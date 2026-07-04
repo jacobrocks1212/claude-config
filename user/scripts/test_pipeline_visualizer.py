@@ -1037,5 +1037,1150 @@ class TestKeyedMarkerLookup:
             assert _run_marker_present(repo) is False
 
 
+# ---------------------------------------------------------------------------
+# harness-telemetry-ledger Phase 3 — pipeline_visualizer.trends
+#
+# Pure-read aggregation (D9-A) over the telemetry ledger (+ the deny ledger),
+# an /api/trends route through its own TtlCache, and the D8 retro CLI
+# (`python -m pipeline_visualizer.trends --run-id <id> --repo-root <repo>`).
+# Aggregates are asserted against HAND-COMPUTED values over a fixture ledger.
+# ---------------------------------------------------------------------------
+
+import subprocess as _tl_subprocess
+
+
+def _tl_event(ts, event, run_id="R1", pipeline="feature", item_id=None, data=None):
+    return {"v": 1, "ts": ts, "run_id": run_id, "pipeline": pipeline,
+            "event": event, "item_id": item_id, "data": data or {}}
+
+
+def _tl_fixture_events():
+    """Two-run fixture. Hand-computed expectations:
+    R1: duration 120s; 2 cycle-begins (1 real + 1 meta); 1 completion
+        (__mark_complete__) → cycles/completion = 2.0; 1 gate-refusal;
+        1 containment-refusal; 1 halt (f2, needs-input) resolved after 20s.
+    R2: run-start only (no run-end → duration None); 1 unresolved halt (f3)."""
+    return [
+        _tl_event(100.0, "run-start"),
+        _tl_event(110.0, "cycle-begin", item_id="f1",
+                  data={"kind": "real", "sub_skill": "execute-plan"}),
+        _tl_event(120.0, "cycle-end", item_id="f1", data={"cleared": True}),
+        _tl_event(130.0, "dispatch", item_id="f1",
+                  data={"current_step": "Step 7a: execute plan",
+                        "sub_skill": "execute-plan", "terminal_reason": None}),
+        _tl_event(140.0, "gate-refusal", item_id="f1",
+                  data={"gate": "verify-ledger", "failing_check": "clean_tree"}),
+        _tl_event(150.0, "cycle-begin", item_id="f1",
+                  data={"kind": "meta", "sub_skill": "__mark_complete__"}),
+        _tl_event(160.0, "cycle-end", item_id="f1", data={"cleared": True}),
+        _tl_event(170.0, "pseudo-applied", item_id="f1",
+                  data={"pseudo": "__mark_complete__"}),
+        _tl_event(180.0, "halt", item_id="f2",
+                  data={"terminal_reason": "needs-input"}),
+        _tl_event(200.0, "sentinel-resolved", item_id="f2",
+                  data={"sentinel": "NEEDS_INPUT.md"}),
+        _tl_event(210.0, "containment-refusal", item_id="f1",
+                  data={"op": "--apply-pseudo",
+                        "guard": "refuse_if_cycle_active"}),
+        _tl_event(220.0, "run-end", data={"reason": "terminal"}),
+        _tl_event(300.0, "run-start", run_id="R2"),
+        _tl_event(310.0, "halt", run_id="R2", item_id="f3",
+                  data={"terminal_reason": "blocked"}),
+    ]
+
+
+_TL_FIXTURE_DENIES = [
+    {"ts": 1.0, "tool_use_id": "tu-1", "denied_sha12": "a" * 12,
+     "reason_head": "deny", "prompt_head": "p", "acked": False},
+    {"ts": 2.0, "kind": "process-friction", "reason_head": "cycle-bracket-break",
+     "detail": "d", "acked": False},
+    {"ts": 3.0, "tool_use_id": "tu-2", "auto_readmit": True,
+     "readmitted_sha12": "b" * 12, "suffix_head": "s", "item_id": None,
+     "acked": True},
+]
+
+
+class TestTrendsAggregates:
+    """Pure functions over hand-built event lists (no I/O)."""
+
+    def test_runs_grouping(self):
+        from pipeline_visualizer.trends import runs
+        got = runs(_tl_fixture_events())
+        assert [r["run_id"] for r in got] == ["R1", "R2"]
+        r1 = got[0]
+        assert r1["pipeline"] == "feature"
+        assert r1["first_ts"] == 100.0 and r1["last_ts"] == 220.0
+        assert r1["event_counts"]["cycle-begin"] == 2
+        assert r1["event_counts"]["run-end"] == 1
+
+    def test_run_durations(self):
+        from pipeline_visualizer.trends import run_durations
+        got = run_durations(_tl_fixture_events())
+        by_id = {r["run_id"]: r for r in got}
+        assert by_id["R1"]["duration_seconds"] == 120.0
+        assert by_id["R2"]["duration_seconds"] is None  # no run-end → honest None
+
+    def test_cycles_per_completion(self):
+        from pipeline_visualizer.trends import cycles_per_completion
+        got = cycles_per_completion(_tl_fixture_events())
+        assert got["cycles"] == 2
+        assert got["forward_cycles"] == 1
+        assert got["meta_cycles"] == 1
+        assert got["completions"] == 1
+        assert got["cycles_per_completion"] == 2.0
+
+    def test_cycles_per_completion_zero_completions_is_none(self):
+        from pipeline_visualizer.trends import cycles_per_completion
+        got = cycles_per_completion([_tl_event(1.0, "cycle-begin", item_id="x",
+                                               data={"kind": "real"})])
+        assert got["completions"] == 0
+        assert got["cycles_per_completion"] is None  # never a fabricated zero
+
+    def test_refusal_counts(self):
+        from pipeline_visualizer.trends import refusal_counts
+        got = refusal_counts(_tl_fixture_events(), _TL_FIXTURE_DENIES)
+        assert got["gate_refusals"] == 1
+        assert got["containment_refusals"] == 1
+        assert got["by_gate"] == {"verify-ledger": 1}
+        assert got["guard_denies"] == 1        # the plain deny entry only
+        assert got["process_friction"] == 1
+        assert got["auto_readmits"] == 1
+        assert got["unacked_denies"] == 2      # deny + friction (both unacked)
+
+    def test_halt_dwell_pairing(self):
+        from pipeline_visualizer.trends import halt_dwell
+        got = halt_dwell(_tl_fixture_events())
+        assert len(got) == 2
+        resolved = [h for h in got if h["item_id"] == "f2"][0]
+        assert resolved["dwell_seconds"] == 20.0
+        assert resolved["resolved_ts"] == 200.0
+        assert resolved["terminal_reason"] == "needs-input"
+        unresolved = [h for h in got if h["item_id"] == "f3"][0]
+        assert unresolved["resolved_ts"] is None
+        assert unresolved["dwell_seconds"] is None  # honest unresolved, not 0
+
+
+class TestTrendsPayload:
+    """trends_payload(repo_root) — the /api/trends aggregate over real files."""
+
+    def _write_ledger(self, state_dir, events):
+        ledger = state_dir / "lazy-telemetry.jsonl"
+        ledger.write_text(
+            "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+        return ledger
+
+    def test_payload_over_fixture_ledger(self, tmp_path):
+        from pipeline_visualizer.trends import trends_payload
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        with _isolated_state_dir(tmp_path, marker=False):
+            state_dir = tmp_path / "_state"
+            self._write_ledger(state_dir, _tl_fixture_events())
+            (state_dir / "lazy-deny-ledger.jsonl").write_text(
+                "".join(json.dumps(d) + "\n" for d in _TL_FIXTURE_DENIES),
+                encoding="utf-8")
+            payload = trends_payload(repo)
+        assert payload["telemetry_available"] is True
+        assert [r["run_id"] for r in payload["runs"]] == ["R1", "R2"]
+        r1 = [r for r in payload["runs"] if r["run_id"] == "R1"][0]
+        assert r1["forward_cycles"] == 1
+        assert r1["meta_cycles"] == 1
+        assert r1["completions"] == 1
+        assert r1["cycles_per_completion"] == 2.0
+        assert r1["gate_refusals"] == 1
+        assert r1["containment_refusals"] == 1
+        assert r1["halts"] == 1
+        assert r1["duration_seconds"] == 120.0
+        assert payload["totals"]["cycles"] == 2
+        assert payload["deny_ledger"]["unacked_denies"] == 2
+
+    def test_payload_empty_ledger_is_honest(self, tmp_path):
+        from pipeline_visualizer.trends import trends_payload
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        with _isolated_state_dir(tmp_path, marker=False):
+            payload = trends_payload(repo)
+        assert payload["telemetry_available"] is False
+        assert "no telemetry" in payload["message"].lower()
+        assert payload["runs"] == []
+
+    def test_payload_merges_committed_cloud_segments(self, tmp_path):
+        from pipeline_visualizer.trends import trends_payload
+        repo = tmp_path / "repo"
+        cloud_dir = repo / "docs" / "telemetry" / "cloud"
+        cloud_dir.mkdir(parents=True)
+        cloud_events = [
+            _tl_event(500.0, "run-start", run_id="RC"),
+            _tl_event(600.0, "run-end", run_id="RC"),
+        ]
+        (cloud_dir / "RC.jsonl").write_text(
+            "".join(json.dumps(e) + "\n" for e in cloud_events),
+            encoding="utf-8")
+        with _isolated_state_dir(tmp_path, marker=False):
+            payload = trends_payload(repo)
+        assert payload["telemetry_available"] is True
+        rc = [r for r in payload["runs"] if r["run_id"] == "RC"][0]
+        assert rc["duration_seconds"] == 100.0
+
+
+class TestTrendsServerRoute:
+    def test_api_trends_200_json(self, tmp_path):
+        repo_root = _seed_feature_repo(tmp_path)
+        with _isolated_state_dir(tmp_path, marker=False):
+            state_dir = tmp_path / "_state"
+            (state_dir / "lazy-telemetry.jsonl").write_text(
+                "".join(json.dumps(e) + "\n" for e in _tl_fixture_events()),
+                encoding="utf-8")
+            httpd, port = _start_server(repo_root)
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                conn.request("GET", "/api/trends")
+                resp = conn.getresponse()
+                assert resp.status == 200
+                assert "application/json" in (resp.getheader("Content-Type") or "")
+                body = json.loads(resp.read())
+                assert body["telemetry_available"] is True
+                assert [r["run_id"] for r in body["runs"]] == ["R1", "R2"]
+            finally:
+                httpd.shutdown()
+
+    def test_api_trends_empty_state_honest(self, tmp_path):
+        repo_root = _seed_feature_repo(tmp_path)
+        with _isolated_state_dir(tmp_path, marker=False):
+            httpd, port = _start_server(repo_root)
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                conn.request("GET", "/api/trends")
+                body = json.loads(conn.getresponse().read())
+                assert body["telemetry_available"] is False
+            finally:
+                httpd.shutdown()
+
+    def test_trends_served_through_cache(self, tmp_path):
+        # Sequential GETs within the TTL window → ONE underlying aggregation
+        # (the trends producer is a module attribute, like probe_state).
+        from pipeline_visualizer import server as server_mod
+        repo_root = _seed_feature_repo(tmp_path)
+        calls = {"n": 0}
+        real_trends = server_mod.trends_payload
+
+        def counting_trends(root):
+            calls["n"] += 1
+            return real_trends(root)
+
+        server_mod.trends_payload = counting_trends
+        try:
+            with _isolated_state_dir(tmp_path, marker=False):
+                httpd, port = _start_server(repo_root)
+                try:
+                    for _ in range(5):
+                        conn = http.client.HTTPConnection("127.0.0.1", port,
+                                                          timeout=30)
+                        conn.request("GET", "/api/trends")
+                        conn.getresponse().read()
+                    assert calls["n"] == 1
+                finally:
+                    httpd.shutdown()
+        finally:
+            server_mod.trends_payload = real_trends
+
+
+class TestTrendsRetroCli:
+    """The D8 retro CLI: python -m pipeline_visualizer.trends --run-id <id>."""
+
+    def _run_cli(self, tmp_path, args):
+        state_dir = tmp_path / "_state"
+        env = dict(_os.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        return _tl_subprocess.run(
+            [sys.executable, "-m", "pipeline_visualizer.trends"] + args,
+            capture_output=True, text=True, env=env,
+            cwd=str(Path(__file__).parent),
+        )
+
+    def test_run_summary_shape_and_citations(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        state_dir = tmp_path / "_state"
+        state_dir.mkdir()
+        (state_dir / "lazy-telemetry.jsonl").write_text(
+            "".join(json.dumps(e) + "\n" for e in _tl_fixture_events()),
+            encoding="utf-8")
+        r = self._run_cli(tmp_path, ["--repo-root", str(repo), "--run-id", "R1"])
+        assert r.returncode == 0, r.stderr
+        summary = json.loads(r.stdout)
+        assert summary["found"] is True
+        assert summary["run_id"] == "R1"
+        assert summary["forward_cycles"] == 1
+        assert summary["meta_cycles"] == 1
+        assert summary["completions"] == 1
+        assert summary["gate_refusals"][0]["gate"] == "verify-ledger"
+        assert summary["containment_refusals"][0]["op"] == "--apply-pseudo"
+        # Per-figure ledger citations: the run's physical line window.
+        lines = summary["ledger_lines"]
+        assert lines and all("first" in w and "last" in w for w in lines.values())
+        (halt,) = summary["halts"]
+        assert halt["item_id"] == "f2" and halt["dwell_seconds"] == 20.0
+        assert halt["citation"]["line"] == 9  # 9th physical ledger line
+
+    def test_run_summary_honest_miss(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (tmp_path / "_state").mkdir()
+        r = self._run_cli(tmp_path, ["--repo-root", str(repo),
+                                     "--run-id", "NO-SUCH-RUN"])
+        assert r.returncode == 0, r.stderr
+        summary = json.loads(r.stdout)
+        assert summary["found"] is False
+        assert "no telemetry" in summary["message"].lower()
+
+    def test_cli_without_run_id_prints_payload(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (tmp_path / "_state").mkdir()
+        r = self._run_cli(tmp_path, ["--repo-root", str(repo)])
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert payload["telemetry_available"] is False
+
+
+# ---------------------------------------------------------------------------
+# cross-repo-fleet-view Phase 1 — pipeline_visualizer.fleet (shallow read layer)
+#
+# Pure-read fleet library: D1 discovery (registry glob + lazy-repos.json
+# pins/excludes + live-marker union), the raw NEVER-DELETING marker read + D3
+# badge grading, D5 shallow rows (queue depths + halt-sentinel presence), and
+# D7 slug assignment. Zero state-script subprocesses anywhere in this layer.
+# ---------------------------------------------------------------------------
+
+import datetime as _fl_datetime
+
+
+def _fl_iso(epoch: float) -> str:
+    """ISO-8601 UTC 'Z' string for an epoch float (the marker's format)."""
+    return (_fl_datetime.datetime(1970, 1, 1)
+            + _fl_datetime.timedelta(seconds=epoch)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _fl_seed_repo(base: Path, name: str, features=(), bugs=(),
+                  lazy_queue_doc: bool = False) -> Path:
+    """Seed a minimal lazy-enabled repo: queue.json + item dirs per pipeline."""
+    repo = base / name
+    for pipeline, ids in (("features", features), ("bugs", bugs)):
+        pdir = repo / "docs" / pipeline
+        pdir.mkdir(parents=True, exist_ok=True)
+        (pdir / "queue.json").write_text(
+            json.dumps({"queue": [
+                {"id": i, "name": i, "spec_dir": i, "tier": 1} for i in ids
+            ]}, indent=2) + "\n", encoding="utf-8")
+        for i in ids:
+            d = pdir / i
+            d.mkdir(exist_ok=True)
+            (d / "SPEC.md").write_text("# x\n\n**Status:** Draft\n",
+                                       encoding="utf-8")
+    if lazy_queue_doc:
+        (repo / "LAZY_QUEUE.md").write_text("# Lazy Queue\n", encoding="utf-8")
+    return repo
+
+
+def _fl_write_marker(state_base: Path, repo_root: Path, started_epoch: float,
+                     pipeline="feature", work_branch="lazy/run-branch") -> Path:
+    """Write a keyed run marker (production layout: <state_base>/<repo_key>/)."""
+    import lazy_core
+    d = state_base / lazy_core.repo_key(str(repo_root))
+    d.mkdir(parents=True, exist_ok=True)
+    marker = {
+        "pipeline": pipeline, "cloud": False, "repo_root": str(repo_root),
+        "session_id": None, "started_at": _fl_iso(started_epoch),
+        "work_branch": work_branch, "max_cycles": 20,
+    }
+    p = d / "lazy-run-marker.json"
+    p.write_text(json.dumps(marker), encoding="utf-8")
+    return p
+
+
+_FL_NOW = 1_800_000_000.0  # fixed injected 'now' for age grading
+
+
+class TestFleetDiscovery:
+    """discover_repos: registry glob ∪ pins ∪ live-marker roots, realpath-
+    deduped, excludes applied last."""
+
+    def test_registry_glob_finds_lazy_repos_only(self, tmp_path):
+        from pipeline_visualizer.fleet import discover_repos
+        base = tmp_path / "repos"
+        base.mkdir()
+        a = _fl_seed_repo(base, "repo-a", features=("f1",))
+        b = _fl_seed_repo(base, "repo-b", bugs=("b1",))
+        (base / "not-a-repo").mkdir()  # no docs/ → not discovered
+        got = discover_repos(repos_base=base,
+                             lazy_repos_path=tmp_path / "no-config.json",
+                             state_base=tmp_path / "no-state")
+        assert set(got) == {_os.path.realpath(str(a)), _os.path.realpath(str(b))}
+
+    def test_pins_added_and_excludes_removed(self, tmp_path):
+        from pipeline_visualizer.fleet import discover_repos
+        base = tmp_path / "repos"
+        base.mkdir()
+        a = _fl_seed_repo(base, "repo-a", features=("f1",))
+        b = _fl_seed_repo(base, "repo-b", features=("f1",))
+        # An out-of-tree pinned repo (not under repos_base).
+        c = _fl_seed_repo(tmp_path / "elsewhere", "repo-c", features=("f1",))
+        cfg = tmp_path / "lazy-repos.json"
+        cfg.write_text(json.dumps({
+            "pins": [str(c)],
+            "excludes": [str(b)],
+        }), encoding="utf-8")
+        got = discover_repos(repos_base=base, lazy_repos_path=cfg,
+                             state_base=tmp_path / "no-state")
+        assert set(got) == {_os.path.realpath(str(a)), _os.path.realpath(str(c))}
+
+    def test_live_marker_union_adds_out_of_tree_repo(self, tmp_path):
+        from pipeline_visualizer.fleet import discover_repos
+        base = tmp_path / "repos"
+        base.mkdir()
+        a = _fl_seed_repo(base, "repo-a", features=("f1",))
+        # A live run in a nonstandard root, discoverable only via its marker.
+        d = _fl_seed_repo(tmp_path / "outside", "repo-d", features=("f1",))
+        state_base = tmp_path / "state"
+        _fl_write_marker(state_base, d, _FL_NOW - 60)
+        got = discover_repos(repos_base=base,
+                             lazy_repos_path=tmp_path / "no-config.json",
+                             state_base=state_base)
+        assert set(got) == {_os.path.realpath(str(a)), _os.path.realpath(str(d))}
+
+    def test_union_dedups_by_realpath(self, tmp_path):
+        from pipeline_visualizer.fleet import discover_repos
+        base = tmp_path / "repos"
+        base.mkdir()
+        a = _fl_seed_repo(base, "repo-a", features=("f1",))
+        # Pin the SAME repo via a non-canonical path form (trailing slash) AND
+        # give it a live marker — still one entry.
+        cfg = tmp_path / "lazy-repos.json"
+        cfg.write_text(json.dumps({"pins": [str(a) + _os.sep]}), encoding="utf-8")
+        state_base = tmp_path / "state"
+        _fl_write_marker(state_base, a, _FL_NOW - 60)
+        got = discover_repos(repos_base=base, lazy_repos_path=cfg,
+                             state_base=state_base)
+        assert got == [_os.path.realpath(str(a))]
+
+    def test_missing_sources_and_malformed_config_fail_open(self, tmp_path):
+        from pipeline_visualizer.fleet import discover_repos
+        base = tmp_path / "repos"
+        base.mkdir()
+        a = _fl_seed_repo(base, "repo-a", features=("f1",))
+        bad_cfg = tmp_path / "lazy-repos.json"
+        bad_cfg.write_text("{ not json", encoding="utf-8")
+        got = discover_repos(repos_base=base, lazy_repos_path=bad_cfg,
+                             state_base=tmp_path / "absent-state")
+        assert got == [_os.path.realpath(str(a))]
+
+
+class TestFleetMarkerRawRead:
+    """read_marker_raw: raw keyed-path read; NEVER deletes (the ≥24h marker
+    survival is the load-bearing D3 invariant)."""
+
+    def test_absent_returns_none(self, tmp_path):
+        from pipeline_visualizer.fleet import read_marker_raw
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        assert read_marker_raw(repo, state_base=tmp_path / "state") is None
+
+    def test_present_returns_raw_fields(self, tmp_path):
+        from pipeline_visualizer.fleet import read_marker_raw
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        state_base = tmp_path / "state"
+        _fl_write_marker(state_base, repo, _FL_NOW - 120, pipeline="bug",
+                         work_branch="lazy/bugs-x")
+        raw = read_marker_raw(repo, state_base=state_base)
+        assert raw["pipeline"] == "bug"
+        assert raw["work_branch"] == "lazy/bugs-x"
+        assert raw["repo_root"] == str(repo)
+
+    def test_stale_marker_survives_repeated_reads(self, tmp_path):
+        # THE invariant: a ≥24h-old marker is still on disk (bytes unchanged)
+        # after every fleet read path has run over it, repeatedly.
+        from pipeline_visualizer.fleet import (
+            fleet_row, marker_fresh_present, marker_view, read_marker_raw)
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "docs" / "features").mkdir(parents=True)
+        state_base = tmp_path / "state"
+        mp = _fl_write_marker(state_base, repo, _FL_NOW - 25 * 3600)
+        before = mp.read_bytes()
+        for _ in range(3):
+            raw = read_marker_raw(repo, state_base=state_base)
+            view = marker_view(raw, now=_FL_NOW)
+            assert view["badge"] == "stale-marker"
+            assert marker_fresh_present(repo, state_base=state_base,
+                                        now=_FL_NOW) is False
+            fleet_row(repo, state_base=state_base, now=_FL_NOW)
+        assert mp.exists()
+        assert mp.read_bytes() == before
+
+    def test_corrupt_marker_flagged_not_deleted(self, tmp_path):
+        # lazy_core.read_run_marker DELETES a corrupt marker; the fleet read
+        # must flag it and leave it on disk.
+        from pipeline_visualizer.fleet import (marker_fresh_present,
+                                               marker_view, read_marker_raw)
+        import lazy_core
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        state_base = tmp_path / "state"
+        d = state_base / lazy_core.repo_key(str(repo))
+        d.mkdir(parents=True)
+        mp = d / "lazy-run-marker.json"
+        mp.write_text("{ not json", encoding="utf-8")
+        raw = read_marker_raw(repo, state_base=state_base)
+        assert raw is not None and raw.get("unreadable") is True
+        view = marker_view(raw, now=_FL_NOW)
+        assert view["present"] is True
+        assert view["badge"] == "stale-marker"
+        assert view["age_seconds"] is None
+        assert marker_fresh_present(repo, state_base=state_base,
+                                    now=_FL_NOW) is False
+        assert mp.exists()  # never deleted
+
+    def test_lazy_state_dir_flat_layout_honored(self, tmp_path, monkeypatch):
+        # With no explicit state_base and LAZY_STATE_DIR set, the marker is
+        # read flat from that dir (claude_state_dir override semantics).
+        from pipeline_visualizer.fleet import read_marker_raw
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        flat = tmp_path / "flat-state"
+        flat.mkdir()
+        (flat / "lazy-run-marker.json").write_text(json.dumps({
+            "pipeline": "feature", "repo_root": str(repo),
+            "started_at": _fl_iso(_FL_NOW - 60),
+        }), encoding="utf-8")
+        monkeypatch.setenv("LAZY_STATE_DIR", str(flat))
+        raw = read_marker_raw(repo)
+        assert raw is not None and raw["pipeline"] == "feature"
+
+
+class TestFleetMarkerView:
+    """D3 badge grading over an injected now. Warn threshold 2h; stale 24h
+    (aligned with lazy_core._MARKER_STALE_SECONDS)."""
+
+    def _raw(self, age_seconds):
+        return {"pipeline": "feature", "started_at": _fl_iso(_FL_NOW - age_seconds),
+                "work_branch": "lazy/x", "repo_root": "/r"}
+
+    def test_idle_when_no_marker(self):
+        from pipeline_visualizer.fleet import marker_view
+        view = marker_view(None, now=_FL_NOW)
+        assert view == {"present": False, "age_seconds": None, "badge": "idle",
+                        "pipeline": None, "work_branch": None}
+
+    def test_run_active_within_warn_threshold(self):
+        from pipeline_visualizer.fleet import marker_view
+        view = marker_view(self._raw(60), now=_FL_NOW)
+        assert view["badge"] == "run-active"
+        assert view["present"] is True
+        assert abs(view["age_seconds"] - 60) < 0.001
+        assert view["pipeline"] == "feature"
+        assert view["work_branch"] == "lazy/x"
+
+    def test_run_silent_past_warn_threshold(self):
+        from pipeline_visualizer.fleet import marker_view
+        view = marker_view(self._raw(3 * 3600), now=_FL_NOW)
+        assert view["badge"] == "run-silent"
+        assert abs(view["age_seconds"] - 3 * 3600) < 0.001
+
+    def test_stale_marker_past_24h(self):
+        from pipeline_visualizer.fleet import marker_view
+        view = marker_view(self._raw(25 * 3600), now=_FL_NOW)
+        assert view["badge"] == "stale-marker"
+        assert abs(view["age_seconds"] - 25 * 3600) < 0.001
+
+    def test_thresholds_align_with_lazy_core(self):
+        from pipeline_visualizer import fleet
+        import lazy_core
+        assert fleet.STALE_SECONDS == lazy_core._MARKER_STALE_SECONDS
+        assert fleet.WARN_SECONDS == 2 * 3600
+
+    def test_unparseable_started_at_is_stale_with_null_age(self):
+        from pipeline_visualizer.fleet import marker_view
+        view = marker_view({"pipeline": "feature", "started_at": "yesterday-ish"},
+                           now=_FL_NOW)
+        assert view["present"] is True
+        assert view["badge"] == "stale-marker"
+        assert view["age_seconds"] is None
+
+
+class TestFleetSlugs:
+    def test_slugify_kebab_cases(self):
+        from pipeline_visualizer.fleet import slugify
+        assert slugify("My_Repo!") == "my-repo"
+        assert slugify("claude-config") == "claude-config"
+        assert slugify("...") == "repo"  # never empty
+
+    def test_assign_unique_basenames_keep_plain_slugs(self, tmp_path):
+        from pipeline_visualizer.fleet import assign_slugs
+        a = tmp_path / "alpha"
+        b = tmp_path / "beta"
+        a.mkdir()
+        b.mkdir()
+        slugs = assign_slugs([str(a), str(b)])
+        assert slugs[str(a)] == "alpha"
+        assert slugs[str(b)] == "beta"
+
+    def test_basename_collision_gets_repo_key_suffix(self, tmp_path):
+        from pipeline_visualizer.fleet import assign_slugs
+        import lazy_core
+        a = tmp_path / "one" / "same-name"
+        b = tmp_path / "two" / "same-name"
+        a.mkdir(parents=True)
+        b.mkdir(parents=True)
+        slugs = assign_slugs([str(a), str(b)])
+        assert slugs[str(a)] != slugs[str(b)]
+        for root, slug in slugs.items():
+            assert slug.startswith("same-name-")
+            assert slug == "same-name-" + lazy_core.repo_key(root)[:8]
+
+
+class TestFleetRow:
+    """fleet_row: shallow shape — depths, halt presence, marker view, doc flag,
+    error-row degradation. No state-script subprocess anywhere."""
+
+    def test_depths_match_queue_lengths(self, tmp_path):
+        from pipeline_visualizer.fleet import fleet_row
+        repo = _fl_seed_repo(tmp_path, "repo-a",
+                             features=("f1", "f2", "f3"), bugs=("b1", "b2"))
+        row = fleet_row(repo, state_base=tmp_path / "state", now=_FL_NOW)
+        assert row["features"]["depth"] == 3
+        assert row["bugs"]["depth"] == 2
+        assert row["error"] is None
+        assert row["name"] == "repo-a"
+        assert row["slug"] == "repo-a"
+        assert row["repo_root"] == str(repo)
+
+    def test_halt_sentinel_presence_listed_with_kind(self, tmp_path):
+        from pipeline_visualizer.fleet import fleet_row
+        repo = _fl_seed_repo(tmp_path, "repo-a",
+                             features=("f1", "f2"), bugs=("b1",))
+        (repo / "docs" / "features" / "f2" / "NEEDS_INPUT.md").write_text(
+            "---\nkind: needs-input\n---\n", encoding="utf-8")
+        (repo / "docs" / "bugs" / "b1" / "BLOCKED.md").write_text(
+            "---\nkind: blocked\n---\n", encoding="utf-8")
+        row = fleet_row(repo, state_base=tmp_path / "state", now=_FL_NOW)
+        assert row["features"]["halts"] == [{"id": "f2", "kind": "needs-input"}]
+        assert row["bugs"]["halts"] == [{"id": "b1", "kind": "blocked"}]
+
+    def test_marker_view_embedded(self, tmp_path):
+        from pipeline_visualizer.fleet import fleet_row
+        repo = _fl_seed_repo(tmp_path, "repo-a", features=("f1",))
+        state_base = tmp_path / "state"
+        _fl_write_marker(state_base, repo, _FL_NOW - 300)
+        row = fleet_row(repo, state_base=state_base, now=_FL_NOW)
+        assert row["marker"]["present"] is True
+        assert row["marker"]["badge"] == "run-active"
+        assert row["marker"]["pipeline"] == "feature"
+        assert row["marker"]["work_branch"] == "lazy/run-branch"
+
+    def test_lazy_queue_doc_flag(self, tmp_path):
+        from pipeline_visualizer.fleet import fleet_row
+        with_doc = _fl_seed_repo(tmp_path, "repo-a", features=("f1",),
+                                 lazy_queue_doc=True)
+        without = _fl_seed_repo(tmp_path, "repo-b", features=("f1",))
+        sb = tmp_path / "state"
+        assert fleet_row(with_doc, state_base=sb, now=_FL_NOW)["lazy_queue_doc"] is True
+        assert fleet_row(without, state_base=sb, now=_FL_NOW)["lazy_queue_doc"] is False
+
+    def test_internal_error_degrades_to_error_row(self, tmp_path, monkeypatch):
+        # A broken repo renders an explicit error row, never a raise/omission.
+        from pipeline_visualizer import fleet
+        repo = _fl_seed_repo(tmp_path, "repo-a", features=("f1",))
+
+        def boom(path):
+            raise OSError("permission denied (fixture)")
+
+        monkeypatch.setattr(fleet, "read_queue", boom)
+        row = fleet.fleet_row(repo, state_base=tmp_path / "state", now=_FL_NOW)
+        assert row["error"] is not None
+        assert "permission denied" in row["error"]
+        assert row["slug"] == "repo-a"
+        assert row["repo_root"] == str(repo)
+        assert row["features"]["depth"] == 0  # shape stays renderable
+
+
+# ---------------------------------------------------------------------------
+# cross-repo-fleet-view Phase 2 — `--fleet` serving mode
+#
+# One instance serves the fleet home: /api/fleet behind its own TtlCache and
+# the existing per-repo handlers nested under /repo/<slug>/… (slug-resolved,
+# per-repo caches). Single-repo --repo-root mode is byte-identical (the whole
+# pre-existing suite above runs against it unmodified).
+# ---------------------------------------------------------------------------
+
+
+def _start_fleet_server(repos_base: Path, lazy_repos_path: Path,
+                        state_base: Path):
+    from pipeline_visualizer.server import make_server
+    httpd = make_server(host="127.0.0.1", port=0, fleet=True,
+                        repos_base=repos_base, lazy_repos_path=lazy_repos_path,
+                        state_base=state_base)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    return httpd, httpd.server_address[1]
+
+
+def _fleet_fixture(tmp_path, seed_real_feature=False):
+    """A two-repo fleet home: repos_base with repo-a / repo-b, empty state."""
+    base = tmp_path / "repos"
+    base.mkdir()
+    if seed_real_feature:
+        d = base / "repo-a"
+        d.mkdir()
+        _seed_feature_repo(d)
+        _fl_seed_repo(base, "repo-b", bugs=("b1",))
+    else:
+        _fl_seed_repo(base, "repo-a", features=("f1", "f2"))
+        _fl_seed_repo(base, "repo-b", bugs=("b1",))
+    state_base = tmp_path / "fleet-state"
+    state_base.mkdir()
+    return base, tmp_path / "lazy-repos.json", state_base
+
+
+class TestFleetServer:
+    def _get(self, port, path):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        body = resp.read()
+        return resp, body
+
+    def test_api_fleet_json_shape(self, tmp_path):
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, body = self._get(port, "/api/fleet")
+            assert resp.status == 200
+            assert "application/json" in (resp.getheader("Content-Type") or "")
+            payload = json.loads(body)
+            rows = payload["repos"]
+            assert [r["slug"] for r in rows] == ["repo-a", "repo-b"]
+            a = rows[0]
+            assert a["features"]["depth"] == 2
+            assert a["marker"]["badge"] == "idle"
+            assert a["error"] is None
+            assert "repo_root" in a
+        finally:
+            httpd.shutdown()
+
+    def test_drill_in_state_identical_to_single_repo(self, tmp_path):
+        # /repo/<slug>/api/state must be the full probe_state payload — equal
+        # to what a single-repo server over the same root serves (modulo the
+        # per-response server_time stamp).
+        base, cfg, state_base = _fleet_fixture(tmp_path, seed_real_feature=True)
+        repo_a = base / "repo-a"
+        with _isolated_state_dir(tmp_path, marker=False):
+            fleet_httpd, fleet_port = _start_fleet_server(base, cfg, state_base)
+            single_httpd, single_port = _start_server(repo_a)
+            try:
+                _, fleet_body = self._get(fleet_port, "/repo/repo-a/api/state")
+                _, single_body = self._get(single_port, "/api/state")
+                fleet_state = json.loads(fleet_body)
+                single_state = json.loads(single_body)
+                fleet_state.pop("server_time")
+                single_state.pop("server_time")
+                assert fleet_state == single_state
+            finally:
+                fleet_httpd.shutdown()
+                single_httpd.shutdown()
+
+    def test_drill_in_queue_and_trends_routes(self, tmp_path):
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        with _isolated_state_dir(tmp_path, marker=False):
+            httpd, port = _start_fleet_server(base, cfg, state_base)
+            try:
+                resp, body = self._get(port, "/repo/repo-b/api/queue")
+                assert resp.status == 200
+                assert [e["id"] for e in json.loads(body)["bugs"]] == ["b1"]
+                resp, body = self._get(port, "/repo/repo-b/api/trends")
+                assert resp.status == 200
+                assert json.loads(body)["telemetry_available"] is False
+            finally:
+                httpd.shutdown()
+
+    def test_post_to_fleet_routes_404(self, tmp_path):
+        # D6: the fleet layer is pure read — no fleet-level POST exists.
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            for path in ("/api/fleet", "/api/queue", "/"):
+                resp, _ = _post(port, path, {"pipeline": "features",
+                                             "order": ["f2", "f1"]})
+                assert resp.status == 404, path
+        finally:
+            httpd.shutdown()
+
+    def test_fleet_reorder_idle_persists(self, tmp_path):
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        qp = base / "repo-a" / "docs" / "features" / "queue.json"
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, _ = _post(port, "/repo/repo-a/api/queue",
+                            {"pipeline": "features", "order": ["f2", "f1"]})
+            assert resp.status == 200
+        finally:
+            httpd.shutdown()
+        data = json.loads(qp.read_text(encoding="utf-8"))
+        assert [e["id"] for e in data["queue"]] == ["f2", "f1"]
+
+    def test_fleet_reorder_refused_409_under_fresh_marker(self, tmp_path):
+        # The refusal uses the RAW keyed-path read (no set_active_repo_root
+        # flip, no delete) — and the queue stays byte-identical.
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        repo_a = base / "repo-a"
+        qp = repo_a / "docs" / "features" / "queue.json"
+        before = qp.read_bytes()
+        import time as _time
+        mp = _fl_write_marker(state_base, repo_a, _time.time() - 60)  # fresh
+        marker_before = mp.read_bytes()
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, _ = _post(port, "/repo/repo-a/api/queue",
+                            {"pipeline": "features", "order": ["f2", "f1"]})
+            assert resp.status == 409
+        finally:
+            httpd.shutdown()
+        assert qp.read_bytes() == before
+        assert mp.read_bytes() == marker_before  # marker untouched
+
+    def test_unknown_slug_404(self, tmp_path):
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, _ = self._get(port, "/repo/no-such-repo/api/state")
+            assert resp.status == 404
+            resp, _ = _post(port, "/repo/no-such-repo/api/queue",
+                            {"pipeline": "features", "order": []})
+            assert resp.status == 404
+        finally:
+            httpd.shutdown()
+
+    def test_zero_state_script_calls_on_fleet_poll(self, tmp_path, monkeypatch):
+        # D5's load-bearing bound: the fleet poll spawns ZERO state-script
+        # subprocesses (shallow rows only; the full probe is drill-in-only).
+        from pipeline_visualizer import probe as probe_mod
+        calls = {"n": 0}
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return "{}"
+
+        monkeypatch.setattr(probe_mod, "_run_state_script", counting)
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            for _ in range(3):
+                resp, _ = self._get(port, "/api/fleet")
+                assert resp.status == 200
+        finally:
+            httpd.shutdown()
+        assert calls["n"] == 0
+
+    def test_api_fleet_served_through_own_cache(self, tmp_path):
+        # Repeated GETs within the fleet TTL → ONE underlying aggregation
+        # (fleet_payload is a server module attribute, like probe_state).
+        from pipeline_visualizer import server as server_mod
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        calls = {"n": 0}
+        real = server_mod.fleet_payload
+
+        def counting(**kwargs):
+            calls["n"] += 1
+            return real(**kwargs)
+
+        server_mod.fleet_payload = counting
+        try:
+            httpd, port = _start_fleet_server(base, cfg, state_base)
+            try:
+                for _ in range(5):
+                    self._get(port, "/api/fleet")
+                assert calls["n"] == 1
+            finally:
+                httpd.shutdown()
+        finally:
+            server_mod.fleet_payload = real
+
+    def test_single_repo_mode_has_no_fleet_route(self, tmp_path):
+        # Byte-identical single-repo pin: /api/fleet does not exist there.
+        repo_root = _seed_feature_repo(tmp_path)
+        httpd, port = _start_server(repo_root)
+        try:
+            resp, _ = self._get(port, "/api/fleet")
+            assert resp.status == 404
+        finally:
+            httpd.shutdown()
+
+    def test_cli_exposes_fleet_flag(self):
+        r = _tl_subprocess.run(
+            [sys.executable, "-m", "pipeline_visualizer", "--help"],
+            capture_output=True, text=True, cwd=str(Path(__file__).parent))
+        assert r.returncode == 0
+        assert "--fleet" in r.stdout
+
+
+# ---------------------------------------------------------------------------
+# cross-repo-fleet-view Phase 3 — fleet home frontend + nested per-repo page
+# ---------------------------------------------------------------------------
+
+
+class TestFleetStaticServing:
+    def _get(self, port, path):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        body = resp.read()
+        return resp, body
+
+    def test_fleet_root_serves_fleet_home(self, tmp_path):
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, body = self._get(port, "/")
+            assert resp.status == 200
+            assert "text/html" in (resp.getheader("Content-Type") or "")
+            # Load-bearing DOM markers: the table + the D4-B triage strip.
+            assert b"fleet-table" in body
+            assert b"Needs attention" in body
+        finally:
+            httpd.shutdown()
+
+    def test_fleet_assets_served(self, tmp_path):
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, body = self._get(port, "/static/fleet.js")
+            assert resp.status == 200 and len(body) > 0
+            assert "javascript" in (resp.getheader("Content-Type") or "")
+            resp, body = self._get(port, "/static/fleet.css")
+            assert resp.status == 200
+            assert "css" in (resp.getheader("Content-Type") or "")
+        finally:
+            httpd.shutdown()
+
+    def test_repo_nested_index_and_asset_served(self, tmp_path):
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, body = self._get(port, "/repo/repo-a/")
+            assert resp.status == 200
+            assert "text/html" in (resp.getheader("Content-Type") or "")
+            assert b"app.js" in body  # the shipped per-repo page
+            resp, body = self._get(port, "/repo/repo-a/static/app.js")
+            assert resp.status == 200 and len(body) > 0
+            assert "javascript" in (resp.getheader("Content-Type") or "")
+        finally:
+            httpd.shutdown()
+
+    def test_repo_without_trailing_slash_redirects(self, tmp_path):
+        # Relative api/asset URLs only resolve under the slug prefix with a
+        # trailing slash — the bare form must redirect, not serve.
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, _ = self._get(port, "/repo/repo-a")
+            assert resp.status == 301
+            assert resp.getheader("Location") == "/repo/repo-a/"
+        finally:
+            httpd.shutdown()
+
+    def test_per_repo_frontend_uses_relative_urls(self):
+        # The nested page reuses the SAME assets, so index.html/app.js must
+        # reference api/static paths RELATIVE (absolute would escape the
+        # /repo/<slug>/ prefix and break drill-in).
+        static = Path(__file__).parent / "pipeline_visualizer" / "static"
+        index_html = (static / "index.html").read_text(encoding="utf-8")
+        app_js = (static / "app.js").read_text(encoding="utf-8")
+        assert 'href="/static' not in index_html
+        assert 'src="/static' not in index_html
+        assert 'fetch("/' not in app_js
+
+
+# ---------------------------------------------------------------------------
+# cross-repo-fleet-view Phase 4 — aggregation hardening
+# ---------------------------------------------------------------------------
+
+import time as _fl_time
+
+
+class TestFleetAggregationHardening:
+    def _get(self, port, path):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        body = resp.read()
+        return resp, body
+
+    def _many_repo_fixture(self, tmp_path, n=12):
+        base = tmp_path / "repos"
+        base.mkdir()
+        state_base = tmp_path / "state"
+        state_base.mkdir()
+        for i in range(n):
+            repo = _fl_seed_repo(base, f"repo-{i:02d}",
+                                 features=("f1", "f2"), bugs=("b1",))
+            if i % 3 == 0:
+                _fl_write_marker(state_base, repo,
+                                 _fl_time.time() - (i + 1) * 3600)
+        return base, tmp_path / "no-config.json", state_base
+
+    def test_twelve_repo_poll_bounded_zero_subprocess(self, tmp_path, monkeypatch):
+        # SPEC Phase 4: a ≥10-repo fleet poll stays under a bounded wall-time
+        # with ZERO state-script subprocesses spawned.
+        from pipeline_visualizer import probe as probe_mod
+        calls = {"n": 0}
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return "{}"
+
+        monkeypatch.setattr(probe_mod, "_run_state_script", counting)
+        base, cfg, state_base = self._many_repo_fixture(tmp_path, n=12)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            t0 = _fl_time.monotonic()
+            resp, body = self._get(port, "/api/fleet")
+            elapsed = _fl_time.monotonic() - t0
+            assert resp.status == 200
+            payload = json.loads(body)
+            assert len(payload["repos"]) == 12
+            assert elapsed < 5.0  # stat-level reads; generous flake-free bound
+        finally:
+            httpd.shutdown()
+        assert calls["n"] == 0
+
+    def test_shallow_fanout_is_parallel(self, tmp_path, monkeypatch):
+        # 12 repos × a 0.2s-slow marker read: sequential would be ≥2.4s; the
+        # ThreadPoolExecutor fan-out (8 workers) finishes well under that.
+        from pipeline_visualizer import fleet
+        real = fleet.read_marker_raw
+
+        def slow(repo_root, state_base=None):
+            _fl_time.sleep(0.2)
+            return real(repo_root, state_base=state_base)
+
+        monkeypatch.setattr(fleet, "read_marker_raw", slow)
+        base, cfg, state_base = self._many_repo_fixture(tmp_path, n=12)
+        t0 = _fl_time.monotonic()
+        payload = fleet.fleet_payload(repos_base=base, lazy_repos_path=cfg,
+                                      state_base=state_base)
+        elapsed = _fl_time.monotonic() - t0
+        assert len(payload["repos"]) == 12
+        assert elapsed < 1.5
+
+    def test_broken_repo_renders_error_row_over_http(self, tmp_path, monkeypatch):
+        # Failure honesty end-to-end: a repo whose shallow read raises renders
+        # an explicit error row in /api/fleet — never a silently-omitted repo.
+        from pipeline_visualizer import fleet
+        real = fleet.read_queue
+
+        def flaky(path):
+            if "repo-b" in str(path):
+                raise PermissionError("unreadable queue.json (fixture)")
+            return real(path)
+
+        monkeypatch.setattr(fleet, "read_queue", flaky)
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, body = self._get(port, "/api/fleet")
+            assert resp.status == 200
+            rows = {r["slug"]: r for r in json.loads(body)["repos"]}
+            assert rows["repo-a"]["error"] is None
+            assert rows["repo-b"]["error"] is not None
+            assert "unreadable queue.json" in rows["repo-b"]["error"]
+        finally:
+            httpd.shutdown()
+
+    def test_fleet_payload_carries_ttl_constant(self, tmp_path):
+        from pipeline_visualizer import fleet
+        from pipeline_visualizer.cache import DEFAULT_TTL_SECONDS
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        payload = fleet.fleet_payload(repos_base=base, lazy_repos_path=cfg,
+                                      state_base=state_base)
+        assert payload["fleet_ttl_seconds"] == fleet.FLEET_TTL_SECONDS
+        # D5: the fleet TTL is distinct from — and ≥ — the per-repo probe TTL.
+        assert fleet.FLEET_TTL_SECONDS >= DEFAULT_TTL_SECONDS
+
+
+class TestLazyQueueUrl:
+    """D4-B GitHub-link derivation from PLAIN file reads (no git subprocess)."""
+
+    def _seed_git(self, repo: Path, url: str, branch="main"):
+        git = repo / ".git"
+        git.mkdir(parents=True)
+        (git / "config").write_text(
+            '[core]\n\trepositoryformatversion = 0\n'
+            '[remote "origin"]\n'
+            f'\turl = {url}\n'
+            '\tfetch = +refs/heads/*:refs/remotes/origin/*\n',
+            encoding="utf-8")
+        (git / "HEAD").write_text(f"ref: refs/heads/{branch}\n", encoding="utf-8")
+
+    def test_https_origin(self, tmp_path):
+        from pipeline_visualizer.fleet import lazy_queue_url
+        repo = _fl_seed_repo(tmp_path, "repo-a", features=("f1",),
+                             lazy_queue_doc=True)
+        self._seed_git(repo, "https://github.com/jacob/repo-a.git")
+        assert lazy_queue_url(repo) == \
+            "https://github.com/jacob/repo-a/blob/main/LAZY_QUEUE.md"
+
+    def test_ssh_origin_normalized(self, tmp_path):
+        from pipeline_visualizer.fleet import lazy_queue_url
+        repo = _fl_seed_repo(tmp_path, "repo-a", features=("f1",),
+                             lazy_queue_doc=True)
+        self._seed_git(repo, "git@github.com:jacob/repo-a.git", branch="trunk")
+        assert lazy_queue_url(repo) == \
+            "https://github.com/jacob/repo-a/blob/trunk/LAZY_QUEUE.md"
+
+    def test_no_doc_or_no_git_is_none(self, tmp_path):
+        from pipeline_visualizer.fleet import lazy_queue_url
+        no_doc = _fl_seed_repo(tmp_path, "repo-a", features=("f1",))
+        self._seed_git(no_doc, "https://github.com/jacob/repo-a.git")
+        assert lazy_queue_url(no_doc) is None
+        no_git = _fl_seed_repo(tmp_path, "repo-b", features=("f1",),
+                               lazy_queue_doc=True)
+        assert lazy_queue_url(no_git) is None
+
+    def test_detached_head_is_none(self, tmp_path):
+        from pipeline_visualizer.fleet import lazy_queue_url
+        repo = _fl_seed_repo(tmp_path, "repo-a", features=("f1",),
+                             lazy_queue_doc=True)
+        self._seed_git(repo, "https://github.com/jacob/repo-a.git")
+        (repo / ".git" / "HEAD").write_text("a" * 40 + "\n", encoding="utf-8")
+        assert lazy_queue_url(repo) is None
+
+    def test_worktree_gitfile_followed(self, tmp_path):
+        # A worktree's .git is a FILE (gitdir: …); HEAD lives in the worktree
+        # gitdir, config in the common .git dir.
+        from pipeline_visualizer.fleet import lazy_queue_url
+        main = _fl_seed_repo(tmp_path, "main-repo", features=("f1",))
+        self._seed_git(main, "https://github.com/jacob/main-repo.git")
+        wt_gitdir = main / ".git" / "worktrees" / "wt-a"
+        wt_gitdir.mkdir(parents=True)
+        (wt_gitdir / "HEAD").write_text("ref: refs/heads/lane/x\n",
+                                        encoding="utf-8")
+        wt = _fl_seed_repo(tmp_path, "wt-a", features=("f1",),
+                           lazy_queue_doc=True)
+        (wt / ".git").write_text(f"gitdir: {wt_gitdir}\n", encoding="utf-8")
+        assert lazy_queue_url(wt) == \
+            "https://github.com/jacob/main-repo/blob/lane/x/LAZY_QUEUE.md"
+
+    def test_fleet_row_carries_url_only_with_doc(self, tmp_path):
+        from pipeline_visualizer.fleet import fleet_row
+        repo = _fl_seed_repo(tmp_path, "repo-a", features=("f1",),
+                             lazy_queue_doc=True)
+        self._seed_git(repo, "https://github.com/jacob/repo-a.git")
+        row = fleet_row(repo, state_base=tmp_path / "state", now=_FL_NOW)
+        assert row["lazy_queue_doc"] is True
+        assert row["lazy_queue_url"] == \
+            "https://github.com/jacob/repo-a/blob/main/LAZY_QUEUE.md"
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

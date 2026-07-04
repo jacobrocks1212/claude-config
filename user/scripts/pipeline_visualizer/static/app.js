@@ -473,7 +473,7 @@
   function postReorder(track, order) {
     var pipeline = track === "bug" ? "bugs" : "features";
     pendingReorder[track] = order.slice();   // optimistic — reconciled next poll
-    return fetch("/api/queue", {
+    return fetch("api/queue", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pipeline: pipeline, order: order }),
@@ -690,7 +690,7 @@
     // AbortController gives us a hard timeout so a hung probe still trips the guard.
     var controller = new AbortController();
     var timer = setTimeout(function () { controller.abort(); }, POLL_TIMEOUT_MS);
-    return fetch("/api/state", { signal: controller.signal, cache: "no-store" })
+    return fetch("api/state", { signal: controller.signal, cache: "no-store" })
       .then(function (resp) {
         clearTimeout(timer);
         if (!resp.ok) throw new Error("HTTP " + resp.status);
@@ -748,5 +748,146 @@
     document.addEventListener("DOMContentLoaded", start);
   } else {
     start();
+  }
+})();
+
+/* ---- Trends tab (harness-telemetry-ledger Phase 3) ----------------------
+ * Collapsed by default. On "Show", fetch /api/trends (pure-read, server-side
+ * TtlCache-debounced) and render per-run aggregate tables + the deny-ledger
+ * trend. An empty ledger renders the server's honest empty message — never
+ * fabricated zeros. Self-contained IIFE: no coupling to the graph renderer.
+ */
+(function () {
+  "use strict";
+  var TRENDS_REFRESH_MS = 10000; // refresh while the pane is open
+  var open = false;
+  var timer = null;
+
+  function el(tag, text, cls) {
+    var node = document.createElement(tag);
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    if (cls) node.className = cls;
+    return node;
+  }
+
+  function fmt(v) {
+    if (v === null || v === undefined) return "—";
+    return String(v);
+  }
+
+  function fmtDuration(seconds) {
+    if (seconds === null || seconds === undefined) return "—";
+    if (seconds < 90) return Math.round(seconds) + "s";
+    return Math.round(seconds / 60) + "m";
+  }
+
+  function table(headers, rows) {
+    var t = el("table", null, "trends-table");
+    var thead = document.createElement("thead");
+    var hr = document.createElement("tr");
+    headers.forEach(function (h) { hr.appendChild(el("th", h)); });
+    thead.appendChild(hr);
+    t.appendChild(thead);
+    var tbody = document.createElement("tbody");
+    rows.forEach(function (cells) {
+      var tr = document.createElement("tr");
+      cells.forEach(function (c) { tr.appendChild(el("td", c)); });
+      tbody.appendChild(tr);
+    });
+    t.appendChild(tbody);
+    return t;
+  }
+
+  function render(payload) {
+    var empty = document.getElementById("trends-empty");
+    var content = document.getElementById("trends-content");
+    if (!empty || !content) return;
+    content.textContent = "";
+    if (!payload || payload.telemetry_available !== true) {
+      empty.hidden = false;
+      empty.textContent = (payload && payload.message) ||
+        "no telemetry recorded for this window";
+      // The deny ledger may still carry a trend even with no telemetry.
+      if (payload && payload.deny_ledger && payload.deny_ledger.unacked_denies) {
+        empty.textContent += " — deny ledger: " +
+          payload.deny_ledger.unacked_denies + " unacked entr(ies)";
+      }
+      return;
+    }
+    empty.hidden = true;
+
+    content.appendChild(el("div", "Per-run", "trends-subtitle"));
+    content.appendChild(table(
+      ["Run", "Pipeline", "Fwd cycles", "Meta cycles", "Completions",
+       "Cyc/Compl", "Gate refusals", "Containment", "Halts", "Duration"],
+      (payload.runs || []).map(function (r) {
+        return [r.run_id, fmt(r.pipeline), fmt(r.forward_cycles),
+                fmt(r.meta_cycles), fmt(r.completions),
+                fmt(r.cycles_per_completion), fmt(r.gate_refusals),
+                fmt(r.containment_refusals), fmt(r.halts),
+                fmtDuration(r.duration_seconds)];
+      })
+    ));
+
+    var halts = payload.halts || [];
+    if (halts.length) {
+      content.appendChild(el("div", "Halt dwell", "trends-subtitle"));
+      content.appendChild(table(
+        ["Item", "Reason", "Dwell"],
+        halts.map(function (h) {
+          return [fmt(h.item_id), fmt(h.terminal_reason),
+                  h.dwell_seconds === null || h.dwell_seconds === undefined
+                    ? "unresolved" : fmtDuration(h.dwell_seconds)];
+        })
+      ));
+    }
+
+    var dl = payload.deny_ledger || {};
+    content.appendChild(el("div", "Deny ledger", "trends-subtitle"));
+    content.appendChild(table(
+      ["Guard denies", "Process friction", "Auto-readmits", "Unacked debt"],
+      [[fmt(dl.guard_denies), fmt(dl.process_friction),
+        fmt(dl.auto_readmits), fmt(dl.unacked_denies)]]
+    ));
+  }
+
+  function fetchTrends() {
+    fetch("api/trends", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(render)
+      .catch(function () {
+        var empty = document.getElementById("trends-empty");
+        if (empty) {
+          empty.hidden = false;
+          empty.textContent = "trends unavailable (fetch failed)";
+        }
+      });
+  }
+
+  function toggle() {
+    var body = document.getElementById("trends-body");
+    var btn = document.getElementById("trends-toggle");
+    if (!body || !btn) return;
+    open = !open;
+    body.hidden = !open;
+    btn.textContent = open ? "Hide" : "Show";
+    if (open) {
+      fetchTrends();
+      timer = setInterval(fetchTrends, TRENDS_REFRESH_MS);
+    } else if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+  }
+
+  function bind() {
+    var btn = document.getElementById("trends-toggle");
+    if (btn) btn.addEventListener("click", toggle);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bind);
+  } else {
+    bind();
   }
 })();

@@ -40,6 +40,8 @@ This runs **once**, before the loop. It is a bootstrap, not a per-cycle action.
 
    (Equivalently `python3 ~/.claude/scripts/bug-state.py --enqueue-adhoc --type bug --id "<id>" --name "<name>"` — the `lazy-state.py --type bug` form delegates to it and additionally seeds the bug `ADHOC_BRIEF.md`.)
 
+   **Optional `--deps a,b` (queue-dependency-dag):** when the ad-hoc item hard-depends on other queued/on-disk items of the SAME pipeline, append `--deps "<id>,<id>"` to either form. The ids land on the entry's `deps` field (the machine-enforced hard-dep projection), so the dep-gate holds the ad-hoc item until each dep is Complete/Fixed with a receipt instead of dispatching it out of order. Ids are validated (kebab-case; `bug:`/`feature:` prefixes are reserved for cross-pipeline vN and refused). Omit the flag for a dependency-free item — the entry shape is byte-identical to before.
+
    Parse the JSON result. If the script exits non-zero (e.g. the id is already queued, or `queue.json` is malformed), surface the error and STOP — do NOT proceed to the loop.
 
 5. **Announce and proceed.** Print one line:

@@ -60,6 +60,17 @@ else
   exit 0
 fi
 
+# incident-auto-capture Phase 1 (D2): resolve the scripts dir relative to this
+# hook so the inline Python can import lazy_core for the keyed hook-events
+# append (best-effort — the appender falls back to the base dir when the import
+# is unavailable). Builtins only; $0 may carry Windows backslashes.
+SELF="${0//\\//}"
+case "$SELF" in
+  */*) BQE_SCRIPT_DIR="$(cd "${SELF%/*}" && pwd)" ;;
+  *)   BQE_SCRIPT_DIR="$(pwd)" ;;
+esac
+BQE_SCRIPTS_DIR="$BQE_SCRIPT_DIR/../scripts"
+
 read -r -d '' _BQE_PY <<'PYEOF'
 import datetime
 import json
@@ -146,6 +157,51 @@ def _suppress_safe(command):
     return suppressed
 
 
+# incident-auto-capture Phase 1 (D2): the tool-call cwd, captured in main() so
+# the event appender can attribute the event to the active repo. Best-effort.
+_EVT_CWD = ""
+
+
+def _append_hook_event(kind, signature, detail):
+    """incident-auto-capture Phase 1 (D2): append one countable hook-event line
+    (hook-events.jsonl). Best-effort / FAIL-OPEN — never raises, never changes
+    the deny/allow output. Prefers the shared lazy_core appender (keyed state
+    dir when the repo is resolvable; exact LAZY_STATE_DIR dir in tests); falls
+    back to an inline append at the base dir when lazy_core is unavailable."""
+    try:
+        try:
+            _sd = os.environ.get("BQE_SCRIPTS_DIR")
+            if _sd and _sd not in sys.path:
+                sys.path.insert(0, _sd)
+            import lazy_core
+            try:
+                lazy_core.set_active_repo_root(_EVT_CWD or None)
+                repo_root = str(lazy_core.active_repo_root() or "")
+            except Exception:
+                repo_root = _EVT_CWD or ""
+            lazy_core.append_hook_event(
+                kind, "build-queue-enforce", signature, detail,
+                repo_root=repo_root,
+            )
+            return
+        except ImportError:
+            pass
+        import time as _time
+        os.makedirs(STATE_DIR, exist_ok=True)
+        entry = {
+            "ts": _time.time(), "kind": kind,
+            "hook": "build-queue-enforce",
+            "repo_root": _EVT_CWD or "", "signature": (signature or "")[:200],
+            "detail": (detail or "")[:500],
+        }
+        with open(
+            os.path.join(STATE_DIR, "hook-events.jsonl"), "a", encoding="utf-8"
+        ) as fh:
+            fh.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass
+
+
 def _breadcrumb(err):
     try:
         os.makedirs(STATE_DIR, exist_ok=True)
@@ -163,13 +219,19 @@ def _breadcrumb(err):
             )
     except Exception:
         pass
+    # D2: the breadcrumb stays byte-identical; the countable history is the
+    # additive hook-events line beside it (fail-open, never raises).
+    _append_hook_event("error", "", str(err))
 
 
 def _allow():
     sys.exit(0)
 
 
-def _deny(reason):
+def _deny(reason, signature="build-queue-enforced"):
+    # incident-auto-capture D2: countable deny event (fail-open, additive) —
+    # each deny site passes its classified op as the signature.
+    _append_hook_event("deny", signature, reason)
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
@@ -285,8 +347,11 @@ def _classify_nx(command):
 
 
 def main():
+    global _EVT_CWD
     raw = sys.stdin.read()
     payload = json.loads(raw)
+    # D2: capture the tool-call cwd for hook-event repo attribution.
+    _EVT_CWD = payload.get("cwd") or ""
     if payload.get("tool_name", "") != "Bash":
         _allow()
     command = (payload.get("tool_input") or {}).get("command", "")
@@ -315,16 +380,18 @@ def main():
 
     # Deny surface.
     if _DOTNET_BUILD_RE.search(scan):
-        _deny(_redirect_reason("dotnet-build", command))
+        _deny(_redirect_reason("dotnet-build", command), "dotnet-build")
 
     if _DOTNET_TEST_RE.search(scan):
-        _deny(_redirect_reason("dotnet-test", command))
+        _deny(_redirect_reason("dotnet-test", command), "dotnet-test")
 
     if _NX_BUILD_TEST_RE.search(scan):
-        _deny(_redirect_reason(_classify_nx(command), command))
+        _nx_op = _classify_nx(command)
+        _deny(_redirect_reason(_nx_op, command), _nx_op)
 
     if _FILTERED_SCRIPT_DIRECT_RE.search(scan) or _FILTERED_SCRIPT_POWERSHELL_RE.search(scan):
-        _deny(_redirect_reason(_classify_filtered_script(command), command))
+        _f_op = _classify_filtered_script(command)
+        _deny(_redirect_reason(_f_op, command), _f_op)
 
     _allow()
 
@@ -338,5 +405,7 @@ except Exception as exc:
     sys.exit(0)
 PYEOF
 
-"$PYTHON" -c "$_BQE_PY"
+# BQE_SCRIPTS_DIR is threaded via env (D2) so the inline appender can import
+# lazy_core for the keyed hook-events append.
+BQE_SCRIPTS_DIR="$BQE_SCRIPTS_DIR" "$PYTHON" -c "$_BQE_PY"
 exit 0

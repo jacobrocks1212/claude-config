@@ -7,7 +7,7 @@
 > halt sentinels), and links into the shipped per-repo visualizer views for drill-in. It never
 > re-infers pipeline state, never deletes a marker, and adds no new write path.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research
@@ -59,8 +59,7 @@ surfaced honestly instead of discovered hours later — the same time-to-notice 
 
 ### D1. Repo-root discovery mechanism
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04)`
 - **Question:** Which repos appear on the fleet page? The keyed state dirs cannot be enumerated
   back to roots (`repo_key` is a one-way sha1), a live marker exists only while a run is live, and
   the operator needs idle repos listed too.
@@ -85,12 +84,15 @@ surfaced honestly instead of discovered hours later — the same time-to-notice 
   channel (mobile-queue-control Decision 2), it covers idle repos, and the marker union closes
   A's only structural gap (a run in a nonstandard root). The manifest is demonstrably the wrong
   proxy (verified against the current `manifest.psd1`: its Repos scope is Cognito-only).
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **RESOLVED — A** (operator-approved 2026-07-04 — recommended option taken).
+  Discovery = registry convention (`~/source/repos/*/docs/{features,bugs}/queue.json`
+  auto-discover + optional `~/.claude/lazy-repos.json` pins/excludes — this feature is that
+  file's first consumer and documents its schema) UNIONED with the live-marker `repo_root` scan
+  over `~/.claude/state/*/lazy-run-marker.json` (raw read). `manifest.psd1` rejected.
 
 ### D2. Serving model — one `--fleet` instance vs per-repo instances
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04)`
 - **Question:** The CLI today takes one `--repo-root`. How does the operator launch and navigate
   the multi-repo view?
 - **Options:**
@@ -109,13 +111,14 @@ surfaced honestly instead of discovered hours later — the same time-to-notice 
   `pipeline_visualizer` server, linking into the current per-repo views", and B fails the
   feature's own problem statement. The handler parameterization is mechanical (the closure
   becomes a lookup keyed by URL slug).
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (the launch/URL
-  shape is operator-visible).
+- **Resolution:** **RESOLVED — A** (operator-approved 2026-07-04 — recommended option taken).
+  Single instance via `--fleet`; fleet home at `/`; per-repo views nested under
+  `/repo/<slug>/…`; single-repo `--repo-root` mode stays byte-identical (pinned by the existing
+  test suite, unmodified).
 
 ### D3. Staleness display for dead/stale run markers
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04)`
 - **Question:** A run marker whose owning run crashed is on disk until something reclaims it
   (`lazy_core.read_run_marker` deletes at the 24h age gate — but only when *that* code path runs
   in that repo). What does the fleet page show for such a repo, and does the read view ever
@@ -139,13 +142,14 @@ surfaced honestly instead of discovered hours later — the same time-to-notice 
   marker's `started_at` plus per-cycle activity is not directly readable without deeper probes,
   so age-since-`started_at` is the v1 signal; a finer "last cycle activity" signal is a
   documented vN upgrade). Never-delete is non-negotiable for a read view.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (the badge taxonomy
-  and threshold are operator-visible).
+- **Resolution:** **RESOLVED — A** (operator-approved 2026-07-04 — recommended option taken).
+  Three-state badge over the marker: `run-active` (age < 2h warn threshold), `run-silent`
+  (2h ≤ age < 24h), `stale-marker` (age ≥ 24h — the script-aligned boundary), plus `idle` (no
+  marker). Age always shown. The fleet read NEVER deletes a marker.
 
 ### D4. Fleet page shape
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04)`
 - **Question:** What does the landing page actually show per repo, and where do the links go?
 - **Options:**
   - **A — Compact table only:** one row per repo — repo name, run badge (D3), features queued,
@@ -162,7 +166,10 @@ surfaced honestly instead of discovered hours later — the same time-to-notice 
   repo 3 of 6 must not require six drill-ins to find), it is computable from the shallow probe
   (sentinel presence + item id), and it reuses a layout pattern the operator already reads in two
   sibling surfaces.
-- **Resolution:** OPEN — recommendation is B; awaiting operator confirmation.
+- **Resolution:** **RESOLVED — B** (operator-approved 2026-07-04 — recommended option taken).
+  Compact table + cross-repo "Needs attention" triage strip + per-row `LAZY_QUEUE.md` GitHub
+  links (derived from plain-file reads of `.git/config` + `.git/HEAD`; derivation failure →
+  no link, never an error).
 
 ### D5. Fleet-row probe strategy and aggregation cost
 
@@ -186,8 +193,11 @@ surfaced honestly instead of discovered hours later — the same time-to-notice 
   from presence checks; per-item stage fidelity belongs to the drill-in, which already has it.
   Reuses `probe.read_queue` and the `receipt_present` read pattern; adds zero subprocess load to
   the landing page.
-- **Resolution:** Auto-accepted A; probe internals and caching are invisible so long as the
-  rendered data is honest (the row shows depth + halts, and labels itself as shallow).
+- **Resolution:** **RESOLVED — A** (operator-locked 2026-07-04): shallow fleet rows (queue.json
+  reads + raw marker + sentinel presence); full probe only on drill-in; shallow fan-out via
+  `concurrent.futures.ThreadPoolExecutor`; a distinct fleet `TtlCache` (~5s, ≥ the per-repo
+  TTL). Probe internals and caching stay invisible so long as the rendered data is honest (the
+  row shows depth + halts, and labels itself as shallow).
 
 ### D6. Read-only guarantee of the fleet layer
 
@@ -202,7 +212,9 @@ surfaced honestly instead of discovered hours later — the same time-to-notice 
     from a read view is exactly what D3 forbids, and cross-repo mutation has no consumer.
 - **Recommendation:** A — the stub's direction line is operator-set ("pure read over
   `probe_state`, never re-inferring state") and nothing in the fleet use case needs a write.
-- **Resolution:** Auto-accepted A; this restates a stub constraint rather than opening one.
+- **Resolution:** **RESOLVED — A** (operator-locked 2026-07-04): fleet layer pure read; no new
+  POST routes; the per-repo reorder write (`POST /repo/<slug>/api/queue`) unchanged, still
+  run-marker-refused.
 
 ### D7. Repo identity in URLs and payloads
 
@@ -216,8 +228,9 @@ surfaced honestly instead of discovered hours later — the same time-to-notice 
     Python (the key derivation is documented as Python-only).
 - **Recommendation:** A — human-legible, collision-safe, and keeps `repo_key` derivation inside
   `lazy_core` where it belongs.
-- **Resolution:** Auto-accepted A; internal naming with no behavioral implication beyond URL
-  cosmetics.
+- **Resolution:** **RESOLVED — A** (operator-locked 2026-07-04): basename slug with a short
+  `repo_key`-prefix fallback appended only on basename collision; the slug→root map is
+  server-owned; `/api/fleet` rows carry both `slug` and `repo_root`.
 
 ## User Experience
 
@@ -340,21 +353,23 @@ Estimate: ~2-3 sessions (Phases 1-2 one session; 3-4 one to two).
 
 ## Open Questions
 
-- **D1 — repo discovery:** registry convention (`~/source/repos/*/docs/{features,bugs}/queue.json`
-  auto-discover + `~/.claude/lazy-repos.json` pins/excludes) unioned with live-marker `repo_root`
-  scan? Standing recommendation: yes (option A) — consistency with mobile-queue-control
-  Decision 2; manifest.psd1 rejected as a wrong-proxy registry.
-- **D2 — serving model:** single instance with `--fleet` mode and nested `/repo/<slug>/` views
-  (option A), vs per-repo instances behind an aggregator? Standing recommendation: A.
-- **D3 — staleness display:** graded three-state badge (active / run-silent past a ~2h warn
-  threshold / stale-marker at the script-aligned 24h boundary) with age always shown and
-  never-delete (option A)? Standing recommendation: A.
-- **D4 — page shape:** compact table plus a cross-repo "Needs attention" triage strip and
-  GitHub `LAZY_QUEUE.md` links (option B)? Standing recommendation: B.
+None — all decisions resolved 2026-07-04 (operator-approved; every recommendation taken):
+
+- **D1 — repo discovery:** RESOLVED — A. Registry convention
+  (`~/source/repos/*/docs/{features,bugs}/queue.json` auto-discover +
+  `~/.claude/lazy-repos.json` pins/excludes) unioned with the live-marker `repo_root` scan;
+  manifest.psd1 rejected as a wrong-proxy registry.
+- **D2 — serving model:** RESOLVED — A. Single instance with `--fleet` mode and nested
+  `/repo/<slug>/` views.
+- **D3 — staleness display:** RESOLVED — A. Graded three-state badge (run-active / run-silent
+  past the 2h warn threshold / stale-marker at the script-aligned 24h boundary) + idle; age
+  always shown; never delete a marker on read.
+- **D4 — page shape:** RESOLVED — B. Compact table plus a cross-repo "Needs attention" triage
+  strip and GitHub `LAZY_QUEUE.md` links.
 - Deferred empirical checks (implementation-time, not decisions): actual shallow-poll wall time
   at realistic fleet size (the ≥10-repo fixture, Phase 4); whether `~/.claude/lazy-repos.json`
-  needs a `pins` list at all in practice or only `excludes` (schema finalized when first
-  written); slug-collision frequency across the operator's real repo set (D7 fallback).
+  needs a `pins` list at all in practice or only `excludes` (schema: both, first-written by this
+  feature); slug-collision frequency across the operator's real repo set (D7 fallback).
 
 ## Research References
 

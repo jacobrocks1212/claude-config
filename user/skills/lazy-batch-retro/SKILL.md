@@ -580,9 +580,38 @@ Body sections:
 1. **Per-feature headline grades** (table).
 2. **Cross-cutting findings** — issues observed across multiple features (e.g., "every /execute-plan cycle in this run violated R-EP-1 — systemic, not feature-specific").
 3. **Aggregate tool-call census** (sum across all features).
-4. **Links** to each per-feature artifact.
+4. **Ledger deltas** (see Step 6b.5 below — telemetry-ledger counts with per-figure citations, or the honest "no telemetry for this run" line).
+5. **Links** to each per-feature artifact.
 
 Create `docs/features/_index/` if it does not exist (`mkdir -p`).
+
+---
+
+## Step 6b.5: Ledger deltas (harness-telemetry-ledger — measured, not narrated)
+
+The state scripts record every run/cycle bracket, dispatch, halt, gate/containment refusal, pseudo-skill completion, and sentinel resolution into the append-only telemetry ledger (`lazy-telemetry.jsonl`, per-repo keyed state dir; cloud runs also commit `docs/telemetry/cloud/<run_id>.jsonl` segments). The retro MUST cite these deterministic counts instead of narrating effort. **Do NOT hand-count JSONL in prose** — shell the deterministic aggregator:
+
+```bash
+# 1. Resolve the audited run's run_id (= the run marker's started_at, an ISO
+#    timestamp). List the recorded runs and pick the one whose run_id matches
+#    the audited session's start time (from the jsonl's first timestamp):
+python3 -m pipeline_visualizer.trends --repo-root <repo>          # runs[] list
+# 2. Emit the per-run summary:
+python3 -m pipeline_visualizer.trends --repo-root <repo> --run-id <run_id>
+```
+
+(Run from `~/.claude/scripts/` so `pipeline_visualizer` resolves, or with cwd anywhere the package is importable.)
+
+Write a **`## Ledger deltas`** section into the Step 6b overview artifact (single-feature run with no overview → into the per-feature artifact) reporting, from the summary JSON:
+
+- forward + meta cycles, completions, cycles-per-completion;
+- gate refusals (each with `gate:failing_check`) and containment refusals (each with `op`);
+- halts with dwell (`halt` → matching `sentinel-resolved` delta; unresolved → "unresolved", never 0);
+- run duration.
+
+**Every figure cites its ledger lines** — the summary's `ledger_lines` window (e.g. `(ledger lines 118–160 in <source>)`) for aggregate counts, and each halt/refusal row's own `citation` (`source` + `line`) for per-row figures. This satisfies the CITATIONS-NOT-TRUST hard requirement with a deterministic source.
+
+**Honest miss:** `found: false` (older runs predate the ledger, or the run's state dir is gone) → write exactly `Ledger deltas: no telemetry for this run.` — never fabricate zeros, never skip the section silently.
 
 ---
 
@@ -631,6 +660,84 @@ So the commit history surfaces the validation outcome without requiring the audi
 
 ---
 
+## Step 6d: Toolify candidate resurface (REPORT-ONLY — never invokes the materializer)
+
+**Rationale (toolify-auto-promotion D3-A).** Above-bar toolify candidates rot silently when the
+operator forgets to run the promotion loop. This step resurfaces them every retro by joining a
+fresh mine against the promotion ledger and printing the still-undecided (`NEW`) rows with
+ready-to-run promote command lines. It is strictly report-only: this skill NEVER runs
+`toolify-promote.py --promote`/`--decline` — the deliberate-promotion bar (naming the dance is a
+human judgment, bar checklist step 3) stays an operator act.
+
+Run (read-only over logs and the ledger; both commands are safe to run in any repo):
+
+```bash
+python3 ~/.claude/scripts/toolify-promote.py --status
+```
+
+- For each row marked `NEW`, print one ready-to-run line the operator can copy verbatim after
+  supplying the two judgment inputs (`<slug>`, `"<title>"`):
+
+  ```
+  python3 ~/.claude/scripts/toolify-promote.py --promote <candidate_id> --id <slug> --name "<title>"
+  ```
+
+- Rows already `promoted → <feature_id>` / `declined (<reason>)` / `shipped` need no action; do
+  not repeat them beyond the status table.
+- **Degrade gracefully:** if the session-log corpus (`~/.claude/projects`) or
+  `toolify-promote.py` is unavailable, print one line noting the step was skipped and why, then
+  continue — this step must never fail the retro.
+- **Never** enqueue, never write the ledger, never call `--promote`/`--decline` from this skill
+  (D3-A: retro reports; promotion is a standalone operator command).
+
+### Status-bookend integration
+
+The Step 8 final bookend gains a `**Toolify candidates:**` line:
+
+- `**Toolify candidates:** {N} NEW above-bar (promote lines printed above) — {M} promoted, {K} declined, {S} shipped.`
+- or `**Toolify candidates:** step skipped — {reason}.`
+
+---
+
+## Step 6e: Intervention-efficacy citation (REPORT-ONLY — dry-run, never writes)
+
+**Rationale (intervention-efficacy-tracking D10-A).** Retro success claims about harness
+changes must cite MEASURED verdicts, not narrative. The hypothesis ledger
+(`docs/interventions/<id>.md`, written at completion by the `--apply-pseudo` capture gate and
+verdict-updated at each batch run's end-of-run flush) already carries CONFIRMED / REFUTED /
+INCONCLUSIVE verdicts with frozen baselines — this step shells the evaluator in report-only
+mode and cites them.
+
+Run (read-only — `--dry-run` guarantees zero record writes and zero enqueues from the retro):
+
+```bash
+python3 ~/.claude/scripts/efficacy-eval.py --repo-root . --dry-run --json
+```
+
+- For every verdict in the output, cite it wherever the review artifacts would otherwise make
+  a narrative efficacy claim about that intervention: `{id}: {VERDICT} ({delta_pct}%) —
+  {reason}`. A CONFIRMED verdict is the only sanctioned form of "this harness change worked";
+  a REFUTED one must be named, not paraphrased away.
+- List every `needs_triage` entry (escalated ≥2× INCONCLUSIVE hypotheses) under a
+  `### Interventions needing triage` heading in the overview artifact — the operator decides
+  close-as-`inconclusive-accepted` / refine / treat-as-refuted.
+- `not_due` entries need no action (their windows are still accruing); do not present them as
+  verdicts.
+- **Degrade gracefully:** if `efficacy-eval.py` or `docs/interventions/` is unavailable, print
+  one line noting the step was skipped and why, then continue — this step must never fail the
+  retro.
+- **Never** run without `--dry-run` from this skill (verdict writes + REFUTED enqueues belong
+  to the batch orchestrators' §1c.6 flush and on-demand operator runs, not the retro).
+
+### Status-bookend integration
+
+The Step 8 final bookend gains an `**Intervention verdicts:**` line:
+
+- `**Intervention verdicts:** {C} confirmed, {R} refuted, {I} inconclusive due this scan; {T} escalated (needs triage).`
+- or `**Intervention verdicts:** step skipped — {reason}.`
+
+---
+
 ## Step 7: Commit (Phase 6)
 
 Stage the review artifacts and create a commit:
@@ -659,6 +766,7 @@ If the project has a `.claude/skill-config/commit-policy.md`, follow it instead 
   - docs/features/<area>/<feat-B>/LAZY_BATCH_REVIEW_<date>.md
   - docs/features/_index/LAZY_BATCH_REVIEW_<date>_overview.md  (if multi-feature)
 **Commit:** {sha} — not pushed
+**Ledger deltas:** {e.g., "6 fwd + 3 meta cycles, 2 gate refusals, 1 halt (dwell 41m)" | "no telemetry for this run"}
 **Confidence caveats:** {e.g., "2 cycles unverifiable due to transcript reclaim"}
 ```
 

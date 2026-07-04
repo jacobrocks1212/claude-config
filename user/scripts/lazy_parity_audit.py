@@ -308,6 +308,12 @@ _REORDER_QUEUE_RE = re.compile(r'"--reorder-queue"')
 # likewise a coupled-pair surface — the run marker is SHARED between pipelines, so
 # the re-claim action added to one state script must appear in the other.
 _REASSERT_OWNER_RE = re.compile(r'"--reassert-owner"')
+# intervention-efficacy-tracking Phase 1: the orchestrator-only
+# --record-intervention subcommand (hypothesis-ledger capture for the manual /
+# hardening-round / D9-backfill paths; the completion-gate capture itself lives
+# in the SHARED lazy_core.apply_pseudo, parity by construction) is a
+# coupled-pair CLI surface — present on both state scripts.
+_RECORD_INTERVENTION_RE = re.compile(r'"--record-intervention"')
 # host-capability-declaration-for-gated-features Phase 6: the requires_host:
 # PARSE + the unregistered-id FAIL-FAST is a MIRRORED coupled-pair surface — a
 # requires_host: id with no registry probe could never be present on ANY host, so
@@ -335,14 +341,32 @@ _HOST_CAPABILITY_BLOCKER_KIND_RE = re.compile(r"unknown-host-capability")
 # path so the orchestrator receives the @@lazy-ref dispatch token.  A drop of
 # the assignment from either script is a hard finding here.
 _CYCLE_PROMPT_REF_RE = re.compile(r'state\["cycle_prompt_ref"\]\s*=')
+# queue-dependency-dag Phase 5: the orchestrator-only --sync-deps subcommand
+# (the SPEC dep-block → queue `deps` feeder, D5) is a coupled-pair surface —
+# the dep-gate enforces the field on BOTH pipelines, so the script-owned
+# writer must exist on both state scripts (a drop from one would leave that
+# pipeline's queue deps stuck in manual-edit territory, violating the
+# no-hand-edit-queue.json HARD CONSTRAINT).  Match the argparse flag literal.
+_SYNC_DEPS_RE = re.compile(r'"--sync-deps"')
+# operator-halt-notifications Phase 2: the terminal-emission notify_halt call
+# site (surface #7) is a MIRRORED coupled-pair surface — every halt on either
+# pipeline flows through main()'s state-JSON write, so BOTH scripts must call
+# lazy_core.notify_halt(state, ...) immediately before it. A drop from one
+# script would silently un-page that pipeline's halts (the exact
+# time-to-notice gap the feature closes).  Match the call literal.
+_NOTIFY_HALT_RE = re.compile(r"lazy_core\.notify_halt\(")
 
 
 def audit_state_script_parity(repo_root: str | Path) -> list[str]:
     """Assert the shared per-repo state-dir surface is consistent across the
     feature and bug state scripts: each must call
     ``set_active_repo_root(args.repo_root)`` at main(), each must carry the
-    operator-only ``--reorder-queue`` subcommand, AND each must carry the
-    orchestrator-only ``--reassert-owner`` subcommand (coupled-pair parity).
+    operator-only ``--reorder-queue`` subcommand, each must carry the
+    orchestrator-only ``--reassert-owner`` subcommand, each must carry the
+    orchestrator-only ``--sync-deps`` feeder (queue-dependency-dag coupled-pair
+    parity), AND each must carry the ``lazy_core.notify_halt(...)``
+    terminal-emission call site (operator-halt-notifications coupled-pair
+    parity, surface #7).
     Returns one finding per script missing any surface; empty means parity holds.
 
     This is additive — it audits the Python state machines (not the SKILL.md
@@ -383,6 +407,14 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
                 f"so both state scripts expose the same shared-marker re-arm "
                 f"surface (single-slot-marker-ownership-race coupled-pair parity)"
             )
+        if _RECORD_INTERVENTION_RE.search(text) is None:
+            findings.append(
+                f"lazy-parity [state-scripts] STATE: {script} must carry the "
+                f"orchestrator-only --record-intervention subcommand (calls "
+                f"lazy_core.record_intervention, gated by refuse_if_cycle_active) "
+                f"so both state scripts expose the same hypothesis-ledger capture "
+                f"surface (intervention-efficacy-tracking coupled-pair parity)"
+            )
         if (
             _HOST_CAPABILITY_FAILFAST_RE.search(text) is None
             or _HOST_CAPABILITY_BLOCKER_KIND_RE.search(text) is None
@@ -396,6 +428,14 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
                 f"instead of silently deferring forever "
                 f"(host-capability-declaration-for-gated-features coupled-pair parity)"
             )
+        if _SYNC_DEPS_RE.search(text) is None:
+            findings.append(
+                f"lazy-parity [state-scripts] STATE: {script} must carry the "
+                f"orchestrator-only --sync-deps subcommand (calls "
+                f"lazy_core.sync_deps, gated by refuse_if_cycle_active) so both "
+                f"state scripts expose the same script-owned SPEC-dep-block → "
+                f"queue-deps feeder (queue-dependency-dag coupled-pair parity)"
+            )
         if _CYCLE_PROMPT_REF_RE.search(text) is None:
             findings.append(
                 f"lazy-parity [state-scripts] STATE: {script} must assign "
@@ -404,6 +444,14 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
                 f"reference) instead of re-inlining the full cycle prompt "
                 f"(bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref coupled-pair "
                 f"parity)"
+            )
+        if _NOTIFY_HALT_RE.search(text) is None:
+            findings.append(
+                f"lazy-parity [state-scripts] STATE: {script} must call "
+                f"lazy_core.notify_halt(state, ...) at the terminal-emission "
+                f"chokepoint in main() (immediately before the state-JSON "
+                f"write) so halts on both pipelines page the operator "
+                f"(operator-halt-notifications coupled-pair parity)"
             )
     return findings
 

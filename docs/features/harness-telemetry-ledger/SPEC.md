@@ -9,7 +9,7 @@
 > narrative-only claims — so "did that harness change actually reduce coherence-recovery cycles?"
 > becomes answerable with data.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research
@@ -143,8 +143,8 @@ cluster's founding rule.
 
 ### D4. v1 event vocabulary — which chokepoints emit
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04 — recommended
+  option taken)`
 - **Question:** Which events exist in v1? This determines which trends the operator can see and
   which KPI rows `friction-kpi-registry` can bind — the ledger's public vocabulary.
 - **Options:**
@@ -168,12 +168,15 @@ cluster's founding rule.
   answerable, and every event maps to an already-deterministic code site (no new inference).
   Explicit non-goals either way: token counts, per-tool telemetry, subagent wall-time — the
   session logs own those and `toolify-miner.py` already mines them read-only.
-- **Resolution:** OPEN — recommendation is B; awaiting operator confirmation.
+- **Resolution:** **B** (operator-approved 2026-07-04 — recommended option taken). The full
+  bracket + dispatch + halt + refusal + sentinel-resolved vocabulary: `run-start`, `run-end`,
+  `cycle-begin`, `cycle-end`, `pseudo-applied`, `dispatch`, `halt`, `sentinel-resolved`,
+  `gate-refusal`, `containment-refusal`.
 
 ### D5. Residency + cloud transport
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04 — recommended
+  option taken)`
 - **Question:** Where does the ledger live — and what happens to events emitted by
   `/lazy-batch-cloud` runs, whose container (and its `~/.claude/state/`) is destroyed after the
   run?
@@ -199,13 +202,26 @@ cluster's founding rule.
   environment where autonomous batches run longest, and the flush mechanism is a solved pattern
   (cloud runs already commit generated docs per cycle). Scope the flush to the two main-pushing
   repos (claude-config, AlgoBooth), like `LAZY_QUEUE.md`.
-- **Resolution:** OPEN — recommendation is B; awaiting operator confirmation (what lands committed
-  in his repos is an operator call).
+- **Resolution:** **B** (operator-approved 2026-07-04 — recommended option taken). Workstation
+  runs keep state-dir residency; a `--cloud` run's `--run-end` flushes the run's ledger segment
+  to `docs/telemetry/cloud/<run_id>.jsonl`, riding the run's final commit+push.
+- **Implementation notes (conservative choices recorded at implementation, 2026-07-04):**
+  - **Windows-checkout-safe filename:** the `run_id` (`2026-07-04T09:12:03Z`) contains `:`,
+    illegal in Windows filenames — a committed segment named verbatim would break `git checkout`
+    on the operator's workstation. The segment filename is the run_id with colons stripped
+    (`docs/telemetry/cloud/2026-07-04T091203Z.jsonl`); the `run_id` field INSIDE each line is
+    unchanged, so aggregation keys on line content, never on the filename.
+  - **Flush surfacing:** the flush is script-owned inside `--run-end` (marker-gated on
+    `cloud: true`, fail-open). When a segment is actually written, the `--run-end` JSON gains a
+    `telemetry_flushed: {path, events}` key so the cloud wrapper can `git add` the segment for
+    the final push. Pre-feature runs have no telemetry events → no segment → no key, so every
+    pre-existing op's output stays byte-identical (the UX byte-identity promise holds for all
+    previously-possible outputs).
 
 ### D6. Retention / rotation policy
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04 — recommended
+  option taken)`
 - **Question:** Does the ledger grow forever, and if not, how much trend history does the operator
   keep? (Estimate: ~250 bytes/line, a 50-cycle batch run ≈ 150–300 events ≈ ~60 KB — years of
   heavy use fit in tens of MB. Estimated — verify during Phase 2.)
@@ -223,13 +239,15 @@ cluster's founding rule.
 - **Recommendation:** B — bounded and simple, and the cap/segment-count are config constants a
   later decision can raise without schema change. Rotation happens inside the fail-open emitter
   (a rename failure degrades to plain append, never raises).
-- **Resolution:** OPEN — recommendation is B; awaiting operator confirmation (retention length is
-  an operator-visible history guarantee).
+- **Resolution:** **B** (operator-approved 2026-07-04 — recommended option taken). Size-based
+  rollover: cap 10 MB (`_TELEMETRY_ROTATE_BYTES`), 4 rotated segments
+  (`_TELEMETRY_ROTATED_SEGMENTS`; `.1` newest → `.4` oldest, oldest discarded on shift); the
+  reader walks `.4 → .1` then the active file (oldest-first).
 
 ### D7. Trends rendering channel
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04 — recommended
+  option taken)`
 - **Question:** Where does the operator read the trends?
 - **Options:**
   - **A — `pipeline_visualizer` trends page only (recommended):** a new pure-read
@@ -246,7 +264,8 @@ cluster's founding rule.
   mobile steering doc (`LAZY_QUEUE.md`) already covers on-the-go needs, and
   `friction-kpi-registry`'s scorecard (its own decision) is the committed-markdown candidate for
   a curated mobile-readable health view. B/C stay open as vN follow-ups.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). Visualizer
+  Trends page only; no committed `TRENDS.md`.
 
 ### D8. Retro hook-in: `/lazy-batch-retro` cites ledger deltas
 
@@ -405,16 +424,9 @@ state-script chokepoints (write paths, marker-gated)          per-repo keyed sta
 
 ## Open Questions
 
-- **D4 — v1 event vocabulary:** minimal brackets vs brackets+gates+halts vs maximal.
-  Recommendation: B (brackets + dispatch/halt + gate/containment refusals + sentinel-resolved) —
-  the smallest set covering every seed metric.
-- **D5 — residency + cloud transport:** state-dir-only vs state-dir + committed cloud run-end
-  segment flush vs fully committed. Recommendation: B (workstation state dir; cloud flushes
-  `docs/telemetry/cloud/<run_id>.jsonl` riding the final push, LAZY_QUEUE.md precedent).
-- **D6 — retention/rotation:** none vs size-based rollover (10 MB × 4 segments) vs per-run files.
-  Recommendation: B (size-based rollover; bounded reads, multi-year history at estimated volume).
-- **D7 — trends channel:** visualizer page only vs committed `TRENDS.md` vs both. Recommendation:
-  A (visualizer page; committed trend aggregates would never be byte-stable).
+*(None remaining — all four operator decisions resolved 2026-07-04, each at its recommended
+option: D4 → B, D5 → B, D6 → B, D7 → A. See the per-decision Resolution lines above.)*
+
 - **Deferred empirical checks (implementation, not decisions):** measure real per-run event volume
   against the ~60 KB/50-cycle estimate (Phase 2); confirm `--emit-prompt` is the sole
   orchestrator per-cycle dispatch surface across all three batch wrappers before binding the

@@ -60,5 +60,14 @@
   PASS [cycle-marker-mutation-guard] subagent cycle-end/begin refused, orchestrator allowed
   PASS [reorder-queue] reorder tail/head/index/remove/missing/cycle-active/no-op
   PASS [cycle-prompt-ref-surfacing] cycle_prompt_ref surfaced with marker / None without
+  PASS [telemetry-ledger-chokepoints] bracket/dispatch/purity/refusal/cloud-flush emission
+  PASS [dep-gate] hold+advance / archive-aware / wont-fix+dangling fail-fast / all-gated terminal
+{
+  "error": "invalid '--deps' (enqueue 'adhoc-bug-dep-bad') id 'feature:some-feat': the 'bug:'/'feature:' prefixes are reserved for future cross-pipeline deps (vN) and are rejected in v1 \u2014 declare same-pipeline deps as bare ids",
+  "path": null
+}
+  PASS [sync-deps] cycle-subagent exit-3 refusal + hard-only projection + idempotent noop + enqueue --deps
+  PASS [cycle-end-bracket-fail-open] unwritable bracket ledger never blocks the --cycle-end clear
+  PASS [notify-halt-call-site] bug halt + fake sender: one page (bug| identity), dedup on re-probe, kill switch inert
 
 All smoke tests passed.

@@ -10,7 +10,7 @@
 > re-promotion, and feeds a report-only acceptance-rate view so the bar's thresholds can be tuned
 > deliberately from real data.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research
@@ -87,8 +87,8 @@ the bar's constants in `toolify-miner.py` are only ever changed by a deliberate 
 - **Recommendation:** B — it keeps the miner's tested READ-ONLY contract boundary crisp at zero
   behavioral cost, and mirrors the house pattern of small single-purpose siblings
   (`lazy-queue-doc.py` beside `lazy-state.py`).
-- **Resolution:** Auto-accepted B; internal code placement with no operator-visible difference
-  beyond the command name.
+- **Resolution:** B (operator-approved 2026-07-04 — recommended option taken); internal code
+  placement with no operator-visible difference beyond the command name.
 
 ### D2. Candidate identity: content-hash id added to the miner's output schema
 
@@ -106,13 +106,13 @@ the bar's constants in `toolify-miner.py` are only ever changed by a deliberate 
     key.
 - **Recommendation:** A. The ledger keys on the same hash, so dedup survives re-mining and even a
   re-ranked report.
-- **Resolution:** Auto-accepted A; an additive output column with no consumer-visible removal or
-  rename.
+- **Resolution:** A (operator-approved 2026-07-04 — recommended option taken); an additive output
+  column with no consumer-visible removal or rename.
 
 ### D3. Invocation cadence: standalone on-demand, retro reports but never invokes
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, recommended
+  option A taken)`
 - **Question:** When does promotion happen — as a `/lazy-batch-retro` step, standalone on demand,
   or an interactive prompt appended to every mining run?
 - **Options:**
@@ -133,12 +133,14 @@ the bar's constants in `toolify-miner.py` are only ever changed by a deliberate 
   new above-bar candidates joined against the ledger (so unpromoted ones resurface every retro
   instead of rotting silently). B remains a possible vN once acceptance-rate data shows the
   operator accepts nearly everything the bar surfaces.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** A (operator-approved 2026-07-04 — recommended option taken): standalone
+  on-demand promotion; `/lazy-batch-retro` gains a report-only step that prints ready-to-run
+  promote command lines but NEVER invokes the materializer.
 
 ### D4. Queue landing position: tail + roadmap tier, not the ad-hoc head jump
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, recommended
+  option B taken)`
 - **Question:** `enqueue_adhoc()` always inserts at position 0 with `tier: 0` and `adhoc: true` —
   "do this next" semantics. Is that right for a promoted toolify candidate?
 - **Options:**
@@ -162,8 +164,10 @@ the bar's constants in `toolify-miner.py` are only ever changed by a deliberate 
   materializer shells the state script; it never edits `queue.json` itself), the flags are
   additive with byte-identical defaults, and the metadata honestly describes the item (a stub on
   the roadmap, not an ad-hoc jump).
-- **Resolution:** OPEN — recommendation is B; awaiting operator confirmation (this sets where
-  auto-drafted work lands relative to the operator's curated queue).
+- **Resolution:** B (operator-approved 2026-07-04 — recommended option taken): tail insert at
+  tier 2 with `stub: true`, via additive default-off flags `--tier N` / `--stub` /
+  `--at {head,tail}` on `lazy-state.py --enqueue-adhoc`, threaded into `enqueue_adhoc()`;
+  defaults stay byte-identical.
 
 ### D5. Stub authoring contract: the in-SPEC stub marker is load-bearing, not optional
 
@@ -185,9 +189,10 @@ the bar's constants in `toolify-miner.py` are only ever changed by a deliberate 
   hard-excludes everything decided-looking: no RESEARCH.md, no PHASES.md, no sentinel, no locked
   decisions; the evidence block is presented as input to `/spec`, and the open-questions trailer
   explicitly marks all direction as not locked.
-- **Resolution:** Auto-accepted B; this is a correctness constraint of the existing state machine,
-  not a product choice. (The marker strings themselves live once, in the materializer's template
-  constant, with a test pinning them against `_spec_text_has_stub_marker` acceptance.)
+- **Resolution:** B (operator-approved 2026-07-04 — recommended option taken); this is a
+  correctness constraint of the existing state machine, not a product choice. (The marker strings
+  themselves live once, in the materializer's template constant, with a test pinning them against
+  `_spec_text_has_stub_marker` acceptance.)
 
 ### D6. Promotion ledger: central, git-tracked, keyed on candidate_id
 
@@ -209,12 +214,15 @@ the bar's constants in `toolify-miner.py` are only ever changed by a deliberate 
   forced: bool}`. `shipped` is **derived at read time** (the target repo's
   `docs/features/<feature_id>/COMPLETED.md` receipt is the single source of truth for "done") —
   never stored, so it can never contradict the receipt gate.
-- **Resolution:** Auto-accepted A; internal file layout, invisible except through the reports.
+- **Resolution:** A (operator-approved 2026-07-04 — recommended option taken); central
+  git-tracked ledger `docs/features/unified-pipeline-orchestrator/toolify-ledger.json` keyed on
+  `candidate_id`; `shipped` derived at read time, never stored. Internal file layout, invisible
+  except through the reports.
 
 ### D7. Dedup semantics: refuse repeats, `--force` (with recorded reason) for declined ones
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, recommended
+  option B taken)`
 - **Question:** An above-bar candidate resurfaces in every mining pass until its dance stops
   happening. What does `--promote` do when the ledger already has its `candidate_id`?
 - **Options:**
@@ -230,13 +238,15 @@ the bar's constants in `toolify-miner.py` are only ever changed by a deliberate 
 - **Recommendation:** B. Below-bar candidates are refused unconditionally in all options —
   `--force` never bypasses the bar itself (bar checklist step 2 is an operator-set constraint,
   and eligibility is the miner's `above_bar` field, recomputed fresh at promote time).
-- **Resolution:** OPEN — recommendation is B; awaiting operator confirmation (it defines the
-  operator's own override workflow).
+- **Resolution:** B (operator-approved 2026-07-04 — recommended option taken): hard-refuse
+  re-promoting `promoted`; re-promote `declined` only with `--force --reason "<why>"`, the
+  override recorded (`forced: true`) in the ledger. Below-bar candidates are refused
+  unconditionally — `--force` never bypasses the bar.
 
 ### D8. Acceptance-rate feedback: report-only, never auto-adjusting the bar
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, recommended
+  option A taken)`
 - **Question:** The stub asks that promoted/declined be recorded "so the bar's thresholds are
   tunable from acceptance data". Does the tool tune, or report?
 - **Options:**
@@ -252,8 +262,9 @@ the bar's constants in `toolify-miner.py` are only ever changed by a deliberate 
     load-bearing" clause forbids; also statistically premature at this candidate volume.
 - **Recommendation:** A — emphatically. The report should also name the sample size so a
   two-candidate "100% acceptance" is not mistaken for signal.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (it bounds what the
-  automation is ever allowed to touch).
+- **Resolution:** A (operator-approved 2026-07-04 — recommended option taken): report-only
+  `--acceptance-report` naming the sample size of every cohort; the bar's constants in
+  `toolify-miner.py` are only ever changed by a deliberate human edit.
 
 ### D9. Cross-repo targeting via the house `--repo-root` convention
 
@@ -271,7 +282,8 @@ the bar's constants in `toolify-miner.py` are only ever changed by a deliberate 
     belong in AlgoBooth's queue — inference here is judgment, not derivation.
 - **Recommendation:** A — following the uniform, already-learned addressing convention is not a
   new operator-facing choice; B misclassifies a judgment as mechanical.
-- **Resolution:** Auto-accepted A; convention-following flag plumbing.
+- **Resolution:** A (operator-approved 2026-07-04 — recommended option taken);
+  convention-following flag plumbing.
 
 ### D10. Naming stays human: `--promote` requires operator-supplied `--id` and `--name`
 
@@ -286,8 +298,8 @@ the bar's constants in `toolify-miner.py` are only ever changed by a deliberate 
     (`bash-bash-read`) that defeat step 3's artifact filter.
 - **Recommendation:** A. This is the operator-set checklist constraint carried into the CLI shape;
   everything downstream of the two supplied strings is deterministic.
-- **Resolution:** Auto-accepted A; enforcing an existing operator-set constraint is not a new
-  product call.
+- **Resolution:** A (operator-approved 2026-07-04 — recommended option taken); enforcing an
+  existing operator-set constraint is not a new product call.
 
 ## User Experience
 
@@ -426,18 +438,19 @@ lines.
 
 ## Open Questions
 
-- **D3 — invocation cadence:** standalone on-demand promotion with a report-only retro surface, vs
-  retro-integrated auto-materialization. Standing recommendation: standalone (A); retro prints
-  ready-to-run promote lines but never invokes the materializer.
-- **D4 — queue landing position:** tail + tier 2 + `stub: true` via additive enqueue flags, vs the
-  existing head/tier-0 ad-hoc jump. Standing recommendation: tail + tier 2 (B); promotion is
+> All four formerly-OPEN product-behavior decisions were resolved at their recommended options
+> (operator-approved 2026-07-04 — recommended option taken):
+
+- **D3 — invocation cadence:** RESOLVED → A. Standalone on-demand promotion; `/lazy-batch-retro`
+  gains a report-only step printing ready-to-run promote command lines but never invokes the
+  materializer.
+- **D4 — queue landing position:** RESOLVED → B. Tail insert at tier 2 with `stub: true` via
+  additive default-off `--tier` / `--stub` / `--at {head,tail}` enqueue flags; promotion is
   roadmap work, and the operator escalates with `--reorder-queue` when warranted.
-- **D7 — dedup override:** hard-refuse all ledger repeats, vs `--force --reason` allowed for
-  declined candidates only (promoted stays hard). Standing recommendation: `--force` for declined
-  only (B), with the override recorded in the ledger.
-- **D8 — acceptance feedback:** report-only acceptance-rate view with threshold tuning left as a
-  deliberate human edit, vs any auto-adjustment of the bar's constants. Standing recommendation:
-  report-only (A).
+- **D7 — dedup override:** RESOLVED → B. Hard-refuse re-promoting `promoted`; `--force --reason`
+  allowed for declined candidates only, with the override recorded (`forced: true`) in the ledger.
+- **D8 — acceptance feedback:** RESOLVED → A. Report-only acceptance-rate view (sample sizes
+  named); threshold tuning stays a deliberate human edit to `toolify-miner.py`.
 - **Deferred empirical checks (implementation-time, not decisions):** run the miner over the real
   workstation corpus and confirm the top above-bar candidates still map to nameable dances at
   current log volume (bar doc's manual runtime verification); confirm in a scratch repo that a

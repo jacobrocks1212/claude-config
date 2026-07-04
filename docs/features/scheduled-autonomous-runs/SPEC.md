@@ -9,7 +9,7 @@
 > `operator-halt-notifications`), and a workstation flush of the cloud run's `DEFERRED_NON_CLOUD.md`
 > items. Verify, don't rebuild: no new arbitration, budget, or containment code.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research
@@ -70,8 +70,7 @@ over with new arbitration.
 
 ### D1. Trigger mechanism
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04)`
 - **Question:** What actually starts the nightly run? This determines where credentials live,
   what survives a crash, and what the operator manages.
 - **Options:**
@@ -97,12 +96,13 @@ over with new arbitration.
 - **Recommendation:** A — it is the only option that is pure composition with implemented
   contracts (trigger + `/lazy-batch-cloud` + completion notifications). C remains a documented vN
   path if overnight MCP validation ever matters more than simplicity.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). Platform
+  scheduled trigger, fresh session per fire. OS cron (option C) is documented as REJECTED for v1
+  and remains only a vN path if overnight MCP validation ever outweighs simplicity.
 
 ### D2. Per-repo opt-in shape
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04)`
 - **Question:** Which repos get nightly runs, and where is that declared — one trigger per repo,
   or one trigger iterating a repo list?
 - **Options:**
@@ -122,12 +122,13 @@ over with new arbitration.
 - **Recommendation:** A — the trigger store already provides naming, enable/disable, cadence, and
   enumeration; a config-file registry would duplicate it. Stagger cron slots (e.g. 01:00 / 03:00)
   so two repos' pushes and notifications don't interleave confusingly.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). One named
+  trigger per opted-in repo (`nightly-lazy-<repo>`), staggered cron slots (01:00 / 03:00 UTC),
+  the trigger list IS the registry (`list_triggers`).
 
 ### D3. Nightly budget default
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04)`
 - **Question:** What `max-cycles` (and companion flags) does a nightly fire pass? The budget is a
   trigger-prompt parameter, so it is per-repo tunable — this decision sets the default.
 - **Options:**
@@ -145,12 +146,20 @@ over with new arbitration.
     start, probes, report) becomes a large fraction of the night.
 - **Recommendation:** A — start at the skill's own default; tune per repo by editing the trigger
   prompt once real morning-review data exists (the friction-KPI story, not this spec).
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). Nightly budget
+  is `/lazy-batch-cloud 10 --park`; `--allow-research-skip` NOT passed; per-feature cycle cap
+  un-armed.
+  *Implementation note (2026-07-04, documentation lane):* `/lazy-batch-cloud` is an
+  AlgoBooth-repo-scoped skill (`repos/algobooth/.claude/skills/lazy-batch-cloud/`), not a
+  user-level one, so a claude-config cloud session does not naturally carry it. The canonical
+  invocation stands as approved; `TRIGGER_TEMPLATE.md` parameterizes per repo and documents the
+  conservative claude-config equivalent (`/lazy-batch 10 --park` — same budget/park semantics,
+  and honest there because claude-config has no MCP surface, so the workstation skill's
+  structural MCP-skip applies with nothing to defer). See RESEARCH_SUMMARY.md finding 1.
 
 ### D4. Unattended halt posture (`--park` and the end-of-run flush)
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04)`
 - **Question:** With nobody awake to answer `AskUserQuestion`, what happens when a cycle hits
   `needs-input`/`BLOCKED`? Without `--park`, Step 1g/1h fire an interactive question on the FIRST
   ambiguous decision and the run effectively stops there for the night.
@@ -175,13 +184,14 @@ over with new arbitration.
     real design work, and redundant if A's held-open flush proves workable in the Phase 1 pilot.
 - **Recommendation:** A, empirically validated in the pilot (does an unanswered flush survive to
   morning in a fresh-fire session?); C is the documented fallback if it does not.
-- **Resolution:** OPEN — recommendation is A (with C as the pilot-contingent fallback); awaiting
-  operator confirmation.
+- **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). Run with
+  `--park`; the morning flush waits in the fired session. Option C (unattended-flush variant) is
+  documented as the pilot-contingent fallback ONLY — it becomes its own coupled-skills change with
+  a fresh needs-input round if the Phase-1 pilot shows the held-open flush does not survive.
 
 ### D5. Morning report & failure/no-op notification policy
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04)`
 - **Question:** What does the operator read at breakfast, and what does a bad night (immediate
   halt, refused start, zero progress) look like — a page, an email, or just the queue doc?
 - **Options:**
@@ -203,7 +213,9 @@ over with new arbitration.
     of the mobile story is built on.
 - **Recommendation:** A — every element already exists; the only knob to set is the routine's
   notification channels (push on; email per operator taste).
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). Morning report
+  composes existing surfaces: completion push + `LAZY_QUEUE.md` diff + halt pages + transcript;
+  NO new committed run-summary artifact in v1.
 
 ### D6. Collision safety — verify existing arbitration, don't rebuild
 
@@ -235,6 +247,8 @@ over with new arbitration.
   with observed crash frequency data.
 - **Resolution:** Auto-accepted A; this is verification + documentation of implemented behavior,
   not an operator-visible choice — the stub itself locks "verify, don't rebuild".
+  **LOCKED by operator 2026-07-04:** rely on `refuse_run_start_clobber` + 24h staleness as-is;
+  document the crashed-run interaction (see `PLAYBOOK.md`).
 
 ### D7. Deferred-non-cloud handoff (the honest half of "overnight builder")
 
@@ -256,7 +270,8 @@ over with new arbitration.
   receipt-gated completion invariant; the spec instead names the workstation flush as part of the
   morning routine.
 - **Resolution:** Auto-accepted A; describes existing pipeline behavior rather than choosing new
-  operator-visible behavior.
+  operator-visible behavior. **LOCKED by operator 2026-07-04:** no deferred-non-cloud automation
+  in v1; the workstation flush path is documented (see `PLAYBOOK.md` morning triage).
 
 ### D8. Credentials & environment provisioning
 
@@ -274,7 +289,8 @@ over with new arbitration.
     rot with no threat model requiring it.
 - **Recommendation:** A — one environment per repo, shared between interactive and scheduled use;
   the run-marker arbitration (D6) is what serializes them, not environment separation.
-- **Resolution:** Auto-accepted A; invisible provisioning detail.
+- **Resolution:** Auto-accepted A; invisible provisioning detail. **LOCKED by operator
+  2026-07-04:** reuse the repo's existing cloud environment.
 
 ### D9. Trigger management surface
 
@@ -292,7 +308,9 @@ over with new arbitration.
     what `list_triggers` already answers in chat.
 - **Recommendation:** A — the trigger store is the source of truth (consistent with D2); scripts
   own on-disk state, not remote platform state.
-- **Resolution:** Auto-accepted A; tooling-shape choice with no behavioral surface.
+- **Resolution:** Auto-accepted A; tooling-shape choice with no behavioral surface. **LOCKED by
+  operator 2026-07-04:** manage triggers via chat platform ops; recipes documented in
+  `RECIPES.md`; NO wrapper script.
 
 ## User Experience
 
@@ -425,24 +443,15 @@ folds in).
 
 ## Open Questions
 
-- **D1 — trigger mechanism:** platform scheduled trigger with a fresh session per fire, vs
-  persistent-session fire, vs OS cron + headless CLI? Standing recommendation: platform trigger,
-  fresh-session-per-fire (option A).
-- **D2 — opt-in shape:** one named trigger per opted-in repo (trigger list = registry, staggered
-  slots), vs one trigger iterating a repo list? Standing recommendation: trigger-per-repo (A).
-- **D3 — nightly budget default:** `max_cycles=10`, no `--allow-research-skip`, per-feature guard
-  un-armed? Standing recommendation: yes (A), tune per repo via the trigger prompt later.
-- **D4 — unattended halt posture:** run `--park` and let the end-of-run flush wait for morning
-  (with the new-unattended-flush variant as fallback if the pilot shows the held question doesn't
-  survive)? Standing recommendation: `--park` + morning flush (A).
-- **D5 — morning report & failure policy:** compose completion push/email + `LAZY_QUEUE.md` diff
-  + halt pages + transcript, with no new committed run-summary artifact in v1? Standing
-  recommendation: yes (A), push notifications on.
-- Deferred empirical checks (implementation, not decisions): flush-question survivability in a
-  trigger-fired session overnight (Phase 1, feeds D4); push-to-`main` rights from a trigger-fired
-  fresh session (Phase 1); the exact stderr surfacing of an exit-3 refusal in a fresh session's
-  final summary (Phase 2); whether cron minimum granularity/timezone needs a repo-local note
-  (Phase 3).
+**None remain open — all five product-behavior decisions were operator-approved at their
+recommended options on 2026-07-04** (D1→A, D2→A, D3→A, D4→A, D5→A; D6–D9 auto-accepted and
+operator-locked the same day). See each decision's `Resolution` line under Design Decisions.
+
+- Deferred empirical checks (implementation, not decisions — owned by the operator-run pilot
+  phases): flush-question survivability in a trigger-fired session overnight (Phase 1, feeds
+  D4's A-vs-C fallback); push-to-`main` rights from a trigger-fired fresh session (Phase 1); the
+  exact stderr surfacing of an exit-3 refusal in a fresh session's final summary (Phase 2);
+  whether cron minimum granularity/timezone needs a repo-local note (Phase 3).
 
 ## Research References
 

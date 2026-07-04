@@ -282,6 +282,29 @@ patch is never elided in favor of only the spin-off, nor vice-versa.
 
 If the hardening log directory or the current month's file does not yet exist, create it.
 
+### Intervention record for the round (intervention-efficacy-tracking, additive)
+
+After appending a **mechanical-fix** round (the `Mechanical fix applied:` action form — a
+NEEDS_INPUT round records no intervention; nothing shipped), ALSO capture the round as a
+hypothesis-ledger intervention record so its efficacy is measured instead of assumed. This is
+ADDITIVE to the HARDENING.md round above — it replaces nothing. From the claude-config root:
+
+```bash
+python3 ~/.claude/scripts/lazy-state.py --record-intervention   --id harden-<YYYY-MM>-r<N>   --pipeline hardening   --target-signal event:<ledger-event-type>   --expected-direction decrease   --signal-independence "<independent|self-emitted|mixed — one-line justification>"   --repo-root <claude-config-root>
+```
+
+- `<YYYY-MM>-r<N>` matches the round you just appended (one record per round).
+- `--target-signal` names the ledger signal the fix targets — for a validate-deny /
+  containment-trip round that is usually `event:containment-refusal` or `event:gate-refusal`;
+  when the round's evidence genuinely names no measurable signal, OMIT the three hypothesis
+  flags and the record degrades honestly to `target_signal: undeclared`
+  (INCONCLUSIVE-by-construction, surfaced for triage — never blocked).
+- The script freezes the baseline window from the telemetry ledger at capture and writes
+  `docs/interventions/harden-<YYYY-MM>-r<N>.md` (`pipeline: hardening`); commit it with the
+  round (same `harden(<area>):` commit). Idempotent — re-running never clobbers.
+- NON-BLOCKING: a capture failure is a one-line warning; the round itself stands. Verdicts
+  arrive later via `efficacy-eval.py` at the batch orchestrators' end-of-run flush.
+
 ## Commit discipline
 
 All commits made by this skill use the prefix:

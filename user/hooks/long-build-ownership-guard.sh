@@ -53,6 +53,17 @@ else
   exit 0
 fi
 
+# incident-auto-capture Phase 1 (D2): resolve the scripts dir relative to this
+# hook so the inline Python can import lazy_core for the keyed hook-events
+# append (best-effort — the appender falls back to the base dir when the import
+# is unavailable). Builtins only; $0 may carry Windows backslashes.
+SELF="${0//\\//}"
+case "$SELF" in
+  */*) LBO_SCRIPT_DIR="$(cd "${SELF%/*}" && pwd)" ;;
+  *)   LBO_SCRIPT_DIR="$(pwd)" ;;
+esac
+LBO_SCRIPTS_DIR="$LBO_SCRIPT_DIR/../scripts"
+
 # All deny/allow logic lives in this inline Python. It reads the PreToolUse JSON
 # from stdin and emits an allow/deny hookSpecificOutput block (or nothing for a
 # fast allow). It NEVER exits non-zero on an internal error.
@@ -101,6 +112,46 @@ _LONG_BUILD_RE = re.compile(
 )
 
 
+def _append_hook_event(kind, signature, detail, cwd=""):
+    """incident-auto-capture Phase 1 (D2): append one countable hook-event line
+    (hook-events.jsonl). Best-effort / FAIL-OPEN — never raises, never changes
+    the deny/allow output. Prefers the shared lazy_core appender (keyed state
+    dir when the repo is resolvable; exact LAZY_STATE_DIR dir in tests); falls
+    back to an inline append at the base dir when lazy_core is unavailable."""
+    try:
+        try:
+            _sd = os.environ.get("LBO_SCRIPTS_DIR")
+            if _sd and _sd not in sys.path:
+                sys.path.insert(0, _sd)
+            import lazy_core
+            try:
+                lazy_core.set_active_repo_root(cwd or None)
+                repo_root = str(lazy_core.active_repo_root() or "")
+            except Exception:
+                repo_root = cwd or ""
+            lazy_core.append_hook_event(
+                kind, "long-build-ownership-guard", signature, detail,
+                repo_root=repo_root,
+            )
+            return
+        except ImportError:
+            pass
+        import time as _time
+        os.makedirs(STATE_DIR, exist_ok=True)
+        entry = {
+            "ts": _time.time(), "kind": kind,
+            "hook": "long-build-ownership-guard",
+            "repo_root": cwd or "", "signature": (signature or "")[:200],
+            "detail": (detail or "")[:500],
+        }
+        with open(
+            os.path.join(STATE_DIR, "hook-events.jsonl"), "a", encoding="utf-8"
+        ) as fh:
+            fh.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass
+
+
 def _breadcrumb(err):
     """Write a fail-open breadcrumb; never raise."""
     try:
@@ -119,6 +170,9 @@ def _breadcrumb(err):
             )
     except Exception:
         pass
+    # D2: the breadcrumb stays byte-identical; the countable history is the
+    # additive hook-events line beside it (fail-open, never raises).
+    _append_hook_event("error", "", str(err))
 
 
 def _allow():
@@ -146,6 +200,10 @@ def main():
     if not isinstance(command, str) or not command:
         _allow()
     if _LONG_BUILD_RE.search(command):
+        # incident-auto-capture D2: countable deny event (fail-open, additive).
+        _append_hook_event(
+            "deny", TAKEOVER_SIGNATURE, command, payload.get("cwd") or ""
+        )
         _deny(
             "LONG BUILD REDIRECTED TO ORCHESTRATOR "
             f"[{TAKEOVER_SIGNATURE}]: a long build "
@@ -172,8 +230,9 @@ PYEOF
 
 # `read -d ''` returns non-zero at EOF even on success — that is expected; the
 # variable is populated. Run python with the captured body via -c so the hook's
-# real stdin (the PreToolUse payload) reaches python untouched.
-"$PYTHON" -c "$_LBO_PY"
+# real stdin (the PreToolUse payload) reaches python untouched. LBO_SCRIPTS_DIR
+# is threaded via env (D2) so the inline appender can import lazy_core.
+LBO_SCRIPTS_DIR="$LBO_SCRIPTS_DIR" "$PYTHON" -c "$_LBO_PY"
 
 # Always exit 0 from the shell side: a non-zero PreToolUse exit is a hard
 # blocking error in Claude Code; deny is expressed in JSON, never an exit code.

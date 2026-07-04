@@ -70,6 +70,20 @@ A feature is "Complete" for reality-check purposes if EITHER:
 
 Hard deps on incomplete upstreams produce a soft warning but no reality check — there's nothing settled to look back at yet.
 
+### Queue projection (`deps` field — queue-dependency-dag)
+
+The dep block's **hard** deps are additionally projected into the item's `queue.json` entry as a
+flat `"deps": ["<id>", ...]` field — the machine-enforced counterpart the state scripts' dep-gate
+holds items on (an item whose declared dep is not `Complete`/`Fixed` with a valid receipt is never
+dispatched). The projection is **script-owned**: `lazy-state.py --sync-deps --id <id>` (features)
+/ `bug-state.py --sync-deps --id <id>` (bugs), invoked by `/spec-phases` Step 1.6 once the SPEC
+baseline is locked — never a hand edit. Only `hard` kinds project (soft/composes need the upstream
+to *exist*, not be Complete — they stay prose-only); the prose block above remains the SSOT for
+kinds and reasons. Same-pipeline bare ids only in v1 — `bug:`/`feature:` prefixes are reserved for
+a future cross-pipeline version and are refused. A probe-time drift diagnostic warns when an
+entry's queue set diverges from its SPEC hard set (re-run `--sync-deps` to re-project). Editing
+this block after phases exist? Re-run the sync so prose and machine state cannot silently drift.
+
 ### Skills that consume this schema
 
 | Skill | Reads | Writes |

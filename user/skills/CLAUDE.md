@@ -57,3 +57,13 @@ When editing either half, diff the sibling immediately afterward and confirm it 
 Skills here load everywhere. Repo-specific skills live in `repos/<name>/.claude/skills/` and
 only load in that repo (e.g. `lazy-cloud`, `csharp-cognito`). Put a skill here only if it's
 genuinely repo-agnostic.
+
+## Usage audit / pruning
+
+`python3 ../scripts/skill-usage-miner.py` (read-only, on-demand) mines the session-log corpus
+for per-skill invocation counts across both trees and reports never-invoked candidates
+(age-gated, with ready-to-paste archival proposals), a hygiene sweep of non-skill artifacts
+(stray files, dangling symlinks, case-variant `skill.md`, frontmatter defects), and toolify
+cross-links. It undercounts by construction (component injection, auto-invoke prose, and cloud
+sessions are invisible) — a zero count means investigate, never delete. Archival stays the
+deliberate `archived/` move with its audit-trail row.

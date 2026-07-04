@@ -9,7 +9,7 @@
 > write-only archive into working memory. One deterministic producer, two triggers: the automatic
 > completion-gate path and an operator-invocable manual path for out-of-pipeline work.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P1
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04 (operator-requested; must-have); fleshed
@@ -123,8 +123,8 @@ on every completion — the receipt says *that* it shipped; the ledger says *wha
 
 ### D3. Reverse-index format + location per target repo
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, recommended
+  option taken)`
 - **Question:** Where does the index live in each governed repo, and in what shape? The stub locks
   per-target-repo residency (the governed code lives there, not in claude-config); this decides
   the concrete path and format teammates and agents will see.
@@ -149,7 +149,9 @@ on every completion — the receipt says *that* it shipped; the ledger says *wha
   format single-file v1 with a documented shard threshold (move to C when the file exceeds ~500 KB
   or review-noise becomes real), and normalize all keys to repo-relative POSIX paths so
   Windows/WSL writers produce identical bytes.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** RESOLVED A (operator-approved 2026-07-04 — recommended option taken): committed
+  `docs/provenance-index.json` per repo, single JSON file, repo-relative POSIX-path keys;
+  documented shard threshold (~500 KB → option C) deferred to vN.
 
 ### D4. Touched-file-set derivation — commit brackets, with an honest fallback
 
@@ -201,8 +203,8 @@ on every completion — the receipt says *that* it shipped; the ledger says *wha
 
 ### D6. Consumption mechanism — how the linkage reaches an agent at edit time
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, recommended
+  option taken)`
 - **Question:** How do skills and cycle subagents actually see "these decision records govern the
   file you're touching"? Token cost is the binding constraint (the mission's "efficient"
   criterion): the index is only worth having if consulting it costs less than re-deriving.
@@ -228,12 +230,16 @@ on every completion — the receipt says *that* it shipped; the ledger says *wha
   hit-rate (the lint's churn report gives the measurement: how often governed files are edited).
   Prompt-compliance risk is real but is the same risk every skill step carries, and the
   self-improvement loop already routes compliance failures back as hardening.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** RESOLVED A (operator-approved 2026-07-04 — recommended option taken): skill-step
+  lookup via the read-only `--provenance-lookup` CLI in v1, wired into the cycle-subagent base
+  prompt (`_components/lazy-batch-prompts/cycle-base-prompt.md`), `/spec-phases`, and the coupled
+  `/lazy*` wrapper prose (coupled pairs mirrored exactly); PreToolUse hook injection (B)
+  documented as the vN upgrade once hit-rate is measured.
 
 ### D7. Backfill strategy for already-completed items
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, recommended
+  option taken)`
 - **Question:** Do the ~10 receipted features + ~39 archived bug fixes in claude-config (and
   completed items in other lazy repos; counts estimated — verify during Phase 5) get distillates
   and index rows, or is the ledger forward-only?
@@ -251,12 +257,14 @@ on every completion — the receipt says *that* it shipped; the ledger says *wha
     unbackfilled item — circular.
 - **Recommendation:** A for claude-config (the primary consumer, richest receipts), forward-only
   elsewhere until v1 proves out. C is circular and B starves the feature of its demo value.
-- **Resolution:** OPEN — recommendation is A (claude-config only); awaiting operator confirmation.
+- **Resolution:** RESOLVED A (operator-approved 2026-07-04 — recommended option taken): one-shot
+  `--backfill-provenance` for claude-config only (`provenance: backfilled`,
+  `derivation: message-grep`); forward-only elsewhere until v1 proves out.
 
 ### D8. Manual-path ergonomics — addressing, drafting, and attribution
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, recommended
+  option taken)`
 - **Question:** The stub scopes IN an operator-invocable entry point for teammate/out-of-pipeline
   work. How is the work addressed, and how much of the distillate is drafted vs typed?
 - **Options (addressing):**
@@ -280,7 +288,10 @@ on every completion — the receipt says *that* it shipped; the ledger says *wha
   ergonomic front end. When no SPEC exists for the linked work, the skill creates a minimal
   decision-record dir (`docs/features/<slug>/` with the distillate as its primary doc) rather
   than inventing a fake SPEC.
-- **Resolution:** OPEN — recommendation is A+C; awaiting operator confirmation.
+- **Resolution:** RESOLVED A+C (operator-approved 2026-07-04 — recommended option taken):
+  commit-range-primary addressing (`--commits A..B`) with `--pr <n>` sugar; distillate body
+  LLM-drafted-then-approved via the `/link-provenance` skill, always written THROUGH the producer
+  CLI (`--body-file` for the approved prose).
 
 ### D9. Provenance-attribution field
 
@@ -316,8 +327,8 @@ on every completion — the receipt says *that* it shipped; the ledger says *wha
 
 ### D11. v1 repo scope
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, recommended
+  option taken)`
 - **Question:** Which repos get the producer wired in v1?
 - **Options:**
   - **A — claude-config + AlgoBooth:** both run the full lazy pipeline, work on and push `main`,
@@ -329,7 +340,9 @@ on every completion — the receipt says *that* it shipped; the ledger says *wha
 - **Recommendation:** A. The producer stays `--repo-root`-addressable everywhere (any repo can
   link manually), but the automatic gate wiring ships to the two repos whose publishing model is
   already proven.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** RESOLVED A (operator-approved 2026-07-04 — recommended option taken):
+  claude-config + AlgoBooth automatic gate wiring; the manual path (`--link-provenance`) stays
+  `--repo-root`-addressable everywhere.
 
 ## User Experience
 

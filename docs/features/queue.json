@@ -3,20 +3,6 @@
   "autodiscover": true,
   "queue": [
     {
-      "id": "code-doc-provenance-linkage",
-      "name": "Code-Doc Provenance Linkage (Implementation Ledger)",
-      "spec_dir": "code-doc-provenance-linkage",
-      "tier": 1,
-      "stub": true
-    },
-    {
-      "id": "operator-halt-notifications",
-      "name": "Operator Paging on Pipeline Halts",
-      "spec_dir": "operator-halt-notifications",
-      "tier": 1,
-      "stub": true
-    },
-    {
       "id": "claude-config-ci",
       "name": "CI for claude-config Itself",
       "spec_dir": "claude-config-ci",
@@ -24,123 +10,47 @@
       "stub": true
     },
     {
-      "id": "doc-drift-linter",
-      "name": "Doc-Drift Linter (CLAUDE.md vs. Reality)",
-      "spec_dir": "doc-drift-linter",
-      "tier": 1,
-      "stub": true
-    },
-    {
-      "id": "harness-telemetry-ledger",
-      "name": "Harness Telemetry Ledger + Trends",
-      "spec_dir": "harness-telemetry-ledger",
-      "tier": 1,
-      "stub": true
-    },
-    {
       "id": "friction-kpi-registry",
       "name": "Friction KPI Registry + Scorecards",
       "spec_dir": "friction-kpi-registry",
-      "tier": 1,
-      "stub": true
-    },
-    {
-      "id": "intervention-efficacy-tracking",
-      "name": "Intervention Efficacy Tracking (Hypothesis Ledger)",
-      "spec_dir": "intervention-efficacy-tracking",
-      "tier": 1,
-      "stub": true
+      "tier": 1
     },
     {
       "id": "anti-overfit-design-gate",
       "name": "Anti-Overfit + Tautology Design Gate for Harness Changes",
       "spec_dir": "anti-overfit-design-gate",
-      "tier": 1,
-      "stub": true
+      "tier": 1
     },
     {
       "id": "harness-change-canary-rollback",
       "name": "Harness-Change Canary + Rollback",
       "spec_dir": "harness-change-canary-rollback",
-      "tier": 2,
-      "stub": true
-    },
-    {
-      "id": "queue-dependency-dag",
-      "name": "First-Class Dependency DAG in queue.json",
-      "spec_dir": "queue-dependency-dag",
-      "tier": 2,
-      "stub": true
-    },
-    {
-      "id": "cross-repo-fleet-view",
-      "name": "Cross-Repo Fleet Home Page",
-      "spec_dir": "cross-repo-fleet-view",
-      "tier": 2,
-      "stub": true
-    },
-    {
-      "id": "scheduled-autonomous-runs",
-      "name": "Scheduled Autonomous Runs (Overnight Builder)",
-      "spec_dir": "scheduled-autonomous-runs",
-      "tier": 2,
-      "stub": true
+      "tier": 2
     },
     {
       "id": "build-queue-generalization",
       "name": "Generalize Build-Queue Beyond Cognito",
       "spec_dir": "build-queue-generalization",
-      "tier": 2,
-      "stub": true
+      "tier": 2
     },
     {
       "id": "build-queue-eta-priority-lanes",
       "name": "Build-Queue ETA + Priority Lanes",
       "spec_dir": "build-queue-eta-priority-lanes",
-      "tier": 2,
-      "stub": true
-    },
-    {
-      "id": "toolify-auto-promotion",
-      "name": "Auto-Promotion Pipeline for Toolify Candidates",
-      "spec_dir": "toolify-auto-promotion",
-      "tier": 2,
-      "stub": true
-    },
-    {
-      "id": "skill-usage-miner",
-      "name": "Skill Usage Miner + Dead-Weight Audit",
-      "spec_dir": "skill-usage-miner",
-      "tier": 2,
-      "stub": true
-    },
-    {
-      "id": "incident-auto-capture",
-      "name": "Incident Auto-Capture to Bug Stubs",
-      "spec_dir": "incident-auto-capture",
-      "tier": 2,
-      "stub": true
-    },
-    {
-      "id": "cross-platform-setup",
-      "name": "Cross-Platform Setup (Python Port of setup.ps1/manifest.psd1)",
-      "spec_dir": "cross-platform-setup",
-      "tier": 2,
-      "stub": true
+      "tier": 2
     },
     {
       "id": "parallel-worktree-batch-execution",
       "name": "Sanctioned Parallel-Worktree Batch Execution",
       "spec_dir": "parallel-worktree-batch-execution",
-      "tier": 3,
-      "stub": true
+      "tier": 3
     },
     {
       "id": "native-android-pipeline-steering",
       "name": "Native Android App for Pipeline Steering",
       "spec_dir": "native-android-pipeline-steering",
-      "tier": 3,
-      "stub": true
+      "tier": 3
     }
-  ]
+  ],
+  "interventions": true
 }

@@ -98,6 +98,15 @@ def _write_breadcrumb(error_msg: str) -> None:
         }
         crumb_path = state_dir / "hook-error.json"
         crumb_path.write_text(json.dumps(breadcrumb, indent=2), encoding="utf-8")
+        # incident-auto-capture Phase 1 (D2): countable error event beside the
+        # (byte-identical) breadcrumb. append_hook_event is itself fail-open
+        # (swallows its own errors, returns False) — the guard's DENY sites
+        # deliberately do NOT call it: denies are already durably persisted in
+        # the deny ledger, and double-writing would double-count one incident
+        # across two signal classes (SPEC D2 implementation note).
+        lazy_core.append_hook_event(
+            "error", _HOOK_NAME, "", error_msg,
+        )
     except Exception:  # noqa: BLE001
         pass  # Absolutely must not raise from the error handler.
 

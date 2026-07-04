@@ -171,6 +171,15 @@ def _state(
     # end-of-run gated-head flush.
     if _GATED_HEADS:
         out["gated_heads"] = list(_GATED_HEADS)
+    # queue-dependency-dag Phase 2 (D10): the items the dep-gate HELD this
+    # probe — [{id, missing: [<incomplete dep ids>]}] — are ONLY surfaced when
+    # the walk held at least one item (_DEP_GATED non-empty). When empty the
+    # key is entirely absent so default output (no `deps` fields anywhere)
+    # stays byte-identical — same discipline as "parked" / "gated_heads".
+    # Pure-read consumers (pipeline_visualizer, lazy-queue-doc.py) can render
+    # a "waiting on <dep>" state from this without re-inferring anything.
+    if _DEP_GATED:
+        out["dep_gated"] = [dict(r) for r in _DEP_GATED]
     # budget-guard-defers-near-complete-feature Phase 3: the end-of-run resume
     # flush auto-resumed a near-complete budget-deferred feature this probe. Only
     # surfaced when the flush actually resumed one (_BUDGET_RESUMED set) so default
@@ -257,6 +266,12 @@ _GATED_HEADS: list = []
 # the "budget_resumed_near_complete" probe key is absent, keeping default output
 # byte-identical). Reset at the start of each compute_state().
 _BUDGET_RESUMED: str | None = None
+
+# queue-dependency-dag Phase 2: the items the dep-gate held this invocation —
+# [{id, missing: [<incomplete dep ids>]}], in walk order. Surfaced via the
+# "dep_gated" probe key ONLY when non-empty (byte-identity discipline). Reset
+# at the start of each compute_state().
+_DEP_GATED: list = []
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +514,13 @@ def load_queue(repo_root: Path) -> list[dict[str, Any]]:
         _die("queue.json 'queue' field must be an array", queue_path)
         return []  # pragma: no cover
 
+    # queue-dependency-dag Phase 1: validate the optional per-entry `deps`
+    # field (shape + id regex + reserved bug:/feature: prefixes + cycle
+    # detection via Kahn's) BEFORE any merge. A dep-less queue is a silent
+    # no-op (byte-identical); a broken declared graph _die()s exit 2 like the
+    # other queue-schema violations above.
+    lazy_core.validate_queue_deps(items, queue_path, queue_label="queue.json")
+
     # feature-queue-lacks-on-disk-autodiscovery: opt-in on-disk auto-discovery.
     # When docs/features/queue.json carries a top-level "autodiscover": true flag
     # (sibling of "queue"), merge on-disk open feature dirs NOT already queued —
@@ -586,6 +608,9 @@ def enqueue_adhoc(
     brief: str,
     spec_dir: str | None = None,
     tier: int = 0,
+    stub: bool = False,
+    at: str = "head",
+    deps: list[str] | None = None,
 ) -> dict[str, Any]:
     """Insert an ad-hoc feature at the TOP of docs/features/queue.json.
 
@@ -594,10 +619,30 @@ def enqueue_adhoc(
     ADHOC_BRIEF.md (which Step 4 routes to /spec), and adds a ROADMAP.md row.
     queue.json / ROADMAP.md are created if absent so ad-hoc works in a fresh
     repo. Idempotent on the brief/dir; refuses a duplicate feature_id.
+
+    toolify-auto-promotion Phase 2 (D4-B), additive default-off params:
+    ``stub=True`` adds ``"stub": true`` to the queue entry (the Step-4.5
+    cross-check flag; the key is OMITTED otherwise so the default entry stays
+    byte-identical to before); ``at="tail"`` appends instead of prepending
+    (promotions ride normal roadmap order rather than jumping the curated
+    queue). Feature-pipeline-only — the bug pipeline has no stub step and
+    orders by severity, so ``bug-state.py`` deliberately has no mirror
+    (justified divergence; un-audited by ``lazy_parity_audit.py``).
+
+    queue-dependency-dag Phase 4: an optional ``deps`` id list (the
+    ``--enqueue-adhoc --deps a,b`` surface) lets an ad-hoc item declare hard
+    queue deps at enqueue time without waiting for ``/spec-phases`` to run
+    ``--sync-deps``. Validated up front (regex + reserved ``bug:``/``feature:``
+    prefixes → ``_die``, zero side effects); omitted ⇒ the entry shape is
+    byte-identical to before.
     """
     repo_root = repo_root.resolve()
     if not re.match(r"^[a-z0-9][a-z0-9-]*$", feature_id):
         _die(f"invalid feature_id (must be kebab-case): {feature_id!r}")
+    if deps:
+        lazy_core.validate_dep_id_list(
+            deps, context=f"'--deps' (enqueue {feature_id!r})"
+        )
     features = repo_root / "docs" / "features"
     features.mkdir(parents=True, exist_ok=True)
     spec_dir = spec_dir or feature_id
@@ -619,13 +664,25 @@ def enqueue_adhoc(
         _die(f"feature_id already queued: {feature_id}", queue_path)
         return {}  # pragma: no cover
 
-    items.insert(0, {
+    entry: dict[str, Any] = {
         "id": feature_id,
         "name": name,
         "spec_dir": spec_dir,
         "tier": tier,
         "adhoc": True,
-    })
+    }
+    if stub:
+        entry["stub"] = True
+    if deps:
+        # queue-dependency-dag: the optional hard-deps declaration. Key absent
+        # when not supplied — byte-identical legacy entry shape.
+        entry["deps"] = list(deps)
+    if at == "tail":
+        items.append(entry)
+        queue_position = len(items) - 1
+    else:
+        items.insert(0, entry)
+        queue_position = 0
     data["queue"] = items
     _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
 
@@ -663,7 +720,7 @@ def enqueue_adhoc(
         "feature_name": name,
         "spec_path": str(spec_path),
         "brief_path": str(brief_file),
-        "queue_position": 0,
+        "queue_position": queue_position,
         "queue_length": len(items),
     }
 
@@ -675,6 +732,7 @@ def enqueue_adhoc_bug(
     brief: str = "",
     spec_dir: str | None = None,
     severity: str | None = None,
+    deps: list[str] | None = None,
 ) -> dict[str, Any]:
     """Route an ad-hoc item into docs/bugs/queue.json (the bug pipeline).
 
@@ -711,7 +769,17 @@ def enqueue_adhoc_bug(
     ]
     if severity:
         cmd += ["--severity", severity]
+    if deps:
+        # queue-dependency-dag Phase 4: forward the deps declaration to the
+        # bug-state enqueue (which validates + stores it on the entry).
+        cmd += ["--deps", ",".join(deps)]
     _enqueue_env = {**os.environ, "LAZY_ORCHESTRATOR": "1"}
+    # Flush our buffered stdout/stderr BEFORE the child inherits the fds: when
+    # stdout is a pipe (CI, pytest capture) the parent's buffered lines would
+    # otherwise land AFTER the child's direct writes, making merged-output
+    # ordering platform-dependent (the --test baseline pins one order).
+    sys.stdout.flush()
+    sys.stderr.flush()
     subprocess.run(cmd, check=True, env=_enqueue_env)
 
     # Seed the bug-doc shape: docs/bugs/<slug>/ADHOC_BRIEF.md (idempotent).
@@ -837,6 +905,10 @@ def materialize_wi(repo_root: Path, wi_id, type_pipeline_map: dict) -> dict:
         # failing this legitimate orchestrator op. This makes the call hermetic
         # against an ambient marker.
         _materialize_env = {**os.environ, "LAZY_ORCHESTRATOR": "1"}
+        # Flush before the child inherits the fds (see _enqueue_bug's twin flush:
+        # keeps parent/child merged-output ordering platform-deterministic).
+        sys.stdout.flush()
+        sys.stderr.flush()
         subprocess.run(
             [
                 sys.executable,
@@ -1155,45 +1227,53 @@ def _stub_is_queue_flag_only(
     )
 
 
-def parse_dep_block(spec_text: str) -> list[dict[str, str]]:
-    """Parse **Depends on:** block per _components/dep-block-schema.md.
+# parse_dep_block RELOCATED to lazy_core.py (queue-dependency-dag D9) so both
+# state scripts share ONE dep-block parser. Re-exported here so the Step 4.6
+# realign check, the skip-ahead branch, and the smoke fixtures keep their
+# existing call sites unchanged.
+parse_dep_block = lazy_core.parse_dep_block
 
-    Returns a list of {feature_id, kind, reason}. Empty list for '(none)' or
-    malformed/missing block (caller decides how to handle).
+
+def _merged_skip_ahead_deps(
+    spec_deps: list[dict[str, str]], queue_dep_ids: list[str]
+) -> list[dict[str, str]]:
+    """queue-dependency-dag Phase 3 (D7): merge the skip-ahead key-1 inputs.
+
+    Returns SPEC-parsed deps (tagged ``source: spec``) followed by the queue
+    ``deps`` ids (tagged ``source: queue``, treated as ``hard`` per D1's field
+    semantics — the queue field IS the hard-only enforcement projection),
+    deduped by feature_id (SPEC wins). ``skip_ahead_ready`` ignores the extra
+    ``source`` key — it exists for the audit ``_diag`` line.
+
+    Strictly-additive defense-in-depth: at the current walk order the Phase-2
+    dep-gate holds a queue-deps-on-incomplete candidate BEFORE the skip-ahead
+    branch evaluates it, so this union changes no outcome today — it guards
+    the readiness predicate against any future re-ordering of the walk's
+    branches (a SPEC authored before --sync-deps runs stays visible via the
+    spec side; a synced queue field stays visible even if the SPEC block is
+    later edited).
     """
-    lines = spec_text.splitlines()
-    deps: list[dict[str, str]] = []
-    i = 0
-    while i < len(lines):
-        if lines[i].rstrip() == "**Depends on:**" or re.match(r"^\*\*Depends on:\*\*\s*\(none\)\s*$", lines[i]):
-            if "(none)" in lines[i]:
-                return []
-            # Block-form: parse subsequent "- " lines until blank or heading
-            j = i + 1
-            while j < len(lines):
-                line = lines[j]
-                stripped = line.strip()
-                if not stripped:
-                    # Allow one blank line between header and list (form A in schema)
-                    if not deps:
-                        j += 1
-                        continue
-                    break
-                if stripped.startswith("# ") or stripped.startswith("## ") or stripped.startswith("---"):
-                    break
-                if not stripped.startswith("- "):
-                    break
-                # Split on " — " (space em-dash space)
-                payload = stripped[2:]
-                parts = payload.split(" — ")
-                if len(parts) >= 3:
-                    feature_id, kind, reason = parts[0].strip(), parts[1].strip(), " — ".join(parts[2:]).strip()
-                    if kind in ("hard", "soft", "composes") and re.match(r"^[a-z0-9][a-z0-9-]*$", feature_id):
-                        deps.append({"feature_id": feature_id, "kind": kind, "reason": reason})
-                j += 1
-            return deps
-        i += 1
-    return []
+    merged: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for d in spec_deps or []:
+        if not isinstance(d, dict):
+            continue
+        fid = d.get("feature_id")
+        if not fid or fid in seen:
+            continue
+        seen.add(fid)
+        merged.append({**d, "source": "spec"})
+    for qid in queue_dep_ids or []:
+        if not isinstance(qid, str) or qid in seen:
+            continue
+        seen.add(qid)
+        merged.append({
+            "feature_id": qid,
+            "kind": "hard",
+            "reason": "queue deps field",
+            "source": "queue",
+        })
+    return merged
 
 
 def resolve_upstream_dir(repo_root: Path, current_spec_dir: Path, feature_id: str) -> Path | None:
@@ -1547,9 +1627,15 @@ def compute_state(
     # Park mode: set the module global from the param so _state() can gate
     # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
     global _PARK_MODE, _PARKED, _DEFERRED_BUDGET, _BUDGET_GUARD, _GATED_HEADS
-    global _BUDGET_RESUMED
+    global _BUDGET_RESUMED, _DEP_GATED
     _PARK_MODE = park_needs_input or park_blocked
     _PARKED.clear()
+    # queue-dependency-dag Phase 2: reset the dep-gate hold list for this
+    # invocation. _dep_dir_map is the lazily-built queued id → dir map the
+    # dep-completion classifier resolves custom spec_dirs through — built only
+    # when an entry actually carries `deps` (zero cost on the no-deps path).
+    _DEP_GATED = []
+    _dep_dir_map: dict | None = None
     # Reset the per-feature budget-guard state for this invocation.
     _DEFERRED_BUDGET = []
     _BUDGET_GUARD = None
@@ -2232,6 +2318,111 @@ def compute_state(
                     }
                 _DEFERRED_BUDGET.append(feature_id)
                 continue
+        # queue-dependency-dag Phase 2: the dep-gate (D2-A). An entry whose
+        # queue `deps` (D1: the flat hard-only enforcement projection of the
+        # SPEC dep-block) contain an id that is not receipt-gated-complete
+        # (D3) is HELD — recorded in the dep_gated probe list and skipped with
+        # a _diag audit line — so the walk naturally lands on the dependency
+        # first (an ORDER CORRECTION, not a skip-past-halted-work: no
+        # independent:true rail is demanded of the successor). Transitivity is
+        # emergent — a still-queued dep is incomplete by construction, so a
+        # C→B→A chain holds C and B with no graph traversal. A dangling or
+        # retired (Superseded) dep is the D4 fail-fast: canonical BLOCKED.md
+        # (blocker_kind: unknown-dependency) on the DEPENDENT, halting
+        # terminal_reason="blocked" — the unknown-host-capability shape.
+        # Placed AFTER the completion/cloud/device/host/research/park/budget
+        # skips and BEFORE the skip-ahead branch; runs regardless of
+        # --strict-research-halt (a correctness gate on an opt-in field, not a
+        # throughput optimization — there is no legacy behavior to restore for
+        # entries that carry `deps`). Entries WITHOUT `deps` never enter this
+        # block — byte-identical on every path.
+        #
+        # queue-dependency-dag Phase 4 (D5): probe-time DRIFT diagnostic —
+        # gated on the entry CARRYING a `deps` key (an opted-in entry), so
+        # legacy entries (no key) emit nothing even when their SPEC has a dep
+        # block. Compares the queue set against the SPEC's parsed hard-dep set
+        # (reusing _hc_spec_text — the walk's existing per-entry SPEC read, so
+        # zero additional file I/O). Lint-grade: a mismatch warns, never halts.
+        if "deps" in entry:
+            _drift_spec_hard = sorted({
+                d["feature_id"]
+                for d in parse_dep_block(_hc_spec_text)
+                if d.get("kind") == "hard"
+            })
+            _drift_queue = sorted(set(lazy_core.dep_ids(entry)))
+            if _drift_spec_hard != _drift_queue:
+                _diag(
+                    f"dep-drift: '{feature_id}' queue deps {_drift_queue!r} != "
+                    f"SPEC hard deps {_drift_spec_hard!r} — re-run "
+                    f"`--sync-deps --id {feature_id}` to re-project "
+                    f"(lint-grade warning; not a halt)."
+                )
+        _dg_deps = lazy_core.dep_ids(entry)
+        if _dg_deps:
+            if _dep_dir_map is None:
+                _dep_dir_map = {
+                    e.get("id"): (
+                        repo_root / "docs" / "features" / e.get("spec_dir")
+                    ).resolve()
+                    for e in queue
+                    if isinstance(e, dict) and e.get("id") and e.get("spec_dir")
+                }
+            _dg_missing: list[str] = []
+            _dg_bad: tuple[str, str] | None = None
+            for _dg_dep in _dg_deps:
+                _dg_status = lazy_core.dep_completion_status(
+                    _dg_dep, repo_root, pipeline="feature",
+                    id_dir_map=_dep_dir_map,
+                )
+                if _dg_status == "complete":
+                    continue
+                if _dg_status == "incomplete":
+                    _dg_missing.append(_dg_dep)
+                    continue
+                # missing / unsatisfiable-* → D4 fail-fast on the FIRST bad dep.
+                _dg_bad = (_dg_dep, _dg_status)
+                break
+            if _dg_bad is not None:
+                blocked_file = spec_path / "BLOCKED.md"
+                if not blocked_file.exists():
+                    body = lazy_core.format_unknown_dependency_blocker(
+                        feature_id, _dg_bad[0], _dg_bad[1],
+                        sorted(_dep_dir_map or {}),
+                    )
+                    _write_yaml_blocked_sentinel(
+                        blocked_file,
+                        feature_id=feature_id,
+                        phase="Dependency validation",
+                        blocker_kind="unknown-dependency",
+                        blocked_at=lazy_core.utc_now_iso(),
+                        retry_count=0,
+                        body=body,
+                    )
+                _diag(
+                    f"unknown-dependency: {name} declares queue dep "
+                    f"'{_dg_bad[0]}' which classified {_dg_bad[1]!r} — wrote "
+                    f"BLOCKED.md (blocker_kind: unknown-dependency). Fix the "
+                    f"SPEC dep-block + --sync-deps, or drop the dep."
+                )
+                return _state(
+                    feature_id=feature_id,
+                    feature_name=name,
+                    spec_path=str(spec_path),
+                    current_step="Step 3: blocked",
+                    terminal_reason="blocked",
+                    notify_message=(
+                        f"BLOCKED: {name} — queue dependency '{_dg_bad[0]}' is "
+                        f"{_dg_bad[1]} (unknown-dependency). Awaiting input."
+                    ),
+                )
+            if _dg_missing:
+                _DEP_GATED.append({"id": feature_id, "missing": _dg_missing})
+                _diag(
+                    f"dep-gate: '{feature_id}' held — dep(s) "
+                    f"{', '.join(repr(m) for m in _dg_missing)} not Complete "
+                    f"(receipt-gated); advancing."
+                )
+                continue
         # feature-budget-guard-and-skip-ahead Phase 3: dependency-aware skip-ahead
         # past a gated head (default-on; --strict-research-halt disables it). This
         # is the FINAL gate before a candidate is dispatched, so it sees only
@@ -2287,7 +2478,13 @@ def compute_state(
                         if (spec_path / "SPEC.md").exists() else ""
                 except OSError:
                     _sa_spec_text = ""
-                _sa_deps = parse_dep_block(_sa_spec_text)
+                # queue-dependency-dag Phase 3 (D7): key 1 evaluates the UNION
+                # of SPEC hard deps ∪ queue `deps` (queue ids treated as hard,
+                # tagged source=queue for the audit line). Strictly-additive
+                # defense-in-depth — see _merged_skip_ahead_deps.
+                _sa_deps = _merged_skip_ahead_deps(
+                    parse_dep_block(_sa_spec_text), lazy_core.dep_ids(entry)
+                )
                 _sa_independent = lazy_core.parse_independent_marker(
                     _sa_spec_text, entry
                 )
@@ -2295,12 +2492,13 @@ def compute_state(
                     _sa_deps, gated_ids, _sa_independent
                 )
                 # Skip-ahead audit (RESEARCH_SUMMARY rich-audit leg): gated-head
-                # id(s) + the skipped-to candidate + the evaluated dep array +
-                # the readiness verdict — emitted on EVERY skip-ahead evaluation.
+                # id(s) + the skipped-to candidate + the evaluated dep array
+                # (with each dep's source: spec | queue) + the readiness
+                # verdict — emitted on EVERY skip-ahead evaluation.
                 _diag(
                     f"skip-ahead audit: gated_heads={sorted(gated_ids)!r} "
                     f"candidate='{feature_id}' independent={_sa_independent} "
-                    f"deps={[{'feature_id': d.get('feature_id'), 'kind': d.get('kind')} for d in _sa_deps]!r} "
+                    f"deps={[{'feature_id': d.get('feature_id'), 'kind': d.get('kind'), 'source': d.get('source')} for d in _sa_deps]!r} "
                     f"→ {'DISPATCH' if _sa_ready else 'SKIP (not skip-ahead-ready)'}"
                 )
                 if not _sa_ready:
@@ -2509,6 +2707,30 @@ def compute_state(
                     f"--feature-id '{scope_feature_id}' matched no entry in "
                     "docs/features/queue.json — check the id (typo?) or that the "
                     "feature is queued. No cycle was dispatched."
+                ),
+            )
+        # queue-dependency-dag D4: honest all-dep-gated terminal. The walk
+        # exhausted and at least one item was HELD on an incomplete declared
+        # dependency this probe — a clean, sanctioned stop (the holds re-open
+        # automatically as their deps complete), NOT all-features-complete (a
+        # false completion). Placed AFTER the specific global terminals above
+        # (cloud/device/host/research/scoped-id keep their precedence) and
+        # BEFORE the all-parked fallback (a dep-gated item is held for a more
+        # specific reason than "parked"); the flush names each held item and
+        # its incomplete deps. Gated on a hold having actually occurred, so
+        # dep-less queues are byte-identical.
+        if _DEP_GATED:
+            _dg_lines = "; ".join(
+                f"{r['id']} waiting on {', '.join(r['missing'])}"
+                for r in _DEP_GATED
+            )
+            return _state(
+                terminal_reason="queue-exhausted-dependency-gated",
+                notify_message=(
+                    f"Queue exhausted — {len(_DEP_GATED)} item(s) "
+                    f"dependency-gated: {_dg_lines}. Each re-opens "
+                    "automatically once its dependencies are Complete with a "
+                    "receipt."
                 ),
             )
         # Honest all-parked terminal (SPEC D3): when every remaining feature was
@@ -7245,6 +7467,461 @@ def run_smoke_tests() -> int:
         print("  [skip-ahead] default skip-onto-independent + unmarked/downstream "
               "NOT-skipped + --strict-research-halt legacy halt: ok")
 
+        # (d) queue-dependency-dag Phase 3 (D7): skip-ahead key 1 evaluates
+        #     the UNION of SPEC hard deps ∪ queue `deps` (queue ids treated as
+        #     hard per D1's field semantics). _merged_skip_ahead_deps is the
+        #     merge seam: queue ids append as hard deps tagged source=queue,
+        #     deduped against the SPEC-parsed set (tagged source=spec).
+        _sa_merged = _merged_skip_ahead_deps(
+            [{"feature_id": "feat-sa-head", "kind": "hard", "reason": "r"}],
+            ["feat-sa-other", "feat-sa-head"],
+        )
+        if [(d.get("feature_id"), d.get("kind"), d.get("source"))
+                for d in _sa_merged] != [
+            ("feat-sa-head", "hard", "spec"),
+            ("feat-sa-other", "hard", "queue"),
+        ]:
+            failures.append(
+                "[skip-ahead-union] merge seam: expected SPEC dep (source=spec) "
+                "+ deduped queue dep (source=queue), got "
+                f"{_sa_merged!r}"
+            )
+        if lazy_core.skip_ahead_ready(_sa_merged, {"feat-sa-other"}, True):
+            failures.append(
+                "[skip-ahead-union] a queue-sourced hard dep on a gated id must "
+                "block skip-ahead readiness (key 1 union)"
+            )
+
+        # (e) End-to-end layering: a queue-deps-only downstream candidate
+        #     (SPEC block '(none)', independent:true, queue deps on the gated
+        #     head) is NOT dispatched past the gated head — the Phase-2
+        #     dep-gate holds it first (dep_gated names it), and the union is
+        #     the defense-in-depth second layer. The independent, dep-free
+        #     alternative dispatches.
+        _sa_make(
+            sa_root, "feat-sa-qdep",
+            spec=(
+                "---\nindependent: true\n---\n\n# Spec\n\n**Status:** Draft\n\n"
+                "**Depends on:** (none)\n"
+            ),
+        )
+        (sa_root / "docs" / "features" / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-sa-head", "name": "SA Head",
+                 "spec_dir": "feat-sa-head", "tier": 1},
+                {"id": "feat-sa-qdep", "name": "SA QDep",
+                 "spec_dir": "feat-sa-qdep", "tier": 2,
+                 "deps": ["feat-sa-head"]},
+                {"id": "feat-sa-indep", "name": "SA Indep",
+                 "spec_dir": "feat-sa-indep", "tier": 4},
+            ]
+        }))
+        sa_st4 = compute_state(sa_root, cloud=False, real_device=True)
+        if sa_st4.get("feature_id") != "feat-sa-indep":
+            failures.append(
+                "[skip-ahead-union] queue-deps-only candidate: expected "
+                "feat-sa-indep dispatched (feat-sa-qdep held/blocked), got "
+                f"{sa_st4.get('feature_id')!r}"
+            )
+        if sa_st4.get("dep_gated") != [
+            {"id": "feat-sa-qdep", "missing": ["feat-sa-head"]},
+        ]:
+            failures.append(
+                "[skip-ahead-union] queue-deps-only candidate: expected the "
+                "dep-gate hold to surface feat-sa-qdep, got "
+                f"{sa_st4.get('dep_gated')!r}"
+            )
+        print("  [skip-ahead-union] SPEC∪queue merged key-1 deps + "
+              "queue-deps-only candidate not dispatched: ok")
+
+        # -------------------------------------------------------------------
+        # Functional check: queue-dependency-dag Phase 2 — the queue `deps`
+        # dep-gate. Covers: hold + advance (B(deps:[A]) held, A dispatched),
+        # transitive hold (C→B→A, no traversal special-case), the gate running
+        # regardless of --strict-research-halt (D2), completion unlock
+        # (receipt-gated, D3), reorder-composes (D8), the unknown-dependency
+        # fail-fast for dangling + Superseded deps (D4), and the all-gated
+        # clean terminal.
+        # -------------------------------------------------------------------
+        def _dg_make(root: Path, fid: str, *, status: str = "Draft",
+                     receipt: bool = False) -> Path:
+            fdir = root / "docs" / "features" / fid
+            fdir.mkdir(parents=True, exist_ok=True)
+            (fdir / "SPEC.md").write_text(
+                f"# {fid}\n\n**Status:** {status}\n\n**Depends on:** (none)\n",
+                encoding="utf-8",
+            )
+            if receipt:
+                (fdir / "COMPLETED.md").write_text(
+                    f"---\nkind: completed\nfeature_id: {fid}\n"
+                    "provenance: mark-complete\n---\n\n# Completed\n",
+                    encoding="utf-8",
+                )
+            if status not in ("Complete", "Superseded"):
+                (fdir / "RESEARCH.md").write_text("# R\n")
+                (fdir / "RESEARCH_SUMMARY.md").write_text("# S\n")
+                (fdir / "PHASES.md").write_text(
+                    "# Phases\n\n### Phase 1\n- [ ] Build\n"
+                )
+                (fdir / "plans").mkdir(exist_ok=True)
+                (fdir / "plans" / f"all-phases-{fid}.md").write_text("# Plan\n")
+            return fdir
+
+        dg_root = td_path / "dep-gate"
+        dg_feats = dg_root / "docs" / "features"
+        dg_feats.mkdir(parents=True, exist_ok=True)
+        (dg_feats / "ROADMAP.md").write_text("# Roadmap\n")
+        (dg_feats / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "feat-dg-c", "name": "DG C", "spec_dir": "feat-dg-c",
+             "tier": 1, "deps": ["feat-dg-b"]},
+            {"id": "feat-dg-b", "name": "DG B", "spec_dir": "feat-dg-b",
+             "tier": 2, "deps": ["feat-dg-a"]},
+            {"id": "feat-dg-a", "name": "DG A", "spec_dir": "feat-dg-a",
+             "tier": 3},
+        ]}))
+        for _dg_fid in ("feat-dg-a", "feat-dg-b", "feat-dg-c"):
+            _dg_make(dg_root, _dg_fid)
+
+        # (a) Hold + advance + transitive: C held on B, B held on A (both
+        #     incomplete-because-queued), A dispatched. dep_gated surfaces the
+        #     holds in walk order with their missing dep ids.
+        dg_st = compute_state(dg_root, cloud=False, real_device=True)
+        if dg_st.get("feature_id") != "feat-dg-a":
+            failures.append(
+                "[dep-gate] hold+advance: expected feat-dg-a dispatched past the "
+                f"held dependents, got {dg_st.get('feature_id')!r} "
+                f"(terminal={dg_st.get('terminal_reason')!r})"
+            )
+        if dg_st.get("dep_gated") != [
+            {"id": "feat-dg-c", "missing": ["feat-dg-b"]},
+            {"id": "feat-dg-b", "missing": ["feat-dg-a"]},
+        ]:
+            failures.append(
+                "[dep-gate] hold+advance: expected dep_gated to name C(missing B) "
+                f"then B(missing A); got {dg_st.get('dep_gated')!r}"
+            )
+
+        # (b) The dep-gate is a correctness gate, NOT a throughput
+        #     optimization: it runs identically under --strict-research-halt.
+        dg_st2 = compute_state(
+            dg_root, cloud=False, real_device=True, strict_research_halt=True
+        )
+        if dg_st2.get("feature_id") != "feat-dg-a" or not dg_st2.get("dep_gated"):
+            failures.append(
+                "[dep-gate] strict-flag independence: expected the same hold "
+                f"under --strict-research-halt, got "
+                f"feature_id={dg_st2.get('feature_id')!r} "
+                f"dep_gated={dg_st2.get('dep_gated')!r}"
+            )
+
+        # (c) Completion unlock (D3 receipt-gated): flip A to Complete + a
+        #     valid COMPLETED.md receipt → next probe dispatches B normally;
+        #     C stays held on the still-queued B.
+        (dg_root / "docs" / "features" / "feat-dg-a" / "SPEC.md").write_text(
+            "# feat-dg-a\n\n**Status:** Complete\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        (dg_root / "docs" / "features" / "feat-dg-a" / "COMPLETED.md").write_text(
+            "---\nkind: completed\nfeature_id: feat-dg-a\n"
+            "provenance: mark-complete\n---\n\n# Completed\n",
+            encoding="utf-8",
+        )
+        dg_st3 = compute_state(dg_root, cloud=False, real_device=True)
+        if dg_st3.get("feature_id") != "feat-dg-b":
+            failures.append(
+                "[dep-gate] completion unlock: expected feat-dg-b dispatched once "
+                f"its dep gained Complete + receipt, got "
+                f"{dg_st3.get('feature_id')!r}"
+            )
+        if dg_st3.get("dep_gated") != [
+            {"id": "feat-dg-c", "missing": ["feat-dg-b"]},
+        ]:
+            failures.append(
+                "[dep-gate] completion unlock: expected only C still held, got "
+                f"{dg_st3.get('dep_gated')!r}"
+            )
+
+        # (d) Reorder composes (D8): queue order is pure preference, the DAG is
+        #     pure constraint — moving the dependent to head is storable and the
+        #     next probe simply holds it again.
+        lazy_core.reorder_queue(
+            dg_feats / "queue.json", "feat-dg-b", to="head",
+            queue_label="queue.json",
+        )
+        dg_st4 = compute_state(dg_root, cloud=False, real_device=True)
+        if dg_st4.get("feature_id") != "feat-dg-b":
+            failures.append(
+                "[dep-gate] reorder composes: expected feat-dg-b (dep already "
+                f"complete) after reorder-to-head, got {dg_st4.get('feature_id')!r}"
+            )
+        lazy_core.reorder_queue(
+            dg_feats / "queue.json", "feat-dg-c", to="head",
+            queue_label="queue.json",
+        )
+        dg_st5 = compute_state(dg_root, cloud=False, real_device=True)
+        if dg_st5.get("feature_id") != "feat-dg-b" or dg_st5.get("dep_gated") != [
+            {"id": "feat-dg-c", "missing": ["feat-dg-b"]},
+        ]:
+            failures.append(
+                "[dep-gate] reorder composes: dependent-at-head must be held, dep "
+                f"worked first; got feature_id={dg_st5.get('feature_id')!r} "
+                f"dep_gated={dg_st5.get('dep_gated')!r}"
+            )
+        print("  [dep-gate] hold+advance + transitive + strict-flag independence "
+              "+ completion unlock + reorder composes: ok")
+
+        # (e) Unknown-dependency fail-fast (D4): a DANGLING dep id (resolves
+        #     nowhere) writes canonical BLOCKED.md (blocker_kind:
+        #     unknown-dependency) on the DEPENDENT and halts blocked.
+        dgu_root = td_path / "dep-gate-unknown"
+        dgu_feats = dgu_root / "docs" / "features"
+        dgu_feats.mkdir(parents=True, exist_ok=True)
+        (dgu_feats / "ROADMAP.md").write_text("# Roadmap\n")
+        (dgu_feats / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "feat-dg-d", "name": "DG D", "spec_dir": "feat-dg-d",
+             "tier": 1, "deps": ["feat-dg-ghost"]},
+        ]}))
+        _dg_make(dgu_root, "feat-dg-d")
+        dgu_st = compute_state(dgu_root, cloud=False, real_device=True)
+        dgu_blocked = dgu_feats / "feat-dg-d" / "BLOCKED.md"
+        if dgu_st.get("terminal_reason") != "blocked" \
+                or dgu_st.get("feature_id") != "feat-dg-d":
+            failures.append(
+                "[dep-gate] dangling dep: expected blocked halt on feat-dg-d, got "
+                f"terminal={dgu_st.get('terminal_reason')!r} "
+                f"feature_id={dgu_st.get('feature_id')!r}"
+            )
+        if not dgu_blocked.exists():
+            failures.append("[dep-gate] dangling dep: BLOCKED.md was not written")
+        else:
+            dgu_meta = parse_sentinel(dgu_blocked) or {}
+            if dgu_meta.get("blocker_kind") != "unknown-dependency":
+                failures.append(
+                    "[dep-gate] dangling dep: expected blocker_kind "
+                    f"unknown-dependency, got {dgu_meta.get('blocker_kind')!r}"
+                )
+            if "feat-dg-ghost" not in dgu_blocked.read_text(encoding="utf-8"):
+                failures.append(
+                    "[dep-gate] dangling dep: BLOCKED.md body must name the "
+                    "offending dep id"
+                )
+
+        # (f) Superseded dep → the same unknown-dependency fail-fast (the work
+        #     never happened; silently holding would starve the dependent).
+        dgs_root = td_path / "dep-gate-superseded"
+        dgs_feats = dgs_root / "docs" / "features"
+        dgs_feats.mkdir(parents=True, exist_ok=True)
+        (dgs_feats / "ROADMAP.md").write_text("# Roadmap\n")
+        (dgs_feats / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "feat-dg-e", "name": "DG E", "spec_dir": "feat-dg-e",
+             "tier": 1, "deps": ["feat-dg-old"]},
+        ]}))
+        _dg_make(dgs_root, "feat-dg-e")
+        _dg_make(dgs_root, "feat-dg-old", status="Superseded")
+        dgs_st = compute_state(dgs_root, cloud=False, real_device=True)
+        if dgs_st.get("terminal_reason") != "blocked" \
+                or not (dgs_feats / "feat-dg-e" / "BLOCKED.md").exists():
+            failures.append(
+                "[dep-gate] superseded dep: expected unknown-dependency blocked "
+                f"halt on feat-dg-e, got terminal={dgs_st.get('terminal_reason')!r}"
+            )
+        print("  [dep-gate] dangling + superseded dep unknown-dependency "
+              "fail-fast: ok")
+
+        # (g) All-gated clean terminal: the only queued item is dep-gated on an
+        #     incomplete unqueued on-disk dir → queue-exhausted-dependency-gated
+        #     (an honest distinct terminal, never all-features-complete), flush
+        #     naming the held item.
+        dgt_root = td_path / "dep-gate-terminal"
+        dgt_feats = dgt_root / "docs" / "features"
+        dgt_feats.mkdir(parents=True, exist_ok=True)
+        (dgt_feats / "ROADMAP.md").write_text("# Roadmap\n")
+        (dgt_feats / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "feat-dg-h", "name": "DG H", "spec_dir": "feat-dg-h",
+             "tier": 1, "deps": ["feat-dg-open"]},
+        ]}))
+        _dg_make(dgt_root, "feat-dg-h")
+        _dg_make(dgt_root, "feat-dg-open")  # on-disk, incomplete, NOT queued
+        dgt_st = compute_state(dgt_root, cloud=False, real_device=True)
+        if dgt_st.get("terminal_reason") != "queue-exhausted-dependency-gated":
+            failures.append(
+                "[dep-gate] all-gated terminal: expected "
+                "queue-exhausted-dependency-gated, got "
+                f"{dgt_st.get('terminal_reason')!r}"
+            )
+        if dgt_st.get("dep_gated") != [
+            {"id": "feat-dg-h", "missing": ["feat-dg-open"]},
+        ]:
+            failures.append(
+                "[dep-gate] all-gated terminal: expected the flush to name the "
+                f"held item + missing dep, got {dgt_st.get('dep_gated')!r}"
+            )
+        if "feat-dg-h" not in (dgt_st.get("notify_message") or ""):
+            failures.append(
+                "[dep-gate] all-gated terminal: notify_message must name the "
+                f"held item, got {dgt_st.get('notify_message')!r}"
+            )
+        print("  [dep-gate] all-gated queue-exhausted-dependency-gated "
+              "terminal: ok")
+
+        # -------------------------------------------------------------------
+        # Functional check: queue-dependency-dag Phase 4 — the feeder + drift.
+        # (h) probe-time drift diagnostic: an entry CARRYING a `deps` key whose
+        #     set diverges from the SPEC's parsed hard-dep set emits a
+        #     lint-grade dep-drift warning (never a halt; the item still
+        #     routes). Entries without the key emit nothing (byte-identity —
+        #     pinned by every pre-existing fixture + the baselines).
+        # -------------------------------------------------------------------
+        dgr_root = td_path / "dep-drift"
+        dgr_feats = dgr_root / "docs" / "features"
+        dgr_feats.mkdir(parents=True, exist_ok=True)
+        (dgr_feats / "ROADMAP.md").write_text("# Roadmap\n")
+        (dgr_feats / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "feat-dg-drift", "name": "DG Drift",
+             "spec_dir": "feat-dg-drift", "tier": 1, "deps": []},
+        ]}))
+        dgr_dir = _dg_make(dgr_root, "feat-dg-drift")
+        # SPEC declares one hard dep the queue field does not carry.
+        (dgr_dir / "SPEC.md").write_text(
+            "# feat-dg-drift\n\n**Status:** Draft\n\n"
+            "**Depends on:**\n- feat-dg-drift-up — hard — upstream contract\n",
+            encoding="utf-8",
+        )
+        dgr_st = compute_state(dgr_root, cloud=False, real_device=True)
+        if dgr_st.get("feature_id") != "feat-dg-drift":
+            failures.append(
+                "[dep-drift] expected the drifted entry to still route "
+                f"normally (lint-grade), got {dgr_st.get('feature_id')!r} "
+                f"terminal={dgr_st.get('terminal_reason')!r}"
+            )
+        if not any("dep-drift" in d for d in dgr_st.get("diagnostics", [])):
+            failures.append(
+                "[dep-drift] expected a dep-drift diagnostic naming the "
+                f"diverged sets; got {dgr_st.get('diagnostics')!r}"
+            )
+        print("  [dep-drift] queue-vs-SPEC hard-dep drift diagnostic "
+              "(lint-grade, no halt): ok")
+
+        # -------------------------------------------------------------------
+        # (i) enqueue_adhoc --deps: an ad-hoc item can declare deps at enqueue
+        #     time (validated: reserved bug:/feature: prefixes refused).
+        # -------------------------------------------------------------------
+        enqd_root = td_path / "enqueue-deps-test"
+        enqd_feats = enqd_root / "docs" / "features"
+        enqd_feats.mkdir(parents=True, exist_ok=True)
+        (enqd_feats / "queue.json").write_text(json.dumps({"queue": []}))
+        (enqd_feats / "ROADMAP.md").write_text("# Roadmap\n")
+        enqd_res = enqueue_adhoc(
+            enqd_root, "adhoc-dep", "Adhoc Dep", "do it",
+            deps=["feat-dg-up"],
+        )
+        enqd_queue = json.loads((enqd_feats / "queue.json").read_text())
+        if not enqd_res.get("enqueued") \
+                or enqd_queue["queue"][0].get("deps") != ["feat-dg-up"]:
+            failures.append(
+                "[enqueue-deps] expected the prepended entry to carry "
+                f"deps=['feat-dg-up']; got {enqd_queue['queue'][0]!r}"
+            )
+        try:
+            enqueue_adhoc(
+                enqd_root, "adhoc-dep-bad", "Bad", "x", deps=["bug:some-bug"],
+            )
+            failures.append(
+                "[enqueue-deps] a reserved bug:/feature: prefixed dep id must "
+                "be refused (_die), but was accepted"
+            )
+        except SystemExit:
+            pass
+        print("  [enqueue-deps] --deps stored on the ad-hoc entry + reserved "
+              "prefix refused: ok")
+
+        # -------------------------------------------------------------------
+        # (j) --sync-deps CLI (subprocess, real handler): projects the SPEC's
+        #     hard deps into the queue entry (script-owned, atomic), noop:true
+        #     + byte-identical on re-run, and REFUSED exit 3 with zero side
+        #     effects for a cycle subagent (refuse_if_cycle_active FIRST — the
+        #     --reorder-queue/--enqueue-adhoc contract).
+        # -------------------------------------------------------------------
+        sd_root = td_path / "sync-deps-test"
+        sd_feats = sd_root / "docs" / "features"
+        sd_feats.mkdir(parents=True, exist_ok=True)
+        (sd_feats / "ROADMAP.md").write_text("# Roadmap\n")
+        (sd_feats / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "feat-sd", "name": "SD", "spec_dir": "feat-sd", "tier": 1},
+            {"id": "feat-sd-up", "name": "SD Up", "spec_dir": "feat-sd-up",
+             "tier": 2},
+        ]}, indent=2) + "\n")
+        sd_dir = _dg_make(sd_root, "feat-sd")
+        (sd_dir / "SPEC.md").write_text(
+            "# feat-sd\n\n**Status:** Draft\n\n"
+            "**Depends on:**\n- feat-sd-up — hard — upstream contract\n"
+            "- feat-sd-soft — soft — optional\n",
+            encoding="utf-8",
+        )
+        _dg_make(sd_root, "feat-sd-up")
+        _sd_script = str(Path(__file__).resolve())
+        _sd_state = td_path / "sd-state"
+        _sd_state.mkdir(parents=True, exist_ok=True)
+
+        def _sd_env(**extra: str) -> dict:
+            e = {k: v for k, v in os.environ.items()
+                 if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+            e["LAZY_STATE_DIR"] = str(_sd_state)
+            e.update(extra)
+            return e
+
+        # Cycle-subagent refusal FIRST (zero side effects proven below).
+        sd_before = (sd_feats / "queue.json").read_bytes()
+        r_sd_refuse = subprocess.run(
+            [sys.executable, _sd_script, "--sync-deps", "--id", "feat-sd",
+             "--repo-root", str(sd_root)],
+            capture_output=True, text=True,
+            env=_sd_env(LAZY_CYCLE_SUBAGENT="1"),
+        )
+        if r_sd_refuse.returncode != 3 \
+                or (sd_feats / "queue.json").read_bytes() != sd_before:
+            failures.append(
+                "[sync-deps] cycle-subagent refusal: expected exit 3 with zero "
+                f"side effects, got rc={r_sd_refuse.returncode} "
+                f"mutated={(sd_feats / 'queue.json').read_bytes() != sd_before}"
+            )
+        # Orchestrator-side write.
+        r_sd = subprocess.run(
+            [sys.executable, _sd_script, "--sync-deps", "--id", "feat-sd",
+             "--repo-root", str(sd_root)],
+            capture_output=True, text=True,
+            env=_sd_env(LAZY_ORCHESTRATOR="1"),
+        )
+        sd_queue = json.loads((sd_feats / "queue.json").read_text())
+        if r_sd.returncode != 0 \
+                or sd_queue["queue"][0].get("deps") != ["feat-sd-up"]:
+            failures.append(
+                "[sync-deps] write: expected exit 0 + deps=['feat-sd-up'] "
+                f"(hard only), got rc={r_sd.returncode} "
+                f"entry={sd_queue['queue'][0]!r} stderr={r_sd.stderr[:200]!r}"
+            )
+        # Idempotent re-run: noop true, file byte-identical.
+        sd_after_first = (sd_feats / "queue.json").read_bytes()
+        r_sd2 = subprocess.run(
+            [sys.executable, _sd_script, "--sync-deps", "--id", "feat-sd",
+             "--repo-root", str(sd_root)],
+            capture_output=True, text=True,
+            env=_sd_env(LAZY_ORCHESTRATOR="1"),
+        )
+        try:
+            sd_out2 = json.loads(r_sd2.stdout)
+        except json.JSONDecodeError:
+            sd_out2 = {}
+        if r_sd2.returncode != 0 or sd_out2.get("noop") is not True \
+                or (sd_feats / "queue.json").read_bytes() != sd_after_first:
+            failures.append(
+                "[sync-deps] idempotent re-run: expected noop:true + "
+                f"byte-identical file, got rc={r_sd2.returncode} "
+                f"out={sd_out2!r}"
+            )
+        print("  [sync-deps] cycle-subagent exit-3 refusal + hard-only "
+              "projection + idempotent noop: ok")
+
         # Functional check: enqueue_adhoc prepends the queue, seeds the brief,
         # creates the spec dir, and adds a ROADMAP row.
         enq_features = td_path / "enqueue-test" / "docs" / "features"
@@ -7286,6 +7963,103 @@ def run_smoke_tests() -> int:
         except SystemExit:
             pass
         print("  [enqueue] enqueue_adhoc prepend + brief + roadmap: ok")
+
+        # Functional check (toolify-auto-promotion Phase 2, D4-B): additive
+        # --stub / --at {head,tail} flags on enqueue_adhoc, byte-identical
+        # defaults. Feature-pipeline-only (bug pipeline has no stub step —
+        # justified divergence, no bug-state.py mirror).
+        enqf_root = td_path / "enqueue-flags-test"
+        enqf_features = enqf_root / "docs" / "features"
+        enqf_features.mkdir(parents=True, exist_ok=True)
+        (enqf_features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-y", "name": "Y", "spec_dir": "feat-y", "tier": 1}
+            ]
+        }))
+        (enqf_features / "ROADMAP.md").write_text("# Roadmap\n")
+        # (a) Default path byte-identity: head insert, NO "stub" key, the exact
+        # pre-change key-set on the entry.
+        res_def = enqueue_adhoc(enqf_root, "adhoc-default", "Adhoc Default", "x")
+        enqf_q1 = json.loads((enqf_features / "queue.json").read_text())
+        if enqf_q1["queue"][0].get("id") != "adhoc-default":
+            failures.append("[enqueue-flags] default: expected head insert")
+        if "stub" in enqf_q1["queue"][0]:
+            failures.append("[enqueue-flags] default: entry must NOT carry a stub key")
+        if set(enqf_q1["queue"][0].keys()) != {"id", "name", "spec_dir", "tier", "adhoc"}:
+            failures.append(
+                f"[enqueue-flags] default entry key-set drifted: "
+                f"{sorted(enqf_q1['queue'][0].keys())}"
+            )
+        if res_def.get("queue_position") != 0:
+            failures.append("[enqueue-flags] default: queue_position must be 0")
+        # (b) stub=True + at='tail' + tier=2: appended AFTER existing entries,
+        # honest queue_position, `"stub": true` on the entry.
+        res_tail = enqueue_adhoc(
+            enqf_root, "adhoc-stub-tail", "Adhoc Stub Tail", "y",
+            tier=2, stub=True, at="tail",
+        )
+        enqf_q2 = json.loads((enqf_features / "queue.json").read_text())
+        enqf_last = enqf_q2["queue"][-1]
+        if enqf_last.get("id") != "adhoc-stub-tail":
+            failures.append("[enqueue-flags] at=tail: entry must land at the queue tail")
+        if enqf_last.get("stub") is not True:
+            failures.append("[enqueue-flags] stub=True: entry missing stub: true")
+        if enqf_last.get("tier") != 2:
+            failures.append("[enqueue-flags] tier=2 did not thread")
+        if res_tail.get("queue_position") != len(enqf_q2["queue"]) - 1:
+            failures.append(
+                f"[enqueue-flags] at=tail: queue_position must be the tail index; "
+                f"got {res_tail.get('queue_position')!r}"
+            )
+        if enqf_q2["queue"][0].get("id") != "adhoc-default":
+            failures.append("[enqueue-flags] at=tail: head entry must be undisturbed")
+        # (c) CLI threading: --stub --at tail --tier 2 land on the entry.
+        enqf_cli_root = td_path / "enqueue-flags-cli-test"
+        (enqf_cli_root / "docs" / "features").mkdir(parents=True, exist_ok=True)
+        enqf_env = {**os.environ, "LAZY_ORCHESTRATOR": "1"}
+        sys.stdout.flush()
+        sys.stderr.flush()
+        enqf_cli = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()),
+             "--enqueue-adhoc", "--id", "adhoc-cli-stub", "--name", "Adhoc CLI Stub",
+             "--tier", "2", "--stub", "--at", "tail",
+             "--repo-root", str(enqf_cli_root)],
+            capture_output=True, text=True, env=enqf_env,
+        )
+        if enqf_cli.returncode != 0:
+            failures.append(
+                f"[enqueue-flags] CLI --stub --at tail failed: {enqf_cli.stderr.strip()!r}"
+            )
+        else:
+            enqf_q3 = json.loads(
+                (enqf_cli_root / "docs" / "features" / "queue.json").read_text()
+            )
+            enqf_cli_entry = enqf_q3["queue"][-1]
+            if (enqf_cli_entry.get("id") != "adhoc-cli-stub"
+                    or enqf_cli_entry.get("stub") is not True
+                    or enqf_cli_entry.get("tier") != 2):
+                failures.append(
+                    f"[enqueue-flags] CLI flags did not thread: {enqf_cli_entry!r}"
+                )
+        # (d) Feature-only flags: --stub with --type bug is refused loudly
+        # (exit 2) BEFORE any queue write — never silently ignored.
+        enqf_bug = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()),
+             "--enqueue-adhoc", "--type", "bug", "--stub",
+             "--id", "adhoc-bug-stub", "--name", "X",
+             "--repo-root", str(enqf_cli_root)],
+            capture_output=True, text=True, env=enqf_env,
+        )
+        if enqf_bug.returncode != 2:
+            failures.append(
+                f"[enqueue-flags] --type bug --stub must be refused (exit 2); "
+                f"got exit {enqf_bug.returncode}"
+            )
+        if (enqf_cli_root / "docs" / "bugs" / "queue.json").exists():
+            failures.append(
+                "[enqueue-flags] --type bug --stub refusal must not write docs/bugs/queue.json"
+            )
+        print("  [enqueue-flags] default byte-identical + stub/tail/tier + bug-type refusal: ok")
 
         # Functional check (unified-pipeline-orchestrator P3 WU-1):
         # enqueue_adhoc_bug routes an ad-hoc item into docs/bugs/queue.json via
@@ -8743,6 +9517,438 @@ def run_smoke_tests() -> int:
             ro_ok = False
         print(f"  {'PASS' if ro_ok else 'FAIL'} [{fix_ro}] reorder tail/head/index/remove/missing/cycle-active/no-op")
 
+        # -------------------------------------------------------------------
+        # Fixture: harness-telemetry-ledger Phase 2 — chokepoint emission.
+        # (a) bracket: --run-start → --cycle-begin → --cycle-end → --run-end ⇒
+        #     four envelope-valid lazy-telemetry.jsonl lines sharing ONE run_id.
+        # (b) dispatch/halt: --emit-prompt under a marker emits `dispatch`
+        #     (+ `halt` when terminal_reason is in the halt set); output JSON
+        #     gains NO new keys.
+        # (c) read-path purity: a bare probe with NO marker creates neither the
+        #     state dir nor a ledger; with a marker it appends NOTHING.
+        # (d) refusal capture: subagent --apply-pseudo ⇒ exit 3 + ONE
+        #     containment-refusal line (its only side effect beyond stderr);
+        #     --verify-ledger on a dirty/non-git tree ⇒ exit 1 + gate-refusal.
+        # (e) D5-B cloud flush: a --cloud run's --run-end lands the committed
+        #     docs/telemetry/cloud/<run_id colon-stripped>.jsonl segment and
+        #     surfaces telemetry_flushed in the JSON.
+        # Driven via subprocess so the real CLI handlers run; hermetic via
+        # isolated LAZY_STATE_DIR dirs (never the live ~/.claude/state/).
+        # -------------------------------------------------------------------
+        fix_tl = "telemetry-ledger-chokepoints"
+        tl_ok = True
+        _tl_script = str(Path(__file__).resolve())
+        _TL_LEDGER = "lazy-telemetry.jsonl"
+
+        def _tl_env(state_dir: "Path", *, orchestrator: bool = True) -> dict:
+            e = {k: v for k, v in os.environ.items()
+                 if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+            e["LAZY_STATE_DIR"] = str(state_dir)
+            if orchestrator:
+                e["LAZY_ORCHESTRATOR"] = "1"
+            return e
+
+        def _tl_events(state_dir: "Path") -> list:
+            ledger = state_dir / _TL_LEDGER
+            if not ledger.exists():
+                return []
+            out = []
+            for line in ledger.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    out.append(json.loads(line))
+            return out
+
+        try:
+            # (a) full bracket — one run_id across all four events.
+            tl_state = td_path / "tl-state"
+            tl_state.mkdir(parents=True, exist_ok=True)
+            tl_repo = td_path / "tl-repo"
+            tl_repo.mkdir(parents=True, exist_ok=True)
+            for cmd in (
+                ["--run-start"],
+                ["--cycle-begin", "--feature-id", "feat-tl", "--nonce", "abc123",
+                 "--kind", "real", "--sub-skill", "execute-plan"],
+                ["--cycle-end"],
+                ["--run-end", "--reason", "terminal",
+                 "--terminal-reason", "all-features-complete"],
+            ):
+                r = subprocess.run(
+                    [sys.executable, _tl_script, "--repo-root", str(tl_repo)] + cmd,
+                    capture_output=True, text=True, env=_tl_env(tl_state),
+                )
+                if r.returncode != 0:
+                    failures.append(
+                        f"[{fix_tl}] {cmd[0]} must exit 0; got {r.returncode}: "
+                        f"{r.stderr[:200]}"
+                    )
+                    tl_ok = False
+            ev = _tl_events(tl_state)
+            got_types = [e.get("event") for e in ev]
+            if got_types != ["run-start", "cycle-begin", "cycle-end", "run-end"]:
+                failures.append(f"[{fix_tl}] bracket events wrong: {got_types}")
+                tl_ok = False
+            if ev:
+                run_ids = {e.get("run_id") for e in ev}
+                if len(run_ids) != 1 or None in run_ids:
+                    failures.append(f"[{fix_tl}] bracket must share ONE run_id: {run_ids}")
+                    tl_ok = False
+                for e in ev:
+                    if set(e) != {"v", "ts", "run_id", "pipeline", "event",
+                                  "item_id", "data"}:
+                        failures.append(f"[{fix_tl}] envelope keys wrong: {sorted(e)}")
+                        tl_ok = False
+                        break
+                if ev[0].get("pipeline") != "feature":
+                    failures.append(f"[{fix_tl}] pipeline must be 'feature': {ev[0]}")
+                    tl_ok = False
+                if ev[1].get("item_id") != "feat-tl" or ev[1]["data"].get("sub_skill") != "execute-plan":
+                    failures.append(f"[{fix_tl}] cycle-begin item/sub_skill wrong: {ev[1]}")
+                    tl_ok = False
+
+            # (b) dispatch + halt at --emit-prompt (halt fixture → blocked).
+            tl_state_b = td_path / "tl-state-b"
+            tl_state_b.mkdir(parents=True, exist_ok=True)
+            halt_root = _build_fixture(td_path, "blocker")
+            subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(halt_root),
+                 "--run-start"],
+                capture_output=True, text=True, env=_tl_env(tl_state_b),
+            )
+            r = subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(halt_root),
+                 "--emit-prompt"],
+                capture_output=True, text=True, env=_tl_env(tl_state_b),
+            )
+            probe_json = json.loads(r.stdout)
+            if "telemetry_flushed" in probe_json:
+                failures.append(f"[{fix_tl}] --emit-prompt output must gain no telemetry keys")
+                tl_ok = False
+            ev_b = _tl_events(tl_state_b)
+            types_b = [e.get("event") for e in ev_b]
+            if types_b != ["run-start", "dispatch", "halt"]:
+                failures.append(f"[{fix_tl}] emit-prompt events wrong: {types_b}")
+                tl_ok = False
+            else:
+                disp = ev_b[1]
+                if (disp.get("item_id") != "feat-b"
+                        or disp["data"].get("terminal_reason") != "blocked"):
+                    failures.append(f"[{fix_tl}] dispatch payload wrong: {disp}")
+                    tl_ok = False
+                if ev_b[2]["data"].get("terminal_reason") != "blocked":
+                    failures.append(f"[{fix_tl}] halt payload wrong: {ev_b[2]}")
+                    tl_ok = False
+
+            # (c) read-path purity — no marker: bare probe creates NOTHING.
+            tl_state_c = td_path / "tl-state-c"  # deliberately NOT created
+            pure_root = _build_fixture(td_path, "all-complete")
+            r = subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(pure_root)],
+                capture_output=True, text=True,
+                env=_tl_env(tl_state_c, orchestrator=False),
+            )
+            if r.returncode != 0:
+                failures.append(f"[{fix_tl}] bare probe must exit 0; got {r.returncode}")
+                tl_ok = False
+            if tl_state_c.exists():
+                failures.append(f"[{fix_tl}] bare probe (no marker) must not create the state dir")
+                tl_ok = False
+            #     — marker present: bare probe appends nothing.
+            before = (tl_state_b / _TL_LEDGER).read_bytes()
+            subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(pure_root)],
+                capture_output=True, text=True,
+                env=_tl_env(tl_state_b, orchestrator=False),
+            )
+            if (tl_state_b / _TL_LEDGER).read_bytes() != before:
+                failures.append(f"[{fix_tl}] bare probe under a marker must append NOTHING")
+                tl_ok = False
+
+            # (d1) subagent --apply-pseudo ⇒ exit 3 + containment-refusal line.
+            subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(halt_root),
+                 "--cycle-begin", "--feature-id", "feat-b", "--nonce", "beef",
+                 "--kind", "real", "--sub-skill", "execute-plan"],
+                capture_output=True, text=True, env=_tl_env(tl_state_b),
+            )
+            n_before = len(_tl_events(tl_state_b))
+            r = subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(halt_root),
+                 "--apply-pseudo", "__mark_complete__",
+                 str(halt_root / "docs" / "features" / "feat-b" / "SPEC.md")],
+                capture_output=True, text=True,
+                env=_tl_env(tl_state_b, orchestrator=False),
+            )
+            if r.returncode != 3:
+                failures.append(f"[{fix_tl}] subagent --apply-pseudo must exit 3; got {r.returncode}")
+                tl_ok = False
+            ev_d = _tl_events(tl_state_b)
+            if len(ev_d) != n_before + 1 or ev_d[-1].get("event") != "containment-refusal":
+                failures.append(
+                    f"[{fix_tl}] refusal must append exactly ONE containment-refusal "
+                    f"line: {[e.get('event') for e in ev_d[n_before:]]}"
+                )
+                tl_ok = False
+            elif ev_d[-1]["data"].get("op") != "--apply-pseudo":
+                failures.append(f"[{fix_tl}] containment-refusal op wrong: {ev_d[-1]}")
+                tl_ok = False
+
+            # (d2) --verify-ledger on a non-git tree ⇒ exit 1 + gate-refusal.
+            r = subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(halt_root),
+                 "--verify-ledger",
+                 str(halt_root / "docs" / "features" / "feat-b" / "SPEC.md")],
+                capture_output=True, text=True, env=_tl_env(tl_state_b),
+            )
+            if r.returncode != 1:
+                failures.append(f"[{fix_tl}] --verify-ledger dirty must exit 1; got {r.returncode}")
+                tl_ok = False
+            ev_d2 = _tl_events(tl_state_b)
+            if not ev_d2 or ev_d2[-1].get("event") != "gate-refusal" \
+                    or ev_d2[-1]["data"].get("gate") != "verify-ledger" \
+                    or not ev_d2[-1]["data"].get("failing_check"):
+                failures.append(f"[{fix_tl}] gate-refusal (verify-ledger) missing/wrong: {ev_d2[-1:]}")
+                tl_ok = False
+
+            # (e) D5-B cloud flush at --run-end.
+            tl_state_e = td_path / "tl-state-e"
+            tl_state_e.mkdir(parents=True, exist_ok=True)
+            tl_repo_e = td_path / "tl-repo-e"
+            tl_repo_e.mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(tl_repo_e),
+                 "--cloud", "--run-start"],
+                capture_output=True, text=True, env=_tl_env(tl_state_e),
+            )
+            r = subprocess.run(
+                [sys.executable, _tl_script, "--repo-root", str(tl_repo_e),
+                 "--cloud", "--run-end", "--reason", "terminal",
+                 "--terminal-reason", "cloud-queue-exhausted"],
+                capture_output=True, text=True, env=_tl_env(tl_state_e),
+            )
+            if r.returncode != 0:
+                failures.append(f"[{fix_tl}] cloud --run-end must exit 0; got {r.returncode}")
+                tl_ok = False
+            out_e = json.loads(r.stdout) if r.stdout else {}
+            flushed = out_e.get("telemetry_flushed")
+            if not (isinstance(flushed, dict) and flushed.get("events", 0) >= 2):
+                failures.append(f"[{fix_tl}] cloud --run-end must surface telemetry_flushed: {out_e}")
+                tl_ok = False
+            else:
+                seg = Path(flushed["path"])
+                if not seg.exists() or ":" in seg.name \
+                        or seg.parent != tl_repo_e / "docs" / "telemetry" / "cloud":
+                    failures.append(f"[{fix_tl}] cloud segment missing/misplaced: {flushed}")
+                    tl_ok = False
+                else:
+                    seg_events = [json.loads(l) for l in
+                                  seg.read_text(encoding="utf-8").splitlines() if l.strip()]
+                    if [e.get("event") for e in seg_events] != ["run-start", "run-end"]:
+                        failures.append(
+                            f"[{fix_tl}] cloud segment events wrong: "
+                            f"{[e.get('event') for e in seg_events]}"
+                        )
+                        tl_ok = False
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"[{fix_tl}] unexpected error: {exc!r}")
+            tl_ok = False
+        print(f"  {'PASS' if tl_ok else 'FAIL'} [{fix_tl}] bracket/dispatch/purity/refusal/cloud-flush emission")
+
+        # -------------------------------------------------------------------
+        # Fixture: --cycle-end commit-bracket append is FAIL-OPEN
+        # (code-doc-provenance-linkage Phase 1 / D4-A). A directory squatting on
+        # the ledger filename makes the bracket append unwritable; the
+        # orchestrator --cycle-end must STILL exit 0 and clear the marker (the
+        # bookkeeping never blocks the clear), and the JSON carries no
+        # commit_bracket key (the append honestly reported nothing recorded).
+        # Driven via subprocess so the real handler (friction check → bracket →
+        # clear) runs against a real git bracket (begin → one commit → end).
+        # -------------------------------------------------------------------
+        fix_cbfo = "cycle-end-bracket-fail-open"
+        cbfo_ok = True
+        try:
+            cbfo_state = td_path / "cbfo-state"
+            cbfo_state.mkdir(parents=True, exist_ok=True)
+            # Squat a DIRECTORY on the ledger name so open(..., "a") fails.
+            (cbfo_state / "lazy-commit-brackets.jsonl").mkdir()
+            cbfo_repo = td_path / "cbfo-repo"
+            cbfo_repo.mkdir(parents=True, exist_ok=True)
+            subprocess.run(["git", "-C", str(cbfo_repo), "init", "-q"], check=True)
+            subprocess.run(["git", "-C", str(cbfo_repo), "config", "user.email", "t@t"], check=True)
+            subprocess.run(["git", "-C", str(cbfo_repo), "config", "user.name", "t"], check=True)
+            # Hermetic: never depend on the host's commit-signing setup.
+            subprocess.run(["git", "-C", str(cbfo_repo), "config", "commit.gpgsign", "false"], check=True)
+            (cbfo_repo / "seed.txt").write_text("seed", encoding="utf-8")
+            subprocess.run(["git", "-C", str(cbfo_repo), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(cbfo_repo), "commit", "-q", "-m", "seed"], check=True)
+            cbfo_env = {k: v for k, v in os.environ.items()
+                        if k not in ("LAZY_CYCLE_SUBAGENT",)}
+            cbfo_env["LAZY_STATE_DIR"] = str(cbfo_state)
+            cbfo_env["LAZY_ORCHESTRATOR"] = "1"
+            r = subprocess.run(
+                [sys.executable, _this_script, "--cycle-begin",
+                 "--feature-id", "feat-cbfo", "--nonce", "beef",
+                 "--repo-root", str(cbfo_repo)],
+                capture_output=True, text=True, env=cbfo_env,
+            )
+            if r.returncode != 0:
+                failures.append(f"[{fix_cbfo}] --cycle-begin must exit 0; got {r.returncode}: {r.stderr}")
+                cbfo_ok = False
+            # Advance HEAD so a real (non-empty) bracket is attempted.
+            (cbfo_repo / "work.txt").write_text("work", encoding="utf-8")
+            subprocess.run(["git", "-C", str(cbfo_repo), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(cbfo_repo), "commit", "-q", "-m", "work"], check=True)
+            r = subprocess.run(
+                [sys.executable, _this_script, "--cycle-end",
+                 "--repo-root", str(cbfo_repo)],
+                capture_output=True, text=True, env=cbfo_env,
+            )
+            if r.returncode != 0:
+                failures.append(f"[{fix_cbfo}] --cycle-end must exit 0 despite the unwritable ledger; got {r.returncode}: {r.stderr}")
+                cbfo_ok = False
+            if (cbfo_state / "lazy-cycle-active.json").exists():
+                failures.append(f"[{fix_cbfo}] --cycle-end must still clear the marker (fail-open)")
+                cbfo_ok = False
+            try:
+                cbfo_out = json.loads(r.stdout)
+                if cbfo_out.get("cycle_marker_cleared") is not True:
+                    failures.append(f"[{fix_cbfo}] JSON must report cycle_marker_cleared: true")
+                    cbfo_ok = False
+                if "commit_bracket" in cbfo_out:
+                    failures.append(f"[{fix_cbfo}] a failed append must NOT report a commit_bracket")
+                    cbfo_ok = False
+            except (json.JSONDecodeError, TypeError):
+                failures.append(f"[{fix_cbfo}] --cycle-end stdout must be JSON; got {r.stdout!r}")
+                cbfo_ok = False
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"[{fix_cbfo}] unexpected error: {exc!r}")
+            cbfo_ok = False
+        print(f"  {'PASS' if cbfo_ok else 'FAIL'} [{fix_cbfo}] unwritable bracket ledger never blocks the --cycle-end clear")
+
+
+    # -----------------------------------------------------------------------
+    # operator-halt-notifications Phase 2 — call-site wiring fixture.
+    # Drives main() IN-PROCESS (patched argv + captured stdout) against a
+    # needs-input halt with a fake config (LAZY_NOTIFY_URL) and a
+    # monkeypatched module-level ntfy sender, asserting the PRODUCTION
+    # binding end-to-end: the FIRST probe pages exactly once, the SECOND
+    # probe dedups on the sentinel identity (zero further sends), and a
+    # LAZY_NOTIFY_DISABLE=1 probe is byte-identical to the deduped probe.
+    # Hermetic: LAZY_STATE_DIR temp dir; env, sender, argv, and the active-
+    # repo binding are all restored.
+    # -----------------------------------------------------------------------
+    fix_nh = "notify-halt-call-site"
+    nh_ok = True
+    try:
+        import io as _nh_io
+        with tempfile.TemporaryDirectory(prefix="lazy-notify-fixture-") as nh_td:
+            nh_root = Path(nh_td) / "repo"
+            nh_feat = nh_root / "docs" / "features" / "feat-nh"
+            nh_feat.mkdir(parents=True)
+            (nh_root / "docs" / "features" / "queue.json").write_text(json.dumps({
+                "queue": [{"id": "feat-nh", "name": "Notify Halt",
+                           "spec_dir": "feat-nh", "tier": 1}]
+            }), encoding="utf-8")
+            (nh_root / "docs" / "features" / "ROADMAP.md").write_text(
+                "# Roadmap\n", encoding="utf-8")
+            (nh_feat / "SPEC.md").write_text(
+                "# Notify Halt\n\n**Status:** Draft\n", encoding="utf-8")
+            (nh_feat / "NEEDS_INPUT.md").write_text(
+                "---\nkind: needs-input\nfeature_id: feat-nh\nwritten_by: spec\n"
+                "decisions:\n  - Which channel?\ndate: 2026-07-04\n---\nbody\n",
+                encoding="utf-8",
+            )
+            nh_state_dir = Path(nh_td) / "state"
+            nh_state_dir.mkdir()
+            nh_saved_env = {k: os.environ.get(k) for k in
+                            ("LAZY_STATE_DIR", "LAZY_NOTIFY_URL",
+                             "LAZY_NOTIFY_DISABLE")}
+            os.environ["LAZY_STATE_DIR"] = str(nh_state_dir)
+            os.environ["LAZY_NOTIFY_URL"] = "https://ntfy.example/fixture-topic"
+            os.environ.pop("LAZY_NOTIFY_DISABLE", None)
+            nh_sends: list = []
+            nh_real_send = lazy_core._ntfy_send
+            nh_prev_repo = getattr(lazy_core, "_active_repo_root", None)
+            lazy_core._ntfy_send = (
+                lambda url, t, b, l=None: nh_sends.append((url, t, b, l))
+            )
+            nh_argv = sys.argv
+
+            def _nh_run() -> str:
+                buf = _nh_io.StringIO()
+                sys.argv = ["lazy-state.py", "--repo-root", str(nh_root)]
+                real_stdout = sys.stdout
+                sys.stdout = buf
+                try:
+                    rc = main()
+                finally:
+                    sys.stdout = real_stdout
+                    sys.argv = nh_argv
+                if rc != 0:
+                    raise AssertionError(f"main() must exit 0, got {rc}")
+                return buf.getvalue()
+
+            try:
+                out1 = _nh_run()
+                st1 = json.loads(out1)
+                if st1.get("terminal_reason") != "needs-input":
+                    failures.append(
+                        f"[{fix_nh}] expected terminal_reason='needs-input', "
+                        f"got {st1.get('terminal_reason')!r}")
+                    nh_ok = False
+                if len(nh_sends) != 1:
+                    failures.append(
+                        f"[{fix_nh}] first probe must page exactly once, "
+                        f"got {len(nh_sends)} send(s)")
+                    nh_ok = False
+                else:
+                    nh_url, nh_title, nh_body, _nh_link = nh_sends[0]
+                    if nh_url != "https://ntfy.example/fixture-topic":
+                        failures.append(
+                            f"[{fix_nh}] configured topic URL must be threaded "
+                            f"to the sender, got {nh_url!r}")
+                        nh_ok = False
+                    if not nh_title.startswith("NEEDS INPUT"):
+                        failures.append(
+                            f"[{fix_nh}] title must be notify_message verbatim, "
+                            f"got {nh_title!r}")
+                        nh_ok = False
+                    if "1. Which channel?" not in nh_body:
+                        failures.append(
+                            f"[{fix_nh}] body must carry the decisions "
+                            f"one-liner, got {nh_body!r}")
+                        nh_ok = False
+                out2 = _nh_run()
+                if len(nh_sends) != 1:
+                    failures.append(
+                        f"[{fix_nh}] second probe must dedup (still 1 send), "
+                        f"got {len(nh_sends)}")
+                    nh_ok = False
+                os.environ["LAZY_NOTIFY_DISABLE"] = "1"
+                out3 = _nh_run()
+                if out3 != out2:
+                    failures.append(
+                        f"[{fix_nh}] LAZY_NOTIFY_DISABLE probe must be "
+                        f"byte-identical to a deduped probe")
+                    nh_ok = False
+                if len(nh_sends) != 1:
+                    failures.append(
+                        f"[{fix_nh}] kill switch must not send, "
+                        f"got {len(nh_sends)}")
+                    nh_ok = False
+            finally:
+                lazy_core._ntfy_send = nh_real_send
+                lazy_core._active_repo_root = nh_prev_repo
+                for k, v in nh_saved_env.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"[{fix_nh}] unexpected error: {exc!r}")
+        nh_ok = False
+    print(f"  {'PASS' if nh_ok else 'FAIL'} [{fix_nh}] halt + fake sender: one page, dedup on re-probe, kill switch inert")
+
+
     if failures:
         print("\nFAILURES:")
         for f in failures:
@@ -8813,8 +10019,123 @@ def main() -> int:
                               "(requires --session-id). Gated by "
                               "refuse_if_cycle_active (exit 3 for a cycle "
                               "subagent). single-slot-marker-ownership-race."))
+    parser.add_argument("--record-intervention", dest="record_intervention",
+                        action="store_true",
+                        help=("intervention-efficacy-tracking: write the "
+                              "intervention record (hypothesis ledger capture) "
+                              "for a shipped harness change to "
+                              "docs/interventions/<id>.md. Requires --id. "
+                              "Optional: --spec-dir (item dir carrying the "
+                              "## Intervention Hypothesis block), --pipeline, "
+                              "--shipped-commit/--shipped-date (D9 backfill — "
+                              "stamps provenance: backfilled), and the "
+                              "hypothesis-override flags (--target-signal, "
+                              "--expected-direction, --signal-independence, "
+                              "--review-after-runs) for the no-SPEC hardening "
+                              "path. Orchestrator-only (refuse_if_cycle_active; "
+                              "exit 3 for a cycle subagent). Idempotent — an "
+                              "existing record is never clobbered."))
+    parser.add_argument("--pipeline", dest="intervention_pipeline",
+                        choices=["feature", "bug", "hardening"],
+                        default="feature",
+                        help=("Pipeline stamped on a --record-intervention "
+                              "record (default: feature on lazy-state.py, bug "
+                              "on bug-state.py; hardening for /harden-harness "
+                              "rounds)."))
+    parser.add_argument("--shipped-commit", default=None,
+                        help=("--record-intervention D9 backfill: override the "
+                              "recorded shipped_commit (default: current HEAD). "
+                              "Stamps provenance: backfilled."))
+    parser.add_argument("--shipped-date", default=None,
+                        help=("--record-intervention D9 backfill: override the "
+                              "recorded shipped_date (YYYY-MM-DD). Stamps "
+                              "provenance: backfilled."))
+    parser.add_argument("--target-signal", default=None,
+                        help=("--record-intervention hypothesis override: "
+                              "kpi:<system>.<kpi-id> or event:<ledger-event-"
+                              "type> (for captures with no SPEC block, e.g. "
+                              "hardening rounds)."))
+    parser.add_argument("--expected-direction", default=None,
+                        choices=["decrease", "increase"],
+                        help="--record-intervention hypothesis override.")
+    parser.add_argument("--signal-independence", default=None,
+                        help=("--record-intervention hypothesis override: "
+                              "independent | self-emitted | mixed (+ optional "
+                              "justification tail)."))
+    parser.add_argument("--review-after-runs", type=int, default=None,
+                        help=("--record-intervention hypothesis override: "
+                              "post-ship run-count window before each review "
+                              "(default: 20)."))
     parser.add_argument("--tier", type=int, default=0,
                         help="Tier for the ad-hoc entry (default: 0).")
+    parser.add_argument("--stub", action="store_true",
+                        help=("toolify-auto-promotion D4-B: mark the ad-hoc queue "
+                              "entry \"stub\": true (Step-4.5 baseline-lock "
+                              "cross-check flag). Default off — entry byte-"
+                              "identical to before. Feature pipeline only "
+                              "(refused with --type bug)."))
+    parser.add_argument("--at", choices=["head", "tail"], default="head",
+                        dest="enqueue_at",
+                        help=("toolify-auto-promotion D4-B: queue landing "
+                              "position for --enqueue-adhoc. Default head "
+                              "(byte-identical prepend); tail appends so a "
+                              "promotion rides roadmap order instead of "
+                              "jumping the curated queue. Feature pipeline "
+                              "only (tail refused with --type bug)."))
+    parser.add_argument("--deps", default=None,
+                        help=("queue-dependency-dag: comma-separated hard-dep "
+                              "ids for --enqueue-adhoc (e.g. --deps a,b). "
+                              "Validated (kebab-case ids; bug:/feature: "
+                              "prefixes reserved → exit 2); stored on the "
+                              "prepended entry's `deps` field; forwarded to "
+                              "bug-state.py on --type bug. Omitted → the "
+                              "entry shape is byte-identical to before."))
+    parser.add_argument("--sync-deps", dest="sync_deps", action="store_true",
+                        help=("queue-dependency-dag D5 (orchestrator-only, "
+                              "wired at /spec-phases): project the SPEC "
+                              "**Depends on:** block's HARD deps into the "
+                              "queue entry's `deps` field (requires --id). "
+                              "Script-owned load → parse → mutate → atomic "
+                              "write; idempotent (noop:true when in sync; "
+                              "empty hard set removes the key). Gated by "
+                              "refuse_if_cycle_active FIRST (exit 3 for a "
+                              "cycle subagent, zero side effects)."))
+    # --- code-doc-provenance-linkage: provenance CLI (mirrored on bug-state.py) ---
+    parser.add_argument("--link-provenance", action="store_true",
+                        help=("Manual provenance link (the one-writer producer's "
+                              "second trigger): distill out-of-pipeline work "
+                              "(--commits A..B primary, --pr <n> sugar) into "
+                              "IMPLEMENTED.md + docs/provenance-index.json rows "
+                              "(provenance: manual). Requires --id; optional "
+                              "--body-file (approved prose) and --dry-run. Gated "
+                              "by refuse_if_cycle_active like --enqueue-adhoc."))
+    parser.add_argument("--commits", default=None, metavar="A..B",
+                        help="Commit range for --link-provenance (primary addressing).")
+    parser.add_argument("--pr", type=int, default=None, metavar="N",
+                        help=("PR-number sugar for --link-provenance — resolved to a "
+                              "range via `gh pr view`; degrades to a clean refusal "
+                              "naming the --commits fallback when gh is absent."))
+    parser.add_argument("--body-file", default=None, metavar="PATH",
+                        help=("Operator-approved distillate body prose for "
+                              "--link-provenance (written through the producer, "
+                              "which still owns frontmatter + index)."))
+    parser.add_argument("--dry-run", action="store_true",
+                        help=("With --link-provenance: derive + preview the "
+                              "touched-file set and distillate, write NOTHING."))
+    parser.add_argument("--provenance-lookup", default=None, metavar="PATH",
+                        help=("Pure read: print the provenance-index rows governing "
+                              "PATH ({path, governed_by: [{id, type, doc, decisions, "
+                              "provenance}]}). Never mutates; missing index → empty "
+                              "governed_by (degrades to a no-op)."))
+    parser.add_argument("--lint-provenance", action="store_true",
+                        help=("Pure read, report only (D10): dead index rows (path "
+                              "gone), high-churn files with no provenance rows, and "
+                              "cross-orphans (distillate↔index). Never mutates."))
+    parser.add_argument("--backfill-provenance", action="store_true",
+                        help=("One-shot backfill (D7): distill every receipted item "
+                              "(COMPLETED.md/FIXED.md incl. docs/bugs/_archive/) "
+                              "via message-grep derivation, provenance: backfilled. "
+                              "Idempotent (items with IMPLEMENTED.md are skipped)."))
     parser.add_argument("--materialize-wi", type=int, default=None,
                         help="Materialize ADO work item <id> from docs/work/ado-mirror.json into a doc pipeline.")
     parser.add_argument("--feature-id", default=None,
@@ -9342,6 +10663,14 @@ def main() -> int:
     # orchestrator's && chains short-circuit (parity with --verify-ledger).
     if args.gate_coverage is not None:
         result = lazy_core.gate_coverage(Path(args.gate_coverage))
+        # harness-telemetry-ledger Phase 2 (D4-B): an exit-1 Gate-1 verdict is a
+        # `gate-refusal` event (marker-gated + fail-open; adds NO output keys).
+        if result["uncovered"]:
+            lazy_core.append_telemetry_event(
+                "gate-refusal",
+                item_id=Path(args.gate_coverage).resolve().parent.name,
+                data={"gate": "gate-coverage", "uncovered": result["uncovered"]},
+            )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if not result["uncovered"] else 1
 
@@ -9435,6 +10764,13 @@ def main() -> int:
             run_started_at=run_started_at, begin_head_sha=begin_head_sha,
             sub_skill=args.sub_skill, sub_skill_args=args.sub_skill_args,
         )
+        # harness-telemetry-ledger Phase 2 (D4-B): cycle-bracket emission.
+        # Marker-gated inside the emitter (no live run → no line) and fail-open
+        # (a write failure never blocks the bracket); adds NO output keys.
+        lazy_core.append_telemetry_event(
+            "cycle-begin", item_id=args.feature_id,
+            data={"kind": args.kind, "sub_skill": args.sub_skill},
+        )
         out: dict = dict(marker)
         if reconciliation is not None and reconciliation.get("reconciled"):
             out["git_consistency_reconciliation"] = reconciliation
@@ -9451,11 +10787,30 @@ def main() -> int:
         # process-friction signals BEFORE clearing the marker; on a hit, append a
         # kind: process-friction entry to the deny ledger (best-effort, never
         # blocks the clear).
+        # harness-telemetry-ledger Phase 2: capture the cycle identity BEFORE
+        # the clear (read-only) so the cycle-end event carries the item id.
+        _tl_cycle = lazy_core.read_cycle_marker()
         friction = lazy_core.cycle_end_friction_check(repo_root=Path(args.repo_root))
+        # code-doc-provenance-linkage Phase 1 (D4-A): record this cycle's commit
+        # bracket (marker begin_head_sha → current HEAD) into the state-dir
+        # bracket ledger BEFORE clearing the marker. Fail-open — a degraded
+        # snapshot / write failure returns None and never blocks the clear.
+        bracket = lazy_core.record_cycle_commit_bracket(
+            repo_root=Path(args.repo_root)
+        )
         cleared = lazy_core.clear_cycle_marker()
+        # harness-telemetry-ledger Phase 2 (D4-B): cycle-bracket emission
+        # (marker-gated + fail-open inside the emitter; adds NO output keys).
+        lazy_core.append_telemetry_event(
+            "cycle-end", item_id=(_tl_cycle or {}).get("feature_id"),
+            data={"cleared": cleared,
+                  "process_friction": (friction or {}).get("reason")},
+        )
         out: dict = {"cycle_marker_cleared": cleared}
         if friction is not None:
             out["process_friction"] = friction
+        if bracket is not None:
+            out["commit_bracket"] = bracket
         sys.stdout.write(json.dumps(out, indent=2) + "\n")
         return 0
 
@@ -9524,6 +10879,14 @@ def main() -> int:
                 out["last_advance_consume_count"] = restored.get(
                     "last_advance_consume_count"
                 )
+        # harness-telemetry-ledger Phase 2 (D4-B): run-bracket emission —
+        # fires AFTER write_run_marker so the fresh marker supplies the run
+        # identity (marker-gated + fail-open inside the emitter; no output keys).
+        lazy_core.append_telemetry_event(
+            "run-start",
+            data={"cloud": args.cloud, "max_cycles": args.max_cycles,
+                  "resumed_from_checkpoint": checkpoint is not None},
+        )
         sys.stdout.write(json.dumps(out, indent=2) + "\n")
         return 0
 
@@ -9671,12 +11034,31 @@ def main() -> int:
                 operator_authorized=bool(args.operator_authorized),
             )
 
+        # harness-telemetry-ledger Phase 2 (D4-B): run-bracket emission — MUST
+        # fire BEFORE delete_run_marker (the marker supplies the run identity),
+        # and before the D5-B flush so the run-end line rides the segment.
+        lazy_core.append_telemetry_event(
+            "run-end",
+            data={"reason": reason,
+                  "terminal_reason": getattr(args, "terminal_reason", None)},
+        )
+        # D5-B cloud run-end flush: persist this cloud run's ledger segment into
+        # the repo (docs/telemetry/cloud/) so it rides the final commit+push.
+        # No-op (None) for workstation runs / no matching events; fail-open.
+        telemetry_flushed = lazy_core.flush_cloud_telemetry_segment(
+            Path(args.repo_root)
+        )
+
         # Delete the marker AND the registry (both are run-scoped state).
         # clear_registry=True ensures the prompt registry does not bleed
         # across runs — entries from a previous run must never be dispatchable
         # in the next run's fresh startup.
         deleted = lazy_core.delete_run_marker(clear_registry=True)
         result_out: dict = {"run_marker_deleted": deleted, "reason": reason}
+        if telemetry_flushed is not None:
+            # Only a cloud run WITH telemetry events gains this key — every
+            # pre-feature output shape is byte-identical (no events → None).
+            result_out["telemetry_flushed"] = telemetry_flushed
         if override_note is not None:
             result_out["override"] = override_note
         if checkpoint_written is not None:
@@ -9804,6 +11186,16 @@ def main() -> int:
 
     if args.neutralize_sentinel is not None:
         result = lazy_core.neutralize_sentinel(Path(args.neutralize_sentinel), date=args.apply_date)
+        # harness-telemetry-ledger Phase 2 (D4-B): a successful neutralization
+        # is the halt-dwell END marker (`sentinel-resolved`). Marker-gated +
+        # fail-open; adds NO output keys.
+        if result.get("ok"):
+            _tl_sentinel = Path(args.neutralize_sentinel)
+            lazy_core.append_telemetry_event(
+                "sentinel-resolved",
+                item_id=_tl_sentinel.resolve().parent.name,
+                data={"sentinel": _tl_sentinel.name},
+            )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result["ok"] else 1
 
@@ -9837,6 +11229,19 @@ def main() -> int:
                 lazy_core._diag(
                     f"--apply-pseudo {name}: forward-cycle advance failed ({exc})"
                 )
+        # harness-telemetry-ledger Phase 2 (D4-B): a successful apply is a
+        # `pseudo-applied` event; an exit-1 verdict is a `gate-refusal`.
+        # Marker-gated + fail-open; adds NO output keys.
+        _tl_item = Path(spec).resolve().parent.name
+        if result.get("ok"):
+            lazy_core.append_telemetry_event(
+                "pseudo-applied", item_id=_tl_item, data={"pseudo": name},
+            )
+        else:
+            lazy_core.append_telemetry_event(
+                "gate-refusal", item_id=_tl_item,
+                data={"gate": "apply-pseudo", "pseudo": name},
+            )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result["ok"] else 1
 
@@ -9846,7 +11251,21 @@ def main() -> int:
         lazy_core.refuse_if_cycle_active("--enqueue-adhoc")
         if not args.id or not args.name:
             _die("--enqueue-adhoc requires --id and --name")
+        # queue-dependency-dag Phase 4: optional --deps a,b (comma-separated
+        # hard-dep ids). Parsed here; validated inside the enqueue helpers.
+        _adhoc_deps = (
+            [s.strip() for s in args.deps.split(",") if s.strip()]
+            if args.deps else None
+        )
         if args.adhoc_type == "bug":
+            # toolify-auto-promotion Phase 2: --stub / --at tail are FEATURE-
+            # queue-shaped (the bug pipeline has no stub step and orders by
+            # severity). Refuse loudly BEFORE any write — never silently
+            # ignore a flag the caller asked for.
+            if args.stub or args.enqueue_at == "tail":
+                _die("--stub/--at tail are feature-pipeline-only "
+                     "(bug pipeline has no stub step); drop them or use "
+                     "--type feature")
             # unified-pipeline-orchestrator P3: route into docs/bugs/queue.json
             # via the existing bug-state.py enqueue (do NOT reimplement it).
             result = enqueue_adhoc_bug(
@@ -9855,6 +11274,7 @@ def main() -> int:
                 args.name,
                 args.brief,
                 args.spec_dir,
+                deps=_adhoc_deps,
             )
         else:
             result = enqueue_adhoc(
@@ -9864,6 +11284,9 @@ def main() -> int:
                 args.brief,
                 args.spec_dir,
                 args.tier,
+                stub=args.stub,
+                at=args.enqueue_at,
+                deps=_adhoc_deps,
             )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
@@ -9890,6 +11313,23 @@ def main() -> int:
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 
+    if args.sync_deps:
+        # queue-dependency-dag D5: the script-owned SPEC→queue deps feeder.
+        # Orchestrator-only — refuse FIRST (before any read/mutate) so a cycle
+        # subagent gets exit 3 with ZERO side effects, exactly like
+        # --enqueue-adhoc / --reorder-queue.
+        lazy_core.refuse_if_cycle_active("--sync-deps")
+        if not args.id:
+            _die("--sync-deps requires --id")
+        result = lazy_core.sync_deps(
+            Path(args.repo_root) / "docs" / "features" / "queue.json",
+            args.id,
+            Path(args.repo_root) / "docs" / "features",
+            queue_label="queue.json",
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
     if args.reassert_owner:
         # single-slot-marker-ownership-race-disarms-owning-run Phase 2: the owner
         # RE-ARM path. Orchestrator-only — refuse FIRST (before any read/mutate)
@@ -9903,6 +11343,48 @@ def main() -> int:
         sys.stdout.write(json.dumps(
             {"reasserted": reasserted, "prior_status": prior}, indent=2
         ) + "\n")
+        return 0
+
+    if args.record_intervention:
+        # intervention-efficacy-tracking Phase 1: the manual / hardening-round /
+        # D9-backfill capture path (the completion-gate capture lives inside
+        # lazy_core.apply_pseudo — this CLI covers captures with no completion
+        # event). Orchestrator-only: the record is committed pipeline state, so
+        # refuse a cycle subagent FIRST (exit 3, zero side effects), exactly
+        # like --enqueue-adhoc / --reorder-queue.
+        lazy_core.refuse_if_cycle_active("--record-intervention")
+        if not args.id:
+            _die("--record-intervention requires --id")
+        # D9 honesty convention: an explicit shipped_commit/shipped_date
+        # override means this capture reconstructs an ALREADY-shipped change →
+        # provenance: backfilled (mirrors backfilled-unverified receipts).
+        provenance = (
+            "backfilled" if (args.shipped_commit or args.shipped_date)
+            else "manual"
+        )
+        overrides = {
+            "target_signal": args.target_signal,
+            "expected_direction": args.expected_direction,
+            "signal_independence": args.signal_independence,
+            "review_after_runs": args.review_after_runs,
+        }
+        overrides = {k: v for k, v in overrides.items() if v is not None}
+        spec_path = None
+        if args.spec_dir:
+            spec_path = Path(args.spec_dir)
+            if not spec_path.is_absolute():
+                spec_path = Path(args.repo_root) / spec_path
+        result = lazy_core.record_intervention(
+            Path(args.repo_root),
+            args.id,
+            pipeline=args.intervention_pipeline,
+            spec_path=spec_path,
+            shipped_commit=args.shipped_commit,
+            shipped_date=args.shipped_date,
+            provenance=provenance,
+            hypothesis_overrides=overrides or None,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 
     if args.materialize_wi is not None:
@@ -9921,6 +11403,49 @@ def main() -> int:
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 
+    if args.link_provenance:
+        # code-doc-provenance-linkage Phase 3: the manual trigger of the
+        # one-writer provenance producer. Operator-only / out-of-cycle —
+        # gated EXACTLY like --enqueue-adhoc (a cycle subagent is refused
+        # exit 3 with zero side effects).
+        lazy_core.refuse_if_cycle_active("--link-provenance")
+        if not args.id:
+            _die("--link-provenance requires --id")
+        result = lazy_core.link_provenance(
+            Path(args.repo_root), args.id,
+            commit_range=args.commits, pr=args.pr,
+            body_file=Path(args.body_file) if args.body_file else None,
+            dry_run=args.dry_run,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result.get("ok") else 1
+
+    if args.provenance_lookup is not None:
+        # code-doc-provenance-linkage Phase 4 (D6-A): PURE READ — which
+        # decision records govern this file. Not cycle-guarded: dispatched
+        # subagents are the intended consumers (read-only, like --verify-ledger).
+        result = lazy_core.provenance_lookup(
+            Path(args.repo_root), args.provenance_lookup
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.lint_provenance:
+        # code-doc-provenance-linkage Phase 5 (D10): PURE READ, report only.
+        result = lazy_core.lint_provenance(Path(args.repo_root))
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.backfill_provenance:
+        # code-doc-provenance-linkage Phase 5 (D7-A): one-shot backfill of
+        # already-receipted items through the ONE producer (honest degraded
+        # provenance: backfilled + message-grep). Operator-only — cycle-guarded
+        # like --backfill-receipts' sibling mutations.
+        lazy_core.refuse_if_cycle_active("--backfill-provenance")
+        result = lazy_core.backfill_provenance(Path(args.repo_root))
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result.get("ok") else 1
+
     if args.verify_ledger is not None:
         # Scripted completion-ledger guard: verify the four preconditions for
         # marking a feature complete. The orchestrator's && chains short-circuit
@@ -9935,6 +11460,14 @@ def main() -> int:
             Path(args.repo_root), _spec_dir,
             plan_path=Path(args.plan) if args.plan else None,
         )
+        # harness-telemetry-ledger Phase 2 (D4-B): an exit-1 ledger verdict is a
+        # `gate-refusal` event (marker-gated + fail-open; adds NO output keys).
+        if not result["ok"]:
+            lazy_core.append_telemetry_event(
+                "gate-refusal", item_id=_spec_dir.resolve().name,
+                data={"gate": "verify-ledger",
+                      "failing_check": result.get("failing_check")},
+            )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result["ok"] else 1
 
@@ -10066,6 +11599,27 @@ def main() -> int:
                     state["cycle_prompt_ref"] = None
             else:
                 state["cycle_prompt_ref"] = None
+        # harness-telemetry-ledger Phase 2 (D4-B): --emit-prompt IS the
+        # per-cycle dispatch surface — record the routed dispatch tuple (and a
+        # `halt` sibling when the terminal_reason is a halt). Marker-gated
+        # inside the emitter (a bare unmarked probe emits nothing) + fail-open;
+        # adds NO keys to the probe JSON.
+        _tl_dispatch_data = {
+            "current_step": state.get("current_step"),
+            "sub_skill": state.get("sub_skill"),
+            "terminal_reason": state.get("terminal_reason"),
+        }
+        if state.get("route_overridden_by"):
+            _tl_dispatch_data["route_overridden_by"] = state["route_overridden_by"]
+        lazy_core.append_telemetry_event(
+            "dispatch", item_id=state.get("feature_id"), data=_tl_dispatch_data,
+        )
+        if state.get("terminal_reason") in lazy_core.TELEMETRY_HALT_TERMINAL_REASONS:
+            lazy_core.append_telemetry_event(
+                "halt", item_id=state.get("feature_id"),
+                data={"terminal_reason": state.get("terminal_reason"),
+                      "current_step": state.get("current_step")},
+            )
     # --probe is strictly additive and flag-gated so that default output remains
     # byte-identical when the flag is absent.  Composes independently with
     # --repeat-count (both may be present simultaneously).
@@ -10110,6 +11664,14 @@ def main() -> int:
                     f"⚠ pending_hardening: {_pending} — forward route withheld; "
                     f"run hardening_emit_command first\n"
                 )
+    # operator-halt-notifications (D2): the terminal-emission chokepoint —
+    # page the operator on an attention-terminal halt. Config-gated (inert
+    # no-op without ~/.claude/notify.json / LAZY_NOTIFY_URL), dedup-ledgered
+    # per sentinel identity, fail-OPEN (never raises, never alters this JSON's
+    # terminal fields or the exit code). Composes with the telemetry `halt`
+    # event above — telemetry records, notify pages. Coupled-pair surface #7
+    # (lazy_parity_audit.py); mirrored in bug-state.py with pipeline="bug".
+    lazy_core.notify_halt(state, args.repo_root, pipeline="feature")
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0
 

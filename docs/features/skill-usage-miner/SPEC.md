@@ -9,7 +9,7 @@
 > high-frequency prose skills. It **proposes, never auto-archives** — archival stays a deliberate
 > operator move into `archived/` with its audit-trail row.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research
@@ -110,8 +110,7 @@ about its blind spots.
 
 ### D3. Window semantics: full corpus + `--since`, never-invoked gated by skill age
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (operator-approved 2026-07-04)`
 - **Question:** Over what time window is usage counted, and when is a zero-count skill flagged
   "never invoked" (the archival-proposal trigger)?
 - **Options:**
@@ -129,13 +128,15 @@ about its blind spots.
   - **C — no time dimension:** cheapest; loses trend and recency entirely.
 - **Recommendation:** A — the report's headline claims must survive scrutiny, and the age gate is
   what turns "no signal" into "no signal despite N months of opportunity".
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (window semantics
-  define what the operator reads and acts on).
+- **Resolution:** **A** — operator-approved 2026-07-04 — recommended option taken. Full corpus by
+  default, optional `--since YYYY-MM-DD`, a 30-day recency column, and the never-invoked flag
+  gated by git-derived skill age (`git log --follow --diff-filter=A --format=%cs`).
+  Implementation note: the 30-day recency window is anchored to the **newest corpus timestamp**
+  (not wall clock) so a saved report is byte-stable and diffs cleanly.
 
 ### D4. Scope: include repo-scoped skills; workstation-visible logs only in v1
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (operator-approved 2026-07-04)`
 - **Question:** Does v1 cover only `user/skills/` or also the 29 repo-scoped skills? And what
   about cloud sessions?
 - **Options:**
@@ -158,8 +159,11 @@ about its blind spots.
     sync infrastructure far beyond a miner.
 - **Recommendation:** A — inclusion is nearly free (the inventory is a glob; attribution is
   labeling, not gating), and the cloud caveat is a documentation obligation either way.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (v1 scope is the
-  operator's call).
+- **Resolution:** **A** — operator-approved 2026-07-04 — recommended option taken. Inventory both
+  scopes; heuristic per-repo attribution (project-dir slug substring match, labeled heuristic);
+  cloud sessions out of scope with cloud-variant skills (`*-cloud`) annotated
+  `cloud-biased undercount`. (Implementation-time count correction: the repo-scoped population is
+  30 today — 3 algobooth incl. `mcp-test`, 27 cognito-forms — not the 29 the survey snapshot said.)
 
 ### D5. Hygiene-sweep rule and placement
 
@@ -188,8 +192,7 @@ about its blind spots.
 
 ### D6. Report destination and cadence: on-demand stdout, optional `--out`, no auto-wiring
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (operator-approved 2026-07-04)`
 - **Question:** Where does the report go and what triggers it?
 - **Options:**
   - **A — on-demand CLI mirroring `toolify-miner.py`'s shape:** `--markdown` / `--json`
@@ -204,13 +207,13 @@ about its blind spots.
     long contract before the report's value is proven.
 - **Recommendation:** A for v1; revisit B/C only if the operator finds themself running it on a
   fixed cadence anyway.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (cadence and
-  destination are operator workflow).
+- **Resolution:** **A** — operator-approved 2026-07-04 — recommended option taken. On-demand CLI
+  (`--markdown` / `--json`, both when neither; `--out <file>` to save); no auto-wiring into the
+  pipeline or the retro.
 
 ### D7. Toolify cross-feed: annotate-only, never auto-enqueue
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (operator-approved 2026-07-04)`
 - **Question:** The stub asks that high-frequency prose skills be flagged as toolification
   candidates. How hard is that link?
 - **Options:**
@@ -227,8 +230,10 @@ about its blind spots.
     deliberately avoid.
 - **Recommendation:** A for v1; B becomes attractive if/when the sequence miner grows a
   session-filter flag (noted as a deferred idea, not a dependency).
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (it bounds how
-  aggressive the cross-feed is).
+- **Resolution:** **A** — operator-approved 2026-07-04 — recommended option taken. Annotate-only
+  cross-links to `docs/features/unified-pipeline-orchestrator/toolify-bar.md`; the documented
+  frequency threshold is a module constant (`TOOLIFY_CANDIDATE_THRESHOLD`); this miner never
+  invokes the sequence miner or the promotion pipeline.
 
 ### D8. Archival proposals are ready-to-review text, never executed
 
@@ -331,9 +336,13 @@ table. Nothing about the pipeline changes; this tool is never on the state-scrip
   the bare skill name with any `plugin:` prefix and leading `/` stripped); `type == "user"` text
   content is scanned with the `digest_sessions.py:125` regex. Each hit records
   (skill, detector, session file, timestamp, project dir).
-- **Inventory:** glob the two skills trees for `SKILL.md`, parse the frontmatter `name:` (fall
-  back to the dir name on a malformed header — and flag it in Hygiene), record scope
-  (`user` / `repo:<name>`). Names not in the inventory but seen in logs are reported in an
+- **Inventory:** glob the two skills trees for `SKILL.md`, record scope (`user` / `repo:<name>`).
+  *(Implementation-time correction, live-validated 2026-07-04:)* the inventory keys by the **dir
+  name**, not the frontmatter `name:` — the dir name is the invocation identity (`/foo` dispatches
+  by dir; both detectors record that form), and several real skills carry a human-title
+  frontmatter name (`name: Error Resolver`) that would break the join AND the proposal paths. A
+  missing `name:` (malformed header) and a frontmatter/dir-name mismatch are both flagged in
+  Hygiene. Names not in the inventory but seen in logs are reported in an
   `## Unknown invocations` section (renamed/archived/plugin skills) rather than dropped.
 - **Attribution (D4):** repo-scoped rows also report the share of hits whose project-dir slug
   matches their repo — labeled heuristic.
@@ -383,17 +392,16 @@ table. Nothing about the pipeline changes; this tool is never on the state-scrip
 
 ## Open Questions
 
-- **D3 — window semantics:** full corpus + `--since` + a 30-day recency column, with the
-  never-invoked flag gated by git-derived skill age, vs a simple fixed rolling window. Standing
-  recommendation: full corpus with the age gate (A).
-- **D4 — v1 scope:** include the 29 repo-scoped skills with heuristic per-repo attribution and an
-  explicit workstation-logs-only / cloud-undercount caveat, vs user-level skills only. Standing
-  recommendation: include both scopes (A).
-- **D6 — report destination/cadence:** on-demand stdout + optional `--out`, vs a committed
-  regenerated report doc or retro auto-feed. Standing recommendation: on-demand (A).
-- **D7 — toolify cross-feed:** annotate-only cross-links to the bar doc, vs auto-running the
-  sequence miner or auto-enqueueing via the sibling promotion pipeline. Standing recommendation:
-  annotate-only (A).
+All four product-behavior decisions were resolved by the operator on 2026-07-04 (each at its
+recommended option — see the per-decision `Resolution` entries above):
+
+- **D3 — window semantics:** RESOLVED → A (full corpus + `--since` + 30-day recency column;
+  never-invoked gated by git-derived skill age).
+- **D4 — v1 scope:** RESOLVED → A (both scopes inventoried; heuristic per-repo attribution;
+  workstation logs only, cloud-variant skills annotated as cloud-biased undercount).
+- **D6 — report destination/cadence:** RESOLVED → A (on-demand stdout + optional `--out`; no
+  auto-wiring).
+- **D7 — toolify cross-feed:** RESOLVED → A (annotate-only cross-links to the bar doc).
 - **Deferred empirical checks (implementation-time, not decisions):** confirm on the live corpus
   that Skill-tool `tool_use` blocks record the skill name under `input["skill"]` across current
   and older transcript formats (and whether plugin-namespaced names appear); measure a full-corpus

@@ -125,6 +125,26 @@ Procedure:
 
 If the block is missing, malformed, or all deps are soft/composes/incomplete, skip this step with a one-line note. Do NOT abort.
 
+### Step 1.6: Sync the dep-block into the queue (`--sync-deps`)
+
+The SPEC baseline is locked by this point, so its `**Depends on:**` block is settled — project it into the machine-enforced queue `deps` field now (queue-dependency-dag D5). Run the state script for the item's pipeline:
+
+```bash
+# Feature (docs/features/queue.json):
+python3 ~/.claude/scripts/lazy-state.py --sync-deps --id "<feature-id>" --repo-root "<repo-root>"
+# Bug (docs/bugs/queue.json):
+python3 ~/.claude/scripts/bug-state.py --sync-deps --id "<bug-id>" --repo-root "<repo-root>"
+```
+
+This is a deterministic, script-owned `queue.json` mutation (HARD CONSTRAINT: never hand-edit the queue): it filters the block to `kind == hard`, writes the id list into the entry's `deps` field, and is idempotent (`noop: true` + byte-stable when already in sync; an empty hard set removes the field). The prose block stays the SSOT for kinds/reasons; the queue field is the enforcement projection `compute_state()`'s dep-gate holds items on. Interpretation of results:
+
+- `noop: true` — already in sync; nothing to report.
+- `synced: true, noop: false` — the projection was written; the queue.json change rides this cycle's commit.
+- Exit 2 naming `item not queued` — the item is disk-discovered (autodiscover) with no explicit queue entry; skip with a one-line note (the SPEC block still feeds skip-ahead directly).
+- Exit 2 naming a cycle or a reserved `bug:`/`feature:` prefix — STOP and surface: the dep-block itself needs fixing before phases are drafted.
+
+Skip with a one-line note if the SPEC has no dep block (nothing to project).
+
 ### Step 2: Analyze Phase Boundaries
 
 Consider these factors when identifying phase boundaries:
@@ -186,6 +206,16 @@ The gate below includes the **SPEC-example capability audit**: every API surface
 The gate also includes the **MCP tool-existence audit** (where a repo declares `.claude/skill-config/mcp-tool-catalog.md`): every MCP tool the SPEC's validation will call is enumerated and grepped against the repo's live tool registry — a required-but-missing tool AUTO-AUTHORS a "build MCP tool X" deliverable up front rather than being discovered late at `/mcp-test` (see `docs/bugs/mcp-tooling-not-predetermined-at-planning`). Catalog absent → the MCP audit no-ops.
 
 !`cat .claude/skill-config/phases-runtime-validation.md 2>/dev/null || cat ~/.claude/skills/_components/phases-runtime-validation.md`
+
+### Step 2.8: Provenance lookup over the files the phases will touch (code-doc-provenance-linkage D6-A)
+
+Before drafting phases, run the cheap pure-read provenance lookup over each file the phases are likely to modify (the SPEC's "Files likely modified" candidates):
+
+```bash
+python3 ~/.claude/scripts/lazy-state.py --provenance-lookup <file> --repo-root .
+```
+
+It lists the decision records governing that file (`{id, doc, decisions}` rows from the committed `docs/provenance-index.json`). Read the cited `IMPLEMENTED.md` distillates whose decision ids are unfamiliar — phases must be drafted **against the real decision record**, not a reconstruction; a phase that would contradict a cited Locked Decision needs the contradiction resolved in the SPEC first (surface it, don't plan over it). Missing index / empty `governed_by` → the step is a no-op (nothing governs the file yet).
 
 ### Step 3: Propose Phase Structure
 

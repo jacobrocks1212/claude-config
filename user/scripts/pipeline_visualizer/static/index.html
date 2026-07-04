@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Lazy Pipeline Visualizer</title>
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="stylesheet" href="static/styles.css" />
 </head>
 <body>
   <!-- Screen-dim overlay + Connection-Lost banner (hidden until a poll fails) -->
@@ -52,6 +52,19 @@
       </section>
     </div>
 
+    <!-- Trends — telemetry-ledger aggregates (harness-telemetry-ledger).
+         Collapsed by default; fetches /api/trends on demand (pure-read). -->
+    <section id="trends-pane" class="pane trends-pane" aria-label="Trends">
+      <h2 class="pane-title">
+        Trends
+        <button id="trends-toggle" class="trends-toggle" type="button">Show</button>
+      </h2>
+      <div id="trends-body" class="trends-body" hidden>
+        <div id="trends-empty" class="trends-empty" hidden></div>
+        <div id="trends-content"></div>
+      </div>
+    </section>
+
     <!-- Footer — live indicator -->
     <footer class="footer">
       <span id="live-dot" class="live-dot live-dot--unknown" aria-hidden="true"></span>
@@ -62,9 +75,9 @@
   </div>
 
   <!-- Vendored UMD (no build step) — Decision 7 -->
-  <script src="/static/cytoscape.umd.js"></script>
-  <script src="/static/dagre.js"></script>
-  <script src="/static/cytoscape-dagre.js"></script>
-  <script src="/static/app.js"></script>
+  <script src="static/cytoscape.umd.js"></script>
+  <script src="static/dagre.js"></script>
+  <script src="static/cytoscape-dagre.js"></script>
+  <script src="static/app.js"></script>
 </body>
 </html>

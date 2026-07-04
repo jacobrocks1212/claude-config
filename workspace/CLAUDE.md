@@ -124,6 +124,10 @@ All Claude Code configuration is authored in the **`claude-config/`** repo and p
 - **Adding a repo:** create `claude-config/repos/<name>/.claude/`, add an entry under `Repos` in `manifest.psd1`, then run `.\setup.ps1 bootstrap -Target Repos`.
 - See `claude-config/CLAUDE.md` for the full layout, skills system, components, and hooks.
 
+### Scheduled Autonomous Runs (nightly lazy)
+
+Opted-in repos (claude-config, AlgoBooth) drain their lazy queues **nightly** via platform scheduled triggers — one `nightly-lazy-<repo>` trigger per repo (staggered UTC slots), each firing a **fresh cloud session** whose prompt invokes the batch orchestrator with a bounded budget (`/lazy-batch-cloud 10 --park`; `/lazy-batch 10 --park` in claude-config). Collisions with live interactive runs are refused by the existing run-marker arbitration (exit 3, zero side effects — never delete a marker to "fix" this), halts are parked and flushed at run end, and the morning report composes existing surfaces: completion push, the repo's `LAZY_QUEUE.md` diff, halt pages, and the fired session's transcript; MCP validation + receipt-gated completion still require a morning workstation `/lazy-batch` flush. Canonical docs — trigger prompt template, copy-paste trigger recipes (create/pause/fire-now/registry), and the failure/recovery playbook (crashed-marker recovery, refusal collisions, morning triage) — live in `claude-config/docs/features/scheduled-autonomous-runs/` (`TRIGGER_TEMPLATE.md`, `RECIPES.md`, `PLAYBOOK.md`).
+
 ## Work Repo Git Workflow
 
 In work repos (`git config user.email == jacob@cognitoforms.com`):

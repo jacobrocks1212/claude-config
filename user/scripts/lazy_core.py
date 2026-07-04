@@ -328,6 +328,453 @@ def clear_queue_stub(queue_path: "Path", feature_id: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Queue dependency DAG (queue-dependency-dag) — the optional, machine-enforced
+# `deps: ["<id>", ...]` queue-entry field on BOTH pipelines.
+#
+# D1: the queue field is a FLAT HARD-ONLY id list — an enforcement projection
+#     of the SPEC's prose `**Depends on:**` block (which stays the SSOT for
+#     kinds/reasons; see _components/dep-block-schema.md "Queue projection").
+# D6: v1 is same-pipeline only; `bug:` / `feature:` prefixes are RESERVED for a
+#     future cross-pipeline vN and rejected loudly at every id-validation
+#     chokepoint (load / --sync-deps / --enqueue-adhoc --deps).
+# D4: a dependency CYCLE is corrupt script-owned machine state — `_die` exit 2
+#     at queue load (Kahn's algorithm), naming the members. Dangling /
+#     Superseded deps are a WALK-time fail-fast (BLOCKED.md
+#     `blocker_kind: unknown-dependency` on the dependent), not a load error.
+# ---------------------------------------------------------------------------
+
+# The dep-block id regex (shared with parse_dep_block below).
+_DEP_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+# D6 — reserved cross-pipeline prefixes (rejected in v1 so v1 bare ids stay
+# forward-compatible and unambiguous when vN adds cross-queue resolution).
+_RESERVED_DEP_PREFIXES: tuple[str, ...] = ("bug:", "feature:")
+
+
+def parse_dep_block(spec_text: str) -> list[dict[str, str]]:
+    """Parse **Depends on:** block per _components/dep-block-schema.md.
+
+    Returns a list of {feature_id, kind, reason}. Empty list for '(none)' or
+    malformed/missing block (caller decides how to handle).
+
+    Relocated VERBATIM from lazy-state.py (queue-dependency-dag D9) so both
+    state scripts share ONE parser; lazy-state.py re-exports it.
+    """
+    lines = spec_text.splitlines()
+    deps: list[dict[str, str]] = []
+    i = 0
+    while i < len(lines):
+        if lines[i].rstrip() == "**Depends on:**" or re.match(r"^\*\*Depends on:\*\*\s*\(none\)\s*$", lines[i]):
+            if "(none)" in lines[i]:
+                return []
+            # Block-form: parse subsequent "- " lines until blank or heading
+            j = i + 1
+            while j < len(lines):
+                line = lines[j]
+                stripped = line.strip()
+                if not stripped:
+                    # Allow one blank line between header and list (form A in schema)
+                    if not deps:
+                        j += 1
+                        continue
+                    break
+                if stripped.startswith("# ") or stripped.startswith("## ") or stripped.startswith("---"):
+                    break
+                if not stripped.startswith("- "):
+                    break
+                # Split on " — " (space em-dash space)
+                payload = stripped[2:]
+                parts = payload.split(" — ")
+                if len(parts) >= 3:
+                    feature_id, kind, reason = parts[0].strip(), parts[1].strip(), " — ".join(parts[2:]).strip()
+                    if kind in ("hard", "soft", "composes") and _DEP_ID_RE.match(feature_id):
+                        deps.append({"feature_id": feature_id, "kind": kind, "reason": reason})
+                j += 1
+            return deps
+        i += 1
+    return []
+
+
+def dep_ids(queue_entry: "dict | None") -> list[str]:
+    """Shape-tolerant read of a queue entry's optional ``deps`` field (D1).
+
+    Returns the entry's declared hard-dependency id list. EVERY degenerate
+    shape — ``None`` entry, non-dict, absent key, non-list value, non-string
+    members — degrades to ``[]`` (or drops the member), because absent-field
+    behavior MUST be byte-identical to today on every path. Load-time
+    validation (``validate_queue_deps``) is where malformed shapes are loud;
+    this read-side helper never raises.
+    """
+    if not isinstance(queue_entry, dict):
+        return []
+    raw = queue_entry.get("deps")
+    if not isinstance(raw, list):
+        return []
+    return [d for d in raw if isinstance(d, str)]
+
+
+def detect_dep_cycle(entries: "list") -> "list[str] | None":
+    """Detect a dependency cycle among queued entries' ``deps`` edges (D4).
+
+    Kahn's algorithm over the sub-graph whose nodes are the QUEUED ids and
+    whose edges are ``dep -> dependent`` for each declared dep that is itself
+    a queued id. Edges pointing outside the queued id set (dangling deps) are
+    NOT graph edges — they are the walk-time unknown-dependency surface, not a
+    load-time cycle. ≤ tens of nodes in practice; cost negligible.
+
+    Returns the SORTED list of cycle-member ids (the Kahn residue) when a
+    cycle exists, else ``None``.
+    """
+    nodes: set[str] = set()
+    for e in entries:
+        if isinstance(e, dict) and isinstance(e.get("id"), str):
+            nodes.add(e["id"])
+    # In-degree over in-set edges only.
+    indegree: dict[str, int] = {n: 0 for n in nodes}
+    dependents: dict[str, list[str]] = {n: [] for n in nodes}
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        eid = e.get("id")
+        if eid not in nodes:
+            continue
+        for d in dep_ids(e):
+            if d in nodes:
+                indegree[eid] += 1
+                dependents[d].append(eid)
+    ready = [n for n in sorted(nodes) if indegree[n] == 0]
+    processed = 0
+    while ready:
+        n = ready.pop()
+        processed += 1
+        for dependent in dependents[n]:
+            indegree[dependent] -= 1
+            if indegree[dependent] == 0:
+                ready.append(dependent)
+    if processed == len(nodes):
+        return None
+    return sorted(n for n in nodes if indegree[n] > 0)
+
+
+def validate_dep_id_list(
+    ids: "list", queue_path: "Path | None" = None, *, context: str = "deps"
+) -> None:
+    """Validate a list of dependency ids at a write/load chokepoint.
+
+    ``_die`` exit 2 (zero mutation) on: a non-string member; a reserved
+    ``bug:`` / ``feature:`` prefix (D6 — cross-pipeline deps are reserved for
+    vN; the message says so); an id violating the dep-block id regex. Shared
+    by ``validate_queue_deps``, ``sync_deps``, and the ``--enqueue-adhoc
+    --deps`` handlers so every chokepoint rejects identically.
+    """
+    for d in ids:
+        if not isinstance(d, str):
+            _die(
+                f"invalid {context} member (must be a string id): {d!r}",
+                queue_path,
+            )
+            return  # pragma: no cover
+        if d.startswith(_RESERVED_DEP_PREFIXES):
+            _die(
+                f"invalid {context} id {d!r}: the 'bug:'/'feature:' prefixes "
+                f"are reserved for future cross-pipeline deps (vN) and are "
+                f"rejected in v1 — declare same-pipeline deps as bare ids",
+                queue_path,
+            )
+            return  # pragma: no cover
+        if not _DEP_ID_RE.match(d):
+            _die(
+                f"invalid {context} id (must match ^[a-z0-9][a-z0-9-]*$): {d!r}",
+                queue_path,
+            )
+            return  # pragma: no cover
+
+
+def validate_queue_deps(
+    items: "list", queue_path: "Path", *, queue_label: str = "queue.json"
+) -> None:
+    """Load-time validation of the optional queue ``deps`` field (D1/D4/D6).
+
+    Called by BOTH loaders (``load_queue`` / ``load_bug_queue``) over the raw
+    queue items before any merge. ``_die`` exit 2 on: a ``deps`` value that is
+    not an array; an invalid/reserved id (``validate_dep_id_list``); a
+    dependency cycle among queued entries (naming the members). Entries
+    without ``deps`` are untouched — a dep-less queue validates with zero
+    output and zero cost beyond the key scan.
+    """
+    any_deps = False
+    for e in items:
+        if not isinstance(e, dict) or "deps" not in e:
+            continue
+        raw = e.get("deps")
+        if not isinstance(raw, list):
+            _die(
+                f"{queue_label} entry {e.get('id')!r}: 'deps' must be an "
+                f"array of ids, got {type(raw).__name__}",
+                queue_path,
+            )
+            return  # pragma: no cover
+        validate_dep_id_list(raw, queue_path, context=f"'deps' (entry {e.get('id')!r})")
+        if raw:
+            any_deps = True
+    if not any_deps:
+        return
+    cycle = detect_dep_cycle(items)
+    if cycle is not None:
+        _die(
+            f"{queue_label} dependency cycle detected among entries: "
+            f"{', '.join(repr(c) for c in cycle)} — the queue is script-owned "
+            f"state and a cycle can never unblock. Fix the SPEC dep-blocks and "
+            f"re-run --sync-deps, or remove an entry via --reorder-queue --to "
+            f"remove.",
+            queue_path,
+        )
+        return  # pragma: no cover
+
+
+def sync_deps(
+    queue_path: "Path",
+    item_id: str,
+    docs_dir: "Path",
+    *,
+    queue_label: str = "queue.json",
+) -> dict:
+    """Project an item's SPEC ``**Depends on:**`` HARD deps into its queue
+    entry's ``deps`` field (queue-dependency-dag D5 — the script-owned feeder).
+
+    The SPEC dep-block stays the human/design SSOT (kinds + reasons); the
+    queue field is the enforcement projection the dep-gate reads. Invoked by
+    ``/spec-phases`` once the SPEC baseline is locked (deps are settled by
+    then); also callable ad-hoc by the operator. Mirrors the
+    ``reorder_queue``/``clear_queue_stub`` load → find → mutate →
+    ``_atomic_write`` shape.
+
+    Behavior:
+      * ``hard`` deps only (``soft``/``composes`` need the upstream to exist,
+        not be Complete — they stay prose-only by design), SPEC order,
+        deduped, ids validated (regex + reserved ``bug:``/``feature:``
+        prefixes → ``_die``).
+      * Idempotent / byte-stable: equal sets → ``noop: true``, ZERO write.
+      * Empty hard set: an existing ``deps`` key is REMOVED (restoring the
+        byte-identical no-deps entry shape); absent key → ``noop: true``.
+      * Fail-fast, zero mutation (``_die`` exit 2): missing queue id; missing
+        ``SPEC.md``; a self-dep; a projection that would create a queue cycle
+        (which would brick every subsequent probe at load — D4).
+
+    Args:
+        queue_path: the pipeline's queue.json.
+        item_id: the queue entry id to sync.
+        docs_dir: the pipeline docs root the entry's ``spec_dir`` resolves
+            under (``docs/features`` or ``docs/bugs``).
+        queue_label: diagnostic label ("queue.json" vs "bugs/queue.json").
+
+    Returns ``{"synced": bool, "noop": bool, "item_id": str,
+    "deps": [<ids>], "queue_length": int}``.
+    """
+    if not queue_path.exists():
+        _die(f"{queue_label} not found", queue_path)
+        return {}  # pragma: no cover
+    try:
+        data = json.loads(queue_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        _die(f"invalid {queue_label}: {exc}", queue_path)
+        return {}  # pragma: no cover
+    items = data.get("queue", [])
+    if not isinstance(items, list):
+        _die(f"{queue_label} 'queue' field must be an array", queue_path)
+        return {}  # pragma: no cover
+    idx = next(
+        (i for i, e in enumerate(items)
+         if isinstance(e, dict) and e.get("id") == item_id),
+        None,
+    )
+    if idx is None:
+        _die(f"item not queued: {item_id}", queue_path)
+        return {}  # pragma: no cover
+    entry = items[idx]
+
+    spec_dir = entry.get("spec_dir") or item_id
+    spec_md = docs_dir / spec_dir / "SPEC.md"
+    if not spec_md.exists():
+        _die(
+            f"--sync-deps: no SPEC.md for {item_id!r} at {spec_md} — nothing "
+            f"to project (author the SPEC dep-block first)",
+            queue_path,
+        )
+        return {}  # pragma: no cover
+    try:
+        spec_text = spec_md.read_text(encoding="utf-8")
+    except OSError as exc:
+        _die(f"--sync-deps: cannot read {spec_md}: {exc}", queue_path)
+        return {}  # pragma: no cover
+
+    hard: list[str] = []
+    for d in parse_dep_block(spec_text):
+        if d.get("kind") == "hard" and d["feature_id"] not in hard:
+            hard.append(d["feature_id"])
+    validate_dep_id_list(hard, queue_path, context=f"'deps' (sync {item_id!r})")
+    if item_id in hard:
+        _die(
+            f"--sync-deps: {item_id!r} declares a hard dep on itself — a "
+            f"self-dependency can never unblock. Fix the SPEC dep-block.",
+            queue_path,
+        )
+        return {}  # pragma: no cover
+
+    current = entry.get("deps")
+    if hard:
+        if current == hard:
+            return {"synced": True, "noop": True, "item_id": item_id,
+                    "deps": hard, "queue_length": len(items)}
+        entry["deps"] = hard
+    else:
+        if "deps" not in entry:
+            return {"synced": True, "noop": True, "item_id": item_id,
+                    "deps": [], "queue_length": len(items)}
+        entry.pop("deps", None)
+
+    # D4 write-side guard: never persist a projection that would cycle the
+    # queued graph (a cycle bricks every subsequent probe at load). Checked on
+    # the POST-mutation in-memory items; _die leaves the file untouched.
+    cycle = detect_dep_cycle(items)
+    if cycle is not None:
+        _die(
+            f"--sync-deps: projecting {item_id!r}'s hard deps would create a "
+            f"dependency cycle among queued entries: "
+            f"{', '.join(repr(c) for c in cycle)} — refusing to write. Fix "
+            f"the SPEC dep-blocks first.",
+            queue_path,
+        )
+        return {}  # pragma: no cover
+
+    data["queue"] = items
+    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+    _diag(
+        f"sync-deps: projected {item_id!r} hard deps {hard!r} into "
+        f"{queue_label}"
+    )
+    return {"synced": True, "noop": False, "item_id": item_id,
+            "deps": hard, "queue_length": len(items)}
+
+
+def dep_completion_status(
+    dep_id: str,
+    repo_root: "Path",
+    *,
+    pipeline: str,
+    id_dir_map: "dict | None" = None,
+) -> str:
+    """Classify a declared dependency for gating purposes (D3 — receipt-gated).
+
+    Returns one of:
+      * ``"complete"`` — the dep's dir resolves with the pipeline's terminal
+        status AND a content-valid completion receipt
+        (feature: ``**Status:** Complete`` + ``COMPLETED.md``;
+        bug: ``**Status:** Fixed`` + ``FIXED.md``) — the EXACT completion
+        definition ``__mark_complete__`` / ``__mark_fixed__`` already enforce.
+      * ``"incomplete"`` — the dir resolves but the dep is not (provably)
+        done: any working status, a claimed terminal status WITHOUT a valid
+        receipt, or a dir with no parseable SPEC yet (an ad-hoc seed). A
+        still-workable queued item always classifies here, so
+        "still-queued ⇒ incomplete" holds by construction.
+      * ``"unsatisfiable-superseded"`` / ``"unsatisfiable-wont-fix"`` — the
+        dep was retired without the work happening (``Superseded`` /
+        ``Won't-fix``); the dependent must fail fast (D4), never silently
+        hold.
+      * ``"missing"`` — no dir resolves anywhere (a dangling id) — the D4
+        fail-fast surface.
+
+    Resolution: ``id_dir_map`` (the caller's queued id → dir map, honoring a
+    custom ``spec_dir``) wins; then the canonical ``docs/features/<id>/`` —
+    or, for the bug pipeline, ``docs/bugs/<id>/`` THEN
+    ``docs/bugs/_archive/<id>/`` (``__mark_fixed__`` archives on fix — the D9
+    justified divergence). Pure on-disk reads; no LLM judgment, no new state.
+    """
+    candidates: list = []
+    if id_dir_map and dep_id in id_dir_map:
+        candidates.append(Path(id_dir_map[dep_id]))
+    if pipeline == "bug":
+        candidates.append(repo_root / "docs" / "bugs" / dep_id)
+        candidates.append(repo_root / "docs" / "bugs" / "_archive" / dep_id)
+        terminal_status, receipt_name, retired, retired_tag = (
+            "Fixed", "FIXED.md", "Won't-fix", "unsatisfiable-wont-fix",
+        )
+    else:
+        candidates.append(repo_root / "docs" / "features" / dep_id)
+        terminal_status, receipt_name, retired, retired_tag = (
+            "Complete", "COMPLETED.md", "Superseded",
+            "unsatisfiable-superseded",
+        )
+    for d in candidates:
+        if not d.exists() or not d.is_dir():
+            continue
+        status = spec_status(d)
+        if status == retired:
+            return retired_tag
+        if status == terminal_status and has_completion_receipt(
+            d, filename=receipt_name
+        ):
+            return "complete"
+        # Resolvable but not provably done (working status, claimed-terminal
+        # without receipt, or no SPEC yet) — the dependent holds.
+        return "incomplete"
+    return "missing"
+
+
+def format_unknown_dependency_blocker(
+    item_id: str, dep_id: str, status: str, known_ids: "list | set"
+) -> str:
+    """Build the BLOCKED.md body for the D4 unknown-dependency fail-fast.
+
+    Written on the DEPENDENT when a declared queue dep is a dangling id
+    (``missing``) or a retired upstream (``unsatisfiable-superseded`` /
+    ``unsatisfiable-wont-fix``). Names the offending id, WHY it can never
+    complete, and the known queued-id set — the
+    ``format_unknown_host_capability_blocker`` shape, for the same reason: a
+    silent hold on an unsatisfiable dep is infinite queue starvation. Shared
+    so the bug-pipeline parity mirror is a one-line reuse.
+    """
+    why = {
+        "missing": (
+            "the id resolves to no on-disk item (open or archived) and no "
+            "queued entry — a dangling reference (typo, renamed slug, or a "
+            "removed item)"
+        ),
+        "unsatisfiable-superseded": (
+            "the upstream is Superseded — it was retired without the work "
+            "happening, so this dependency can never become Complete"
+        ),
+        "unsatisfiable-wont-fix": (
+            "the upstream is Won't-fix — it was retired without the work "
+            "happening, so this dependency can never become Fixed"
+        ),
+    }.get(status, f"the dependency classified {status!r}")
+    known_sorted = sorted(set(known_ids))
+    known_line = (
+        ", ".join(f"`{k}`" for k in known_sorted) if known_sorted
+        else "(none queued)"
+    )
+    return (
+        "# Blocked — unknown dependency\n\n"
+        "## Details\n\n"
+        f"Item `{item_id}` declares a queue dependency (`deps`) on "
+        f"`{dep_id}`, but {why}.\n\n"
+        f"Classification: `{status}`.\n\n"
+        "An unsatisfiable dependency would hold this item forever (silent, "
+        "infinite queue starvation), so this is a loud, immediate validation "
+        "failure instead (blocker_kind: unknown-dependency).\n\n"
+        "## Known queued ids\n\n"
+        f"{known_line}\n\n"
+        "## Recovery Suggestion\n\n"
+        "Either fix the dep id in the item's SPEC `**Depends on:**` block and "
+        "re-run `--sync-deps --id " + item_id + "`, or drop the dependency "
+        "(edit the SPEC block, re-sync), or — if the upstream really is "
+        "retired — redesign this item against a live upstream. Then rename/"
+        "neutralize this BLOCKED.md.\n"
+    )
+
+
+# ---------------------------------------------------------------------------
 # Sentinel parsing (per _components/sentinel-frontmatter.md)
 # ---------------------------------------------------------------------------
 
@@ -4190,12 +4637,17 @@ def apply_pseudo(
         )
 
         # Write the receipt using the existing helper.
+        # code-doc-provenance-linkage Phase 1 (D4): anchor the receipt to the
+        # HEAD at flip time. write_completed_receipt has always supported the
+        # field; this call site simply never passed it. A non-git repo_root
+        # resolves None → the field is omitted (legacy byte-shape preserved).
         write_completed_receipt(
             receipt_path,
             feature_id,
             date,
             provenance="gated",
             kind=receipt_kind,
+            completed_commit=_current_head(repo_root),
             validated_via=validated_via,
             mcp_pass_count=mcp_pass_count,
             mcp_total_count=mcp_total_count,
@@ -4203,6 +4655,41 @@ def apply_pseudo(
             body_note=body_note,
         )
         wrote = [receipt_filename]
+
+        # --- Intervention capture (intervention-efficacy-tracking D1-A) ---
+        # AFTER the receipt write (the receipt is the completion's core; the
+        # record is additive) and BEHIND the receipt-noop guard above (a
+        # re-completion never re-captures). Eligibility (D2-A): the repo's
+        # top-level `"interventions": true` queue flag OR a present
+        # `## Intervention Hypothesis` SPEC block — otherwise this branch is
+        # byte-inert (no keys, no file; every non-opted-in repo unchanged).
+        # FAIL-OPEN: any capture error degrades to a `warnings` entry — the
+        # completion stands; capture can never fail a completion.
+        intervention_result: dict | None = None
+        intervention_warnings: list[str] = []
+        try:
+            _spec_md_path = spec_path / "SPEC.md"
+            _hyp_present = False
+            if _spec_md_path.exists():
+                _hyp_present = parse_intervention_hypothesis(
+                    _spec_md_path.read_text(encoding="utf-8")
+                ) is not None
+            if _interventions_queue_flag(repo_root) or _hyp_present:
+                intervention_result = record_intervention(
+                    repo_root,
+                    feature_id,
+                    pipeline="bug" if is_fixed else "feature",
+                    spec_path=spec_path,
+                    date=date,
+                    provenance="gated",
+                )
+        except Exception as exc:  # noqa: BLE001 — capture is fail-open
+            intervention_warnings.append(
+                f"intervention capture failed ({exc}) — the completion "
+                f"stands; record docs/{_INTERVENTIONS_DIRNAME}/"
+                f"{feature_id}.md was not written (re-capture manually via "
+                f"--record-intervention)"
+            )
 
         # --- (b) Flip status lines in SPEC.md and PHASES.md ---
         status_line_re = re.compile(r"^\*\*Status:\*\*.*$", re.MULTILINE)
@@ -4346,6 +4833,56 @@ def apply_pseudo(
                         f"({exc}) — strike the completed row by hand"
                     )
 
+        # --- (f) Provenance ledger (code-doc-provenance-linkage Phase 2) ---
+        # AFTER the receipt write + queue trim + ROADMAP strike (the
+        # completion's core is already durable), distill the item into
+        # IMPLEMENTED.md + merge its touched-file rows into the committed
+        # reverse index — via the ONE producer (write_provenance, D1-B).
+        # Derivation (D4): recorded commit brackets primary; message-grep as
+        # the explicitly-marked fallback (legacy items / cross-machine gaps).
+        # FAILURE CONTAINMENT: any provenance failure degrades to a
+        # ``warnings[]`` entry (the malformed-queue-trim policy) — completion
+        # is NEVER blocked by its own bookkeeping.
+        provenance_written = False
+        try:
+            derived = derive_touched_from_brackets(repo_root, feature_id)
+            prov_derivation = "commit-brackets"
+            if derived is None:
+                derived = derive_touched_from_grep(repo_root, feature_id)
+                prov_derivation = "message-grep"
+            counts_part = (
+                f" ({mcp_pass_count}/{mcp_total_count})"
+                if mcp_pass_count is not None and mcp_total_count is not None
+                else ""
+            )
+            prov_validated_line = (
+                f"Validated via: {validated_via}{counts_part}. "
+                f"Receipt: {receipt_filename} (provenance: gated)."
+            )
+            prov_result = write_provenance(
+                repo_root, spec_path, feature_id,
+                "bug" if is_fixed else "feature",
+                derived["commits"], derived["files"],
+                provenance="pipeline-gated",
+                derivation=prov_derivation,
+                date=date,
+                validated_line=prov_validated_line,
+            )
+            if prov_result.get("ok"):
+                provenance_written = True
+                wrote.extend(prov_result.get("wrote", []))
+            else:
+                queue_warnings.append(
+                    "provenance ledger could not be written "
+                    f"({prov_result.get('refused')}) — the completion stands; "
+                    "re-link via --link-provenance"
+                )
+        except Exception as exc:  # noqa: BLE001 — bookkeeping never blocks
+            queue_warnings.append(
+                f"provenance ledger could not be written ({exc}) — the "
+                "completion stands; re-link via --link-provenance"
+            )
+
         # Attach the Phase 9 WU-1 ``flipped_phases`` key (the per-phase headings
         # the completion-coherence gate auto-flipped to Complete this call).
         # Empty list when nothing needed flipping; documented in the docstring.
@@ -4365,10 +4902,26 @@ def apply_pseudo(
         # struck this call (always False for the bug/fixed path and when no
         # ROADMAP.md exists or the row was already struck).
         result["roadmap_struck"] = roadmap_struck
-        if queue_warnings:
+        # code-doc-provenance-linkage Phase 2: True iff the IMPLEMENTED.md
+        # distillate + index rows were written this call (False on a contained
+        # provenance failure — see the warnings[] entry it leaves behind).
+        result["provenance_written"] = provenance_written
+        # intervention-efficacy-tracking D1-A: attach the capture keys ONLY
+        # when capture fired (eligibility met) — a non-opted-in repo's result
+        # stays byte-identical to pre-feature. `intervention_recorded` is True
+        # for a fresh record AND for an existing-record noop (the record
+        # exists either way — e.g. a prior D9 backfill).
+        if intervention_result is not None:
+            result["intervention_recorded"] = bool(
+                intervention_result.get("recorded")
+                or intervention_result.get("noop")
+            )
+            result["intervention_record"] = intervention_result.get("path")
+        all_warnings = intervention_warnings + queue_warnings
+        if all_warnings:
             existing_warnings = result.get("warnings") or []
-            result["warnings"] = existing_warnings + queue_warnings
-            for w in queue_warnings:
+            result["warnings"] = existing_warnings + all_warnings
+            for w in all_warnings:
                 print(f"WARNING: {w}", file=sys.stderr)
         return result
 
@@ -6450,6 +7003,13 @@ _DENY_LEDGER_FILENAME = "lazy-deny-ledger.jsonl"
 # --run-end --reason checkpoint; consumed (echoed + deleted) by the next
 # --run-start.  Consume-once resume context across a sanctioned pause.
 _CHECKPOINT_FILENAME = "lazy-run-checkpoint.json"
+
+# incident-auto-capture Phase 1 (D2): hook-events filename (JSONL, append-only).
+# Countable history of hook deny/error events — the single overwritten
+# hook-error.json breadcrumb stays byte-identical (it remains the at-a-glance
+# "is a hook broken" file); this file is what makes recurrence observable for
+# incident-scan.py.
+_HOOK_EVENTS_FILENAME = "hook-events.jsonl"
 
 # Phase 7: max characters retained for the ledger's reason_head / prompt_head
 # summary fields (keeps the JSONL line bounded regardless of prompt size).
@@ -9283,6 +9843,13 @@ SANCTIONED_STOP_TERMINAL: frozenset[str] = frozenset({
     "blocked-halt-for-manual", # script-emitted BLOCKED.md halt
     "needs-research",          # NEEDS_INPUT.md needs-research halt
     "queue-blocked-on-research",  # all queue items need research
+    # queue-dependency-dag D4: every remaining queue item is dep-gated (held
+    # on an incomplete declared dependency). A clean, sanctioned stop — the
+    # holds re-open automatically as their deps complete — so the orchestrator
+    # may end a run on it without --operator-authorized, exactly like the
+    # host-capability / all-parked exhaustion terminals. Emitted by BOTH state
+    # scripts (the dep-gate is a coupled-pair surface).
+    "queue-exhausted-dependency-gated",  # all remaining items held on incomplete deps
 })
 
 
@@ -10619,6 +11186,16 @@ def refuse_if_cycle_active(op_name: str) -> None:
         return
 
     feature_id = (marker or {}).get("feature_id", "<unknown>")
+    # harness-telemetry-ledger Phase 2 (D4-B): record the containment trip AFTER
+    # the refusal decision, BEFORE exit. The append-only ledger line is
+    # observability, not state — the refused op still has ZERO state side
+    # effects (same standing the deny ledger has at guard-deny time).
+    # Marker-gated (non-destructive read) + fail-open inside the emitter.
+    append_telemetry_event(
+        "containment-refusal",
+        item_id=(marker or {}).get("feature_id"),
+        data={"op": op_name, "guard": "refuse_if_cycle_active"},
+    )
     sys.stderr.write(
         f"REFUSED: `{op_name}` is an orchestrator-only operation and you are a "
         f"single cycle subagent (the lazy-cycle-active marker is present for "
@@ -10679,6 +11256,13 @@ def refuse_cycle_marker_mutation_if_subagent(op_name: str) -> None:
         return
 
     feature_id = (marker or {}).get("feature_id", "<unknown>")
+    # harness-telemetry-ledger Phase 2 (D4-B): observability-only ledger line
+    # (see refuse_if_cycle_active) — zero STATE side effects preserved.
+    append_telemetry_event(
+        "containment-refusal",
+        item_id=(marker or {}).get("feature_id"),
+        data={"op": op_name, "guard": "refuse_cycle_marker_mutation_if_subagent"},
+    )
     sys.stderr.write(
         f"REFUSED: `{op_name}` mutates the cycle-containment marker and is an "
         f"orchestrator-only operation — you are a single cycle subagent (the "
@@ -10791,6 +11375,15 @@ def refuse_run_start_clobber(incoming_pipeline: str, *, now: float | None = None
         # concurrent SECOND walker on this repo+branch+pipeline → refuse the clobber.
         existing_session = existing.get("session_id")
         forward_cycles = existing.get("forward_cycles")
+        # harness-telemetry-ledger Phase 2 (D4-B): observability-only ledger
+        # line, attributed to the LIVE run being protected (its marker supplies
+        # the run identity). Zero STATE side effects preserved.
+        append_telemetry_event(
+            "containment-refusal",
+            data={"op": "--run-start", "guard": "refuse_run_start_clobber",
+                  "incoming_pipeline": incoming_pipeline},
+            now=now,
+        )
         sys.stderr.write(
             f"REFUSED: `--run-start` (pipeline={incoming_pipeline!r}) would CLOBBER "
             f"an ACTIVE run marker for the SAME pipeline with NO checkpoint waiting "
@@ -10809,6 +11402,14 @@ def refuse_run_start_clobber(incoming_pipeline: str, *, now: float | None = None
 
     # Live, well-formed, DIFFERENT-pipeline marker → refuse the clobber.
     existing_session = existing.get("session_id")
+    # harness-telemetry-ledger Phase 2 (D4-B): observability-only ledger line
+    # (see the same-pipeline branch above). Zero STATE side effects preserved.
+    append_telemetry_event(
+        "containment-refusal",
+        data={"op": "--run-start", "guard": "refuse_run_start_clobber",
+              "incoming_pipeline": incoming_pipeline},
+        now=now,
+    )
     sys.stderr.write(
         f"REFUSED: `--run-start` (pipeline={incoming_pipeline!r}) would CLOBBER an "
         f"ACTIVE run marker owned by a DIFFERENT pipeline "
@@ -12697,6 +13298,953 @@ def append_friction_ledger_entry(
         return False
 
 
+def append_hook_event(
+    kind: str,
+    hook: str,
+    signature: str,
+    detail: str,
+    repo_root: str | None = None,
+    now: float | None = None,
+) -> bool:
+    """Append one hook deny/error event to ``hook-events.jsonl`` (JSONL).
+
+    incident-auto-capture Phase 1 (D2): the shared, best-effort appender that
+    makes hook-level denies and fail-open errors COUNTABLE. The single
+    overwritten ``hook-error.json`` breadcrumb keeps being written byte-
+    identically by its existing writers; this append-only file is the countable
+    history the ``incident-scan.py`` collector clusters over.
+
+    Entry shape (one JSON object per line):
+        {"ts": <epoch float>, "kind": "error"|"deny", "hook": <str>,
+         "repo_root": <str — best-effort attribution, may be "">,
+         "signature": <≤200 chars — the hook's own deny-signature token /
+         classified op / takeover signature; "" for errors>,
+         "detail": <≤500 chars — human-readable specifics>}
+
+    Best-effort / fail-open — the SAME sacred contract as
+    ``append_deny_ledger_entry`` / ``append_friction_ledger_entry``: an append
+    failure can NEVER change a hook's deny/allow output. This function swallows
+    its own write errors and returns False rather than raising, and callers
+    additionally wrap it, so it is safe to call from any deny/error site.
+
+    The file lives beside the deny ledger in ``claude_state_dir()`` — the keyed
+    per-repo dir in production (repo resolvable via the active-repo binding),
+    the exact ``LAZY_STATE_DIR`` dir in hermetic tests, and the un-keyed base
+    dir when no repo is resolvable (matching the breadcrumbs' residency rules).
+
+    Args:
+        kind: "deny" or "error" (the collector's kind discriminator).
+        hook: the emitting hook's name (e.g. "lazy-cycle-containment").
+        signature: the hook's per-class cluster signature (D4); "" for errors.
+        detail: human-readable specifics (deny reason head / error message).
+        repo_root: best-effort repo attribution recorded on the entry; None → "".
+        now: epoch float for ts (injectable for hermetic tests).
+
+    Returns:
+        True if the line was appended; False on any write failure (fail-open).
+    """
+    if now is None:
+        now = time.time()
+    try:
+        entry = {
+            "ts": now,
+            "kind": kind,
+            "hook": hook,
+            "repo_root": repo_root or "",
+            "signature": (signature or "")[:_LEDGER_HEAD_CHARS],
+            # Detail gets a slightly larger cap than the ledger heads: raw deny
+            # reasons are the collector's capsule evidence, but the line must
+            # stay bounded.
+            "detail": (detail or "")[:500],
+        }
+        events_path = claude_state_dir() / _HOOK_EVENTS_FILENAME
+        # Plain append (not _atomic_write): append-only file whose reader is
+        # corrupt-line-tolerant — same rationale as the deny ledger.
+        with events_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        # Fail-open: an events write must never propagate.
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Commit-bracket ledger (code-doc-provenance-linkage Phase 1 / SPEC D4-A)
+#
+# Per-cycle commit brackets are the deterministic raw material for the
+# provenance producer's touched-file-set derivation: at --cycle-end (BOTH state
+# scripts — coupled pair) the cycle marker's begin_head_sha → current-HEAD span
+# is appended as {feature_id, begin_sha, end_sha, ts} to
+# ``lazy-commit-brackets.jsonl`` in the per-repo keyed state dir. Append-only,
+# FAIL-OPEN — the identical contract to append_friction_ledger_entry: a write
+# failure returns False and never blocks the --cycle-end marker clear.
+# ---------------------------------------------------------------------------
+
+_COMMIT_BRACKETS_FILENAME = "lazy-commit-brackets.jsonl"
+
+
+def append_commit_bracket(
+    feature_id: str,
+    begin_sha: str,
+    end_sha: str,
+    now: float | None = None,
+) -> bool:
+    """Append one commit-bracket record to the state-dir bracket ledger.
+
+    Entry shape (one JSON object per line):
+        {"ts": <epoch float>, "feature_id": <str>,
+         "begin_sha": <str>, "end_sha": <str>}
+
+    Best-effort / fail-open: swallows its own write errors and returns False
+    rather than raising, so a ledger-write failure never derails the
+    --cycle-end marker clear (identical to append_friction_ledger_entry).
+
+    Returns:
+        True if the line was appended; False on any write failure.
+    """
+    if now is None:
+        now = time.time()
+    try:
+        entry = {
+            "ts": now,
+            "feature_id": feature_id,
+            "begin_sha": begin_sha,
+            "end_sha": end_sha,
+        }
+        ledger_path = claude_state_dir() / _COMMIT_BRACKETS_FILENAME
+        with ledger_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        # Fail-open: a ledger write must never propagate.
+        return False
+
+
+def read_commit_brackets(item_id: str) -> list[dict]:
+    """Return the recorded commit brackets for ``item_id`` (pure read).
+
+    Reads ``lazy-commit-brackets.jsonl`` from the state dir and filters by the
+    ``feature_id`` field (the bug pipeline records its bug ids in the same
+    field — the cycle marker's id slot is shared). Malformed lines are skipped;
+    a missing ledger / any read error degrades to ``[]`` (never raises, never
+    creates the state dir).
+    """
+    try:
+        ledger_path = claude_state_dir(create=False) / _COMMIT_BRACKETS_FILENAME
+        if not ledger_path.is_file():
+            return []
+        out: list[dict] = []
+        for line in ledger_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(entry, dict) and entry.get("feature_id") == item_id:
+                out.append(entry)
+        return out
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def record_cycle_commit_bracket(
+    repo_root: Path | None = None,
+    now: float | None = None,
+) -> dict | None:
+    """--cycle-end bracket recording (called by BOTH state scripts' handlers
+    immediately BEFORE clear_cycle_marker — coupled pair).
+
+    Reads the live cycle marker (the --cycle-begin snapshot), resolves the
+    current HEAD, and appends the {feature_id, begin_sha, end_sha} bracket to
+    the ledger via append_commit_bracket.
+
+    Degradations (all return None; NEVER raise — the clear must proceed):
+      - no/partial cycle marker (no feature_id or no begin_head_sha snapshot);
+      - HEAD unresolvable (non-git tree);
+      - begin == end (an empty bracket contributes no touched files and would
+        only bloat the ledger — skipped);
+      - the append itself failing (fail-open, returns False).
+
+    Returns:
+        The recorded bracket dict {feature_id, begin_sha, end_sha}, or None.
+    """
+    try:
+        marker = read_cycle_marker()
+        if not isinstance(marker, dict):
+            return None
+        feature_id = marker.get("feature_id")
+        begin_sha = marker.get("begin_head_sha")
+        if not feature_id or not begin_sha:
+            return None
+        root = repo_root or Path.cwd()
+        end_sha = head_sha_snapshot(root)
+        if not end_sha or end_sha == begin_sha:
+            return None
+        if not append_commit_bracket(feature_id, begin_sha, end_sha, now=now):
+            return None
+        return {
+            "feature_id": feature_id,
+            "begin_sha": begin_sha,
+            "end_sha": end_sha,
+        }
+    except Exception:  # noqa: BLE001
+        # Fail-open: bracket bookkeeping must never block the marker clear.
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Provenance producer (code-doc-provenance-linkage Phase 2)
+#
+# ONE WRITER, TWO TRIGGERS (SPEC D1-B): write_provenance is the SOLE author of
+# the per-item IMPLEMENTED.md distillate (D2-A) and the committed per-repo
+# reverse index docs/provenance-index.json (D3-A). It is called from:
+#   1. the __mark_complete__/__mark_fixed__ branch of apply_pseudo (the
+#      automatic completion-gate trigger, provenance: pipeline-gated), and
+#   2. the --link-provenance / --backfill-provenance CLI handlers (the manual
+#      trigger, provenance: manual | backfilled).
+# The provenance enum (D9): pipeline-gated | manual (+ linked_by) | backfilled.
+# The derivation enum (D4): commit-brackets | commit-range | message-grep.
+# ---------------------------------------------------------------------------
+
+_PROVENANCE_VALUES = ("pipeline-gated", "manual", "backfilled")
+_PROVENANCE_KINDS = ("feature", "bug")
+
+
+def _provenance_index_path(repo_root: Path) -> Path:
+    """The committed per-repo reverse-index location (D3-A)."""
+    return Path(repo_root) / "docs" / "provenance-index.json"
+
+
+def _normalize_index_key(repo_root: Path, path_str: str) -> str:
+    """Normalize a file path to the index's repo-relative POSIX key form."""
+    s = str(path_str).replace("\\", "/").strip()
+    # Strip an absolute repo_root prefix when present.
+    root_posix = str(Path(repo_root)).replace("\\", "/").rstrip("/")
+    if root_posix and s.startswith(root_posix + "/"):
+        s = s[len(root_posix) + 1:]
+    while s.startswith("./"):
+        s = s[2:]
+    return s.strip("/")
+
+
+def _spec_summary_paragraph(item_dir: Path) -> str | None:
+    """Extract the SPEC's leading ``>`` blockquote summary paragraph, verbatim
+    (unwrapped to a single flowing paragraph). None when SPEC.md is absent or
+    carries no leading blockquote."""
+    spec_md_path = Path(item_dir) / "SPEC.md"
+    if not spec_md_path.is_file():
+        return None
+    try:
+        lines = spec_md_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    quote: list[str] = []
+    seen_quote = False
+    for ln in lines:
+        s = ln.strip()
+        if s.startswith(">"):
+            seen_quote = True
+            quote.append(s.lstrip(">").strip())
+        elif seen_quote:
+            break  # the first blockquote block ended
+        elif s.startswith("#") or not s:
+            continue  # title / blanks before the summary
+        else:
+            break  # prose before any blockquote → no leading summary
+    text = " ".join(q for q in quote if q).strip()
+    return text or None
+
+
+def _git_capture_lines(repo_root: Path, args: list[str]) -> list[str] | None:
+    """Run a git command under repo_root and return stdout lines, or None on
+    any failure (non-git tree, bad revision, git unavailable). Never raises."""
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(repo_root)] + args,
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode != 0:
+            return None
+        return r.stdout.splitlines()
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def derive_touched_from_range(repo_root: Path, rev_range: str) -> dict | None:
+    """Derive {commits, files} from a git revision range (e.g. ``A..B``).
+
+    commits = authored (merge-excluded) short shas in the range, oldest first;
+    files = the range's ``git diff --name-only`` set, sorted. None when the
+    range cannot be resolved (the caller decides the fallback)."""
+    commits = _git_capture_lines(
+        repo_root, ["rev-list", "--no-merges", "--reverse", rev_range])
+    files = _git_capture_lines(repo_root, ["diff", "--name-only", rev_range])
+    if commits is None or files is None:
+        return None
+    return {
+        "commits": [c.strip()[:7] for c in commits if c.strip()],
+        "files": sorted({f.strip() for f in files if f.strip()}),
+    }
+
+
+def derive_touched_from_brackets(repo_root: Path, item_id: str) -> dict | None:
+    """Union {commits, files} over the item's recorded commit brackets (D4-A,
+    the pipeline-primary derivation). None when no bracket resolves (no
+    brackets recorded, or every recorded sha is unreachable) — the caller
+    falls back to message-grep with an honest derivation label."""
+    brackets = read_commit_brackets(item_id)
+    if not brackets:
+        return None
+    commits: list[str] = []
+    files: set[str] = set()
+    any_resolved = False
+    for b in brackets:
+        begin = b.get("begin_sha")
+        end = b.get("end_sha")
+        if not begin or not end:
+            continue
+        r = derive_touched_from_range(repo_root, f"{begin}..{end}")
+        if r is None:
+            continue
+        any_resolved = True
+        for c in r["commits"]:
+            if c not in commits:
+                commits.append(c)
+        files.update(r["files"])
+    if not any_resolved:
+        return None
+    return {"commits": commits, "files": sorted(files)}
+
+
+def derive_touched_from_grep(repo_root: Path, item_id: str) -> dict:
+    """Message-grep fallback derivation (D4-B, explicitly degraded): commits
+    whose message contains the item id literal (fixed-string), plus their
+    touched files. Empty lists when nothing matches / not a git tree."""
+    out = _git_capture_lines(
+        repo_root,
+        ["log", "--no-merges", "--fixed-strings", f"--grep={item_id}",
+         "--name-only", "--pretty=format:%H"],
+    )
+    if out is None:
+        return {"commits": [], "files": []}
+    commits: list[str] = []
+    files: set[str] = set()
+    sha_re = re.compile(r"^[0-9a-f]{40}$")
+    for ln in out:
+        s = ln.strip()
+        if not s:
+            continue
+        if sha_re.match(s):
+            short = s[:7]
+            if short not in commits:
+                commits.append(short)
+        else:
+            files.add(s)
+    return {"commits": commits, "files": sorted(files)}
+
+
+def write_provenance(
+    repo_root: Path,
+    item_dir: Path,
+    item_id: str,
+    kind: str,
+    commits: list[str],
+    files: list[str],
+    *,
+    provenance: str = "pipeline-gated",
+    derivation: str = "commit-brackets",
+    date: str | None = None,
+    body: str | None = None,
+    linked_by: str | None = None,
+    validated_line: str | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """THE provenance producer — sole author of IMPLEMENTED.md + the index.
+
+    Writes (atomically, via _atomic_write):
+      1. ``item_dir/IMPLEMENTED.md`` — the D2-A distillate: frontmatter
+         (kind: implemented, feature_id, date, provenance, [linked_by,]
+         derivation, commits, decisions) + a deterministic body (the SPEC's
+         leading ``>`` summary verbatim, the Locked-Decision id — title rows
+         via _parse_locked_decisions, and the receipt-facts line). A manual
+         ``body`` (the D8 operator-approved prose) replaces the deterministic
+         body; the producer still owns the frontmatter and the index either way.
+      2. ``repo_root/docs/provenance-index.json`` — the D3-A reverse index:
+         repo-relative POSIX path → sorted [{id, type, provenance}] rows. This
+         item's existing rows are REPLACED (re-linking never duplicates);
+         other items' rows are preserved byte-for-byte modulo canonical
+         ordering. The index write is skipped entirely when the item touches
+         no files AND no index exists yet (nothing to record, nothing to trim).
+
+    ``dry_run=True`` computes everything (including ``distillate_preview``)
+    and writes NOTHING.
+
+    Returns a dict: {ok, refused, wrote, files, commits, decisions, dry_run}
+    (+ distillate_preview on dry_run). Any write/parse failure returns
+    ok: False with the refusal text — callers inside the completion gate fold
+    that into warnings[]; the manual CLI surfaces it verbatim.
+    """
+    if date is None:
+        date = datetime.date.today().isoformat()
+    if kind not in _PROVENANCE_KINDS:
+        return {"ok": False, "refused": f"unknown item kind {kind!r} "
+                f"(expected one of {_PROVENANCE_KINDS})", "wrote": []}
+    if provenance not in _PROVENANCE_VALUES:
+        return {"ok": False, "refused": f"unknown provenance {provenance!r} "
+                f"(expected one of {_PROVENANCE_VALUES})", "wrote": []}
+
+    repo_root = Path(repo_root)
+    item_dir = Path(item_dir)
+
+    # Canonicalize inputs (deterministic, byte-stable re-runs).
+    norm_files: list[str] = sorted({
+        _normalize_index_key(repo_root, f) for f in (files or []) if str(f).strip()
+    })
+    norm_commits: list[str] = []
+    for c in commits or []:
+        c = str(c).strip()
+        if c and c not in norm_commits:
+            norm_commits.append(c)
+
+    # Decisions from the SPEC's canonical Locked-Decision surface (zero new
+    # parsing — the same enumeration gate_coverage uses).
+    spec_md = ""
+    spec_md_path = item_dir / "SPEC.md"
+    if spec_md_path.is_file():
+        try:
+            spec_md = spec_md_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            spec_md = ""
+    decisions = _parse_locked_decisions(spec_md)
+    decision_ids = [d["id"] for d in decisions]
+
+    # --- Assemble the distillate ---
+    commits_inline = yaml.safe_dump(
+        norm_commits, default_flow_style=True).strip() if norm_commits else "[]"
+    decisions_inline = yaml.safe_dump(
+        decision_ids, default_flow_style=True).strip() if decision_ids else "[]"
+    linked_by_line = f"linked_by: {linked_by}\n" if linked_by else ""
+    fm = (
+        "---\n"
+        "kind: implemented\n"
+        f"feature_id: {item_id}\n"
+        f"date: {date}\n"
+        f"provenance: {provenance}\n"
+        f"{linked_by_line}"
+        f"derivation: {derivation}\n"
+        f"commits: {commits_inline}\n"
+        f"decisions: {decisions_inline}\n"
+        "---\n"
+        "\n"
+    )
+    if body is not None:
+        body_text = "# Implementation Ledger\n\n" + body.strip() + "\n"
+    else:
+        summary = _spec_summary_paragraph(item_dir) or "(no SPEC summary available)"
+        if decisions:
+            decision_rows = "\n".join(
+                f"- {d['id']} — {d['title']}" for d in decisions)
+            decisions_block = f"**Decisions that drove it:**\n{decision_rows}\n"
+        else:
+            decisions_block = (
+                "**Decisions that drove it:** (none — the SPEC carries "
+                "no Locked-Decision surface)\n"
+            )
+        validated_block = f"\n**{validated_line}**\n" if validated_line else ""
+        body_text = (
+            "# Implementation Ledger\n"
+            "\n"
+            f"**What shipped:** {summary}\n"
+            "\n"
+            f"{decisions_block}"
+            f"{validated_block}"
+        )
+    distillate = fm + body_text
+
+    # --- Merge the index (load → replace-this-item's-rows → serialize) ---
+    index_path = _provenance_index_path(repo_root)
+    try:
+        index: dict = {}
+        if index_path.is_file():
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            if not isinstance(index, dict):
+                return {"ok": False, "refused":
+                        f"{index_path} is not a JSON object — refusing to "
+                        "merge; fix the index by hand", "wrote": []}
+        merged: dict = {}
+        for key, rows in index.items():
+            if not isinstance(rows, list):
+                continue
+            kept = [
+                r for r in rows
+                if not (isinstance(r, dict)
+                        and r.get("id") == item_id and r.get("type") == kind)
+            ]
+            if kept:
+                merged[key] = kept
+        for f in norm_files:
+            merged.setdefault(f, []).append(
+                {"id": item_id, "type": kind, "provenance": provenance})
+        # Canonical form: sorted keys; per-key rows sorted by (type, id) and
+        # rebuilt to the canonical field order — byte-stable re-runs.
+        canonical = {}
+        for key in sorted(merged):
+            rows = sorted(
+                merged[key],
+                key=lambda r: (str(r.get("type")), str(r.get("id"))),
+            )
+            canonical[key] = [
+                {"id": r.get("id"), "type": r.get("type"),
+                 "provenance": r.get("provenance")}
+                for r in rows
+            ]
+        index_serialized = json.dumps(canonical, indent=2) + "\n"
+        # Nothing to record and nothing on disk to trim → skip the index write.
+        index_write_needed = bool(canonical) or index_path.is_file()
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        return {"ok": False, "refused": f"provenance index could not be "
+                f"merged ({exc})", "wrote": []}
+
+    result_base = {
+        "files": norm_files,
+        "commits": norm_commits,
+        "decisions": decision_ids,
+        "dry_run": dry_run,
+    }
+    if dry_run:
+        return {"ok": True, "refused": None, "wrote": [],
+                "distillate_preview": distillate,
+                "index_preview": index_serialized if index_write_needed else None,
+                **result_base}
+
+    # --- Writes (atomic; a failure surfaces as ok: False, refused) ---
+    wrote: list[str] = []
+    try:
+        item_dir.mkdir(parents=True, exist_ok=True)
+        _atomic_write(item_dir / "IMPLEMENTED.md", distillate)
+        wrote.append("IMPLEMENTED.md")
+        if index_write_needed:
+            index_path.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write(index_path, index_serialized)
+            try:
+                wrote.append(str(index_path.relative_to(repo_root)).replace("\\", "/"))
+            except ValueError:
+                wrote.append(str(index_path))
+    except (OSError, ValueError) as exc:
+        return {"ok": False, "refused": f"provenance write failed ({exc})",
+                "wrote": wrote, **result_base}
+    return {"ok": True, "refused": None, "wrote": wrote, **result_base}
+
+
+def _resolve_provenance_item_dir(repo_root: Path, item_id: str) -> tuple[Path, str]:
+    """Resolve an item id to its docs dir + type for the manual link path.
+
+    Search order: docs/features/<id> (feature) → docs/bugs/<id> (bug) →
+    docs/bugs/_archive/<id> (bug). When none exists, D8 says the manual path
+    creates a MINIMAL decision-record dir — docs/features/<id>/ with the
+    distillate as its primary doc (never a fabricated SPEC); the producer's
+    mkdir handles the creation.
+    """
+    repo_root = Path(repo_root)
+    candidates: list[tuple[Path, str]] = [
+        (repo_root / "docs" / "features" / item_id, "feature"),
+        (repo_root / "docs" / "bugs" / item_id, "bug"),
+        (repo_root / "docs" / "bugs" / "_archive" / item_id, "bug"),
+    ]
+    for cand, kind in candidates:
+        if cand.is_dir():
+            return cand, kind
+    return candidates[0]
+
+
+def _resolve_pr_range(repo_root: Path, pr: int) -> tuple[str | None, str | None]:
+    """Resolve a PR number to a ``base..head`` range via `gh pr view` (the D8
+    `--pr` sugar). Returns (range, None) on success or (None, refusal) —
+    degrading CLEANLY when gh is absent/unauthenticated (the refusal names the
+    --commits fallback)."""
+    try:
+        r = subprocess.run(
+            ["gh", "pr", "view", str(pr), "--json", "baseRefOid,headRefOid"],
+            cwd=str(repo_root), capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, (f"gh is unavailable ({exc}) — resolve the PR range "
+                      "yourself and pass --commits <base>..<head>")
+    if r.returncode != 0:
+        return None, (f"gh pr view {pr} failed ({(r.stderr or '').strip()[:200]}) "
+                      "— pass --commits <base>..<head> instead")
+    try:
+        data = json.loads(r.stdout)
+        base = data["baseRefOid"]
+        head = data["headRefOid"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        return None, (f"gh pr view {pr} returned an unexpected payload ({exc}) "
+                      "— pass --commits <base>..<head> instead")
+    return f"{base}..{head}", None
+
+
+def link_provenance(
+    repo_root: Path,
+    item_id: str,
+    *,
+    commit_range: str | None = None,
+    pr: int | None = None,
+    body_file: Path | None = None,
+    linked_by: str | None = None,
+    date: str | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """The MANUAL trigger of the one-writer producer (D8-A+C, D9).
+
+    Addressing is commit-range-primary (``--commits A..B``); ``--pr <n>`` is
+    sugar resolved via `gh pr view` to a range (clean refusal when gh is
+    absent). The touched-file set and commit list are derived from the range
+    (derivation: commit-range) and written THROUGH write_provenance with
+    ``provenance: manual`` + ``linked_by:`` — so manual entries are
+    shape-identical to pipeline entries by construction.
+
+    ``body_file`` carries the operator-APPROVED distillate prose (the
+    `/link-provenance` skill's draft-then-approve loop); omitted → the
+    deterministic extract. ``dry_run`` derives + previews, writes nothing.
+    """
+    repo_root = Path(repo_root)
+
+    def _refused(msg: str) -> dict:
+        return {"ok": False, "refused": msg, "wrote": [], "dry_run": dry_run}
+
+    if pr is not None and commit_range:
+        return _refused("--commits and --pr are mutually exclusive — pass one")
+    if pr is not None:
+        commit_range, err = _resolve_pr_range(repo_root, pr)
+        if err:
+            return _refused(err)
+    if not commit_range:
+        return _refused("--link-provenance requires --commits <A..B> or --pr <n>")
+
+    derived = derive_touched_from_range(repo_root, commit_range)
+    if derived is None:
+        return _refused(
+            f"could not resolve commit range {commit_range!r} under "
+            f"{repo_root} — nothing was written"
+        )
+    if not derived["commits"] and not derived["files"]:
+        return _refused(
+            f"commit range {commit_range!r} is empty (no authored commits, "
+            "no touched files) — nothing to link"
+        )
+
+    body: str | None = None
+    if body_file is not None:
+        try:
+            body = Path(body_file).read_text(encoding="utf-8")
+        except OSError as exc:
+            return _refused(f"--body-file could not be read ({exc})")
+
+    item_dir, kind = _resolve_provenance_item_dir(repo_root, item_id)
+    result = write_provenance(
+        repo_root, item_dir, item_id, kind,
+        derived["commits"], derived["files"],
+        provenance="manual", derivation="commit-range",
+        date=date, body=body,
+        linked_by=(linked_by or "operator"),
+        dry_run=dry_run,
+    )
+    result["commit_range"] = commit_range
+    result["kind"] = kind
+    try:
+        result["item_dir"] = str(item_dir.relative_to(repo_root)).replace("\\", "/")
+    except ValueError:
+        result["item_dir"] = str(item_dir)
+    return result
+
+
+def _provenance_doc_path(repo_root: Path, item_id: str, kind: str) -> str:
+    """Resolve an index row's distillate doc path (repo-relative POSIX),
+    honoring archive residency for bugs. Falls back to the canonical
+    non-archive location string when nothing exists on disk."""
+    repo_root = Path(repo_root)
+    if kind == "bug":
+        candidates = [
+            f"docs/bugs/{item_id}/IMPLEMENTED.md",
+            f"docs/bugs/_archive/{item_id}/IMPLEMENTED.md",
+        ]
+    else:
+        candidates = [f"docs/features/{item_id}/IMPLEMENTED.md"]
+    for rel in candidates:
+        if (repo_root / rel).is_file():
+            return rel
+    return candidates[0]
+
+
+def provenance_lookup(repo_root: Path, path_str: str) -> dict:
+    """PURE READ (D6-A): which decision records govern ``path_str``?
+
+    Loads docs/provenance-index.json, normalizes the query to the index's
+    repo-relative POSIX key form, and returns::
+
+        {"path": <key>, "governed_by": [
+            {"id", "type", "doc", "decisions", "provenance"}, ...]}
+
+    ``doc`` is the item's IMPLEMENTED.md (archive residency resolved);
+    ``decisions`` come from that distillate's frontmatter ([] when unreadable).
+    Never mutates, never creates directories, never re-infers state — a
+    missing/malformed index degrades to an empty ``governed_by`` (the consumer
+    step is a no-op where no index exists)."""
+    repo_root = Path(repo_root)
+    key = _normalize_index_key(repo_root, path_str)
+    out: dict = {"path": key, "governed_by": []}
+    index_path = _provenance_index_path(repo_root)
+    if not index_path.is_file():
+        return out
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return out
+    rows = index.get(key) if isinstance(index, dict) else None
+    if not isinstance(rows, list):
+        return out
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        item_id = str(r.get("id"))
+        kind = str(r.get("type"))
+        doc_rel = _provenance_doc_path(repo_root, item_id, kind)
+        decisions: list[str] = []
+        doc_meta = parse_sentinel(repo_root / doc_rel)
+        if doc_meta and isinstance(doc_meta.get("decisions"), list):
+            decisions = [str(d) for d in doc_meta["decisions"]]
+        out["governed_by"].append({
+            "id": item_id,
+            "type": kind,
+            "doc": doc_rel,
+            "decisions": decisions,
+            "provenance": r.get("provenance"),
+        })
+    return out
+
+
+# Churn-lint defaults (D10) — placeholder thresholds, tunable in one place:
+# a file with >= _PROVENANCE_CHURN_THRESHOLD authored commits in the last
+# _PROVENANCE_CHURN_DAYS days and NO index rows is a hotspot (the prompt to
+# run the manual --link-provenance pass over teammate churn).
+_PROVENANCE_CHURN_DAYS = 90
+_PROVENANCE_CHURN_THRESHOLD = 5
+
+
+def _iter_receipted_item_dirs(repo_root: Path):
+    """Yield (item_dir, kind, receipt_name) for every dir holding a valid
+    completion receipt: docs/features/*/COMPLETED.md (feature),
+    docs/bugs/*/FIXED.md and docs/bugs/_archive/*/FIXED.md (bug)."""
+    repo_root = Path(repo_root)
+    roots = [
+        (repo_root / "docs" / "features", "feature", "COMPLETED.md", "completed"),
+        (repo_root / "docs" / "bugs", "bug", "FIXED.md", "fixed"),
+        (repo_root / "docs" / "bugs" / "_archive", "bug", "FIXED.md", "fixed"),
+    ]
+    for base, kind, receipt_name, receipt_kind in roots:
+        if not base.is_dir():
+            continue
+        for d in sorted(base.iterdir()):
+            if not d.is_dir() or d.name.startswith("_"):
+                continue
+            meta = parse_sentinel(d / receipt_name)
+            if meta is not None and meta.get("kind") == receipt_kind:
+                yield d, kind, receipt_name
+
+
+def backfill_provenance(repo_root: Path, date: str | None = None) -> dict:
+    """One-shot backfill (D7-A): distill every already-receipted item through
+    the ONE producer with honest degraded provenance.
+
+    Walks items with a valid COMPLETED.md/FIXED.md (features, bugs, AND
+    docs/bugs/_archive/), skips items already carrying IMPLEMENTED.md
+    (idempotent — never clobbers a richer pipeline/manual distillate), derives
+    the touched-file set via message-grep (no commit brackets exist for
+    pre-feature history), and writes provenance: backfilled +
+    derivation: message-grep. A zero-hit slug still gets a distillate
+    (commits: []) and contributes no index rows — honest, never silent.
+    """
+    repo_root = Path(repo_root)
+    backfilled: list[str] = []
+    skipped_existing: list[str] = []
+    no_commit_matches: list[str] = []
+    failures: list[str] = []
+    for item_dir, kind, receipt_name in _iter_receipted_item_dirs(repo_root):
+        item_id = item_dir.name
+        if (item_dir / "IMPLEMENTED.md").exists():
+            skipped_existing.append(item_id)
+            continue
+        derived = derive_touched_from_grep(repo_root, item_id)
+        receipt_meta = parse_sentinel(item_dir / receipt_name) or {}
+        receipt_prov = receipt_meta.get("provenance", "gated")
+        if not derived["commits"]:
+            no_commit_matches.append(item_id)
+            validated_line = (
+                f"Backfilled: message-grep resolved NO commits for this slug "
+                f"(pre-feature history). Receipt: {receipt_name} "
+                f"(provenance: {receipt_prov})."
+            )
+        else:
+            validated_line = (
+                f"Backfilled from message-grep history. Receipt: "
+                f"{receipt_name} (provenance: {receipt_prov})."
+            )
+        result = write_provenance(
+            repo_root, item_dir, item_id, kind,
+            derived["commits"], derived["files"],
+            provenance="backfilled", derivation="message-grep",
+            date=date, validated_line=validated_line,
+        )
+        if result.get("ok"):
+            backfilled.append(item_id)
+        else:
+            failures.append(f"{item_id}: {result.get('refused')}")
+    out = {
+        "ok": not failures,
+        "backfilled": backfilled,
+        "skipped_existing": skipped_existing,
+        "no_commit_matches": no_commit_matches,
+        "count": len(backfilled),
+    }
+    if failures:
+        out["failures"] = failures
+    return out
+
+
+def lint_provenance(
+    repo_root: Path,
+    churn_days: int = _PROVENANCE_CHURN_DAYS,
+    churn_threshold: int = _PROVENANCE_CHURN_THRESHOLD,
+) -> dict:
+    """Maintenance lint (D10) — PURE READ, report only, never mutates.
+
+    Three checks:
+      (a) dead_rows — index keys whose path no longer exists in the working
+          tree (D5's rename/delete correction prompt: re-link or accept the
+          tombstone);
+      (b) churn_hotspots — files with >= churn_threshold authored commits in
+          the last churn_days days and NO index rows (the prompt to run the
+          manual pass over teammate churn). ``docs/**`` paths are excluded —
+          decision records/queues churn by design and are not governed code;
+      (c) cross_orphans — distillates (with a non-empty commits list) that
+          have no index rows, and index rows citing a missing distillate.
+    """
+    repo_root = Path(repo_root)
+    index_path = _provenance_index_path(repo_root)
+    index: dict = {}
+    index_error: str | None = None
+    if index_path.is_file():
+        try:
+            loaded = json.loads(index_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                index = loaded
+            else:
+                index_error = "index is not a JSON object"
+        except (OSError, json.JSONDecodeError, ValueError) as exc:
+            index_error = f"index unreadable ({exc})"
+
+    # (a) dead rows.
+    dead_rows: list[dict] = []
+    for key in sorted(index):
+        if not (repo_root / key).exists():
+            ids = [r.get("id") for r in index[key] if isinstance(r, dict)]
+            dead_rows.append({"path": key, "ids": ids})
+
+    # (b) churn hotspots with no rows.
+    churn_hotspots: list[dict] = []
+    out = _git_capture_lines(
+        repo_root,
+        ["log", "--no-merges", f"--since={churn_days} days ago",
+         "--name-only", "--pretty=format:"],
+    )
+    if out is not None:
+        counts: dict[str, int] = {}
+        for ln in out:
+            s = ln.strip()
+            if s:
+                counts[s] = counts.get(s, 0) + 1
+        for path, n in sorted(counts.items()):
+            if n < churn_threshold:
+                continue
+            if path in index:
+                continue
+            if path.startswith("docs/"):
+                continue  # decision records / queues churn by design
+            if not (repo_root / path).exists():
+                continue  # deleted since — not an actionable hotspot
+            churn_hotspots.append({"path": path, "commits": n})
+
+    # (c) cross-orphans.
+    ids_with_rows: set[tuple[str, str]] = set()
+    for rows in index.values():
+        if not isinstance(rows, list):
+            continue
+        for r in rows:
+            if isinstance(r, dict):
+                ids_with_rows.add((str(r.get("id")), str(r.get("type"))))
+    distillates_without_rows: list[str] = []
+    known_distillate_ids: set[str] = set()
+    dist_globs = [
+        ("docs/features", "feature"),
+        ("docs/bugs", "bug"),
+        ("docs/bugs/_archive", "bug"),
+    ]
+    for rel_base, kind in dist_globs:
+        base = repo_root / rel_base
+        if not base.is_dir():
+            continue
+        for d in sorted(base.iterdir()):
+            if not d.is_dir() or d.name.startswith("_"):
+                continue
+            doc = d / "IMPLEMENTED.md"
+            meta = parse_sentinel(doc)
+            if meta is None or meta.get("kind") != "implemented":
+                continue
+            known_distillate_ids.add(d.name)
+            commits = meta.get("commits")
+            has_commits = isinstance(commits, list) and len(commits) > 0
+            if has_commits and (d.name, kind) not in ids_with_rows:
+                distillates_without_rows.append(
+                    str(doc.relative_to(repo_root)).replace("\\", "/"))
+    rows_without_distillate: list[dict] = []
+    seen_missing: set[tuple[str, str]] = set()
+    for key in sorted(index):
+        rows = index[key]
+        if not isinstance(rows, list):
+            continue
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            item_id = str(r.get("id"))
+            kind = str(r.get("type"))
+            if (item_id, kind) in seen_missing:
+                continue
+            doc_rel = _provenance_doc_path(repo_root, item_id, kind)
+            if not (repo_root / doc_rel).is_file():
+                seen_missing.add((item_id, kind))
+                rows_without_distillate.append(
+                    {"path": key, "id": item_id, "type": kind})
+    report = {
+        "ok": True,
+        "index_present": index_path.is_file(),
+        "dead_rows": dead_rows,
+        "churn_hotspots": churn_hotspots,
+        "cross_orphans": {
+            "distillates_without_rows": distillates_without_rows,
+            "rows_without_distillate": rows_without_distillate,
+        },
+        "thresholds": {
+            "churn_days": churn_days,
+            "churn_threshold": churn_threshold,
+        },
+    }
+    if index_error:
+        report["index_error"] = index_error
+    return report
+
+
 def append_auto_readmit_event(
     tool_use_id: str,
     readmitted_sha12: str,
@@ -13025,6 +14573,695 @@ def pending_denial_reasons() -> list[str]:
         for e in read_deny_ledger()
         if not e.get("acked", False)
     ]
+
+
+# ---------------------------------------------------------------------------
+# harness-telemetry-ledger — the telemetry ledger (sibling of the deny ledger).
+#
+# An append-only JSONL ledger of the pipeline's deterministic chokepoint events
+# (run/cycle brackets, dispatches, halts, gate/containment refusals, pseudo-skill
+# completions, sentinel resolutions — the D4-B vocabulary), written by BOTH state
+# scripts through this ONE shared emitter (D2-A: parity by construction) into the
+# per-repo keyed state dir beside lazy-deny-ledger.jsonl.
+#
+# Contract (clones the deny-ledger precedent wholesale):
+#   - MARKER-GATED (D3-A): no live run marker → no write, no file, return False.
+#     Bare probes and unmarked interactive invocations stay side-effect-free.
+#     The marker read here is RAW and NON-DESTRUCTIVE (never read_run_marker,
+#     whose stale path DELETES the marker) — emission also fires from exit-3
+#     refusal paths that promise ZERO side effects.
+#   - FAIL-OPEN (D2-A): plain `open(..., "a")` append (never _atomic_write — an
+#     atomic rewrite adds a read-modify-write race on an append-only file whose
+#     torn final line the reader already tolerates); every exception is
+#     swallowed → False. The emitter NEVER calls _diag — a failed append must
+#     not perturb the diagnostics[] surface of the op it rides on.
+#   - RAW EVENTS ONLY (D9-A): metrics are derived reader-side
+#     (pipeline_visualizer/trends.py); nothing here aggregates.
+#   - ROTATION (D6-B): at emit time an over-cap active file rotates to `.1`
+#     (shifting `.1`→`.2` … and dropping the oldest beyond
+#     _TELEMETRY_ROTATED_SEGMENTS); a rotation failure degrades to plain append.
+# ---------------------------------------------------------------------------
+
+_TELEMETRY_LEDGER_FILENAME = "lazy-telemetry.jsonl"
+_TELEMETRY_SCHEMA_VERSION = 1
+_TELEMETRY_ROTATE_BYTES = 10 * 1024 * 1024  # D6-B: 10 MB active-file cap
+_TELEMETRY_ROTATED_SEGMENTS = 4             # D6-B: .1 (newest) … .4 (oldest)
+
+# D4-B: the dispatch terminal_reasons that ALSO emit a `halt` event (the
+# halt-dwell start marker; the matching `sentinel-resolved` ends the dwell).
+TELEMETRY_HALT_TERMINAL_REASONS: frozenset[str] = frozenset({
+    "blocked",
+    "needs-input",
+    "needs-spec-input",
+    "needs-research",
+    "completion-unverified",
+    "blocked-misnamed",
+})
+
+
+def _telemetry_run_marker(now: float | None = None) -> dict | None:
+    """RAW, NON-destructive run-marker read for telemetry gating (D3-A).
+
+    Returns the marker dict when a well-formed, age-fresh (≤24h) marker exists;
+    otherwise None. Unlike ``read_run_marker`` this NEVER deletes a stale or
+    corrupt marker and NEVER applies session-id gating — the emitter is called
+    from refusal paths whose contract is "zero side effects", and from any
+    session that runs a marker-gated op (the run identity is the marker's, not
+    the caller's). Mirrors ``refuse_run_start_clobber``'s own raw read.
+
+    Args:
+        now: epoch float for the age check (injectable for hermetic tests).
+    """
+    if now is None:
+        now = time.time()
+    try:
+        marker_path = claude_state_dir(create=False) / _MARKER_FILENAME
+        if not marker_path.exists():
+            return None
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        if not isinstance(marker, dict):
+            return None
+        started_at_str = marker.get("started_at", "")
+        started_dt = datetime.datetime.strptime(
+            started_at_str, "%Y-%m-%dT%H:%M:%SZ"
+        )
+        started_epoch = (
+            started_dt - datetime.datetime(1970, 1, 1)
+        ).total_seconds()
+        if now - started_epoch > _MARKER_STALE_SECONDS:
+            return None  # age-stale → gated; deletion is read_run_marker's job
+        return marker
+    except Exception:  # noqa: BLE001
+        # Fail-open gate: any read/parse error means "no live run" → no emit.
+        return None
+
+
+def _rotate_telemetry_segments(ledger_path: Path) -> None:
+    """D6-B size-based rollover, called at emit time BEFORE the append.
+
+    When the active file is at/over ``_TELEMETRY_ROTATE_BYTES``: drop the oldest
+    segment (``.N``), shift ``.i`` → ``.i+1``, and rename the active file to
+    ``.1``. Best-effort — any failure returns silently so the caller degrades to
+    a plain append on the (over-cap) active file rather than losing the event.
+    """
+    try:
+        if not ledger_path.exists():
+            return
+        if ledger_path.stat().st_size < _TELEMETRY_ROTATE_BYTES:
+            return
+        oldest = Path(f"{ledger_path}.{_TELEMETRY_ROTATED_SEGMENTS}")
+        if oldest.exists():
+            oldest.unlink()
+        for i in range(_TELEMETRY_ROTATED_SEGMENTS - 1, 0, -1):
+            src = Path(f"{ledger_path}.{i}")
+            if src.exists():
+                src.rename(Path(f"{ledger_path}.{i + 1}"))
+        ledger_path.rename(Path(f"{ledger_path}.1"))
+    except OSError:
+        # Degrade to plain append on the over-cap active file — never raise.
+        return
+
+
+def append_telemetry_event(
+    event: str,
+    *,
+    item_id: str | None = None,
+    data: dict | None = None,
+    now: float | None = None,
+) -> bool:
+    """Append one telemetry event to the telemetry ledger (JSONL), best-effort.
+
+    The ONE shared writer both state scripts (and the shared exit-3 refusal
+    helpers) call at their CLI write-path chokepoints (D2-A / D3-A). Envelope
+    (D1-A), one compact JSON object per line:
+
+        {"v": 1, "ts": <epoch float>, "run_id": <marker started_at>,
+         "pipeline": "feature"|"bug", "event": "<type>",
+         "item_id": <str|None>, "data": {…}}
+
+    MARKER-GATED: no live (age-fresh) run marker → nothing is written and False
+    is returned — bare probes / unmarked interactive invocations never create
+    the ledger. FAIL-OPEN: swallows every exception and returns False; callers
+    never branch on the return value (telemetry can never block the pipeline).
+    The ledger line is observability, not state — a refused op that emits one
+    still has zero STATE side effects.
+
+    Args:
+        event: the D4-B event type (e.g. "run-start", "dispatch", "gate-refusal").
+        item_id: the feature/bug id the event concerns (None for run-level events).
+        data: small per-event payload map (untyped by design — D1-A).
+        now: epoch float for ts + the marker age gate (injectable for tests).
+
+    Returns:
+        True iff a line was appended; False when gated or on any write failure.
+    """
+    if now is None:
+        now = time.time()
+    try:
+        marker = _telemetry_run_marker(now=now)
+        if marker is None:
+            return False  # D3-A: no live run → no emit
+        entry = {
+            "v": _TELEMETRY_SCHEMA_VERSION,
+            "ts": now,
+            "run_id": marker.get("started_at"),
+            "pipeline": marker.get("pipeline"),
+            "event": event,
+            "item_id": item_id,
+            "data": data or {},
+        }
+        ledger_path = claude_state_dir() / _TELEMETRY_LEDGER_FILENAME
+        _rotate_telemetry_segments(ledger_path)
+        # Plain append (not _atomic_write) — deny-ledger precedent: append-only
+        # file, torn final line tolerated by the reader.
+        with ledger_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        # Fail-open: a telemetry write must never propagate.
+        return False
+
+
+def read_telemetry_events(
+    paths: "list[Path] | None" = None,
+    with_provenance: bool = False,
+) -> list[dict]:
+    """Read telemetry events, skipping unparseable lines and unknown ``v``.
+
+    Default path set: the rotated segments OLDEST-first (``.4`` → ``.1``) then
+    the active file, so the returned list is in chronological append order
+    across the whole retained window (D6-B). A missing file / unreadable path /
+    torn line / non-dict line / line whose ``v`` is not a known schema version
+    is skipped, never fatal (D1-A: tolerate what you don't understand).
+
+    Args:
+        paths: explicit files to read (e.g. committed cloud segments); None →
+            the state-dir default set.
+        with_provenance: when True, stamp ``_source`` (str path) and ``_line``
+            (1-based physical line number) onto each event for the retro's
+            per-figure ledger citations (D8). Default False keeps the envelope
+            pure for aggregation.
+
+    Returns:
+        The list of parsed event dicts in file/line order.
+    """
+    if paths is None:
+        base = claude_state_dir(create=False)
+        active = base / _TELEMETRY_LEDGER_FILENAME
+        paths = [
+            Path(f"{active}.{i}")
+            for i in range(_TELEMETRY_ROTATED_SEGMENTS, 0, -1)
+        ] + [active]
+    events: list[dict] = []
+    for p in paths:
+        p = Path(p)
+        if not p.exists():
+            continue
+        try:
+            raw = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for lineno, line in enumerate(raw.splitlines(), start=1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue  # torn append — skip, never brick the ledger
+            if not isinstance(obj, dict):
+                continue
+            if obj.get("v") != _TELEMETRY_SCHEMA_VERSION:
+                continue  # unknown schema version — a future writer's line
+            if with_provenance:
+                obj = dict(obj)
+                obj["_source"] = str(p)
+                obj["_line"] = lineno
+            events.append(obj)
+    return events
+
+
+def flush_cloud_telemetry_segment(
+    repo_root: Path,
+    *,
+    now: float | None = None,
+) -> dict | None:
+    """D5-B cloud run-end flush: persist the live cloud run's ledger segment
+    into the repo so it survives the container.
+
+    Called by both scripts' ``--run-end`` handlers AFTER the run-end emission
+    and BEFORE ``delete_run_marker`` (the marker supplies the run identity).
+    Gated on a live marker with ``cloud: true`` — workstation runs return None
+    untouched. Filters the state-dir ledger to lines whose ``run_id`` equals
+    the marker's ``started_at`` and writes them (one-shot, via _atomic_write —
+    this is a segment REWRITE, not an append-only file) to:
+
+        <repo_root>/docs/telemetry/cloud/<run_id with colons stripped>.jsonl
+
+    The colon-strip keeps the committed filename legal on a Windows checkout
+    (run_id is ``2026-07-04T09:12:03Z``); each line's ``run_id`` FIELD is
+    unchanged, so aggregation keys on content, never the filename. Zero
+    matching events → None (nothing to persist; pre-feature byte-identity).
+    Fail-open: any error returns None and never blocks the run-end.
+
+    Args:
+        repo_root: the repo the segment lands in (rides the final cloud push).
+        now: epoch float for the marker age gate (injectable for tests).
+
+    Returns:
+        {"path": <str>, "events": <int>} when a segment was written, else None.
+    """
+    try:
+        marker = _telemetry_run_marker(now=now)
+        if marker is None or not marker.get("cloud"):
+            return None
+        run_id = marker.get("started_at")
+        if not run_id:
+            return None
+        lines = [
+            e for e in read_telemetry_events() if e.get("run_id") == run_id
+        ]
+        if not lines:
+            return None
+        seg_dir = Path(repo_root) / "docs" / "telemetry" / "cloud"
+        seg_dir.mkdir(parents=True, exist_ok=True)
+        seg_path = seg_dir / (run_id.replace(":", "") + ".jsonl")
+        _atomic_write(
+            seg_path, "\n".join(json.dumps(e) for e in lines) + "\n"
+        )
+        return {"path": str(seg_path), "events": len(lines)}
+    except Exception:  # noqa: BLE001
+        # Fail-open: the flush must never block --run-end.
+        return None
+
+
+# ---------------------------------------------------------------------------
+# intervention-efficacy-tracking — the hypothesis ledger (capture half).
+#
+# Every shipped harness change is an implicit hypothesis ("this change will
+# move friction signal X in direction D"). Capture writes a deterministic,
+# script-owned intervention record (a frontmatter-sentinel markdown file at
+# docs/interventions/<id>.md — committed, durable, GitHub-mobile readable;
+# D4-A central residency) at the completion chokepoint:
+#
+#   * apply_pseudo __mark_complete__ / __mark_fixed__ — ONE shared call site,
+#     so both pipelines inherit capture by construction (D1-A). Eligibility:
+#     a top-level `"interventions": true` in docs/features/queue.json (the
+#     `"autodiscover": true` precedent — only claude-config sets it) OR a
+#     present `## Intervention Hypothesis` SPEC block. Otherwise the
+#     completion is byte-identical to pre-feature (no keys, no file).
+#   * the orchestrator-only `--record-intervention` CLI on BOTH state scripts
+#     (the /harden-harness round path, manual capture, and the D9 opt-in
+#     backfill — `--shipped-commit`/`--shipped-date` stamp
+#     `provenance: backfilled`, mirroring `backfilled-unverified` honesty).
+#
+# The baseline is FROZEN into the record at capture time (D3): the raw
+# telemetry ledger is untracked + rotation-eligible, so verdicts must never
+# depend on raw-event retention. Missing/undeclared inputs degrade honestly
+# (`unavailable` / `not-computable` / `target_signal: undeclared`) — capture
+# NEVER errors a completion (D2-A: fail-open to a warnings entry).
+#
+# The evaluation half lives OFF the state-script compute path in
+# user/scripts/efficacy-eval.py (the toolify-miner/lazy-queue-doc precedent),
+# which re-reads these records via parse_sentinel and re-writes them through
+# the same _render_intervention_record serializer (diff-stable field order).
+# ---------------------------------------------------------------------------
+
+# D5-A declared defaults — one block, per-record overridable via the
+# `## Intervention Hypothesis` block (baseline_runs / review_after_runs /
+# min_sample / band_pct). Starting points to be tuned by this feature's own
+# ledger, not laws.
+INTERVENTION_BASELINE_RUNS = 20
+INTERVENTION_REVIEW_AFTER_RUNS = 20
+INTERVENTION_MIN_SAMPLE = 5
+INTERVENTION_BAND_PCT = 20
+
+_INTERVENTIONS_DIRNAME = "interventions"
+
+_INTERVENTION_HYPOTHESIS_HEADING_RE = re.compile(
+    r"(?mi)^##\s+Intervention Hypothesis\s*$"
+)
+_INTERVENTION_FIELD_RE = re.compile(r"^[-*]\s*([a-z_]+)\s*:\s*(.+?)\s*$")
+# The three signal_independence enum heads (D3); the justification sentence
+# rides in `signal_independence_note` and the record body.
+_INTERVENTION_INDEPENDENCE_ENUM = ("independent", "self-emitted", "mixed")
+_INTERVENTION_INT_FIELDS = (
+    "review_after_runs", "baseline_runs", "min_sample", "band_pct",
+)
+
+
+def parse_intervention_hypothesis(spec_text: str) -> dict | None:
+    """Parse a SPEC's ``## Intervention Hypothesis`` block (D2-A).
+
+    Returns a dict of the declared fields, or None when the heading is absent
+    (the degrade-on-absence discriminator — an absent block still captures,
+    as ``target_signal: undeclared``). Recognized list-item fields:
+    ``target_signal``, ``expected_direction``, ``signal_independence`` (enum
+    head extracted to the field; the full raw value — including a wrapped
+    justification continuation line — lands in ``signal_independence_note``),
+    ``review_after_runs`` and the optional D5 overrides ``baseline_runs`` /
+    ``min_sample`` / ``band_pct`` (ints; a malformed int is OMITTED, never
+    raised — capture must never break a completion).
+    """
+    m = _INTERVENTION_HYPOTHESIS_HEADING_RE.search(spec_text or "")
+    if m is None:
+        return None
+    fields: dict = {}
+    raw: dict[str, str] = {}
+    current: str | None = None
+    for line in spec_text[m.end():].splitlines():
+        if line.startswith("##"):
+            break  # next section — the block has ended
+        stripped = line.strip()
+        if not stripped:
+            current = None
+            continue
+        fm = _INTERVENTION_FIELD_RE.match(stripped)
+        if fm:
+            current = fm.group(1)
+            raw[current] = fm.group(2)
+            continue
+        if current is not None and line[:1] in (" ", "\t"):
+            # Wrapped continuation of the previous list item (the SPEC's UX
+            # example wraps the signal_independence justification).
+            raw[current] = raw[current] + " " + stripped
+            continue
+        current = None  # non-field prose — stop folding
+    for key in ("target_signal", "expected_direction"):
+        if key in raw:
+            fields[key] = raw[key]
+    if "signal_independence" in raw:
+        value = raw["signal_independence"]
+        head = value.split()[0].rstrip(":,;") if value.split() else value
+        fields["signal_independence"] = (
+            head if head in _INTERVENTION_INDEPENDENCE_ENUM else value
+        )
+        fields["signal_independence_note"] = value
+    for key in _INTERVENTION_INT_FIELDS:
+        if key in raw:
+            try:
+                fields[key] = int(raw[key])
+            except (TypeError, ValueError):
+                pass  # malformed int → omitted (defaults apply downstream)
+    return fields
+
+
+def _intervention_signal_event(target_signal: str) -> str | None:
+    """Return the ledger event type for an ``event:<type>`` target, else None.
+
+    ``kpi:<system>.<kpi-id>`` targets are carried VERBATIM on the record and
+    resolve through the friction-kpi-registry (soft dep) at evaluation time —
+    this helper deliberately does NOT resolve them (the evaluator owns the
+    resolution seam and degrades a miss to ``INCONCLUSIVE (kpi-unresolvable)``).
+    """
+    if isinstance(target_signal, str) and target_signal.startswith("event:"):
+        return target_signal[len("event:"):] or None
+    return None
+
+
+def read_intervention_telemetry(repo_root: Path) -> list[dict]:
+    """Merged, deduped, chronological telemetry read for intervention windows.
+
+    State-dir ledger (``read_telemetry_events`` — rotated segments + active
+    file) PLUS any committed cloud segments under
+    ``<repo_root>/docs/telemetry/cloud/*.jsonl`` (the trends-aggregator read
+    pattern — cloud runs' events survive only as committed segments). Deduped
+    on ``(run_id, ts, event, item_id)``; sorted by ``(run_id, ts)`` so
+    consumers see run-grouped chronological order. Read-only and fail-open —
+    any error contributes nothing rather than raising.
+    """
+    events = list(read_telemetry_events())
+    try:
+        seg_dir = Path(repo_root) / "docs" / "telemetry" / "cloud"
+        if seg_dir.is_dir():
+            seg_paths = sorted(seg_dir.glob("*.jsonl"))
+            if seg_paths:
+                events += read_telemetry_events(paths=seg_paths)
+    except OSError:
+        pass
+    seen: set = set()
+    merged: list[dict] = []
+    for e in events:
+        key = (e.get("run_id"), e.get("ts"), e.get("event"), e.get("item_id"))
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(e)
+    merged.sort(key=lambda e: (e.get("run_id") or "", e.get("ts") or 0.0))
+    return merged
+
+
+# The record's frontmatter field order — ONE serializer owns it so capture
+# writes and evaluator re-writes stay diff-stable.
+_INTERVENTION_FIELD_ORDER = (
+    "kind", "intervention_id", "pipeline", "provenance", "shipped_date",
+    "shipped_commit", "commit_set", "target_signal", "expected_direction",
+    "signal_independence", "baseline", "review_after_runs", "min_sample",
+    "band_pct", "review_count", "status", "escalated",
+    "reconsideration_enqueued",
+)
+
+
+def _render_intervention_record(meta: dict, body: str) -> str:
+    """Serialize an intervention record (frontmatter sentinel form, D3).
+
+    Field order follows ``_INTERVENTION_FIELD_ORDER`` (unknown extras append
+    in insertion order). ``yaml.safe_dump`` handles the nested ``baseline:``
+    map, None → ``null``, and QUOTES strings that would otherwise re-parse as
+    timestamps (run ids / dates) — so ``parse_sentinel`` round-trips every
+    value type-preserved (the SPEC's formerly-deferred empirical check).
+    """
+    ordered: dict = {}
+    for key in _INTERVENTION_FIELD_ORDER:
+        if key in meta:
+            ordered[key] = meta[key]
+    for key, value in meta.items():
+        if key not in ordered:
+            ordered[key] = value
+    fm = yaml.safe_dump(
+        ordered, sort_keys=False, default_flow_style=False,
+        allow_unicode=True,
+    ).strip()
+    return f"---\n{fm}\n---\n\n{body.rstrip()}\n"
+
+
+def record_intervention(
+    repo_root: Path,
+    intervention_id: str,
+    *,
+    pipeline: str,
+    spec_path: Path | None = None,
+    date: str | None = None,
+    shipped_commit: str | None = None,
+    shipped_date: str | None = None,
+    provenance: str = "gated",
+    hypothesis_overrides: dict | None = None,
+) -> dict:
+    """Write the intervention record for a shipped harness change (capture, D1-A).
+
+    Freezes the baseline window from the telemetry ledger AT THIS MOMENT into
+    the record (D3 — the raw ledger is untracked and rotation-eligible; the
+    baseline must not depend on raw-event retention) and atomically writes the
+    frontmatter-sentinel record to ``docs/interventions/<id>.md`` (D4-A).
+
+    Hypothesis inputs, in precedence order: the ``## Intervention Hypothesis``
+    block of ``spec_path``'s SPEC.md (when given), then ``hypothesis_overrides``
+    (the CLI's no-SPEC path — hardening rounds). Absent both → the record is
+    written ``target_signal: undeclared`` (INCONCLUSIVE-by-construction,
+    surfaced for triage; completion NEVER blocked — D2-A).
+
+    Baseline degradation is honest, never an error: ``frozen`` (trailing
+    ``baseline_runs`` distinct run_ids counted for an ``event:`` target),
+    ``unavailable`` (no ledger data), ``not-computable`` (undeclared or
+    non-``event:`` target — kpi targets resolve at evaluation time).
+    ``last_run_id`` (the post-window boundary) is recorded in every case.
+
+    Idempotent and never-clobbering: an EXISTING file at the record path →
+    noop (``{"recorded": False, "noop": True}``) — a prior capture/backfill is
+    never overwritten. All writes go through ``_atomic_write``. This function
+    never raises for missing/degraded inputs and never calls ``_die``; callers
+    on the completion path additionally wrap it fail-open.
+
+    Args:
+        repo_root: repo the record lands in (``docs/interventions/``).
+        intervention_id: item slug or ``harden-<YYYY-MM>-r<N>`` (D3).
+        pipeline: ``feature`` | ``bug`` | ``hardening``.
+        spec_path: the item's spec DIR (or a SPEC.md file) to read the
+            hypothesis block from; None for the no-SPEC paths.
+        date: ISO capture date (defaults to today).
+        shipped_commit: HEAD override (D9 backfill); defaults to the repo's
+            current HEAD (None on a non-git tree → recorded ``unknown``).
+        shipped_date: ship-date override (D9 backfill); defaults to ``date``.
+        provenance: ``gated`` (completion gate) | ``manual`` (CLI) |
+            ``backfilled`` (CLI with shipped-* overrides).
+        hypothesis_overrides: dict merged OVER the parsed SPEC block.
+
+    Returns:
+        ``{"recorded": bool, "noop": bool, "path": str, "target_signal": str,
+        "baseline_status": str}``.
+    """
+    repo_root = Path(repo_root)
+    if date is None:
+        date = datetime.date.today().isoformat()
+    record_path = (
+        repo_root / "docs" / _INTERVENTIONS_DIRNAME / f"{intervention_id}.md"
+    )
+    if record_path.exists():
+        # Never clobber a prior capture/backfill — idempotency by existence.
+        return {
+            "recorded": False,
+            "noop": True,
+            "path": str(record_path),
+            "target_signal": None,
+            "baseline_status": None,
+        }
+
+    # --- Hypothesis resolution (SPEC block, then overrides) ---
+    hyp: dict = {}
+    if spec_path is not None:
+        spec_md = Path(spec_path)
+        if spec_md.is_dir():
+            spec_md = spec_md / "SPEC.md"
+        try:
+            parsed = parse_intervention_hypothesis(
+                spec_md.read_text(encoding="utf-8")
+            )
+        except OSError:
+            parsed = None
+        if parsed:
+            hyp.update(parsed)
+    if hypothesis_overrides:
+        hyp.update(
+            {k: v for k, v in hypothesis_overrides.items() if v is not None}
+        )
+    target_signal = hyp.get("target_signal") or "undeclared"
+    expected_direction = hyp.get("expected_direction") or "undeclared"
+    signal_independence = hyp.get("signal_independence") or "undeclared"
+
+    def _cfg_int(key: str, default: int) -> int:
+        try:
+            return int(hyp.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    review_after_runs = _cfg_int(
+        "review_after_runs", INTERVENTION_REVIEW_AFTER_RUNS)
+    baseline_runs_cfg = _cfg_int("baseline_runs", INTERVENTION_BASELINE_RUNS)
+    min_sample = _cfg_int("min_sample", INTERVENTION_MIN_SAMPLE)
+    band_pct = _cfg_int("band_pct", INTERVENTION_BAND_PCT)
+
+    if shipped_commit is None:
+        shipped_commit = head_sha_snapshot(repo_root)
+    if shipped_date is None:
+        shipped_date = date
+
+    # --- Baseline freeze (read-only over the merged ledger; fail-open) ---
+    try:
+        events = read_intervention_telemetry(repo_root)
+    except Exception:  # noqa: BLE001 — capture must never error a completion
+        events = []
+    run_ids = sorted({
+        e.get("run_id") for e in events if e.get("run_id")
+    })
+    last_run_id = run_ids[-1] if run_ids else None
+    ev_type = _intervention_signal_event(target_signal)
+    if ev_type is None:
+        baseline: dict = {
+            "status": "not-computable",
+            "reason": ("undeclared" if target_signal == "undeclared"
+                       else "non-event-target"),
+            "last_run_id": last_run_id,
+        }
+    elif not run_ids:
+        baseline = {
+            "status": "unavailable",
+            "reason": "no-ledger-data",
+            "last_run_id": None,
+        }
+    else:
+        window = run_ids[-baseline_runs_cfg:]
+        window_set = set(window)
+        count = sum(
+            1 for e in events
+            if e.get("run_id") in window_set and e.get("event") == ev_type
+        )
+        baseline = {
+            "status": "frozen",
+            "runs": len(window),
+            "events": count,
+            "value": round(count / len(window), 4),
+            "window_start_run": window[0],
+            "window_end_run": window[-1],
+            "last_run_id": last_run_id,
+        }
+
+    meta = {
+        "kind": "intervention",
+        "intervention_id": intervention_id,
+        "pipeline": pipeline,
+        "provenance": provenance,
+        "shipped_date": shipped_date,
+        "shipped_commit": shipped_commit or "unknown",
+        # v1 commit_set = the capture commit; enriched to the full
+        # change→commit-set mapping when code-doc-provenance-linkage ships.
+        "commit_set": shipped_commit or "unknown",
+        "target_signal": target_signal,
+        "expected_direction": expected_direction,
+        "signal_independence": signal_independence,
+        "baseline": baseline,
+        "review_after_runs": review_after_runs,
+        "min_sample": min_sample,
+        "band_pct": band_pct,
+        "review_count": 0,
+        "status": "open",
+        "escalated": False,
+        "reconsideration_enqueued": None,
+    }
+    note = hyp.get("signal_independence_note") or ""
+    body_lines = [
+        f"# Intervention: {intervention_id}",
+        "",
+        (f"Hypothesis: shipping `{intervention_id}` ({pipeline} pipeline) "
+         f"moves `{target_signal}` in direction `{expected_direction}` "
+         f"within {review_after_runs} post-ship runs."),
+    ]
+    if note:
+        body_lines += ["", f"Signal independence: {note}"]
+    body_lines += [
+        "",
+        "Reviews are appended below by `user/scripts/efficacy-eval.py` "
+        "(`## Review <date>` sections). Do not hand-edit the frontmatter — "
+        "the evaluator is its sole post-capture writer.",
+    ]
+    _atomic_write(
+        record_path, _render_intervention_record(meta, "\n".join(body_lines))
+    )
+    return {
+        "recorded": True,
+        "noop": False,
+        "path": str(record_path),
+        "target_signal": target_signal,
+        "baseline_status": baseline["status"],
+    }
+
+
+def _interventions_queue_flag(repo_root: Path) -> bool:
+    """True iff docs/features/queue.json carries top-level ``interventions: true``.
+
+    The repo-opt-in capture flag (the ``autodiscover`` precedent — top-level
+    sibling of ``queue``, set only by claude-config; every other repo omits it
+    and completion output stays byte-identical). Read-only, defensive: a
+    missing/malformed queue.json ⇒ False. The flag lives in the FEATURE queue
+    for BOTH pipelines (one repo-level switch, not per-queue).
+    """
+    queue_path = Path(repo_root) / "docs" / "features" / "queue.json"
+    if not queue_path.exists():
+        return False
+    try:
+        data = json.loads(queue_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    return isinstance(data, dict) and data.get("interventions") is True
 
 
 def oldest_unacked_deny() -> dict | None:
@@ -13505,3 +15742,450 @@ def restore_checkpoint_counters(checkpoint: dict | None) -> dict | None:
     marker_path = claude_state_dir() / _MARKER_FILENAME
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
     return marker
+
+
+# ---------------------------------------------------------------------------
+# operator-halt-notifications — the script-owned halt notifier
+# ---------------------------------------------------------------------------
+#
+# A NEEDS_INPUT.md/BLOCKED.md halt is honest but passive: it sits silently
+# until the operator checks in.  notify_halt() pages the operator's phone at
+# the terminal-emission chokepoint — called as ONE line by BOTH state scripts'
+# main() immediately before the state-JSON write (D2; parity surface #7 in
+# lazy_parity_audit.py).  Contracts (SPEC docs/features/operator-halt-notifications,
+# all decisions operator-approved 2026-07-04):
+#
+#   D1  ntfy behind a minimal channel seam: notify_halt dispatches through an
+#       injected `sender(title, body, link)` callable (hermetic tests inject a
+#       fake); production binds _ntfy_send — one stdlib urllib POST to the
+#       configured topic URL.
+#   D3  Attention terminals only (_NOTIFY_ATTENTION_TERMINALS, the locked
+#       11-terminal list) page by default; the 5 named clean stops
+#       (_NOTIFY_CLEAN_STOP_TERMINALS) page only under notify_on_clean_stop.
+#       NOTE: a sibling of SANCTIONED_STOP_TERMINAL, NOT its complement —
+#       needs-research / queue-blocked-on-research / queue-missing are
+#       sanctioned stops that still demand operator action.  The telemetry
+#       TELEMETRY_HALT_TERMINAL_REASONS set is a DIFFERENT vocabulary
+#       (halt-dwell recording) and deliberately not shared.
+#   D4  Notify-once per sentinel identity (_notify_identity): sentinel-backed
+#       terminals key on (pipeline, item, reason, mtime_ns, size) — a
+#       --neutralize-sentinel rename retires the identity, a re-halt's new
+#       sentinel re-arms; sentinel-less terminals key on the UTC date.
+#   D5  Rich payload: title = notify_message verbatim; body = repo basename ·
+#       pipeline · item · halt kind (+ needs-input `decisions:` one-liners via
+#       a TOLERANT frontmatter read — parse_sentinel would _die() on a
+#       malformed file, corrupting the halt JSON, so it is NOT used here);
+#       link = the normalized GitHub remote + /tree/main/<item dir> (remote
+#       derivation failure ⇒ link omitted, still send).
+#   D7  Config: ~/.claude/notify.json (untracked; {channel, url,
+#       notify_on_clean_stop, reping_hours}) with LAZY_NOTIFY_URL overriding
+#       the url and LAZY_NOTIFY_DISABLE=1 as the kill switch.  Absent config ⇒
+#       notify_halt is a COMPLETE no-op (byte-identical probe, zero writes).
+#   D8  Dedup ledger notify-ledger.json in claude_state_dir() (per-repo keyed;
+#       LAZY_STATE_DIR-hermetic), written via _atomic_write, entries older
+#       than 30 days dropped on write; updated ONLY on a successful send.
+#   D9  Fail-OPEN: nothing here may raise, print to stdout, or change the exit
+#       code.  Send failure → notify-error.json breadcrumb (single overwritten
+#       file, the hook-error.json pattern) + a "why no page" line appended to
+#       state["diagnostics"] (the dict's own list — a _diag() call after
+#       compute_state cannot reach the printed JSON), NO ledger entry (the
+#       next observation retries).
+#   D10 Environment-agnostic: no --cloud branch; cloud containers provision
+#       LAZY_NOTIFY_URL via env.
+# ---------------------------------------------------------------------------
+
+_NOTIFY_CONFIG_FILENAME = "notify.json"          # under ~/.claude/ (untracked)
+_NOTIFY_LEDGER_FILENAME = "notify-ledger.json"   # under claude_state_dir()
+_NOTIFY_ERROR_FILENAME = "notify-error.json"     # under claude_state_dir()
+# Same bound as _default_sidecar_probe / _default_frontend_probe (D9).
+_NOTIFY_SEND_TIMEOUT_SECONDS = 5
+_NOTIFY_LEDGER_MAX_AGE_SECONDS = 30 * 24 * 3600  # D8: 30-day prune on write
+
+# D3 (locked 2026-07-04): the terminals where the operator's action is the
+# unblocker — these page by default.
+_NOTIFY_ATTENTION_TERMINALS: frozenset[str] = frozenset({
+    "blocked",
+    "blocked-misnamed",
+    "needs-input",
+    "needs-spec-input",
+    "needs-research",
+    "queue-blocked-on-research",
+    "completion-unverified",
+    "stale_upstream",
+    "queue-exhausted-all-parked",
+    "queue-exhausted-budget-deferred",
+    "queue-missing",
+})
+
+# D3: clean run-end terminals — page ONLY when the config sets
+# notify_on_clean_stop: true.  Everything in neither set never pages (e.g.
+# queue-exhausted-dependency-gated: holds re-open by themselves as deps
+# complete; scoped per-item terminals: the run continues past them).
+_NOTIFY_CLEAN_STOP_TERMINALS: frozenset[str] = frozenset({
+    "all-features-complete",
+    "all-bugs-fixed",
+    "cloud-queue-exhausted",
+    "device-queue-exhausted",
+    "host-capability-saturated",
+})
+
+# D4: terminal → candidate sentinel basenames (first existing wins) for the
+# identity stat.  blocked-misnamed is special-cased onto the stray file via
+# detect_noncanonical_blocker.
+_NOTIFY_SENTINEL_CANDIDATES: dict[str, tuple[str, ...]] = {
+    "blocked": ("BLOCKED.md",),
+    "needs-input": ("NEEDS_INPUT.md",),
+    "needs-research": ("NEEDS_RESEARCH.md", "RESEARCH_PROMPT.md"),
+}
+
+
+def _load_notify_config() -> dict | None:
+    """Resolve the notifier config (D7), or None ⇒ the feature does not exist.
+
+    Precedence: LAZY_NOTIFY_DISABLE truthy → None (kill switch, dominates
+    everything); else merge ~/.claude/notify.json (when readable/valid — a
+    malformed file degrades silently, fail-open) with the LAZY_NOTIFY_URL env
+    override (env wins on `url`; file booleans survive).  No usable url ⇒
+    None.  Never raises, never writes.
+    """
+    if os.environ.get("LAZY_NOTIFY_DISABLE"):
+        return None
+    cfg: dict = {}
+    try:
+        cfg_path = Path.home() / ".claude" / _NOTIFY_CONFIG_FILENAME
+        if cfg_path.is_file():
+            loaded = json.loads(cfg_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                cfg.update(loaded)
+    except Exception:  # noqa: BLE001 — malformed/unreadable file is fail-open
+        pass
+    env_url = os.environ.get("LAZY_NOTIFY_URL")
+    if env_url:
+        cfg["url"] = env_url
+    url = cfg.get("url")
+    if not isinstance(url, str) or not url.strip():
+        return None
+    cfg.setdefault("channel", "ntfy")
+    cfg["notify_on_clean_stop"] = bool(cfg.get("notify_on_clean_stop"))
+    return cfg
+
+
+def _notify_sentinel_path(state: dict, terminal_reason: str) -> Path | None:
+    """Resolve the halt's sentinel file from the state's spec_path (D4).
+
+    Returns the first existing candidate for the terminal (the stray file for
+    blocked-misnamed), or None for sentinel-less terminals (queue-missing,
+    exhaustion terminals, needs-spec-input's empty dir, …).  Never raises.
+    """
+    spec = state.get("spec_path")
+    if not spec:
+        return None
+    try:
+        spec_dir = Path(spec)
+        if terminal_reason == "blocked-misnamed":
+            return detect_noncanonical_blocker(spec_dir)
+        for name in _NOTIFY_SENTINEL_CANDIDATES.get(terminal_reason, ()):
+            candidate = spec_dir / name
+            if candidate.is_file():
+                return candidate
+    except OSError:
+        pass
+    return None
+
+
+def _notify_identity(state: dict, pipeline: str, *, now: float | None = None) -> str:
+    """The D4 dedup key: one halt, one page, no matter how many probes see it.
+
+    Sentinel-backed: ``{pipeline}|{item}|{reason}|{mtime_ns}|{size}`` — a
+    rename (--neutralize-sentinel) kills the identity, a rewritten sentinel is
+    a NEW identity (re-arm).  Sentinel-less: ``{pipeline}|{item}|{reason}|d:{UTC date}``
+    (bounded: at most one page per day per such terminal).
+    """
+    reason = state.get("terminal_reason") or ""
+    item = state.get("feature_id") or ""
+    sentinel = _notify_sentinel_path(state, reason)
+    if sentinel is not None:
+        try:
+            st = sentinel.stat()
+            return f"{pipeline}|{item}|{reason}|{st.st_mtime_ns}|{st.st_size}"
+        except OSError:
+            pass
+    ts = time.time() if now is None else float(now)
+    day = datetime.datetime.fromtimestamp(
+        ts, tz=datetime.timezone.utc
+    ).strftime("%Y-%m-%d")
+    return f"{pipeline}|{item}|{reason}|d:{day}"
+
+
+def _load_notify_ledger() -> dict:
+    """Read notify-ledger.json entries ({identity: {notified_at, …}}).
+
+    Read-only (create=False — a probe that never sends must not create the
+    state dir).  Corrupt/absent ⇒ {} (fail-open).
+    """
+    try:
+        path = claude_state_dir(create=False) / _NOTIFY_LEDGER_FILENAME
+        data = json.loads(path.read_text(encoding="utf-8"))
+        entries = data.get("entries") if isinstance(data, dict) else None
+        return entries if isinstance(entries, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _record_notify_send(identity: str, state: dict, pipeline: str,
+                        *, now: float | None = None) -> None:
+    """Ledger a successful send (D8) via _atomic_write, pruning entries older
+    than 30 days.  The schema is re-ping-ready: notified_at is the timestamp a
+    future reping_hours key would compare against (D4-B, additive later)."""
+    ts = time.time() if now is None else float(now)
+    cutoff = ts - _NOTIFY_LEDGER_MAX_AGE_SECONDS
+    entries = {
+        k: v for k, v in _load_notify_ledger().items()
+        if isinstance(v, dict)
+        and isinstance(v.get("notified_at"), (int, float))
+        and v["notified_at"] >= cutoff
+    }
+    entries[identity] = {
+        "notified_at": ts,
+        "pipeline": pipeline,
+        "item_id": state.get("feature_id"),
+        "terminal_reason": state.get("terminal_reason"),
+    }
+    payload = {"v": 1, "entries": entries}
+    _atomic_write(
+        claude_state_dir() / _NOTIFY_LEDGER_FILENAME,
+        json.dumps(payload, indent=2) + "\n",
+    )
+
+
+def _write_notify_error(message: str, identity: str | None,
+                        *, now: float | None = None) -> None:
+    """Overwrite the notify-error.json breadcrumb (the hook-error.json
+    pattern: a single at-a-glance 'why no page' file, D9)."""
+    entry = {
+        "ts": time.time() if now is None else float(now),
+        "source": "notify_halt",
+        "error": str(message)[:500],
+        "identity": identity,
+    }
+    _atomic_write(
+        claude_state_dir() / _NOTIFY_ERROR_FILENAME,
+        json.dumps(entry, indent=2) + "\n",
+    )
+
+
+def _notify_decisions(sentinel_path: Path) -> list[str]:
+    """Tolerant read of a NEEDS_INPUT.md frontmatter ``decisions:`` list (≤4).
+
+    Deliberately NOT parse_sentinel: that helper _die()s (error JSON on stdout
+    + exit 2) on a malformed file, which would corrupt the halt this notifier
+    merely observes (D9).  Any problem ⇒ [] (notify without decision lines).
+    """
+    try:
+        lines = sentinel_path.read_text(encoding="utf-8").splitlines()
+        i = 0
+        while i < len(lines) and not lines[i].strip():
+            i += 1
+        if i >= len(lines) or lines[i].strip() != "---":
+            return []
+        end = None
+        for j in range(i + 1, len(lines)):
+            if lines[j].strip() == "---":
+                end = j
+                break
+        if end is None:
+            return []
+        data = yaml.safe_load("\n".join(lines[i + 1:end])) or {}
+        if not isinstance(data, dict):
+            return []
+        decisions = data.get("decisions")
+        if not isinstance(decisions, list):
+            return []
+        return [str(d).strip() for d in decisions if str(d).strip()][:4]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _normalize_git_remote_url(raw: str | None) -> str | None:
+    """Normalize a git remote URL to a plain browsable http(s) URL (D5).
+
+    Handles scp-style SSH (git@host:owner/repo.git), ssh:// (optional user +
+    port), and http(s) (credentials stripped, .git suffix dropped).  Anything
+    else (file://, empty, garbage) ⇒ None — the caller omits the link and
+    still sends.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    m = re.match(r"^git@([^:/]+):(.+)$", raw)
+    if m:
+        raw = f"https://{m.group(1)}/{m.group(2)}"
+    elif raw.startswith("ssh://"):
+        m2 = re.match(r"^ssh://(?:[^@/]+@)?([^/:]+)(?::\d+)?/(.+)$", raw)
+        if not m2:
+            return None
+        raw = f"https://{m2.group(1)}/{m2.group(2)}"
+    if not (raw.startswith("http://") or raw.startswith("https://")):
+        return None
+    scheme, rest = raw.split("://", 1)
+    authority, _, tail = rest.partition("/")
+    if "@" in authority:
+        authority = authority.rsplit("@", 1)[1]  # strip credentials
+    raw = f"{scheme}://{authority}" + (f"/{tail}" if tail else "")
+    if raw.endswith(".git"):
+        raw = raw[: -len(".git")]
+    return raw.rstrip("/")
+
+
+def _github_remote_url(repo_root: str) -> str | None:
+    """``git config --get remote.origin.url`` → normalized URL, or None."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo_root), "config", "--get",
+             "remote.origin.url"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode != 0:
+            return None
+        return _normalize_git_remote_url(proc.stdout.strip())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _compose_notify_payload(state: dict, repo_root: str,
+                            pipeline: str) -> tuple[str, str, str | None]:
+    """Build the D5 rich payload: (title, body, link).
+
+    title = the script's composed notify_message verbatim (already
+    item-naming); body = repo basename · pipeline · item · halt kind, the
+    needs-input ``decisions:`` one-liners, and the LAZY_QUEUE/answer-path
+    pointer; link = normalized remote + /tree/main/<item dir> (None when the
+    remote cannot be derived — omit link, still send).
+    """
+    reason = state.get("terminal_reason") or ""
+    title = state.get("notify_message") or f"PIPELINE HALT: {reason}"
+    try:
+        repo_name = Path(repo_root).name or str(repo_root)
+    except Exception:  # noqa: BLE001
+        repo_name = str(repo_root)
+    item = state.get("feature_id") or "(no item)"
+    body_lines = [f"{repo_name} · {pipeline} · {item} · {reason}"]
+    if reason == "needs-input":
+        sentinel = _notify_sentinel_path(state, reason)
+        if sentinel is not None:
+            for n, decision in enumerate(_notify_decisions(sentinel), 1):
+                body_lines.append(f"{n}. {decision}")
+    body_lines.append(
+        "Queue: LAZY_QUEUE.md · answer in the Claude app / next session"
+    )
+    link = None
+    base = _github_remote_url(repo_root)
+    if base:
+        link = base
+        spec = state.get("spec_path")
+        if spec:
+            try:
+                rel = Path(spec).resolve().relative_to(
+                    Path(repo_root).resolve()
+                ).as_posix()
+                link = f"{base}/tree/main/{rel}"
+            except Exception:  # noqa: BLE001 — spec outside root → repo link
+                pass
+    return title, "\n".join(body_lines), link
+
+
+def _rfc2047_header(value: str) -> str:
+    """Encode a header value as RFC 2047 UTF-8 Base64 when it is not
+    latin-1-safe (http.client raises UnicodeEncodeError otherwise — and
+    notify_message strings routinely carry em-dashes).  ntfy documents RFC
+    2047 support for its Title/Click headers.  Latin-1-safe values pass
+    through verbatim."""
+    try:
+        value.encode("latin-1")
+        return value
+    except UnicodeEncodeError:
+        import base64
+        encoded = base64.b64encode(value.encode("utf-8")).decode("ascii")
+        return f"=?UTF-8?B?{encoded}?="
+
+
+def _ntfy_send(url: str, title: str, body: str, link: str | None = None) -> None:
+    """The v1 ntfy channel (D1): one stdlib urllib POST to the topic URL —
+    message = body, Title/Click headers, timeout=5.  Raises on failure (the
+    notify_halt wrapper owns fail-OPEN)."""
+    import urllib.request
+    headers = {"Title": _rfc2047_header(" ".join(title.split()))}
+    if link:
+        headers["Click"] = _rfc2047_header(link.strip())
+    req = urllib.request.Request(
+        url, data=body.encode("utf-8"), headers=headers, method="POST",
+    )
+    with urllib.request.urlopen(  # noqa: S310 — operator-configured URL
+        req, timeout=_NOTIFY_SEND_TIMEOUT_SECONDS
+    ) as resp:
+        resp.read()
+
+
+def notify_halt(state: dict, repo_root: str, *, pipeline: str = "feature",
+                sender=None, now: float | None = None) -> None:
+    """Page the operator about an attention-terminal halt.  Fail-OPEN observer:
+    NEVER raises, never prints to stdout, never changes the exit code, and is
+    a complete no-op (zero writes, state dict untouched) without config.
+
+    Called by BOTH state scripts' main() immediately before the state-JSON
+    write (D2 — the one chokepoint every halt passes through; parity-audited).
+    ``sender(title, body, link)`` is the injected channel seam (tests inject a
+    fake; production binds _ntfy_send to the configured topic URL).
+    """
+    identity: str | None = None
+    try:
+        config = _load_notify_config()
+        if config is None:
+            return  # D7: absent config ⇒ the feature does not exist.
+        reason = state.get("terminal_reason")
+        if not reason:
+            return  # forward routes never page
+        if reason in _NOTIFY_ATTENTION_TERMINALS:
+            pass
+        elif (reason in _NOTIFY_CLEAN_STOP_TERMINALS
+                and config.get("notify_on_clean_stop")):
+            pass
+        else:
+            return  # D3: everything else never pages
+        identity = _notify_identity(state, pipeline, now=now)
+        if identity in _load_notify_ledger():
+            return  # D4: already paged this halt
+        title, body, link = _compose_notify_payload(state, repo_root, pipeline)
+        if sender is None:
+            url = config["url"]
+            def sender(t, b, l, _url=url):  # noqa: E731 — production binding
+                _ntfy_send(_url, t, b, l)
+        diagnostics = state.get("diagnostics")
+        try:
+            sender(title, body, link)
+        except Exception as send_exc:  # noqa: BLE001 — D9 fail-OPEN
+            _write_notify_error(
+                f"{send_exc.__class__.__name__}: {send_exc}", identity, now=now,
+            )
+            if isinstance(diagnostics, list):
+                diagnostics.append(
+                    "notify_halt: send failed "
+                    f"({send_exc.__class__.__name__}: {send_exc}) — "
+                    "notify-error.json written; halt unaffected, "
+                    "no ledger entry (next observation retries)"
+                )
+            return
+        _record_notify_send(identity, state, pipeline, now=now)
+        if isinstance(diagnostics, list):
+            diagnostics.append(
+                f"notify_halt: paged terminal_reason={reason} "
+                "(recorded in notify-ledger.json)"
+            )
+    except Exception as exc:  # noqa: BLE001 — D9: nothing may propagate
+        try:
+            _write_notify_error(
+                f"internal error: {exc.__class__.__name__}: {exc}",
+                identity, now=now,
+            )
+        except Exception:  # noqa: BLE001 — even the breadcrumb is best-effort
+            pass
