@@ -82,6 +82,6 @@ python3 lint-skills.py --skills-dir <worktree-root>/user/skills --repos-dir <wor
 
 ## Phase 4 — Hardening-round capture + docs
 
-- [ ] WU-4.1 — `/harden-harness` Step 4 invocation block; `test_lazy_core.py` hardening-pipeline fixture (already red from WU-1.1's provenance test — extend/green).
-- [ ] WU-4.2 — Docs: `docs/interventions/CLAUDE.md` (schema + authoring surface + backfill); root `CLAUDE.md` scripts row; `user/scripts/CLAUDE.md` row + section.
-- [ ] WU-4.3 — FULL gate suite green (all pytest suites, both `--test` baselines, `lazy_coord.py --test`, `test_toolify_miner.py`, parity audit, lint-skills). Commit Phase 4. Write `SKIP_MCP_TEST.md`; flip PHASES/plan status.
+- [x] WU-4.1 — `/harden-harness` Step 4 invocation block; `test_lazy_core.py` hardening-pipeline fixture (already red from WU-1.1's provenance test — extend/green).
+- [x] WU-4.2 — Docs: `docs/interventions/CLAUDE.md` (schema + authoring surface + backfill); root `CLAUDE.md` scripts row; `user/scripts/CLAUDE.md` row + section.
+- [x] WU-4.3 — FULL gate suite green (all pytest suites, both `--test` baselines, `lazy_coord.py --test`, `test_toolify_miner.py`, parity audit, lint-skills). Commit Phase 4. Write `SKIP_MCP_TEST.md`; flip PHASES/plan status.

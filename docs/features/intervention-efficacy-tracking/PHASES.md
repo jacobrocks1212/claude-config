@@ -119,16 +119,16 @@
 **Scope:** `/harden-harness` Step 4 invokes `--record-intervention --id harden-<YYYY-MM>-r<N> --pipeline hardening` (additive to the round log; hypothesis-override flags carry the round's targeted signal when known). Document the D9 manual backfill flow. Author the docs rows: root `CLAUDE.md` scripts-table row, `user/scripts/CLAUDE.md` table row + intervention-ledger section, NEW `docs/interventions/CLAUDE.md` (record schema + the `## Intervention Hypothesis` authoring surface).
 
 **Deliverables:**
-- [ ] `user/skills/harden-harness/SKILL.md` Step 4: `--record-intervention` invocation block (`pipeline: hardening`, id scheme `harden-<YYYY-MM>-r<N>`, optional `--target-signal event:<type>` from the round's evidence; non-blocking).
-- [ ] `test_lazy_core.py`: hardening-round capture fixture — CLI-shaped `record_intervention(..., pipeline="hardening", hypothesis_overrides=…)` produces a record with `pipeline: hardening`; backfill overrides produce `provenance: backfilled`.
-- [ ] `docs/interventions/CLAUDE.md`: record schema, lifecycle, the `## Intervention Hypothesis` authoring block (copy-paste template), backfill flow.
-- [ ] Root `CLAUDE.md`: `efficacy-eval.py` scripts-table row (tightly scoped add).
-- [ ] `user/scripts/CLAUDE.md`: `efficacy-eval.py` table row + a short "Intervention efficacy ledger" section (capture chokepoint, opt-in flag, CLI, evaluator cadence).
+- [x] `user/skills/harden-harness/SKILL.md` Step 4: `--record-intervention` invocation block (`pipeline: hardening`, id scheme `harden-<YYYY-MM>-r<N>`, optional `--target-signal event:<type>` from the round's evidence; non-blocking).
+- [x] `test_lazy_core.py`: hardening-round capture fixture — CLI-shaped `record_intervention(..., pipeline="hardening", hypothesis_overrides=…)` produces a record with `pipeline: hardening`; backfill overrides produce `provenance: backfilled`.
+- [x] `docs/interventions/CLAUDE.md`: record schema, lifecycle, the `## Intervention Hypothesis` authoring block (copy-paste template), backfill flow.
+- [x] Root `CLAUDE.md`: `efficacy-eval.py` scripts-table row (tightly scoped add).
+- [x] `user/scripts/CLAUDE.md`: `efficacy-eval.py` table row + a short "Intervention efficacy ledger" section (capture chokepoint, opt-in flag, CLI, evaluator cadence).
 
 **Minimum Verifiable Behavior:** A hardening-round dry run (the CLI against a fixture repo) produces a record with `pipeline: hardening`; docs lint (doc-drift-lint self-check) unaffected.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Hardening-round capture: `--record-intervention --pipeline hardening` fixture → record with `pipeline: hardening`. *(Evidence: `SKIP_MCP_TEST.md` — `test_lazy_core.py` hardening fixture.)* <!-- verification-only -->
+- [x] Hardening-round capture: `--record-intervention --pipeline hardening` fixture → record with `pipeline: hardening`. *(Evidence: `SKIP_MCP_TEST.md` — `test_lazy_core.py` hardening fixture.)* <!-- verification-only -->
 - **DEFERRED (workstation-only, not a completion blocker):** a live `/harden-harness` round performing the Step-4 invocation end-to-end (needs a real hardening dispatch; the CLI it runs is covered hermetically).
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface. Verification is `pytest` + docs lint.
