@@ -14,8 +14,8 @@
 | | status: Needs-input · next: answer needs-input · A self-improving harness has a failure mode ordinary code doesn't: it can overfit to single incidents, weaken its own gates, and grade itself with metrics it controls. | | |
 | 5 | [build-queue-generalization](docs/features/build-queue-generalization/SPEC.md) | ⬡ Needs-input | T2 |
 | | status: Needs-input · next: answer needs-input · The machine-global FIFO build serializer (`build-queue.ps1` wrapper + self-releasing runner + hygiene module + outcome banner + enforcement hook) is hard-wired to one repo: a four-op `ValidateSet`, a `cognitoforms/cognito` git-remote scope gate, and .NET-specific hygiene (VBCSCompiler recycle, per-project DLL quarantine). | | |
-| 6 | [build-queue-eta-priority-lanes](docs/features/build-queue-eta-priority-lanes/SPEC.md) | Research | T2 |
-| | status: Research · next: research · Waiters on the machine-global build queue poll blind: the enqueue line and `build-queue-status.ps1` show position and elapsed wait, but no prediction of when a queued op will start or finish, and a 20-second filtered test run pays worst-case latency behind a full solution build. | | |
+| 6 | [build-queue-eta-priority-lanes](docs/features/build-queue-eta-priority-lanes/SPEC.md) | ⬡ Needs-input | T2 |
+| | status: Needs-input · next: answer needs-input · Waiters on the machine-global build queue poll blind: the enqueue line and `build-queue-status.ps1` show position and elapsed wait, but no prediction of when a queued op will start or finish, and a 20-second filtered test run pays worst-case latency behind a full solution build. | | |
 | 7 | [claude-config-ci](docs/features/claude-config-ci/SPEC.md) | Spec | T3 |
 | | status: Spec · next: spec · The repo has ~10 pytest suites, `lint-skills.py`, the parity audit, and a bash hook harness — and no `.github/workflows/`, so the harness's own integrity gates only run when someone remembers. | | |
 | 8 | [native-android-pipeline-steering](docs/features/native-android-pipeline-steering/SPEC.md) | Research | T3 |
@@ -58,3 +58,4 @@
 
 - ⬡ anti-overfit-design-gate — needs-input
 - ⬡ build-queue-generalization — needs-input
+- ⬡ build-queue-eta-priority-lanes — needs-input
