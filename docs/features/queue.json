@@ -34,6 +34,34 @@
       "id": "harness-telemetry-ledger",
       "name": "Harness Telemetry Ledger + Trends",
       "spec_dir": "harness-telemetry-ledger",
+      "tier": 1,
+      "stub": true
+    },
+    {
+      "id": "friction-kpi-registry",
+      "name": "Friction KPI Registry + Scorecards",
+      "spec_dir": "friction-kpi-registry",
+      "tier": 1,
+      "stub": true
+    },
+    {
+      "id": "intervention-efficacy-tracking",
+      "name": "Intervention Efficacy Tracking (Hypothesis Ledger)",
+      "spec_dir": "intervention-efficacy-tracking",
+      "tier": 1,
+      "stub": true
+    },
+    {
+      "id": "anti-overfit-design-gate",
+      "name": "Anti-Overfit + Tautology Design Gate for Harness Changes",
+      "spec_dir": "anti-overfit-design-gate",
+      "tier": 1,
+      "stub": true
+    },
+    {
+      "id": "harness-change-canary-rollback",
+      "name": "Harness-Change Canary + Rollback",
+      "spec_dir": "harness-change-canary-rollback",
       "tier": 2,
       "stub": true
     },

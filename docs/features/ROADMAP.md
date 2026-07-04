@@ -39,9 +39,23 @@ the historical / manually-authored spec archive (not under pipeline management).
 - CI for claude-config Itself (`claude-config-ci`) — no `.github/workflows/` exists; run the pytest suites, skill lint, parity audit, bash hook harness, and Pester/PSScriptAnalyzer on every push so the harness's own integrity gates are un-skippable.
 - Doc-Drift Linter (`doc-drift-linter`) — mechanically cross-check CLAUDE.md's hooks/scripts/coupled-pair tables against `settings.json`, the filesystem, and `lazy-parity-manifest.json`; the `worktree-claude-doc-drift` class, generalized.
 
+### Self-evolution cluster (operator-requested 2026-07-04)
+
+> The harness must continuously evolve — but with instruments and epistemic guardrails, so
+> improvements are measured (not narrated) and the self-improvement loop cannot overfit, weaken
+> its own gates, or grade itself with tautological metrics. Substrate → semantics → hypothesis →
+> guardrail: `harness-telemetry-ledger` (promoted from Tier 2 — raw-event substrate) →
+> `friction-kpi-registry` → `intervention-efficacy-tracking` → `anti-overfit-design-gate`, with
+> `harness-change-canary-rollback` (Tier 2) as the self-healing consumer.
+
+- Harness Telemetry Ledger + Trends (`harness-telemetry-ledger`) — state scripts emit a per-cycle JSONL ledger (cycles-per-feature, gate refusals, halt dwell, wall-time); `pipeline_visualizer` gains a trends view so hardening changes are measured, not vibes. *(Promoted from Tier 2 2026-07-04 — measurement substrate for this cluster.)*
+- Friction KPI Registry + Scorecards (`friction-kpi-registry`) — every friction-reduction system (build-queue, containment, halt handling, and anything designed later) declares canonical KPIs (signal sources, direction-of-goodness, baseline) in a machine-readable registry; scorecards trend per-system health and flag regressions; a `/spec`-time gate makes measurability a precondition for locking any future friction-reduction feature's baseline.
+- Intervention Efficacy Tracking (`intervention-efficacy-tracking`) — every harness change registers its hypothesis (targeted friction signal, baseline, expected direction, review-by date) at ship time; a post-window evaluator writes CONFIRMED/REFUTED/INCONCLUSIVE verdicts against telemetry; REFUTED auto-enqueues a reconsideration item, closing the observe→measure loop the retro system currently leaves open.
+- Anti-Overfit + Tautology Design Gate (`anti-overfit-design-gate`) — mechanical + adversarial review gate on harness self-modifications: overfit-smell detection (incident-literal rules), tautological-metric detection (a system graded by a signal it controls or suppresses), gate-weakening detection (loosened thresholds/exemptions demand operator sign-off), and a complexity budget; verdicts are recorded so the gate itself stays auditable.
+
 ## Tier 2 — proposed (repo-exploration stubs 2026-07-04)
 
-- Harness Telemetry Ledger + Trends (`harness-telemetry-ledger`) — state scripts emit a per-cycle JSONL ledger (cycles-per-feature, gate refusals, halt dwell, wall-time); `pipeline_visualizer` gains a trends view so hardening changes are measured, not vibes.
+- Harness-Change Canary + Rollback (`harness-change-canary-rollback`) — shipped control-surface changes enter an observation window; KPI regression or fresh incident clusters on the change's surface auto-enqueue an evidence-backed revert-or-redesign item, with revertibility metadata (change → commits via the provenance ledger) recorded at ship time. Flag-and-enqueue, never silent auto-revert.
 - First-Class Dependency DAG in queue.json (`queue-dependency-dag`) — promote ROADMAP-prose hard-deps to an enforced `deps: [...]` queue field so skip-ahead can jump around dependency chains safely; prerequisite readiness signal for parallel execution.
 - Cross-Repo Fleet Home Page (`cross-repo-fleet-view`) — multi-repo landing view in `pipeline_visualizer` aggregating every repo's queues, run markers, and halts into one control plane.
 - Scheduled Autonomous Runs (`scheduled-autonomous-runs`) — cron-triggered `/lazy-batch-cloud` drains the queue nightly; `LAZY_QUEUE.md` + halt notifications are the morning report; existing arbitration keeps scheduled runs from clobbering live ones.
