@@ -67,13 +67,13 @@ python3 lint-skills.py --skills-dir <repo-root>/user/skills --repos-dir <repo-ro
 
 ## Phase 2 — Enqueue path flags
 
-- [ ] WU-2.1 — TEST-FIRST: extend `run_smoke_tests()` with the `[enqueue-flags]` functional block
+- [x] WU-2.1 — TEST-FIRST: extend `run_smoke_tests()` with the `[enqueue-flags]` functional block
   (default entry has NO `stub` key; `stub=True` ⇒ `"stub": true`; `at="tail"` appends with honest
   `queue_position`; `--type bug` + `--stub` refused via CLI subprocess or handler check); run
   `lazy-state.py --test` → RED (TypeError/missing behavior).
-- [ ] WU-2.2 — Implement `enqueue_adhoc(…, stub=False, at="head")` + `--stub`/`--at` argparse +
+- [x] WU-2.2 — Implement `enqueue_adhoc(…, stub=False, at="head")` + `--stub`/`--at` argparse +
   handler threading + the `--type bug` refusal; `lazy-state.py --test` → GREEN.
-- [ ] WU-2.3 — Regenerate `tests/baselines/lazy-state-test-baseline.txt` via
+- [x] WU-2.3 — Regenerate `tests/baselines/lazy-state-test-baseline.txt` via
   `_normalize_smoke_output` (never hand-edit); `pytest test_lazy_core.py` baseline test green;
   `bug-state.py --test` green (baseline untouched); `lazy_parity_audit.py` exit 0. Commit Phase 2.
 

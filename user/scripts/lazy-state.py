@@ -586,6 +586,8 @@ def enqueue_adhoc(
     brief: str,
     spec_dir: str | None = None,
     tier: int = 0,
+    stub: bool = False,
+    at: str = "head",
 ) -> dict[str, Any]:
     """Insert an ad-hoc feature at the TOP of docs/features/queue.json.
 
@@ -594,6 +596,15 @@ def enqueue_adhoc(
     ADHOC_BRIEF.md (which Step 4 routes to /spec), and adds a ROADMAP.md row.
     queue.json / ROADMAP.md are created if absent so ad-hoc works in a fresh
     repo. Idempotent on the brief/dir; refuses a duplicate feature_id.
+
+    toolify-auto-promotion Phase 2 (D4-B), additive default-off params:
+    ``stub=True`` adds ``"stub": true`` to the queue entry (the Step-4.5
+    cross-check flag; the key is OMITTED otherwise so the default entry stays
+    byte-identical to before); ``at="tail"`` appends instead of prepending
+    (promotions ride normal roadmap order rather than jumping the curated
+    queue). Feature-pipeline-only — the bug pipeline has no stub step and
+    orders by severity, so ``bug-state.py`` deliberately has no mirror
+    (justified divergence; un-audited by ``lazy_parity_audit.py``).
     """
     repo_root = repo_root.resolve()
     if not re.match(r"^[a-z0-9][a-z0-9-]*$", feature_id):
@@ -619,13 +630,21 @@ def enqueue_adhoc(
         _die(f"feature_id already queued: {feature_id}", queue_path)
         return {}  # pragma: no cover
 
-    items.insert(0, {
+    entry: dict[str, Any] = {
         "id": feature_id,
         "name": name,
         "spec_dir": spec_dir,
         "tier": tier,
         "adhoc": True,
-    })
+    }
+    if stub:
+        entry["stub"] = True
+    if at == "tail":
+        items.append(entry)
+        queue_position = len(items) - 1
+    else:
+        items.insert(0, entry)
+        queue_position = 0
     data["queue"] = items
     _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
 
@@ -663,7 +682,7 @@ def enqueue_adhoc(
         "feature_name": name,
         "spec_path": str(spec_path),
         "brief_path": str(brief_file),
-        "queue_position": 0,
+        "queue_position": queue_position,
         "queue_length": len(items),
     }
 
@@ -7297,6 +7316,103 @@ def run_smoke_tests() -> int:
             pass
         print("  [enqueue] enqueue_adhoc prepend + brief + roadmap: ok")
 
+        # Functional check (toolify-auto-promotion Phase 2, D4-B): additive
+        # --stub / --at {head,tail} flags on enqueue_adhoc, byte-identical
+        # defaults. Feature-pipeline-only (bug pipeline has no stub step —
+        # justified divergence, no bug-state.py mirror).
+        enqf_root = td_path / "enqueue-flags-test"
+        enqf_features = enqf_root / "docs" / "features"
+        enqf_features.mkdir(parents=True, exist_ok=True)
+        (enqf_features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-y", "name": "Y", "spec_dir": "feat-y", "tier": 1}
+            ]
+        }))
+        (enqf_features / "ROADMAP.md").write_text("# Roadmap\n")
+        # (a) Default path byte-identity: head insert, NO "stub" key, the exact
+        # pre-change key-set on the entry.
+        res_def = enqueue_adhoc(enqf_root, "adhoc-default", "Adhoc Default", "x")
+        enqf_q1 = json.loads((enqf_features / "queue.json").read_text())
+        if enqf_q1["queue"][0].get("id") != "adhoc-default":
+            failures.append("[enqueue-flags] default: expected head insert")
+        if "stub" in enqf_q1["queue"][0]:
+            failures.append("[enqueue-flags] default: entry must NOT carry a stub key")
+        if set(enqf_q1["queue"][0].keys()) != {"id", "name", "spec_dir", "tier", "adhoc"}:
+            failures.append(
+                f"[enqueue-flags] default entry key-set drifted: "
+                f"{sorted(enqf_q1['queue'][0].keys())}"
+            )
+        if res_def.get("queue_position") != 0:
+            failures.append("[enqueue-flags] default: queue_position must be 0")
+        # (b) stub=True + at='tail' + tier=2: appended AFTER existing entries,
+        # honest queue_position, `"stub": true` on the entry.
+        res_tail = enqueue_adhoc(
+            enqf_root, "adhoc-stub-tail", "Adhoc Stub Tail", "y",
+            tier=2, stub=True, at="tail",
+        )
+        enqf_q2 = json.loads((enqf_features / "queue.json").read_text())
+        enqf_last = enqf_q2["queue"][-1]
+        if enqf_last.get("id") != "adhoc-stub-tail":
+            failures.append("[enqueue-flags] at=tail: entry must land at the queue tail")
+        if enqf_last.get("stub") is not True:
+            failures.append("[enqueue-flags] stub=True: entry missing stub: true")
+        if enqf_last.get("tier") != 2:
+            failures.append("[enqueue-flags] tier=2 did not thread")
+        if res_tail.get("queue_position") != len(enqf_q2["queue"]) - 1:
+            failures.append(
+                f"[enqueue-flags] at=tail: queue_position must be the tail index; "
+                f"got {res_tail.get('queue_position')!r}"
+            )
+        if enqf_q2["queue"][0].get("id") != "adhoc-default":
+            failures.append("[enqueue-flags] at=tail: head entry must be undisturbed")
+        # (c) CLI threading: --stub --at tail --tier 2 land on the entry.
+        enqf_cli_root = td_path / "enqueue-flags-cli-test"
+        (enqf_cli_root / "docs" / "features").mkdir(parents=True, exist_ok=True)
+        enqf_env = {**os.environ, "LAZY_ORCHESTRATOR": "1"}
+        sys.stdout.flush()
+        sys.stderr.flush()
+        enqf_cli = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()),
+             "--enqueue-adhoc", "--id", "adhoc-cli-stub", "--name", "Adhoc CLI Stub",
+             "--tier", "2", "--stub", "--at", "tail",
+             "--repo-root", str(enqf_cli_root)],
+            capture_output=True, text=True, env=enqf_env,
+        )
+        if enqf_cli.returncode != 0:
+            failures.append(
+                f"[enqueue-flags] CLI --stub --at tail failed: {enqf_cli.stderr.strip()!r}"
+            )
+        else:
+            enqf_q3 = json.loads(
+                (enqf_cli_root / "docs" / "features" / "queue.json").read_text()
+            )
+            enqf_cli_entry = enqf_q3["queue"][-1]
+            if (enqf_cli_entry.get("id") != "adhoc-cli-stub"
+                    or enqf_cli_entry.get("stub") is not True
+                    or enqf_cli_entry.get("tier") != 2):
+                failures.append(
+                    f"[enqueue-flags] CLI flags did not thread: {enqf_cli_entry!r}"
+                )
+        # (d) Feature-only flags: --stub with --type bug is refused loudly
+        # (exit 2) BEFORE any queue write — never silently ignored.
+        enqf_bug = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()),
+             "--enqueue-adhoc", "--type", "bug", "--stub",
+             "--id", "adhoc-bug-stub", "--name", "X",
+             "--repo-root", str(enqf_cli_root)],
+            capture_output=True, text=True, env=enqf_env,
+        )
+        if enqf_bug.returncode != 2:
+            failures.append(
+                f"[enqueue-flags] --type bug --stub must be refused (exit 2); "
+                f"got exit {enqf_bug.returncode}"
+            )
+        if (enqf_cli_root / "docs" / "bugs" / "queue.json").exists():
+            failures.append(
+                "[enqueue-flags] --type bug --stub refusal must not write docs/bugs/queue.json"
+            )
+        print("  [enqueue-flags] default byte-identical + stub/tail/tier + bug-type refusal: ok")
+
         # Functional check (unified-pipeline-orchestrator P3 WU-1):
         # enqueue_adhoc_bug routes an ad-hoc item into docs/bugs/queue.json via
         # the existing bug-state.py enqueue, seeds docs/bugs/<slug>/, and is
@@ -8825,6 +8941,20 @@ def main() -> int:
                               "subagent). single-slot-marker-ownership-race."))
     parser.add_argument("--tier", type=int, default=0,
                         help="Tier for the ad-hoc entry (default: 0).")
+    parser.add_argument("--stub", action="store_true",
+                        help=("toolify-auto-promotion D4-B: mark the ad-hoc queue "
+                              "entry \"stub\": true (Step-4.5 baseline-lock "
+                              "cross-check flag). Default off — entry byte-"
+                              "identical to before. Feature pipeline only "
+                              "(refused with --type bug)."))
+    parser.add_argument("--at", choices=["head", "tail"], default="head",
+                        dest="enqueue_at",
+                        help=("toolify-auto-promotion D4-B: queue landing "
+                              "position for --enqueue-adhoc. Default head "
+                              "(byte-identical prepend); tail appends so a "
+                              "promotion rides roadmap order instead of "
+                              "jumping the curated queue. Feature pipeline "
+                              "only (tail refused with --type bug)."))
     parser.add_argument("--materialize-wi", type=int, default=None,
                         help="Materialize ADO work item <id> from docs/work/ado-mirror.json into a doc pipeline.")
     parser.add_argument("--feature-id", default=None,
@@ -9857,6 +9987,14 @@ def main() -> int:
         if not args.id or not args.name:
             _die("--enqueue-adhoc requires --id and --name")
         if args.adhoc_type == "bug":
+            # toolify-auto-promotion Phase 2: --stub / --at tail are FEATURE-
+            # queue-shaped (the bug pipeline has no stub step and orders by
+            # severity). Refuse loudly BEFORE any write — never silently
+            # ignore a flag the caller asked for.
+            if args.stub or args.enqueue_at == "tail":
+                _die("--stub/--at tail are feature-pipeline-only "
+                     "(bug pipeline has no stub step); drop them or use "
+                     "--type feature")
             # unified-pipeline-orchestrator P3: route into docs/bugs/queue.json
             # via the existing bug-state.py enqueue (do NOT reimplement it).
             result = enqueue_adhoc_bug(
@@ -9874,6 +10012,8 @@ def main() -> int:
                 args.brief,
                 args.spec_dir,
                 args.tier,
+                stub=args.stub,
+                at=args.enqueue_at,
             )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0

@@ -91,20 +91,20 @@ guard that the additive change stays read-only.
 a justified divergence from `bug-state.py` (no stub step; severity ordering).
 
 **Deliverables:**
-- [ ] `enqueue_adhoc(…, stub: bool = False, at: str = "head")`: `stub=True` adds `"stub": true`
+- [x] `enqueue_adhoc(…, stub: bool = False, at: str = "head")`: `stub=True` adds `"stub": true`
   to the queue entry (key absent otherwise — byte-identical default); `at="tail"` appends instead
   of prepending (`queue_position` reported honestly).
-- [ ] CLI: `--stub` (store_true) + `--at {head,tail}` (default `head`) on `lazy-state.py`;
+- [x] CLI: `--stub` (store_true) + `--at {head,tail}` (default `head`) on `lazy-state.py`;
   threaded in the `args.enqueue_adhoc` feature branch; `--stub`/`--at tail` combined with
   `--type bug` is refused loudly (`_die`, exit 2) — never silently ignored.
-- [ ] `--test` fixtures (inline functional checks beside the existing `[enqueue]` block): default
+- [x] `--test` fixtures (inline functional checks beside the existing `[enqueue]` block): default
   invocation writes NO `stub` key + prepends (byte-identical to today); `stub=True` writes
   `"stub": true`; `at="tail"` appends after existing entries with correct `queue_position`;
   tier threads (existing param).
-- [ ] Baseline: `tests/baselines/lazy-state-test-baseline.txt` regenerated ONLY via
+- [x] Baseline: `tests/baselines/lazy-state-test-baseline.txt` regenerated ONLY via
   `_normalize_smoke_output` (new fixture prints legitimately change the output);
   `bug-state-test-baseline.txt` untouched.
-- [ ] Parity audit run recorded: `lazy_parity_audit.py --repo-root .` exit 0 (the audit's
+- [x] Parity audit run recorded: `lazy_parity_audit.py --repo-root .` exit 0 (the audit's
   state-script checks name five fixed surfaces, none enqueue-flag-shaped — divergence confirmed
   un-audited and documented in `user/scripts/CLAUDE.md`).
 
@@ -114,10 +114,10 @@ adhoc: true, stub: true}` at the queue tail.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the
 implementation agent):*
-- [ ] Enqueue defaults untouched: default-path fixture asserts no `stub` key + position 0.
+- [x] Enqueue defaults untouched: default-path fixture asserts no `stub` key + position 0.
   *(Evidence: `SKIP_MCP_TEST.md` — `lazy-state.py --test` `[enqueue-flags]` fixture.)*
   <!-- verification-only -->
-- [ ] Parity audit stays exit 0 with the feature-only flags present. *(Evidence:
+- [x] Parity audit stays exit 0 with the feature-only flags present. *(Evidence:
   `SKIP_MCP_TEST.md` — `lazy_parity_audit.py` run.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface
