@@ -335,14 +335,23 @@ _HOST_CAPABILITY_BLOCKER_KIND_RE = re.compile(r"unknown-host-capability")
 # path so the orchestrator receives the @@lazy-ref dispatch token.  A drop of
 # the assignment from either script is a hard finding here.
 _CYCLE_PROMPT_REF_RE = re.compile(r'state\["cycle_prompt_ref"\]\s*=')
+# queue-dependency-dag Phase 5: the orchestrator-only --sync-deps subcommand
+# (the SPEC dep-block → queue `deps` feeder, D5) is a coupled-pair surface —
+# the dep-gate enforces the field on BOTH pipelines, so the script-owned
+# writer must exist on both state scripts (a drop from one would leave that
+# pipeline's queue deps stuck in manual-edit territory, violating the
+# no-hand-edit-queue.json HARD CONSTRAINT).  Match the argparse flag literal.
+_SYNC_DEPS_RE = re.compile(r'"--sync-deps"')
 
 
 def audit_state_script_parity(repo_root: str | Path) -> list[str]:
     """Assert the shared per-repo state-dir surface is consistent across the
     feature and bug state scripts: each must call
     ``set_active_repo_root(args.repo_root)`` at main(), each must carry the
-    operator-only ``--reorder-queue`` subcommand, AND each must carry the
-    orchestrator-only ``--reassert-owner`` subcommand (coupled-pair parity).
+    operator-only ``--reorder-queue`` subcommand, each must carry the
+    orchestrator-only ``--reassert-owner`` subcommand, AND each must carry the
+    orchestrator-only ``--sync-deps`` feeder (queue-dependency-dag coupled-pair
+    parity).
     Returns one finding per script missing any surface; empty means parity holds.
 
     This is additive — it audits the Python state machines (not the SKILL.md
@@ -395,6 +404,14 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
                 f"so both state scripts fail fast on an unprobeable capability id "
                 f"instead of silently deferring forever "
                 f"(host-capability-declaration-for-gated-features coupled-pair parity)"
+            )
+        if _SYNC_DEPS_RE.search(text) is None:
+            findings.append(
+                f"lazy-parity [state-scripts] STATE: {script} must carry the "
+                f"orchestrator-only --sync-deps subcommand (calls "
+                f"lazy_core.sync_deps, gated by refuse_if_cycle_active) so both "
+                f"state scripts expose the same script-owned SPEC-dep-block → "
+                f"queue-deps feeder (queue-dependency-dag coupled-pair parity)"
             )
         if _CYCLE_PROMPT_REF_RE.search(text) is None:
             findings.append(

@@ -122,7 +122,7 @@ At runtime, Claude Code expands this inline. The `project-skills.py` script pre-
 - `plan-file-output.md` — Writes plan files to `plans/` subdirs
 - `quality-gates.md` — Project-specific build/test gates
 - `subagent-launch.md` / `subagent-review.md` — Orchestrator+subagent execution model
-- `adhoc-enqueue.md` — Shared `/lazy*` ad-hoc enqueue protocol (`--adhoc`): prepends an item to `queue.json` via `lazy-state.py --enqueue-adhoc`, seeds `ADHOC_BRIEF.md`, adds a ROADMAP row. Injected into all four `/lazy*` skills. **Type-aware (`unified-pipeline-orchestrator` Phase 3):** `--type {feature|bug}` (default `feature` — byte-identical when omitted) selects the destination pipeline; `--type bug` routes into `docs/bugs/queue.json` via the existing `bug-state.py` enqueue + seeds `docs/bugs/<slug>/`, for harden-harness spin-offs and other defect items.
+- `adhoc-enqueue.md` — Shared `/lazy*` ad-hoc enqueue protocol (`--adhoc`): prepends an item to `queue.json` via `lazy-state.py --enqueue-adhoc`, seeds `ADHOC_BRIEF.md`, adds a ROADMAP row. Injected into all four `/lazy*` skills. **Type-aware (`unified-pipeline-orchestrator` Phase 3):** `--type {feature|bug}` (default `feature` — byte-identical when omitted) selects the destination pipeline; `--type bug` routes into `docs/bugs/queue.json` via the existing `bug-state.py` enqueue + seeds `docs/bugs/<slug>/`, for harden-harness spin-offs and other defect items. Optional `--deps a,b` (queue-dependency-dag) declares hard queue deps at enqueue time (validated; `bug:`/`feature:` prefixes reserved for vN).
 - `phases-runtime-validation.md` — The `/spec-phases` Step 2.7 capability-audit injected BEFORE drafting phases. Generic version under `_components/`; per-repo override at `repos/<name>/.claude/skill-config/`. Carries two planning-time audits: (1) the **SPEC-example capability audit** (negative-evidence grep over every API surface / construct the SPEC's code examples consume — an explicitly-rejected capability is a planning-time halt); and (2) the **MCP tool-existence audit** (`mcp-tooling-not-predetermined-at-planning`) — enumerates the MCP tools the SPEC's validation will call, greps the per-repo `mcp-tool-catalog.md` registry sources, and AUTO-AUTHORS a "build MCP tool X" deliverable up front on a miss (catalog absent → no-op). Moves MCP tool-surface determination to the FRONT of the pipeline so a missing tool lands before `/mcp-test` instead of forcing a late corrective add-phase / `adhoc-mcp-*` spin-off. The repo-specific registry paths live in `repos/<name>/.claude/skill-config/mcp-tool-catalog.md` (AlgoBooth: `scripts/mcp-test/tool-methods.ts` + the Rust `inventory::submit!` sites).
 - `mcp-coverage-audit.md` — Gates `__mark_complete__` (feature pipeline) and `__mark_fixed__` (bug pipeline) across the `/lazy*` family: **Gate 1** in `/lazy` + `/lazy-cloud` + `/lazy-bug`, Step 1c.5 in `/lazy-batch` + `/lazy-batch-cloud` + `/lazy-bug-batch`. Reads SPEC.md's `## Locked Decisions` / `## Resolved by Research` / numbered key-decisions surface; greps `mcp-tests/*.md` for each decision's id + keywords (consumers pass `{feature_id}` or `{bug_id}`); uncovered decisions write `NEEDS_INPUT.md` (test-or-exempt choice) instead of flipping SPEC to Complete. Docs-only — runs identically in cloud and workstation. **Completion-time half of the MCP-tooling two-seam contract (`mcp-tooling-not-predetermined-at-planning`):** a required-MCP-tooling Locked Decision captured at `/spec` is enumerated here with no algorithm change (ordinary `## Locked Decisions` row), so the gate asserts the tool's scenario coverage — defense-in-depth with the planning-time `phases-runtime-validation.md` audit above.
 - `audit-table-validator.md` — Post-generation validator for any audit artifact that writes per-feature decision tables. Non-destructive — appends `⚠ NOT-FOUND-IN-SPEC` (SPEC keyword search miss) and `⚠ CROSS-FEATURE-DUP(<other-feature-id>)` (literal duplicate row text across artifacts) markers in place + a `## Audit-Table Validator Report` summary. Injected into `/lazy-batch-retro` Step 6c; future ad-hoc audit-ledger generators inject it the same way.
@@ -186,6 +186,19 @@ python ~/.claude/scripts/lint-skills.py                           # Basic: broke
 python ~/.claude/scripts/lint-skills.py --check-projected --check-capabilities  # Full: cross-repo check
 python ~/.claude/scripts/project-skills.py                        # Expand all skills → projected/
 ```
+
+### Queue dependency DAG (`queue-dependency-dag`)
+
+Queue entries on BOTH pipelines accept an optional `"deps": ["<id>"]` field — a flat, hard-only,
+machine-enforced dependency list (the enforcement projection of the SPEC `**Depends on:**` block,
+which stays the prose SSOT). `compute_state()`'s dep-gate HOLDS an item whose dep is not
+receipt-gated-complete (surfaced via the `dep_gated` probe key; all-held → the clean
+`queue-exhausted-dependency-gated` terminal); a dangling/`Superseded`/`Won't-fix` dep fail-fasts
+as `BLOCKED.md` `blocker_kind: unknown-dependency`; a declared cycle refuses every probe (`_die`
+exit 2 at load). The field is written ONLY by the script-owned `--sync-deps` feeder (invoked at
+`/spec-phases` Step 1.6; idempotent; both state scripts — parity-audited) or `--enqueue-adhoc
+--deps`; a probe-time drift diagnostic flags queue-vs-SPEC divergence. Entries without `deps` are
+byte-identical to before. See `user/scripts/CLAUDE.md` → "Queue dependency DAG".
 
 ### Research resume in claude-config
 

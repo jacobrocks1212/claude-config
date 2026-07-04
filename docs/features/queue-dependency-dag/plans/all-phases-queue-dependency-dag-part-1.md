@@ -114,13 +114,13 @@ Full lane gate suite (all ten pytest files + lazy_coord + toolify) at the end.
 
 ## Phase 5 — Parity + docs
 
-- [ ] WU-5.1 — TESTS FIRST: `test_lazy_parity.py` — add the fires-when-sync-deps-missing case;
+- [x] WU-5.1 — TESTS FIRST: `test_lazy_parity.py` — add the fires-when-sync-deps-missing case;
   extend the existing stubs with the `--sync-deps` token (they must stay green once the audit
   gains surface #6). Run → red (audit lacks the surface).
-- [ ] WU-5.2 — `lazy_parity_audit.py`: `_SYNC_DEPS_RE` + finding in `audit_state_script_parity`;
+- [x] WU-5.2 — `lazy_parity_audit.py`: `_SYNC_DEPS_RE` + finding in `audit_state_script_parity`;
   docstring updated.
-- [ ] WU-5.3 — docs: `user/scripts/CLAUDE.md` (CLI rows + deps-field contributor note), root
+- [x] WU-5.3 — docs: `user/scripts/CLAUDE.md` (CLI rows + deps-field contributor note), root
   `CLAUDE.md` (scripts-section note + adhoc-enqueue bullet), `docs/features/CLAUDE.md` (queue.json
   schema note), `dep-block-schema.md` ("Queue projection" paragraph) + re-projection + lint.
-- [ ] WU-5.4 — FULL lane gate suite green (all pytest files, both `--test`, `lazy_coord.py --test`,
+- [x] WU-5.4 — FULL lane gate suite green (all pytest files, both `--test`, `lazy_coord.py --test`,
   `test_toolify_miner.py`, parity audit, lint-skills).

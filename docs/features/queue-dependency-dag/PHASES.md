@@ -287,20 +287,20 @@ stub updates; schema/CLI documentation rows; `dep-block-schema.md` queue-project
 full gate suite.
 
 **Deliverables:**
-- [ ] `lazy_parity_audit.py`: `_SYNC_DEPS_RE = re.compile(r'"--sync-deps"')` + finding text in
+- [x] `lazy_parity_audit.py`: `_SYNC_DEPS_RE = re.compile(r'"--sync-deps"')` + finding text in
   `audit_state_script_parity` (queue-dependency-dag coupled-pair parity).
-- [ ] `test_lazy_parity.py`: every `TestStateScriptParity` stub gains the `--sync-deps` token;
+- [x] `test_lazy_parity.py`: every `TestStateScriptParity` stub gains the `--sync-deps` token;
   docstrings/comments updated FIVE → SIX; new fires-when-sync-deps-missing test.
-- [ ] `user/scripts/CLAUDE.md`: CLI rows for `--sync-deps` + `--enqueue-adhoc --deps`, and a
+- [x] `user/scripts/CLAUDE.md`: CLI rows for `--sync-deps` + `--enqueue-adhoc --deps`, and a
   contributor note documenting the `deps` field, the dep-gate, the `dep_gated` probe key, the
   terminal, and the two justified divergences.
-- [ ] Root `CLAUDE.md`: queue-dependency-dag note (scripts section) + `adhoc-enqueue.md`
+- [x] Root `CLAUDE.md`: queue-dependency-dag note (scripts section) + `adhoc-enqueue.md`
   component bullet gains `--deps`.
-- [ ] `docs/features/CLAUDE.md`: `deps` schema note on the queue.json line.
-- [ ] `user/skills/_components/dep-block-schema.md`: "Queue projection" paragraph (prose block =
+- [x] `docs/features/CLAUDE.md`: `deps` schema note on the queue.json line.
+- [x] `user/skills/_components/dep-block-schema.md`: "Queue projection" paragraph (prose block =
   SSOT for kinds/reasons; queue `deps` = script-owned hard-only enforcement projection via
   `--sync-deps`; drift diagnostic; reserved prefixes).
-- [ ] Full gate suite green (pytest suites + both `--test` + `lazy_coord.py --test` +
+- [x] Full gate suite green (pytest suites + both `--test` + `lazy_coord.py --test` +
   `toolify` + parity audit + lint).
 
 **Minimum Verifiable Behavior:** `lazy_parity_audit.py --repo-root .` exits 0 against the live
@@ -308,7 +308,7 @@ tree and exits 1 (naming `--sync-deps`) against a stub tree where one script dro
 `lint-skills.py` clean.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Parity: full fixture suites on both scripts + `lazy_parity_audit.py` green. *(Evidence:
+- [x] Parity: full fixture suites on both scripts + `lazy_parity_audit.py` green. *(Evidence:
   `SKIP_MCP_TEST.md` — gate-suite tails.)*
 <!-- verification-only -->
 
