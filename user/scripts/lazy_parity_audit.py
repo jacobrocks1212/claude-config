@@ -308,6 +308,12 @@ _REORDER_QUEUE_RE = re.compile(r'"--reorder-queue"')
 # likewise a coupled-pair surface — the run marker is SHARED between pipelines, so
 # the re-claim action added to one state script must appear in the other.
 _REASSERT_OWNER_RE = re.compile(r'"--reassert-owner"')
+# intervention-efficacy-tracking Phase 1: the orchestrator-only
+# --record-intervention subcommand (hypothesis-ledger capture for the manual /
+# hardening-round / D9-backfill paths; the completion-gate capture itself lives
+# in the SHARED lazy_core.apply_pseudo, parity by construction) is a
+# coupled-pair CLI surface — present on both state scripts.
+_RECORD_INTERVENTION_RE = re.compile(r'"--record-intervention"')
 # host-capability-declaration-for-gated-features Phase 6: the requires_host:
 # PARSE + the unregistered-id FAIL-FAST is a MIRRORED coupled-pair surface — a
 # requires_host: id with no registry probe could never be present on ANY host, so
@@ -391,6 +397,14 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
                 f"lazy_core.reassert_marker_owner, gated by refuse_if_cycle_active) "
                 f"so both state scripts expose the same shared-marker re-arm "
                 f"surface (single-slot-marker-ownership-race coupled-pair parity)"
+            )
+        if _RECORD_INTERVENTION_RE.search(text) is None:
+            findings.append(
+                f"lazy-parity [state-scripts] STATE: {script} must carry the "
+                f"orchestrator-only --record-intervention subcommand (calls "
+                f"lazy_core.record_intervention, gated by refuse_if_cycle_active) "
+                f"so both state scripts expose the same hypothesis-ledger capture "
+                f"surface (intervention-efficacy-tracking coupled-pair parity)"
             )
         if (
             _HOST_CAPABILITY_FAILFAST_RE.search(text) is None

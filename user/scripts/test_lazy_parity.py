@@ -649,11 +649,12 @@ class TestStateScriptParity:
         set_active_repo_root(args.repo_root) binding."""
         scripts = tmp_path / "user" / "scripts"
         scripts.mkdir(parents=True)
-        # lazy-state.py carries ALL SIX surfaces.
+        # lazy-state.py carries ALL SEVEN surfaces.
         (scripts / "lazy-state.py").write_text(
             'def main():\n    lazy_core.set_active_repo_root(args.repo_root)\n'
             '    parser.add_argument("--reorder-queue")\n'
             '    parser.add_argument("--reassert-owner")\n'
+            '    parser.add_argument("--record-intervention")\n'
             '    parser.add_argument("--sync-deps")\n'
             '    lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
@@ -666,6 +667,7 @@ class TestStateScriptParity:
             'def main():\n    pass  # no active-repo binding\n'
             '    parser.add_argument("--reorder-queue")\n'
             '    parser.add_argument("--reassert-owner")\n'
+            '    parser.add_argument("--record-intervention")\n'
             '    parser.add_argument("--sync-deps")\n'
             '    lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
@@ -691,6 +693,7 @@ class TestStateScriptParity:
             'set_active_repo_root(args.repo_root)\n'
             'parser.add_argument("--reorder-queue")\n'
             'parser.add_argument("--reassert-owner")\n'
+            'parser.add_argument("--record-intervention")\n'
             'parser.add_argument("--sync-deps")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
@@ -702,6 +705,7 @@ class TestStateScriptParity:
         (scripts / "bug-state.py").write_text(
             'set_active_repo_root(args.repo_root)  # no --reorder-queue\n'
             'parser.add_argument("--reassert-owner")\n'
+            'parser.add_argument("--record-intervention")\n'
             'parser.add_argument("--sync-deps")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
@@ -721,11 +725,12 @@ class TestStateScriptParity:
         surface)."""
         scripts = tmp_path / "user" / "scripts"
         scripts.mkdir(parents=True)
-        # lazy-state.py carries ALL SIX surfaces.
+        # lazy-state.py carries ALL SEVEN surfaces.
         (scripts / "lazy-state.py").write_text(
             'set_active_repo_root(args.repo_root)\n'
             'parser.add_argument("--reorder-queue")\n'
             'parser.add_argument("--reassert-owner")\n'
+            'parser.add_argument("--record-intervention")\n'
             'parser.add_argument("--sync-deps")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
@@ -738,6 +743,7 @@ class TestStateScriptParity:
             'set_active_repo_root(args.repo_root)  # no --sync-deps\n'
             'parser.add_argument("--reorder-queue")\n'
             'parser.add_argument("--reassert-owner")\n'
+            'parser.add_argument("--record-intervention")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
             'state["cycle_prompt_ref"] = _emit_ref\n',
@@ -755,13 +761,14 @@ class TestStateScriptParity:
         prefixed form) AND the --reorder-queue subcommand."""
         scripts = tmp_path / "user" / "scripts"
         scripts.mkdir(parents=True)
-        # Both stubs carry ALL SIX surfaces; the binding form differs (bare
+        # Both stubs carry ALL SEVEN surfaces; the binding form differs (bare
         # here, lazy_core.-prefixed in bug-state.py) to keep both regex
         # alternatives covered.
         (scripts / "lazy-state.py").write_text(
             'set_active_repo_root( args.repo_root )\n'
             'parser.add_argument("--reorder-queue")\n'
             'parser.add_argument("--reassert-owner")\n'
+            'parser.add_argument("--record-intervention")\n'
             'parser.add_argument("--sync-deps")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
@@ -772,6 +779,7 @@ class TestStateScriptParity:
             'lazy_core.set_active_repo_root(args.repo_root)\n'
             'parser.add_argument("--reorder-queue")\n'
             'parser.add_argument("--reassert-owner")\n'
+            'parser.add_argument("--record-intervention")\n'
             'parser.add_argument("--sync-deps")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'

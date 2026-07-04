@@ -4656,6 +4656,41 @@ def apply_pseudo(
         )
         wrote = [receipt_filename]
 
+        # --- Intervention capture (intervention-efficacy-tracking D1-A) ---
+        # AFTER the receipt write (the receipt is the completion's core; the
+        # record is additive) and BEHIND the receipt-noop guard above (a
+        # re-completion never re-captures). Eligibility (D2-A): the repo's
+        # top-level `"interventions": true` queue flag OR a present
+        # `## Intervention Hypothesis` SPEC block — otherwise this branch is
+        # byte-inert (no keys, no file; every non-opted-in repo unchanged).
+        # FAIL-OPEN: any capture error degrades to a `warnings` entry — the
+        # completion stands; capture can never fail a completion.
+        intervention_result: dict | None = None
+        intervention_warnings: list[str] = []
+        try:
+            _spec_md_path = spec_path / "SPEC.md"
+            _hyp_present = False
+            if _spec_md_path.exists():
+                _hyp_present = parse_intervention_hypothesis(
+                    _spec_md_path.read_text(encoding="utf-8")
+                ) is not None
+            if _interventions_queue_flag(repo_root) or _hyp_present:
+                intervention_result = record_intervention(
+                    repo_root,
+                    feature_id,
+                    pipeline="bug" if is_fixed else "feature",
+                    spec_path=spec_path,
+                    date=date,
+                    provenance="gated",
+                )
+        except Exception as exc:  # noqa: BLE001 — capture is fail-open
+            intervention_warnings.append(
+                f"intervention capture failed ({exc}) — the completion "
+                f"stands; record docs/{_INTERVENTIONS_DIRNAME}/"
+                f"{feature_id}.md was not written (re-capture manually via "
+                f"--record-intervention)"
+            )
+
         # --- (b) Flip status lines in SPEC.md and PHASES.md ---
         status_line_re = re.compile(r"^\*\*Status:\*\*.*$", re.MULTILINE)
 
@@ -4871,10 +4906,22 @@ def apply_pseudo(
         # distillate + index rows were written this call (False on a contained
         # provenance failure — see the warnings[] entry it leaves behind).
         result["provenance_written"] = provenance_written
-        if queue_warnings:
+        # intervention-efficacy-tracking D1-A: attach the capture keys ONLY
+        # when capture fired (eligibility met) — a non-opted-in repo's result
+        # stays byte-identical to pre-feature. `intervention_recorded` is True
+        # for a fresh record AND for an existing-record noop (the record
+        # exists either way — e.g. a prior D9 backfill).
+        if intervention_result is not None:
+            result["intervention_recorded"] = bool(
+                intervention_result.get("recorded")
+                or intervention_result.get("noop")
+            )
+            result["intervention_record"] = intervention_result.get("path")
+        all_warnings = intervention_warnings + queue_warnings
+        if all_warnings:
             existing_warnings = result.get("warnings") or []
-            result["warnings"] = existing_warnings + queue_warnings
-            for w in queue_warnings:
+            result["warnings"] = existing_warnings + all_warnings
+            for w in all_warnings:
                 print(f"WARNING: {w}", file=sys.stderr)
         return result
 
@@ -14806,6 +14853,415 @@ def flush_cloud_telemetry_segment(
     except Exception:  # noqa: BLE001
         # Fail-open: the flush must never block --run-end.
         return None
+
+
+# ---------------------------------------------------------------------------
+# intervention-efficacy-tracking — the hypothesis ledger (capture half).
+#
+# Every shipped harness change is an implicit hypothesis ("this change will
+# move friction signal X in direction D"). Capture writes a deterministic,
+# script-owned intervention record (a frontmatter-sentinel markdown file at
+# docs/interventions/<id>.md — committed, durable, GitHub-mobile readable;
+# D4-A central residency) at the completion chokepoint:
+#
+#   * apply_pseudo __mark_complete__ / __mark_fixed__ — ONE shared call site,
+#     so both pipelines inherit capture by construction (D1-A). Eligibility:
+#     a top-level `"interventions": true` in docs/features/queue.json (the
+#     `"autodiscover": true` precedent — only claude-config sets it) OR a
+#     present `## Intervention Hypothesis` SPEC block. Otherwise the
+#     completion is byte-identical to pre-feature (no keys, no file).
+#   * the orchestrator-only `--record-intervention` CLI on BOTH state scripts
+#     (the /harden-harness round path, manual capture, and the D9 opt-in
+#     backfill — `--shipped-commit`/`--shipped-date` stamp
+#     `provenance: backfilled`, mirroring `backfilled-unverified` honesty).
+#
+# The baseline is FROZEN into the record at capture time (D3): the raw
+# telemetry ledger is untracked + rotation-eligible, so verdicts must never
+# depend on raw-event retention. Missing/undeclared inputs degrade honestly
+# (`unavailable` / `not-computable` / `target_signal: undeclared`) — capture
+# NEVER errors a completion (D2-A: fail-open to a warnings entry).
+#
+# The evaluation half lives OFF the state-script compute path in
+# user/scripts/efficacy-eval.py (the toolify-miner/lazy-queue-doc precedent),
+# which re-reads these records via parse_sentinel and re-writes them through
+# the same _render_intervention_record serializer (diff-stable field order).
+# ---------------------------------------------------------------------------
+
+# D5-A declared defaults — one block, per-record overridable via the
+# `## Intervention Hypothesis` block (baseline_runs / review_after_runs /
+# min_sample / band_pct). Starting points to be tuned by this feature's own
+# ledger, not laws.
+INTERVENTION_BASELINE_RUNS = 20
+INTERVENTION_REVIEW_AFTER_RUNS = 20
+INTERVENTION_MIN_SAMPLE = 5
+INTERVENTION_BAND_PCT = 20
+
+_INTERVENTIONS_DIRNAME = "interventions"
+
+_INTERVENTION_HYPOTHESIS_HEADING_RE = re.compile(
+    r"(?mi)^##\s+Intervention Hypothesis\s*$"
+)
+_INTERVENTION_FIELD_RE = re.compile(r"^[-*]\s*([a-z_]+)\s*:\s*(.+?)\s*$")
+# The three signal_independence enum heads (D3); the justification sentence
+# rides in `signal_independence_note` and the record body.
+_INTERVENTION_INDEPENDENCE_ENUM = ("independent", "self-emitted", "mixed")
+_INTERVENTION_INT_FIELDS = (
+    "review_after_runs", "baseline_runs", "min_sample", "band_pct",
+)
+
+
+def parse_intervention_hypothesis(spec_text: str) -> dict | None:
+    """Parse a SPEC's ``## Intervention Hypothesis`` block (D2-A).
+
+    Returns a dict of the declared fields, or None when the heading is absent
+    (the degrade-on-absence discriminator — an absent block still captures,
+    as ``target_signal: undeclared``). Recognized list-item fields:
+    ``target_signal``, ``expected_direction``, ``signal_independence`` (enum
+    head extracted to the field; the full raw value — including a wrapped
+    justification continuation line — lands in ``signal_independence_note``),
+    ``review_after_runs`` and the optional D5 overrides ``baseline_runs`` /
+    ``min_sample`` / ``band_pct`` (ints; a malformed int is OMITTED, never
+    raised — capture must never break a completion).
+    """
+    m = _INTERVENTION_HYPOTHESIS_HEADING_RE.search(spec_text or "")
+    if m is None:
+        return None
+    fields: dict = {}
+    raw: dict[str, str] = {}
+    current: str | None = None
+    for line in spec_text[m.end():].splitlines():
+        if line.startswith("##"):
+            break  # next section — the block has ended
+        stripped = line.strip()
+        if not stripped:
+            current = None
+            continue
+        fm = _INTERVENTION_FIELD_RE.match(stripped)
+        if fm:
+            current = fm.group(1)
+            raw[current] = fm.group(2)
+            continue
+        if current is not None and line[:1] in (" ", "\t"):
+            # Wrapped continuation of the previous list item (the SPEC's UX
+            # example wraps the signal_independence justification).
+            raw[current] = raw[current] + " " + stripped
+            continue
+        current = None  # non-field prose — stop folding
+    for key in ("target_signal", "expected_direction"):
+        if key in raw:
+            fields[key] = raw[key]
+    if "signal_independence" in raw:
+        value = raw["signal_independence"]
+        head = value.split()[0].rstrip(":,;") if value.split() else value
+        fields["signal_independence"] = (
+            head if head in _INTERVENTION_INDEPENDENCE_ENUM else value
+        )
+        fields["signal_independence_note"] = value
+    for key in _INTERVENTION_INT_FIELDS:
+        if key in raw:
+            try:
+                fields[key] = int(raw[key])
+            except (TypeError, ValueError):
+                pass  # malformed int → omitted (defaults apply downstream)
+    return fields
+
+
+def _intervention_signal_event(target_signal: str) -> str | None:
+    """Return the ledger event type for an ``event:<type>`` target, else None.
+
+    ``kpi:<system>.<kpi-id>`` targets are carried VERBATIM on the record and
+    resolve through the friction-kpi-registry (soft dep) at evaluation time —
+    this helper deliberately does NOT resolve them (the evaluator owns the
+    resolution seam and degrades a miss to ``INCONCLUSIVE (kpi-unresolvable)``).
+    """
+    if isinstance(target_signal, str) and target_signal.startswith("event:"):
+        return target_signal[len("event:"):] or None
+    return None
+
+
+def read_intervention_telemetry(repo_root: Path) -> list[dict]:
+    """Merged, deduped, chronological telemetry read for intervention windows.
+
+    State-dir ledger (``read_telemetry_events`` — rotated segments + active
+    file) PLUS any committed cloud segments under
+    ``<repo_root>/docs/telemetry/cloud/*.jsonl`` (the trends-aggregator read
+    pattern — cloud runs' events survive only as committed segments). Deduped
+    on ``(run_id, ts, event, item_id)``; sorted by ``(run_id, ts)`` so
+    consumers see run-grouped chronological order. Read-only and fail-open —
+    any error contributes nothing rather than raising.
+    """
+    events = list(read_telemetry_events())
+    try:
+        seg_dir = Path(repo_root) / "docs" / "telemetry" / "cloud"
+        if seg_dir.is_dir():
+            seg_paths = sorted(seg_dir.glob("*.jsonl"))
+            if seg_paths:
+                events += read_telemetry_events(paths=seg_paths)
+    except OSError:
+        pass
+    seen: set = set()
+    merged: list[dict] = []
+    for e in events:
+        key = (e.get("run_id"), e.get("ts"), e.get("event"), e.get("item_id"))
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(e)
+    merged.sort(key=lambda e: (e.get("run_id") or "", e.get("ts") or 0.0))
+    return merged
+
+
+# The record's frontmatter field order — ONE serializer owns it so capture
+# writes and evaluator re-writes stay diff-stable.
+_INTERVENTION_FIELD_ORDER = (
+    "kind", "intervention_id", "pipeline", "provenance", "shipped_date",
+    "shipped_commit", "commit_set", "target_signal", "expected_direction",
+    "signal_independence", "baseline", "review_after_runs", "min_sample",
+    "band_pct", "review_count", "status", "escalated",
+    "reconsideration_enqueued",
+)
+
+
+def _render_intervention_record(meta: dict, body: str) -> str:
+    """Serialize an intervention record (frontmatter sentinel form, D3).
+
+    Field order follows ``_INTERVENTION_FIELD_ORDER`` (unknown extras append
+    in insertion order). ``yaml.safe_dump`` handles the nested ``baseline:``
+    map, None → ``null``, and QUOTES strings that would otherwise re-parse as
+    timestamps (run ids / dates) — so ``parse_sentinel`` round-trips every
+    value type-preserved (the SPEC's formerly-deferred empirical check).
+    """
+    ordered: dict = {}
+    for key in _INTERVENTION_FIELD_ORDER:
+        if key in meta:
+            ordered[key] = meta[key]
+    for key, value in meta.items():
+        if key not in ordered:
+            ordered[key] = value
+    fm = yaml.safe_dump(
+        ordered, sort_keys=False, default_flow_style=False,
+        allow_unicode=True,
+    ).strip()
+    return f"---\n{fm}\n---\n\n{body.rstrip()}\n"
+
+
+def record_intervention(
+    repo_root: Path,
+    intervention_id: str,
+    *,
+    pipeline: str,
+    spec_path: Path | None = None,
+    date: str | None = None,
+    shipped_commit: str | None = None,
+    shipped_date: str | None = None,
+    provenance: str = "gated",
+    hypothesis_overrides: dict | None = None,
+) -> dict:
+    """Write the intervention record for a shipped harness change (capture, D1-A).
+
+    Freezes the baseline window from the telemetry ledger AT THIS MOMENT into
+    the record (D3 — the raw ledger is untracked and rotation-eligible; the
+    baseline must not depend on raw-event retention) and atomically writes the
+    frontmatter-sentinel record to ``docs/interventions/<id>.md`` (D4-A).
+
+    Hypothesis inputs, in precedence order: the ``## Intervention Hypothesis``
+    block of ``spec_path``'s SPEC.md (when given), then ``hypothesis_overrides``
+    (the CLI's no-SPEC path — hardening rounds). Absent both → the record is
+    written ``target_signal: undeclared`` (INCONCLUSIVE-by-construction,
+    surfaced for triage; completion NEVER blocked — D2-A).
+
+    Baseline degradation is honest, never an error: ``frozen`` (trailing
+    ``baseline_runs`` distinct run_ids counted for an ``event:`` target),
+    ``unavailable`` (no ledger data), ``not-computable`` (undeclared or
+    non-``event:`` target — kpi targets resolve at evaluation time).
+    ``last_run_id`` (the post-window boundary) is recorded in every case.
+
+    Idempotent and never-clobbering: an EXISTING file at the record path →
+    noop (``{"recorded": False, "noop": True}``) — a prior capture/backfill is
+    never overwritten. All writes go through ``_atomic_write``. This function
+    never raises for missing/degraded inputs and never calls ``_die``; callers
+    on the completion path additionally wrap it fail-open.
+
+    Args:
+        repo_root: repo the record lands in (``docs/interventions/``).
+        intervention_id: item slug or ``harden-<YYYY-MM>-r<N>`` (D3).
+        pipeline: ``feature`` | ``bug`` | ``hardening``.
+        spec_path: the item's spec DIR (or a SPEC.md file) to read the
+            hypothesis block from; None for the no-SPEC paths.
+        date: ISO capture date (defaults to today).
+        shipped_commit: HEAD override (D9 backfill); defaults to the repo's
+            current HEAD (None on a non-git tree → recorded ``unknown``).
+        shipped_date: ship-date override (D9 backfill); defaults to ``date``.
+        provenance: ``gated`` (completion gate) | ``manual`` (CLI) |
+            ``backfilled`` (CLI with shipped-* overrides).
+        hypothesis_overrides: dict merged OVER the parsed SPEC block.
+
+    Returns:
+        ``{"recorded": bool, "noop": bool, "path": str, "target_signal": str,
+        "baseline_status": str}``.
+    """
+    repo_root = Path(repo_root)
+    if date is None:
+        date = datetime.date.today().isoformat()
+    record_path = (
+        repo_root / "docs" / _INTERVENTIONS_DIRNAME / f"{intervention_id}.md"
+    )
+    if record_path.exists():
+        # Never clobber a prior capture/backfill — idempotency by existence.
+        return {
+            "recorded": False,
+            "noop": True,
+            "path": str(record_path),
+            "target_signal": None,
+            "baseline_status": None,
+        }
+
+    # --- Hypothesis resolution (SPEC block, then overrides) ---
+    hyp: dict = {}
+    if spec_path is not None:
+        spec_md = Path(spec_path)
+        if spec_md.is_dir():
+            spec_md = spec_md / "SPEC.md"
+        try:
+            parsed = parse_intervention_hypothesis(
+                spec_md.read_text(encoding="utf-8")
+            )
+        except OSError:
+            parsed = None
+        if parsed:
+            hyp.update(parsed)
+    if hypothesis_overrides:
+        hyp.update(
+            {k: v for k, v in hypothesis_overrides.items() if v is not None}
+        )
+    target_signal = hyp.get("target_signal") or "undeclared"
+    expected_direction = hyp.get("expected_direction") or "undeclared"
+    signal_independence = hyp.get("signal_independence") or "undeclared"
+
+    def _cfg_int(key: str, default: int) -> int:
+        try:
+            return int(hyp.get(key, default))
+        except (TypeError, ValueError):
+            return default
+
+    review_after_runs = _cfg_int(
+        "review_after_runs", INTERVENTION_REVIEW_AFTER_RUNS)
+    baseline_runs_cfg = _cfg_int("baseline_runs", INTERVENTION_BASELINE_RUNS)
+    min_sample = _cfg_int("min_sample", INTERVENTION_MIN_SAMPLE)
+    band_pct = _cfg_int("band_pct", INTERVENTION_BAND_PCT)
+
+    if shipped_commit is None:
+        shipped_commit = head_sha_snapshot(repo_root)
+    if shipped_date is None:
+        shipped_date = date
+
+    # --- Baseline freeze (read-only over the merged ledger; fail-open) ---
+    try:
+        events = read_intervention_telemetry(repo_root)
+    except Exception:  # noqa: BLE001 — capture must never error a completion
+        events = []
+    run_ids = sorted({
+        e.get("run_id") for e in events if e.get("run_id")
+    })
+    last_run_id = run_ids[-1] if run_ids else None
+    ev_type = _intervention_signal_event(target_signal)
+    if ev_type is None:
+        baseline: dict = {
+            "status": "not-computable",
+            "reason": ("undeclared" if target_signal == "undeclared"
+                       else "non-event-target"),
+            "last_run_id": last_run_id,
+        }
+    elif not run_ids:
+        baseline = {
+            "status": "unavailable",
+            "reason": "no-ledger-data",
+            "last_run_id": None,
+        }
+    else:
+        window = run_ids[-baseline_runs_cfg:]
+        window_set = set(window)
+        count = sum(
+            1 for e in events
+            if e.get("run_id") in window_set and e.get("event") == ev_type
+        )
+        baseline = {
+            "status": "frozen",
+            "runs": len(window),
+            "events": count,
+            "value": round(count / len(window), 4),
+            "window_start_run": window[0],
+            "window_end_run": window[-1],
+            "last_run_id": last_run_id,
+        }
+
+    meta = {
+        "kind": "intervention",
+        "intervention_id": intervention_id,
+        "pipeline": pipeline,
+        "provenance": provenance,
+        "shipped_date": shipped_date,
+        "shipped_commit": shipped_commit or "unknown",
+        # v1 commit_set = the capture commit; enriched to the full
+        # change→commit-set mapping when code-doc-provenance-linkage ships.
+        "commit_set": shipped_commit or "unknown",
+        "target_signal": target_signal,
+        "expected_direction": expected_direction,
+        "signal_independence": signal_independence,
+        "baseline": baseline,
+        "review_after_runs": review_after_runs,
+        "min_sample": min_sample,
+        "band_pct": band_pct,
+        "review_count": 0,
+        "status": "open",
+        "escalated": False,
+        "reconsideration_enqueued": None,
+    }
+    note = hyp.get("signal_independence_note") or ""
+    body_lines = [
+        f"# Intervention: {intervention_id}",
+        "",
+        (f"Hypothesis: shipping `{intervention_id}` ({pipeline} pipeline) "
+         f"moves `{target_signal}` in direction `{expected_direction}` "
+         f"within {review_after_runs} post-ship runs."),
+    ]
+    if note:
+        body_lines += ["", f"Signal independence: {note}"]
+    body_lines += [
+        "",
+        "Reviews are appended below by `user/scripts/efficacy-eval.py` "
+        "(`## Review <date>` sections). Do not hand-edit the frontmatter — "
+        "the evaluator is its sole post-capture writer.",
+    ]
+    _atomic_write(
+        record_path, _render_intervention_record(meta, "\n".join(body_lines))
+    )
+    return {
+        "recorded": True,
+        "noop": False,
+        "path": str(record_path),
+        "target_signal": target_signal,
+        "baseline_status": baseline["status"],
+    }
+
+
+def _interventions_queue_flag(repo_root: Path) -> bool:
+    """True iff docs/features/queue.json carries top-level ``interventions: true``.
+
+    The repo-opt-in capture flag (the ``autodiscover`` precedent — top-level
+    sibling of ``queue``, set only by claude-config; every other repo omits it
+    and completion output stays byte-identical). Read-only, defensive: a
+    missing/malformed queue.json ⇒ False. The flag lives in the FEATURE queue
+    for BOTH pipelines (one repo-level switch, not per-queue).
+    """
+    queue_path = Path(repo_root) / "docs" / "features" / "queue.json"
+    if not queue_path.exists():
+        return False
+    try:
+        data = json.loads(queue_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return False
+    return isinstance(data, dict) and data.get("interventions") is True
 
 
 def oldest_unacked_deny() -> dict | None:

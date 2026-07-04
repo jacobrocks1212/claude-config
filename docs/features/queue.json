@@ -63,5 +63,6 @@
       "spec_dir": "native-android-pipeline-steering",
       "tier": 3
     }
-  ]
+  ],
+  "interventions": true
 }

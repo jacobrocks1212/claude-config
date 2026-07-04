@@ -699,6 +699,45 @@ The Step 8 final bookend gains a `**Toolify candidates:**` line:
 
 ---
 
+## Step 6e: Intervention-efficacy citation (REPORT-ONLY — dry-run, never writes)
+
+**Rationale (intervention-efficacy-tracking D10-A).** Retro success claims about harness
+changes must cite MEASURED verdicts, not narrative. The hypothesis ledger
+(`docs/interventions/<id>.md`, written at completion by the `--apply-pseudo` capture gate and
+verdict-updated at each batch run's end-of-run flush) already carries CONFIRMED / REFUTED /
+INCONCLUSIVE verdicts with frozen baselines — this step shells the evaluator in report-only
+mode and cites them.
+
+Run (read-only — `--dry-run` guarantees zero record writes and zero enqueues from the retro):
+
+```bash
+python3 ~/.claude/scripts/efficacy-eval.py --repo-root . --dry-run --json
+```
+
+- For every verdict in the output, cite it wherever the review artifacts would otherwise make
+  a narrative efficacy claim about that intervention: `{id}: {VERDICT} ({delta_pct}%) —
+  {reason}`. A CONFIRMED verdict is the only sanctioned form of "this harness change worked";
+  a REFUTED one must be named, not paraphrased away.
+- List every `needs_triage` entry (escalated ≥2× INCONCLUSIVE hypotheses) under a
+  `### Interventions needing triage` heading in the overview artifact — the operator decides
+  close-as-`inconclusive-accepted` / refine / treat-as-refuted.
+- `not_due` entries need no action (their windows are still accruing); do not present them as
+  verdicts.
+- **Degrade gracefully:** if `efficacy-eval.py` or `docs/interventions/` is unavailable, print
+  one line noting the step was skipped and why, then continue — this step must never fail the
+  retro.
+- **Never** run without `--dry-run` from this skill (verdict writes + REFUTED enqueues belong
+  to the batch orchestrators' §1c.6 flush and on-demand operator runs, not the retro).
+
+### Status-bookend integration
+
+The Step 8 final bookend gains an `**Intervention verdicts:**` line:
+
+- `**Intervention verdicts:** {C} confirmed, {R} refuted, {I} inconclusive due this scan; {T} escalated (needs triage).`
+- or `**Intervention verdicts:** step skipped — {reason}.`
+
+---
+
 ## Step 7: Commit (Phase 6)
 
 Stage the review artifacts and create a commit:
