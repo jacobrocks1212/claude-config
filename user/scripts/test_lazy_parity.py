@@ -625,11 +625,11 @@ class TestStateScriptParity:
     claude_state_dir() scopes run-scoped state per repo.
 
     LOCKSTEP NOTE: these synthetic stubs must mirror
-    audit_state_script_parity's _STATE_SCRIPTS six-surface list (binding +
+    audit_state_script_parity's _STATE_SCRIPTS seven-surface list (binding +
     --reorder-queue + --reassert-owner + the requires_host fail-fast pair +
-    cycle_prompt_ref + --sync-deps) in lockstep — any future coupled-pair
-    surface added to the audit must add its token(s) to these stubs too, or
-    the clean fixture goes red."""
+    cycle_prompt_ref + --sync-deps + the notify_halt call site) in lockstep —
+    any future coupled-pair surface added to the audit must add its token(s)
+    to these stubs too, or the clean fixture goes red."""
 
     def test_live_state_scripts_bind_active_repo(self) -> None:
         """Hard gate: lazy-state.py AND bug-state.py both call
@@ -649,7 +649,7 @@ class TestStateScriptParity:
         set_active_repo_root(args.repo_root) binding."""
         scripts = tmp_path / "user" / "scripts"
         scripts.mkdir(parents=True)
-        # lazy-state.py carries ALL SIX surfaces.
+        # lazy-state.py carries ALL SEVEN surfaces.
         (scripts / "lazy-state.py").write_text(
             'def main():\n    lazy_core.set_active_repo_root(args.repo_root)\n'
             '    parser.add_argument("--reorder-queue")\n'
@@ -657,10 +657,11 @@ class TestStateScriptParity:
             '    parser.add_argument("--sync-deps")\n'
             '    lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
-            '    state["cycle_prompt_ref"] = _emit_ref\n',
+            '    state["cycle_prompt_ref"] = _emit_ref\n'
+            '    lazy_core.notify_halt(state, args.repo_root)\n',
             encoding="utf-8",
         )
-        # bug-state.py carries surfaces 2+3+4+5+6 but is MISSING the binding
+        # bug-state.py carries surfaces 2+3+4+5+6+7 but is MISSING the binding
         # (surface 1) → exactly one finding, naming the binding gap.
         (scripts / "bug-state.py").write_text(
             'def main():\n    pass  # no active-repo binding\n'
@@ -669,7 +670,8 @@ class TestStateScriptParity:
             '    parser.add_argument("--sync-deps")\n'
             '    lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
-            '    state["cycle_prompt_ref"] = _emit_ref\n',
+            '    state["cycle_prompt_ref"] = _emit_ref\n'
+            '    lazy_core.notify_halt(state, args.repo_root)\n',
             encoding="utf-8",
         )
         findings = lazy_parity_audit.audit_state_script_parity(tmp_path)
@@ -685,7 +687,7 @@ class TestStateScriptParity:
         --reorder-queue subcommand (coupled-pair queue-mutation surface)."""
         scripts = tmp_path / "user" / "scripts"
         scripts.mkdir(parents=True)
-        # Both carry surfaces 1+3+4+5+6; only lazy-state.py carries --reorder-queue
+        # Both carry surfaces 1+3+4+5+6+7; only lazy-state.py carries --reorder-queue
         # (surface 2).
         (scripts / "lazy-state.py").write_text(
             'set_active_repo_root(args.repo_root)\n'
@@ -694,10 +696,11 @@ class TestStateScriptParity:
             'parser.add_argument("--sync-deps")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
-            'state["cycle_prompt_ref"] = _emit_ref\n',
+            'state["cycle_prompt_ref"] = _emit_ref\n'
+            'lazy_core.notify_halt(state, args.repo_root)\n',
             encoding="utf-8",
         )
-        # bug-state.py carries surfaces 1+3+4+5+6 but STILL omits --reorder-queue
+        # bug-state.py carries surfaces 1+3+4+5+6+7 but STILL omits --reorder-queue
         # (surface 2) → exactly one finding, naming --reorder-queue.
         (scripts / "bug-state.py").write_text(
             'set_active_repo_root(args.repo_root)  # no --reorder-queue\n'
@@ -705,7 +708,8 @@ class TestStateScriptParity:
             'parser.add_argument("--sync-deps")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
-            'state["cycle_prompt_ref"] = _emit_ref\n',
+            'state["cycle_prompt_ref"] = _emit_ref\n'
+            'lazy_core.notify_halt(state, args.repo_root)\n',
             encoding="utf-8",
         )
         findings = lazy_parity_audit.audit_state_script_parity(tmp_path)
@@ -721,9 +725,59 @@ class TestStateScriptParity:
         surface)."""
         scripts = tmp_path / "user" / "scripts"
         scripts.mkdir(parents=True)
-        # lazy-state.py carries ALL SIX surfaces.
+        # lazy-state.py carries ALL SEVEN surfaces.
         (scripts / "lazy-state.py").write_text(
             'set_active_repo_root(args.repo_root)\n'
+            'parser.add_argument("--reorder-queue")\n'
+            'parser.add_argument("--reassert-owner")\n'
+            'parser.add_argument("--sync-deps")\n'
+            'lazy_core.format_unknown_host_capability_blocker(...)'
+            '  # blocker_kind: unknown-host-capability\n'
+            'state["cycle_prompt_ref"] = _emit_ref\n'
+            'lazy_core.notify_halt(state, args.repo_root)\n',
+            encoding="utf-8",
+        )
+        # bug-state.py carries surfaces 1-5 + 7 but OMITS --sync-deps (surface 6)
+        # → exactly one finding, naming --sync-deps.
+        (scripts / "bug-state.py").write_text(
+            'set_active_repo_root(args.repo_root)  # no --sync-deps\n'
+            'parser.add_argument("--reorder-queue")\n'
+            'parser.add_argument("--reassert-owner")\n'
+            'lazy_core.format_unknown_host_capability_blocker(...)'
+            '  # blocker_kind: unknown-host-capability\n'
+            'state["cycle_prompt_ref"] = _emit_ref\n'
+            'lazy_core.notify_halt(state, args.repo_root)\n',
+            encoding="utf-8",
+        )
+        findings = lazy_parity_audit.audit_state_script_parity(tmp_path)
+        assert len(findings) == 1, findings
+        assert "bug-state.py" in findings[0]
+        assert "--sync-deps" in findings[0]
+
+    def test_audit_state_script_parity_fires_when_notify_halt_missing(
+        self, tmp_path: Path
+    ) -> None:
+        """The check FIRES (one finding) when a state script drops the
+        lazy_core.notify_halt(...) terminal-emission call site
+        (operator-halt-notifications coupled-pair surface #7)."""
+        scripts = tmp_path / "user" / "scripts"
+        scripts.mkdir(parents=True)
+        # lazy-state.py carries ALL SEVEN surfaces.
+        (scripts / "lazy-state.py").write_text(
+            'set_active_repo_root(args.repo_root)\n'
+            'parser.add_argument("--reorder-queue")\n'
+            'parser.add_argument("--reassert-owner")\n'
+            'parser.add_argument("--sync-deps")\n'
+            'lazy_core.format_unknown_host_capability_blocker(...)'
+            '  # blocker_kind: unknown-host-capability\n'
+            'state["cycle_prompt_ref"] = _emit_ref\n'
+            'lazy_core.notify_halt(state, args.repo_root)\n',
+            encoding="utf-8",
+        )
+        # bug-state.py carries surfaces 1-6 but OMITS the notify_halt call
+        # (surface 7) → exactly one finding, naming notify_halt.
+        (scripts / "bug-state.py").write_text(
+            'set_active_repo_root(args.repo_root)  # no notify_halt\n'
             'parser.add_argument("--reorder-queue")\n'
             'parser.add_argument("--reassert-owner")\n'
             'parser.add_argument("--sync-deps")\n'
@@ -732,21 +786,10 @@ class TestStateScriptParity:
             'state["cycle_prompt_ref"] = _emit_ref\n',
             encoding="utf-8",
         )
-        # bug-state.py carries surfaces 1-5 but OMITS --sync-deps (surface 6)
-        # → exactly one finding, naming --sync-deps.
-        (scripts / "bug-state.py").write_text(
-            'set_active_repo_root(args.repo_root)  # no --sync-deps\n'
-            'parser.add_argument("--reorder-queue")\n'
-            'parser.add_argument("--reassert-owner")\n'
-            'lazy_core.format_unknown_host_capability_blocker(...)'
-            '  # blocker_kind: unknown-host-capability\n'
-            'state["cycle_prompt_ref"] = _emit_ref\n',
-            encoding="utf-8",
-        )
         findings = lazy_parity_audit.audit_state_script_parity(tmp_path)
         assert len(findings) == 1, findings
         assert "bug-state.py" in findings[0]
-        assert "--sync-deps" in findings[0]
+        assert "notify_halt" in findings[0]
 
     def test_audit_state_script_parity_clean_when_both_bind(
         self, tmp_path: Path
@@ -755,7 +798,7 @@ class TestStateScriptParity:
         prefixed form) AND the --reorder-queue subcommand."""
         scripts = tmp_path / "user" / "scripts"
         scripts.mkdir(parents=True)
-        # Both stubs carry ALL SIX surfaces; the binding form differs (bare
+        # Both stubs carry ALL SEVEN surfaces; the binding form differs (bare
         # here, lazy_core.-prefixed in bug-state.py) to keep both regex
         # alternatives covered.
         (scripts / "lazy-state.py").write_text(
@@ -765,7 +808,8 @@ class TestStateScriptParity:
             'parser.add_argument("--sync-deps")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
-            'state["cycle_prompt_ref"] = _emit_ref\n',
+            'state["cycle_prompt_ref"] = _emit_ref\n'
+            'lazy_core.notify_halt(state, args.repo_root)\n',
             encoding="utf-8",
         )
         (scripts / "bug-state.py").write_text(
@@ -775,7 +819,8 @@ class TestStateScriptParity:
             'parser.add_argument("--sync-deps")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
-            'state["cycle_prompt_ref"] = _emit_ref\n',
+            'state["cycle_prompt_ref"] = _emit_ref\n'
+            'lazy_core.notify_halt(state, args.repo_root)\n',
             encoding="utf-8",
         )
         assert lazy_parity_audit.audit_state_script_parity(tmp_path) == []

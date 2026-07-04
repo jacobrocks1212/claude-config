@@ -9824,6 +9824,131 @@ def run_smoke_tests() -> int:
             cbfo_ok = False
         print(f"  {'PASS' if cbfo_ok else 'FAIL'} [{fix_cbfo}] unwritable bracket ledger never blocks the --cycle-end clear")
 
+
+    # -----------------------------------------------------------------------
+    # operator-halt-notifications Phase 2 — call-site wiring fixture.
+    # Drives main() IN-PROCESS (patched argv + captured stdout) against a
+    # needs-input halt with a fake config (LAZY_NOTIFY_URL) and a
+    # monkeypatched module-level ntfy sender, asserting the PRODUCTION
+    # binding end-to-end: the FIRST probe pages exactly once, the SECOND
+    # probe dedups on the sentinel identity (zero further sends), and a
+    # LAZY_NOTIFY_DISABLE=1 probe is byte-identical to the deduped probe.
+    # Hermetic: LAZY_STATE_DIR temp dir; env, sender, argv, and the active-
+    # repo binding are all restored.
+    # -----------------------------------------------------------------------
+    fix_nh = "notify-halt-call-site"
+    nh_ok = True
+    try:
+        import io as _nh_io
+        with tempfile.TemporaryDirectory(prefix="lazy-notify-fixture-") as nh_td:
+            nh_root = Path(nh_td) / "repo"
+            nh_feat = nh_root / "docs" / "features" / "feat-nh"
+            nh_feat.mkdir(parents=True)
+            (nh_root / "docs" / "features" / "queue.json").write_text(json.dumps({
+                "queue": [{"id": "feat-nh", "name": "Notify Halt",
+                           "spec_dir": "feat-nh", "tier": 1}]
+            }), encoding="utf-8")
+            (nh_root / "docs" / "features" / "ROADMAP.md").write_text(
+                "# Roadmap\n", encoding="utf-8")
+            (nh_feat / "SPEC.md").write_text(
+                "# Notify Halt\n\n**Status:** Draft\n", encoding="utf-8")
+            (nh_feat / "NEEDS_INPUT.md").write_text(
+                "---\nkind: needs-input\nfeature_id: feat-nh\nwritten_by: spec\n"
+                "decisions:\n  - Which channel?\ndate: 2026-07-04\n---\nbody\n",
+                encoding="utf-8",
+            )
+            nh_state_dir = Path(nh_td) / "state"
+            nh_state_dir.mkdir()
+            nh_saved_env = {k: os.environ.get(k) for k in
+                            ("LAZY_STATE_DIR", "LAZY_NOTIFY_URL",
+                             "LAZY_NOTIFY_DISABLE")}
+            os.environ["LAZY_STATE_DIR"] = str(nh_state_dir)
+            os.environ["LAZY_NOTIFY_URL"] = "https://ntfy.example/fixture-topic"
+            os.environ.pop("LAZY_NOTIFY_DISABLE", None)
+            nh_sends: list = []
+            nh_real_send = lazy_core._ntfy_send
+            nh_prev_repo = getattr(lazy_core, "_active_repo_root", None)
+            lazy_core._ntfy_send = (
+                lambda url, t, b, l=None: nh_sends.append((url, t, b, l))
+            )
+            nh_argv = sys.argv
+
+            def _nh_run() -> str:
+                buf = _nh_io.StringIO()
+                sys.argv = ["lazy-state.py", "--repo-root", str(nh_root)]
+                real_stdout = sys.stdout
+                sys.stdout = buf
+                try:
+                    rc = main()
+                finally:
+                    sys.stdout = real_stdout
+                    sys.argv = nh_argv
+                if rc != 0:
+                    raise AssertionError(f"main() must exit 0, got {rc}")
+                return buf.getvalue()
+
+            try:
+                out1 = _nh_run()
+                st1 = json.loads(out1)
+                if st1.get("terminal_reason") != "needs-input":
+                    failures.append(
+                        f"[{fix_nh}] expected terminal_reason='needs-input', "
+                        f"got {st1.get('terminal_reason')!r}")
+                    nh_ok = False
+                if len(nh_sends) != 1:
+                    failures.append(
+                        f"[{fix_nh}] first probe must page exactly once, "
+                        f"got {len(nh_sends)} send(s)")
+                    nh_ok = False
+                else:
+                    nh_url, nh_title, nh_body, _nh_link = nh_sends[0]
+                    if nh_url != "https://ntfy.example/fixture-topic":
+                        failures.append(
+                            f"[{fix_nh}] configured topic URL must be threaded "
+                            f"to the sender, got {nh_url!r}")
+                        nh_ok = False
+                    if not nh_title.startswith("NEEDS INPUT"):
+                        failures.append(
+                            f"[{fix_nh}] title must be notify_message verbatim, "
+                            f"got {nh_title!r}")
+                        nh_ok = False
+                    if "1. Which channel?" not in nh_body:
+                        failures.append(
+                            f"[{fix_nh}] body must carry the decisions "
+                            f"one-liner, got {nh_body!r}")
+                        nh_ok = False
+                out2 = _nh_run()
+                if len(nh_sends) != 1:
+                    failures.append(
+                        f"[{fix_nh}] second probe must dedup (still 1 send), "
+                        f"got {len(nh_sends)}")
+                    nh_ok = False
+                os.environ["LAZY_NOTIFY_DISABLE"] = "1"
+                out3 = _nh_run()
+                if out3 != out2:
+                    failures.append(
+                        f"[{fix_nh}] LAZY_NOTIFY_DISABLE probe must be "
+                        f"byte-identical to a deduped probe")
+                    nh_ok = False
+                if len(nh_sends) != 1:
+                    failures.append(
+                        f"[{fix_nh}] kill switch must not send, "
+                        f"got {len(nh_sends)}")
+                    nh_ok = False
+            finally:
+                lazy_core._ntfy_send = nh_real_send
+                lazy_core._active_repo_root = nh_prev_repo
+                for k, v in nh_saved_env.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"[{fix_nh}] unexpected error: {exc!r}")
+        nh_ok = False
+    print(f"  {'PASS' if nh_ok else 'FAIL'} [{fix_nh}] halt + fake sender: one page, dedup on re-probe, kill switch inert")
+
+
     if failures:
         print("\nFAILURES:")
         for f in failures:
@@ -11450,6 +11575,14 @@ def main() -> int:
                     f"⚠ pending_hardening: {_pending} — forward route withheld; "
                     f"run hardening_emit_command first\n"
                 )
+    # operator-halt-notifications (D2): the terminal-emission chokepoint —
+    # page the operator on an attention-terminal halt. Config-gated (inert
+    # no-op without ~/.claude/notify.json / LAZY_NOTIFY_URL), dedup-ledgered
+    # per sentinel identity, fail-OPEN (never raises, never alters this JSON's
+    # terminal fields or the exit code). Composes with the telemetry `halt`
+    # event above — telemetry records, notify pages. Coupled-pair surface #7
+    # (lazy_parity_audit.py); mirrored in bug-state.py with pipeline="bug".
+    lazy_core.notify_halt(state, args.repo_root, pipeline="feature")
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0
 

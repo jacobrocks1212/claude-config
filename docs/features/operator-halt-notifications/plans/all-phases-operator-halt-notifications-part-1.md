@@ -82,15 +82,15 @@ python3 lint-skills.py --skills-dir <repo-root>/user/skills --repos-dir <repo-ro
 
 ## Phase 2 — Wire both scripts (parity-coupled)
 
-- [ ] WU-2.1 — TDD: `test_lazy_parity.py` seven-surface lockstep (update all stubs + docstrings;
+- [x] WU-2.1 — TDD: `test_lazy_parity.py` seven-surface lockstep (update all stubs + docstrings;
   new fires-when-notify-halt-missing test; run → red against unwired scripts) → implement
   `_NOTIFY_HALT_RE` surface #7 in `lazy_parity_audit.py` + the two one-line call sites in
   `lazy-state.py` / `bug-state.py` `main()` → green.
-- [ ] WU-2.2 — In-file `--test` fixture (lazy-state.py): halt fixture repo + hermetic env +
+- [x] WU-2.2 — In-file `--test` fixture (lazy-state.py): halt fixture repo + hermetic env +
   monkeypatched module sender; `main()` driven twice ⇒ exactly one send; disable-switch leg
   byte-identical output.
-- [ ] WU-2.3 — In-file `--test` fixture (bug-state.py): mirrored over a bug halt.
-- [ ] WU-2.4 — Re-pin both `--test` baselines via `_normalize_smoke_output` (fixture output lines
+- [x] WU-2.3 — In-file `--test` fixture (bug-state.py): mirrored over a bug halt.
+- [x] WU-2.4 — Re-pin both `--test` baselines via `_normalize_smoke_output` (fixture output lines
   legitimately added); `lazy_parity_audit.py --repo-root .` exit 0; full gate suite green.
   Commit Phase 2.
 

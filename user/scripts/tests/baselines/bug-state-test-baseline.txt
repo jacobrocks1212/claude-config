@@ -68,5 +68,6 @@
 }
   PASS [sync-deps] cycle-subagent exit-3 refusal + hard-only projection + idempotent noop + enqueue --deps
   PASS [cycle-end-bracket-fail-open] unwritable bracket ledger never blocks the --cycle-end clear
+  PASS [notify-halt-call-site] bug halt + fake sender: one page (bug| identity), dedup on re-probe, kill switch inert
 
 All smoke tests passed.

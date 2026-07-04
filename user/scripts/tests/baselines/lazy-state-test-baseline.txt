@@ -139,5 +139,6 @@
   PASS [reorder-queue] reorder tail/head/index/remove/missing/cycle-active/no-op
   PASS [telemetry-ledger-chokepoints] bracket/dispatch/purity/refusal/cloud-flush emission
   PASS [cycle-end-bracket-fail-open] unwritable bracket ledger never blocks the --cycle-end clear
+  PASS [notify-halt-call-site] halt + fake sender: one page, dedup on re-probe, kill switch inert
 
 All smoke tests passed.

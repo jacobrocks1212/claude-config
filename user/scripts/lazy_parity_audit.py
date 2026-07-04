@@ -342,6 +342,13 @@ _CYCLE_PROMPT_REF_RE = re.compile(r'state\["cycle_prompt_ref"\]\s*=')
 # pipeline's queue deps stuck in manual-edit territory, violating the
 # no-hand-edit-queue.json HARD CONSTRAINT).  Match the argparse flag literal.
 _SYNC_DEPS_RE = re.compile(r'"--sync-deps"')
+# operator-halt-notifications Phase 2: the terminal-emission notify_halt call
+# site (surface #7) is a MIRRORED coupled-pair surface — every halt on either
+# pipeline flows through main()'s state-JSON write, so BOTH scripts must call
+# lazy_core.notify_halt(state, ...) immediately before it. A drop from one
+# script would silently un-page that pipeline's halts (the exact
+# time-to-notice gap the feature closes).  Match the call literal.
+_NOTIFY_HALT_RE = re.compile(r"lazy_core\.notify_halt\(")
 
 
 def audit_state_script_parity(repo_root: str | Path) -> list[str]:
@@ -349,9 +356,11 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
     feature and bug state scripts: each must call
     ``set_active_repo_root(args.repo_root)`` at main(), each must carry the
     operator-only ``--reorder-queue`` subcommand, each must carry the
-    orchestrator-only ``--reassert-owner`` subcommand, AND each must carry the
+    orchestrator-only ``--reassert-owner`` subcommand, each must carry the
     orchestrator-only ``--sync-deps`` feeder (queue-dependency-dag coupled-pair
-    parity).
+    parity), AND each must carry the ``lazy_core.notify_halt(...)``
+    terminal-emission call site (operator-halt-notifications coupled-pair
+    parity, surface #7).
     Returns one finding per script missing any surface; empty means parity holds.
 
     This is additive — it audits the Python state machines (not the SKILL.md
@@ -421,6 +430,14 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
                 f"reference) instead of re-inlining the full cycle prompt "
                 f"(bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref coupled-pair "
                 f"parity)"
+            )
+        if _NOTIFY_HALT_RE.search(text) is None:
+            findings.append(
+                f"lazy-parity [state-scripts] STATE: {script} must call "
+                f"lazy_core.notify_halt(state, ...) at the terminal-emission "
+                f"chokepoint in main() (immediately before the state-JSON "
+                f"write) so halts on both pipelines page the operator "
+                f"(operator-halt-notifications coupled-pair parity)"
             )
     return findings
 

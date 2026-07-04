@@ -5718,6 +5718,126 @@ def run_smoke_tests() -> int:
             cbfo_ok = False
         print(f"  {'PASS' if cbfo_ok else 'FAIL'} [{fix_cbfo}] unwritable bracket ledger never blocks the --cycle-end clear")
 
+
+    # -----------------------------------------------------------------------
+    # operator-halt-notifications Phase 2 — call-site wiring fixture
+    # (coupled-pair mirror of lazy-state.py's [notify-halt-call-site]).
+    # Drives main() IN-PROCESS against a BLOCKED.md bug halt with a fake
+    # config + monkeypatched module ntfy sender: first probe pages once
+    # (ledger identity carries pipeline="bug"), second probe dedups, kill
+    # switch is byte-inert. Hermetic: LAZY_STATE_DIR temp dir; env, sender,
+    # argv, and the active-repo binding restored.
+    # -----------------------------------------------------------------------
+    fix_nh = "notify-halt-call-site"
+    nh_ok = True
+    try:
+        import io as _nh_io
+        with tempfile.TemporaryDirectory(prefix="bug-notify-fixture-") as nh_td:
+            nh_root = Path(nh_td) / "repo"
+            nh_bug = nh_root / "docs" / "bugs" / "bug-nh"
+            nh_bug.mkdir(parents=True)
+            (nh_root / "docs" / "bugs" / "queue.json").write_text(json.dumps({
+                "queue": [{"id": "bug-nh", "name": "Notify Halt Bug",
+                           "spec_dir": "bug-nh"}]
+            }), encoding="utf-8")
+            (nh_bug / "SPEC.md").write_text(
+                "# Notify Halt Bug\n\n**Status:** Investigating\n\n"
+                "**Severity:** P1\n\n**Discovered:** 2026-07-04\n",
+                encoding="utf-8",
+            )
+            (nh_bug / "BLOCKED.md").write_text(
+                "---\nkind: blocked\nfeature_id: bug-nh\nphase: fix\n"
+                "blocked_at: 2026-07-04T00:00:00Z\nretry_count: 0\n---\n"
+                "## Details\nblocked\n",
+                encoding="utf-8",
+            )
+            nh_state_dir = Path(nh_td) / "state"
+            nh_state_dir.mkdir()
+            nh_saved_env = {k: os.environ.get(k) for k in
+                            ("LAZY_STATE_DIR", "LAZY_NOTIFY_URL",
+                             "LAZY_NOTIFY_DISABLE")}
+            os.environ["LAZY_STATE_DIR"] = str(nh_state_dir)
+            os.environ["LAZY_NOTIFY_URL"] = "https://ntfy.example/fixture-topic"
+            os.environ.pop("LAZY_NOTIFY_DISABLE", None)
+            nh_sends: list = []
+            nh_real_send = lazy_core._ntfy_send
+            nh_prev_repo = getattr(lazy_core, "_active_repo_root", None)
+            lazy_core._ntfy_send = (
+                lambda url, t, b, l=None: nh_sends.append((url, t, b, l))
+            )
+            nh_argv = sys.argv
+
+            def _nh_run() -> str:
+                buf = _nh_io.StringIO()
+                sys.argv = ["bug-state.py", "--repo-root", str(nh_root)]
+                real_stdout = sys.stdout
+                sys.stdout = buf
+                try:
+                    rc = main()
+                finally:
+                    sys.stdout = real_stdout
+                    sys.argv = nh_argv
+                if rc != 0:
+                    raise AssertionError(f"main() must exit 0, got {rc}")
+                return buf.getvalue()
+
+            try:
+                out1 = _nh_run()
+                st1 = json.loads(out1)
+                if st1.get("terminal_reason") != TR_BLOCKED:
+                    failures.append(
+                        f"[{fix_nh}] expected terminal_reason='blocked', "
+                        f"got {st1.get('terminal_reason')!r}")
+                    nh_ok = False
+                if len(nh_sends) != 1:
+                    failures.append(
+                        f"[{fix_nh}] first probe must page exactly once, "
+                        f"got {len(nh_sends)} send(s)")
+                    nh_ok = False
+                # The ledger identity must carry the BUG pipeline (the call
+                # site threads pipeline="bug" — the coupled-pair divergence).
+                nh_ledger = json.loads(
+                    (nh_state_dir / "notify-ledger.json").read_text(
+                        encoding="utf-8")
+                ).get("entries", {})
+                if not all(k.startswith("bug|bug-nh|blocked|")
+                           for k in nh_ledger) or len(nh_ledger) != 1:
+                    failures.append(
+                        f"[{fix_nh}] ledger identity must be "
+                        f"bug|bug-nh|blocked|<stat>, got {list(nh_ledger)!r}")
+                    nh_ok = False
+                out2 = _nh_run()
+                if len(nh_sends) != 1:
+                    failures.append(
+                        f"[{fix_nh}] second probe must dedup (still 1 send), "
+                        f"got {len(nh_sends)}")
+                    nh_ok = False
+                os.environ["LAZY_NOTIFY_DISABLE"] = "1"
+                out3 = _nh_run()
+                if out3 != out2:
+                    failures.append(
+                        f"[{fix_nh}] LAZY_NOTIFY_DISABLE probe must be "
+                        f"byte-identical to a deduped probe")
+                    nh_ok = False
+                if len(nh_sends) != 1:
+                    failures.append(
+                        f"[{fix_nh}] kill switch must not send, "
+                        f"got {len(nh_sends)}")
+                    nh_ok = False
+            finally:
+                lazy_core._ntfy_send = nh_real_send
+                lazy_core._active_repo_root = nh_prev_repo
+                for k, v in nh_saved_env.items():
+                    if v is None:
+                        os.environ.pop(k, None)
+                    else:
+                        os.environ[k] = v
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"[{fix_nh}] unexpected error: {exc!r}")
+        nh_ok = False
+    print(f"  {'PASS' if nh_ok else 'FAIL'} [{fix_nh}] bug halt + fake sender: one page (bug| identity), dedup on re-probe, kill switch inert")
+
+
     # Summary
     if failures:
         print("\nFAILURES:")
@@ -7006,6 +7126,10 @@ def main() -> int:
                     f"⚠ pending_hardening: {_pending} — forward route withheld; "
                     f"run hardening_emit_command first\n"
                 )
+    # operator-halt-notifications (D2): the terminal-emission chokepoint —
+    # coupled-pair mirror of lazy-state.py (parity surface #7). Config-gated,
+    # dedup-ledgered, fail-OPEN; state's feature_id holds the bug id.
+    lazy_core.notify_halt(state, args.repo_root, pipeline="bug")
     sys.stdout.write(json.dumps(state, indent=2) + "\n")
     return 0
 

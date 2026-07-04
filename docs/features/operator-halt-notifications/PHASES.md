@@ -107,19 +107,19 @@ lockstep `test_lazy_parity.py` fixture updates (six → seven); in-file `--test`
 in BOTH scripts; baselines re-pinned via `_normalize_smoke_output` only.
 
 **Deliverables:**
-- [ ] `lazy-state.py` `main()`: `lazy_core.notify_halt(state, args.repo_root, pipeline="feature")`
+- [x] `lazy-state.py` `main()`: `lazy_core.notify_halt(state, args.repo_root, pipeline="feature")`
   immediately before the state-JSON write (after the telemetry block — composes, never duplicates).
-- [ ] `bug-state.py` `main()`: `lazy_core.notify_halt(state, args.repo_root, pipeline="bug")` at
+- [x] `bug-state.py` `main()`: `lazy_core.notify_halt(state, args.repo_root, pipeline="bug")` at
   the mirrored point.
-- [ ] `lazy_parity_audit.py`: `_NOTIFY_HALT_RE` surface #7 in `audit_state_script_parity` (both
+- [x] `lazy_parity_audit.py`: `_NOTIFY_HALT_RE` surface #7 in `audit_state_script_parity` (both
   scripts must carry the call); audit stays exit 0 against the live tree.
-- [ ] `test_lazy_parity.py`: lockstep stub updates (all `TestStateScriptParity` fixtures gain the
+- [x] `test_lazy_parity.py`: lockstep stub updates (all `TestStateScriptParity` fixtures gain the
   `notify_halt` token; docstrings six → seven) + a new fires-when-missing test.
-- [ ] In-file `--test` fixture in `lazy-state.py`: halt fixture + `LAZY_NOTIFY_URL` + monkeypatched
+- [x] In-file `--test` fixture in `lazy-state.py`: halt fixture + `LAZY_NOTIFY_URL` + monkeypatched
   module sender ⇒ driving `main()` twice produces EXACTLY one send (dedup on the second probe) and
   parseable halt JSON; inert leg (disable switch) byte-identical.
-- [ ] In-file `--test` fixture in `bug-state.py`: same shape over a bug halt.
-- [ ] Baselines (`tests/baselines/*-test-baseline.txt`) re-pinned ONLY by piping live `--test`
+- [x] In-file `--test` fixture in `bug-state.py`: same shape over a bug halt.
+- [x] Baselines (`tests/baselines/*-test-baseline.txt`) re-pinned ONLY by piping live `--test`
   output through `_normalize_smoke_output`.
 
 **Minimum Verifiable Behavior:** `python3 lazy-state.py --test` and `python3 bug-state.py --test`
@@ -127,8 +127,8 @@ pass with the new call-site fixtures; `lazy_parity_audit.py --repo-root .` exits
 call site would flip the audit to a finding (proven by the parity-test negative fixture).
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] A fixture halt with a fake sender produces exactly one payload carrying the D5 fields; repeated probes produce zero further sends. *(Evidence: in-file `--test` fixtures, both scripts.)* <!-- verification-only -->
-- [ ] Parity audit green with both call sites; red when one is removed (negative fixture). *(Evidence: `test_lazy_parity.py` seven-surface suite.)* <!-- verification-only -->
+- [x] A fixture halt with a fake sender produces exactly one payload carrying the D5 fields; repeated probes produce zero further sends. *(Evidence: in-file `--test` fixtures, both scripts.)* <!-- verification-only -->
+- [x] Parity audit green with both call sites; red when one is removed (negative fixture). *(Evidence: `test_lazy_parity.py` seven-surface suite.)* <!-- verification-only -->
 - **DEFERRED (workstation-only, not a completion blocker):** GitHub remote-URL derivation
   spot-check across the Windows workstation's real SSH/HTTPS remotes (this container's remote is a
   local git proxy; the normalizer is unit-tested against SSH/HTTPS/ssh:// fixture forms). <!-- verification-only -->
