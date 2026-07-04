@@ -8,12 +8,12 @@
 | | status: Validate · phase 4/4 · next: run mcp-test · Every friction-reduction system (build-queue, containment hooks, halt handling, and anything designed later) declares its canonical KPIs — what friction it exists to reduce, the concrete signal sources, direction-of-goodness, baseline, and regression band — in a machine-readable, committed registry. | | |
 | 2 | [parallel-worktree-batch-execution](docs/features/parallel-worktree-batch-execution/SPEC.md) | Validate | T1 |
 | | status: Validate · phase 5/6 · next: run mcp-test · One repo = one lane today: every arbitration layer built so far (`refuse_run_start_clobber`, single-slot marker ownership, per-repo keyed state dirs, the containment hooks) exists to refuse *accidental* concurrency, and there is no sanctioned path to *deliberate* concurrency. | | |
-| 3 | [harness-change-canary-rollback](docs/features/harness-change-canary-rollback/SPEC.md) | Plan | T1 |
-| | status: Plan · next: plan · Self-healing for the self-improvement loop: a shipped control-surface change enters a canary observation window during which its targeted signal and its surface's fresh incident streams are watched every run — more aggressively than steady-state review cadence. | | |
-| 4 | [anti-overfit-design-gate](docs/features/anti-overfit-design-gate/SPEC.md) | Research | T2 |
-| | status: Research · next: research · A self-improving harness has a failure mode ordinary code doesn't: it can overfit to single incidents, weaken its own gates, and grade itself with metrics it controls. | | |
-| 5 | [build-queue-generalization](docs/features/build-queue-generalization/SPEC.md) | Research | T2 |
-| | status: Research · next: research · The machine-global FIFO build serializer (`build-queue.ps1` wrapper + self-releasing runner + hygiene module + outcome banner + enforcement hook) is hard-wired to one repo: a four-op `ValidateSet`, a `cognitoforms/cognito` git-remote scope gate, and .NET-specific hygiene (VBCSCompiler recycle, per-project DLL quarantine). | | |
+| 3 | [harness-change-canary-rollback](docs/features/harness-change-canary-rollback/SPEC.md) | Validate | T1 |
+| | status: Validate · phase 3/4 · next: run mcp-test · Self-healing for the self-improvement loop: a shipped control-surface change enters a canary observation window during which its targeted signal and its surface's fresh incident streams are watched every run — more aggressively than steady-state review cadence. | | |
+| 4 | [anti-overfit-design-gate](docs/features/anti-overfit-design-gate/SPEC.md) | ⬡ Needs-input | T2 |
+| | status: Needs-input · next: answer needs-input · A self-improving harness has a failure mode ordinary code doesn't: it can overfit to single incidents, weaken its own gates, and grade itself with metrics it controls. | | |
+| 5 | [build-queue-generalization](docs/features/build-queue-generalization/SPEC.md) | ⬡ Needs-input | T2 |
+| | status: Needs-input · next: answer needs-input · The machine-global FIFO build serializer (`build-queue.ps1` wrapper + self-releasing runner + hygiene module + outcome banner + enforcement hook) is hard-wired to one repo: a four-op `ValidateSet`, a `cognitoforms/cognito` git-remote scope gate, and .NET-specific hygiene (VBCSCompiler recycle, per-project DLL quarantine). | | |
 | 6 | [build-queue-eta-priority-lanes](docs/features/build-queue-eta-priority-lanes/SPEC.md) | Research | T2 |
 | | status: Research · next: research · Waiters on the machine-global build queue poll blind: the enqueue line and `build-queue-status.ps1` show position and elapsed wait, but no prediction of when a queued op will start or finish, and a 20-second filtered test run pays worst-case latency behind a full solution build. | | |
 | 7 | [claude-config-ci](docs/features/claude-config-ci/SPEC.md) | Spec | T3 |
@@ -53,3 +53,8 @@
 | | status: Spec · next: spec | | |
 | 14 | [adhoc-derive-multi-commit-budget-from-dispatch-sites](docs/bugs/adhoc-derive-multi-commit-budget-from-dispatch-sites/SPEC.md) | Spec | — |
 | | status: Spec · next: spec | | |
+
+## Needs attention
+
+- ⬡ anti-overfit-design-gate — needs-input
+- ⬡ build-queue-generalization — needs-input
