@@ -63,14 +63,14 @@ python3 lint-skills.py --skills-dir <root>/user/skills --repos-dir <root>/repos
 
 ## Phase 2 — `--fleet` serving mode
 
-- [ ] WU-2.1 — Tests first: `TestFleetServer` (`/api/fleet` shape; drill-in state == single-repo
+- [x] WU-2.1 — Tests first: `TestFleetServer` (`/api/fleet` shape; drill-in state == single-repo
   state modulo `server_time`; POST 404s; fleet reorder idle-OK / marker-409 byte-identical;
   unknown slug 404; zero `_run_state_script` on fleet polls; `/api/fleet` cache debounce via
   monkeypatched `server.fleet_payload`). Run → fail.
-- [ ] WU-2.2 — Implement: `server.py` fleet mode (fleet handler, slug map from cached payload,
+- [x] WU-2.2 — Implement: `server.py` fleet mode (fleet handler, slug map from cached payload,
   per-repo lazy `TtlCache` pairs, `_handle_queue_post` extraction with `locked` param — single-
   repo call order/behavior unchanged), `__main__.py --fleet`. Re-run → green.
-- [ ] WU-2.3 — Full suite green (single-repo tests untouched). Commit Phase 2.
+- [x] WU-2.3 — Full suite green (single-repo tests untouched). Commit Phase 2.
 
 ## Phase 3 — Fleet home frontend
 

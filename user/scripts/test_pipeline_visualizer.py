@@ -1705,5 +1705,224 @@ class TestFleetRow:
         assert row["features"]["depth"] == 0  # shape stays renderable
 
 
+# ---------------------------------------------------------------------------
+# cross-repo-fleet-view Phase 2 — `--fleet` serving mode
+#
+# One instance serves the fleet home: /api/fleet behind its own TtlCache and
+# the existing per-repo handlers nested under /repo/<slug>/… (slug-resolved,
+# per-repo caches). Single-repo --repo-root mode is byte-identical (the whole
+# pre-existing suite above runs against it unmodified).
+# ---------------------------------------------------------------------------
+
+
+def _start_fleet_server(repos_base: Path, lazy_repos_path: Path,
+                        state_base: Path):
+    from pipeline_visualizer.server import make_server
+    httpd = make_server(host="127.0.0.1", port=0, fleet=True,
+                        repos_base=repos_base, lazy_repos_path=lazy_repos_path,
+                        state_base=state_base)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    return httpd, httpd.server_address[1]
+
+
+def _fleet_fixture(tmp_path, seed_real_feature=False):
+    """A two-repo fleet home: repos_base with repo-a / repo-b, empty state."""
+    base = tmp_path / "repos"
+    base.mkdir()
+    if seed_real_feature:
+        d = base / "repo-a"
+        d.mkdir()
+        _seed_feature_repo(d)
+        _fl_seed_repo(base, "repo-b", bugs=("b1",))
+    else:
+        _fl_seed_repo(base, "repo-a", features=("f1", "f2"))
+        _fl_seed_repo(base, "repo-b", bugs=("b1",))
+    state_base = tmp_path / "fleet-state"
+    state_base.mkdir()
+    return base, tmp_path / "lazy-repos.json", state_base
+
+
+class TestFleetServer:
+    def _get(self, port, path):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        conn.request("GET", path)
+        resp = conn.getresponse()
+        body = resp.read()
+        return resp, body
+
+    def test_api_fleet_json_shape(self, tmp_path):
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, body = self._get(port, "/api/fleet")
+            assert resp.status == 200
+            assert "application/json" in (resp.getheader("Content-Type") or "")
+            payload = json.loads(body)
+            rows = payload["repos"]
+            assert [r["slug"] for r in rows] == ["repo-a", "repo-b"]
+            a = rows[0]
+            assert a["features"]["depth"] == 2
+            assert a["marker"]["badge"] == "idle"
+            assert a["error"] is None
+            assert "repo_root" in a
+        finally:
+            httpd.shutdown()
+
+    def test_drill_in_state_identical_to_single_repo(self, tmp_path):
+        # /repo/<slug>/api/state must be the full probe_state payload — equal
+        # to what a single-repo server over the same root serves (modulo the
+        # per-response server_time stamp).
+        base, cfg, state_base = _fleet_fixture(tmp_path, seed_real_feature=True)
+        repo_a = base / "repo-a"
+        with _isolated_state_dir(tmp_path, marker=False):
+            fleet_httpd, fleet_port = _start_fleet_server(base, cfg, state_base)
+            single_httpd, single_port = _start_server(repo_a)
+            try:
+                _, fleet_body = self._get(fleet_port, "/repo/repo-a/api/state")
+                _, single_body = self._get(single_port, "/api/state")
+                fleet_state = json.loads(fleet_body)
+                single_state = json.loads(single_body)
+                fleet_state.pop("server_time")
+                single_state.pop("server_time")
+                assert fleet_state == single_state
+            finally:
+                fleet_httpd.shutdown()
+                single_httpd.shutdown()
+
+    def test_drill_in_queue_and_trends_routes(self, tmp_path):
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        with _isolated_state_dir(tmp_path, marker=False):
+            httpd, port = _start_fleet_server(base, cfg, state_base)
+            try:
+                resp, body = self._get(port, "/repo/repo-b/api/queue")
+                assert resp.status == 200
+                assert [e["id"] for e in json.loads(body)["bugs"]] == ["b1"]
+                resp, body = self._get(port, "/repo/repo-b/api/trends")
+                assert resp.status == 200
+                assert json.loads(body)["telemetry_available"] is False
+            finally:
+                httpd.shutdown()
+
+    def test_post_to_fleet_routes_404(self, tmp_path):
+        # D6: the fleet layer is pure read — no fleet-level POST exists.
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            for path in ("/api/fleet", "/api/queue", "/"):
+                resp, _ = _post(port, path, {"pipeline": "features",
+                                             "order": ["f2", "f1"]})
+                assert resp.status == 404, path
+        finally:
+            httpd.shutdown()
+
+    def test_fleet_reorder_idle_persists(self, tmp_path):
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        qp = base / "repo-a" / "docs" / "features" / "queue.json"
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, _ = _post(port, "/repo/repo-a/api/queue",
+                            {"pipeline": "features", "order": ["f2", "f1"]})
+            assert resp.status == 200
+        finally:
+            httpd.shutdown()
+        data = json.loads(qp.read_text(encoding="utf-8"))
+        assert [e["id"] for e in data["queue"]] == ["f2", "f1"]
+
+    def test_fleet_reorder_refused_409_under_fresh_marker(self, tmp_path):
+        # The refusal uses the RAW keyed-path read (no set_active_repo_root
+        # flip, no delete) — and the queue stays byte-identical.
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        repo_a = base / "repo-a"
+        qp = repo_a / "docs" / "features" / "queue.json"
+        before = qp.read_bytes()
+        import time as _time
+        mp = _fl_write_marker(state_base, repo_a, _time.time() - 60)  # fresh
+        marker_before = mp.read_bytes()
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, _ = _post(port, "/repo/repo-a/api/queue",
+                            {"pipeline": "features", "order": ["f2", "f1"]})
+            assert resp.status == 409
+        finally:
+            httpd.shutdown()
+        assert qp.read_bytes() == before
+        assert mp.read_bytes() == marker_before  # marker untouched
+
+    def test_unknown_slug_404(self, tmp_path):
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            resp, _ = self._get(port, "/repo/no-such-repo/api/state")
+            assert resp.status == 404
+            resp, _ = _post(port, "/repo/no-such-repo/api/queue",
+                            {"pipeline": "features", "order": []})
+            assert resp.status == 404
+        finally:
+            httpd.shutdown()
+
+    def test_zero_state_script_calls_on_fleet_poll(self, tmp_path, monkeypatch):
+        # D5's load-bearing bound: the fleet poll spawns ZERO state-script
+        # subprocesses (shallow rows only; the full probe is drill-in-only).
+        from pipeline_visualizer import probe as probe_mod
+        calls = {"n": 0}
+
+        def counting(*args, **kwargs):
+            calls["n"] += 1
+            return "{}"
+
+        monkeypatch.setattr(probe_mod, "_run_state_script", counting)
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        httpd, port = _start_fleet_server(base, cfg, state_base)
+        try:
+            for _ in range(3):
+                resp, _ = self._get(port, "/api/fleet")
+                assert resp.status == 200
+        finally:
+            httpd.shutdown()
+        assert calls["n"] == 0
+
+    def test_api_fleet_served_through_own_cache(self, tmp_path):
+        # Repeated GETs within the fleet TTL → ONE underlying aggregation
+        # (fleet_payload is a server module attribute, like probe_state).
+        from pipeline_visualizer import server as server_mod
+        base, cfg, state_base = _fleet_fixture(tmp_path)
+        calls = {"n": 0}
+        real = server_mod.fleet_payload
+
+        def counting(**kwargs):
+            calls["n"] += 1
+            return real(**kwargs)
+
+        server_mod.fleet_payload = counting
+        try:
+            httpd, port = _start_fleet_server(base, cfg, state_base)
+            try:
+                for _ in range(5):
+                    self._get(port, "/api/fleet")
+                assert calls["n"] == 1
+            finally:
+                httpd.shutdown()
+        finally:
+            server_mod.fleet_payload = real
+
+    def test_single_repo_mode_has_no_fleet_route(self, tmp_path):
+        # Byte-identical single-repo pin: /api/fleet does not exist there.
+        repo_root = _seed_feature_repo(tmp_path)
+        httpd, port = _start_server(repo_root)
+        try:
+            resp, _ = self._get(port, "/api/fleet")
+            assert resp.status == 404
+        finally:
+            httpd.shutdown()
+
+    def test_cli_exposes_fleet_flag(self):
+        r = _tl_subprocess.run(
+            [sys.executable, "-m", "pipeline_visualizer", "--help"],
+            capture_output=True, text=True, cwd=str(Path(__file__).parent))
+        assert r.returncode == 0
+        assert "--fleet" in r.stdout
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

@@ -106,7 +106,7 @@ caches allocated lazily on first drill-in, raw keyed-path marker read for fleet-
 `queue_locked`. `__main__.py` gains `--fleet`.
 
 **Deliverables:**
-- [ ] `server.py`: `make_server(repo_root=None, ..., fleet=False, repos_base=None,
+- [x] `server.py`: `make_server(repo_root=None, ..., fleet=False, repos_base=None,
   lazy_repos_path=None, state_base=None)` — `fleet=False` constructs exactly today's handler
   (existing suite green, no fixture edits). Fleet handler: `GET /api/fleet` (own
   `TtlCache(FLEET_TTL_SECONDS)`, server-owned slug map refreshed with the payload);
@@ -114,10 +114,10 @@ caches allocated lazily on first drill-in, raw keyed-path marker read for fleet-
   `POST /repo/<slug>/api/queue` (same permutation-validated atomic write, refusal via
   `fleet.marker_fresh_present` — raw read, no `set_active_repo_root` flip); unknown slug → 404;
   `POST` to `/api/fleet` or any other fleet path → 404.
-- [ ] `server.py`: `fleet_payload` referenced as a module attribute (monkeypatch pattern, like
+- [x] `server.py`: `fleet_payload` referenced as a module attribute (monkeypatch pattern, like
   `probe_state`/`trends_payload`).
-- [ ] `__main__.py`: `--fleet` flag (fleet home at `/`); `--repo-root` mode unchanged.
-- [ ] Tests: `/api/fleet` JSON shape; drill-in `/repo/<slug>/api/state` payload identical to
+- [x] `__main__.py`: `--fleet` flag (fleet home at `/`); `--repo-root` mode unchanged.
+- [x] Tests: `/api/fleet` JSON shape; drill-in `/repo/<slug>/api/state` payload identical to
   single-repo `/api/state` for the same root (modulo `server_time`); POST to fleet routes →
   404; fleet reorder POST works idle and 409s under a fresh keyed marker (queue bytes
   unchanged); unknown slug 404; zero `probe._run_state_script` calls on `/api/fleet` polls
@@ -129,8 +129,8 @@ caches allocated lazily on first drill-in, raw keyed-path marker read for fleet-
 server over the same root serves; POSTing to `/api/fleet` returns 404.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Zero state-script subprocesses spawned by fleet polls. *(Evidence: `TestFleetServer` monkeypatched `_run_state_script` counter.)* <!-- verification-only -->
-- [ ] Single-repo mode byte-identical: full pre-existing `test_pipeline_visualizer.py` suite green with zero fixture edits. *(Evidence: suite run.)* <!-- verification-only -->
+- [x] Zero state-script subprocesses spawned by fleet polls. *(Evidence: `TestFleetServer` monkeypatched `_run_state_script` counter.)* <!-- verification-only -->
+- [x] Single-repo mode byte-identical: full pre-existing `test_pipeline_visualizer.py` suite green with zero fixture edits. *(Evidence: suite run.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
 

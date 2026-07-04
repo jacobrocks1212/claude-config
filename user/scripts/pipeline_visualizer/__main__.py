@@ -39,7 +39,27 @@ def main(argv=None) -> int:
         "--host", default="127.0.0.1",
         help="Host/interface to bind (default: 127.0.0.1).",
     )
+    parser.add_argument(
+        "--fleet", action="store_true",
+        help=("Serve the cross-repo fleet home at / (one instance for every "
+              "lazy-enabled repo: ~/source/repos auto-discovery + "
+              "~/.claude/lazy-repos.json pins/excludes + live run markers); "
+              "per-repo views nest under /repo/<slug>/. --repo-root is "
+              "ignored in this mode."),
+    )
     args = parser.parse_args(argv)
+
+    if args.fleet:
+        httpd = make_server(host=args.host, port=args.port, fleet=True)
+        bound_host, bound_port = httpd.server_address[0], httpd.server_address[1]
+        print(f"Lazy Fleet serving at http://{bound_host}:{bound_port}/")
+        print("  endpoints: /api/fleet  /repo/<slug>/api/state  (Ctrl-C to stop)")
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            print("\nShutting down.")
+            httpd.shutdown()
+        return 0
 
     httpd = make_server(repo_root=args.repo_root, host=args.host, port=args.port)
     bound_host, bound_port = httpd.server_address[0], httpd.server_address[1]
