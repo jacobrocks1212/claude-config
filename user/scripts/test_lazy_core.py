@@ -28565,5 +28565,378 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# code-doc-provenance-linkage — Phase 2: write_provenance producer + gate wiring
+# ---------------------------------------------------------------------------
+
+_PROV_SPEC_MD = """# Feature Spec
+
+> Distill each completed item into a durable ledger artifact and a reverse
+> index so agents can discover the decisions that govern a file.
+
+**Status:** In-progress
+
+## Locked Decisions
+
+| id | decision |
+|----|----------|
+| L1 | one writer, two triggers |
+| L2 | deterministic distillate assembly |
+
+## Overview
+
+Some content.
+"""
+
+
+def _prov_spec_dir(repo_root: "Path", slug: str, *, docs_kind: str = "features",
+                   spec_md: str | None = None) -> "Path":
+    spec_dir = repo_root / "docs" / docs_kind / slug
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    (spec_dir / "SPEC.md").write_text(
+        spec_md if spec_md is not None else _PROV_SPEC_MD, encoding="utf-8")
+    return spec_dir
+
+
+def test_write_provenance_distillate_and_index_deterministic():
+    """write_provenance emits the D2-A distillate (frontmatter + deterministic
+    body) and the D3-A index (sorted POSIX keys); re-running is byte-stable."""
+    _guard()
+    assert hasattr(lazy_core, "write_provenance"), (
+        "lazy_core.write_provenance is missing"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = _prov_spec_dir(repo_root, "feat-prov")
+        result = lazy_core.write_provenance(
+            repo_root, spec_dir, "feat-prov", "feature",
+            ["abc1234", "def5678"],
+            ["user/scripts/lazy_core.py", "src/a.py"],
+            provenance="pipeline-gated", derivation="commit-brackets",
+            date="2026-07-04",
+            validated_line="Validated via: mcp (2/2). Receipt: COMPLETED.md (provenance: gated).",
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        dist_path = spec_dir / "IMPLEMENTED.md"
+        assert dist_path.exists(), "IMPLEMENTED.md was not written"
+        meta = lazy_core.parse_sentinel(dist_path)
+        assert meta.get("kind") == "implemented"
+        assert meta.get("feature_id") == "feat-prov"
+        assert meta.get("provenance") == "pipeline-gated"
+        assert meta.get("derivation") == "commit-brackets"
+        assert [str(c) for c in meta.get("commits")] == ["abc1234", "def5678"]
+        assert [str(d) for d in meta.get("decisions")] == ["L1", "L2"]
+        body = dist_path.read_text(encoding="utf-8")
+        # What-shipped = the SPEC's leading `>` summary, verbatim (unwrapped).
+        assert "Distill each completed item into a durable ledger artifact" in body
+        assert "L1 — one writer, two triggers" in body
+        assert "Validated via: mcp (2/2)" in body
+        # Index: sorted POSIX keys → per-file entry rows.
+        index_path = repo_root / "docs" / "provenance-index.json"
+        assert index_path.exists(), "docs/provenance-index.json was not written"
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+        assert list(index.keys()) == sorted(index.keys())
+        assert index["user/scripts/lazy_core.py"] == [
+            {"id": "feat-prov", "type": "feature", "provenance": "pipeline-gated"}
+        ]
+        assert "src/a.py" in index
+        # Idempotency: re-running the SAME write is byte-stable.
+        dist_before = dist_path.read_bytes()
+        index_before = index_path.read_bytes()
+        result2 = lazy_core.write_provenance(
+            repo_root, spec_dir, "feat-prov", "feature",
+            ["abc1234", "def5678"],
+            ["user/scripts/lazy_core.py", "src/a.py"],
+            provenance="pipeline-gated", derivation="commit-brackets",
+            date="2026-07-04",
+            validated_line="Validated via: mcp (2/2). Receipt: COMPLETED.md (provenance: gated).",
+        )
+        assert result2["ok"] is True
+        assert dist_path.read_bytes() == dist_before, "distillate must be byte-stable"
+        assert index_path.read_bytes() == index_before, "index must be byte-stable"
+
+
+def test_write_provenance_replaces_item_rows_not_duplicates():
+    """Re-writing the SAME item with a different file set REPLACES that item's
+    rows (no duplicates, stale rows dropped); other items' rows survive."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_a = _prov_spec_dir(repo_root, "feat-a")
+        spec_b = _prov_spec_dir(repo_root, "feat-b")
+        assert lazy_core.write_provenance(
+            repo_root, spec_a, "feat-a", "feature", ["aaa1111"],
+            ["src/one.py", "src/two.py"], date="2026-07-04")["ok"]
+        assert lazy_core.write_provenance(
+            repo_root, spec_b, "feat-b", "feature", ["bbb2222"],
+            ["src/one.py"], date="2026-07-04")["ok"]
+        # Re-link feat-a with a NARROWER set: src/two.py row must disappear.
+        assert lazy_core.write_provenance(
+            repo_root, spec_a, "feat-a", "feature", ["aaa1111"],
+            ["src/one.py"], date="2026-07-04")["ok"]
+        index = json.loads(
+            (repo_root / "docs" / "provenance-index.json").read_text(encoding="utf-8"))
+        one_ids = [(e["id"], e["type"]) for e in index["src/one.py"]]
+        assert one_ids.count(("feat-a", "feature")) == 1, f"duplicated rows: {index}"
+        assert ("feat-b", "feature") in one_ids, "other item's rows must survive"
+        assert "src/two.py" not in index, f"stale row must be dropped: {index}"
+
+
+def test_write_provenance_no_locked_decisions_is_honest():
+    """A SPEC with no Locked-Decision surface → decisions: [] + a body note
+    (never fabricated ids)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = _prov_spec_dir(
+            repo_root, "feat-bare",
+            spec_md="# Spec\n\n> Bare summary line.\n\n**Status:** In-progress\n")
+        result = lazy_core.write_provenance(
+            repo_root, spec_dir, "feat-bare", "feature", [], [],
+            date="2026-07-04")
+        assert result["ok"] is True, f"got {result}"
+        meta = lazy_core.parse_sentinel(spec_dir / "IMPLEMENTED.md")
+        assert meta.get("decisions") == [], f"expected [], got {meta.get('decisions')!r}"
+        body = (spec_dir / "IMPLEMENTED.md").read_text(encoding="utf-8")
+        assert "no Locked-Decision surface" in body
+
+
+def test_write_provenance_dry_run_mutates_nothing():
+    """dry_run computes the full result (preview included) and writes NOTHING."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = _prov_spec_dir(repo_root, "feat-dry")
+        result = lazy_core.write_provenance(
+            repo_root, spec_dir, "feat-dry", "feature", ["abc1234"],
+            ["src/a.py"], date="2026-07-04", dry_run=True)
+        assert result["ok"] is True and result.get("dry_run") is True
+        assert result.get("files") == ["src/a.py"]
+        assert "distillate_preview" in result and "kind: implemented" in result["distillate_preview"]
+        assert not (spec_dir / "IMPLEMENTED.md").exists(), "dry_run must not write"
+        assert not (repo_root / "docs" / "provenance-index.json").exists()
+
+
+def test_mark_complete_emits_provenance_from_brackets():
+    """The pipeline trigger: __mark_complete__ with recorded brackets emits the
+    distillate (derivation: commit-brackets) + index rows matching the
+    bracket-diff union, and reports provenance_written: true."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        spec_dir = _prov_spec_dir(repo_root, "feat-gate")
+        _write_validated_md(spec_dir)
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"],
+                       check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m", "specs"],
+                       check=True, capture_output=True)
+        bracket_begin = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            check=True, capture_output=True, text=True).stdout.strip()
+        end = _prov_git_commit_file(repo_root, "src/impl.py", "implement feat-gate")
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.append_commit_bracket("feat-gate", bracket_begin, end)
+            result = lazy_core.apply_pseudo(
+                repo_root, "__mark_complete__", spec_dir,
+                feature_id="feat-gate", date="2026-07-04",
+            )
+        finally:
+            _clear_state_dir()
+        assert result["ok"] is True, f"got {result}"
+        assert result.get("provenance_written") is True, f"got {result}"
+        meta = lazy_core.parse_sentinel(spec_dir / "IMPLEMENTED.md")
+        assert meta is not None and meta.get("kind") == "implemented"
+        assert meta.get("provenance") == "pipeline-gated"
+        assert meta.get("derivation") == "commit-brackets"
+        assert [str(c) for c in meta.get("commits")] == [end[:7]]
+        index = json.loads(
+            (repo_root / "docs" / "provenance-index.json").read_text(encoding="utf-8"))
+        # Index keys == the bracket window's `git diff --name-only` union.
+        assert list(index.keys()) == ["src/impl.py"], f"got {index}"
+        assert index["src/impl.py"][0]["provenance"] == "pipeline-gated"
+
+
+def test_mark_complete_provenance_falls_back_to_message_grep():
+    """No recorded brackets → the gate derives via message-grep and records the
+    honest degraded derivation label."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        spec_dir = _prov_spec_dir(repo_root, "feat-grep")
+        _write_validated_md(spec_dir)
+        end = _prov_git_commit_file(repo_root, "src/g.py", "fix(feat-grep): work")
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()  # hermetic + EMPTY: no brackets recorded
+        _set_state_dir(state_dir)
+        try:
+            result = lazy_core.apply_pseudo(
+                repo_root, "__mark_complete__", spec_dir,
+                feature_id="feat-grep", date="2026-07-04",
+            )
+        finally:
+            _clear_state_dir()
+        assert result["ok"] is True, f"got {result}"
+        assert result.get("provenance_written") is True, f"got {result}"
+        meta = lazy_core.parse_sentinel(spec_dir / "IMPLEMENTED.md")
+        assert meta.get("derivation") == "message-grep", f"got {meta}"
+        assert [str(c) for c in meta.get("commits")] == [end[:7]]
+        index = json.loads(
+            (repo_root / "docs" / "provenance-index.json").read_text(encoding="utf-8"))
+        assert "src/g.py" in index
+
+
+def test_mark_complete_refused_gate_writes_no_provenance():
+    """A refused completion (no evidence sentinel) writes NOTHING — no
+    distillate, no index."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = _prov_spec_dir(repo_root, "feat-refused")
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            result = lazy_core.apply_pseudo(
+                repo_root, "__mark_complete__", spec_dir,
+                feature_id="feat-refused", date="2026-07-04",
+            )
+        finally:
+            _clear_state_dir()
+        assert result["ok"] is False and result["refused"]
+        assert not (spec_dir / "IMPLEMENTED.md").exists()
+        assert not (repo_root / "docs" / "provenance-index.json").exists()
+
+
+def test_mark_complete_receipt_noop_writes_no_provenance():
+    """Re-running a completion (receipt-noop path) writes nothing — the noop
+    early-return sits BEFORE the provenance write."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = _prov_spec_dir(repo_root, "feat-noop")
+        _write_validated_md(spec_dir)
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            first = lazy_core.apply_pseudo(
+                repo_root, "__mark_complete__", spec_dir,
+                feature_id="feat-noop", date="2026-07-04",
+            )
+            assert first["ok"] is True
+            dist_path = spec_dir / "IMPLEMENTED.md"
+            assert dist_path.exists()
+            dist_path.unlink()  # remove so a re-write would be visible
+            # Re-add the evidence sentinel (the first completion deleted it) so
+            # the re-run reaches the receipt-noop path, not the evidence gate.
+            _write_validated_md(spec_dir)
+            second = lazy_core.apply_pseudo(
+                repo_root, "__mark_complete__", spec_dir,
+                feature_id="feat-noop", date="2026-07-04",
+            )
+        finally:
+            _clear_state_dir()
+        assert second["noop"] is True
+        assert not dist_path.exists(), (
+            "receipt-noop re-run must not re-write the distillate"
+        )
+
+
+def test_mark_complete_index_failure_degrades_to_warning():
+    """An induced index-write failure (a DIRECTORY squats on the index path)
+    still completes — receipt + flips land; the result carries warnings[] and
+    provenance_written: false. Completion is never blocked by bookkeeping."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = _prov_spec_dir(repo_root, "feat-warn")
+        _write_validated_md(spec_dir)
+        # Squat a directory on the index path so its atomic write fails, and
+        # plant a real touched-file set via message-grep in a git repo.
+        (repo_root / "docs" / "provenance-index.json").mkdir(parents=True)
+        subprocess.run(["git", "-C", str(repo_root), "init", "-q"],
+                       check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "config", "user.email", "t@t"],
+                       check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "config", "user.name", "t"],
+                       check=True, capture_output=True)
+        _prov_git_commit_file(repo_root, "src/w.py", "feat(feat-warn): work")
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            result = lazy_core.apply_pseudo(
+                repo_root, "__mark_complete__", spec_dir,
+                feature_id="feat-warn", date="2026-07-04",
+            )
+        finally:
+            _clear_state_dir()
+        assert result["ok"] is True, f"completion must stand, got {result}"
+        assert (spec_dir / "COMPLETED.md").exists()
+        assert "**Status:** Complete" in (spec_dir / "SPEC.md").read_text(encoding="utf-8")
+        assert result.get("provenance_written") is False, f"got {result}"
+        warnings = result.get("warnings") or []
+        assert any("provenance" in w for w in warnings), f"got warnings={warnings}"
+
+
+def test_mark_fixed_emits_provenance_bug_type():
+    """The bug pipeline trigger: __mark_fixed__ emits type: bug index rows via
+    the SAME producer (no coupled-pair fork)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        spec_dir = _prov_spec_dir(repo_root, "bug-prov", docs_kind="bugs")
+        _write_validated_md(spec_dir)
+        _prov_git_commit_file(repo_root, "src/fix.py", "fix(bug-prov): repair")
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            result = lazy_core.apply_pseudo(
+                repo_root, "__mark_fixed__", spec_dir,
+                feature_id="bug-prov", date="2026-07-04",
+            )
+        finally:
+            _clear_state_dir()
+        assert result["ok"] is True, f"got {result}"
+        assert result.get("provenance_written") is True
+        meta = lazy_core.parse_sentinel(spec_dir / "IMPLEMENTED.md")
+        assert meta.get("kind") == "implemented"
+        index = json.loads(
+            (repo_root / "docs" / "provenance-index.json").read_text(encoding="utf-8"))
+        assert index["src/fix.py"][0]["type"] == "bug", f"got {index}"
+
+
+# Extend _TESTS with code-doc-provenance-linkage Phase 2 entries.
+_TESTS = _TESTS + [
+    ("test_write_provenance_distillate_and_index_deterministic",
+     test_write_provenance_distillate_and_index_deterministic),
+    ("test_write_provenance_replaces_item_rows_not_duplicates",
+     test_write_provenance_replaces_item_rows_not_duplicates),
+    ("test_write_provenance_no_locked_decisions_is_honest",
+     test_write_provenance_no_locked_decisions_is_honest),
+    ("test_write_provenance_dry_run_mutates_nothing",
+     test_write_provenance_dry_run_mutates_nothing),
+    ("test_mark_complete_emits_provenance_from_brackets",
+     test_mark_complete_emits_provenance_from_brackets),
+    ("test_mark_complete_provenance_falls_back_to_message_grep",
+     test_mark_complete_provenance_falls_back_to_message_grep),
+    ("test_mark_complete_refused_gate_writes_no_provenance",
+     test_mark_complete_refused_gate_writes_no_provenance),
+    ("test_mark_complete_receipt_noop_writes_no_provenance",
+     test_mark_complete_receipt_noop_writes_no_provenance),
+    ("test_mark_complete_index_failure_degrades_to_warning",
+     test_mark_complete_index_failure_degrades_to_warning),
+    ("test_mark_fixed_emits_provenance_bug_type",
+     test_mark_fixed_emits_provenance_bug_type),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

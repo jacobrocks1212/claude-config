@@ -4351,6 +4351,56 @@ def apply_pseudo(
                         f"({exc}) — strike the completed row by hand"
                     )
 
+        # --- (f) Provenance ledger (code-doc-provenance-linkage Phase 2) ---
+        # AFTER the receipt write + queue trim + ROADMAP strike (the
+        # completion's core is already durable), distill the item into
+        # IMPLEMENTED.md + merge its touched-file rows into the committed
+        # reverse index — via the ONE producer (write_provenance, D1-B).
+        # Derivation (D4): recorded commit brackets primary; message-grep as
+        # the explicitly-marked fallback (legacy items / cross-machine gaps).
+        # FAILURE CONTAINMENT: any provenance failure degrades to a
+        # ``warnings[]`` entry (the malformed-queue-trim policy) — completion
+        # is NEVER blocked by its own bookkeeping.
+        provenance_written = False
+        try:
+            derived = derive_touched_from_brackets(repo_root, feature_id)
+            prov_derivation = "commit-brackets"
+            if derived is None:
+                derived = derive_touched_from_grep(repo_root, feature_id)
+                prov_derivation = "message-grep"
+            counts_part = (
+                f" ({mcp_pass_count}/{mcp_total_count})"
+                if mcp_pass_count is not None and mcp_total_count is not None
+                else ""
+            )
+            prov_validated_line = (
+                f"Validated via: {validated_via}{counts_part}. "
+                f"Receipt: {receipt_filename} (provenance: gated)."
+            )
+            prov_result = write_provenance(
+                repo_root, spec_path, feature_id,
+                "bug" if is_fixed else "feature",
+                derived["commits"], derived["files"],
+                provenance="pipeline-gated",
+                derivation=prov_derivation,
+                date=date,
+                validated_line=prov_validated_line,
+            )
+            if prov_result.get("ok"):
+                provenance_written = True
+                wrote.extend(prov_result.get("wrote", []))
+            else:
+                queue_warnings.append(
+                    "provenance ledger could not be written "
+                    f"({prov_result.get('refused')}) — the completion stands; "
+                    "re-link via --link-provenance"
+                )
+        except Exception as exc:  # noqa: BLE001 — bookkeeping never blocks
+            queue_warnings.append(
+                f"provenance ledger could not be written ({exc}) — the "
+                "completion stands; re-link via --link-provenance"
+            )
+
         # Attach the Phase 9 WU-1 ``flipped_phases`` key (the per-phase headings
         # the completion-coherence gate auto-flipped to Complete this call).
         # Empty list when nothing needed flipping; documented in the docstring.
@@ -4370,6 +4420,10 @@ def apply_pseudo(
         # struck this call (always False for the bug/fixed path and when no
         # ROADMAP.md exists or the row was already struck).
         result["roadmap_struck"] = roadmap_struck
+        # code-doc-provenance-linkage Phase 2: True iff the IMPLEMENTED.md
+        # distillate + index rows were written this call (False on a contained
+        # provenance failure — see the warnings[] entry it leaves behind).
+        result["provenance_written"] = provenance_written
         if queue_warnings:
             existing_warnings = result.get("warnings") or []
             result["warnings"] = existing_warnings + queue_warnings
@@ -12826,6 +12880,350 @@ def record_cycle_commit_bracket(
     except Exception:  # noqa: BLE001
         # Fail-open: bracket bookkeeping must never block the marker clear.
         return None
+
+
+# ---------------------------------------------------------------------------
+# Provenance producer (code-doc-provenance-linkage Phase 2)
+#
+# ONE WRITER, TWO TRIGGERS (SPEC D1-B): write_provenance is the SOLE author of
+# the per-item IMPLEMENTED.md distillate (D2-A) and the committed per-repo
+# reverse index docs/provenance-index.json (D3-A). It is called from:
+#   1. the __mark_complete__/__mark_fixed__ branch of apply_pseudo (the
+#      automatic completion-gate trigger, provenance: pipeline-gated), and
+#   2. the --link-provenance / --backfill-provenance CLI handlers (the manual
+#      trigger, provenance: manual | backfilled).
+# The provenance enum (D9): pipeline-gated | manual (+ linked_by) | backfilled.
+# The derivation enum (D4): commit-brackets | commit-range | message-grep.
+# ---------------------------------------------------------------------------
+
+_PROVENANCE_VALUES = ("pipeline-gated", "manual", "backfilled")
+_PROVENANCE_KINDS = ("feature", "bug")
+
+
+def _provenance_index_path(repo_root: Path) -> Path:
+    """The committed per-repo reverse-index location (D3-A)."""
+    return Path(repo_root) / "docs" / "provenance-index.json"
+
+
+def _normalize_index_key(repo_root: Path, path_str: str) -> str:
+    """Normalize a file path to the index's repo-relative POSIX key form."""
+    s = str(path_str).replace("\\", "/").strip()
+    # Strip an absolute repo_root prefix when present.
+    root_posix = str(Path(repo_root)).replace("\\", "/").rstrip("/")
+    if root_posix and s.startswith(root_posix + "/"):
+        s = s[len(root_posix) + 1:]
+    while s.startswith("./"):
+        s = s[2:]
+    return s.strip("/")
+
+
+def _spec_summary_paragraph(item_dir: Path) -> str | None:
+    """Extract the SPEC's leading ``>`` blockquote summary paragraph, verbatim
+    (unwrapped to a single flowing paragraph). None when SPEC.md is absent or
+    carries no leading blockquote."""
+    spec_md_path = Path(item_dir) / "SPEC.md"
+    if not spec_md_path.is_file():
+        return None
+    try:
+        lines = spec_md_path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return None
+    quote: list[str] = []
+    seen_quote = False
+    for ln in lines:
+        s = ln.strip()
+        if s.startswith(">"):
+            seen_quote = True
+            quote.append(s.lstrip(">").strip())
+        elif seen_quote:
+            break  # the first blockquote block ended
+        elif s.startswith("#") or not s:
+            continue  # title / blanks before the summary
+        else:
+            break  # prose before any blockquote → no leading summary
+    text = " ".join(q for q in quote if q).strip()
+    return text or None
+
+
+def _git_capture_lines(repo_root: Path, args: list[str]) -> list[str] | None:
+    """Run a git command under repo_root and return stdout lines, or None on
+    any failure (non-git tree, bad revision, git unavailable). Never raises."""
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(repo_root)] + args,
+            capture_output=True, text=True, timeout=30,
+        )
+        if r.returncode != 0:
+            return None
+        return r.stdout.splitlines()
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def derive_touched_from_range(repo_root: Path, rev_range: str) -> dict | None:
+    """Derive {commits, files} from a git revision range (e.g. ``A..B``).
+
+    commits = authored (merge-excluded) short shas in the range, oldest first;
+    files = the range's ``git diff --name-only`` set, sorted. None when the
+    range cannot be resolved (the caller decides the fallback)."""
+    commits = _git_capture_lines(
+        repo_root, ["rev-list", "--no-merges", "--reverse", rev_range])
+    files = _git_capture_lines(repo_root, ["diff", "--name-only", rev_range])
+    if commits is None or files is None:
+        return None
+    return {
+        "commits": [c.strip()[:7] for c in commits if c.strip()],
+        "files": sorted({f.strip() for f in files if f.strip()}),
+    }
+
+
+def derive_touched_from_brackets(repo_root: Path, item_id: str) -> dict | None:
+    """Union {commits, files} over the item's recorded commit brackets (D4-A,
+    the pipeline-primary derivation). None when no bracket resolves (no
+    brackets recorded, or every recorded sha is unreachable) — the caller
+    falls back to message-grep with an honest derivation label."""
+    brackets = read_commit_brackets(item_id)
+    if not brackets:
+        return None
+    commits: list[str] = []
+    files: set[str] = set()
+    any_resolved = False
+    for b in brackets:
+        begin = b.get("begin_sha")
+        end = b.get("end_sha")
+        if not begin or not end:
+            continue
+        r = derive_touched_from_range(repo_root, f"{begin}..{end}")
+        if r is None:
+            continue
+        any_resolved = True
+        for c in r["commits"]:
+            if c not in commits:
+                commits.append(c)
+        files.update(r["files"])
+    if not any_resolved:
+        return None
+    return {"commits": commits, "files": sorted(files)}
+
+
+def derive_touched_from_grep(repo_root: Path, item_id: str) -> dict:
+    """Message-grep fallback derivation (D4-B, explicitly degraded): commits
+    whose message contains the item id literal (fixed-string), plus their
+    touched files. Empty lists when nothing matches / not a git tree."""
+    out = _git_capture_lines(
+        repo_root,
+        ["log", "--no-merges", "--fixed-strings", f"--grep={item_id}",
+         "--name-only", "--pretty=format:%H"],
+    )
+    if out is None:
+        return {"commits": [], "files": []}
+    commits: list[str] = []
+    files: set[str] = set()
+    sha_re = re.compile(r"^[0-9a-f]{40}$")
+    for ln in out:
+        s = ln.strip()
+        if not s:
+            continue
+        if sha_re.match(s):
+            short = s[:7]
+            if short not in commits:
+                commits.append(short)
+        else:
+            files.add(s)
+    return {"commits": commits, "files": sorted(files)}
+
+
+def write_provenance(
+    repo_root: Path,
+    item_dir: Path,
+    item_id: str,
+    kind: str,
+    commits: list[str],
+    files: list[str],
+    *,
+    provenance: str = "pipeline-gated",
+    derivation: str = "commit-brackets",
+    date: str | None = None,
+    body: str | None = None,
+    linked_by: str | None = None,
+    validated_line: str | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """THE provenance producer — sole author of IMPLEMENTED.md + the index.
+
+    Writes (atomically, via _atomic_write):
+      1. ``item_dir/IMPLEMENTED.md`` — the D2-A distillate: frontmatter
+         (kind: implemented, feature_id, date, provenance, [linked_by,]
+         derivation, commits, decisions) + a deterministic body (the SPEC's
+         leading ``>`` summary verbatim, the Locked-Decision id — title rows
+         via _parse_locked_decisions, and the receipt-facts line). A manual
+         ``body`` (the D8 operator-approved prose) replaces the deterministic
+         body; the producer still owns the frontmatter and the index either way.
+      2. ``repo_root/docs/provenance-index.json`` — the D3-A reverse index:
+         repo-relative POSIX path → sorted [{id, type, provenance}] rows. This
+         item's existing rows are REPLACED (re-linking never duplicates);
+         other items' rows are preserved byte-for-byte modulo canonical
+         ordering. The index write is skipped entirely when the item touches
+         no files AND no index exists yet (nothing to record, nothing to trim).
+
+    ``dry_run=True`` computes everything (including ``distillate_preview``)
+    and writes NOTHING.
+
+    Returns a dict: {ok, refused, wrote, files, commits, decisions, dry_run}
+    (+ distillate_preview on dry_run). Any write/parse failure returns
+    ok: False with the refusal text — callers inside the completion gate fold
+    that into warnings[]; the manual CLI surfaces it verbatim.
+    """
+    if date is None:
+        date = datetime.date.today().isoformat()
+    if kind not in _PROVENANCE_KINDS:
+        return {"ok": False, "refused": f"unknown item kind {kind!r} "
+                f"(expected one of {_PROVENANCE_KINDS})", "wrote": []}
+    if provenance not in _PROVENANCE_VALUES:
+        return {"ok": False, "refused": f"unknown provenance {provenance!r} "
+                f"(expected one of {_PROVENANCE_VALUES})", "wrote": []}
+
+    repo_root = Path(repo_root)
+    item_dir = Path(item_dir)
+
+    # Canonicalize inputs (deterministic, byte-stable re-runs).
+    norm_files: list[str] = sorted({
+        _normalize_index_key(repo_root, f) for f in (files or []) if str(f).strip()
+    })
+    norm_commits: list[str] = []
+    for c in commits or []:
+        c = str(c).strip()
+        if c and c not in norm_commits:
+            norm_commits.append(c)
+
+    # Decisions from the SPEC's canonical Locked-Decision surface (zero new
+    # parsing — the same enumeration gate_coverage uses).
+    spec_md = ""
+    spec_md_path = item_dir / "SPEC.md"
+    if spec_md_path.is_file():
+        try:
+            spec_md = spec_md_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            spec_md = ""
+    decisions = _parse_locked_decisions(spec_md)
+    decision_ids = [d["id"] for d in decisions]
+
+    # --- Assemble the distillate ---
+    commits_inline = yaml.safe_dump(
+        norm_commits, default_flow_style=True).strip() if norm_commits else "[]"
+    decisions_inline = yaml.safe_dump(
+        decision_ids, default_flow_style=True).strip() if decision_ids else "[]"
+    linked_by_line = f"linked_by: {linked_by}\n" if linked_by else ""
+    fm = (
+        "---\n"
+        "kind: implemented\n"
+        f"feature_id: {item_id}\n"
+        f"date: {date}\n"
+        f"provenance: {provenance}\n"
+        f"{linked_by_line}"
+        f"derivation: {derivation}\n"
+        f"commits: {commits_inline}\n"
+        f"decisions: {decisions_inline}\n"
+        "---\n"
+        "\n"
+    )
+    if body is not None:
+        body_text = "# Implementation Ledger\n\n" + body.strip() + "\n"
+    else:
+        summary = _spec_summary_paragraph(item_dir) or "(no SPEC summary available)"
+        if decisions:
+            decision_rows = "\n".join(
+                f"- {d['id']} — {d['title']}" for d in decisions)
+            decisions_block = f"**Decisions that drove it:**\n{decision_rows}\n"
+        else:
+            decisions_block = (
+                "**Decisions that drove it:** (none — the SPEC carries "
+                "no Locked-Decision surface)\n"
+            )
+        validated_block = f"\n**{validated_line}**\n" if validated_line else ""
+        body_text = (
+            "# Implementation Ledger\n"
+            "\n"
+            f"**What shipped:** {summary}\n"
+            "\n"
+            f"{decisions_block}"
+            f"{validated_block}"
+        )
+    distillate = fm + body_text
+
+    # --- Merge the index (load → replace-this-item's-rows → serialize) ---
+    index_path = _provenance_index_path(repo_root)
+    try:
+        index: dict = {}
+        if index_path.is_file():
+            index = json.loads(index_path.read_text(encoding="utf-8"))
+            if not isinstance(index, dict):
+                return {"ok": False, "refused":
+                        f"{index_path} is not a JSON object — refusing to "
+                        "merge; fix the index by hand", "wrote": []}
+        merged: dict = {}
+        for key, rows in index.items():
+            if not isinstance(rows, list):
+                continue
+            kept = [
+                r for r in rows
+                if not (isinstance(r, dict)
+                        and r.get("id") == item_id and r.get("type") == kind)
+            ]
+            if kept:
+                merged[key] = kept
+        for f in norm_files:
+            merged.setdefault(f, []).append(
+                {"id": item_id, "type": kind, "provenance": provenance})
+        # Canonical form: sorted keys; per-key rows sorted by (type, id) and
+        # rebuilt to the canonical field order — byte-stable re-runs.
+        canonical = {}
+        for key in sorted(merged):
+            rows = sorted(
+                merged[key],
+                key=lambda r: (str(r.get("type")), str(r.get("id"))),
+            )
+            canonical[key] = [
+                {"id": r.get("id"), "type": r.get("type"),
+                 "provenance": r.get("provenance")}
+                for r in rows
+            ]
+        index_serialized = json.dumps(canonical, indent=2) + "\n"
+        # Nothing to record and nothing on disk to trim → skip the index write.
+        index_write_needed = bool(canonical) or index_path.is_file()
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        return {"ok": False, "refused": f"provenance index could not be "
+                f"merged ({exc})", "wrote": []}
+
+    result_base = {
+        "files": norm_files,
+        "commits": norm_commits,
+        "decisions": decision_ids,
+        "dry_run": dry_run,
+    }
+    if dry_run:
+        return {"ok": True, "refused": None, "wrote": [],
+                "distillate_preview": distillate,
+                "index_preview": index_serialized if index_write_needed else None,
+                **result_base}
+
+    # --- Writes (atomic; a failure surfaces as ok: False, refused) ---
+    wrote: list[str] = []
+    try:
+        item_dir.mkdir(parents=True, exist_ok=True)
+        _atomic_write(item_dir / "IMPLEMENTED.md", distillate)
+        wrote.append("IMPLEMENTED.md")
+        if index_write_needed:
+            index_path.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write(index_path, index_serialized)
+            try:
+                wrote.append(str(index_path.relative_to(repo_root)).replace("\\", "/"))
+            except ValueError:
+                wrote.append(str(index_path))
+    except (OSError, ValueError) as exc:
+        return {"ok": False, "refused": f"provenance write failed ({exc})",
+                "wrote": wrote, **result_base}
+    return {"ok": True, "refused": None, "wrote": wrote, **result_base}
 
 
 def append_auto_readmit_event(

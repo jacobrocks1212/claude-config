@@ -355,6 +355,51 @@ gate existed — it truthfully marks them as never gate-verified. Body keeps a
 human-readable completion summary (folded validation evidence, or the
 backfill grandfather note).
 
+#### `IMPLEMENTED.md` — `kind: implemented`  *(new — provenance distillate)*
+
+The **implementation-ledger distillate** written by the ONE provenance producer
+(`lazy_core.write_provenance` — code-doc-provenance-linkage): what shipped,
+which Locked Decisions drove it, and how it was validated. Written
+automatically by the `__mark_complete__`/`__mark_fixed__` completion gate
+(`provenance: pipeline-gated`), by the manual `--link-provenance` CLI /
+`/link-provenance` skill (`provenance: manual` + `linked_by:`), or by the
+one-shot `--backfill-provenance` (`provenance: backfilled`). Like
+`COMPLETED.md`, it is a **permanent audit artifact**, NOT a halt sentinel — the
+state scripts key no routing on it (`compute_state` ignores it entirely); it is
+consumed by humans and by the read-only `--provenance-lookup` CLI, alongside
+the per-repo reverse index `docs/provenance-index.json` (file path →
+`[{id, type, provenance}]` rows) the same producer maintains.
+
+Required:
+
+```yaml
+---
+kind: implemented
+feature_id: <id>
+date: <YYYY-MM-DD>
+provenance: pipeline-gated  # one of: pipeline-gated | manual | backfilled
+derivation: commit-brackets # one of: commit-brackets | commit-range | message-grep
+commits: [<short-sha>, ...] # [] when the derivation resolved no commits
+decisions: [<decision-id>, ...] # [] when the SPEC has no Locked-Decision surface
+---
+```
+
+Optional:
+- `linked_by: <who>` — REQUIRED semantics on `provenance: manual` (the D8/D9
+  attribution: who invoked the manual link); absent on pipeline/backfill writes.
+
+`derivation` records HOW the touched-file set + commit list were derived —
+`commit-brackets` (the deterministic per-cycle bracket ledger, pipeline
+primary), `commit-range` (a manual `--commits A..B` / `--pr` link), or
+`message-grep` (the explicitly-degraded fallback for legacy/backfilled items
+and cross-machine gaps). A degraded derivation is always recorded honestly,
+never silently. Body: `# Implementation Ledger` with the **What shipped**
+paragraph (the SPEC's leading `>` summary, verbatim), the **Decisions that
+drove it** id — title rows, and the validated-via receipt facts; the manual
+path may carry operator-approved prose instead (frontmatter is producer-owned
+either way). Keep in lockstep with AlgoBooth's
+`scripts/check-docs-consistency.ts` `SENTINEL_SCHEMAS`.
+
 #### `SKIP_MCP_TEST.md` — `kind: skip-mcp-test`
 
 Required:
@@ -551,6 +596,7 @@ A skill that writes `NEEDS_INPUT.md` MUST:
 | VALIDATED.md | /lazy after 100% MCP pass | /lazy Step 10 (folded into COMPLETED.md) |
 | RETRO_DONE.md | DORMANT — /retro is unwired (2026-06); never written for new features (retained for lint-validity + restore) | /lazy Step 10 (folded into COMPLETED.md if a stale one exists) |
 | COMPLETED.md | /lazy Step 10 `__mark_complete__` integrity gate (or --backfill-receipts) | Persists permanently (completion audit trail) |
+| IMPLEMENTED.md | The provenance producer (`write_provenance`): the `__mark_complete__`/`__mark_fixed__` gate, `--link-provenance`, or `--backfill-provenance` | Persists permanently (implementation-ledger distillate; re-links REPLACE it + the item's index rows) |
 | SKIP_MCP_TEST.md | /lazy assessment: not testable | Persists permanently |
 | MCP_TEST_RESULTS.md | /lazy after mcp-test runs | Persists permanently (audit) |
 | NEEDS_RESEARCH.md | `/lazy-batch` or `/lazy-batch-cloud` Step 4 (research halt), fired when the state machine's Step 5 returns `needs-research` (RESEARCH.md absent) — `written_by` is the writing orchestrator per the schema enum above | Human drops RESEARCH.md, then next `/lazy-batch` (or `/lazy-batch-cloud`) run ingests it and proceeds; file may be left stale or overwritten on ingestion |

@@ -71,16 +71,16 @@ python3 lint-skills.py --skills-dir <worktree-root>/user/skills --repos-dir <wor
 
 ## Phase 2 — Producer + gate wiring
 
-- [ ] WU-2.1 — Failing tests first: distillate byte-stability + decision ids + index-key match
+- [x] WU-2.1 — Failing tests first: distillate byte-stability + decision ids + index-key match
   with `git diff` union; refused-gate-writes-nothing; induced-index-failure-degrades-to-warning;
   receipt-noop-writes-nothing; empty-decisions honesty.
-- [ ] WU-2.2 — `lazy_core.write_provenance` (+ `_provenance_index_path`, index merge/replace,
+- [x] WU-2.2 — `lazy_core.write_provenance` (+ `_provenance_index_path`, index merge/replace,
   distillate assembly from SPEC `>` summary + `_parse_locked_decisions` + receipt facts).
-- [ ] WU-2.3 — Derivation helpers: `derive_touched_from_brackets` / `derive_touched_from_range` /
+- [x] WU-2.3 — Derivation helpers: `derive_touched_from_brackets` / `derive_touched_from_range` /
   `derive_touched_from_grep`.
-- [ ] WU-2.4 — `apply_pseudo` mark-complete/mark-fixed wiring (`provenance_written` +
+- [x] WU-2.4 — `apply_pseudo` mark-complete/mark-fixed wiring (`provenance_written` +
   `warnings[]` degradation).
-- [ ] WU-2.5 — `sentinel-frontmatter.md` `kind: implemented` registration; gate suite green.
+- [x] WU-2.5 — `sentinel-frontmatter.md` `kind: implemented` registration; gate suite green.
 
 ## Phase 3 — Manual path
 

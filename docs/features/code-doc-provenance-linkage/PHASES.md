@@ -91,7 +91,7 @@ falls back to message-grep with an honest `derivation:` label.
 `__mark_complete__`/`__mark_fixed__` branch; `warnings[]` degradation; schema registration.
 
 **Deliverables:**
-- [ ] `lazy_core.py`: `write_provenance(repo_root, item_dir, item_id, kind, commits, files, ...)`
+- [x] `lazy_core.py`: `write_provenance(repo_root, item_dir, item_id, kind, commits, files, ...)`
   — stdlib-only; writes `IMPLEMENTED.md` (frontmatter: `kind: implemented`, `feature_id`, `date`,
   `provenance` (D9), `derivation` (D4), `commits:`, `decisions:`; optional `linked_by:`) with a
   deterministic body (SPEC leading `>` summary verbatim; Locked-Decision id — title rows via
@@ -99,16 +99,16 @@ falls back to message-grep with an honest `derivation:` label.
   `docs/provenance-index.json` (load → replace-this-item's-rows → `_atomic_write`; POSIX
   repo-relative keys, sorted for byte-stability). `dry_run` mutates nothing. Manual `body`
   override supported (D8) — the producer still owns frontmatter + index.
-- [ ] `lazy_core.py`: derivation helpers — `derive_touched_from_brackets` (union
+- [x] `lazy_core.py`: derivation helpers — `derive_touched_from_brackets` (union
   `git rev-list`/`git diff --name-only` over recorded brackets), `derive_touched_from_range`,
   `derive_touched_from_grep` (message-grep fallback, `-F --grep=<slug>`).
-- [ ] `apply_pseudo` `__mark_complete__`/`__mark_fixed__`: after receipt + queue trim + ROADMAP
+- [x] `apply_pseudo` `__mark_complete__`/`__mark_fixed__`: after receipt + queue trim + ROADMAP
   strike, derive (brackets primary, message-grep fallback) and call `write_provenance`
   (`provenance: pipeline-gated`); result carries `provenance_written`; any failure degrades to a
   `warnings[]` entry — completion is never blocked by its own bookkeeping.
-- [ ] `user/skills/_components/sentinel-frontmatter.md`: register `IMPLEMENTED.md` /
+- [x] `user/skills/_components/sentinel-frontmatter.md`: register `IMPLEMENTED.md` /
   `kind: implemented` (+ lifecycle row).
-- [ ] Tests: fixture completion produces byte-stable `IMPLEMENTED.md` + index rows matching
+- [x] Tests: fixture completion produces byte-stable `IMPLEMENTED.md` + index rows matching
   `git diff` union; refused gate writes neither; induced index-write failure still completes with
   `warnings[]`; receipt-noop re-run writes nothing; no-Locked-Decision SPEC → `decisions: []` +
   body note.
@@ -119,8 +119,8 @@ ids + shas) and index rows whose keys equal the bracket-diff union; re-running i
 that writes nothing.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Completion never blocked by bookkeeping: induced index-write failure → receipt + flips land, result carries `warnings[]`. *(Evidence: `test_lazy_core.py`.)* <!-- verification-only -->
-- [ ] Refused gate writes nothing: `__mark_complete__` with no evidence sentinel → no distillate, no index change. *(Evidence: `test_lazy_core.py`.)* <!-- verification-only -->
+- [x] Completion never blocked by bookkeeping: induced index-write failure → receipt + flips land, result carries `warnings[]`. *(Evidence: `test_lazy_core.py`.)* <!-- verification-only -->
+- [x] Refused gate writes nothing: `__mark_complete__` with no evidence sentinel → no distillate, no index change. *(Evidence: `test_lazy_core.py`.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
 
