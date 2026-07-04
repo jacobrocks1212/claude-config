@@ -11,7 +11,8 @@ sentinel or a hand-flipped status corrupts the machine's view of the world. `laz
 ```
 docs/features/
 ├── ROADMAP.md          # human-facing row per feature
-├── queue.json          # ordering + flags; autodiscover:true also picks up on-disk dirs
+├── queue.json          # ordering + flags; autodiscover:true also picks up on-disk dirs;
+│                       # optional per-entry deps:["<id>"] = machine-enforced hard deps (dep-gate)
 └── <slug>/             # kebab-case; one feature
     ├── SPEC.md         # the Status: line is the state machine's truth
     ├── RESEARCH.md / RESEARCH_SUMMARY.md
@@ -33,6 +34,11 @@ inside `__mark_complete__`. `Superseded` is exempt.
 ## Conventions
 
 - Slug dirs and `queue.json` ids are kebab-case.
+- **`deps` is script-owned** (queue-dependency-dag): never hand-edit it — `lazy-state.py
+  --sync-deps --id <id>` projects the SPEC `**Depends on:**` block's hard deps into it
+  (`/spec-phases` Step 1.6 runs this). The dep-gate holds an entry until each dep is
+  `Complete` with a `COMPLETED.md` receipt; a dangling/Superseded dep BLOCKs the dependent;
+  a cycle refuses every probe at load.
 - SPEC / sentinel / plan frontmatter follows `user/skills/_components/sentinel-frontmatter.md` —
   keep it valid; the state machine parses it.
 - **Don't hand-write completion sentinels** — the gates write them. (A stray/misnamed `BLOCKED*`

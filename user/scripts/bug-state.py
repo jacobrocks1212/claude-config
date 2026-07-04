@@ -234,6 +234,12 @@ _OPERATOR_DEFERRED: list[str] = []
 _PARKED: list = []
 _PARK_MODE: bool = False
 
+# queue-dependency-dag Phase 2 (coupled-pair mirror of lazy-state.py): the
+# bugs the dep-gate held this invocation — [{id, missing: [<incomplete dep
+# ids>]}], in walk order. Surfaced via the "dep_gated" probe key ONLY when
+# non-empty (byte-identity discipline). Reset at each compute_state().
+_DEP_GATED: list = []
+
 
 # ===========================================================================
 # === IMPLEMENTATION (WU-2.2 impl-agent owns the bodies below) ==============
@@ -291,6 +297,11 @@ def _bug_state(
     # byte-identical to the pre-WU-1 Phase-4 baseline.
     if _PARK_MODE:
         out["parked"] = list(_PARKED)
+    # queue-dependency-dag Phase 2 (D10, coupled-pair mirror of lazy-state.py):
+    # the bugs the dep-gate HELD this probe. ONLY surfaced when non-empty so
+    # default output (no `deps` fields anywhere) stays byte-identical.
+    if _DEP_GATED:
+        out["dep_gated"] = [dict(r) for r in _DEP_GATED]
     return out
 
 
@@ -387,6 +398,15 @@ def load_bug_queue(repo_root: Path) -> list[dict[str, Any]]:
         if not isinstance(items, list):
             _die("bugs/queue.json 'queue' field must be an array", queue_path)
             return []  # pragma: no cover
+
+        # queue-dependency-dag Phase 1 (coupled-pair mirror of load_queue):
+        # validate the optional per-entry `deps` field (shape + id regex +
+        # reserved bug:/feature: prefixes + cycle detection) BEFORE the disk
+        # merge. Dep-less queues are byte-identical; a broken declared graph
+        # _die()s exit 2 like the other queue-schema violations above.
+        lazy_core.validate_queue_deps(
+            items, queue_path, queue_label="bugs/queue.json"
+        )
 
         for entry in items:
             if not isinstance(entry, dict):
@@ -643,9 +663,14 @@ def compute_state(
     _OPERATOR_DEFERRED.clear()
     # Park mode: set the module global from the param so _bug_state() can gate
     # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
-    global _PARK_MODE, _PARKED
+    global _PARK_MODE, _PARKED, _DEP_GATED
     _PARK_MODE = park_needs_input or park_blocked
     _PARKED.clear()
+    # queue-dependency-dag Phase 2: reset the dep-gate hold list; the lazily-
+    # built queued id → dir map resolves deps through normalized spec_paths
+    # (built only when an entry actually carries `deps` — zero cost otherwise).
+    _DEP_GATED = []
+    _dep_dir_map: dict | None = None
     repo_root = repo_root.resolve()
 
     # Load the hybrid-ordered bug queue.
@@ -990,6 +1015,103 @@ def compute_state(
             )
             continue
 
+        # queue-dependency-dag Phase 2: the dep-gate (D2-A; coupled-pair
+        # mirror of lazy-state.py's). A bug whose queue `deps` contain an id
+        # that is not receipt-gated-complete (D3: **Status:** Fixed + a valid
+        # FIXED.md — resolution consults docs/bugs/<id>/ THEN
+        # docs/bugs/_archive/<id>/, the D9 archive-aware divergence) is HELD
+        # and the walk advances to the dependency. A dangling or Won't-fix dep
+        # is the D4 fail-fast (canonical BLOCKED.md, blocker_kind:
+        # unknown-dependency). This is the FINAL check before dispatch (the
+        # bug pipeline has no skip-ahead branch — justified divergence).
+        # Entries WITHOUT `deps` never enter this block — byte-identical.
+        #
+        # queue-dependency-dag Phase 4 (D5): probe-time DRIFT diagnostic —
+        # gated on the raw entry CARRYING a `deps` key. Compares the queue set
+        # against the SPEC's parsed hard-dep set (reusing _hc_spec_text — the
+        # walk's existing per-entry SPEC read; zero additional file I/O).
+        # Lint-grade: a mismatch warns, never halts. Mirror of lazy-state.py.
+        _dg_raw_entry = entry.get("queue_entry")
+        if isinstance(_dg_raw_entry, dict) and "deps" in _dg_raw_entry:
+            _drift_spec_hard = sorted({
+                d["feature_id"]
+                for d in lazy_core.parse_dep_block(_hc_spec_text)
+                if d.get("kind") == "hard"
+            })
+            _drift_queue = sorted(set(lazy_core.dep_ids(_dg_raw_entry)))
+            if _drift_spec_hard != _drift_queue:
+                _diag(
+                    f"dep-drift: '{bug_id}' queue deps {_drift_queue!r} != "
+                    f"SPEC hard deps {_drift_spec_hard!r} — re-run "
+                    f"`--sync-deps --id {bug_id}` to re-project "
+                    f"(lint-grade warning; not a halt)."
+                )
+        _dg_deps = lazy_core.dep_ids(entry.get("queue_entry"))
+        if _dg_deps:
+            if _dep_dir_map is None:
+                _dep_dir_map = {
+                    e.get("id"): e.get("spec_path")
+                    for e in queue
+                    if isinstance(e, dict) and e.get("id") and e.get("spec_path")
+                }
+            _dg_missing: list[str] = []
+            _dg_bad: tuple[str, str] | None = None
+            for _dg_dep in _dg_deps:
+                _dg_status = lazy_core.dep_completion_status(
+                    _dg_dep, repo_root, pipeline="bug",
+                    id_dir_map=_dep_dir_map,
+                )
+                if _dg_status == "complete":
+                    continue
+                if _dg_status == "incomplete":
+                    _dg_missing.append(_dg_dep)
+                    continue
+                # missing / unsatisfiable-* → D4 fail-fast on the FIRST bad dep.
+                _dg_bad = (_dg_dep, _dg_status)
+                break
+            if _dg_bad is not None:
+                blocked_file = spec_dir / "BLOCKED.md"
+                if not blocked_file.exists():
+                    body = lazy_core.format_unknown_dependency_blocker(
+                        bug_id, _dg_bad[0], _dg_bad[1],
+                        sorted(_dep_dir_map or {}),
+                    )
+                    _write_yaml_blocked_sentinel(
+                        blocked_file,
+                        feature_id=bug_id,
+                        phase="Dependency validation",
+                        blocker_kind="unknown-dependency",
+                        blocked_at=lazy_core.utc_now_iso(),
+                        retry_count=0,
+                        body=body,
+                    )
+                _diag(
+                    f"unknown-dependency: {bug_name} declares queue dep "
+                    f"'{_dg_bad[0]}' which classified {_dg_bad[1]!r} — wrote "
+                    f"BLOCKED.md (blocker_kind: unknown-dependency). Fix the "
+                    f"SPEC dep-block + --sync-deps, or drop the dep."
+                )
+                return _bug_state(
+                    feature_id=bug_id,
+                    feature_name=bug_name,
+                    spec_path=str(spec_dir),
+                    current_step=STEP_BLOCKED,
+                    terminal_reason=TR_BLOCKED,
+                    notify_message=(
+                        f"BLOCKED: {bug_name} — queue dependency "
+                        f"'{_dg_bad[0]}' is {_dg_bad[1]} (unknown-dependency). "
+                        "Awaiting input."
+                    ),
+                )
+            if _dg_missing:
+                _DEP_GATED.append({"id": bug_id, "missing": _dg_missing})
+                _diag(
+                    f"dep-gate: '{bug_id}' held — dep(s) "
+                    f"{', '.join(repr(m) for m in _dg_missing)} not Fixed "
+                    f"(receipt-gated); advancing."
+                )
+                continue
+
         # This bug is actionable — stop scanning.
         current = {
             "id": bug_id,
@@ -1058,6 +1180,29 @@ def compute_state(
                 notify_message=(
                     f"--bug-id '{scope_bug_id}' matched no entry in the bug queue — "
                     "check the id (typo?) or that the bug is queued. No cycle was dispatched."
+                ),
+            )
+        # queue-dependency-dag D4 (coupled-pair mirror of lazy-state.py):
+        # honest all-dep-gated terminal. The walk exhausted and at least one
+        # bug was HELD on an incomplete declared dependency this probe — a
+        # clean, sanctioned stop (holds re-open as their deps are fixed +
+        # archived), NOT all-bugs-fixed. Placed AFTER the specific global
+        # terminals above and BEFORE the all-parked fallback (a dep-gated bug
+        # is held for a more specific reason than "parked"); the flush names
+        # each held bug and its incomplete deps. Gated on a hold having
+        # occurred — dep-less queues are byte-identical.
+        if _DEP_GATED:
+            _dg_lines = "; ".join(
+                f"{r['id']} waiting on {', '.join(r['missing'])}"
+                for r in _DEP_GATED
+            )
+            return _bug_state(
+                terminal_reason="queue-exhausted-dependency-gated",
+                notify_message=(
+                    f"Queue exhausted — {len(_DEP_GATED)} bug(s) "
+                    f"dependency-gated: {_dg_lines}. Each re-opens "
+                    "automatically once its dependencies are Fixed with a "
+                    "receipt."
                 ),
             )
         # Honest all-parked terminal (SPEC D3): when every remaining bug was
@@ -1485,15 +1630,26 @@ def enqueue_adhoc(
     name: str,
     spec_dir: str | None = None,
     severity: str | None = None,
+    deps: list[str] | None = None,
 ) -> dict[str, Any]:
     """Prepend an ad-hoc bug entry to docs/bugs/queue.json.
 
     Idempotent: if bug_id is already queued, emits a diagnostic and returns
     without modifying the file (exits 0 — safe to call from a re-materialize path).
     Creates queue.json (with empty queue) and docs/bugs/ if absent.
+
+    queue-dependency-dag Phase 4 (coupled-pair mirror of lazy-state.py's
+    enqueue): an optional ``deps`` id list (``--deps a,b``) declares hard queue
+    deps at enqueue time. Validated up front (regex + reserved
+    ``bug:``/``feature:`` prefixes → ``_die``, zero side effects); omitted ⇒
+    the entry shape is byte-identical to before.
     """
     repo_root = repo_root.resolve()
     spec_dir = spec_dir or bug_id
+    if deps:
+        lazy_core.validate_dep_id_list(
+            deps, context=f"'--deps' (enqueue {bug_id!r})"
+        )
     bugs_dir = repo_root / "docs" / "bugs"
     bugs_dir.mkdir(parents=True, exist_ok=True)
     queue_path = bugs_dir / "queue.json"
@@ -1516,12 +1672,17 @@ def enqueue_adhoc(
         _diag(f"bug already queued: {bug_id} — enqueue is a no-op")
         return {"id": bug_id, "spec_dir": spec_dir, "status": "duplicate"}
 
-    items.insert(0, {
+    _new_entry: dict[str, Any] = {
         "id": bug_id,
         "name": name,
         "spec_dir": spec_dir,
         "severity": severity,
-    })
+    }
+    if deps:
+        # queue-dependency-dag: the optional hard-deps declaration. Key absent
+        # when not supplied — byte-identical legacy entry shape.
+        _new_entry["deps"] = list(deps)
+    items.insert(0, _new_entry)
     data["queue"] = items
     _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
     return {"id": bug_id, "spec_dir": spec_dir, "status": "queued"}
@@ -4955,6 +5116,7 @@ def run_smoke_tests() -> int:
         )
 
         # -------------------------------------------------------------------
+<<<<<<< HEAD
         # Fixture: harness-telemetry-ledger Phase 2 — chokepoint emission
         # (coupled-pair mirror of the lazy-state.py fixture; --bug-id item ids,
         # pipeline "bug", no --gate-coverage — the documented divergence).
@@ -5168,6 +5330,327 @@ def run_smoke_tests() -> int:
             failures.append(f"[{fix_tl}] unexpected error: {exc!r}")
             tl_ok = False
         print(f"  {'PASS' if tl_ok else 'FAIL'} [{fix_tl}] bracket/dispatch/purity/refusal/cloud-flush emission")
+=======
+        # Fixture: queue-dependency-dag Phase 2 — the bug-pipeline dep-gate
+        # (coupled-pair mirror of lazy-state.py's). Covers: hold + advance,
+        # ARCHIVE-AWARE dep resolution (D9 divergence 2: a dep fixed +
+        # archived under docs/bugs/_archive/<id>/ counts complete), the
+        # Won't-fix / dangling unknown-dependency fail-fast (D4), and the
+        # all-gated queue-exhausted-dependency-gated terminal.
+        # -------------------------------------------------------------------
+        fix_dg = "dep-gate"
+        dg_ok = True
+
+        def _dg_bug(root: Path, bid: str, *, status: str = "Open",
+                    receipt: bool = False, archived: bool = False) -> Path:
+            base = root / "docs" / "bugs"
+            if archived:
+                base = base / "_archive"
+            d = base / bid
+            d.mkdir(parents=True, exist_ok=True)
+            (d / "SPEC.md").write_text(
+                f"# {bid}\n\n**Status:** {status}\n**Severity:** P2\n"
+                "**Discovered:** 2026-07-04\n",
+                encoding="utf-8",
+            )
+            if receipt:
+                (d / "FIXED.md").write_text(
+                    f"---\nkind: fixed\nbug_id: {bid}\n"
+                    "provenance: mark-fixed\n---\n\n# Fixed\n",
+                    encoding="utf-8",
+                )
+            return d
+
+        # (a) Hold + advance: bug-dg-b (deps:[bug-dg-a]) ahead of bug-dg-a →
+        #     bug-dg-a dispatched, dep_gated names bug-dg-b.
+        dg_root = td_path / "bug-dep-gate"
+        dg_bugs = dg_root / "docs" / "bugs"
+        dg_bugs.mkdir(parents=True, exist_ok=True)
+        (dg_bugs / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "bug-dg-b", "name": "DG Bug B", "spec_dir": "bug-dg-b",
+             "severity": "P1", "deps": ["bug-dg-a"]},
+            {"id": "bug-dg-a", "name": "DG Bug A", "spec_dir": "bug-dg-a",
+             "severity": "P2"},
+        ]}))
+        _dg_bug(dg_root, "bug-dg-a")
+        _dg_bug(dg_root, "bug-dg-b")
+        dg_st = compute_state(dg_root, cloud=False, real_device=True)
+        if dg_st.get("feature_id") != "bug-dg-a":
+            failures.append(
+                f"[{fix_dg}] hold+advance: expected bug-dg-a dispatched past the "
+                f"held dependent, got {dg_st.get('feature_id')!r} "
+                f"(terminal={dg_st.get('terminal_reason')!r})"
+            )
+            dg_ok = False
+        if dg_st.get("dep_gated") != [
+            {"id": "bug-dg-b", "missing": ["bug-dg-a"]},
+        ]:
+            failures.append(
+                f"[{fix_dg}] hold+advance: expected dep_gated to name bug-dg-b "
+                f"missing bug-dg-a, got {dg_st.get('dep_gated')!r}"
+            )
+            dg_ok = False
+
+        # (b) Archive-aware unlock: bug-dg-c deps a bug that exists ONLY under
+        #     docs/bugs/_archive/ (Fixed + FIXED.md receipt — the
+        #     __mark_fixed__ end-state) → the dep is complete, c dispatches.
+        dga_root = td_path / "bug-dep-gate-archive"
+        dga_bugs = dga_root / "docs" / "bugs"
+        dga_bugs.mkdir(parents=True, exist_ok=True)
+        (dga_bugs / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "bug-dg-c", "name": "DG Bug C", "spec_dir": "bug-dg-c",
+             "severity": "P1", "deps": ["bug-dg-x"]},
+        ]}))
+        _dg_bug(dga_root, "bug-dg-c")
+        _dg_bug(dga_root, "bug-dg-x", status="Fixed", receipt=True,
+                archived=True)
+        dga_st = compute_state(dga_root, cloud=False, real_device=True)
+        if dga_st.get("feature_id") != "bug-dg-c" or dga_st.get("dep_gated"):
+            failures.append(
+                f"[{fix_dg}] archive-aware: expected bug-dg-c dispatched (its dep "
+                f"is fixed + archived), got {dga_st.get('feature_id')!r} "
+                f"dep_gated={dga_st.get('dep_gated')!r}"
+            )
+            dg_ok = False
+
+        # (c) Won't-fix dep → unknown-dependency fail-fast on the DEPENDENT
+        #     (the bug-side analog of a Superseded feature upstream — the work
+        #     never happened).
+        dgw_root = td_path / "bug-dep-gate-wontfix"
+        dgw_bugs = dgw_root / "docs" / "bugs"
+        dgw_bugs.mkdir(parents=True, exist_ok=True)
+        (dgw_bugs / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "bug-dg-d", "name": "DG Bug D", "spec_dir": "bug-dg-d",
+             "severity": "P1", "deps": ["bug-dg-w"]},
+        ]}))
+        _dg_bug(dgw_root, "bug-dg-d")
+        _dg_bug(dgw_root, "bug-dg-w", status="Won't-fix")
+        dgw_st = compute_state(dgw_root, cloud=False, real_device=True)
+        dgw_blocked = dgw_bugs / "bug-dg-d" / "BLOCKED.md"
+        if dgw_st.get("terminal_reason") != TR_BLOCKED \
+                or dgw_st.get("feature_id") != "bug-dg-d" \
+                or not dgw_blocked.exists():
+            failures.append(
+                f"[{fix_dg}] wont-fix dep: expected unknown-dependency blocked "
+                f"halt on bug-dg-d, got "
+                f"terminal={dgw_st.get('terminal_reason')!r} "
+                f"blocked_exists={dgw_blocked.exists()}"
+            )
+            dg_ok = False
+        else:
+            dgw_meta = parse_sentinel(dgw_blocked) or {}
+            if dgw_meta.get("blocker_kind") != "unknown-dependency":
+                failures.append(
+                    f"[{fix_dg}] wont-fix dep: expected blocker_kind "
+                    f"unknown-dependency, got {dgw_meta.get('blocker_kind')!r}"
+                )
+                dg_ok = False
+
+        # (d) Dangling dep id (resolves nowhere, open or archived) → the same
+        #     fail-fast.
+        dgd_root = td_path / "bug-dep-gate-dangling"
+        dgd_bugs = dgd_root / "docs" / "bugs"
+        dgd_bugs.mkdir(parents=True, exist_ok=True)
+        (dgd_bugs / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "bug-dg-e", "name": "DG Bug E", "spec_dir": "bug-dg-e",
+             "severity": "P1", "deps": ["bug-dg-ghost"]},
+        ]}))
+        _dg_bug(dgd_root, "bug-dg-e")
+        dgd_st = compute_state(dgd_root, cloud=False, real_device=True)
+        if dgd_st.get("terminal_reason") != TR_BLOCKED \
+                or not (dgd_bugs / "bug-dg-e" / "BLOCKED.md").exists():
+            failures.append(
+                f"[{fix_dg}] dangling dep: expected unknown-dependency blocked "
+                f"halt on bug-dg-e, got "
+                f"terminal={dgd_st.get('terminal_reason')!r}"
+            )
+            dg_ok = False
+
+        # (e) All-gated clean terminal: the dependent is dep-gated and its dep
+        #     is parked (BLOCKED.md under --park-blocked) → nothing dispatches
+        #     → queue-exhausted-dependency-gated (checked BEFORE the all-parked
+        #     fallback; an honest distinct terminal, never all-bugs-fixed).
+        dgt_root = td_path / "bug-dep-gate-terminal"
+        dgt_bugs = dgt_root / "docs" / "bugs"
+        dgt_bugs.mkdir(parents=True, exist_ok=True)
+        (dgt_bugs / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "bug-dg-f", "name": "DG Bug F", "spec_dir": "bug-dg-f",
+             "severity": "P1", "deps": ["bug-dg-g"]},
+            {"id": "bug-dg-g", "name": "DG Bug G", "spec_dir": "bug-dg-g",
+             "severity": "P2"},
+        ]}))
+        _dg_bug(dgt_root, "bug-dg-f")
+        dgt_g = _dg_bug(dgt_root, "bug-dg-g")
+        _write_yaml_blocked_sentinel(
+            dgt_g / "BLOCKED.md", feature_id="bug-dg-g", phase="Fix",
+            blocker_kind="external", blocked_at="2026-07-04T00:00:00Z",
+            retry_count=0,
+        )
+        dgt_st = compute_state(
+            dgt_root, cloud=False, real_device=True, park_blocked=True
+        )
+        if dgt_st.get("terminal_reason") != "queue-exhausted-dependency-gated":
+            failures.append(
+                f"[{fix_dg}] all-gated terminal: expected "
+                f"queue-exhausted-dependency-gated, got "
+                f"{dgt_st.get('terminal_reason')!r}"
+            )
+            dg_ok = False
+        if dgt_st.get("dep_gated") != [
+            {"id": "bug-dg-f", "missing": ["bug-dg-g"]},
+        ]:
+            failures.append(
+                f"[{fix_dg}] all-gated terminal: expected the flush to name the "
+                f"held item + missing dep, got {dgt_st.get('dep_gated')!r}"
+            )
+            dg_ok = False
+
+        print(
+            f"  {'PASS' if dg_ok else 'FAIL'} [{fix_dg}] "
+            f"hold+advance / archive-aware / wont-fix+dangling fail-fast / "
+            f"all-gated terminal"
+        )
+
+        # -------------------------------------------------------------------
+        # Fixture: queue-dependency-dag Phase 4 — the bug-pipeline feeder
+        # (coupled-pair mirror of lazy-state.py's --sync-deps) + --enqueue-adhoc
+        # --deps. --sync-deps projects the bug SPEC's hard deps into
+        # docs/bugs/queue.json (script-owned, atomic), is a byte-stable
+        # noop:true on re-run, and is REFUSED exit 3 with zero side effects for
+        # a cycle subagent.
+        # -------------------------------------------------------------------
+        fix_sd = "sync-deps"
+        sd_ok = True
+        sd_root = td_path / "bug-sync-deps"
+        sd_bugs = sd_root / "docs" / "bugs"
+        sd_bugs.mkdir(parents=True, exist_ok=True)
+        (sd_bugs / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "bug-sd", "name": "SD Bug", "spec_dir": "bug-sd",
+             "severity": "P1"},
+            {"id": "bug-sd-up", "name": "SD Bug Up", "spec_dir": "bug-sd-up",
+             "severity": "P2"},
+        ]}, indent=2) + "\n")
+        _dg_bug(sd_root, "bug-sd")
+        (sd_bugs / "bug-sd" / "SPEC.md").write_text(
+            "# bug-sd\n\n**Status:** Open\n**Severity:** P1\n"
+            "**Discovered:** 2026-07-04\n\n"
+            "**Depends on:**\n- bug-sd-up — hard — must land first\n",
+            encoding="utf-8",
+        )
+        _dg_bug(sd_root, "bug-sd-up")
+        _sd_script = str(Path(__file__).resolve())
+        _sd_state = td_path / "bug-sd-state"
+        _sd_state.mkdir(parents=True, exist_ok=True)
+
+        def _sd_env(**extra: str) -> dict:
+            e = {k: v for k, v in os.environ.items()
+                 if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+            e["LAZY_STATE_DIR"] = str(_sd_state)
+            e.update(extra)
+            return e
+
+        sd_before = (sd_bugs / "queue.json").read_bytes()
+        r_sd_refuse = subprocess.run(
+            [sys.executable, _sd_script, "--sync-deps", "--id", "bug-sd",
+             "--repo-root", str(sd_root)],
+            capture_output=True, text=True,
+            env=_sd_env(LAZY_CYCLE_SUBAGENT="1"),
+        )
+        if r_sd_refuse.returncode != 3 \
+                or (sd_bugs / "queue.json").read_bytes() != sd_before:
+            failures.append(
+                f"[{fix_sd}] cycle-subagent refusal: expected exit 3 with zero "
+                f"side effects, got rc={r_sd_refuse.returncode}"
+            )
+            sd_ok = False
+        r_sd = subprocess.run(
+            [sys.executable, _sd_script, "--sync-deps", "--id", "bug-sd",
+             "--repo-root", str(sd_root)],
+            capture_output=True, text=True,
+            env=_sd_env(LAZY_ORCHESTRATOR="1"),
+        )
+        sd_queue = json.loads((sd_bugs / "queue.json").read_text())
+        if r_sd.returncode != 0 \
+                or sd_queue["queue"][0].get("deps") != ["bug-sd-up"]:
+            failures.append(
+                f"[{fix_sd}] write: expected exit 0 + deps=['bug-sd-up'], got "
+                f"rc={r_sd.returncode} entry={sd_queue['queue'][0]!r} "
+                f"stderr={r_sd.stderr[:200]!r}"
+            )
+            sd_ok = False
+        sd_after_first = (sd_bugs / "queue.json").read_bytes()
+        r_sd2 = subprocess.run(
+            [sys.executable, _sd_script, "--sync-deps", "--id", "bug-sd",
+             "--repo-root", str(sd_root)],
+            capture_output=True, text=True,
+            env=_sd_env(LAZY_ORCHESTRATOR="1"),
+        )
+        try:
+            sd_out2 = json.loads(r_sd2.stdout)
+        except json.JSONDecodeError:
+            sd_out2 = {}
+        if r_sd2.returncode != 0 or sd_out2.get("noop") is not True \
+                or (sd_bugs / "queue.json").read_bytes() != sd_after_first:
+            failures.append(
+                f"[{fix_sd}] idempotent re-run: expected noop:true + "
+                f"byte-identical file, got rc={r_sd2.returncode} out={sd_out2!r}"
+            )
+            sd_ok = False
+
+        # Probe-time drift diagnostic (bug-side mirror): the synced entry now
+        # carries deps ['bug-sd-up']; rewriting the SPEC block to (none) makes
+        # the sets diverge → a lint-grade dep-drift diagnostic (no halt).
+        (sd_bugs / "bug-sd" / "SPEC.md").write_text(
+            "# bug-sd\n\n**Status:** Open\n**Severity:** P1\n"
+            "**Discovered:** 2026-07-04\n\n"
+            "**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        sd_drift_st = compute_state(sd_root, cloud=False, real_device=True)
+        if not any("dep-drift" in d for d in sd_drift_st.get("diagnostics", [])):
+            failures.append(
+                f"[{fix_sd}] drift: expected a dep-drift diagnostic after the "
+                f"SPEC block diverged from the synced queue deps, got "
+                f"{sd_drift_st.get('diagnostics')!r}"
+            )
+            sd_ok = False
+
+        # --enqueue-adhoc --deps (function-level): the prepended bug entry
+        # carries the validated deps list; a reserved prefix is refused.
+        enqd_root = td_path / "bug-enqueue-deps"
+        enqd_root.mkdir(parents=True, exist_ok=True)
+        enqd_res = enqueue_adhoc(
+            enqd_root, "adhoc-bug-dep", "Adhoc Bug Dep", deps=["bug-sd-up"],
+        )
+        enqd_queue = json.loads(
+            (enqd_root / "docs" / "bugs" / "queue.json").read_text()
+        )
+        if enqd_res.get("status") != "queued" \
+                or enqd_queue["queue"][0].get("deps") != ["bug-sd-up"]:
+            failures.append(
+                f"[{fix_sd}] enqueue --deps: expected deps=['bug-sd-up'] on the "
+                f"prepended entry, got {enqd_queue['queue'][0]!r}"
+            )
+            sd_ok = False
+        try:
+            enqueue_adhoc(
+                enqd_root, "adhoc-bug-dep-bad", "Bad",
+                deps=["feature:some-feat"],
+            )
+            failures.append(
+                f"[{fix_sd}] enqueue --deps: a reserved feature: prefixed dep "
+                f"id must be refused (_die), but was accepted"
+            )
+            sd_ok = False
+        except SystemExit:
+            pass
+
+        print(
+            f"  {'PASS' if sd_ok else 'FAIL'} [{fix_sd}] "
+            f"cycle-subagent exit-3 refusal + hard-only projection + "
+            f"idempotent noop + enqueue --deps"
+        )
+>>>>>>> lane/queue-dependency-dag
 
     # Summary
     if failures:
@@ -5250,6 +5733,25 @@ def main() -> int:
               "bug state script); present so the unified-pipeline-orchestrator "
               "'bug-state.py --enqueue-adhoc --type bug' form parses cleanly. "
               "No behavior change — bug-state always enqueues a bug."),
+    )
+    parser.add_argument(
+        "--deps", default=None,
+        help=("queue-dependency-dag: comma-separated hard-dep ids for "
+              "--enqueue-adhoc (e.g. --deps a,b). Validated (kebab-case ids; "
+              "bug:/feature: prefixes reserved → exit 2); stored on the "
+              "prepended entry's `deps` field. Omitted → the entry shape is "
+              "byte-identical to before. Coupled-pair mirror of lazy-state.py "
+              "--deps."),
+    )
+    parser.add_argument(
+        "--sync-deps", dest="sync_deps", action="store_true",
+        help=("queue-dependency-dag D5 (orchestrator-only): project the bug "
+              "SPEC **Depends on:** block's HARD deps into the "
+              "docs/bugs/queue.json entry's `deps` field (requires --id). "
+              "Idempotent (noop:true when in sync; empty hard set removes the "
+              "key). Gated by refuse_if_cycle_active FIRST (exit 3 for a "
+              "cycle subagent, zero side effects). Coupled-pair mirror of "
+              "lazy-state.py --sync-deps."),
     )
     parser.add_argument(
         "--reorder-queue", dest="reorder_queue", action="store_true",
@@ -6057,8 +6559,32 @@ def main() -> int:
             _die("--enqueue-adhoc requires --id")
         if not args.name:
             _die("--enqueue-adhoc requires --name")
+        # queue-dependency-dag Phase 4: optional --deps a,b (comma-separated
+        # hard-dep ids). Parsed here; validated inside enqueue_adhoc.
+        _adhoc_deps = (
+            [s.strip() for s in args.deps.split(",") if s.strip()]
+            if args.deps else None
+        )
         result = enqueue_adhoc(
-            Path(args.repo_root), args.id, args.name, args.spec_dir, args.severity
+            Path(args.repo_root), args.id, args.name, args.spec_dir,
+            args.severity, deps=_adhoc_deps,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.sync_deps:
+        # queue-dependency-dag D5 (coupled-pair mirror of lazy-state.py
+        # --sync-deps): the script-owned SPEC→queue deps feeder for the bug
+        # pipeline. Orchestrator-only — refuse FIRST so a cycle subagent gets
+        # exit 3 with ZERO side effects.
+        lazy_core.refuse_if_cycle_active("--sync-deps")
+        if not args.id:
+            _die("--sync-deps requires --id")
+        result = lazy_core.sync_deps(
+            Path(args.repo_root) / "docs" / "bugs" / "queue.json",
+            args.id,
+            Path(args.repo_root) / "docs" / "bugs",
+            queue_label="bugs/queue.json",
         )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
