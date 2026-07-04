@@ -202,27 +202,27 @@ populate; the lookup output cites `IMPLEMENTED.md` paths + decision ids.
 **Scope:** The read side: a pure-read CLI + one lookup step wired into the edit-adjacent surfaces.
 
 **Deliverables:**
-- [ ] `lazy_core.py`: `provenance_lookup(repo_root, path)` — pure read over
+- [x] `lazy_core.py`: `provenance_lookup(repo_root, path)` — pure read over
   `docs/provenance-index.json`; normalizes the query path to a repo-relative POSIX key; returns
   `{path, governed_by: [{id, type, doc, decisions, provenance}]}` (decisions read from each
   distillate's frontmatter; `doc` resolves archive residency). Never mutates; missing index →
   empty `governed_by` (degrades to a no-op).
-- [ ] CLI on BOTH scripts: `--provenance-lookup <path>` (mirrored; parity green).
-- [ ] `_components/lazy-batch-prompts/cycle-base-prompt.md`: lookup step before first edit to a
+- [x] CLI on BOTH scripts: `--provenance-lookup <path>` (mirrored; parity green).
+- [x] `_components/lazy-batch-prompts/cycle-base-prompt.md`: lookup step before first edit to a
   file — read the cited `IMPLEMENTED.md` ONLY if the decision ids are unfamiliar.
-- [ ] `/spec-phases` SKILL.md: lookup step alongside the existing capability audit (governing
+- [x] `/spec-phases` SKILL.md: lookup step alongside the existing capability audit (governing
   decisions consulted while drafting phases).
-- [ ] Coupled `/lazy*` wrapper prose: the same short lookup note added to `lazy` ↔ `lazy-cloud`
+- [x] Coupled `/lazy*` wrapper prose: the same short lookup note added to `lazy` ↔ `lazy-cloud`
   and `lazy-batch` ↔ `lazy-batch-cloud` (mirrors diffed; parity audit green).
-- [ ] Projection + lint: `project-skills.py` to a lane-local output dir + `lint-skills.py` clean.
-- [ ] Tests: lookup returns correct rows for a seeded index; lookup leaves index bytes + mtime
+- [x] Projection + lint: `project-skills.py` to a lane-local output dir + `lint-skills.py` clean.
+- [x] Tests: lookup returns correct rows for a seeded index; lookup leaves index bytes + mtime
   unchanged; unknown path / missing index → empty result, exit 0.
 
 **Minimum Verifiable Behavior:** With a seeded index, `--provenance-lookup user/scripts/lazy_core.py`
 prints the governing `{id, type, doc, decisions, provenance}` rows and mutates nothing.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Lookup is a pure read: correct rows; index unchanged. *(Evidence: `test_lazy_core.py`.)* <!-- verification-only -->
+- [x] Lookup is a pure read: correct rows; index unchanged. *(Evidence: `test_lazy_core.py`.)* <!-- verification-only -->
 - [ ] A cycle-subagent transcript shows the lookup step firing. *(Deferred-to-live: no cycle subagent runs inside this lane; the prompt step is projection-linted and the CLI is pytest-proven — first live `/lazy-batch` run observes it. Recorded per skip-vs-defer honesty.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.

@@ -95,12 +95,12 @@ python3 lint-skills.py --skills-dir <worktree-root>/user/skills --repos-dir <wor
 
 ## Phase 4 — Consumption
 
-- [ ] WU-4.1 — Failing tests first: seeded-index lookup correctness; purity (bytes + mtime);
+- [x] WU-4.1 — Failing tests first: seeded-index lookup correctness; purity (bytes + mtime);
   missing-index no-op; CLI on both scripts.
-- [ ] WU-4.2 — `lazy_core.provenance_lookup` + `--provenance-lookup <path>` handlers (mirrored).
-- [ ] WU-4.3 — Prompt wiring: `cycle-base-prompt.md` lookup step; `/spec-phases` step; coupled
+- [x] WU-4.2 — `lazy_core.provenance_lookup` + `--provenance-lookup <path>` handlers (mirrored).
+- [x] WU-4.3 — Prompt wiring: `cycle-base-prompt.md` lookup step; `/spec-phases` step; coupled
   `/lazy*` wrapper notes (`lazy`↔`lazy-cloud`, `lazy-batch`↔`lazy-batch-cloud`, mirrors diffed).
-- [ ] WU-4.4 — `project-skills.py` (lane-local output dir) + `lint-skills.py` clean; parity audit
+- [x] WU-4.4 — `project-skills.py` (lane-local output dir) + `lint-skills.py` clean; parity audit
   exit 0; gate suite green.
 
 ## Phase 5 — Backfill + lint
