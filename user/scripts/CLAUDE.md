@@ -573,6 +573,61 @@ in another repo (it also kills stale-marker contagion across repos).
 > the dispatch-skill set — NEVER a separate budget row. Single landing site in shared `lazy_core`;
 > serves both pipelines; `budget_override` (Round 20) + `kind=="meta"` (Round 19) branches unchanged.
 
+## Operator halt notifications (`operator-halt-notifications`)
+
+Both state scripts page the operator's phone on attention-terminal halts via ONE shared,
+script-owned notifier: `lazy_core.notify_halt(state, repo_root, pipeline=…)`, called as one line
+in each script's `main()` immediately before the final state-JSON write (the terminal-emission
+chokepoint — every halt from every producer passes through it). **Coupled-pair surface #7** in
+`lazy_parity_audit.py::audit_state_script_parity` (the `lazy_core.notify_halt(` literal must be
+present in BOTH scripts; `test_lazy_parity.py`'s lockstep stubs carry the token).
+
+- **Config (opt-in; absent ⇒ the feature does not exist — byte-identical output, zero writes).**
+  Untracked `~/.claude/notify.json` (NEVER symlinked into this repo; listed in the root
+  `CLAUDE.md` untracked-secrets set): `{"channel": "ntfy", "url": "https://ntfy.sh/<topic>",
+  "notify_on_clean_stop": false, "reping_hours": 6}`. `LAZY_NOTIFY_URL` env overrides the `url`
+  (how cloud containers are provisioned); `LAZY_NOTIFY_DISABLE=1` is the kill switch (dominates
+  everything). `reping_hours` is accepted but INERT in v1 — the ledger schema (`notified_at`) is
+  re-ping-ready, so wiring it later is a pure additive change (D4-B).
+- **Event scope (D3).** `lazy_core._NOTIFY_ATTENTION_TERMINALS` (the default paging set — the
+  terminals where the operator's action is the unblocker): `blocked`, `blocked-misnamed`,
+  `needs-input`, `needs-spec-input`, `needs-research`, `queue-blocked-on-research`,
+  `completion-unverified`, `stale_upstream`, `queue-exhausted-all-parked`,
+  `queue-exhausted-budget-deferred`, `queue-missing`. A SIBLING of `SANCTIONED_STOP_TERMINAL`,
+  NOT its complement, and deliberately distinct from the 6-element telemetry
+  `TELEMETRY_HALT_TERMINAL_REASONS` (different vocabularies: telemetry records halt-dwell, notify
+  pages for action). Clean stops (`_NOTIFY_CLEAN_STOP_TERMINALS`: `all-features-complete`,
+  `all-bugs-fixed`, `cloud-queue-exhausted`, `device-queue-exhausted`,
+  `host-capability-saturated`) page only under `notify_on_clean_stop: true`. Terminals in neither
+  set (e.g. `queue-exhausted-dependency-gated`, the scoped per-item terminals) never page. The
+  orchestrator §1c.6 `PushNotification` prose policy is UNTOUCHED — additive channels.
+- **Dedup (D4/D8).** Notify-once per sentinel identity — sentinel-backed terminals key on
+  `(pipeline, item, reason, mtime_ns, size)`; sentinel-less terminals on the UTC date. Ledger:
+  `notify-ledger.json` in the per-repo keyed `claude_state_dir()` (hermetic under
+  `LAZY_STATE_DIR`), written via `_atomic_write`, entries >30 days dropped on write, updated ONLY
+  on a successful send (a failed send retries on the next observation). `--neutralize-sentinel`'s
+  rename retires the identity; a re-halt's fresh sentinel re-arms. Read-only probes
+  (`/lazy-status`, `lazy-queue-doc.py`, `pipeline_visualizer`) re-observe halts every refresh —
+  the ledger caps each halt at one page.
+- **Payload (D5).** title = the state's `notify_message` verbatim; body = repo basename ·
+  pipeline · item id · halt kind + (needs-input) the frontmatter `decisions:` one-liners via a
+  TOLERANT frontmatter read (NOT `parse_sentinel`, which would `_die()` on a malformed file and
+  corrupt the halt JSON) + the `LAZY_QUEUE.md`/answer-path pointer; link = normalized GitHub
+  remote (`git config --get remote.origin.url`, SSH→HTTPS) + `/tree/main/<item dir>` — derivation
+  failure ⇒ link omitted, still sends. v1 channel = ntfy (`_ntfy_send`: one stdlib urllib POST,
+  `timeout=5`, RFC-2047-encoded Title/Click headers for non-latin-1) behind the injected
+  `sender(title, body, link)` seam (tests inject fakes; a future Pushover/GitHub channel is a
+  config value, not a rewrite).
+- **Failure semantics (D9 — fail-OPEN, absolute).** `notify_halt` never raises, never prints to
+  stdout, never changes the exit code, and never mutates the state dict on the inert path. A send
+  failure overwrites the `notify-error.json` breadcrumb (state dir; the `hook-error.json`
+  pattern) and appends a "why no page" line to `state["diagnostics"]` (the dict's own list — a
+  post-compute `_diag()` never reaches the printed JSON). Environment-agnostic (D10): no
+  `--cloud` branch.
+- **Tests.** `test_lazy_core.py` notify suite (11 cases, `_TESTS`-registered) + a
+  `[notify-halt-call-site]` in-file `--test` fixture in EACH script (drives `main()` in-process:
+  one page, dedup on re-probe, kill switch byte-inert — the wiring itself, not a re-mock).
+
 ## Cycle-counter advance: two orthogonal triggers (lazy-batch-unified-driver-parity-and-accounting Phase 1)
 
 The run marker's `forward_cycles` / `meta_cycles` budget counters advance via **two

@@ -93,7 +93,9 @@ work as a control mechanism if the human in the loop actually learns about them 
   env var / one untracked config line on every host class we have (Windows workstation, WSL, cloud
   container), and the channel seam keeps the decision reversible for the cost of one function
   signature.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** RESOLVED — A (ntfy behind a minimal `send(title, body, link)` channel seam; the
+  topic URL is the whole configuration). *(operator-approved 2026-07-04 — recommended option
+  taken.)*
 
 ### D2. Trigger chokepoint — where the notifier is called
 
@@ -121,6 +123,8 @@ work as a control mechanism if the human in the loop actually learns about them 
   option because long-lived sentinels are re-observed every probe.
 - **Resolution:** Auto-accepted A; the operator-visible behavior ("halts page me") is fixed by the
   stub — where the call lives inside the scripts is invisible implementation placement.
+  *(operator-confirmed 2026-07-04: terminal-emission chokepoint in each script's `main()`, one-line
+  `lazy_core.notify_halt(state, repo_root)` call immediately before the state-JSON write.)*
 
 ### D3. Event scope — which terminals notify
 
@@ -151,7 +155,12 @@ work as a control mechanism if the human in the loop actually learns about them 
   untouched. Honest boundary note: orchestrator-decided halts with no script terminal (the
   `forward_cycles >= max_cycles` cap, per-park events under `--park`) remain §1c.6 territory in
   v1; a parked sentinel still pages at the `queue-exhausted-all-parked` terminal.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** RESOLVED — A. Attention set = the new `lazy_core._NOTIFY_ATTENTION_TERMINALS`
+  frozenset (`blocked`, `blocked-misnamed`, `needs-input`, `needs-spec-input`, `needs-research`,
+  `queue-blocked-on-research`, `completion-unverified`, `stale_upstream`,
+  `queue-exhausted-all-parked`, `queue-exhausted-budget-deferred`, `queue-missing`); clean stops
+  opt-in via `notify_on_clean_stop`; the orchestrator §1c.6 PushNotification prose stays
+  UNTOUCHED. *(operator-approved 2026-07-04 — recommended option taken.)*
 
 ### D4. Dedup / re-ping policy for long-lived halts
 
@@ -177,8 +186,9 @@ work as a control mechanism if the human in the loop actually learns about them 
   pure additive config key (`reping_hours: 6`) later — no migration. The cloud caveat is disclosed:
   a fresh cloud container has an empty state dir, so a pre-existing halt observed there re-pages
   once per container — bounded, and arguably the desired reminder.
-- **Resolution:** OPEN — recommendation is A (with B as a documented config-key follow-up);
-  awaiting operator confirmation.
+- **Resolution:** RESOLVED — A (notify-once per sentinel identity; the ledger schema carries
+  `notified_at` so B's `reping_hours` is a pure additive config key later — no migration).
+  *(operator-approved 2026-07-04 — recommended option taken.)*
 
 ### D5. Payload shape
 
@@ -202,7 +212,17 @@ work as a control mechanism if the human in the loop actually learns about them 
 - **Recommendation:** A — the marginal cost is one frontmatter parse (`parse_sentinel`, already
   imported) and one `git config` read; the marginal value is the whole "answerable from the lock
   screen" experience.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** RESOLVED — A (rich payload: title = `notify_message` verbatim; body = repo
+  basename + pipeline + item id + halt kind + `needs-input` decision one-liners; link = GitHub
+  blob/tree URL from `git config --get remote.origin.url` SSH→HTTPS normalized, derivation
+  failure ⇒ omit link, still send). *(operator-approved 2026-07-04 — recommended option taken.)*
+  **Implementation note (fail-OPEN, discovered at implementation 2026-07-04):** the decisions
+  extraction uses a tolerant local frontmatter read of the SAME `sentinel-frontmatter.md`
+  contract instead of calling `parse_sentinel` directly — `parse_sentinel` `_die()`s (prints
+  error JSON to stdout + `sys.exit(2)`) on a malformed sentinel, which would corrupt the halt's
+  probe JSON, violating this SPEC's own D9 fail-OPEN constraint (notification is an observer of
+  the halt, never a participant). A malformed sentinel degrades to "no decision lines", still
+  notifies.
 
 ### D6. Answer path (v1 scope)
 
@@ -223,7 +243,9 @@ work as a control mechanism if the human in the loop actually learns about them 
     file contracts warn about; the sibling spec exists to do this properly with structure.
 - **Recommendation:** A — scope discipline. The notification body may STATE where the answer
   happens ("answer in the Claude app / next session"), but v1 builds no write path.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** RESOLVED — A (v1 is notice-only; the answer path stays in chat / the
+  `native-android-pipeline-steering` sibling). *(operator-approved 2026-07-04 — recommended
+  option taken.)*
 
 ### D7. Secrets and configuration residency
 
@@ -242,7 +264,9 @@ work as a control mechanism if the human in the loop actually learns about them 
 - **Recommendation:** A — one secret, one place, env-overridable for cloud, absent-by-default so
   the feature is opt-in and hermetic tests need no teardown.
 - **Resolution:** Auto-accepted A; secret placement is invisible plumbing — the operator-visible
-  choice (which channel) is D1.
+  choice (which channel) is D1. *(operator-confirmed 2026-07-04: untracked `~/.claude/notify.json`
+  `{channel, url, notify_on_clean_stop, reping_hours}` + `LAZY_NOTIFY_URL` env override +
+  `LAZY_NOTIFY_DISABLE=1` kill switch; absent config ⇒ complete no-op.)*
 
 ### D8. Dedup ledger location and write discipline
 
@@ -260,6 +284,8 @@ work as a control mechanism if the human in the loop actually learns about them 
 - **Recommendation:** A — repo-tree purity plus free hermeticity; the ledger is ephemeral state,
   exactly what the state dir is for.
 - **Resolution:** Auto-accepted A; internal state layout with no operator-visible surface.
+  *(operator-confirmed 2026-07-04: `notify-ledger.json` in the per-repo keyed state dir via
+  `_atomic_write`, keyed by sentinel identity, entries >30 days dropped on write.)*
 
 ### D9. Failure semantics
 
@@ -278,6 +304,8 @@ work as a control mechanism if the human in the loop actually learns about them 
 - **Recommendation:** A — this is the stub's own fail-OPEN constraint made concrete with the
   repo's existing timeout and breadcrumb conventions.
 - **Resolution:** Auto-accepted A; the stub locks fail-OPEN — only the mechanics are chosen here.
+  *(operator-confirmed 2026-07-04: urllib `timeout=5`, `notify-error.json` breadcrumb + `_diag`
+  on failure; ledger updated ONLY on a successful send.)*
 
 ### D10. Cloud vs. workstation parity
 
@@ -294,6 +322,7 @@ work as a control mechanism if the human in the loop actually learns about them 
 - **Recommendation:** A — with the ntfy-reachability-from-cloud check recorded as a deferred
   empirical verification (Phase 3), not assumed.
 - **Resolution:** Auto-accepted A; environment parity of an invisible code path.
+  *(operator-confirmed 2026-07-04: identical env-agnostic code path cloud/workstation.)*
 
 ## User Experience
 
@@ -412,16 +441,19 @@ Estimate: ~3 sessions (Phases 1–2 one session, 3 one, 4 folds into either).
 
 ## Open Questions
 
-- **D1 — channel choice:** which push channel ships in v1? Standing recommendation: ntfy behind a
-  minimal channel seam (one secret = topic URL; seam keeps Pushover/GitHub reversible).
-- **D3 — event scope:** attention terminals only by default, clean stops opt-in, §1c.6 prose
-  policy untouched? Standing recommendation: yes (option A).
-- **D4 — dedup/re-ping:** notify-once per sentinel identity, with re-ping-after-M-hours as a later
-  config key? Standing recommendation: notify-once for v1 (option A), ledger schema re-ping-ready.
-- **D5 — payload:** rich payload (decision titles inline + GitHub deep link + LAZY_QUEUE.md
-  pointer) vs. minimal one-liner? Standing recommendation: rich (option A).
-- **D6 — answer path:** v1 is notice-only (answer in chat); mobile-committed resolution stays in
-  `native-android-pipeline-steering`? Standing recommendation: yes (option A).
+All five product-behavior decisions were RESOLVED 2026-07-04 (operator-approved, recommended
+option taken in each case — see each decision's `**Resolution:**` entry above):
+
+- **D1 — channel choice:** RESOLVED — ntfy behind a minimal channel seam (option A).
+- **D3 — event scope:** RESOLVED — attention terminals only by default, clean stops opt-in,
+  §1c.6 prose policy untouched (option A).
+- **D4 — dedup/re-ping:** RESOLVED — notify-once per sentinel identity for v1 (option A), ledger
+  schema re-ping-ready (`reping_hours` is a later additive config key).
+- **D5 — payload:** RESOLVED — rich payload (option A).
+- **D6 — answer path:** RESOLVED — v1 is notice-only (option A).
+
+Remaining (empirical checks, not decisions):
+
 - Deferred empirical checks (implementation, not decisions): ntfy reachability from a cloud
   container through the outbound proxy (Phase 3); GitHub remote-URL derivation across SSH/HTTPS
   remotes on the Windows workstation (Phase 2); ntfy click-through→GitHub-mobile handoff behavior
