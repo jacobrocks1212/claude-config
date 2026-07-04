@@ -101,10 +101,10 @@ python3 lint-skills.py --skills-dir <worktree-root>/user/skills --repos-dir <wor
 
 ## Phase 4 — workspace/CLAUDE.md pointer + validation
 
-- [ ] WU-4.1 — Additive pointer paragraph in `workspace/CLAUDE.md` (no reflow of other text).
-- [ ] WU-4.2 — Doc cross-check pass complete (RESEARCH_SUMMARY table is the ledger; every doc
+- [x] WU-4.1 — Additive pointer paragraph in `workspace/CLAUDE.md` (no reflow of other text).
+- [x] WU-4.2 — Doc cross-check pass complete (RESEARCH_SUMMARY table is the ledger; every doc
   citation traces to a row).
-- [ ] WU-4.3 — Full gate suite green (verbatim tails recorded in SKIP_MCP_TEST.md); tick
+- [x] WU-4.3 — Full gate suite green (verbatim tails recorded in SKIP_MCP_TEST.md); tick
   PHASES.md Phase 4 boxes; commit.
 
 ## Phase 5 — Live pilot, drills & rollout (OPERATOR-DEFERRED)

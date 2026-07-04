@@ -187,19 +187,19 @@ the entry point for "what happened overnight".
 home for discoverability) + the doc-completeness validation pass + full gate suite.
 
 **Deliverables:**
-- [ ] `workspace/CLAUDE.md`: a "Scheduled Autonomous Runs (nightly lazy)" paragraph — what fires,
+- [x] `workspace/CLAUDE.md`: a "Scheduled Autonomous Runs (nightly lazy)" paragraph — what fires,
   where the template/recipes/playbook live, and the one-line morning-routine summary. Additive
   only (no reflow of surrounding text).
-- [ ] Doc cross-check pass: every flag/terminal/op cited across the three new docs traced to its
+- [x] Doc cross-check pass: every flag/terminal/op cited across the three new docs traced to its
   contract (the RESEARCH_SUMMARY anchor table is the ledger).
-- [ ] Full harness gate suite run once, green (docs-only feature — confirms no accidental
+- [x] Full harness gate suite run once, green (docs-only feature — confirms no accidental
   breakage).
 
 **Minimum Verifiable Behavior:** `workspace/CLAUDE.md` points a fresh session at the feature dir;
 gate suite green at the lane's final commit.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Gate suite green (pytest suites + `--test` smokes + parity audit + skill lint) at the final
+- [x] Gate suite green (pytest suites + `--test` smokes + parity audit + skill lint) at the final
   commit. *(Evidence: `SKIP_MCP_TEST.md` alternative_validation counts.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
