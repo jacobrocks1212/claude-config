@@ -66,7 +66,7 @@ Where this plan's repo uses non-default gates or component paths (a harness-conf
 ## Work Units
 
 - [x] WU-1 — Control-surface manifest resolution + touched-file derivation + intersection
-- [ ] WU-2 — Coupled-pair scope computation over the parity manifest
+- [x] WU-2 — Coupled-pair scope computation over the parity manifest
 - [ ] WU-3 — `record_intervention` canary post-step (integrates WU-1 + WU-2)
 
 ---

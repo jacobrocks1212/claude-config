@@ -15324,6 +15324,65 @@ def _canary_intersects(touched_files, surfaces) -> tuple[bool, list[str]]:
     return (bool(hits), hits)
 
 
+# The coupled-pair table from the root CLAUDE.md, folded in as DATA for any
+# pair absent from lazy-parity-manifest.json (D5 — the pair scope must be
+# computable even for pairs the machine-readable manifest does not carry).
+# Kept in lockstep with the root CLAUDE.md "Coupled Skill Pairs" table.
+_CANARY_CLAUDE_MD_PAIRS: tuple[tuple[str, str], ...] = (
+    ("user/skills/lazy/SKILL.md",
+     "repos/algobooth/.claude/skills/lazy-cloud/SKILL.md"),
+    ("user/skills/lazy-batch/SKILL.md",
+     "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md"),
+    ("user/skills/lazy/SKILL.md", "user/skills/lazy-bug/SKILL.md"),
+    ("user/skills/lazy-batch/SKILL.md", "user/skills/lazy-bug-batch/SKILL.md"),
+    ("user/skills/lazy-status/SKILL.md",
+     "user/skills/lazy-bug-status/SKILL.md"),
+)
+
+
+def _canary_load_parity_pairs(manifest_path: Path) -> list[tuple[str, str]]:
+    """Read (canonical, derived) pairs from lazy-parity-manifest.json. Any
+    read/parse failure or unexpected shape degrades to an empty list (the
+    caller still folds in the CLAUDE.md pairs-table data)."""
+    try:
+        data = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return []
+    pairs: list[tuple[str, str]] = []
+    for p in (data.get("pairs") if isinstance(data, dict) else None) or []:
+        if not isinstance(p, dict):
+            continue
+        canonical = p.get("canonical")
+        derived = p.get("derived")
+        if isinstance(canonical, str) and isinstance(derived, str):
+            pairs.append((canonical, derived))
+    return pairs
+
+
+def _compute_pair_scope(touched_files, manifest_path: Path) -> list[str]:
+    """Compute the coupled-pair scope for a set of touched files (D5).
+
+    A touched file matching EITHER half of a coupled pair yields BOTH halves in
+    the scope (reverting one half of a parity-guarded pair breaks the audit).
+    Pairs come from ``lazy-parity-manifest.json`` UNIONed with the root
+    CLAUDE.md pairs-table entries (folded in as data for any pair the manifest
+    does not carry). Result is de-duplicated, order-stable."""
+    pairs = _canary_load_parity_pairs(manifest_path)
+    seen_pairs = {frozenset(p) for p in pairs}
+    for p in _CANARY_CLAUDE_MD_PAIRS:
+        if frozenset(p) not in seen_pairs:
+            pairs.append(p)
+            seen_pairs.add(frozenset(p))
+    touched = set(touched_files or [])
+    scope: list[str] = []
+    for canonical, derived in pairs:
+        if canonical in touched or derived in touched:
+            for half in (canonical, derived):
+                if half not in scope:
+                    scope.append(half)
+    return scope
+
+
 def record_intervention(
     repo_root: Path,
     intervention_id: str,

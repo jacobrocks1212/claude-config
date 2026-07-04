@@ -30946,7 +30946,64 @@ def test_canary_intersects_arm_decision():
     assert arm4 is False and hits4 == []
 
 
-# harness-change-canary-rollback Phase 1 — WU-1 registration helpers.
+def test_compute_pair_scope():
+    """`_compute_pair_scope` returns BOTH halves of every coupled pair a
+    touched file hits (over lazy-parity-manifest.json), de-duplicated; a touched
+    file in no pair yields an empty scope; the CLAUDE.md pairs-table entries are
+    folded in as data for any pair absent from the manifest."""
+    _guard()
+    assert hasattr(lazy_core, "_compute_pair_scope")
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "parity.json"
+        # Synthetic manifest: ONE lazy-batch pair; the lazy-status pair is
+        # deliberately ABSENT so the CLAUDE.md fold must supply it.
+        manifest.write_text(json.dumps({
+            "mechanic_sets": {},
+            "pairs": [
+                {"canonical": "user/skills/lazy-batch/SKILL.md",
+                 "derived": "user/skills/lazy-bug-batch/SKILL.md"},
+                {"canonical": "user/skills/lazy-batch/SKILL.md",
+                 "derived": "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md"},
+            ],
+        }) + "\n", encoding="utf-8")
+
+        # Touch the canonical half → both halves of BOTH pairs it belongs to,
+        # canonical listed once (de-duplicated).
+        scope = lazy_core._compute_pair_scope(
+            ["user/skills/lazy-batch/SKILL.md"], manifest)
+        assert "user/skills/lazy-batch/SKILL.md" in scope
+        assert "user/skills/lazy-bug-batch/SKILL.md" in scope
+        assert "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md" in scope
+        assert scope.count("user/skills/lazy-batch/SKILL.md") == 1
+
+        # Touch a DERIVED half → the same pair returns both halves.
+        scope2 = lazy_core._compute_pair_scope(
+            ["user/skills/lazy-bug-batch/SKILL.md"], manifest)
+        assert set(scope2) >= {
+            "user/skills/lazy-batch/SKILL.md",
+            "user/skills/lazy-bug-batch/SKILL.md",
+        }
+
+        # Touch a file in NO pair → empty scope.
+        assert lazy_core._compute_pair_scope(["docs/foo.md"], manifest) == []
+
+        # CLAUDE.md-only pair (folded as data, absent from this manifest):
+        # touching one half still yields both halves of that pair.
+        scope3 = lazy_core._compute_pair_scope(
+            ["user/skills/lazy-status/SKILL.md"], manifest)
+        assert "user/skills/lazy-status/SKILL.md" in scope3
+        assert "user/skills/lazy-bug-status/SKILL.md" in scope3
+
+        # A missing/malformed manifest degrades to the CLAUDE.md fold only,
+        # never raises.
+        missing = Path(td) / "nope.json"
+        scope4 = lazy_core._compute_pair_scope(
+            ["user/skills/lazy/SKILL.md"], missing)
+        assert "user/skills/lazy/SKILL.md" in scope4
+        assert "user/skills/lazy-bug/SKILL.md" in scope4
+
+
+# harness-change-canary-rollback Phase 1 — WU-1 + WU-2 registration helpers.
 _TESTS = _TESTS + [
     ("test_canary_control_surfaces_fallback_and_manifest",
      test_canary_control_surfaces_fallback_and_manifest),
@@ -30954,6 +31011,7 @@ _TESTS = _TESTS + [
      test_canary_touched_files_from_commit),
     ("test_canary_intersects_arm_decision",
      test_canary_intersects_arm_decision),
+    ("test_compute_pair_scope", test_compute_pair_scope),
 ]
 
 
