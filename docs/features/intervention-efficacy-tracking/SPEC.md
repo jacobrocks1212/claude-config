@@ -95,13 +95,13 @@ state.
 - **Recommendation:** A — the stub already locks "deterministic, script-owned"; the repo's
   invariant is script-emitted state over LLM-inferred state, and `apply_pseudo` is the shipped
   single-author chokepoint for completion-time writes.
-- **Resolution:** Auto-accepted A; the stub locks the direction and the only choice is which
-  shipped chokepoint hosts it — not a product call.
+- **Resolution:** Auto-accepted A (operator-locked 2026-07-04); the stub locks the direction
+  and the only choice is which shipped chokepoint hosts it — not a product call.
 
 ### D2. Hypothesis declaration surface, and whether an undeclared hypothesis blocks completion
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the
-  pipeline's needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04 — recommended
+  option taken)`
 - **Question:** The script can freeze a baseline deterministically, but it cannot infer the
   targeted signal or expected direction. Where does the hypothesis get declared, and what
   happens at completion when it wasn't?
@@ -122,7 +122,9 @@ state.
 - **Recommendation:** A for v1 — honest degradation over a new hard gate; mirrors the
   `--backfill-receipts` philosophy (debt recorded loudly, not silenced, not blocking). Revisit
   fail-closed once the sibling gate is live for control-surface changes.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). Parseable
+  `## Intervention Hypothesis` SPEC block; degrade-on-absence writes
+  `target_signal: undeclared` and completion is NEVER blocked.
 
 ### D3. Record schema
 
@@ -144,13 +146,14 @@ state.
   load-bearing: the raw telemetry ledger lives in the per-repo keyed state dir (untracked,
   rotation-eligible per that feature's retention decision), so the baseline must not depend on
   raw-event retention.
-- **Resolution:** Auto-accepted; field layout of a machine artifact with the operator-visible
-  choices (residency, windows, consequences) carried separately in D4/D5/D7/D8.
+- **Resolution:** Auto-accepted (operator-locked 2026-07-04); field layout of a machine
+  artifact with the operator-visible choices (residency, windows, consequences) carried
+  separately in D4/D5/D7/D8.
 
 ### D4. Record residency — central `docs/interventions/` vs alongside `COMPLETED.md`
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the
-  pipeline's needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04 — recommended
+  option taken)`
 - **Question:** Where do intervention records live? The operator reads these (GitHub mobile
   included), and the evaluator must enumerate all open hypotheses cheaply.
 - **Options:**
@@ -173,12 +176,13 @@ state.
   flat central dir is what the sibling `anti-overfit-design-gate` and
   `harness-change-canary-rollback` compose against (gate-verdict pointers and canary fields
   live on this record).
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). Central
+  `docs/interventions/<intervention_id>.md`, one committed file per intervention.
 
 ### D5. Window semantics — lengths, minimum-sample rule, and verdict bands
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the
-  pipeline's needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04 — recommended
+  option taken)`
 - **Question:** How long are baseline and post-ship windows, when is a comparison allowed to
   conclude anything, and what movement earns CONFIRMED vs REFUTED?
 - **Options:**
@@ -198,8 +202,9 @@ state.
 - **Recommendation:** A. All four numbers (20 / 20 / 5 / 20%) are declared defaults in one
   constants block, overridable per-record via the hypothesis block — they are starting points
   to be tuned by this feature's own ledger, not laws.
-- **Resolution:** OPEN — recommendation is A with defaults 20 runs / 20 runs / min-sample 5 /
-  ±20%; awaiting operator confirmation.
+- **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). Run-count
+  windows with defaults baseline 20 runs / review-after 20 runs / min-sample 5 / ±20% relative
+  bands, declared in one constants block, per-record overridable via the hypothesis block.
 
 ### D6. Confounder annotation mechanics
 
@@ -216,8 +221,9 @@ state.
 - **Recommendation:** A — the stub locks the annotation; the cap is the conservative reading of
   "not pretend A/B rigor" (never let confounded data trigger an automatic consequence), and it
   errs toward inaction, which is safe because INCONCLUSIVE has its own escalation path (D8).
-- **Resolution:** Auto-accepted A; conservative verdict arithmetic on confounded data is an
-  internal correctness property, not an operator-facing mode choice.
+- **Resolution:** Auto-accepted A (operator-locked 2026-07-04); conservative verdict
+  arithmetic on confounded data is an internal correctness property, not an operator-facing
+  mode choice.
 
 ### D7. REFUTED consequence — auto-enqueue mechanics and recurrence guard
 
@@ -240,13 +246,13 @@ state.
 - **Recommendation:** A — the enqueue destination (`/spec-bug` investigation) is itself the
   review step: the reconsideration item still passes through spec, plan, and the operator's
   normal triage before anything is reverted. Nothing is reverted by the evaluator.
-- **Resolution:** Auto-accepted A; the stub locks auto-enqueue and the guard shape is internal
-  plumbing on a shipped path.
+- **Resolution:** Auto-accepted A (operator-locked 2026-07-04); the stub locks auto-enqueue
+  and the guard shape is internal plumbing on a shipped path.
 
 ### D8. INCONCLUSIVE escalation after N reviews
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the
-  pipeline's needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04 — recommended
+  option taken)`
 - **Question:** An INCONCLUSIVE hypothesis re-reviews on its cadence — when and how does it
   stop silently spinning and reach the operator?
 - **Options:**
@@ -262,13 +268,14 @@ state.
 - **Recommendation:** A with N=2 — after two windows with no signal, more waiting rarely helps;
   the operator decides whether to close it `inconclusive-accepted`, refine the hypothesis, or
   treat it as refuted.
-- **Resolution:** OPEN — recommendation is A (N=2, passive surfacing); awaiting operator
-  confirmation.
+- **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). Escalate
+  after N=2 INCONCLUSIVE reviews; passive surfacing (evaluator needs-triage output + retro
+  citation), never a sentinel or halt.
 
 ### D9. Backfill policy for already-shipped interventions
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the
-  pipeline's needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04 — recommended
+  option taken)`
 - **Question:** Dozens of hardening rounds and completed harness items predate this feature. Do
   they get records?
 - **Options:**
@@ -284,12 +291,14 @@ state.
     unavailable` — noise that buries the real ledger at birth.
 - **Recommendation:** A — measurement starts where measurement is possible; honest provenance
   marks the exceptions.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). No bulk
+  backfill; manual opt-in via `--record-intervention --shipped-commit/--shipped-date`,
+  stamped `provenance: backfilled`.
 
 ### D10. Evaluator invocation cadence
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the
-  pipeline's needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04 — recommended
+  option taken)`
 - **Question:** When does evaluation actually run?
 - **Options:**
   - **A — end-of-run flush + on-demand, retro cites:** the batch orchestrators invoke
@@ -305,7 +314,9 @@ state.
   - **C — scheduled (cron/trigger):** wall-clock scheduling contradicts run-count windows and
     adds unattended write machinery for no data gain.
 - **Recommendation:** A — run-boundary evaluation matches run-count windows one-to-one.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A** (operator-approved 2026-07-04 — recommended option taken). End-of-run
+  flush in the batch orchestrators (mirrored across the coupled pair) + on-demand + a
+  `/lazy-batch-retro` report-only citation step.
 
 ## User Experience
 
@@ -442,26 +453,23 @@ SPEC.md hypothesis block          __mark_complete__ / __mark_fixed__ / --record-
 
 ## Open Questions
 
-- **D2 — hypothesis declaration + undeclared handling:** parseable SPEC block with degrade-on-
-  absence (record written `undeclared`, completion never blocked) vs fail-closed completion
-  refusal. Recommendation: degrade in v1; upstream gates are the forcing function.
-- **D4 — record residency:** central `docs/interventions/<id>.md` vs item-dir vs state-dir.
-  Recommendation: central — survives bug archive-on-fix and houses hardening rounds.
-- **D5 — windows and bands:** run-count windows (baseline 20 runs / review after 20 runs),
-  min-sample 5, ±20% relative bands vs wall-clock or statistical-test alternatives.
-  Recommendation: run-count defaults, per-record overridable.
-- **D8 — INCONCLUSIVE escalation:** escalate after N=2 reviews, surfaced passively in evaluator
-  output + retro vs NEEDS_INPUT rounds vs never. Recommendation: N=2, passive.
-- **D9 — backfill:** manual opt-in `--record-intervention` with `provenance: backfilled` vs
-  bulk backfill of all completed items. Recommendation: manual opt-in only.
-- **D10 — evaluator cadence:** end-of-run flush + on-demand + retro citation vs retro-only vs
-  scheduled. Recommendation: end-of-run flush.
-- Deferred empirical checks: exact telemetry-ledger event/field names for run identity and the
-  v1 signal set (verify against `harness-telemetry-ledger` once its schema locks); whether
-  `parse_sentinel` handles the nested `baseline:` map or the record should flatten it to
-  `baseline_value`/`baseline_events`/`baseline_window` scalars (flatten if not — verify during
-  Phase 1); the exact end-of-run flush insertion point in the batch orchestrators (mirror
-  across the coupled pairs).
+All open decisions were resolved 2026-07-04 (operator-approved; every recommendation taken —
+see D2/D4/D5/D8/D9/D10 above). The formerly-deferred empirical checks were verified during
+Phase 1 implementation:
+
+- **Telemetry-ledger run identity + v1 signal set:** verified against the SHIPPED
+  `harness-telemetry-ledger` code (not just its SPEC) — run identity is the envelope's
+  `run_id` field (the run marker's `started_at`, an ISO-8601 `%Y-%m-%dT%H:%M:%SZ` string, so
+  lexical order == chronological order); the D4-B v1 event vocabulary is `run-start`,
+  `run-end`, `cycle-begin`, `cycle-end`, `pseudo-applied`, `dispatch`, `halt`,
+  `sentinel-resolved`, `gate-refusal`, `containment-refusal`. `event:<type>` targets filter on
+  the envelope's `event` field.
+- **Nested `baseline:` map:** `lazy_core.parse_sentinel` delegates to `yaml.safe_load`, which
+  parses nested mappings natively — the record keeps the nested `baseline:` map per D3 (no
+  flattening needed; round-trip covered by a Phase-1 test).
+- **End-of-run flush insertion point:** §1c.6 of `/lazy-batch` and `/lazy-batch-cloud` — the
+  same once-per-run end-of-run flush where the incident-scan invocation sits (BEFORE
+  `--run-end`), mirrored across the coupled pair.
 
 ## Research References
 
