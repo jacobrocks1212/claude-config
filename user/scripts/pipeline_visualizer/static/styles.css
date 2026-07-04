@@ -33,11 +33,12 @@ html, body {
 
 .app {
   display: grid;
-  grid-template-rows: auto 1fr auto auto;
+  grid-template-rows: auto 1fr auto auto auto;
   grid-template-areas:
     "triage"
     "graph"
     "bottom"
+    "trends"
     "footer";
   height: 100vh;
   gap: 8px;
@@ -190,6 +191,26 @@ html, body {
 .chip[data-stage="Needs-input"] { color: var(--c-needsinput); background: var(--c-needsinput); }
 .chip[data-stage="Blocked"]     { color: var(--c-blocked);    background: var(--c-blocked); }
 .chip[data-stage="Deferred"]    { color: var(--c-deferred);   background: transparent; border-style: dashed; opacity: 0.6; }
+
+/* ---- Trends pane (harness-telemetry-ledger) ---- */
+.trends-pane { grid-area: trends; max-height: 40vh; }
+.trends-toggle {
+  margin-left: 8px; padding: 2px 10px; font-size: 12px; cursor: pointer;
+  color: var(--fg-dim); background: transparent;
+  border: 1px solid var(--border); border-radius: 6px;
+}
+.trends-toggle:hover { color: var(--fg); }
+.trends-empty { color: var(--fg-dim); font-style: italic; padding: 4px 0; }
+.trends-table { width: 100%; border-collapse: collapse; margin: 6px 0 12px; }
+.trends-table th, .trends-table td {
+  padding: 4px 8px; text-align: left; font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+.trends-table th { color: var(--fg-dim); font-weight: 600; }
+.trends-subtitle {
+  margin: 8px 0 2px; font-size: 12px; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--fg-dim);
+}
 
 /* ---- Footer / live dot ---- */
 .footer {

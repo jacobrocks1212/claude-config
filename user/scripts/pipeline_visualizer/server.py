@@ -18,6 +18,7 @@ from pathlib import Path
 from .cache import TtlCache
 from .probe import probe_state, read_queue  # noqa: F401 (probe_state monkeypatched in tests)
 from .queue_writer import PermutationError, QueueWriteError, reorder_queue
+from .trends import trends_payload  # noqa: F401 (monkeypatched in tests, like probe_state)
 
 
 def _run_marker_present(repo_root=None) -> bool:
@@ -75,6 +76,10 @@ def make_server(repo_root, host: str = "127.0.0.1", port: int = 8765) -> Threadi
     """
     repo_root = Path(repo_root)
     cache = TtlCache()
+    # harness-telemetry-ledger Phase 3: /api/trends gets its OWN TtlCache so a
+    # polling Trends tab re-reads the ledgers at most once per TTL window,
+    # independent of the /api/state probe cache.
+    trends_cache = TtlCache()
     static_root = str(STATIC_ROOT)
 
     class Handler(SimpleHTTPRequestHandler):
@@ -107,6 +112,15 @@ def make_server(repo_root, host: str = "127.0.0.1", port: int = 8765) -> Threadi
             features = read_queue(repo_root / "docs" / "features" / "queue.json")
             bugs = read_queue(repo_root / "docs" / "bugs" / "queue.json")
             self._send_json(200, {"features": features, "bugs": bugs})
+
+        def _api_trends(self) -> None:
+            # harness-telemetry-ledger Phase 3: pure-read ledger aggregation,
+            # served through its own TtlCache (one aggregation per TTL window).
+            # The module-level name is re-read so tests can monkeypatch
+            # server.trends_payload with a call counter (probe_state pattern).
+            import pipeline_visualizer.server as _self_mod
+            payload = trends_cache.get(lambda: _self_mod.trends_payload(repo_root))
+            self._send_json(200, payload)
 
         def _queue_path_for(self, pipeline: str):
             """Map a posted pipeline name to its queue.json path. Returns None
@@ -174,6 +188,9 @@ def make_server(repo_root, host: str = "127.0.0.1", port: int = 8765) -> Threadi
                 return
             if route == "/api/queue":
                 self._api_queue()
+                return
+            if route == "/api/trends":
+                self._api_trends()
                 return
             # Static frontend assets, rooted at static/. `/static/<x>` is the
             # canonical asset prefix in the HTML; strip it so the file resolves

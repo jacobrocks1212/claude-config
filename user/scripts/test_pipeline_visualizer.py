@@ -1037,5 +1037,312 @@ class TestKeyedMarkerLookup:
             assert _run_marker_present(repo) is False
 
 
+# ---------------------------------------------------------------------------
+# harness-telemetry-ledger Phase 3 — pipeline_visualizer.trends
+#
+# Pure-read aggregation (D9-A) over the telemetry ledger (+ the deny ledger),
+# an /api/trends route through its own TtlCache, and the D8 retro CLI
+# (`python -m pipeline_visualizer.trends --run-id <id> --repo-root <repo>`).
+# Aggregates are asserted against HAND-COMPUTED values over a fixture ledger.
+# ---------------------------------------------------------------------------
+
+import subprocess as _tl_subprocess
+
+
+def _tl_event(ts, event, run_id="R1", pipeline="feature", item_id=None, data=None):
+    return {"v": 1, "ts": ts, "run_id": run_id, "pipeline": pipeline,
+            "event": event, "item_id": item_id, "data": data or {}}
+
+
+def _tl_fixture_events():
+    """Two-run fixture. Hand-computed expectations:
+    R1: duration 120s; 2 cycle-begins (1 real + 1 meta); 1 completion
+        (__mark_complete__) → cycles/completion = 2.0; 1 gate-refusal;
+        1 containment-refusal; 1 halt (f2, needs-input) resolved after 20s.
+    R2: run-start only (no run-end → duration None); 1 unresolved halt (f3)."""
+    return [
+        _tl_event(100.0, "run-start"),
+        _tl_event(110.0, "cycle-begin", item_id="f1",
+                  data={"kind": "real", "sub_skill": "execute-plan"}),
+        _tl_event(120.0, "cycle-end", item_id="f1", data={"cleared": True}),
+        _tl_event(130.0, "dispatch", item_id="f1",
+                  data={"current_step": "Step 7a: execute plan",
+                        "sub_skill": "execute-plan", "terminal_reason": None}),
+        _tl_event(140.0, "gate-refusal", item_id="f1",
+                  data={"gate": "verify-ledger", "failing_check": "clean_tree"}),
+        _tl_event(150.0, "cycle-begin", item_id="f1",
+                  data={"kind": "meta", "sub_skill": "__mark_complete__"}),
+        _tl_event(160.0, "cycle-end", item_id="f1", data={"cleared": True}),
+        _tl_event(170.0, "pseudo-applied", item_id="f1",
+                  data={"pseudo": "__mark_complete__"}),
+        _tl_event(180.0, "halt", item_id="f2",
+                  data={"terminal_reason": "needs-input"}),
+        _tl_event(200.0, "sentinel-resolved", item_id="f2",
+                  data={"sentinel": "NEEDS_INPUT.md"}),
+        _tl_event(210.0, "containment-refusal", item_id="f1",
+                  data={"op": "--apply-pseudo",
+                        "guard": "refuse_if_cycle_active"}),
+        _tl_event(220.0, "run-end", data={"reason": "terminal"}),
+        _tl_event(300.0, "run-start", run_id="R2"),
+        _tl_event(310.0, "halt", run_id="R2", item_id="f3",
+                  data={"terminal_reason": "blocked"}),
+    ]
+
+
+_TL_FIXTURE_DENIES = [
+    {"ts": 1.0, "tool_use_id": "tu-1", "denied_sha12": "a" * 12,
+     "reason_head": "deny", "prompt_head": "p", "acked": False},
+    {"ts": 2.0, "kind": "process-friction", "reason_head": "cycle-bracket-break",
+     "detail": "d", "acked": False},
+    {"ts": 3.0, "tool_use_id": "tu-2", "auto_readmit": True,
+     "readmitted_sha12": "b" * 12, "suffix_head": "s", "item_id": None,
+     "acked": True},
+]
+
+
+class TestTrendsAggregates:
+    """Pure functions over hand-built event lists (no I/O)."""
+
+    def test_runs_grouping(self):
+        from pipeline_visualizer.trends import runs
+        got = runs(_tl_fixture_events())
+        assert [r["run_id"] for r in got] == ["R1", "R2"]
+        r1 = got[0]
+        assert r1["pipeline"] == "feature"
+        assert r1["first_ts"] == 100.0 and r1["last_ts"] == 220.0
+        assert r1["event_counts"]["cycle-begin"] == 2
+        assert r1["event_counts"]["run-end"] == 1
+
+    def test_run_durations(self):
+        from pipeline_visualizer.trends import run_durations
+        got = run_durations(_tl_fixture_events())
+        by_id = {r["run_id"]: r for r in got}
+        assert by_id["R1"]["duration_seconds"] == 120.0
+        assert by_id["R2"]["duration_seconds"] is None  # no run-end → honest None
+
+    def test_cycles_per_completion(self):
+        from pipeline_visualizer.trends import cycles_per_completion
+        got = cycles_per_completion(_tl_fixture_events())
+        assert got["cycles"] == 2
+        assert got["forward_cycles"] == 1
+        assert got["meta_cycles"] == 1
+        assert got["completions"] == 1
+        assert got["cycles_per_completion"] == 2.0
+
+    def test_cycles_per_completion_zero_completions_is_none(self):
+        from pipeline_visualizer.trends import cycles_per_completion
+        got = cycles_per_completion([_tl_event(1.0, "cycle-begin", item_id="x",
+                                               data={"kind": "real"})])
+        assert got["completions"] == 0
+        assert got["cycles_per_completion"] is None  # never a fabricated zero
+
+    def test_refusal_counts(self):
+        from pipeline_visualizer.trends import refusal_counts
+        got = refusal_counts(_tl_fixture_events(), _TL_FIXTURE_DENIES)
+        assert got["gate_refusals"] == 1
+        assert got["containment_refusals"] == 1
+        assert got["by_gate"] == {"verify-ledger": 1}
+        assert got["guard_denies"] == 1        # the plain deny entry only
+        assert got["process_friction"] == 1
+        assert got["auto_readmits"] == 1
+        assert got["unacked_denies"] == 2      # deny + friction (both unacked)
+
+    def test_halt_dwell_pairing(self):
+        from pipeline_visualizer.trends import halt_dwell
+        got = halt_dwell(_tl_fixture_events())
+        assert len(got) == 2
+        resolved = [h for h in got if h["item_id"] == "f2"][0]
+        assert resolved["dwell_seconds"] == 20.0
+        assert resolved["resolved_ts"] == 200.0
+        assert resolved["terminal_reason"] == "needs-input"
+        unresolved = [h for h in got if h["item_id"] == "f3"][0]
+        assert unresolved["resolved_ts"] is None
+        assert unresolved["dwell_seconds"] is None  # honest unresolved, not 0
+
+
+class TestTrendsPayload:
+    """trends_payload(repo_root) — the /api/trends aggregate over real files."""
+
+    def _write_ledger(self, state_dir, events):
+        ledger = state_dir / "lazy-telemetry.jsonl"
+        ledger.write_text(
+            "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+        return ledger
+
+    def test_payload_over_fixture_ledger(self, tmp_path):
+        from pipeline_visualizer.trends import trends_payload
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        with _isolated_state_dir(tmp_path, marker=False):
+            state_dir = tmp_path / "_state"
+            self._write_ledger(state_dir, _tl_fixture_events())
+            (state_dir / "lazy-deny-ledger.jsonl").write_text(
+                "".join(json.dumps(d) + "\n" for d in _TL_FIXTURE_DENIES),
+                encoding="utf-8")
+            payload = trends_payload(repo)
+        assert payload["telemetry_available"] is True
+        assert [r["run_id"] for r in payload["runs"]] == ["R1", "R2"]
+        r1 = [r for r in payload["runs"] if r["run_id"] == "R1"][0]
+        assert r1["forward_cycles"] == 1
+        assert r1["meta_cycles"] == 1
+        assert r1["completions"] == 1
+        assert r1["cycles_per_completion"] == 2.0
+        assert r1["gate_refusals"] == 1
+        assert r1["containment_refusals"] == 1
+        assert r1["halts"] == 1
+        assert r1["duration_seconds"] == 120.0
+        assert payload["totals"]["cycles"] == 2
+        assert payload["deny_ledger"]["unacked_denies"] == 2
+
+    def test_payload_empty_ledger_is_honest(self, tmp_path):
+        from pipeline_visualizer.trends import trends_payload
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        with _isolated_state_dir(tmp_path, marker=False):
+            payload = trends_payload(repo)
+        assert payload["telemetry_available"] is False
+        assert "no telemetry" in payload["message"].lower()
+        assert payload["runs"] == []
+
+    def test_payload_merges_committed_cloud_segments(self, tmp_path):
+        from pipeline_visualizer.trends import trends_payload
+        repo = tmp_path / "repo"
+        cloud_dir = repo / "docs" / "telemetry" / "cloud"
+        cloud_dir.mkdir(parents=True)
+        cloud_events = [
+            _tl_event(500.0, "run-start", run_id="RC"),
+            _tl_event(600.0, "run-end", run_id="RC"),
+        ]
+        (cloud_dir / "RC.jsonl").write_text(
+            "".join(json.dumps(e) + "\n" for e in cloud_events),
+            encoding="utf-8")
+        with _isolated_state_dir(tmp_path, marker=False):
+            payload = trends_payload(repo)
+        assert payload["telemetry_available"] is True
+        rc = [r for r in payload["runs"] if r["run_id"] == "RC"][0]
+        assert rc["duration_seconds"] == 100.0
+
+
+class TestTrendsServerRoute:
+    def test_api_trends_200_json(self, tmp_path):
+        repo_root = _seed_feature_repo(tmp_path)
+        with _isolated_state_dir(tmp_path, marker=False):
+            state_dir = tmp_path / "_state"
+            (state_dir / "lazy-telemetry.jsonl").write_text(
+                "".join(json.dumps(e) + "\n" for e in _tl_fixture_events()),
+                encoding="utf-8")
+            httpd, port = _start_server(repo_root)
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                conn.request("GET", "/api/trends")
+                resp = conn.getresponse()
+                assert resp.status == 200
+                assert "application/json" in (resp.getheader("Content-Type") or "")
+                body = json.loads(resp.read())
+                assert body["telemetry_available"] is True
+                assert [r["run_id"] for r in body["runs"]] == ["R1", "R2"]
+            finally:
+                httpd.shutdown()
+
+    def test_api_trends_empty_state_honest(self, tmp_path):
+        repo_root = _seed_feature_repo(tmp_path)
+        with _isolated_state_dir(tmp_path, marker=False):
+            httpd, port = _start_server(repo_root)
+            try:
+                conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+                conn.request("GET", "/api/trends")
+                body = json.loads(conn.getresponse().read())
+                assert body["telemetry_available"] is False
+            finally:
+                httpd.shutdown()
+
+    def test_trends_served_through_cache(self, tmp_path):
+        # Sequential GETs within the TTL window → ONE underlying aggregation
+        # (the trends producer is a module attribute, like probe_state).
+        from pipeline_visualizer import server as server_mod
+        repo_root = _seed_feature_repo(tmp_path)
+        calls = {"n": 0}
+        real_trends = server_mod.trends_payload
+
+        def counting_trends(root):
+            calls["n"] += 1
+            return real_trends(root)
+
+        server_mod.trends_payload = counting_trends
+        try:
+            with _isolated_state_dir(tmp_path, marker=False):
+                httpd, port = _start_server(repo_root)
+                try:
+                    for _ in range(5):
+                        conn = http.client.HTTPConnection("127.0.0.1", port,
+                                                          timeout=30)
+                        conn.request("GET", "/api/trends")
+                        conn.getresponse().read()
+                    assert calls["n"] == 1
+                finally:
+                    httpd.shutdown()
+        finally:
+            server_mod.trends_payload = real_trends
+
+
+class TestTrendsRetroCli:
+    """The D8 retro CLI: python -m pipeline_visualizer.trends --run-id <id>."""
+
+    def _run_cli(self, tmp_path, args):
+        state_dir = tmp_path / "_state"
+        env = dict(_os.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        return _tl_subprocess.run(
+            [sys.executable, "-m", "pipeline_visualizer.trends"] + args,
+            capture_output=True, text=True, env=env,
+            cwd=str(Path(__file__).parent),
+        )
+
+    def test_run_summary_shape_and_citations(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        state_dir = tmp_path / "_state"
+        state_dir.mkdir()
+        (state_dir / "lazy-telemetry.jsonl").write_text(
+            "".join(json.dumps(e) + "\n" for e in _tl_fixture_events()),
+            encoding="utf-8")
+        r = self._run_cli(tmp_path, ["--repo-root", str(repo), "--run-id", "R1"])
+        assert r.returncode == 0, r.stderr
+        summary = json.loads(r.stdout)
+        assert summary["found"] is True
+        assert summary["run_id"] == "R1"
+        assert summary["forward_cycles"] == 1
+        assert summary["meta_cycles"] == 1
+        assert summary["completions"] == 1
+        assert summary["gate_refusals"][0]["gate"] == "verify-ledger"
+        assert summary["containment_refusals"][0]["op"] == "--apply-pseudo"
+        # Per-figure ledger citations: the run's physical line window.
+        lines = summary["ledger_lines"]
+        assert lines and all("first" in w and "last" in w for w in lines.values())
+        (halt,) = summary["halts"]
+        assert halt["item_id"] == "f2" and halt["dwell_seconds"] == 20.0
+        assert halt["citation"]["line"] == 9  # 9th physical ledger line
+
+    def test_run_summary_honest_miss(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (tmp_path / "_state").mkdir()
+        r = self._run_cli(tmp_path, ["--repo-root", str(repo),
+                                     "--run-id", "NO-SUCH-RUN"])
+        assert r.returncode == 0, r.stderr
+        summary = json.loads(r.stdout)
+        assert summary["found"] is False
+        assert "no telemetry" in summary["message"].lower()
+
+    def test_cli_without_run_id_prints_payload(self, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (tmp_path / "_state").mkdir()
+        r = self._run_cli(tmp_path, ["--repo-root", str(repo)])
+        assert r.returncode == 0, r.stderr
+        payload = json.loads(r.stdout)
+        assert payload["telemetry_available"] is False
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
