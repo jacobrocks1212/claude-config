@@ -712,6 +712,12 @@ def enqueue_adhoc_bug(
     if severity:
         cmd += ["--severity", severity]
     _enqueue_env = {**os.environ, "LAZY_ORCHESTRATOR": "1"}
+    # Flush our buffered stdout/stderr BEFORE the child inherits the fds: when
+    # stdout is a pipe (CI, pytest capture) the parent's buffered lines would
+    # otherwise land AFTER the child's direct writes, making merged-output
+    # ordering platform-dependent (the --test baseline pins one order).
+    sys.stdout.flush()
+    sys.stderr.flush()
     subprocess.run(cmd, check=True, env=_enqueue_env)
 
     # Seed the bug-doc shape: docs/bugs/<slug>/ADHOC_BRIEF.md (idempotent).
@@ -837,6 +843,10 @@ def materialize_wi(repo_root: Path, wi_id, type_pipeline_map: dict) -> dict:
         # failing this legitimate orchestrator op. This makes the call hermetic
         # against an ambient marker.
         _materialize_env = {**os.environ, "LAZY_ORCHESTRATOR": "1"}
+        # Flush before the child inherits the fds (see _enqueue_bug's twin flush:
+        # keeps parent/child merged-output ordering platform-deterministic).
+        sys.stdout.flush()
+        sys.stderr.flush()
         subprocess.run(
             [
                 sys.executable,

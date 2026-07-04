@@ -25,6 +25,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unittest
 import uuid
 from pathlib import Path
 
@@ -156,8 +157,13 @@ class _ModuleMissing(Exception):
     """Raised when lazy_core is not importable."""
 
 
-class _TestSkip(Exception):
-    """Raised to signal a legitimate SKIP (not a failure)."""
+class _TestSkip(unittest.SkipTest):
+    """Raised to signal a legitimate SKIP (not a failure).
+
+    Subclasses unittest.SkipTest so BOTH runners agree: the in-file runner
+    catches _TestSkip explicitly, and a pytest collection of this module
+    treats the raise as a skip (pytest honors unittest.SkipTest) instead of
+    an error — keeping the two invocation forms' verdicts consistent."""
 
 
 def _guard() -> None:
@@ -1044,11 +1050,16 @@ def test_pipe_tests_wsl():
     RED reason: WSL environment may lack the hooks or lazy_guard.py;
     SKIP reason: WSL unavailable on this machine.
     """
-    # Check if wsl is on PATH.
-    wsl_check = subprocess.run(
-        ["wsl", "bash", "-c", "echo OK"],
-        capture_output=True, text=True, timeout=15,
-    )
+    # Check if wsl is on PATH. On a non-Windows host the binary does not exist
+    # at all, which raises before the returncode check — that is the same
+    # "WSL absent" condition and must SKIP, not FAIL (this test's contract).
+    try:
+        wsl_check = subprocess.run(
+            ["wsl", "bash", "-c", "echo OK"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (FileNotFoundError, OSError):
+        raise _TestSkip("wsl not available on this machine (no wsl binary)")
     if wsl_check.returncode != 0 or "OK" not in wsl_check.stdout:
         raise _TestSkip("wsl not available or not functional on this machine")
 

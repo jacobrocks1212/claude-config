@@ -22117,6 +22117,14 @@ def test_ensure_runtime_production_restart_spawns_via_shell_on_windows_cold_boot
     the two prior false-green tests could not make because their fake always spawned.
     """
     _guard()
+    if os.name != "nt":
+        import pytest as _pytest
+        _pytest.skip(
+            "spawn-binding under test is the Windows (os.name == 'nt') shell "
+            "branch of the production restart(); on posix the production "
+            "closure legitimately uses the no-shell argv form the "
+            "_WindowsSpawnSemanticsSubprocess double rejects by design"
+        )
     live = _FakeBootPopen(exit_code=None)  # boot stays alive once it launches
     fake_sub = _WindowsSpawnSemanticsSubprocess(live)
     fake_time = _FakeTime()

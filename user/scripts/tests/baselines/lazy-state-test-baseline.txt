@@ -71,22 +71,7 @@
   [ready-plan-unchecked-in-scope-still-executes] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
   [finalize-plan-verification-rows-only-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)
   [stale-empty-scope-decomposition-executes] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
-  [stale-empty-scope-all-plan-wus-checked-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked){
-  "id": "adhoc-bug-1",
-  "spec_dir": "adhoc-bug-1",
-  "status": "queued"
-}
-{
-  "id": "adhoc-bug-1",
-  "spec_dir": "adhoc-bug-1",
-  "status": "duplicate"
-}
-{
-  "id": "broken-submit-button",
-  "spec_dir": "broken-submit-button",
-  "status": "queued"
-}
-
+  [stale-empty-scope-all-plan-wus-checked-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)
   [realign-hash-gate-detects-changed-upstream] cloud=False skip_nr=False real_device=True: Step 4.6: upstream realign needed
   [stale-upstream-auto-wired-at-probe] cloud=False skip_nr=False real_device=True: Step 2.9: stale-upstream
   PASS [step10-unexpected-writes-needs-input] _write_step10_needs_input writes well-formed NEEDS_INPUT.md
@@ -98,11 +83,26 @@
   [skip-ahead] default skip-onto-independent + unmarked/downstream NOT-skipped + --strict-research-halt legacy halt: ok
 {
   "error": "feature_id already queued: adhoc-test",
-  "path": "C:\\Users\\Jacob\\AppData\\Local\\Temp\\lazy-state-fixtures-xb_dxxg7\\enqueue-test\\docs\\features\\queue.json"
+  "path": "<TMP>/lazy-state-fixtures-XXXXXXXX/enqueue-test/docs/features/queue.json"
 }
   [enqueue] enqueue_adhoc prepend + brief + roadmap: ok
+{
+  "id": "adhoc-bug-1",
+  "spec_dir": "adhoc-bug-1",
+  "status": "queued"
+}
+{
+  "id": "adhoc-bug-1",
+  "spec_dir": "adhoc-bug-1",
+  "status": "duplicate"
+}
   [enqueue-bug] enqueue_adhoc_bug routes to docs/bugs + idempotent: ok
   PASS [materialize-feature] feature materialize
+{
+  "id": "broken-submit-button",
+  "spec_dir": "broken-submit-button",
+  "status": "queued"
+}
   PASS [materialize-bug] bug materialize
   PASS [materialize-unknown-type] unknown type → skip
   PASS [materialize-idempotent] idempotent: 1 record after 2 materialize calls
