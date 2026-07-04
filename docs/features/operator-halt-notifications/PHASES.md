@@ -203,20 +203,20 @@ key is parsed-but-inert in v1); doc rows in `user/scripts/CLAUDE.md` and the roo
 untracked-secrets list.
 
 **Deliverables:**
-- [ ] `user/scripts/CLAUDE.md`: an "Operator halt notifications" section — config file schema +
+- [x] `user/scripts/CLAUDE.md`: an "Operator halt notifications" section — config file schema +
   env overrides, the attention/clean-stop sets, ledger/breadcrumb residency, fail-OPEN semantics,
   the §1c.6 coexistence note, and the parity surface #7 row.
-- [ ] Root `CLAUDE.md`: `notify.json` added to the untracked-secrets list ("What's NOT Tracked").
-- [ ] `notify_on_clean_stop` behavior documented (opt-in flips the 5 named clean stops into the
+- [x] Root `CLAUDE.md`: `notify.json` added to the untracked-secrets list ("What's NOT Tracked").
+- [x] `notify_on_clean_stop` behavior documented (opt-in flips the 5 named clean stops into the
   notify set); `reping_hours` documented as accepted-but-inert (schema-ready for D4-B).
-- [ ] Lint/projection clean (no SKILL.md/component edits in this feature; `lint-skills.py` green).
+- [x] Lint/projection clean (no SKILL.md/component edits in this feature; `lint-skills.py` green).
 
 **Minimum Verifiable Behavior:** Docs reference the real keys/filenames the code reads
 (`notify.json`, `LAZY_NOTIFY_URL`, `LAZY_NOTIFY_DISABLE`, `notify-ledger.json`,
 `notify-error.json`); gate suite green.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Doc keys match code constants (grep-verified names in both CLAUDE.md files vs `lazy_core.py`). *(Evidence: gate suite + manual grep at commit time.)* <!-- verification-only -->
+- [x] Doc keys match code constants (grep-verified names in both CLAUDE.md files vs `lazy_core.py`). *(Evidence: gate suite + manual grep at commit time.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
 
