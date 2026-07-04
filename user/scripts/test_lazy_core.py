@@ -28291,5 +28291,159 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# queue-dependency-dag Phase 1 — deps schema, relocated parse_dep_block, cycle
+# detection, load-time validation (D1/D4/D6/D9).
+# ---------------------------------------------------------------------------
+
+_DEP_SPEC_FORM_A = (
+    "# Spec\n\n**Status:** Draft\n\n"
+    "**Depends on:**\n"
+    "- feat-up-one — hard — needs the upstream contract\n"
+    "- feat-up-two — soft — nice to have\n"
+    "- feat-up-three — composes — builds atop it\n"
+    "- Bad_Id — hard — invalid id is skipped\n"
+    "- feat-up-four — wrongkind — invalid kind is skipped\n"
+)
+
+
+def test_parse_dep_block_relocated_to_lazy_core():
+    """queue-dependency-dag D9: parse_dep_block lives in lazy_core (shared by
+    both state scripts) with the exact prior lazy-state.py behavior: Form A
+    parses valid lines into {feature_id, kind, reason}; malformed lines are
+    skipped; Form B '(none)' and a missing block return []."""
+    _guard()
+    deps = lazy_core.parse_dep_block(_DEP_SPEC_FORM_A)
+    assert [d["feature_id"] for d in deps] == [
+        "feat-up-one", "feat-up-two", "feat-up-three"
+    ], deps
+    assert [d["kind"] for d in deps] == ["hard", "soft", "composes"], deps
+    assert deps[0]["reason"] == "needs the upstream contract", deps
+    # Form B — (none).
+    assert lazy_core.parse_dep_block(
+        "# Spec\n\n**Depends on:** (none)\n"
+    ) == []
+    # Missing block entirely.
+    assert lazy_core.parse_dep_block("# Spec\n\n**Status:** Draft\n") == []
+
+
+def test_dep_ids_shape_tolerant_queue_read():
+    """dep_ids(queue_entry) reads the optional flat `deps` field (D1):
+    absent/None entry/non-list/non-string members all degrade to [] — the
+    shape-tolerance rail that keeps dep-less entries byte-identical."""
+    _guard()
+    assert lazy_core.dep_ids(None) == []
+    assert lazy_core.dep_ids({}) == []
+    assert lazy_core.dep_ids({"id": "x"}) == []
+    assert lazy_core.dep_ids({"deps": None}) == []
+    assert lazy_core.dep_ids({"deps": "not-a-list"}) == []
+    assert lazy_core.dep_ids({"deps": ["a", 3, "b", None]}) == ["a", "b"]
+    assert lazy_core.dep_ids({"deps": ["queue-dependency-dag"]}) == [
+        "queue-dependency-dag"
+    ]
+
+
+def test_detect_dep_cycle_clean_and_dangling_edges():
+    """detect_dep_cycle returns None for a clean DAG; edges pointing OUTSIDE
+    the queued id set (dangling deps) are NOT graph edges (they are the D4
+    walk-time BLOCKED surface, not a load-time cycle)."""
+    _guard()
+    entries = [
+        {"id": "a", "deps": ["b"]},
+        {"id": "b"},
+        {"id": "c", "deps": ["not-queued"]},
+    ]
+    assert lazy_core.detect_dep_cycle(entries) is None
+
+
+def test_detect_dep_cycle_two_cycle_self_loop_and_chain():
+    """detect_dep_cycle names the members of an A<->B cycle, a self-loop, and
+    a 3-chain cycle (Kahn's residue), sorted for determinism."""
+    _guard()
+    assert lazy_core.detect_dep_cycle([
+        {"id": "a", "deps": ["b"]},
+        {"id": "b", "deps": ["a"]},
+        {"id": "c"},
+    ]) == ["a", "b"]
+    assert lazy_core.detect_dep_cycle([
+        {"id": "a", "deps": ["a"]},
+    ]) == ["a"]
+    assert lazy_core.detect_dep_cycle([
+        {"id": "a", "deps": ["c"]},
+        {"id": "b", "deps": ["a"]},
+        {"id": "c", "deps": ["b"]},
+    ]) == ["a", "b", "c"]
+
+
+def _dep_die_exit_code(fn) -> tuple:
+    """Run fn expecting lazy_core._die's SystemExit(2); return (code, stdout)."""
+    import contextlib
+    import io as _io
+    buf = _io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            fn()
+    except SystemExit as exc:
+        return (exc.code, buf.getvalue())
+    raise AssertionError("expected SystemExit from _die, none raised")
+
+
+def test_validate_queue_deps_die_cases(tmp_path):
+    """validate_queue_deps _die()s (exit 2) on: non-list deps, a
+    regex-violating id, a reserved bug:/feature: prefix (D6, reserved for vN),
+    and a dependency cycle (D4, naming members). pytest-only (tmp_path)."""
+    _guard()
+    qp = tmp_path / "queue.json"
+
+    code, out = _dep_die_exit_code(lambda: lazy_core.validate_queue_deps(
+        [{"id": "a", "deps": "not-a-list"}], qp))
+    assert code == 2 and "deps" in out
+
+    code, out = _dep_die_exit_code(lambda: lazy_core.validate_queue_deps(
+        [{"id": "a", "deps": ["Bad_Id"]}], qp))
+    assert code == 2 and "Bad_Id" in out
+
+    code, out = _dep_die_exit_code(lambda: lazy_core.validate_queue_deps(
+        [{"id": "a", "deps": ["bug:some-bug"]}], qp))
+    assert code == 2 and "reserved" in out and "bug:some-bug" in out
+
+    code, out = _dep_die_exit_code(lambda: lazy_core.validate_queue_deps(
+        [{"id": "a", "deps": ["feature:x"]}], qp))
+    assert code == 2 and "reserved" in out
+
+    code, out = _dep_die_exit_code(lambda: lazy_core.validate_queue_deps(
+        [{"id": "a", "deps": ["b"]}, {"id": "b", "deps": ["a"]}], qp))
+    assert code == 2 and "cycle" in out.lower() and "'a'" in out and "'b'" in out
+
+
+def test_validate_queue_deps_clean_pass_is_silent_noop(tmp_path):
+    """A queue whose entries carry no deps — or valid acyclic deps — passes
+    validation with zero output and zero mutation (byte-identity rail).
+    pytest-only (tmp_path)."""
+    _guard()
+    qp = tmp_path / "queue.json"
+    # No deps anywhere (the universal legacy case).
+    assert lazy_core.validate_queue_deps(
+        [{"id": "a"}, {"id": "b"}], qp) is None
+    # Valid acyclic deps, incl. a dangling edge (walk-time surface, not load).
+    assert lazy_core.validate_queue_deps(
+        [{"id": "a", "deps": ["b"]}, {"id": "b"},
+         {"id": "c", "deps": ["not-queued"]}, "not-a-dict"], qp) is None
+
+
+_TESTS = _TESTS + [
+    # queue-dependency-dag Phase 1 — deps schema + loader validation. (The two
+    # tmp_path-fixture tests above are pytest-only, per the tmp_path precedent.)
+    ("test_parse_dep_block_relocated_to_lazy_core",
+     test_parse_dep_block_relocated_to_lazy_core),
+    ("test_dep_ids_shape_tolerant_queue_read",
+     test_dep_ids_shape_tolerant_queue_read),
+    ("test_detect_dep_cycle_clean_and_dangling_edges",
+     test_detect_dep_cycle_clean_and_dangling_edges),
+    ("test_detect_dep_cycle_two_cycle_self_loop_and_chain",
+     test_detect_dep_cycle_two_cycle_self_loop_and_chain),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

@@ -499,6 +499,13 @@ def load_queue(repo_root: Path) -> list[dict[str, Any]]:
         _die("queue.json 'queue' field must be an array", queue_path)
         return []  # pragma: no cover
 
+    # queue-dependency-dag Phase 1: validate the optional per-entry `deps`
+    # field (shape + id regex + reserved bug:/feature: prefixes + cycle
+    # detection via Kahn's) BEFORE any merge. A dep-less queue is a silent
+    # no-op (byte-identical); a broken declared graph _die()s exit 2 like the
+    # other queue-schema violations above.
+    lazy_core.validate_queue_deps(items, queue_path, queue_label="queue.json")
+
     # feature-queue-lacks-on-disk-autodiscovery: opt-in on-disk auto-discovery.
     # When docs/features/queue.json carries a top-level "autodiscover": true flag
     # (sibling of "queue"), merge on-disk open feature dirs NOT already queued —
@@ -1165,45 +1172,11 @@ def _stub_is_queue_flag_only(
     )
 
 
-def parse_dep_block(spec_text: str) -> list[dict[str, str]]:
-    """Parse **Depends on:** block per _components/dep-block-schema.md.
-
-    Returns a list of {feature_id, kind, reason}. Empty list for '(none)' or
-    malformed/missing block (caller decides how to handle).
-    """
-    lines = spec_text.splitlines()
-    deps: list[dict[str, str]] = []
-    i = 0
-    while i < len(lines):
-        if lines[i].rstrip() == "**Depends on:**" or re.match(r"^\*\*Depends on:\*\*\s*\(none\)\s*$", lines[i]):
-            if "(none)" in lines[i]:
-                return []
-            # Block-form: parse subsequent "- " lines until blank or heading
-            j = i + 1
-            while j < len(lines):
-                line = lines[j]
-                stripped = line.strip()
-                if not stripped:
-                    # Allow one blank line between header and list (form A in schema)
-                    if not deps:
-                        j += 1
-                        continue
-                    break
-                if stripped.startswith("# ") or stripped.startswith("## ") or stripped.startswith("---"):
-                    break
-                if not stripped.startswith("- "):
-                    break
-                # Split on " — " (space em-dash space)
-                payload = stripped[2:]
-                parts = payload.split(" — ")
-                if len(parts) >= 3:
-                    feature_id, kind, reason = parts[0].strip(), parts[1].strip(), " — ".join(parts[2:]).strip()
-                    if kind in ("hard", "soft", "composes") and re.match(r"^[a-z0-9][a-z0-9-]*$", feature_id):
-                        deps.append({"feature_id": feature_id, "kind": kind, "reason": reason})
-                j += 1
-            return deps
-        i += 1
-    return []
+# parse_dep_block RELOCATED to lazy_core.py (queue-dependency-dag D9) so both
+# state scripts share ONE dep-block parser. Re-exported here so the Step 4.6
+# realign check, the skip-ahead branch, and the smoke fixtures keep their
+# existing call sites unchanged.
+parse_dep_block = lazy_core.parse_dep_block
 
 
 def resolve_upstream_dir(repo_root: Path, current_spec_dir: Path, feature_id: str) -> Path | None:

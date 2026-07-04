@@ -388,6 +388,15 @@ def load_bug_queue(repo_root: Path) -> list[dict[str, Any]]:
             _die("bugs/queue.json 'queue' field must be an array", queue_path)
             return []  # pragma: no cover
 
+        # queue-dependency-dag Phase 1 (coupled-pair mirror of load_queue):
+        # validate the optional per-entry `deps` field (shape + id regex +
+        # reserved bug:/feature: prefixes + cycle detection) BEFORE the disk
+        # merge. Dep-less queues are byte-identical; a broken declared graph
+        # _die()s exit 2 like the other queue-schema violations above.
+        lazy_core.validate_queue_deps(
+            items, queue_path, queue_label="bugs/queue.json"
+        )
+
         for entry in items:
             if not isinstance(entry, dict):
                 continue

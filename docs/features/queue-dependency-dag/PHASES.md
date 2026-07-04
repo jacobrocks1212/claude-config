@@ -45,19 +45,19 @@ is `pytest` on `test_lazy_core.py`/`test_lazy_parity.py`, the `lazy-state.py --t
 `bug:`/`feature:` prefix → `_die` exit 2; byte-identity for dep-less queues.
 
 **Deliverables:**
-- [ ] `lazy_core.py`: `parse_dep_block` relocated verbatim from `lazy-state.py` (module-level
+- [x] `lazy_core.py`: `parse_dep_block` relocated verbatim from `lazy-state.py` (module-level
   `_DEP_BLOCK_ID_RE`); `lazy-state.py` re-exports it (`parse_dep_block = lazy_core.parse_dep_block`)
   so Step 4.6 / skip-ahead callers are unchanged.
-- [ ] `lazy_core.py`: `dep_ids(queue_entry)` — shape-tolerant read of the optional `deps` field
+- [x] `lazy_core.py`: `dep_ids(queue_entry)` — shape-tolerant read of the optional `deps` field
   (non-dict entry / absent / non-list → `[]`; non-string members dropped).
-- [ ] `lazy_core.py`: `detect_dep_cycle(entries)` — Kahn's algorithm over queued entries' dep
+- [x] `lazy_core.py`: `detect_dep_cycle(entries)` — Kahn's algorithm over queued entries' dep
   edges (edges only between queued ids); returns the sorted cycle-member id list or `None`.
-- [ ] `lazy_core.py`: `validate_queue_deps(items, queue_path, *, queue_label)` — `_die` exit 2 on:
+- [x] `lazy_core.py`: `validate_queue_deps(items, queue_path, *, queue_label)` — `_die` exit 2 on:
   `deps` not a list; a non-string / regex-violating id; a reserved `bug:`/`feature:` prefix
   (named as reserved-for-vN in the message, D6); a cycle (naming members, D4).
-- [ ] `load_queue` (`lazy-state.py`) and `load_bug_queue` (`bug-state.py`) call
+- [x] `load_queue` (`lazy-state.py`) and `load_bug_queue` (`bug-state.py`) call
   `validate_queue_deps` over the raw queue items before any merge.
-- [ ] pytest tests in `test_lazy_core.py` (registered in `_TESTS`): parse_dep_block relocation
+- [x] pytest tests in `test_lazy_core.py` (registered in `_TESTS`): parse_dep_block relocation
   behavior; dep_ids shapes; cycle detection (none / 2-cycle / self-loop / chain);
   validate_queue_deps die-cases + clean pass.
 
@@ -67,9 +67,9 @@ before with the field preserved; `"deps": "x"` (non-list), `"deps": ["Bad_Id"]`,
 without `deps` produces byte-identical `--test` output (baselines untouched this phase).
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Byte-identity without `deps`: both `--test` baselines green with zero diff this phase. *(Evidence: `SKIP_MCP_TEST.md` — baseline tests green, no Phase-1 re-pin.)*
+- [x] Byte-identity without `deps`: both `--test` baselines green with zero diff this phase. *(Evidence: `SKIP_MCP_TEST.md` — baseline tests green, no Phase-1 re-pin.)*
 <!-- verification-only -->
-- [ ] Cycle refusal: A↔B `deps` cycle → exit 2 naming both members. *(Evidence: `test_lazy_core.py` validate_queue_deps cases.)*
+- [x] Cycle refusal: A↔B `deps` cycle → exit 2 naming both members. *(Evidence: `test_lazy_core.py` validate_queue_deps cases.)*
 <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface

@@ -57,17 +57,17 @@ Full lane gate suite (all ten pytest files + lazy_coord + toolify) at the end.
 
 ## Phase 1 — Schema + loader + graph validation
 
-- [ ] WU-1.1 — TESTS FIRST (`test_lazy_core.py`, registered in `_TESTS`): `parse_dep_block`
+- [x] WU-1.1 — TESTS FIRST (`test_lazy_core.py`, registered in `_TESTS`): `parse_dep_block`
   importable from `lazy_core` with the exact current behavior (Form A/B, malformed-line skip);
   `dep_ids` shape cases; `detect_dep_cycle` (None on clean/dangling-edge, members on 2-cycle +
   self-loop + 3-chain); `validate_queue_deps` `_die` cases (non-list, bad id, reserved prefix,
   cycle) + clean pass returns None. Run → confirm failing for the right reason (helpers absent).
-- [ ] WU-1.2 — `lazy_core.py`: relocate `parse_dep_block` (+ `_DEP_ID_RE`, `_RESERVED_DEP_PREFIXES`),
+- [x] WU-1.2 — `lazy_core.py`: relocate `parse_dep_block` (+ `_DEP_ID_RE`, `_RESERVED_DEP_PREFIXES`),
   add `dep_ids` / `detect_dep_cycle` / `validate_queue_deps`. `lazy-state.py`: drop the local
   definition, re-export from `lazy_core`.
-- [ ] WU-1.3 — wire `validate_queue_deps` into `load_queue` (post-parse, pre-autodiscover-merge)
+- [x] WU-1.3 — wire `validate_queue_deps` into `load_queue` (post-parse, pre-autodiscover-merge)
   and `load_bug_queue` (post-parse, pre-disk-merge).
-- [ ] WU-1.4 — gates: pytest green; BOTH `--test` suites green with ZERO baseline diff.
+- [x] WU-1.4 — gates: pytest green; BOTH `--test` suites green with ZERO baseline diff.
 
 ## Phase 2 — Dep-gate enforcement
 

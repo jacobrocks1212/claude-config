@@ -328,6 +328,211 @@ def clear_queue_stub(queue_path: "Path", feature_id: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Queue dependency DAG (queue-dependency-dag) — the optional, machine-enforced
+# `deps: ["<id>", ...]` queue-entry field on BOTH pipelines.
+#
+# D1: the queue field is a FLAT HARD-ONLY id list — an enforcement projection
+#     of the SPEC's prose `**Depends on:**` block (which stays the SSOT for
+#     kinds/reasons; see _components/dep-block-schema.md "Queue projection").
+# D6: v1 is same-pipeline only; `bug:` / `feature:` prefixes are RESERVED for a
+#     future cross-pipeline vN and rejected loudly at every id-validation
+#     chokepoint (load / --sync-deps / --enqueue-adhoc --deps).
+# D4: a dependency CYCLE is corrupt script-owned machine state — `_die` exit 2
+#     at queue load (Kahn's algorithm), naming the members. Dangling /
+#     Superseded deps are a WALK-time fail-fast (BLOCKED.md
+#     `blocker_kind: unknown-dependency` on the dependent), not a load error.
+# ---------------------------------------------------------------------------
+
+# The dep-block id regex (shared with parse_dep_block below).
+_DEP_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+# D6 — reserved cross-pipeline prefixes (rejected in v1 so v1 bare ids stay
+# forward-compatible and unambiguous when vN adds cross-queue resolution).
+_RESERVED_DEP_PREFIXES: tuple[str, ...] = ("bug:", "feature:")
+
+
+def parse_dep_block(spec_text: str) -> list[dict[str, str]]:
+    """Parse **Depends on:** block per _components/dep-block-schema.md.
+
+    Returns a list of {feature_id, kind, reason}. Empty list for '(none)' or
+    malformed/missing block (caller decides how to handle).
+
+    Relocated VERBATIM from lazy-state.py (queue-dependency-dag D9) so both
+    state scripts share ONE parser; lazy-state.py re-exports it.
+    """
+    lines = spec_text.splitlines()
+    deps: list[dict[str, str]] = []
+    i = 0
+    while i < len(lines):
+        if lines[i].rstrip() == "**Depends on:**" or re.match(r"^\*\*Depends on:\*\*\s*\(none\)\s*$", lines[i]):
+            if "(none)" in lines[i]:
+                return []
+            # Block-form: parse subsequent "- " lines until blank or heading
+            j = i + 1
+            while j < len(lines):
+                line = lines[j]
+                stripped = line.strip()
+                if not stripped:
+                    # Allow one blank line between header and list (form A in schema)
+                    if not deps:
+                        j += 1
+                        continue
+                    break
+                if stripped.startswith("# ") or stripped.startswith("## ") or stripped.startswith("---"):
+                    break
+                if not stripped.startswith("- "):
+                    break
+                # Split on " — " (space em-dash space)
+                payload = stripped[2:]
+                parts = payload.split(" — ")
+                if len(parts) >= 3:
+                    feature_id, kind, reason = parts[0].strip(), parts[1].strip(), " — ".join(parts[2:]).strip()
+                    if kind in ("hard", "soft", "composes") and _DEP_ID_RE.match(feature_id):
+                        deps.append({"feature_id": feature_id, "kind": kind, "reason": reason})
+                j += 1
+            return deps
+        i += 1
+    return []
+
+
+def dep_ids(queue_entry: "dict | None") -> list[str]:
+    """Shape-tolerant read of a queue entry's optional ``deps`` field (D1).
+
+    Returns the entry's declared hard-dependency id list. EVERY degenerate
+    shape — ``None`` entry, non-dict, absent key, non-list value, non-string
+    members — degrades to ``[]`` (or drops the member), because absent-field
+    behavior MUST be byte-identical to today on every path. Load-time
+    validation (``validate_queue_deps``) is where malformed shapes are loud;
+    this read-side helper never raises.
+    """
+    if not isinstance(queue_entry, dict):
+        return []
+    raw = queue_entry.get("deps")
+    if not isinstance(raw, list):
+        return []
+    return [d for d in raw if isinstance(d, str)]
+
+
+def detect_dep_cycle(entries: "list") -> "list[str] | None":
+    """Detect a dependency cycle among queued entries' ``deps`` edges (D4).
+
+    Kahn's algorithm over the sub-graph whose nodes are the QUEUED ids and
+    whose edges are ``dep -> dependent`` for each declared dep that is itself
+    a queued id. Edges pointing outside the queued id set (dangling deps) are
+    NOT graph edges — they are the walk-time unknown-dependency surface, not a
+    load-time cycle. ≤ tens of nodes in practice; cost negligible.
+
+    Returns the SORTED list of cycle-member ids (the Kahn residue) when a
+    cycle exists, else ``None``.
+    """
+    nodes: set[str] = set()
+    for e in entries:
+        if isinstance(e, dict) and isinstance(e.get("id"), str):
+            nodes.add(e["id"])
+    # In-degree over in-set edges only.
+    indegree: dict[str, int] = {n: 0 for n in nodes}
+    dependents: dict[str, list[str]] = {n: [] for n in nodes}
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        eid = e.get("id")
+        if eid not in nodes:
+            continue
+        for d in dep_ids(e):
+            if d in nodes:
+                indegree[eid] += 1
+                dependents[d].append(eid)
+    ready = [n for n in sorted(nodes) if indegree[n] == 0]
+    processed = 0
+    while ready:
+        n = ready.pop()
+        processed += 1
+        for dependent in dependents[n]:
+            indegree[dependent] -= 1
+            if indegree[dependent] == 0:
+                ready.append(dependent)
+    if processed == len(nodes):
+        return None
+    return sorted(n for n in nodes if indegree[n] > 0)
+
+
+def validate_dep_id_list(
+    ids: "list", queue_path: "Path | None" = None, *, context: str = "deps"
+) -> None:
+    """Validate a list of dependency ids at a write/load chokepoint.
+
+    ``_die`` exit 2 (zero mutation) on: a non-string member; a reserved
+    ``bug:`` / ``feature:`` prefix (D6 — cross-pipeline deps are reserved for
+    vN; the message says so); an id violating the dep-block id regex. Shared
+    by ``validate_queue_deps``, ``sync_deps``, and the ``--enqueue-adhoc
+    --deps`` handlers so every chokepoint rejects identically.
+    """
+    for d in ids:
+        if not isinstance(d, str):
+            _die(
+                f"invalid {context} member (must be a string id): {d!r}",
+                queue_path,
+            )
+            return  # pragma: no cover
+        if d.startswith(_RESERVED_DEP_PREFIXES):
+            _die(
+                f"invalid {context} id {d!r}: the 'bug:'/'feature:' prefixes "
+                f"are reserved for future cross-pipeline deps (vN) and are "
+                f"rejected in v1 — declare same-pipeline deps as bare ids",
+                queue_path,
+            )
+            return  # pragma: no cover
+        if not _DEP_ID_RE.match(d):
+            _die(
+                f"invalid {context} id (must match ^[a-z0-9][a-z0-9-]*$): {d!r}",
+                queue_path,
+            )
+            return  # pragma: no cover
+
+
+def validate_queue_deps(
+    items: "list", queue_path: "Path", *, queue_label: str = "queue.json"
+) -> None:
+    """Load-time validation of the optional queue ``deps`` field (D1/D4/D6).
+
+    Called by BOTH loaders (``load_queue`` / ``load_bug_queue``) over the raw
+    queue items before any merge. ``_die`` exit 2 on: a ``deps`` value that is
+    not an array; an invalid/reserved id (``validate_dep_id_list``); a
+    dependency cycle among queued entries (naming the members). Entries
+    without ``deps`` are untouched — a dep-less queue validates with zero
+    output and zero cost beyond the key scan.
+    """
+    any_deps = False
+    for e in items:
+        if not isinstance(e, dict) or "deps" not in e:
+            continue
+        raw = e.get("deps")
+        if not isinstance(raw, list):
+            _die(
+                f"{queue_label} entry {e.get('id')!r}: 'deps' must be an "
+                f"array of ids, got {type(raw).__name__}",
+                queue_path,
+            )
+            return  # pragma: no cover
+        validate_dep_id_list(raw, queue_path, context=f"'deps' (entry {e.get('id')!r})")
+        if raw:
+            any_deps = True
+    if not any_deps:
+        return
+    cycle = detect_dep_cycle(items)
+    if cycle is not None:
+        _die(
+            f"{queue_label} dependency cycle detected among entries: "
+            f"{', '.join(repr(c) for c in cycle)} — the queue is script-owned "
+            f"state and a cycle can never unblock. Fix the SPEC dep-blocks and "
+            f"re-run --sync-deps, or remove an entry via --reorder-queue --to "
+            f"remove.",
+            queue_path,
+        )
+        return  # pragma: no cover
+
+
+# ---------------------------------------------------------------------------
 # Sentinel parsing (per _components/sentinel-frontmatter.md)
 # ---------------------------------------------------------------------------
 
