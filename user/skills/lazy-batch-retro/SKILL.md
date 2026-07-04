@@ -580,9 +580,38 @@ Body sections:
 1. **Per-feature headline grades** (table).
 2. **Cross-cutting findings** — issues observed across multiple features (e.g., "every /execute-plan cycle in this run violated R-EP-1 — systemic, not feature-specific").
 3. **Aggregate tool-call census** (sum across all features).
-4. **Links** to each per-feature artifact.
+4. **Ledger deltas** (see Step 6b.5 below — telemetry-ledger counts with per-figure citations, or the honest "no telemetry for this run" line).
+5. **Links** to each per-feature artifact.
 
 Create `docs/features/_index/` if it does not exist (`mkdir -p`).
+
+---
+
+## Step 6b.5: Ledger deltas (harness-telemetry-ledger — measured, not narrated)
+
+The state scripts record every run/cycle bracket, dispatch, halt, gate/containment refusal, pseudo-skill completion, and sentinel resolution into the append-only telemetry ledger (`lazy-telemetry.jsonl`, per-repo keyed state dir; cloud runs also commit `docs/telemetry/cloud/<run_id>.jsonl` segments). The retro MUST cite these deterministic counts instead of narrating effort. **Do NOT hand-count JSONL in prose** — shell the deterministic aggregator:
+
+```bash
+# 1. Resolve the audited run's run_id (= the run marker's started_at, an ISO
+#    timestamp). List the recorded runs and pick the one whose run_id matches
+#    the audited session's start time (from the jsonl's first timestamp):
+python3 -m pipeline_visualizer.trends --repo-root <repo>          # runs[] list
+# 2. Emit the per-run summary:
+python3 -m pipeline_visualizer.trends --repo-root <repo> --run-id <run_id>
+```
+
+(Run from `~/.claude/scripts/` so `pipeline_visualizer` resolves, or with cwd anywhere the package is importable.)
+
+Write a **`## Ledger deltas`** section into the Step 6b overview artifact (single-feature run with no overview → into the per-feature artifact) reporting, from the summary JSON:
+
+- forward + meta cycles, completions, cycles-per-completion;
+- gate refusals (each with `gate:failing_check`) and containment refusals (each with `op`);
+- halts with dwell (`halt` → matching `sentinel-resolved` delta; unresolved → "unresolved", never 0);
+- run duration.
+
+**Every figure cites its ledger lines** — the summary's `ledger_lines` window (e.g. `(ledger lines 118–160 in <source>)`) for aggregate counts, and each halt/refusal row's own `citation` (`source` + `line`) for per-row figures. This satisfies the CITATIONS-NOT-TRUST hard requirement with a deterministic source.
+
+**Honest miss:** `found: false` (older runs predate the ledger, or the run's state dir is gone) → write exactly `Ledger deltas: no telemetry for this run.` — never fabricate zeros, never skip the section silently.
 
 ---
 
@@ -698,6 +727,7 @@ If the project has a `.claude/skill-config/commit-policy.md`, follow it instead 
   - docs/features/<area>/<feat-B>/LAZY_BATCH_REVIEW_<date>.md
   - docs/features/_index/LAZY_BATCH_REVIEW_<date>_overview.md  (if multi-feature)
 **Commit:** {sha} — not pushed
+**Ledger deltas:** {e.g., "6 fwd + 3 meta cycles, 2 gate refusals, 1 halt (dwell 41m)" | "no telemetry for this run"}
 **Confidence caveats:** {e.g., "2 cycles unverifiable due to transcript reclaim"}
 ```
 

@@ -126,5 +126,6 @@
   PASS [cycle-marker-mutation-guard] subagent cycle-end/begin refused, orchestrator allowed
   PASS [cycle-begin-git-consistency-reconciliation] stale pre-boot index.lock reconciled at --cycle-begin
   PASS [reorder-queue] reorder tail/head/index/remove/missing/cycle-active/no-op
+  PASS [telemetry-ledger-chokepoints] bracket/dispatch/purity/refusal/cloud-flush emission
 
 All smoke tests passed.
