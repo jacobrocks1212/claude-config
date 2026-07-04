@@ -5272,6 +5272,55 @@ def main() -> int:
               "(single-slot-marker-ownership-race; the marker is shared)."),
     )
     parser.add_argument(
+        "--record-intervention", dest="record_intervention",
+        action="store_true",
+        help=("intervention-efficacy-tracking: write the intervention record "
+              "(hypothesis ledger capture) to docs/interventions/<id>.md. "
+              "Requires --id. Optional: --spec-dir (item dir carrying the "
+              "## Intervention Hypothesis block), --pipeline, "
+              "--shipped-commit/--shipped-date (D9 backfill — stamps "
+              "provenance: backfilled), and the hypothesis-override flags. "
+              "Orchestrator-only (refuse_if_cycle_active). Idempotent. "
+              "Coupled-pair mirror of lazy-state.py --record-intervention "
+              "(the capture helper is shared lazy_core)."),
+    )
+    parser.add_argument(
+        "--pipeline", dest="intervention_pipeline",
+        choices=["feature", "bug", "hardening"], default="bug",
+        help=("Pipeline stamped on a --record-intervention record (default: "
+              "bug on bug-state.py; hardening for /harden-harness rounds)."),
+    )
+    parser.add_argument(
+        "--shipped-commit", default=None,
+        help=("--record-intervention D9 backfill: override the recorded "
+              "shipped_commit (default: current HEAD). Stamps "
+              "provenance: backfilled."),
+    )
+    parser.add_argument(
+        "--shipped-date", default=None,
+        help=("--record-intervention D9 backfill: override the recorded "
+              "shipped_date (YYYY-MM-DD). Stamps provenance: backfilled."),
+    )
+    parser.add_argument(
+        "--target-signal", default=None,
+        help=("--record-intervention hypothesis override: "
+              "kpi:<system>.<kpi-id> or event:<ledger-event-type>."),
+    )
+    parser.add_argument(
+        "--expected-direction", default=None, choices=["decrease", "increase"],
+        help="--record-intervention hypothesis override.",
+    )
+    parser.add_argument(
+        "--signal-independence", default=None,
+        help=("--record-intervention hypothesis override: independent | "
+              "self-emitted | mixed (+ optional justification tail)."),
+    )
+    parser.add_argument(
+        "--review-after-runs", type=int, default=None,
+        help=("--record-intervention hypothesis override: post-ship run-count "
+              "window before each review (default: 20)."),
+    )
+    parser.add_argument(
         "--bug-id", default=None,
         help="Scope this run to a single bug by id. Absent → default behavior.",
     )
@@ -6098,6 +6147,45 @@ def main() -> int:
         sys.stdout.write(json.dumps(
             {"reasserted": reasserted, "prior_status": prior}, indent=2
         ) + "\n")
+        return 0
+
+    if args.record_intervention:
+        # intervention-efficacy-tracking Phase 1 (coupled-pair mirror of
+        # lazy-state.py --record-intervention; the capture helper is shared
+        # lazy_core.record_intervention). Manual / hardening-round / D9-backfill
+        # capture path — the completion-gate capture lives inside
+        # lazy_core.apply_pseudo. Orchestrator-only: refuse a cycle subagent
+        # FIRST (exit 3, zero side effects).
+        lazy_core.refuse_if_cycle_active("--record-intervention")
+        if not args.id:
+            _die("--record-intervention requires --id")
+        provenance = (
+            "backfilled" if (args.shipped_commit or args.shipped_date)
+            else "manual"
+        )
+        overrides = {
+            "target_signal": args.target_signal,
+            "expected_direction": args.expected_direction,
+            "signal_independence": args.signal_independence,
+            "review_after_runs": args.review_after_runs,
+        }
+        overrides = {k: v for k, v in overrides.items() if v is not None}
+        spec_path = None
+        if args.spec_dir:
+            spec_path = Path(args.spec_dir)
+            if not spec_path.is_absolute():
+                spec_path = Path(args.repo_root) / spec_path
+        result = lazy_core.record_intervention(
+            Path(args.repo_root),
+            args.id,
+            pipeline=args.intervention_pipeline,
+            spec_path=spec_path,
+            shipped_commit=args.shipped_commit,
+            shipped_date=args.shipped_date,
+            provenance=provenance,
+            hypothesis_overrides=overrides or None,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 
     if args.test:

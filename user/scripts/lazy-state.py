@@ -9175,6 +9175,53 @@ def main() -> int:
                               "(requires --session-id). Gated by "
                               "refuse_if_cycle_active (exit 3 for a cycle "
                               "subagent). single-slot-marker-ownership-race."))
+    parser.add_argument("--record-intervention", dest="record_intervention",
+                        action="store_true",
+                        help=("intervention-efficacy-tracking: write the "
+                              "intervention record (hypothesis ledger capture) "
+                              "for a shipped harness change to "
+                              "docs/interventions/<id>.md. Requires --id. "
+                              "Optional: --spec-dir (item dir carrying the "
+                              "## Intervention Hypothesis block), --pipeline, "
+                              "--shipped-commit/--shipped-date (D9 backfill — "
+                              "stamps provenance: backfilled), and the "
+                              "hypothesis-override flags (--target-signal, "
+                              "--expected-direction, --signal-independence, "
+                              "--review-after-runs) for the no-SPEC hardening "
+                              "path. Orchestrator-only (refuse_if_cycle_active; "
+                              "exit 3 for a cycle subagent). Idempotent — an "
+                              "existing record is never clobbered."))
+    parser.add_argument("--pipeline", dest="intervention_pipeline",
+                        choices=["feature", "bug", "hardening"],
+                        default="feature",
+                        help=("Pipeline stamped on a --record-intervention "
+                              "record (default: feature on lazy-state.py, bug "
+                              "on bug-state.py; hardening for /harden-harness "
+                              "rounds)."))
+    parser.add_argument("--shipped-commit", default=None,
+                        help=("--record-intervention D9 backfill: override the "
+                              "recorded shipped_commit (default: current HEAD). "
+                              "Stamps provenance: backfilled."))
+    parser.add_argument("--shipped-date", default=None,
+                        help=("--record-intervention D9 backfill: override the "
+                              "recorded shipped_date (YYYY-MM-DD). Stamps "
+                              "provenance: backfilled."))
+    parser.add_argument("--target-signal", default=None,
+                        help=("--record-intervention hypothesis override: "
+                              "kpi:<system>.<kpi-id> or event:<ledger-event-"
+                              "type> (for captures with no SPEC block, e.g. "
+                              "hardening rounds)."))
+    parser.add_argument("--expected-direction", default=None,
+                        choices=["decrease", "increase"],
+                        help="--record-intervention hypothesis override.")
+    parser.add_argument("--signal-independence", default=None,
+                        help=("--record-intervention hypothesis override: "
+                              "independent | self-emitted | mixed (+ optional "
+                              "justification tail)."))
+    parser.add_argument("--review-after-runs", type=int, default=None,
+                        help=("--record-intervention hypothesis override: "
+                              "post-ship run-count window before each review "
+                              "(default: 20)."))
     parser.add_argument("--tier", type=int, default=0,
                         help="Tier for the ad-hoc entry (default: 0).")
     parser.add_argument("--stub", action="store_true",
@@ -10364,6 +10411,48 @@ def main() -> int:
         sys.stdout.write(json.dumps(
             {"reasserted": reasserted, "prior_status": prior}, indent=2
         ) + "\n")
+        return 0
+
+    if args.record_intervention:
+        # intervention-efficacy-tracking Phase 1: the manual / hardening-round /
+        # D9-backfill capture path (the completion-gate capture lives inside
+        # lazy_core.apply_pseudo — this CLI covers captures with no completion
+        # event). Orchestrator-only: the record is committed pipeline state, so
+        # refuse a cycle subagent FIRST (exit 3, zero side effects), exactly
+        # like --enqueue-adhoc / --reorder-queue.
+        lazy_core.refuse_if_cycle_active("--record-intervention")
+        if not args.id:
+            _die("--record-intervention requires --id")
+        # D9 honesty convention: an explicit shipped_commit/shipped_date
+        # override means this capture reconstructs an ALREADY-shipped change →
+        # provenance: backfilled (mirrors backfilled-unverified receipts).
+        provenance = (
+            "backfilled" if (args.shipped_commit or args.shipped_date)
+            else "manual"
+        )
+        overrides = {
+            "target_signal": args.target_signal,
+            "expected_direction": args.expected_direction,
+            "signal_independence": args.signal_independence,
+            "review_after_runs": args.review_after_runs,
+        }
+        overrides = {k: v for k, v in overrides.items() if v is not None}
+        spec_path = None
+        if args.spec_dir:
+            spec_path = Path(args.spec_dir)
+            if not spec_path.is_absolute():
+                spec_path = Path(args.repo_root) / spec_path
+        result = lazy_core.record_intervention(
+            Path(args.repo_root),
+            args.id,
+            pipeline=args.intervention_pipeline,
+            spec_path=spec_path,
+            shipped_commit=args.shipped_commit,
+            shipped_date=args.shipped_date,
+            provenance=provenance,
+            hypothesis_overrides=overrides or None,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 
     if args.materialize_wi is not None:

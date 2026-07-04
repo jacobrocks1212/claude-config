@@ -28719,5 +28719,373 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# intervention-efficacy-tracking Phase 1 — the hypothesis-ledger capture half.
+#
+# `parse_intervention_hypothesis` (the `## Intervention Hypothesis` SPEC-block
+# reader), `record_intervention` (baseline freeze over the REAL telemetry
+# ledger + atomic frontmatter-sentinel record write to
+# docs/interventions/<id>.md), and the `apply_pseudo`
+# __mark_complete__/__mark_fixed__ capture wiring (repo-opt-in via a top-level
+# `"interventions": true` in docs/features/queue.json OR a present hypothesis
+# block; byte-identical result keys otherwise). Hermetic via LAZY_STATE_DIR
+# temp dirs; fixture ledgers are written by the REAL emitter under REAL run
+# markers (never hand-rolled envelopes).
+# ---------------------------------------------------------------------------
+
+
+def _seed_intervention_ledger(runs: int, events_per_run: int,
+                              event: str = "containment-refusal",
+                              base_now: float = 1_700_000_000.0) -> list[str]:
+    """Write `runs` fixture runs into the (LAZY_STATE_DIR) telemetry ledger via
+    the REAL write_run_marker + append_telemetry_event, `events_per_run`
+    matching events each. Returns the run_ids oldest-first. Leaves the LAST
+    run's marker in place (live marker — the capture path never needs it, but
+    a live ledger usually has one)."""
+    run_ids: list[str] = []
+    for i in range(runs):
+        now = base_now + i * 3600.0
+        marker = lazy_core.write_run_marker(
+            pipeline="feature", cloud=False, repo_root="/r",
+            max_cycles=5, now=now,
+        )
+        run_ids.append(marker["started_at"])
+        for j in range(events_per_run):
+            ok = lazy_core.append_telemetry_event(
+                event, item_id=f"item-{i}", data={"n": j}, now=now + 1.0 + j,
+            )
+            assert ok is True, f"fixture emit failed (run {i}, ev {j})"
+    return run_ids
+
+
+def test_intervention_symbols_present():
+    """All intervention-efficacy-tracking Phase 1 symbols exist on lazy_core,
+    with the D5-A default constants (20 / 20 / 5 / 20%)."""
+    _guard()
+    expected = [
+        "INTERVENTION_BASELINE_RUNS",
+        "INTERVENTION_REVIEW_AFTER_RUNS",
+        "INTERVENTION_MIN_SAMPLE",
+        "INTERVENTION_BAND_PCT",
+        "_INTERVENTIONS_DIRNAME",
+        "parse_intervention_hypothesis",
+        "read_intervention_telemetry",
+        "record_intervention",
+    ]
+    missing = [s for s in expected if not hasattr(lazy_core, s)]
+    assert not missing, f"missing intervention symbols: {missing}"
+    assert lazy_core.INTERVENTION_BASELINE_RUNS == 20
+    assert lazy_core.INTERVENTION_REVIEW_AFTER_RUNS == 20
+    assert lazy_core.INTERVENTION_MIN_SAMPLE == 5
+    assert lazy_core.INTERVENTION_BAND_PCT == 20
+    assert lazy_core._INTERVENTIONS_DIRNAME == "interventions"
+
+
+def test_parse_intervention_hypothesis_block_and_absent():
+    """The `## Intervention Hypothesis` reader: full block (incl. the wrapped
+    signal_independence justification from the SPEC's UX example), absent
+    heading → None, malformed int degrades (key omitted, never raises),
+    optional D5 overrides parsed."""
+    _guard()
+    text = (
+        "# Some Feature\n\n"
+        "## Intervention Hypothesis\n\n"
+        "- target_signal: event:containment-refusal\n"
+        "- expected_direction: decrease\n"
+        "- signal_independence: independent — trips are counted by the containment hook's deny\n"
+        "  ledger, which this change does not touch\n"
+        "- review_after_runs: 10\n\n"
+        "## Next Section\n\n- target_signal: event:not-this-one\n"
+    )
+    hyp = lazy_core.parse_intervention_hypothesis(text)
+    assert hyp is not None
+    assert hyp["target_signal"] == "event:containment-refusal"
+    assert hyp["expected_direction"] == "decrease"
+    # Enum head extracted; the wrapped justification is folded into the note.
+    assert hyp["signal_independence"] == "independent"
+    assert "does not touch" in hyp.get("signal_independence_note", "")
+    assert hyp["review_after_runs"] == 10
+
+    # Absent heading → None (the degrade-on-absence discriminator, D2-A).
+    assert lazy_core.parse_intervention_hypothesis("# No block here\n") is None
+
+    # Malformed int degrades: the key is omitted, nothing raises.
+    bad = (
+        "## Intervention Hypothesis\n\n"
+        "- target_signal: event:halt\n"
+        "- review_after_runs: soonish\n"
+    )
+    hyp2 = lazy_core.parse_intervention_hypothesis(bad)
+    assert hyp2 is not None and hyp2["target_signal"] == "event:halt"
+    assert "review_after_runs" not in hyp2
+
+    # Optional D5 overrides (baseline_runs / min_sample / band_pct) parse.
+    ov = (
+        "## Intervention Hypothesis\n\n"
+        "- target_signal: event:halt\n"
+        "- baseline_runs: 6\n"
+        "- min_sample: 2\n"
+        "- band_pct: 30\n"
+    )
+    hyp3 = lazy_core.parse_intervention_hypothesis(ov)
+    assert hyp3["baseline_runs"] == 6
+    assert hyp3["min_sample"] == 2
+    assert hyp3["band_pct"] == 30
+
+
+def test_record_intervention_writes_record_and_freezes_baseline():
+    """Capture freezes the baseline from the REAL ledger into a nested
+    `baseline:` map that round-trips through parse_sentinel (the SPEC's
+    formerly-deferred empirical check), and the record lands at
+    docs/interventions/<id>.md with the D3 field set."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td) / "state"
+        state.mkdir()
+        _set_state_dir(state)
+        try:
+            repo = Path(td) / "repo"
+            spec_dir = repo / "docs" / "features" / "feat-x"
+            spec_dir.mkdir(parents=True)
+            (spec_dir / "SPEC.md").write_text(
+                "# Feat X\n\n**Status:** In Progress\n\n"
+                "## Intervention Hypothesis\n\n"
+                "- target_signal: event:containment-refusal\n"
+                "- expected_direction: decrease\n"
+                "- signal_independence: independent — counted by the guard\n"
+                "- review_after_runs: 4\n",
+                encoding="utf-8",
+            )
+            run_ids = _seed_intervention_ledger(3, 2)
+            res = lazy_core.record_intervention(
+                repo, "feat-x", pipeline="feature", spec_path=spec_dir,
+                date="2026-07-04",
+            )
+            assert res["recorded"] is True, res
+            record_path = repo / "docs" / "interventions" / "feat-x.md"
+            assert record_path.exists()
+            meta = lazy_core.parse_sentinel(record_path)
+            assert meta["kind"] == "intervention"
+            assert meta["intervention_id"] == "feat-x"
+            assert meta["pipeline"] == "feature"
+            assert meta["provenance"] == "gated"
+            assert meta["target_signal"] == "event:containment-refusal"
+            assert meta["expected_direction"] == "decrease"
+            assert meta["signal_independence"] == "independent"
+            assert meta["review_after_runs"] == 4
+            assert meta["review_count"] == 0
+            assert meta["status"] == "open"
+            assert meta["escalated"] is False
+            assert meta["reconsideration_enqueued"] is None
+            # Nested baseline map — parse_sentinel (yaml.safe_load) handles it;
+            # run-id strings survive as STRINGS (never YAML timestamps).
+            base = meta["baseline"]
+            assert isinstance(base, dict), base
+            assert base["status"] == "frozen"
+            assert base["runs"] == 3
+            assert base["events"] == 6
+            assert base["value"] == 2.0
+            assert base["last_run_id"] == run_ids[-1]
+            assert isinstance(base["last_run_id"], str)
+            # shipped_date defaults to the capture date; commit_set is v1-shaped.
+            assert meta["shipped_date"] == "2026-07-04"
+            assert "commit_set" in meta
+        finally:
+            _clear_state_dir()
+
+
+def test_record_intervention_no_ledger_baseline_unavailable_and_idempotent():
+    """Missing ledger → baseline recorded `unavailable` honestly (never an
+    error); an existing record is NEVER clobbered (noop); an undeclared
+    hypothesis records target_signal: undeclared + a not-computable baseline."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td) / "state"
+        state.mkdir()
+        _set_state_dir(state)
+        try:
+            repo = Path(td) / "repo"
+            spec_dir = repo / "docs" / "features" / "feat-y"
+            spec_dir.mkdir(parents=True)
+            (spec_dir / "SPEC.md").write_text(
+                "# Feat Y\n\n## Intervention Hypothesis\n\n"
+                "- target_signal: event:halt\n"
+                "- expected_direction: decrease\n",
+                encoding="utf-8",
+            )
+            res = lazy_core.record_intervention(
+                repo, "feat-y", pipeline="feature", spec_path=spec_dir,
+            )
+            assert res["recorded"] is True
+            meta = lazy_core.parse_sentinel(
+                repo / "docs" / "interventions" / "feat-y.md")
+            assert meta["baseline"]["status"] == "unavailable"
+
+            # Idempotent: second capture is a noop, file byte-unchanged.
+            before = (repo / "docs" / "interventions" / "feat-y.md").read_bytes()
+            res2 = lazy_core.record_intervention(
+                repo, "feat-y", pipeline="feature", spec_path=spec_dir,
+            )
+            assert res2["noop"] is True and res2["recorded"] is False
+            after = (repo / "docs" / "interventions" / "feat-y.md").read_bytes()
+            assert before == after
+
+            # Undeclared: no hypothesis block anywhere → degrade, never block.
+            spec2 = repo / "docs" / "features" / "feat-z"
+            spec2.mkdir(parents=True)
+            (spec2 / "SPEC.md").write_text("# Feat Z\n", encoding="utf-8")
+            res3 = lazy_core.record_intervention(
+                repo, "feat-z", pipeline="feature", spec_path=spec2,
+            )
+            assert res3["recorded"] is True
+            meta3 = lazy_core.parse_sentinel(
+                repo / "docs" / "interventions" / "feat-z.md")
+            assert meta3["target_signal"] == "undeclared"
+            assert meta3["baseline"]["status"] == "not-computable"
+        finally:
+            _clear_state_dir()
+
+
+def test_apply_pseudo_capture_flag_on_and_byte_identical_off():
+    """The completion-gate wiring (D1-A): a flagged repo's __mark_complete__
+    writes the record AFTER the receipt and reports intervention_recorded;
+    an unflagged/no-block repo's result carries NO intervention keys and NO
+    record file (byte-identical elsewhere); a hypothesis block captures even
+    without the flag; a receipt-noop re-completion never re-captures."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td) / "state"
+        state.mkdir()
+        _set_state_dir(state)
+        try:
+            def _mk_repo(name: str, flag: bool, block: bool) -> "tuple[Path, Path]":
+                repo = Path(td) / name
+                spec_dir = repo / "docs" / "features" / "feat-a"
+                spec_dir.mkdir(parents=True)
+                spec_text = "# Feat A\n\n**Status:** In Progress\n"
+                if block:
+                    spec_text += (
+                        "\n## Intervention Hypothesis\n\n"
+                        "- target_signal: event:gate-refusal\n"
+                        "- expected_direction: decrease\n"
+                    )
+                (spec_dir / "SPEC.md").write_text(spec_text, encoding="utf-8")
+                # SKIP_MCP_TEST.md (KEPT by the completion cleanup, unlike
+                # VALIDATED.md) so the re-completion below reaches the
+                # receipt-noop path instead of the evidence-gate refusal.
+                (spec_dir / "SKIP_MCP_TEST.md").write_text(
+                    "---\nkind: skip-mcp-test\nfeature_id: feat-a\n---\n\n# S\n",
+                    encoding="utf-8",
+                )
+                qdata: dict = {"queue": [{"id": "feat-a", "name": "Feat A",
+                                          "spec_dir": "feat-a"}]}
+                if flag:
+                    qdata["interventions"] = True
+                qdir = repo / "docs" / "features"
+                (qdir / "queue.json").write_text(
+                    json.dumps(qdata, indent=2) + "\n", encoding="utf-8")
+                return repo, spec_dir
+
+            # Flag ON → capture fires, record written, keys present.
+            repo1, spec1 = _mk_repo("flag-on", flag=True, block=False)
+            res1 = lazy_core.apply_pseudo(
+                repo1, "__mark_complete__", spec1, date="2026-07-04")
+            assert res1["ok"] is True, res1
+            assert res1.get("intervention_recorded") is True, res1
+            rec1 = repo1 / "docs" / "interventions" / "feat-a.md"
+            assert rec1.exists()
+            meta1 = lazy_core.parse_sentinel(rec1)
+            assert meta1["target_signal"] == "undeclared"  # flag-on, no block
+            assert meta1["pipeline"] == "feature"
+            assert meta1["provenance"] == "gated"
+
+            # Receipt-noop re-completion: no re-capture, no intervention keys.
+            res1b = lazy_core.apply_pseudo(
+                repo1, "__mark_complete__", spec1, date="2026-07-04")
+            assert res1b["noop"] is True
+            assert "intervention_recorded" not in res1b
+
+            # Flag OFF + no block → byte-identical result keys, no record dir.
+            repo2, spec2 = _mk_repo("flag-off", flag=False, block=False)
+            res2 = lazy_core.apply_pseudo(
+                repo2, "__mark_complete__", spec2, date="2026-07-04")
+            assert res2["ok"] is True, res2
+            assert "intervention_recorded" not in res2
+            assert "intervention_record" not in res2
+            assert not (repo2 / "docs" / "interventions").exists()
+
+            # Hypothesis block WITHOUT the flag → capture still fires (D2-A).
+            repo3, spec3 = _mk_repo("block-only", flag=False, block=True)
+            res3 = lazy_core.apply_pseudo(
+                repo3, "__mark_complete__", spec3, date="2026-07-04")
+            assert res3["ok"] is True, res3
+            assert res3.get("intervention_recorded") is True, res3
+            meta3 = lazy_core.parse_sentinel(
+                repo3 / "docs" / "interventions" / "feat-a.md")
+            assert meta3["target_signal"] == "event:gate-refusal"
+        finally:
+            _clear_state_dir()
+
+
+def test_record_intervention_backfill_and_hardening_provenance():
+    """D9 backfill: explicit shipped_commit/shipped_date land verbatim with
+    provenance: backfilled. Phase-4 hardening path: pipeline: hardening +
+    hypothesis_overrides carry the round's targeted signal (no SPEC needed)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td) / "state"
+        state.mkdir()
+        _set_state_dir(state)
+        try:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            res = lazy_core.record_intervention(
+                repo, "old-halt-tweak", pipeline="feature",
+                shipped_commit="abc1234", shipped_date="2026-01-01",
+                provenance="backfilled",
+            )
+            assert res["recorded"] is True
+            meta = lazy_core.parse_sentinel(
+                repo / "docs" / "interventions" / "old-halt-tweak.md")
+            assert meta["provenance"] == "backfilled"
+            assert meta["shipped_commit"] == "abc1234"
+            assert meta["shipped_date"] == "2026-01-01"
+
+            res2 = lazy_core.record_intervention(
+                repo, "harden-2026-07-r3", pipeline="hardening",
+                provenance="manual",
+                hypothesis_overrides={
+                    "target_signal": "event:containment-refusal",
+                    "expected_direction": "decrease",
+                    "review_after_runs": 8,
+                },
+            )
+            assert res2["recorded"] is True
+            meta2 = lazy_core.parse_sentinel(
+                repo / "docs" / "interventions" / "harden-2026-07-r3.md")
+            assert meta2["pipeline"] == "hardening"
+            assert meta2["target_signal"] == "event:containment-refusal"
+            assert meta2["review_after_runs"] == 8
+        finally:
+            _clear_state_dir()
+
+
+# intervention-efficacy-tracking Phase 1 — hypothesis-ledger capture half.
+_TESTS = _TESTS + [
+    ("test_intervention_symbols_present",
+     test_intervention_symbols_present),
+    ("test_parse_intervention_hypothesis_block_and_absent",
+     test_parse_intervention_hypothesis_block_and_absent),
+    ("test_record_intervention_writes_record_and_freezes_baseline",
+     test_record_intervention_writes_record_and_freezes_baseline),
+    ("test_record_intervention_no_ledger_baseline_unavailable_and_idempotent",
+     test_record_intervention_no_ledger_baseline_unavailable_and_idempotent),
+    ("test_apply_pseudo_capture_flag_on_and_byte_identical_off",
+     test_apply_pseudo_capture_flag_on_and_byte_identical_off),
+    ("test_record_intervention_backfill_and_hardening_provenance",
+     test_record_intervention_backfill_and_hardening_provenance),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

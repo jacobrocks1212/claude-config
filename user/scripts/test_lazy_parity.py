@@ -626,7 +626,8 @@ class TestStateScriptParity:
 
     LOCKSTEP NOTE: these synthetic stubs must mirror
     audit_state_script_parity's _STATE_SCRIPTS four-surface list (binding +
-    --reorder-queue + --reassert-owner + the requires_host fail-fast pair) in
+    --reorder-queue + --reassert-owner + --record-intervention + the
+    requires_host fail-fast pair) in
     lockstep — any future coupled-pair surface added to the audit must add its
     token(s) to these stubs too, or the clean fixture goes red."""
 
@@ -648,22 +649,24 @@ class TestStateScriptParity:
         set_active_repo_root(args.repo_root) binding."""
         scripts = tmp_path / "user" / "scripts"
         scripts.mkdir(parents=True)
-        # lazy-state.py carries ALL FIVE surfaces.
+        # lazy-state.py carries ALL SIX surfaces.
         (scripts / "lazy-state.py").write_text(
             'def main():\n    lazy_core.set_active_repo_root(args.repo_root)\n'
             '    parser.add_argument("--reorder-queue")\n'
             '    parser.add_argument("--reassert-owner")\n'
+            '    parser.add_argument("--record-intervention")\n'
             '    lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
             '    state["cycle_prompt_ref"] = _emit_ref\n',
             encoding="utf-8",
         )
-        # bug-state.py carries surfaces 2+3+4+5 but is MISSING the binding
+        # bug-state.py carries every other surface but is MISSING the binding
         # (surface 1) → exactly one finding, naming the binding gap.
         (scripts / "bug-state.py").write_text(
             'def main():\n    pass  # no active-repo binding\n'
             '    parser.add_argument("--reorder-queue")\n'
             '    parser.add_argument("--reassert-owner")\n'
+            '    parser.add_argument("--record-intervention")\n'
             '    lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
             '    state["cycle_prompt_ref"] = _emit_ref\n',
@@ -682,22 +685,22 @@ class TestStateScriptParity:
         --reorder-queue subcommand (coupled-pair queue-mutation surface)."""
         scripts = tmp_path / "user" / "scripts"
         scripts.mkdir(parents=True)
-        # Both carry surfaces 1+3+4+5; only lazy-state.py carries --reorder-queue
-        # (surface 2).
+        # Both carry every surface except --reorder-queue on the bug side.
         (scripts / "lazy-state.py").write_text(
             'set_active_repo_root(args.repo_root)\n'
             'parser.add_argument("--reorder-queue")\n'
             'parser.add_argument("--reassert-owner")\n'
+            'parser.add_argument("--record-intervention")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
             'state["cycle_prompt_ref"] = _emit_ref\n',
             encoding="utf-8",
         )
-        # bug-state.py carries surfaces 1+3+4+5 but STILL omits --reorder-queue
-        # (surface 2) → exactly one finding, naming --reorder-queue.
+        # bug-state.py carries every other surface but STILL omits --reorder-queue → exactly one finding, naming --reorder-queue.
         (scripts / "bug-state.py").write_text(
             'set_active_repo_root(args.repo_root)  # no --reorder-queue\n'
             'parser.add_argument("--reassert-owner")\n'
+            'parser.add_argument("--record-intervention")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
             'state["cycle_prompt_ref"] = _emit_ref\n',
@@ -715,13 +718,14 @@ class TestStateScriptParity:
         prefixed form) AND the --reorder-queue subcommand."""
         scripts = tmp_path / "user" / "scripts"
         scripts.mkdir(parents=True)
-        # Both stubs carry ALL FIVE surfaces; the binding form differs (bare
+        # Both stubs carry ALL SIX surfaces; the binding form differs (bare
         # here, lazy_core.-prefixed in bug-state.py) to keep both regex
         # alternatives covered.
         (scripts / "lazy-state.py").write_text(
             'set_active_repo_root( args.repo_root )\n'
             'parser.add_argument("--reorder-queue")\n'
             'parser.add_argument("--reassert-owner")\n'
+            'parser.add_argument("--record-intervention")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
             'state["cycle_prompt_ref"] = _emit_ref\n',
@@ -731,6 +735,7 @@ class TestStateScriptParity:
             'lazy_core.set_active_repo_root(args.repo_root)\n'
             'parser.add_argument("--reorder-queue")\n'
             'parser.add_argument("--reassert-owner")\n'
+            'parser.add_argument("--record-intervention")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
             'state["cycle_prompt_ref"] = _emit_ref\n',

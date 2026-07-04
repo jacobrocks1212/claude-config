@@ -61,11 +61,11 @@ python3 lint-skills.py --skills-dir <worktree-root>/user/skills --repos-dir <wor
 
 ## Phase 1 — Record + capture
 
-- [ ] WU-1.1 — TESTS FIRST: `test_lazy_core.py` — `test_intervention_symbols_present`, `test_parse_intervention_hypothesis_block_and_absent`, `test_record_intervention_writes_record_and_freezes_baseline`, `test_record_intervention_no_ledger_baseline_unavailable_and_idempotent`, `test_apply_pseudo_capture_flag_on_and_byte_identical_off`, `test_record_intervention_backfill_and_hardening_provenance` (registered in `_TESTS`); run → fail for the right reason (missing symbols).
-- [ ] WU-1.2 — `lazy_core.py`: D5 constants block + `_INTERVENTIONS_DIRNAME`; `parse_intervention_hypothesis`; `read_intervention_telemetry`; `_render_intervention_record`; `record_intervention` (baseline freeze + atomic write + idempotent noop).
-- [ ] WU-1.3 — `apply_pseudo` capture wiring (`_interventions_capture_eligible` + fail-open call after the receipt write; result keys only-when-fired).
-- [ ] WU-1.4 — `--record-intervention` CLI on BOTH scripts (+ `--pipeline`/`--shipped-commit`/`--shipped-date`/`--target-signal`/`--expected-direction`/`--signal-independence`/`--review-after-runs`), guarded by `refuse_if_cycle_active`; `lazy_parity_audit.py` `_RECORD_INTERVENTION_RE` check.
-- [ ] WU-1.5 — Gate suite green (pytest suites + both `--test` baselines unchanged + parity audit exit 0). Commit Phase 1.
+- [x] WU-1.1 — TESTS FIRST: `test_lazy_core.py` — `test_intervention_symbols_present`, `test_parse_intervention_hypothesis_block_and_absent`, `test_record_intervention_writes_record_and_freezes_baseline`, `test_record_intervention_no_ledger_baseline_unavailable_and_idempotent`, `test_apply_pseudo_capture_flag_on_and_byte_identical_off`, `test_record_intervention_backfill_and_hardening_provenance` (registered in `_TESTS`); run → fail for the right reason (missing symbols).
+- [x] WU-1.2 — `lazy_core.py`: D5 constants block + `_INTERVENTIONS_DIRNAME`; `parse_intervention_hypothesis`; `read_intervention_telemetry`; `_render_intervention_record`; `record_intervention` (baseline freeze + atomic write + idempotent noop).
+- [x] WU-1.3 — `apply_pseudo` capture wiring (`_interventions_capture_eligible` + fail-open call after the receipt write; result keys only-when-fired).
+- [x] WU-1.4 — `--record-intervention` CLI on BOTH scripts (+ `--pipeline`/`--shipped-commit`/`--shipped-date`/`--target-signal`/`--expected-direction`/`--signal-independence`/`--review-after-runs`), guarded by `refuse_if_cycle_active`; `lazy_parity_audit.py` `_RECORD_INTERVENTION_RE` check.
+- [x] WU-1.5 — Gate suite green (pytest suites + both `--test` baselines unchanged + parity audit exit 0). Commit Phase 1.
 
 ## Phase 2 — Evaluator
 
