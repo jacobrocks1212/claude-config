@@ -89,7 +89,8 @@ items are safe to work concurrently" signal. Absent-field behavior is byte-ident
   exactly the set the state machine gates on. If a future consumer needs kinds mechanically, Form
   B is an additive migration (a list of strings upgrades to a list of objects behind one parse
   helper).
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** RESOLVED — A (flat hard-only `"deps": ["<id>"]`). Operator-approved 2026-07-04
+  — recommended option taken.
 
 ### D2. Enforcement point and dep-gate semantics in `compute_state()`
 
@@ -116,7 +117,8 @@ items are safe to work concurrently" signal. Absent-field behavior is byte-ident
   Entries without `deps` are untouched on every path (byte-identical, baseline-guarded).
 - **Resolution:** Auto-accepted A; predicate placement inside the walk loop is invisible
   implementation structure — the operator-visible behavior (held items, probe surface, terminals)
-  is decided in D1/D5.
+  is decided in D1/D5. Locked by operator 2026-07-04 (dep-gate `continue` before the skip-ahead
+  branch; transitivity emergent; runs regardless of `--strict-research-halt`).
 
 ### D3. Dep-completion predicate: reuse receipt-gated completion
 
@@ -136,7 +138,9 @@ items are safe to work concurrently" signal. Absent-field behavior is byte-ident
   work never happened); they route to the D5 fail-fast surface so the dependent gets operator
   attention instead of silently building on a dropped design.
 - **Resolution:** Auto-accepted A; an internal predicate choice with one observable rule (receipt
-  or held) that follows the existing completion-integrity contract.
+  or held) that follows the existing completion-integrity contract. Locked by operator 2026-07-04
+  (dep-completion = receipt-gated completion via `has_completion_receipt`; `Superseded` — and its
+  bug-side analog `Won't-fix` — is NOT complete).
 
 ### D4. Graph-error surface: cycles, dangling ids, Superseded upstreams, all-gated terminal
 
@@ -169,8 +173,10 @@ items are safe to work concurrently" signal. Absent-field behavior is byte-ident
   ids). The blast radius concern in B is real but small: the `deps` writer is script-owned
   (`--sync-deps`, D6), so cycles/danglings indicate a feeder bug or a hand-edit — both things the
   operator wants surfaced immediately.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (error surfaces are
-  operator-visible states).
+- **Resolution:** RESOLVED — A (cycle → `_die` exit 2 at load via Kahn's; dangling/Superseded dep
+  → `BLOCKED.md` `blocker_kind: unknown-dependency` on the dependent; all-gated → new clean
+  terminal `queue-exhausted-dependency-gated` in `SANCTIONED_STOP_TERMINAL`). Operator-approved
+  2026-07-04 — recommended option taken.
 
 ### D5. Feeder: who writes the queue `deps` field, and how drift is detected
 
@@ -200,8 +206,9 @@ items are safe to work concurrently" signal. Absent-field behavior is byte-ident
   (no-op when the sets match, like `reorder_queue`'s `noop: true`), and the drift diagnostic costs
   no new I/O. `--enqueue-adhoc` additionally accepts an optional `--deps a,b` so an ad-hoc item
   can declare deps at enqueue time without waiting for `/spec-phases`.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (workflow shape:
-  where in the pipeline the sync happens is operator-experienced).
+- **Resolution:** RESOLVED — A (`--sync-deps` CLI op on both scripts, wired at `/spec-phases` +
+  probe-time drift `_diag`; `--enqueue-adhoc` gains optional `--deps a,b`). Operator-approved
+  2026-07-04 — recommended option taken.
 
 ### D6. Cross-pipeline deps (feature ↔ bug): v1 or reserved for vN
 
@@ -225,7 +232,8 @@ items are safe to work concurrently" signal. Absent-field behavior is byte-ident
 - **Recommendation:** A. Same-pipeline covers the driving use case, and the reserved-prefix rule
   makes vN additive instead of a migration. The `unified-pipeline-orchestrator` merged work-list
   is the natural future home for cross-queue resolution if demand appears.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (v1 scope).
+- **Resolution:** RESOLVED — A (v1 same-pipeline only; `bug:`/`feature:` prefixes reserved and
+  rejected with a clear `_die`). Operator-approved 2026-07-04 — recommended option taken.
 
 ### D7. Skip-ahead integration: queue deps feed `skip_ahead_ready` key 1
 
@@ -242,7 +250,8 @@ items are safe to work concurrently" signal. Absent-field behavior is byte-ident
   the branch already performs. The skip-ahead audit line (`gated_heads=... candidate=... deps=...`)
   extends to show the merged set.
 - **Resolution:** Auto-accepted A; an internal predicate-input choice with no operator-visible
-  mode.
+  mode. Locked by operator 2026-07-04 (skip-ahead readiness = union of SPEC hard deps ∪ queue
+  deps).
 
 ### D8. `--reorder-queue` interaction: no reorder-time validation
 
@@ -258,7 +267,7 @@ items are safe to work concurrently" signal. Absent-field behavior is byte-ident
   constraint — the two compose instead of conflicting. One fixture pins it: reorder a dependent to
   head → next probe dispatches its dep, `dep_gated` names the head, nothing corrupts.
 - **Resolution:** Auto-accepted A; not a product call — observable behavior is fully determined by
-  D2's enforcement semantics.
+  D2's enforcement semantics. Locked by operator 2026-07-04 (no reorder-time validation).
 
 ### D9. Parity mirroring to `bug-state.py`
 
@@ -275,7 +284,9 @@ items are safe to work concurrently" signal. Absent-field behavior is byte-ident
   from `lazy-state.py` into `lazy_core.py` so both scripts share one parser (domain-agnostic
   helper placement).
 - **Resolution:** Auto-accepted; the mirroring rule is the repo's standing coupled-pair
-  convention, not a new product choice.
+  convention, not a new product choice. Locked by operator 2026-07-04 (parity mirror to
+  `bug-state.py`; `parse_dep_block` moves to `lazy_core`; the two documented divergences — no
+  bug-side skip-ahead, archive-aware bug dep resolution — preserved).
 
 ### D10. Probe surface: `dep_gated` key + per-item detail
 
@@ -288,7 +299,8 @@ items are safe to work concurrently" signal. Absent-field behavior is byte-ident
   render a "waiting on <dep>" state without re-inferring anything; wiring those renderers is a
   follow-up, not v1 scope.
 - **Resolution:** Auto-accepted; probe-key naming follows the established convention and the
-  orchestrator contract is unchanged (keys are additive).
+  orchestrator contract is unchanged (keys are additive). Locked by operator 2026-07-04
+  (`dep_gated` probe key + per-hold `_diag`).
 
 ## User Experience
 
@@ -334,7 +346,7 @@ python3 user/scripts/lazy-state.py --enqueue-adhoc ... --deps queue-dependency-d
 The run keeps moving — it works the dependency. When the dep completes (receipt written by
 `__mark_complete__`), the next probe dispatches the dependent with no special action.
 
-**Error states (D4, pending confirmation):** a cycle refuses every probe with exit 2 naming the
+**Error states (D4, operator-approved 2026-07-04):** a cycle refuses every probe with exit 2 naming the
 cycle members (fix via `--sync-deps` after correcting the SPEC blocks, or `--reorder-queue --to
 remove`); a dangling/Superseded dep writes `BLOCKED.md` (`blocker_kind: unknown-dependency`) on
 the dependent, entering the normal blocked-resolution flow; a fully dep-gated queue ends the run
@@ -422,16 +434,10 @@ Estimate: ~3 sessions (Phases 1–2 one, 3–4 one, 5 folds into the second or a
 
 ## Open Questions
 
-- **D1 — queue field shape:** flat hard-only `"deps": ["<id>"]` vs kind-annotated records.
-  Standing recommendation: flat hard-only; the SPEC block stays the SSOT for kinds/reasons.
-- **D4 — graph-error surface:** cycle → `_die` exit 2 at load; dangling/Superseded dep →
-  `BLOCKED.md` `blocker_kind: unknown-dependency` on the dependent; all-gated →
-  `queue-exhausted-dependency-gated` clean terminal. Standing recommendation: this fail-fast
-  bundle (option A), precedent-aligned with malformed-queue `_die` and `unknown-host-capability`.
-- **D5 — feeder + drift:** `--sync-deps` wired at `/spec-phases` + probe-time drift `_diag` (vs
-  mark-complete-time sync or manual-only). Standing recommendation: `/spec-phases` wiring.
-- **D6 — cross-pipeline deps:** v1 same-pipeline only with `bug:`/`feature:` prefixes reserved
-  (vs full cross-queue resolution now). Standing recommendation: defer to vN, reserve prefixes.
+None remaining — every open decision (D1, D4, D5, D6) was operator-approved 2026-07-04 at its
+recommended option, and the auto-accepted decisions (D2, D3, D7, D8, D9, D10) were locked at the
+same review. See each decision's **Resolution** line above.
+
 - **Deferred empirical checks (implementation-time, not decisions):** confirm relocating
   `parse_dep_block` to `lazy_core` keeps both pinned `--test` baselines green; count live SPEC
   dep-blocks across lazy-enabled repos to size the initial `--sync-deps` backfill (estimated —
