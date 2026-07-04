@@ -82,6 +82,7 @@ Each row the miner emits (markdown and JSON) carries:
 
 | Field | Type | Meaning |
 |-------|------|---------|
+| `candidate_id` | string | Stable content-hash identity: `sha256(signature)[:12]` (toolify-auto-promotion D2-A). Deterministic across mining passes (signatures are deterministic), copy-pasteable, derivable offline from any saved report. The promotion ledger (`toolify-promote.py` / `toolify-ledger.json`) keys on it. |
 | `signature` | string | Normalized sequence: `Tool(arg,keys) -> Tool(arg,keys) -> …` (values elided). |
 | `occurrences` | int | Total times this signature appeared across all runs. |
 | `run_count` | int | Number of DISTINCT session runs (files) it appeared in — the "repeated" predicate reads this. |

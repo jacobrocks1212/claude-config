@@ -44,14 +44,14 @@ schema and both render paths. Independently landable — useful in bare mining r
 promote exists.
 
 **Deliverables:**
-- [ ] `toolify-miner.py`: module-level `candidate_id(sig: str) -> str` helper (single derivation,
+- [x] `toolify-miner.py`: module-level `candidate_id(sig: str) -> str` helper (single derivation,
   nothing else re-hashes); `candidate_id` field on `Candidate`; populated in `mine()`; additive
   `candidate_id` column in `render_markdown()`; additive `candidate_id` key in `render_json()`.
-- [ ] `test_toolify_miner.py` new cases (registered by the `_TESTS` globals sweep): id stability
+- [x] `test_toolify_miner.py` new cases (registered by the `_TESTS` globals sweep): id stability
   across two mining passes over the same fixture corpus; id uniqueness across the fixture
   candidates; id present in markdown + JSON renders; id derivable offline from a saved report's
   signature; existing read-only dir-hash test still green (no expectations removed).
-- [ ] `toolify-bar.md` candidate-schema table: `candidate_id` row.
+- [x] `toolify-bar.md` candidate-schema table: `candidate_id` row.
 
 **Minimum Verifiable Behavior:** `mine()` over the fixture corpus twice yields identical
 `candidate_id` per signature; `render_json()` rows carry the id; `sha256(signature)[:12]`
@@ -59,7 +59,7 @@ recomputed offline matches the emitted id.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the
 implementation agent):*
-- [ ] Candidate ids stable + unique across passes on the fixture corpus. *(Evidence:
+- [x] Candidate ids stable + unique across passes on the fixture corpus. *(Evidence:
   `SKIP_MCP_TEST.md` — `test_toolify_miner.py` new cases.)* <!-- verification-only -->
 - [ ] Miner over the REAL workstation corpus still maps top above-bar rows to nameable dances,
   now with ids (bar doc's manual runtime verification). DEFERRED: no `~/.claude/projects` corpus

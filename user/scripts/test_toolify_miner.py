@@ -411,6 +411,60 @@ def test_cli_smoke_runs_and_writes_nothing(tmp_path=None):
         assert before == after, "CLI run mutated the logs dir"
 
 
+# ===========================================================================
+# toolify-auto-promotion Phase 1 — candidate_id (content-hash identity, D2-A)
+# ===========================================================================
+
+def test_candidate_id_stable_across_passes():
+    """Mining the same fixture corpus twice yields IDENTICAL candidate_id per
+    signature — the ledger key survives re-mining (D2-A)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        logs = _build_two_run_log_dir(Path(td))
+        first = {c.signature: c.candidate_id for c in toolify_miner.mine(logs)}
+        second = {c.signature: c.candidate_id for c in toolify_miner.mine(logs)}
+        assert first, "expected candidates"
+        assert first == second, "candidate_id must be stable across passes"
+
+
+def test_candidate_id_unique_and_derivable():
+    """candidate_id is unique per signature on the fixture corpus AND derivable
+    offline: sha256(signature)[:12] — so an operator can recompute it from any
+    saved report."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        logs = _build_two_run_log_dir(Path(td))
+        cands = toolify_miner.mine(logs)
+        ids = [c.candidate_id for c in cands]
+        assert len(ids) == len(set(ids)), "candidate_id must be unique per signature"
+        for c in cands:
+            expected = hashlib.sha256(c.signature.encode("utf-8")).hexdigest()[:12]
+            assert c.candidate_id == expected, (
+                f"candidate_id must be sha256(signature)[:12]; got {c.candidate_id!r}"
+            )
+            assert toolify_miner.candidate_id(c.signature) == expected
+
+
+def test_candidate_id_in_renders():
+    """candidate_id is emitted as an ADDITIVE markdown column and JSON key; no
+    existing schema field is removed or renamed."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        logs = _build_two_run_log_dir(Path(td))
+        cands = toolify_miner.mine(logs)
+        md = toolify_miner.render_markdown(cands)
+        assert "candidate_id" in md.splitlines()[0], "markdown header missing candidate_id"
+        assert cands[0].candidate_id in md, "markdown rows missing the id value"
+        rows = json.loads(toolify_miner.render_json(cands))
+        for row in rows:
+            assert "candidate_id" in row, "JSON row missing candidate_id"
+        # Additive: the full prior schema is still present.
+        for key in ("signature", "occurrences", "run_count",
+                    "est_tokens_per_occurrence", "score", "deterministic",
+                    "above_bar", "n_calls", "sample_tools"):
+            assert key in rows[0], f"prior schema field {key} must survive"
+
+
 # ---------------------------------------------------------------------------
 # Self-contained runner (mirrors test_lazy_core.py's pattern).
 # ---------------------------------------------------------------------------

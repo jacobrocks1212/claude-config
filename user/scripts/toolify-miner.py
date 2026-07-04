@@ -41,6 +41,7 @@ Defaults: --logs ~/.claude/projects ; --markdown (both emitted if neither flag).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -116,6 +117,21 @@ class Candidate:
     above_bar: bool
     n_calls: int = 0
     sample_tools: tuple = field(default_factory=tuple)
+    #: Stable content-hash identity (toolify-auto-promotion D2-A): the first 12
+    #: hex chars of SHA-256 of the signature string. Deterministic across mining
+    #: passes because ``signature()`` is deterministic; the promotion ledger
+    #: (`toolify-promote.py`) keys on it. Additive — no prior field changed.
+    candidate_id: str = ""
+
+
+def candidate_id(sig: str) -> str:
+    """The ONE canonical candidate-id derivation (toolify-auto-promotion D2-A).
+
+    ``sha256(signature)[:12]`` — copy-pasteable, stable across passes, and
+    derivable offline from any saved report. Both the miner's renderers and
+    ``toolify-promote.py`` call this; nothing re-implements the hash.
+    """
+    return hashlib.sha256(sig.encode("utf-8")).hexdigest()[:12]
 
 
 # ---------------------------------------------------------------------------
@@ -312,6 +328,7 @@ def mine(logs_dir, min_runs=None) -> list:
                 above_bar=above_bar,
                 n_calls=rec["n_calls"],
                 sample_tools=rec["sample_tools"],
+                candidate_id=candidate_id(sig),
             )
         )
 
@@ -331,13 +348,14 @@ def mine(logs_dir, min_runs=None) -> list:
 
 def render_markdown(candidates) -> str:
     lines = [
-        "| rank | above_bar | signature | occurrences | runs | est_tokens/occ | score | deterministic |",
-        "|------|-----------|-----------|-------------|------|----------------|-------|---------------|",
+        "| rank | candidate_id | above_bar | signature | occurrences | runs | est_tokens/occ | score | deterministic |",
+        "|------|--------------|-----------|-----------|-------------|------|----------------|-------|---------------|",
     ]
     for i, c in enumerate(candidates, 1):
         sig = c.signature.replace("|", "\\|")
+        cid = c.candidate_id or candidate_id(c.signature)
         lines.append(
-            f"| {i} | {'YES' if c.above_bar else 'no'} | `{sig}` | "
+            f"| {i} | `{cid}` | {'YES' if c.above_bar else 'no'} | `{sig}` | "
             f"{c.occurrences} | {c.run_count} | {c.est_tokens_per_occurrence} | "
             f"{c.score} | {c.deterministic} |"
         )
@@ -349,6 +367,7 @@ def render_json(candidates) -> str:
     for c in candidates:
         rows.append(
             {
+                "candidate_id": c.candidate_id or candidate_id(c.signature),
                 "signature": c.signature,
                 "occurrences": c.occurrences,
                 "run_count": c.run_count,

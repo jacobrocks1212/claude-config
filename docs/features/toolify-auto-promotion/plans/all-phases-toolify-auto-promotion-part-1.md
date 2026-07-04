@@ -58,12 +58,12 @@ python3 lint-skills.py --skills-dir <repo-root>/user/skills --repos-dir <repo-ro
 
 ## Phase 1 — Miner candidate identity
 
-- [ ] WU-1.1 — TEST-FIRST: add `test_candidate_id_stable_across_passes`,
+- [x] WU-1.1 — TEST-FIRST: add `test_candidate_id_stable_across_passes`,
   `test_candidate_id_unique_and_derivable`, `test_candidate_id_in_renders` to
   `test_toolify_miner.py`; run → RED (module lacks `candidate_id`).
-- [ ] WU-1.2 — Implement `candidate_id()` helper + `Candidate.candidate_id` field + `mine()`
+- [x] WU-1.2 — Implement `candidate_id()` helper + `Candidate.candidate_id` field + `mine()`
   population + both renderers (additive column/key); run miner tests → GREEN (19 prior + new).
-- [ ] WU-1.3 — `toolify-bar.md` schema-table row for `candidate_id`. Commit Phase 1.
+- [x] WU-1.3 — `toolify-bar.md` schema-table row for `candidate_id`. Commit Phase 1.
 
 ## Phase 2 — Enqueue path flags
 
