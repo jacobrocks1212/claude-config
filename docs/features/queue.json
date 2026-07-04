@@ -82,12 +82,6 @@
       "tier": 2
     },
     {
-      "id": "incident-auto-capture",
-      "name": "Incident Auto-Capture to Bug Stubs",
-      "spec_dir": "incident-auto-capture",
-      "tier": 2
-    },
-    {
       "id": "parallel-worktree-batch-execution",
       "name": "Sanctioned Parallel-Worktree Batch Execution",
       "spec_dir": "parallel-worktree-batch-execution",

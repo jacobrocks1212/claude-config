@@ -6451,6 +6451,13 @@ _DENY_LEDGER_FILENAME = "lazy-deny-ledger.jsonl"
 # --run-start.  Consume-once resume context across a sanctioned pause.
 _CHECKPOINT_FILENAME = "lazy-run-checkpoint.json"
 
+# incident-auto-capture Phase 1 (D2): hook-events filename (JSONL, append-only).
+# Countable history of hook deny/error events — the single overwritten
+# hook-error.json breadcrumb stays byte-identical (it remains the at-a-glance
+# "is a hook broken" file); this file is what makes recurrence observable for
+# incident-scan.py.
+_HOOK_EVENTS_FILENAME = "hook-events.jsonl"
+
 # Phase 7: max characters retained for the ledger's reason_head / prompt_head
 # summary fields (keeps the JSONL line bounded regardless of prompt size).
 _LEDGER_HEAD_CHARS: int = 200
@@ -12694,6 +12701,76 @@ def append_friction_ledger_entry(
         return True
     except Exception:  # noqa: BLE001
         # Fail-open: a ledger write must never propagate.
+        return False
+
+
+def append_hook_event(
+    kind: str,
+    hook: str,
+    signature: str,
+    detail: str,
+    repo_root: str | None = None,
+    now: float | None = None,
+) -> bool:
+    """Append one hook deny/error event to ``hook-events.jsonl`` (JSONL).
+
+    incident-auto-capture Phase 1 (D2): the shared, best-effort appender that
+    makes hook-level denies and fail-open errors COUNTABLE. The single
+    overwritten ``hook-error.json`` breadcrumb keeps being written byte-
+    identically by its existing writers; this append-only file is the countable
+    history the ``incident-scan.py`` collector clusters over.
+
+    Entry shape (one JSON object per line):
+        {"ts": <epoch float>, "kind": "error"|"deny", "hook": <str>,
+         "repo_root": <str — best-effort attribution, may be "">,
+         "signature": <≤200 chars — the hook's own deny-signature token /
+         classified op / takeover signature; "" for errors>,
+         "detail": <≤500 chars — human-readable specifics>}
+
+    Best-effort / fail-open — the SAME sacred contract as
+    ``append_deny_ledger_entry`` / ``append_friction_ledger_entry``: an append
+    failure can NEVER change a hook's deny/allow output. This function swallows
+    its own write errors and returns False rather than raising, and callers
+    additionally wrap it, so it is safe to call from any deny/error site.
+
+    The file lives beside the deny ledger in ``claude_state_dir()`` — the keyed
+    per-repo dir in production (repo resolvable via the active-repo binding),
+    the exact ``LAZY_STATE_DIR`` dir in hermetic tests, and the un-keyed base
+    dir when no repo is resolvable (matching the breadcrumbs' residency rules).
+
+    Args:
+        kind: "deny" or "error" (the collector's kind discriminator).
+        hook: the emitting hook's name (e.g. "lazy-cycle-containment").
+        signature: the hook's per-class cluster signature (D4); "" for errors.
+        detail: human-readable specifics (deny reason head / error message).
+        repo_root: best-effort repo attribution recorded on the entry; None → "".
+        now: epoch float for ts (injectable for hermetic tests).
+
+    Returns:
+        True if the line was appended; False on any write failure (fail-open).
+    """
+    if now is None:
+        now = time.time()
+    try:
+        entry = {
+            "ts": now,
+            "kind": kind,
+            "hook": hook,
+            "repo_root": repo_root or "",
+            "signature": (signature or "")[:_LEDGER_HEAD_CHARS],
+            # Detail gets a slightly larger cap than the ledger heads: raw deny
+            # reasons are the collector's capsule evidence, but the line must
+            # stay bounded.
+            "detail": (detail or "")[:500],
+        }
+        events_path = claude_state_dir() / _HOOK_EVENTS_FILENAME
+        # Plain append (not _atomic_write): append-only file whose reader is
+        # corrupt-line-tolerant — same rationale as the deny ledger.
+        with events_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        # Fail-open: an events write must never propagate.
         return False
 
 

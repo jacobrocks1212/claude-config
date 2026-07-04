@@ -5258,6 +5258,238 @@ def test_longbuild_guard_allows_find_referencing_npm_run_build():
         )
 
 
+# ===========================================================================
+# incident-auto-capture Phase 1 (D2) — hook-events.jsonl appender wiring.
+#
+# Every hook-level DENY (and every existing fail-open ERROR breadcrumb site)
+# additionally appends one {ts, kind, hook, repo_root, signature, detail} line
+# to hook-events.jsonl in the state dir, making recurrence countable for
+# incident-scan.py.  THE SACRED INVARIANT: the append is fail-open — the
+# deny/allow JSON output, exit code, and hook-error.json behavior are
+# BYTE-UNCHANGED whether the append succeeds or fails.  These tests pin both
+# halves: event-appended-on-deny/error, and unwritable-events-path changes
+# nothing.
+# ===========================================================================
+
+_NONCANON_HOOK_SH = _HOOKS_DIR / "block-noncanonical-blocker-write.sh"
+
+
+def _read_hook_events(state_dir: Path) -> list[dict]:
+    """Parse hook-events.jsonl from *state_dir* (empty list when absent)."""
+    p = state_dir / "hook-events.jsonl"
+    if not p.exists():
+        return []
+    out = []
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            out.append(json.loads(line))
+    return out
+
+
+def test_events_longbuild_deny_appends_event():
+    """Long-build deny → one kind:deny event (hook + takeover signature)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json("tauri build"), state_dir
+        )
+        assert _containment_decision(result) == "deny", result.stdout
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, (
+            f"exactly one hook-event line expected on a deny; got {events!r}"
+        )
+        e = events[0]
+        assert e["kind"] == "deny", e
+        assert e["hook"] == "long-build-ownership-guard", e
+        assert e["signature"] == _LONGBUILD_TAKEOVER_SIGNATURE, e
+        assert isinstance(e.get("ts"), (int, float)), e
+        assert "repo_root" in e and "detail" in e, e
+
+
+def test_events_longbuild_deny_byte_identical_and_fail_open_unwritable():
+    """The deny JSON is byte-identical whether the events append succeeds or
+    fails (hook-events.jsonl squatting as a DIRECTORY), and the failed append
+    is swallowed (exit 0, no event, no crash)."""
+    with tempfile.TemporaryDirectory() as td:
+        ok_dir = Path(td) / "ok"
+        ok_dir.mkdir()
+        r_ok = _run_longbuild_guard(_bash_preToolUse_json("npm run build"), ok_dir)
+        assert _containment_decision(r_ok) == "deny", r_ok.stdout
+        assert len(_read_hook_events(ok_dir)) == 1
+
+        bad_dir = Path(td) / "bad"
+        bad_dir.mkdir()
+        (bad_dir / "hook-events.jsonl").mkdir()  # unwritable events path
+        r_bad = _run_longbuild_guard(_bash_preToolUse_json("npm run build"), bad_dir)
+        assert r_bad.returncode == 0, (
+            f"append failure must be swallowed (exit 0); stderr={r_bad.stderr!r}"
+        )
+        assert r_bad.stdout == r_ok.stdout, (
+            "deny output must be BYTE-IDENTICAL whether the events append "
+            f"succeeds or fails; ok={r_ok.stdout!r} bad={r_bad.stdout!r}"
+        )
+        assert (bad_dir / "hook-events.jsonl").is_dir(), "squatting dir must survive"
+
+
+def test_events_longbuild_error_appends_error_event():
+    """Malformed payload → fail-open allow + hook-error.json breadcrumb
+    (unchanged) + one kind:error event beside it."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_bash(
+            _LONGBUILD_GUARD_SH, "{ not json", _base_env(state_dir)
+        )
+        assert result.returncode == 0
+        assert _containment_decision(result) != "deny"
+        assert (state_dir / "hook-error.json").exists(), (
+            "the existing breadcrumb write must be preserved byte-identically"
+        )
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, events
+        assert events[0]["kind"] == "error", events
+        assert events[0]["hook"] == "long-build-ownership-guard", events
+
+
+def test_events_noncanonical_deny_appends_event():
+    """Mis-named blocker Write deny → one kind:deny event
+    (signature: noncanonical-blocker; detail carries the basename)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        payload = _straybranch_payload(
+            "C:/repo/docs/bugs/x/BLOCKED_NOTES.md", "C:/repo"
+        )
+        result = _run_bash(_NONCANON_HOOK_SH, payload, _base_env(state_dir))
+        assert _containment_decision(result) == "deny", result.stdout
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, events
+        e = events[0]
+        assert e["kind"] == "deny", e
+        assert e["hook"] == "block-noncanonical-blocker-write", e
+        assert e["signature"] == "noncanonical-blocker", e
+        assert "BLOCKED_NOTES.md" in e["detail"], e
+
+
+def test_events_noncanonical_allow_appends_nothing():
+    """An allowed write (canonical BLOCKED.md) appends NO event — the appender
+    fires only at deny/error sites."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        payload = _straybranch_payload("C:/repo/docs/bugs/x/BLOCKED.md", "C:/repo")
+        result = _run_bash(_NONCANON_HOOK_SH, payload, _base_env(state_dir))
+        assert _containment_decision(result) != "deny", result.stdout
+        assert _read_hook_events(state_dir) == [], (
+            "no event may be appended on an allow"
+        )
+
+
+def test_events_straybranch_deny_appends_event():
+    """Stray-branch sentinel deny → one kind:deny event
+    (signature: stray-branch-sentinel)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_repo_on_branch(td, "audit/foo")
+        _write_marker_with_branch(state_dir, str(repo), "main")
+        payload = _straybranch_payload(str(repo / "NEEDS_INPUT.md"), str(repo))
+        result = _run_bash(_STRAYBRANCH_HOOK_SH, payload, _base_env(state_dir))
+        assert _containment_decision(result) == "deny", result.stdout
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, events
+        e = events[0]
+        assert e["kind"] == "deny", e
+        assert e["hook"] == "block-sentinel-write-on-stray-branch", e
+        assert e["signature"] == "stray-branch-sentinel", e
+        assert "NEEDS_INPUT.md" in e["detail"], e
+
+
+def test_events_containment_deny_appends_event():
+    """Containment recursive-Agent deny (agent_id trip) → one kind:deny event
+    (signature: recursive-agent-dispatch)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_containment(
+            _agent_preToolUse_json(agent_id=_SUBAGENT_AGENT_ID), state_dir
+        )
+        assert _containment_decision(result) == "deny", result.stdout
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, events
+        e = events[0]
+        assert e["kind"] == "deny", e
+        assert e["hook"] == "lazy-cycle-containment", e
+        assert e["signature"] == "recursive-agent-dispatch", e
+
+
+def test_events_bqe_deny_appends_event():
+    """Build-queue-enforce deny → one kind:deny event (signature = the
+    classified op, e.g. dotnet-build)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("dotnet build ./Cognito.sln", str(repo)),
+            _base_env(state_dir),
+        )
+        assert _containment_decision(result) == "deny", result.stdout
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, events
+        e = events[0]
+        assert e["kind"] == "deny", e
+        assert e["hook"] == "build-queue-enforce", e
+        assert e["signature"] == "dotnet-build", e
+
+
+def test_events_guard_breadcrumb_appends_error_event():
+    """lazy_guard.py internal error (corrupt registry) → breadcrumb unchanged
+    + one kind:error event (hook: lazy-dispatch-guard). Guard DENIES stay
+    events-free (they already ledger — SPEC D2 implementation note)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        _write_marker_in_dir(state_dir)
+        (state_dir / "lazy-prompt-registry.json").write_bytes(
+            b"\xff\xfe CORRUPT \x00 NOT JSON"
+        )
+        result = _run_guard_py(_e1_preToolUse_json("some dispatch prompt"), env)
+        assert result.returncode == 0
+        assert (state_dir / "hook-error.json").exists()
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, events
+        assert events[0]["kind"] == "error", events
+        assert events[0]["hook"] == "lazy-dispatch-guard", events
+
+
+def test_events_guard_deny_appends_no_event():
+    """A guard DENY appends to the deny LEDGER only — no hook-events line
+    (double-count guard; SPEC D2 implementation note)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        _write_marker_in_dir(state_dir)
+        result = _run_guard_py(
+            _e1_preToolUse_json("an unregistered hand-composed prompt"), env
+        )
+        payload = json.loads(result.stdout.strip())
+        assert payload["hookSpecificOutput"]["permissionDecision"] == "deny"
+        assert _read_hook_events(state_dir) == [], (
+            "guard denies must NOT append hook-events (already deny-ledgered)"
+        )
+
+
 _TESTS = [
     ("test_guard_files_exist",                    test_guard_files_exist),
     ("test_guard_fast_path_no_marker",            test_guard_fast_path_no_marker),
@@ -5517,6 +5749,30 @@ _TESTS = [
      test_longbuild_guard_allows_grep_referencing_tauri_build),
     ("test_longbuild_guard_allows_find_referencing_npm_run_build",
      test_longbuild_guard_allows_find_referencing_npm_run_build),
+    # incident-auto-capture Phase 1 (D2) — hook-events.jsonl appender: every
+    # hook-level deny/error site appends one countable event line; the append
+    # is fail-open (deny/allow output byte-unchanged either way); guard denies
+    # stay events-free (already deny-ledgered).
+    ("test_events_longbuild_deny_appends_event",
+     test_events_longbuild_deny_appends_event),
+    ("test_events_longbuild_deny_byte_identical_and_fail_open_unwritable",
+     test_events_longbuild_deny_byte_identical_and_fail_open_unwritable),
+    ("test_events_longbuild_error_appends_error_event",
+     test_events_longbuild_error_appends_error_event),
+    ("test_events_noncanonical_deny_appends_event",
+     test_events_noncanonical_deny_appends_event),
+    ("test_events_noncanonical_allow_appends_nothing",
+     test_events_noncanonical_allow_appends_nothing),
+    ("test_events_straybranch_deny_appends_event",
+     test_events_straybranch_deny_appends_event),
+    ("test_events_containment_deny_appends_event",
+     test_events_containment_deny_appends_event),
+    ("test_events_bqe_deny_appends_event",
+     test_events_bqe_deny_appends_event),
+    ("test_events_guard_breadcrumb_appends_error_event",
+     test_events_guard_breadcrumb_appends_error_event),
+    ("test_events_guard_deny_appends_no_event",
+     test_events_guard_deny_appends_no_event),
 ]
 
 

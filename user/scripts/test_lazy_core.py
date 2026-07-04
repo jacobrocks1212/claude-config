@@ -28291,5 +28291,78 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# incident-auto-capture Phase 1 (D2) — append_hook_event: the shared fail-open
+# hook-events.jsonl appender (Python form). Contract mirror of
+# append_friction_ledger_entry: swallow-everything, never raise, never change
+# the caller's behavior.
+# ---------------------------------------------------------------------------
+
+def test_append_hook_event_shape_and_fail_open():
+    """incident-auto-capture WU-1.1: append_hook_event appends ONE parseable
+    JSONL line {ts, kind, hook, repo_root, signature, detail} to
+    hook-events.jsonl in the state dir; detail is truncated to the ledger head
+    cap; and it FAILS OPEN (returns False, never raises) when the events path
+    is unwritable (a directory squatting on the filename)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            ok = lazy_core.append_hook_event(
+                "deny", "long-build-ownership-guard",
+                "LONG-BUILD-OWNERSHIP-TAKEOVER",
+                "cargo build --release redirected",
+                repo_root="/repo/a",
+                now=123.0,
+            )
+            assert ok is True
+            events_path = Path(td) / "hook-events.jsonl"
+            assert events_path.exists(), "hook-events.jsonl not created"
+            lines = events_path.read_text(encoding="utf-8").splitlines()
+            assert len(lines) == 1, lines
+            e = json.loads(lines[0])
+            assert e["ts"] == 123.0, e
+            assert e["kind"] == "deny", e
+            assert e["hook"] == "long-build-ownership-guard", e
+            assert e["repo_root"] == "/repo/a", e
+            assert e["signature"] == "LONG-BUILD-OWNERSHIP-TAKEOVER", e
+            assert "redirected" in e["detail"], e
+
+            # Second append → append-only (2 lines, first untouched).
+            assert lazy_core.append_hook_event(
+                "error", "lazy-dispatch-guard", "", "boom", now=124.0,
+            ) is True
+            lines = events_path.read_text(encoding="utf-8").splitlines()
+            assert len(lines) == 2, lines
+            assert json.loads(lines[1])["kind"] == "error"
+
+            # Truncation: an over-long detail is capped (never a multi-KB line).
+            lazy_core.append_hook_event("deny", "h", "s", "x" * 5000, now=125.0)
+            last = json.loads(
+                events_path.read_text(encoding="utf-8").splitlines()[-1]
+            )
+            assert len(last["detail"]) <= 500, len(last["detail"])
+        finally:
+            _clear_state_dir()
+
+    # Fail-open: events filename occupied by a DIRECTORY → open() fails →
+    # returns False, raises nothing, caller unaffected.
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            (Path(td) / "hook-events.jsonl").mkdir()
+            ok = lazy_core.append_hook_event("deny", "h", "s", "d")
+            assert ok is False
+        finally:
+            _clear_state_dir()
+
+
+# incident-auto-capture Phase 1 (D2) — hook-events appender (Python form).
+_TESTS = _TESTS + [
+    ("test_append_hook_event_shape_and_fail_open",
+     test_append_hook_event_shape_and_fail_open),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

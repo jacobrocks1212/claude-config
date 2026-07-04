@@ -63,7 +63,7 @@ the historical / manually-authored spec archive (not under pipeline management).
 - Build-Queue ETA + Priority Lanes (`build-queue-eta-priority-lanes`) — predict per-op ETAs from historical `results/<seq>.json` durations and add a starvation-safe fast lane for small ops.
 ~~- Auto-Promotion Pipeline for Toolify Candidates (`toolify-auto-promotion`) — auto-draft pre-Gemini stubs (miner evidence attached) for above-bar `toolify-miner.py` candidates; track acceptance rate to tune the bar; operator baseline-lock gate preserved.~~  ✅ COMPLETE
 ~~- Skill Usage Miner + Dead-Weight Audit (`skill-usage-miner`) — mine session logs for per-skill invocation frequency; flag never-invoked skills for `archived/` and high-frequency prose skills for toolification; sweep stray non-skill files (e.g. `sh.exe.stackdump`).~~  ✅ COMPLETE
-- Incident Auto-Capture → Bug Stubs (`incident-auto-capture`) — cluster hook `hook-error.json` breadcrumbs + repeated deny signatures and auto-enqueue `--type bug` stubs, closing the observe→harden loop between retros.
+~~- Incident Auto-Capture → Bug Stubs (`incident-auto-capture`) — cluster hook `hook-error.json` breadcrumbs + repeated deny signatures and auto-enqueue `--type bug` stubs, closing the observe→harden loop between retros.~~  ✅ COMPLETE
 ~~- Cross-Platform Setup (`cross-platform-setup`) — stdlib-Python `setup.py bootstrap|check|repair` over a portable manifest so Linux/cloud containers can materialize the symlink layout; ends the recurring windows-portability rediscovery.~~  ✅ COMPLETE
 
 ## Tier 3 — proposed (repo-exploration stubs 2026-07-04, high-ambition)

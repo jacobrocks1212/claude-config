@@ -7,7 +7,7 @@
 > existing `--enqueue-adhoc --type bug` path closes the observe→harden loop without waiting for
 > `/lazy-batch-retro`. The collector proposes evidence; `/spec-bug` still owns root cause.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research
@@ -123,11 +123,17 @@ a deterministic front end; noise control is explicit policy, not vibes).
   string, `denied_sha12`, blocker kind) — no new inference.
 - **Resolution:** Auto-accepted A; invisible plumbing with the fail-open contract preserved, and
   the stub explicitly requests the standardization + migration note this delivers.
+  *Implementation note (2026-07-04, D8-consistent conservative choice):* `lazy_guard.py`'s DENY
+  sites already persist durably to the deny ledger (signal class `deny`); wiring the events
+  appender into those same deny sites would double-count one incident across two signal classes
+  under two distinct cluster keys (D4), which D5's key-equality dedup cannot fold. So the
+  appender is wired at `lazy_guard.py`'s fail-open ERROR site (`_write_breadcrumb`) only, while
+  the five bash hooks (whose denies were previously persisted nowhere) get it at BOTH their deny
+  and error sites.
 
 ### D3. Signal inventory + per-signal recurrence bars (v1)
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04)`
 - **Question:** Which signals can create a bug stub in v1, and how many occurrences within what
   window clear the bar? This decides what shows up in the operator's bug queue — the core
   noise-control policy (one-off fail-OPEN ≠ incident).
@@ -147,8 +153,11 @@ a deterministic front end; noise control is explicit policy, not vibes).
   of the script (numbers, not judgment) so tuning is a one-line diff. `acked` deny entries still
   count toward recurrence: an acked deny means a hardening round was *routed*, and recurrence
   after that is precisely the "hardening didn't stick" incident worth a bug.
-- **Resolution:** OPEN — recommendation is the table + ≤2/scan cap; awaiting operator
-  confirmation.
+- **Resolution:** RESOLVED (operator-approved 2026-07-04 — recommended option taken): the four
+  v1 signal classes with the tabled per-signal thresholds/windows as **defaults in one config
+  block at the top of `incident-scan.py`** (numbers, not judgment — tuning is a one-line diff,
+  Phase 4), plus the **≤2-per-scan enqueue cap** (highest-recurrence first). `acked` deny
+  entries count toward recurrence per the recommendation.
 
 ### D4. Clustering key + slug derivation
 
@@ -167,8 +176,8 @@ a deterministic front end; noise control is explicit policy, not vibes).
 
 ### D5. Dedup mechanics + regression-reopen policy
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)` — the *policy* half; the mechanics are mechanical.
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04)` — the
+  *policy* half; the mechanics are mechanical.
 - **Question:** Mechanics (auto-accepted): every enqueued stub's `INCIDENT.md` carries
   `incident_key: <cluster key>` in frontmatter; the collector dedups by scanning
   `docs/bugs/*/INCIDENT.md` AND `docs/bugs/_archive/*/INCIDENT.md` (plus `queue.json` ids) for
@@ -185,12 +194,13 @@ a deterministic front end; noise control is explicit policy, not vibes).
     exhaustion logic (`_archive/` is skipped by design).
 - **Recommendation:** A. B hides exactly the signal ("the fix didn't hold") this feature exists to
   surface; C breaks the archive contract.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** RESOLVED (operator-approved 2026-07-04 — recommended option A taken): a
+  post-archive recurrence produces a NEW stub carrying `recurrence_of: <archived-slug>`; the
+  archive is never suppressed against and never mutated.
 
 ### D6. Run cadence
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the pipeline's
-  needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04)`
 - **Question:** When does the collector run?
 - **Options:**
   - **A — end-of-run orchestrator step + on-demand skill:** the `/lazy-batch` family runs
@@ -205,7 +215,10 @@ a deterministic front end; noise control is explicit policy, not vibes).
     (evidence evaporating between retros) this feature fixes.
 - **Recommendation:** A for v1; if `scheduled-autonomous-runs` ships, a scheduled scan is a
   one-line addition to its run template rather than machinery here.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** RESOLVED (operator-approved 2026-07-04 — recommended option A taken):
+  end-of-run orchestrator step (the `/lazy-batch` family runs `incident-scan.py` once per run at
+  the terminal/halt flush, before `--run-end`) + on-demand `/incident-scan` skill. Scheduling is
+  deferred to `scheduled-autonomous-runs`.
 
 ### D7. Enqueue behavior — stub-status, evidence capsule, announce line
 
@@ -356,15 +369,15 @@ Estimate: ~3 sessions (Phases 1-2 one; 3 one; 4 one).
 
 ## Open Questions
 
-- **D3 — signal inventory + recurrence bars:** confirm the four v1 signal classes, the per-signal
-  thresholds/windows, and the ≤2-per-scan enqueue cap. Standing recommendation: the D3 table as
-  defaults, thresholds as top-of-script config.
-- **D5 — regression-reopen policy:** when a cluster recurs after its bug was fixed and archived —
-  new stub with `recurrence_of:` vs suppress vs re-open the archive. Standing recommendation: new
-  stub carrying `recurrence_of:` (never suppress a failed fix; never mutate the archive).
-- **D6 — cadence:** end-of-run orchestrator step + on-demand `/incident-scan` skill vs scheduled
-  vs on-demand only. Standing recommendation: end-of-run + on-demand; defer scheduling to
-  `scheduled-autonomous-runs`.
+All product-behavior decisions are resolved (operator-approved 2026-07-04 — each at its
+recommended option):
+
+- **D3 — RESOLVED:** the four v1 signal classes + the tabled per-signal thresholds/windows as
+  top-of-script config defaults, plus the ≤2-per-scan enqueue cap.
+- **D5 — RESOLVED:** post-archive recurrence → NEW stub carrying `recurrence_of:` (never
+  suppress a failed fix; never mutate the archive).
+- **D6 — RESOLVED:** end-of-run orchestrator step + on-demand `/incident-scan` skill; scheduling
+  deferred to `scheduled-autonomous-runs`.
 - Deferred empirical checks (implementation, not decisions): real false-positive rate of the
   default bars over the first weeks of ledger history (Phase 4 tuning); whether the un-keyed
   base-dir breadcrumbs carry enough volume to matter or the events file makes them redundant;

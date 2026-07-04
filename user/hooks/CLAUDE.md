@@ -37,6 +37,23 @@ Two distinct activation models — don't conflate them:
 - **Request-time** (`long-build-ownership-guard.sh`) — always active; matches the command itself
   (an exact long-build invocation) regardless of any marker.
 
+## Countable deny/error events (`hook-events.jsonl`)
+
+Every deny site in the five enforcement hooks (`lazy-cycle-containment.sh`,
+`block-noncanonical-blocker-write.sh`, `block-sentinel-write-on-stray-branch.sh`,
+`long-build-ownership-guard.sh`, `build-queue-enforce.sh`) and every existing
+`hook-error.json` breadcrumb site (those three bash writers + `lazy_guard.py`) ALSO appends one
+`{ts, kind: "error"|"deny", hook, repo_root, signature, detail}` line to **`hook-events.jsonl`**
+(incident-auto-capture D2; keyed state dir when the repo resolves, else the base dir). The
+appender is **fail-open like everything else here** — an append failure never changes the
+deny/allow output, and `hook-error.json` keeps being written byte-identically (it stays the
+at-a-glance "is a hook broken" file; the events file is the countable history `incident-scan.py`
+clusters). `lazy_guard.py`'s DENIES deliberately do NOT append (they already persist to the deny
+ledger — double-writing would double-count one incident across two signal classes). When adding a
+deny site, pass a **stable signature token** (the collector's cluster key), not free text.
+Pipe-tested in `test_hooks.py` (`test_events_*`: event-on-deny, byte-identical output with the
+append failing, no event on allow).
+
 ## Write-time complements
 
 A few hooks mechanically backstop a prose rule by refusing the bad *write*:
