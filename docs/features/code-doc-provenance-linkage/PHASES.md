@@ -152,20 +152,20 @@ except `provenance`/`derivation` (pytest compares both outputs).
 **Scope:** The second trigger of the one writer: operator/manual linking of out-of-pipeline work.
 
 **Deliverables:**
-- [ ] `lazy_core.py`: `link_provenance(repo_root, item_id, commit_range=None, pr=None,
+- [x] `lazy_core.py`: `link_provenance(repo_root, item_id, commit_range=None, pr=None,
   body_file=None, dry_run=False, linked_by=None)` — resolves the item dir
   (`docs/features/<id>` / `docs/bugs/<id>` / `docs/bugs/_archive/<id>`, creating a minimal
   `docs/features/<id>/` decision-record dir when none exists per D8), resolves `--pr` via
   `gh pr view --json baseRefOid,headRefOid` to a range (clean refusal when `gh` absent),
   derives commits+files from the range, and writes THROUGH `write_provenance`
   (`provenance: manual`, `derivation: commit-range`, `linked_by:`).
-- [ ] CLI on BOTH scripts: `--link-provenance` with `--id`, `--commits <A..B>`, `--pr <n>`,
+- [x] CLI on BOTH scripts: `--link-provenance` with `--id`, `--commits <A..B>`, `--pr <n>`,
   `--body-file <path>`, `--dry-run` (thin handlers; mirrored; parity audit green).
-- [ ] `user/skills/link-provenance/SKILL.md` — NEW user-level skill: `--dry-run` first (show the
+- [x] `user/skills/link-provenance/SKILL.md` — NEW user-level skill: `--dry-run` first (show the
   derived touched-file set), draft the body from the PR description/diff, `AskUserQuestion`
   approval, then write through the producer CLI with `--body-file`. Failure modes explicit
   (unresolvable range aborts with the producer's refusal text).
-- [ ] Tests: manual link of a historical range produces `provenance: manual` entries
+- [x] Tests: manual link of a historical range produces `provenance: manual` entries
   byte-identical in shape to pipeline entries (except `provenance`/`derivation`/`linked_by`);
   `--dry-run` mutates nothing (index bytes + mtime unchanged); re-linking the same range replaces
   rather than duplicates rows; unresolvable range refuses with no writes.
@@ -176,8 +176,8 @@ rows for exactly the range's touched files; `--dry-run` prints the same derivati
 nothing.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] One writer, two triggers: manual entry shape byte-identical to pipeline entries except `provenance`/`derivation`. *(Evidence: `test_lazy_core.py` comparing both outputs.)* <!-- verification-only -->
-- [ ] Idempotency: re-link same range → no duplicate rows. *(Evidence: `test_lazy_core.py` byte-diff.)* <!-- verification-only -->
+- [x] One writer, two triggers: manual entry shape byte-identical to pipeline entries except `provenance`/`derivation`. *(Evidence: `test_lazy_core.py` comparing both outputs.)* <!-- verification-only -->
+- [x] Idempotency: re-link same range → no duplicate rows. *(Evidence: `test_lazy_core.py` byte-diff.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
 

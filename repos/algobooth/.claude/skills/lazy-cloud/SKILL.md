@@ -221,6 +221,7 @@ If `sub_skill` is a regular skill name (not `__*__`), invoke it exactly:
 ```
 Skill({ skill: "<sub_skill>", args: "<sub_skill_args>" })
 ```
+> **Provenance lookup before edits (code-doc-provenance-linkage D6-A):** for an edit-heavy dispatch (`/execute-plan`, corrective fix work), consult the provenance index before the FIRST edit to each source/script file: `python3 ~/.claude/scripts/lazy-state.py --provenance-lookup <file> --repo-root .` (pure read; both state scripts expose it). Open the cited `IMPLEMENTED.md` only when the listed decision ids are unfamiliar to the task; an empty result / missing index is a no-op. This keeps edits aligned with the decision records governing the file instead of re-deriving them.
 
 After the skill returns:
 1. Print the after-status bookend.

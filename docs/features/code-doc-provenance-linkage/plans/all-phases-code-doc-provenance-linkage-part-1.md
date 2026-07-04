@@ -84,13 +84,13 @@ python3 lint-skills.py --skills-dir <worktree-root>/user/skills --repos-dir <wor
 
 ## Phase 3 — Manual path
 
-- [ ] WU-3.1 — Failing tests first: manual-link shape parity vs pipeline entries; `--dry-run`
+- [x] WU-3.1 — Failing tests first: manual-link shape parity vs pipeline entries; `--dry-run`
   purity; re-link replace-not-duplicate; unresolvable-range refusal; CLI on both scripts.
-- [ ] WU-3.2 — `lazy_core.link_provenance` (+ `--pr` → range resolution via `gh`, clean refusal
+- [x] WU-3.2 — `lazy_core.link_provenance` (+ `--pr` → range resolution via `gh`, clean refusal
   when absent; minimal decision-record dir creation per D8).
-- [ ] WU-3.3 — `--link-provenance --id/--commits/--pr/--body-file/--dry-run` handlers on BOTH
+- [x] WU-3.3 — `--link-provenance --id/--commits/--pr/--body-file/--dry-run` handlers on BOTH
   scripts (mirrored).
-- [ ] WU-3.4 — `user/skills/link-provenance/SKILL.md` (draft-then-approve, writes through the
+- [x] WU-3.4 — `user/skills/link-provenance/SKILL.md` (draft-then-approve, writes through the
   producer); projection + lint clean; gate suite green.
 
 ## Phase 4 — Consumption

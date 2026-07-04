@@ -187,6 +187,16 @@ The gate also includes the **MCP tool-existence audit** (where a repo declares `
 
 !`cat .claude/skill-config/phases-runtime-validation.md 2>/dev/null || cat ~/.claude/skills/_components/phases-runtime-validation.md`
 
+### Step 2.8: Provenance lookup over the files the phases will touch (code-doc-provenance-linkage D6-A)
+
+Before drafting phases, run the cheap pure-read provenance lookup over each file the phases are likely to modify (the SPEC's "Files likely modified" candidates):
+
+```bash
+python3 ~/.claude/scripts/lazy-state.py --provenance-lookup <file> --repo-root .
+```
+
+It lists the decision records governing that file (`{id, doc, decisions}` rows from the committed `docs/provenance-index.json`). Read the cited `IMPLEMENTED.md` distillates whose decision ids are unfamiliar — phases must be drafted **against the real decision record**, not a reconstruction; a phase that would contradict a cited Locked Decision needs the contradiction resolved in the SPEC first (surface it, don't plan over it). Missing index / empty `governed_by` → the step is a no-op (nothing governs the file yet).
+
 ### Step 3: Propose Phase Structure
 
 **Under `--batch`:** skip the picker below. Run the red-flag detection block at the end of this file. If clean, proceed to Step 4. If any red flag triggers, halt with NEEDS_INPUT.md per the Batch Mode section above.

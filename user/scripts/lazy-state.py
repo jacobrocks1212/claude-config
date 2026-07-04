@@ -8775,6 +8775,8 @@ def run_smoke_tests() -> int:
             subprocess.run(["git", "-C", str(cbfo_repo), "init", "-q"], check=True)
             subprocess.run(["git", "-C", str(cbfo_repo), "config", "user.email", "t@t"], check=True)
             subprocess.run(["git", "-C", str(cbfo_repo), "config", "user.name", "t"], check=True)
+            # Hermetic: never depend on the host's commit-signing setup.
+            subprocess.run(["git", "-C", str(cbfo_repo), "config", "commit.gpgsign", "false"], check=True)
             (cbfo_repo / "seed.txt").write_text("seed", encoding="utf-8")
             subprocess.run(["git", "-C", str(cbfo_repo), "add", "-A"], check=True)
             subprocess.run(["git", "-C", str(cbfo_repo), "commit", "-q", "-m", "seed"], check=True)
@@ -8894,6 +8896,42 @@ def main() -> int:
                               "subagent). single-slot-marker-ownership-race."))
     parser.add_argument("--tier", type=int, default=0,
                         help="Tier for the ad-hoc entry (default: 0).")
+    # --- code-doc-provenance-linkage: provenance CLI (mirrored on bug-state.py) ---
+    parser.add_argument("--link-provenance", action="store_true",
+                        help=("Manual provenance link (the one-writer producer's "
+                              "second trigger): distill out-of-pipeline work "
+                              "(--commits A..B primary, --pr <n> sugar) into "
+                              "IMPLEMENTED.md + docs/provenance-index.json rows "
+                              "(provenance: manual). Requires --id; optional "
+                              "--body-file (approved prose) and --dry-run. Gated "
+                              "by refuse_if_cycle_active like --enqueue-adhoc."))
+    parser.add_argument("--commits", default=None, metavar="A..B",
+                        help="Commit range for --link-provenance (primary addressing).")
+    parser.add_argument("--pr", type=int, default=None, metavar="N",
+                        help=("PR-number sugar for --link-provenance — resolved to a "
+                              "range via `gh pr view`; degrades to a clean refusal "
+                              "naming the --commits fallback when gh is absent."))
+    parser.add_argument("--body-file", default=None, metavar="PATH",
+                        help=("Operator-approved distillate body prose for "
+                              "--link-provenance (written through the producer, "
+                              "which still owns frontmatter + index)."))
+    parser.add_argument("--dry-run", action="store_true",
+                        help=("With --link-provenance: derive + preview the "
+                              "touched-file set and distillate, write NOTHING."))
+    parser.add_argument("--provenance-lookup", default=None, metavar="PATH",
+                        help=("Pure read: print the provenance-index rows governing "
+                              "PATH ({path, governed_by: [{id, type, doc, decisions, "
+                              "provenance}]}). Never mutates; missing index → empty "
+                              "governed_by (degrades to a no-op)."))
+    parser.add_argument("--lint-provenance", action="store_true",
+                        help=("Pure read, report only (D10): dead index rows (path "
+                              "gone), high-churn files with no provenance rows, and "
+                              "cross-orphans (distillate↔index). Never mutates."))
+    parser.add_argument("--backfill-provenance", action="store_true",
+                        help=("One-shot backfill (D7): distill every receipted item "
+                              "(COMPLETED.md/FIXED.md incl. docs/bugs/_archive/) "
+                              "via message-grep derivation, provenance: backfilled. "
+                              "Idempotent (items with IMPLEMENTED.md are skipped)."))
     parser.add_argument("--materialize-wi", type=int, default=None,
                         help="Materialize ADO work item <id> from docs/work/ado-mirror.json into a doc pipeline.")
     parser.add_argument("--feature-id", default=None,
@@ -10006,6 +10044,33 @@ def main() -> int:
 
     if args.backfill_receipts:
         result = backfill_receipts(Path(args.repo_root))
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.link_provenance:
+        # code-doc-provenance-linkage Phase 3: the manual trigger of the
+        # one-writer provenance producer. Operator-only / out-of-cycle —
+        # gated EXACTLY like --enqueue-adhoc (a cycle subagent is refused
+        # exit 3 with zero side effects).
+        lazy_core.refuse_if_cycle_active("--link-provenance")
+        if not args.id:
+            _die("--link-provenance requires --id")
+        result = lazy_core.link_provenance(
+            Path(args.repo_root), args.id,
+            commit_range=args.commits, pr=args.pr,
+            body_file=Path(args.body_file) if args.body_file else None,
+            dry_run=args.dry_run,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result.get("ok") else 1
+
+    if args.provenance_lookup is not None:
+        # code-doc-provenance-linkage Phase 4 (D6-A): PURE READ — which
+        # decision records govern this file. Not cycle-guarded: dispatched
+        # subagents are the intended consumers (read-only, like --verify-ledger).
+        result = lazy_core.provenance_lookup(
+            Path(args.repo_root), args.provenance_lookup
+        )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 

@@ -13226,6 +13226,193 @@ def write_provenance(
     return {"ok": True, "refused": None, "wrote": wrote, **result_base}
 
 
+def _resolve_provenance_item_dir(repo_root: Path, item_id: str) -> tuple[Path, str]:
+    """Resolve an item id to its docs dir + type for the manual link path.
+
+    Search order: docs/features/<id> (feature) → docs/bugs/<id> (bug) →
+    docs/bugs/_archive/<id> (bug). When none exists, D8 says the manual path
+    creates a MINIMAL decision-record dir — docs/features/<id>/ with the
+    distillate as its primary doc (never a fabricated SPEC); the producer's
+    mkdir handles the creation.
+    """
+    repo_root = Path(repo_root)
+    candidates: list[tuple[Path, str]] = [
+        (repo_root / "docs" / "features" / item_id, "feature"),
+        (repo_root / "docs" / "bugs" / item_id, "bug"),
+        (repo_root / "docs" / "bugs" / "_archive" / item_id, "bug"),
+    ]
+    for cand, kind in candidates:
+        if cand.is_dir():
+            return cand, kind
+    return candidates[0]
+
+
+def _resolve_pr_range(repo_root: Path, pr: int) -> tuple[str | None, str | None]:
+    """Resolve a PR number to a ``base..head`` range via `gh pr view` (the D8
+    `--pr` sugar). Returns (range, None) on success or (None, refusal) —
+    degrading CLEANLY when gh is absent/unauthenticated (the refusal names the
+    --commits fallback)."""
+    try:
+        r = subprocess.run(
+            ["gh", "pr", "view", str(pr), "--json", "baseRefOid,headRefOid"],
+            cwd=str(repo_root), capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, (f"gh is unavailable ({exc}) — resolve the PR range "
+                      "yourself and pass --commits <base>..<head>")
+    if r.returncode != 0:
+        return None, (f"gh pr view {pr} failed ({(r.stderr or '').strip()[:200]}) "
+                      "— pass --commits <base>..<head> instead")
+    try:
+        data = json.loads(r.stdout)
+        base = data["baseRefOid"]
+        head = data["headRefOid"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        return None, (f"gh pr view {pr} returned an unexpected payload ({exc}) "
+                      "— pass --commits <base>..<head> instead")
+    return f"{base}..{head}", None
+
+
+def link_provenance(
+    repo_root: Path,
+    item_id: str,
+    *,
+    commit_range: str | None = None,
+    pr: int | None = None,
+    body_file: Path | None = None,
+    linked_by: str | None = None,
+    date: str | None = None,
+    dry_run: bool = False,
+) -> dict:
+    """The MANUAL trigger of the one-writer producer (D8-A+C, D9).
+
+    Addressing is commit-range-primary (``--commits A..B``); ``--pr <n>`` is
+    sugar resolved via `gh pr view` to a range (clean refusal when gh is
+    absent). The touched-file set and commit list are derived from the range
+    (derivation: commit-range) and written THROUGH write_provenance with
+    ``provenance: manual`` + ``linked_by:`` — so manual entries are
+    shape-identical to pipeline entries by construction.
+
+    ``body_file`` carries the operator-APPROVED distillate prose (the
+    `/link-provenance` skill's draft-then-approve loop); omitted → the
+    deterministic extract. ``dry_run`` derives + previews, writes nothing.
+    """
+    repo_root = Path(repo_root)
+
+    def _refused(msg: str) -> dict:
+        return {"ok": False, "refused": msg, "wrote": [], "dry_run": dry_run}
+
+    if pr is not None and commit_range:
+        return _refused("--commits and --pr are mutually exclusive — pass one")
+    if pr is not None:
+        commit_range, err = _resolve_pr_range(repo_root, pr)
+        if err:
+            return _refused(err)
+    if not commit_range:
+        return _refused("--link-provenance requires --commits <A..B> or --pr <n>")
+
+    derived = derive_touched_from_range(repo_root, commit_range)
+    if derived is None:
+        return _refused(
+            f"could not resolve commit range {commit_range!r} under "
+            f"{repo_root} — nothing was written"
+        )
+    if not derived["commits"] and not derived["files"]:
+        return _refused(
+            f"commit range {commit_range!r} is empty (no authored commits, "
+            "no touched files) — nothing to link"
+        )
+
+    body: str | None = None
+    if body_file is not None:
+        try:
+            body = Path(body_file).read_text(encoding="utf-8")
+        except OSError as exc:
+            return _refused(f"--body-file could not be read ({exc})")
+
+    item_dir, kind = _resolve_provenance_item_dir(repo_root, item_id)
+    result = write_provenance(
+        repo_root, item_dir, item_id, kind,
+        derived["commits"], derived["files"],
+        provenance="manual", derivation="commit-range",
+        date=date, body=body,
+        linked_by=(linked_by or "operator"),
+        dry_run=dry_run,
+    )
+    result["commit_range"] = commit_range
+    result["kind"] = kind
+    try:
+        result["item_dir"] = str(item_dir.relative_to(repo_root)).replace("\\", "/")
+    except ValueError:
+        result["item_dir"] = str(item_dir)
+    return result
+
+
+def _provenance_doc_path(repo_root: Path, item_id: str, kind: str) -> str:
+    """Resolve an index row's distillate doc path (repo-relative POSIX),
+    honoring archive residency for bugs. Falls back to the canonical
+    non-archive location string when nothing exists on disk."""
+    repo_root = Path(repo_root)
+    if kind == "bug":
+        candidates = [
+            f"docs/bugs/{item_id}/IMPLEMENTED.md",
+            f"docs/bugs/_archive/{item_id}/IMPLEMENTED.md",
+        ]
+    else:
+        candidates = [f"docs/features/{item_id}/IMPLEMENTED.md"]
+    for rel in candidates:
+        if (repo_root / rel).is_file():
+            return rel
+    return candidates[0]
+
+
+def provenance_lookup(repo_root: Path, path_str: str) -> dict:
+    """PURE READ (D6-A): which decision records govern ``path_str``?
+
+    Loads docs/provenance-index.json, normalizes the query to the index's
+    repo-relative POSIX key form, and returns::
+
+        {"path": <key>, "governed_by": [
+            {"id", "type", "doc", "decisions", "provenance"}, ...]}
+
+    ``doc`` is the item's IMPLEMENTED.md (archive residency resolved);
+    ``decisions`` come from that distillate's frontmatter ([] when unreadable).
+    Never mutates, never creates directories, never re-infers state — a
+    missing/malformed index degrades to an empty ``governed_by`` (the consumer
+    step is a no-op where no index exists)."""
+    repo_root = Path(repo_root)
+    key = _normalize_index_key(repo_root, path_str)
+    out: dict = {"path": key, "governed_by": []}
+    index_path = _provenance_index_path(repo_root)
+    if not index_path.is_file():
+        return out
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return out
+    rows = index.get(key) if isinstance(index, dict) else None
+    if not isinstance(rows, list):
+        return out
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        item_id = str(r.get("id"))
+        kind = str(r.get("type"))
+        doc_rel = _provenance_doc_path(repo_root, item_id, kind)
+        decisions: list[str] = []
+        doc_meta = parse_sentinel(repo_root / doc_rel)
+        if doc_meta and isinstance(doc_meta.get("decisions"), list):
+            decisions = [str(d) for d in doc_meta["decisions"]]
+        out["governed_by"].append({
+            "id": item_id,
+            "type": kind,
+            "doc": doc_rel,
+            "decisions": decisions,
+            "provenance": r.get("provenance"),
+        })
+    return out
+
+
 def append_auto_readmit_event(
     tool_use_id: str,
     readmitted_sha12: str,
