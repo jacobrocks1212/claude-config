@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "kpis": [
+    {
+      "id": "build-queue-false-green-rate",
+      "system": "build-queue",
+      "title": "False-green build rate",
+      "friction": "Builds that report exit 0 without verified compiled output poison downstream work with silent failures the harness then pays to re-diagnose.",
+      "signal": {
+        "source": "build-queue-results",
+        "selector": "false-green-rate"
+      },
+      "unit": "percent",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "repo_scope": "cognito-forms",
+      "notes": "Computable today from ~/.claude/state/build-queue/results/<seq>.json (hygiene.build_fidelity in {log-failure-override, no-output} over non-n/a build records). Baseline capture is workstation-only (--capture-baseline; retro-derivable from results history where retained) — this registry ships provenance-honest pending, never a fabricated zero. Renders NO-DATA on machines without build-queue state."
+    },
+    {
+      "id": "build-queue-wait-time-p50",
+      "system": "build-queue",
+      "title": "Queue wait time p50",
+      "friction": "Serialized Cognito builds queue behind each other; unmeasured wait time hides whether the FIFO serializer is still cheaper than the poisoned-artifact failures it prevents.",
+      "signal": {
+        "source": "build-queue-results",
+        "selector": "queue-wait-p50-seconds"
+      },
+      "unit": "seconds",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "repo_scope": "cognito-forms",
+      "notes": "NOT computable yet (verified 2026-07-04): results/<seq>.json records seq/exit_code/ended_at/hygiene but no queued-at/started-at pair (started_at exists only in the transient active.lock). Workstation-deferred follow-up: build-queue-runner.ps1/build-queue.ps1 persist queued_at + started_at onto results/<seq>.json (no .ps1 modified from this lane per operator direction). Selector renders NO-DATA with a footnote until then."
+    },
+    {
+      "id": "build-queue-raw-invocation-deny-recurrence",
+      "system": "build-queue",
+      "title": "Raw-invocation deny recurrence",
+      "friction": "Agents repeatedly attempting raw dotnet/nx builds in Cognito worktrees burn a hook deny plus a redirect turn each time; recurrence measures whether the skill-routing lesson is sticking.",
+      "signal": {
+        "source": "deny-ledger",
+        "selector": "build-queue-enforce-deny-count"
+      },
+      "unit": "count/30d",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "repo_scope": "cognito-forms",
+      "notes": "build-queue-enforce.sh denies are not ledgered today (verified 2026-07-04). Workstation-deferred follow-up: a best-effort, fail-OPEN-preserving hook-side append of build-queue denies into the deny ledger (hook untouched from this lane per operator direction). Selector counts deny-ledger entries whose reason_head carries the build-queue signature; an absent ledger renders NO-DATA."
+    },
+    {
+      "id": "containment-runaway-trip-rate",
+      "system": "containment",
+      "title": "Runaway containment trip rate",
+      "friction": "Every containment-refusal is a runaway a cycle subagent attempted (routing/lifecycle/recursive-dispatch ops); the trip rate measures how often the containment layer is actually load-bearing versus dead weight.",
+      "signal": {
+        "source": "telemetry-ledger",
+        "selector": "containment-refusal-count"
+      },
+      "unit": "count/30d",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "notes": "Bound to the harness-telemetry-ledger D4-B 'containment-refusal' event (exit-3 refusal sites). The ledger landed 2026-07-04 with no accumulated history yet — provenance pending until a real run window exists (--capture-baseline on the workstation)."
+    },
+    {
+      "id": "halt-dwell-p50",
+      "system": "halt-handling",
+      "title": "Halt dwell time p50",
+      "friction": "A halted item (BLOCKED/NEEDS_INPUT and kin) accrues wall-clock dwell until its sentinel resolves; dwell measures how quickly the operator loop turns halts back into forward progress.",
+      "signal": {
+        "source": "telemetry-ledger",
+        "selector": "halt-dwell-p50-seconds"
+      },
+      "unit": "seconds",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "notes": "Bound to the D4-B 'halt' event (dispatch terminal_reason in the halt set) paired with the next same-item 'sentinel-resolved' event; computed by pipeline_visualizer.trends.halt_dwell (median of resolved dwells; unresolved halts are honest open halts, never counted as zero). Supersedes the date-granularity *_RESOLVED_<date> sentinel-scan fallback the SPEC computability table anticipated."
+    },
+    {
+      "id": "cycles-per-completion",
+      "system": "pipeline-efficiency",
+      "title": "Cycles per completion",
+      "friction": "Forward cycles spent per __mark_complete__/__mark_fixed__ terminal measure orchestration overhead — corrective cycles, gate refusals, and loop churn all inflate it.",
+      "signal": {
+        "source": "telemetry-ledger",
+        "selector": "cycles-per-completion"
+      },
+      "unit": "ratio",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "notes": "Bound to D4-B 'cycle-begin' vs 'pseudo-applied' events whose data.pseudo is a terminal (__mark_complete__/__mark_fixed__); computed by pipeline_visualizer.trends.cycles_per_completion (None when the window has zero completions — never a fabricated ratio). Marker counters alone could not supply this (deleted at --run-end), which is why the row waited for the ledger."
+    }
+  ]
+}

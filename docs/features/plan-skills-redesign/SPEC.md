@@ -2,7 +2,7 @@
 
 > Redesign the plan-generation/execution skill pair so plans are lean (policy lives in one shared component, not duplicated into every plan), the correct planner runs deterministically, startup context stays well under today's ~116K plateau, and the executor exploits the build/test queue with real same-message agent parallelism and backgrounded builds.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P1
 **Last updated:** 2026-06-29
 

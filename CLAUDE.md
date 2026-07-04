@@ -181,6 +181,18 @@ The **canonical machine-readable registry of these pairs is `user/scripts/lazy-p
 
 When adding to a coupled pair, also update each file's State Machine Summary / orchestration shape at the bottom so the dispatch table reflects the new state.
 
+> **`/lazy-batch-parallel` (parallel-worktree-batch-execution) — a family member, not a coupled
+> pair.** `user/skills/lazy-batch-parallel/SKILL.md` is the sanctioned parallel-worktree
+> coordinator (workstation-only v1: claude-config + AlgoBooth; feature-pipeline only). It
+> COMPOSES `/lazy-batch`'s contract (inherits its HARD CONSTRAINTS by reference; carries a
+> "Differences from /lazy-batch" table) rather than mirroring its prose, so serial-skill edits do
+> NOT owe a mirror here — but a change to the `/lazy-batch` HARD CONSTRAINTS block or the cycle
+> dispatch machinery should be sanity-checked against the parallel skill's P1–P7 additions. The
+> concurrency mechanics (claim_shardable, lanes.json ledger, fencing token watermarks,
+> queue-order merge/demote, `parent_run` lane markers) live in `user/scripts/lazy_coord.py` +
+> `user/scripts/lazy_core.py` — see `user/scripts/CLAUDE.md` → "Concurrency plane — sanctioned
+> parallel worktree lanes".
+
 ## Scripts
 
 | Script | Purpose |

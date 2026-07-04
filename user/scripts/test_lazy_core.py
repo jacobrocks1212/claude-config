@@ -30901,6 +30901,48 @@ def test_notify_ledger_roundtrip_prune_and_atomic():
             _clear_state_dir()
 
 
+# parallel-worktree-batch-execution Phase 2 — the `parent_run` lane-marker
+# identity field (D2-A) + per-worktree repo_key isolation.
+#
+# A lane marker is an ordinary run marker written at a WORKTREE root, born
+# owner-bound to the coordinator session, additionally carrying
+# `parent_run: {repo_root, started_at}` so audits (and --run-end sweeps) can
+# prove the marker sanctioned.  The field is run-invariant identity re-derived
+# at run-start ⇒ classified into RUN_FRESH_FIELDS — the continuity-partition
+# completeness test (above) is the designed tripwire that FAILS the moment the
+# marker gains the key until this classification lands.
+# ---------------------------------------------------------------------------
+
+def test_write_run_marker_parent_run_default_none_and_explicit():
+    """`write_run_marker` ALWAYS mints the `parent_run` key: None on a serial
+    run (byte-shape stability — the partition helper sees the key), the caller's
+    identity dict verbatim on a lane run; the on-disk marker matches."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            serial = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=0.0,
+            )
+            assert "parent_run" in serial, "key must ALWAYS be minted"
+            assert serial["parent_run"] is None, "serial run ⇒ parent_run: null"
+            identity = {"repo_root": "/main", "started_at": "2026-07-04T00:00:00Z"}
+            lane = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/main-lanes/wt-00",
+                session_id="coordinator-session", parent_run=identity, now=0.0,
+            )
+            assert lane["parent_run"] == identity
+            on_disk = json.loads(
+                (Path(td) / "lazy-run-marker.json").read_text(encoding="utf-8")
+            )
+            assert on_disk["parent_run"] == identity
+            assert on_disk["session_id"] == "coordinator-session", (
+                "lane marker is born owner-bound to the coordinator session"
+            )
+        finally:
+            _clear_state_dir()
+
+
 def test_notify_remote_url_normalization():
     """D5: SSH / ssh:// / HTTPS (+credentials, +.git) remote forms normalize to
     a plain https URL; garbage → None (omit link, still send)."""
@@ -31216,6 +31258,46 @@ _TESTS = _TESTS + [
      test_notify_halt_fail_open_breadcrumb_and_retry),
     ("test_notify_ntfy_send_headers_and_rfc2047",
      test_notify_ntfy_send_headers_and_rfc2047),
+]
+
+
+def test_parent_run_classified_into_run_fresh_fields():
+    """`parent_run` is run-invariant identity re-derived at run-start ⇒ it MUST
+    be classified into RUN_FRESH_FIELDS (never carried by a checkpoint resume —
+    the resuming --run-start re-supplies it), keeping the completeness partition
+    green with the new key."""
+    _guard()
+    assert "parent_run" in lazy_core.RUN_FRESH_FIELDS
+    assert "parent_run" not in lazy_core.RUN_CONTINUITY_FIELDS
+
+
+def test_repo_key_lane_worktree_distinct():
+    """Per-worktree isolation primitive (D2-A): the main root and each sibling
+    `<repo>-lanes/wt-NN` worktree resolve to pairwise-DISTINCT repo keys, so
+    every lane gets its own keyed state dir (marker/registry/ledger) for free."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        main_root = Path(td) / "repo"
+        lanes_dir = Path(td) / "repo-lanes"
+        wt0 = lanes_dir / "wt-00"
+        wt1 = lanes_dir / "wt-01"
+        for p in (main_root, wt0, wt1):
+            p.mkdir(parents=True)
+        keys = {
+            lazy_core.repo_key(str(main_root)),
+            lazy_core.repo_key(str(wt0)),
+            lazy_core.repo_key(str(wt1)),
+        }
+        assert len(keys) == 3, "main root + each lane must key distinct state dirs"
+
+
+_TESTS = _TESTS + [
+    ("test_write_run_marker_parent_run_default_none_and_explicit",
+     test_write_run_marker_parent_run_default_none_and_explicit),
+    ("test_parent_run_classified_into_run_fresh_fields",
+     test_parent_run_classified_into_run_fresh_fields),
+    ("test_repo_key_lane_worktree_distinct",
+     test_repo_key_lane_worktree_distinct),
 ]
 
 

@@ -1,14 +1,7 @@
 {
-  "_note": "Feature stubs are pre-Gemini ('> Draft (pre-Gemini)' Status + \"stub\": true), so lazy-state.py routes each to /spec (Step 4.5) to shape the baseline interactively before research/plan. Tier orders priority; explicit queue order takes precedence. Current batch sourced from the repo-exploration proposal session 2026-07-04 (operator-curated candidate list). The 2026-06-19 session-audit batch is fully complete and drained.",
+  "_note": "Tier orders priority in the merged (feature+bug) view; explicit array order breaks ties within a tier. Resume ordering set 2026-07-04 (resume-lanes-hardening): the P0 bug 'skip-mcp-test-frontmatter-unquoted-colon' in docs/bugs/queue.json is the absolute merged head (picked first by /lazy-batch's unified driver). Then the three in-progress lane features resume where they left off (tier 1: friction-kpi-registry phases 0-2, parallel-worktree-batch-execution phases 0-5, harness-change-canary-rollback research), then the not-started features in dependency order (tier 2: anti-overfit-design-gate, then build-queue-generalization before build-queue-eta-priority-lanes per the soft dep), then the tail (tier 3: claude-config-ci second-to-last, native-android-pipeline-steering last). CAVEAT: pre-existing Concluded P1/P2 build-queue bugs in docs/bugs/ interleave into the merged view by severity (bug-beats-feature on ties) and are untestable PowerShell in a Linux container. Feature stubs (claude-config-ci: pre-Gemini stub, stub:true) route to interactive /spec at Step 4.5.",
   "autodiscover": true,
   "queue": [
-    {
-      "id": "claude-config-ci",
-      "name": "CI for claude-config Itself",
-      "spec_dir": "claude-config-ci",
-      "tier": 1,
-      "stub": true
-    },
     {
       "id": "friction-kpi-registry",
       "name": "Friction KPI Registry + Scorecards",
@@ -16,15 +9,21 @@
       "tier": 1
     },
     {
-      "id": "anti-overfit-design-gate",
-      "name": "Anti-Overfit + Tautology Design Gate for Harness Changes",
-      "spec_dir": "anti-overfit-design-gate",
+      "id": "parallel-worktree-batch-execution",
+      "name": "Sanctioned Parallel-Worktree Batch Execution",
+      "spec_dir": "parallel-worktree-batch-execution",
       "tier": 1
     },
     {
       "id": "harness-change-canary-rollback",
       "name": "Harness-Change Canary + Rollback",
       "spec_dir": "harness-change-canary-rollback",
+      "tier": 1
+    },
+    {
+      "id": "anti-overfit-design-gate",
+      "name": "Anti-Overfit + Tautology Design Gate for Harness Changes",
+      "spec_dir": "anti-overfit-design-gate",
       "tier": 2
     },
     {
@@ -40,10 +39,11 @@
       "tier": 2
     },
     {
-      "id": "parallel-worktree-batch-execution",
-      "name": "Sanctioned Parallel-Worktree Batch Execution",
-      "spec_dir": "parallel-worktree-batch-execution",
-      "tier": 3
+      "id": "claude-config-ci",
+      "name": "CI for claude-config Itself",
+      "spec_dir": "claude-config-ci",
+      "tier": 3,
+      "stub": true
     },
     {
       "id": "native-android-pipeline-steering",
