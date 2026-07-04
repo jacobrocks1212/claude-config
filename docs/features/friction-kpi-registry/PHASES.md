@@ -133,17 +133,17 @@ the regen wiring lands at the same orchestrator commit step that regenerates `LA
 the coupled-pair record mirrored into `/lazy-batch-cloud`'s Differences table.
 
 **Deliverables:**
-- [ ] Telemetry selectors over `trends` functions: `containment-refusal-count` (windowed event count), `halt-dwell-p50-seconds` (median of resolved `halt`→`sentinel-resolved` dwells; unresolved halts excluded, empty → no-data note), `cycles-per-completion` (`trends.cycles_per_completion`; zero completions → no-data note, never a fabricated ratio). Availability = any ledger segment or cloud segment file exists (absent → NO-DATA).
-- [ ] Regressions section: WARN/BREACH rows rendered `⚠ <system>/<id> <STATUS>: <current> vs band <threshold> (baseline <value>)`; `- (none)` otherwise. Fixture crossing warn then breach (both directions) renders the right flag.
-- [ ] Regen wiring (prose, orchestrator-invoked only, fail-open): extend the `/lazy-batch` per-cycle regen blockquote + commit-policy bullet to also run `python user/scripts/kpi-scorecard.py --repo-root <repo_root>` when `docs/kpi/registry.json` exists (registry-gated no-op elsewhere; a scorecard failure never blocks the commit); add the mirrored "Differences from `/lazy-batch`" table row in `/lazy-batch-cloud` covering the committed-doc regen (also retro-recording the `LAZY_QUEUE.md` wiring the pair table omitted).
-- [ ] Tests: fixture telemetry ledgers (hermetic `LAZY_STATE_DIR`) produce hand-computed dwell/ratio/count values; band-crossing fixtures render WARN and BREACH flags in Regressions; ledger-absent → NO-DATA.
+- [x] Telemetry selectors over `trends` functions: `containment-refusal-count` (windowed event count), `halt-dwell-p50-seconds` (median of resolved `halt`→`sentinel-resolved` dwells; unresolved halts excluded, empty → no-data note), `cycles-per-completion` (`trends.cycles_per_completion`; zero completions → no-data note, never a fabricated ratio). Availability = any ledger segment or cloud segment file exists (absent → NO-DATA).
+- [x] Regressions section: WARN/BREACH rows rendered `⚠ <system>/<id> <STATUS>: <current> vs band <threshold> (baseline <value>)`; `- (none)` otherwise. Fixture crossing warn then breach (both directions) renders the right flag.
+- [x] Regen wiring (prose, orchestrator-invoked only, fail-open): extend the `/lazy-batch` per-cycle regen blockquote + commit-policy bullet to also run `python user/scripts/kpi-scorecard.py --repo-root <repo_root>` when `docs/kpi/registry.json` exists (registry-gated no-op elsewhere; a scorecard failure never blocks the commit); add the mirrored "Differences from `/lazy-batch`" table row in `/lazy-batch-cloud` covering the committed-doc regen (also retro-recording the `LAZY_QUEUE.md` wiring the pair table omitted).
+- [x] Tests: fixture telemetry ledgers (hermetic `LAZY_STATE_DIR`) produce hand-computed dwell/ratio/count values; band-crossing fixtures render WARN and BREACH flags in Regressions; ledger-absent → NO-DATA.
 
 **Minimum Verifiable Behavior:** A fixture ledger with one resolved halt (dwell 3600s) renders
 `halt-dwell-p50` = 3600 seconds; a fixture containment-trip count past the row's `breach`
 renders a `## Regressions` BREACH line naming the row.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Fixture ledger produces expected values; a band-crossing fixture renders a BREACH flag. *(Evidence: `SKIP_MCP_TEST.md` — `test_kpi_scorecard.py` telemetry + regression suites.)* <!-- verification-only -->
+- [x] Fixture ledger produces expected values; a band-crossing fixture renders a BREACH flag. *(Evidence: `SKIP_MCP_TEST.md` — `test_kpi_scorecard.py` telemetry + regression suites.)* <!-- verification-only -->
 - **DEFERRED (workstation-only, not a completion blocker):** observing the regen ride a real `/lazy-batch` per-cycle commit (requires a live orchestrator run on the workstation; the wiring is prose consumed by the orchestrator, mirrored from the proven `LAZY_QUEUE.md` block).
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
@@ -176,13 +176,13 @@ the classification line added to the Phase 3 SPEC template); the deterministic
 docs rows.
 
 **Deliverables:**
-- [ ] `user/skills/_components/spec-friction-kpi-gate.md` — new component (mcp-coverage-audit style): why/inputs/algorithm (classify → declare → shell `kpi-scorecard.py --lint --spec` → route), batch vs interactive table, advisory keyword cross-check (non-blocking), registry-residency note for non-claude-config repos (`--registry` / full-schema drafts), coupling note naming the `/spec` injection.
-- [ ] `user/skills/spec/SKILL.md` — Phase 3 Step 8.5 injection (per-repo override form) beside the Step 8 dep-block checkpoint; `**Friction-reduction feature:** {yes|no}` line added to the Phase 3 SPEC template; Phase 1 `--batch` contract references the classification duty.
-- [ ] `kpi-scorecard.py --lint --spec <path> [--registry <path>]` — validates the classification line (missing → error), `no` + advisory keyword hit → non-blocking warning, `yes` → `## KPI Declaration` must exist and every `- kpi: <id>` reference resolve to the registry and every fenced-JSON draft row pass row-level lint (else exit 1 naming the miss).
-- [ ] `kpi-scorecard.py --capture-baseline <kpi-id>` — computes the row's current windowed value; no-data → refusal exit 1 (a baseline is never fabricated); else stamps `baseline {value, captured_at (UTC today), window, provenance: measured}` via `lazy_core._atomic_write`.
-- [ ] Projection + lint: `project-skills.py` into a lane-local output dir + `lint-skills.py` clean after the skill/component edits.
-- [ ] Docs: root `CLAUDE.md` (scripts table row + key-components bullet), `user/scripts/CLAUDE.md` (script table row).
-- [ ] Tests: `--lint --spec` fixtures (friction SPEC w/o declaration → exit 1; ordinary SPEC w/ `no` line → exit 0 untouched; `no` + friction keywords → advisory warning exit 0; declaration w/ resolving ids → exit 0; unresolved id / invalid draft → exit 1); `--capture-baseline` provenance + refusal tests; registry file after capture remains lint-green.
+- [x] `user/skills/_components/spec-friction-kpi-gate.md` — new component (mcp-coverage-audit style): why/inputs/algorithm (classify → declare → shell `kpi-scorecard.py --lint --spec` → route), batch vs interactive table, advisory keyword cross-check (non-blocking), registry-residency note for non-claude-config repos (`--registry` / full-schema drafts), coupling note naming the `/spec` injection.
+- [x] `user/skills/spec/SKILL.md` — Phase 3 Step 8.5 injection (per-repo override form) beside the Step 8 dep-block checkpoint; `**Friction-reduction feature:** {yes|no}` line added to the Phase 3 SPEC template; Phase 1 `--batch` contract references the classification duty.
+- [x] `kpi-scorecard.py --lint --spec <path> [--registry <path>]` — validates the classification line (missing → error), `no` + advisory keyword hit → non-blocking warning, `yes` → `## KPI Declaration` must exist and every `- kpi: <id>` reference resolve to the registry and every fenced-JSON draft row pass row-level lint (else exit 1 naming the miss).
+- [x] `kpi-scorecard.py --capture-baseline <kpi-id>` — computes the row's current windowed value; no-data → refusal exit 1 (a baseline is never fabricated); else stamps `baseline {value, captured_at (UTC today), window, provenance: measured}` via `lazy_core._atomic_write`.
+- [x] Projection + lint: `project-skills.py` into a lane-local output dir + `lint-skills.py` clean after the skill/component edits.
+- [x] Docs: root `CLAUDE.md` (scripts table row + key-components bullet), `user/scripts/CLAUDE.md` (script table row).
+- [x] Tests: `--lint --spec` fixtures (friction SPEC w/o declaration → exit 1; ordinary SPEC w/ `no` line → exit 0 untouched; `no` + friction keywords → advisory warning exit 0; declaration w/ resolving ids → exit 0; unresolved id / invalid draft → exit 1); `--capture-baseline` provenance + refusal tests; registry file after capture remains lint-green.
 
 **Minimum Verifiable Behavior:** `--lint --spec` on a fixture friction SPEC lacking
 `## KPI Declaration` exits 1 naming the missing section; on an ordinary `no` SPEC exits 0 with
@@ -190,7 +190,7 @@ no demands; `--capture-baseline` over a fixture signal stamps `provenance: measu
 refuses (exit 1) when the signal has no data.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Fixture friction-SPEC without a declaration fails the validator; an ordinary SPEC passes untouched; captured baselines carry correct provenance. *(Evidence: `SKIP_MCP_TEST.md` — `test_kpi_scorecard.py` gate-validator + capture suites.)* <!-- verification-only -->
+- [x] Fixture friction-SPEC without a declaration fails the validator; an ordinary SPEC passes untouched; captured baselines carry correct provenance. *(Evidence: `SKIP_MCP_TEST.md` — `test_kpi_scorecard.py` gate-validator + capture suites.)* <!-- verification-only -->
 - **DEFERRED (workstation-only, not a completion blocker):** a live `/spec --batch` run on a fixture friction feature observing the NEEDS_INPUT round end-to-end (requires a live orchestrator + AskUserQuestion session; the injected prose + the deterministic validator it shells are both fully covered by projection/lint + pytest here).
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.

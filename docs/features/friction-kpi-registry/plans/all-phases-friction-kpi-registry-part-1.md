@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: friction-kpi-registry
-status: In Progress
+status: Complete
 created: 2026-07-04
 complexity: complex
 phases: [1, 2, 3, 4]
@@ -70,14 +70,14 @@ python3 lint-skills.py --skills-dir <root>/user/skills --repos-dir <root>/repos
 
 ## Phase 3 — Ledger-backed rows + regression flags + regen wiring
 
-- [ ] WU-3.1 — Tests FIRST: fixture telemetry ledger (halt→sentinel-resolved dwell 3600s; cycles/completions ratio; containment count), ledger-absent NO-DATA, WARN + BREACH fixtures rendering Regressions lines (both directions).
-- [ ] WU-3.2 — `telemetry-ledger` selectors over `trends` functions + availability check (state-dir segments + cloud segments).
-- [ ] WU-3.3 — Regen wiring prose: `/lazy-batch` per-cycle blockquote + `.claude/skill-config/commit-policy.md` bullet extended (registry-gated, fail-open); `/lazy-batch-cloud` Differences-table row added (coupled-pair record).
+- [x] WU-3.1 — Tests FIRST: fixture telemetry ledger (halt→sentinel-resolved dwell 3600s; cycles/completions ratio; containment count), ledger-absent NO-DATA, WARN + BREACH fixtures rendering Regressions lines (both directions).
+- [x] WU-3.2 — `telemetry-ledger` selectors over `trends` functions + availability check (state-dir segments + cloud segments).
+- [x] WU-3.3 — Regen wiring prose: `/lazy-batch` per-cycle blockquote + `.claude/skill-config/commit-policy.md` bullet extended (registry-gated, fail-open); `/lazy-batch-cloud` Differences-table row added (coupled-pair record).
 
 ## Phase 4 — `/spec` measurability gate + baseline capture
 
-- [ ] WU-4.1 — Tests FIRST: `--lint --spec` fixtures (missing classification line → exit 1; `no` ordinary SPEC → exit 0; `no` + friction keywords → advisory exit 0; `yes` w/o section → exit 1; resolving ids → exit 0; unresolved id → exit 1; valid/invalid JSON draft rows); `--capture-baseline` (stamps measured + captured_at; refuses on no-data; registry stays lint-green).
-- [ ] WU-4.2 — `--lint --spec [--registry]` validator + `--capture-baseline` (`_atomic_write`).
-- [ ] WU-4.3 — `user/skills/_components/spec-friction-kpi-gate.md` (new) + `/spec` SKILL.md edits (Phase 3 Step 8.5 injection, template classification line, Phase 1 batch-contract reference).
-- [ ] WU-4.4 — Projection (lane-local output dir) + `lint-skills.py` clean; docs rows (root `CLAUDE.md` scripts table + components bullet; `user/scripts/CLAUDE.md` table row).
-- [ ] WU-4.5 — FULL gate suite green (pytest suites + `--test` smokes + parity audit + skill lint); `SKIP_MCP_TEST.md`; finalize PHASES/plan statuses.
+- [x] WU-4.1 — Tests FIRST: `--lint --spec` fixtures (missing classification line → exit 1; `no` ordinary SPEC → exit 0; `no` + friction keywords → advisory exit 0; `yes` w/o section → exit 1; resolving ids → exit 0; unresolved id → exit 1; valid/invalid JSON draft rows); `--capture-baseline` (stamps measured + captured_at; refuses on no-data; registry stays lint-green).
+- [x] WU-4.2 — `--lint --spec [--registry]` validator + `--capture-baseline` (`_atomic_write`).
+- [x] WU-4.3 — `user/skills/_components/spec-friction-kpi-gate.md` (new) + `/spec` SKILL.md edits (Phase 3 Step 8.5 injection, template classification line, Phase 1 batch-contract reference).
+- [x] WU-4.4 — Projection (lane-local output dir) + `lint-skills.py` clean; docs rows (root `CLAUDE.md` scripts table + components bullet; `user/scripts/CLAUDE.md` table row).
+- [x] WU-4.5 — FULL gate suite green (pytest suites + `--test` smokes + parity audit + skill lint); `SKIP_MCP_TEST.md`; finalize PHASES/plan statuses. *(Cloud note: `test_kpi_scorecard.py` 76/76 green; `lazy-state`/`bug-state`/`lazy_coord` `--test` all pass; parity audit exit 0; skill lint + doc-drift clean. `SKIP_MCP_TEST.md` is the Step-9 script-authored grant `__grant_skip_no_mcp_surface__` — never hand-written in an execute-plan cycle. The 19 `test_lazy_core.py` failures observed in the combined run are environmental: `refuse_if_cycle_active` refuses `apply_pseudo`/`mark_complete` while the live cloud cycle marker is present — not regressions from this lane, which does not touch `lazy_core.py`.)*

@@ -45,6 +45,56 @@ post-window boundary) · `review_after_runs` / `min_sample` / `band_pct` (per-re
 `review_count` · `status: open|confirmed|refuted|inconclusive` · `escalated` ·
 `reconsideration_enqueued`.
 
+## The `canary:` sub-map (harness-change-canary-rollback)
+
+A shipped change whose touched-file set intersects the control-surface manifest gains a nested
+`canary:` sub-map at capture (an unknown key the serializer appends in insertion order — no
+field-order edit). It carries the change into an observation window watched **every run** (more
+aggressive than the efficacy review's ~20-run cadence). The watcher —
+`efficacy-eval.py --canary` — is the SOLE writer of `canary.*` and reads every signal read-only;
+it never mutates an efficacy verdict field, and a clean canary does NOT pre-judge the efficacy
+verdict (a change can be non-damaging yet ineffective).
+
+Frozen sub-map fields (written by `lazy_core.record_intervention`; do not hand-edit):
+
+- `opened` — ship date; the window's lower time bound + the 30-day-ceiling anchor.
+- `window_runs` — window size in completed runs (default `CANARY_WINDOW_RUNS_DEFAULT` = 10;
+  per-record overridable via the hypothesis block's `- canary_window_runs:`).
+- `surfaces` — the matched touched files (repo-relative POSIX); the D3 attribution identity set.
+- `commit_set` — the change's commit set (the revert target on a trip).
+- `pair_scope` — coupled-pair scope: if the commit set touches one half of a parity-guarded pair
+  (`lazy-parity-manifest.json` + the root CLAUDE.md pairs table), BOTH halves are listed so a
+  revert covers the whole pair and ends with a green `lazy_parity_audit.py`.
+- `degraded_revert_note` — a static note when the change is known revert-unsafe (migrated on-disk
+  state/schema); `null` otherwise. No `git revert` dry-run machinery in v1.
+- `status` — the lifecycle field (below).
+
+Top-level companion field: `canary_revert_enqueued` (the trip date, once stamped — the once-ever
+recurrence guard, mirroring `reconsideration_enqueued`).
+
+### Canary lifecycle (`status` transitions — open → terminal, never re-opened)
+
+1. **open** (at capture) — the watcher's wake predicate. Each run boundary it accrues the window
+   (next `window_runs` completed runs after ship, 30-day wall-clock ceiling), applies the D2
+   tripwire (targeted-signal regression past the KPI band / else ≥25% relative with ≥3 post-ship
+   occurrences, OR ≥2 attributable fresh incidents) and D3 surface-based attribution.
+2. **tripped** — the tripwire fired: the watcher flags-and-enqueues an evidence-bearing
+   `canary-revert-<id>` bug stub (never a silent revert — D4), writes `EVIDENCE.md` into the
+   seeded bug dir, and stamps `status: tripped` + `canary_revert_enqueued` (once ever). A tripped
+   canary does NOT skip the later efficacy verdict.
+3. **closed-clean** — the window matured with no trip: the watcher stamps `status: closed-clean`
+   and appends a `## Canary <date>` record-body section (runs observed, signal movement, incidents
+   attributed none/list). Monitoring drops back to the normal KPI-registry cadence.
+4. **closed-clean (no-data)** — matured with ZERO observable runs (a rarely-run repo hitting the
+   30-day ceiling): the same close + section, stamped honestly `(no-data)` rather than a false
+   clean bill.
+
+A `tripped` / `closed-clean` / `closed-clean (no-data)` record is never re-woken (the watcher's
+wake predicate is `status: open` only). `/lazy-batch-retro` Step 6e cites canary outcomes
+(`--canary --dry-run`) alongside the efficacy verdicts; the canary's own **trip-precision** KPI
+(`canary-trip-precision`, `docs/kpi/registry.json`) measures the fraction of trips whose revert
+item was NOT closed-as-noise.
+
 ## Authoring surface — the `## Intervention Hypothesis` SPEC block
 
 A harness-change SPEC declares its hypothesis in one short parseable block

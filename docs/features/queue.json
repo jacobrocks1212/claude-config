@@ -42,8 +42,7 @@
       "id": "claude-config-ci",
       "name": "CI for claude-config Itself",
       "spec_dir": "claude-config-ci",
-      "tier": 3,
-      "stub": true
+      "tier": 3
     },
     {
       "id": "native-android-pipeline-steering",

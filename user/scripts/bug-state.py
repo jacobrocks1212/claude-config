@@ -1710,9 +1710,15 @@ def _write_yaml_sentinel(path: Path, kind: str, **fields: Any) -> None:
         fm = {"kind": kind, **fields}
         body = "---\n" + yaml.safe_dump(fm, sort_keys=False).strip() + "\n---\n\n# Sentinel\n"
     except ImportError:
-        # Fallback: emit minimal frontmatter manually so the harness can run
-        # even if PyYAML is missing (parse_sentinel treats it as freeform → {}).
-        pairs = "\n".join(f"{k}: {v}" for k, v in {"kind": kind, **fields}.items())
+        # Fallback: emit minimal frontmatter manually so the harness can run even
+        # if PyYAML is missing. Colon-bearing scalar VALUES are single-quoted via
+        # lazy_core._yaml_fallback_scalar so the emitted `key: value` line is valid
+        # YAML (parity with safe_dump) and re-reads through parse_sentinel without
+        # hard-halting (skip-mcp-test-frontmatter-unquoted-colon — quote-on-write).
+        pairs = "\n".join(
+            f"{k}: {lazy_core._yaml_fallback_scalar(v)}"
+            for k, v in {"kind": kind, **fields}.items()
+        )
         body = f"---\n{pairs}\n---\n\n# Sentinel\n"
     path.write_text(body, encoding="utf-8")
 
@@ -1749,8 +1755,12 @@ def _write_yaml_blocked_sentinel(
             + (body if body else "# Blocked\n")
         )
     except ImportError:
+        # Colon-bearing scalar values are single-quoted (parity with safe_dump)
+        # via lazy_core._yaml_fallback_scalar so the manual fallback emits valid
+        # YAML on the no-PyYAML path (skip-mcp-test-frontmatter-unquoted-colon —
+        # quote-on-write; sibling of the _write_yaml_sentinel fallback above).
         pairs = "\n".join(
-            f"{k}: {v}" for k, v in {
+            f"{k}: {lazy_core._yaml_fallback_scalar(v)}" for k, v in {
                 "kind": "blocked",
                 "feature_id": feature_id,
                 "phase": phase,
@@ -2489,6 +2499,55 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             bdir / "SKIP_MCP_TEST.md", "skip-mcp-test",
             bug_id="bug-s9sm", reason="No MCP-testable surface (workstation)",
             approved_by="human", date="2026-05-30",
+        )
+        # Intentionally no VALIDATED.md, no DEFERRED_REQUIRES_DEVICE.md
+
+    elif name == "step9-skip-colon-reason":
+        # skip-mcp-test-frontmatter-unquoted-colon Phase 2 (bug-pipeline mirror of
+        # the lazy-state.py skip-operator-colon-reason-validates fixture): a
+        # SKIP_MCP_TEST.md whose `reason:` carries an UNQUOTED colon-space must
+        # still route Step 9 → __write_validated_from_skip__ rather than exiting 2
+        # at the strict YAML parse. RED before Phase 1 (parse_sentinel _die'd);
+        # GREEN after (tolerant re-parse reads the colon value as a literal).
+        # The SKIP_MCP_TEST.md is written RAW (NOT via _write_yaml_sentinel, whose
+        # yaml.safe_dump would auto-QUOTE the colon value and mask the bug).
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-s9cr", "name": "Step9 Skip Colon Reason Bug",
+                 "spec_dir": "bug-s9cr"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-s9cr"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Step9 Skip Colon Reason Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-07-04\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "RETRO_DONE.md", "retro-done",
+            bug_id="bug-s9cr", date="2026-07-04", rounds=1,
+        )
+        # RAW SKIP_MCP_TEST.md — an UNQUOTED colon-space in the `reason` value.
+        (bdir / "SKIP_MCP_TEST.md").write_text(
+            "---\n"
+            "kind: skip-mcp-test\n"
+            "bug_id: bug-s9cr\n"
+            "reason: untestable on this host: no real audio device\n"
+            "approved_by: human\n"
+            "date: 2026-07-04\n"
+            "---\n\n"
+            "# Skip\n",
+            encoding="utf-8",
         )
         # Intentionally no VALIDATED.md, no DEFERRED_REQUIRES_DEVICE.md
 
@@ -3493,6 +3552,17 @@ def run_smoke_tests() -> int:
         #     → STEP_MCP_SKIP with __write_validated_from_skip__
         (
             "step9-skip-mcp", False, True,
+            {
+                "current_step": STEP_MCP_SKIP,
+                "sub_skill": "__write_validated_from_skip__",
+            },
+        ),
+        # 18b. skip-mcp-test-frontmatter-unquoted-colon Phase 2: SKIP_MCP_TEST.md
+        #      with an UNQUOTED colon-space `reason:` → STEP_MCP_SKIP with
+        #      __write_validated_from_skip__ (parse_sentinel tolerant read), not
+        #      an exit-2 hard-halt at the strict YAML parse. RED before Phase 1.
+        (
+            "step9-skip-colon-reason", False, True,
             {
                 "current_step": STEP_MCP_SKIP,
                 "sub_skill": "__write_validated_from_skip__",

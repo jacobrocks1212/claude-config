@@ -483,6 +483,588 @@ def _review_record(rec: dict, all_records: list[dict], events: list[dict],
 
 
 # ---------------------------------------------------------------------------
+# Canary watcher (harness-change-canary-rollback Phases 2 + 3)
+#
+# `efficacy-eval.py --canary` is a run-boundary mode of this same evaluator:
+# it accrues each OPEN canary's observation window (D2: next N completed runs
+# after ship, 30-day wall-clock ceiling), applies the D2 tripwire bands + D3
+# surface-based incident attribution, and on a trip flags-and-enqueues an
+# evidence-bearing `canary-revert-<id>` bug stub (D4/D5 — never a silent
+# revert). Read-only over every signal; the SOLE writer of `canary.*` record
+# fields + the trip-time `EVIDENCE.md`. Fail-open throughout — a watcher error
+# degrades to "this record accrues nothing this run" and NEVER blocks a run.
+# The two cadences share readers/writers but live behind this clean `--canary`
+# boundary (separate helpers, separate tests).
+# ---------------------------------------------------------------------------
+
+# D2 tripwire constants (one block; the window defaults live in lazy_core:
+# CANARY_WINDOW_RUNS_DEFAULT / CANARY_WINDOW_DAYS_CEILING). Hair-triggered
+# relative to the efficacy verdict bands (a trip enqueues an INVESTIGATION,
+# not a verdict): a 25% regression with ≥3 post-ship occurrences, or ≥2
+# attributable fresh incidents.
+CANARY_REGRESSION_BAND_PCT = 25
+CANARY_MIN_POST_OCCURRENCES = 3
+CANARY_INCIDENT_TRIP_COUNT = 2
+
+
+# --- WU-5: D2 tripwire band + D3 surface-based incident attribution ---------
+
+def _canary_band_trip(meta: dict, canary: dict, events: list[dict],
+                      window: list[str]) -> dict:
+    """D2 tripwire: the targeted signal regressed past the declared band
+    (default ±25% relative to the FROZEN baseline) with ≥3 post-ship
+    occurrences in the accrued window. Hair-triggered relative to the efficacy
+    verdict band. A kpi:<...> / undeclared / no-baseline target degrades to
+    no-trip (never errors) — the KPI-registry band is the sibling seam, not
+    wired here in v1."""
+    out = {"trip": False, "reason": "", "rel": None,
+           "band": CANARY_REGRESSION_BAND_PCT, "post_events": None,
+           "post_value": None, "base_value": None}
+    kind, ev_type = _resolve_target_signal(meta.get("target_signal"))
+    if kind != "event":
+        out["reason"] = f"band-not-evaluable (target {kind})"
+        return out
+    direction = meta.get("expected_direction")
+    if direction not in ("decrease", "increase"):
+        out["reason"] = f"band-not-evaluable (direction {direction!r})"
+        return out
+    baseline = meta.get("baseline") or {}
+    if not isinstance(baseline, dict) or baseline.get("status") != "frozen":
+        out["reason"] = "band-not-evaluable (no frozen baseline)"
+        return out
+    window_set = set(window)
+    post_events = sum(
+        1 for e in events
+        if e.get("run_id") in window_set and e.get("event") == ev_type
+    )
+    post_value = round(post_events / len(window), 4) if window else 0.0
+    base_value = float(baseline.get("value") or 0.0)
+    band = _cfg_int(meta, "canary_band_pct", CANARY_REGRESSION_BAND_PCT)
+    out.update({"post_events": post_events, "post_value": post_value,
+                "base_value": base_value, "band": band})
+    if base_value == 0.0:
+        rel = 100.0 if post_value > 0 else 0.0
+    else:
+        rel = round((post_value - base_value) / base_value * 100.0, 1)
+    out["rel"] = rel
+    # A "regression" is movement AGAINST the intervention's intended direction:
+    # a change that was meant to DECREASE a signal regresses when the signal
+    # goes UP (rel >= +band); an INCREASE target regresses on a drop.
+    regressed = rel >= band if direction == "decrease" else rel <= -band
+    out["trip"] = bool(regressed and post_events >= CANARY_MIN_POST_OCCURRENCES)
+    if out["trip"]:
+        out["reason"] = (
+            f"targeted signal {meta.get('target_signal')} regressed "
+            f"{rel:+.1f}% vs frozen baseline {base_value} ev/run "
+            f"(band ±{band}%, {post_events} post-ship occurrences over "
+            f"{len(window)} window runs)")
+    else:
+        out["reason"] = (
+            f"within band: {rel:+.1f}% vs ±{band}% "
+            f"({post_events} post-ship occurrences)")
+    return out
+
+
+def _canary_hook_surface(hook) -> "str | None":
+    """Map a hook name to its repo-relative script path (`user/hooks/<name>`).
+    A non-hook / empty value → None (conservative: never attributes)."""
+    if not isinstance(hook, str) or not hook.strip():
+        return None
+    base = hook.strip().replace("\\", "/").split("/")[-1]
+    if base.endswith(".sh") or base.endswith(".ps1"):
+        return "user/hooks/" + base
+    return None
+
+
+def _canary_entry_surface(entry: dict) -> "str | None":
+    """Resolve a fresh-incident entry's emitting surface to a repo-relative
+    path (D3). Explicit surface fields win; else a hook name maps to its
+    script. An unresolvable surface returns None and NEVER attributes."""
+    if not isinstance(entry, dict):
+        return None
+    for key in ("surface", "surface_file", "source_file"):
+        v = entry.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip().replace("\\", "/")
+    return _canary_hook_surface(entry.get("hook"))
+
+
+def _load_incident_scan():
+    """Import the dash-named incident-scan module for its READ-ONLY fresh-
+    incident readers. Fail-open — an import failure degrades to deny-ledger-
+    only attribution (never raises)."""
+    try:
+        import importlib.util
+        path = _SCRIPTS_DIR / "incident-scan.py"
+        spec = importlib.util.spec_from_file_location("incident_scan", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _canary_gather_incidents(repo_root: Path) -> list[dict]:
+    """Read fresh incidents from the deny ledger + hook-events + legacy
+    breadcrumbs (the incident-scan.py reader surface — clustered incidents are
+    the preferred input, raw deny/breadcrumb the fallback), each resolved to
+    {ts, surface, kind, line}. Read-only + fail-open."""
+    incidents: list[dict] = []
+
+    def _add(ts, surface, kind, entry):
+        if not isinstance(ts, (int, float)):
+            return
+        incidents.append({"ts": float(ts), "surface": surface, "kind": kind,
+                          "line": json.dumps(entry, sort_keys=True)})
+
+    try:
+        for e in lazy_core.read_deny_ledger():
+            kind = "friction" if e.get("kind") == "process-friction" else "deny"
+            _add(e.get("ts"), _canary_entry_surface(e), kind, e)
+    except Exception:  # noqa: BLE001
+        pass
+
+    inc = _load_incident_scan()
+    if inc is not None:
+        try:
+            for e in inc.read_hook_events(repo_root):
+                _add(e.get("ts"), _canary_entry_surface(e),
+                     f"hook-{e.get('kind') or ''}", e)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            for c in inc.read_legacy_crumbs():
+                ts = inc._parse_crumb_ts(str(c.get("at") or ""))
+                _add(ts, _canary_entry_surface(c), "hook-error", c)
+        except Exception:  # noqa: BLE001
+            pass
+    return incidents
+
+
+def _canary_window_start_ts(opened) -> float:
+    """The window's lower time bound: the `opened` date at 00:00 UTC. An
+    unparseable date → 0.0 (attribute all fresh incidents — favors detection,
+    a false trip costs one triaged stub per the SPEC's D2 philosophy)."""
+    try:
+        d = datetime.datetime.strptime(str(opened), "%Y-%m-%d")
+        return d.replace(tzinfo=datetime.timezone.utc).timestamp()
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _canary_attribute(canary: dict,
+                      incidents: list[dict]) -> "tuple[list, list]":
+    """D3 surface-based attribution: an incident attributes iff (i) its
+    timestamp is inside the window (≥ the canary's opened epoch) AND (ii) its
+    emitting surface ∈ canary.surfaces. Unknown/unresolvable surfaces NEVER
+    attribute. Returns (attributed, unattributed_in_window) — the latter is
+    listed-but-not-counted per D3. A shared surface counts against every
+    matching open canary because each is attributed independently."""
+    start = _canary_window_start_ts(canary.get("opened"))
+    surfaces = set(canary.get("surfaces") or [])
+    attributed: list[dict] = []
+    unattributed: list[dict] = []
+    for inc in incidents:
+        if inc["ts"] < start:
+            continue  # pre-window — not fresh for this canary
+        if inc.get("surface") and inc["surface"] in surfaces:
+            attributed.append(inc)
+        else:
+            unattributed.append(inc)
+    return (attributed, unattributed)
+
+
+# --- WU-6: trip consequence (flag-and-enqueue + EVIDENCE.md + once-ever) -----
+
+def _canary_revert_dir_exists(repo_root: Path, revert_id: str) -> bool:
+    """Guard layer 1: an open docs/bugs/<revert-id>/ dir OR any archived
+    docs/bugs/_archive/ entry whose name starts with it (mirrors
+    _reconsideration_dir_exists)."""
+    bugs = repo_root / "docs" / "bugs"
+    if (bugs / revert_id).exists():
+        return True
+    archive = bugs / "_archive"
+    try:
+        if archive.is_dir():
+            for child in archive.iterdir():
+                if child.name == revert_id or child.name.startswith(
+                        revert_id + "-"):
+                    return True
+    except OSError:
+        pass
+    return False
+
+
+_CANARY_PARITY_INSTRUCTION = (
+    "This change touches a parity-guarded coupled pair. Any revert MUST cover "
+    "the WHOLE pair and END with `python3 user/scripts/lazy_parity_audit.py "
+    "--repo-root .` green — reverting one half breaks the audit."
+)
+
+
+def _canary_evidence_text(rec: dict, ev: dict, repo_root: Path,
+                          today: str) -> str:
+    """Serialize the trip evidence (D5) — trip reason verbatim, full commit
+    set, coupled-pair scope + the parity-audit instruction, degraded note, and
+    linked docs — for the seeded bug dir's EVIDENCE.md."""
+    meta = rec["meta"]
+    rid = meta.get("intervention_id")
+    record_rel = os.path.relpath(str(rec["path"]), str(repo_root))
+    pipeline = meta.get("pipeline") or "feature"
+    item_root = "bugs" if pipeline == "bug" else "features"
+    commit_lines = "\n".join(f"- {c}" for c in ev["commit_set"]) or "- (none derived)"
+    attributed = [i["line"] for i in ev["attributed"]]
+    band = ev["band"]
+    fm = [
+        "---",
+        "kind: canary-evidence",
+        f"canary_revert_of: {rid}",
+        f"intervention_record: {record_rel}",
+        f"tripped: {today}",
+        "---",
+    ]
+    body = [
+        "",
+        f"# Canary Trip Evidence — {rid}",
+        "",
+        "Flag-and-enqueue only — NOTHING was reverted automatically (D4). "
+        "Triage this like any bug: revert (covering the pair scope + parity "
+        "audit below), redesign, or close-as-noise (itself a signal for "
+        "tuning the canary bands).",
+        "",
+        "## Trip reason",
+        "",
+        ev["reason"] or "(trip detected)",
+        "",
+        "### Band numbers",
+        "",
+        f"- relative movement: {band.get('rel')}% (band ±{band.get('band')}%)",
+        f"- post-ship occurrences: {band.get('post_events')} "
+        f"(baseline {band.get('base_value')} ev/run → "
+        f"post {band.get('post_value')} ev/run)",
+        "",
+        "### Attributed fresh incidents (verbatim)",
+        "",
+        "```",
+        *(attributed or ["(none — band-only trip)"]),
+        "```",
+        "",
+        "## Commit set (revert target)",
+        "",
+        commit_lines,
+        "",
+        "## Coupled-pair scope",
+        "",
+    ]
+    if ev["pair_scope"]:
+        body.append(_CANARY_PARITY_INSTRUCTION)
+        body.append("")
+        body.extend(f"- {half}" for half in ev["pair_scope"])
+    else:
+        body.append(
+            "No coupled-pair scope — the commit set touches no parity-guarded "
+            "pair, so a revert need not span a sibling.")
+    body += [
+        "",
+        "## Degraded-revert note",
+        "",
+        ev["degraded_revert_note"] or (
+            "none — a plain `git revert` of the commit set is expected to back "
+            "the change out."),
+        "",
+        "## Linked docs",
+        "",
+        f"- Intervention record: {record_rel}",
+        f"- SPEC: docs/{item_root}/{rid}/SPEC.md",
+        f"- Gate verdict (if present): docs/{item_root}/{rid}/GATE_VERDICT.md",
+        "",
+    ]
+    return "\n".join(fm + body)
+
+
+def _canary_enqueue_revert(repo_root: Path, revert_id: str, rid: str,
+                           record_rel: str) -> bool:
+    """Shell the SHIPPED bug enqueue (copies the _enqueue_reconsideration
+    subprocess + LAZY_ORCHESTRATOR=1 env pattern verbatim — NEVER a queue.json
+    hand-edit). Returns True on a clean enqueue."""
+    brief = (
+        f"Canary tripped for a shipped control-surface change — evidence "
+        f"attached (EVIDENCE.md in this dir).\n\n"
+        f"- Intervention record: {record_rel}\n"
+        f"- Canary: {rid}\n\n"
+        f"Question for /spec-bug: REVERT (covering the coupled-pair scope + a "
+        f"green parity audit), REDESIGN, or close-as-noise? Nothing was "
+        f"reverted automatically — the canary only flags and enqueues; this "
+        f"item flows through spec, plan, and normal triage under full gates."
+    )
+    cmd = [
+        sys.executable,
+        str(_SCRIPTS_DIR / "lazy-state.py"),
+        "--enqueue-adhoc",
+        "--type", "bug",
+        "--id", revert_id,
+        "--name", f"Revert-or-redesign canary trip: {rid}",
+        "--brief", brief,
+        "--repo-root", str(repo_root),
+    ]
+    env = {**os.environ, "LAZY_ORCHESTRATOR": "1"}
+    try:
+        proc = subprocess.run(
+            cmd, env=env, capture_output=True, text=True, check=False)
+    except OSError:
+        return False
+    return proc.returncode == 0
+
+
+def _canary_fire_consequence(repo_root: Path, rec: dict, ev: dict,
+                             today: str) -> str:
+    """Fire the trip consequence behind the two-layer once-ever guard (mirrors
+    _enqueue_reconsideration): enqueue canary-revert-<id>, write EVIDENCE.md,
+    and stamp canary.status: tripped + the record-level guard stamp. The
+    watcher stays the SOLE writer of canary.* fields. Flag-and-enqueue ONLY —
+    no revert, no writes outside record/evidence/queue."""
+    meta = rec["meta"]
+    canary = meta["canary"]
+    rid = meta.get("intervention_id")
+    revert_id = f"canary-revert-{rid}"
+
+    # Layer 2: the record-level stamp — once set, never enqueue again (even if
+    # the bug dir vanished). One revert item per canary, ever.
+    if meta.get("canary_revert_enqueued"):
+        return f"skipped (already enqueued {meta.get('canary_revert_enqueued')})"
+
+    # Layer 1: an existing revert dir, open or archived.
+    if _canary_revert_dir_exists(repo_root, revert_id):
+        canary["status"] = "tripped"
+        meta["canary_revert_enqueued"] = today
+        _write_record(rec)
+        return f"skipped (docs/bugs/{revert_id} exists, open or archived)"
+
+    record_rel = os.path.relpath(str(rec["path"]), str(repo_root))
+    if not _canary_enqueue_revert(repo_root, revert_id, rid, record_rel):
+        # No stamp on failure — the next run retries (status stays open).
+        return "enqueue-failed — will retry next run"
+
+    # The enqueue seeded docs/bugs/<revert_id>/; drop the EVIDENCE.md capsule.
+    evidence_path = repo_root / "docs" / "bugs" / revert_id / "EVIDENCE.md"
+    try:
+        lazy_core._atomic_write(
+            evidence_path, _canary_evidence_text(rec, ev, repo_root, today))
+    except OSError:
+        pass  # evidence is best-effort; the guard stamp still fires
+
+    canary["status"] = "tripped"
+    meta["canary_revert_enqueued"] = today
+    _write_record(rec)
+    return f"enqueued {revert_id}"
+
+
+def _canary_open_records(records: list[dict]) -> list[dict]:
+    """The subset of enumerated records carrying an OPEN canary sub-map — the
+    watcher's wake predicate (a closed-clean / tripped / no-canary record is
+    skipped)."""
+    out: list[dict] = []
+    for rec in records:
+        canary = rec["meta"].get("canary")
+        if isinstance(canary, dict) and canary.get("status") == "open":
+            out.append(rec)
+    return out
+
+
+def _canary_window_runs(canary: dict) -> int:
+    """The record's canary window size (per-record overridable via the frozen
+    `window_runs` field; falls back to the module default)."""
+    wr = canary.get("window_runs")
+    if isinstance(wr, int) and wr > 0:
+        return wr
+    return lazy_core.CANARY_WINDOW_RUNS_DEFAULT
+
+
+def _canary_ceiling_matured(opened, today: str) -> bool:
+    """True when the 30-day wall-clock ceiling has elapsed since `opened`
+    (closes a rarely-run repo's canary even with < window_runs runs). An
+    unparseable date is treated as NOT matured (fail-safe — never a spurious
+    close)."""
+    try:
+        o = datetime.date.fromisoformat(str(opened))
+        t = datetime.date.fromisoformat(str(today))
+    except (ValueError, TypeError):
+        return False
+    return (t - o).days >= lazy_core.CANARY_WINDOW_DAYS_CEILING
+
+
+def _canary_evaluate_record(rec: dict, events: list[dict], run_ids: list[str],
+                            incidents: list[dict], today: str) -> dict:
+    """Evaluate ONE open-canary record for this run boundary. Pure (no writes);
+    the caller applies any consequence. Returns:
+    {"id", "window_runs", "post_runs", "window", "matured", "no_data", "trip",
+     "band", "attributed", "unattributed", "reason", "pair_scope",
+     "commit_set", "degraded_revert_note"}."""
+    meta = rec["meta"]
+    canary = meta.get("canary") or {}
+    rid = meta.get("intervention_id")
+    window_runs = _canary_window_runs(canary)
+    post = _post_runs(meta, run_ids)
+    window = post[:window_runs]
+    run_matured = len(post) >= window_runs
+    ceiling_matured = _canary_ceiling_matured(canary.get("opened"), today)
+    matured = run_matured or ceiling_matured
+
+    band = _canary_band_trip(meta, canary, events, window)
+    attributed, unattributed = _canary_attribute(canary, incidents)
+    incident_trip = len(attributed) >= CANARY_INCIDENT_TRIP_COUNT
+    trip = bool(band.get("trip")) or incident_trip
+
+    # A matured window with ZERO observable runs is honest no-data (D2/D7) —
+    # only when it did NOT trip (an incident trip needs no runs).
+    no_data = bool(matured and len(window) == 0 and not trip)
+
+    reasons: list[str] = []
+    if band.get("trip"):
+        reasons.append(band.get("reason", ""))
+    if incident_trip:
+        surfaces = sorted({i["surface"] for i in attributed if i.get("surface")})
+        reasons.append(
+            f"{len(attributed)} attributable fresh incident(s) on "
+            f"{', '.join(surfaces) or '(surface)'} within the window"
+        )
+    return {
+        "id": rid,
+        "window_runs": window_runs,
+        "post_runs": len(post),
+        "window": len(window),
+        "matured": matured,
+        "no_data": no_data,
+        "trip": trip,
+        "band": band,
+        "attributed": attributed,
+        "unattributed": unattributed,
+        "reason": " AND ".join(r for r in reasons if r),
+        "pair_scope": list(canary.get("pair_scope") or []),
+        "commit_set": list(canary.get("commit_set") or []),
+        "degraded_revert_note": canary.get("degraded_revert_note"),
+    }
+
+
+def _canary_close_section(ev: dict, today: str) -> str:
+    """The `## Canary <date>` record-body section (D7 steady-state handoff):
+    runs observed, signal movement, and incidents attributed (none/list)."""
+    band = ev.get("band") or {}
+    attributed = ev.get("attributed") or []
+    unattributed = ev.get("unattributed") or []
+    lines = [
+        f"## Canary {today}",
+        "",
+        f"- window: closed after {ev['window']}/{ev['window_runs']} observed "
+        f"post-ship run(s) (matured: {ev['matured']})",
+        f"- signal movement: {band.get('reason') or 'n/a (no observable runs)'}",
+    ]
+    if attributed:
+        surfaces = sorted({i.get("surface") for i in attributed
+                           if i.get("surface")})
+        lines.append(
+            f"- incidents attributed: {len(attributed)} on "
+            f"{', '.join(surfaces) or '(surface)'}")
+        lines.append("")
+        lines.append("```")
+        lines.extend(i["line"] for i in attributed)
+        lines.append("```")
+    else:
+        lines.append("- incidents attributed: none")
+    if unattributed:
+        lines.append(
+            f"- unattributed in-window incidents: {len(unattributed)} "
+            f"(listed, never counted)")
+    lines.append(
+        "- handoff: the efficacy review proceeds on its own longer cadence — "
+        "a clean canary does NOT pre-judge the efficacy verdict, and the "
+        "watcher stops waking this record.")
+    return "\n".join(lines)
+
+
+def _canary_stamp_closed(rec: dict, ev: dict, today: str, status: str) -> None:
+    """Close a matured, no-trip canary window (D7): stamp `canary.status`
+    (`closed-clean` or `closed-clean (no-data)`) and append a `## Canary <date>`
+    record-body section. The watcher stays the SOLE writer of `canary.*` and
+    NEVER touches an efficacy verdict field (status / review_count / …)."""
+    rec["meta"]["canary"]["status"] = status
+    rec["body"] = rec["body"].rstrip() + "\n\n" + _canary_close_section(ev, today)
+    _write_record(rec)
+
+
+def run_canary(repo_root: Path, args, today: str) -> dict:
+    """The `--canary` mode entry point. Enumerates open-canary records, accrues
+    each window, detects trips (D2/D3), fires the flag-and-enqueue consequence
+    (D4/D5) unless `--dry-run`, and stamps honest no-data closes. Returns the
+    payload dict."""
+    records = _enumerate_records(repo_root, args.id)
+    open_recs = _canary_open_records(records)
+    events = lazy_core.read_intervention_telemetry(repo_root)
+    run_ids = sorted({
+        e.get("run_id") for e in events
+        if isinstance(e.get("run_id"), str) and e.get("run_id")
+    })
+    incidents = _canary_gather_incidents(repo_root)
+
+    trips: list[dict] = []
+    closed_no_data: list[str] = []
+    closed_clean: list[str] = []
+    monitoring: list[dict] = []
+    for rec in open_recs:
+        ev = _canary_evaluate_record(rec, events, run_ids, incidents, today)
+        if ev["trip"]:
+            consequence = "would enqueue canary-revert-{} (dry-run)".format(
+                ev["id"]) if args.dry_run else _canary_fire_consequence(
+                repo_root, rec, ev, today)
+            trips.append({
+                "id": ev["id"],
+                "revert_id": f"canary-revert-{ev['id']}",
+                "reason": ev["reason"],
+                "attributed": [i["line"] for i in ev["attributed"]],
+                "unattributed": [i["line"] for i in ev["unattributed"]],
+                "band": {k: ev["band"].get(k) for k in
+                         ("trip", "rel", "band", "post_events", "post_value",
+                          "base_value")},
+                "pair_scope": ev["pair_scope"],
+                "consequence": consequence,
+            })
+        elif ev["matured"]:
+            # D7 window close: a matured window with no trip closes clean. Zero
+            # observable runs is the honest `(no-data)` variant; both append a
+            # `## Canary <date>` record section and stop waking the record.
+            status = "closed-clean (no-data)" if ev["no_data"] \
+                else "closed-clean"
+            if not args.dry_run:
+                _canary_stamp_closed(rec, ev, today, status)
+            if ev["no_data"]:
+                closed_no_data.append(ev["id"])
+            else:
+                closed_clean.append(ev["id"])
+        else:
+            monitoring.append({
+                "id": ev["id"],
+                "window": f"{ev['window']}/{ev['window_runs']} runs",
+                "matured": ev["matured"],
+                "attributed": len(ev["attributed"]),
+                "unattributed": len(ev["unattributed"]),
+            })
+
+    notify = None
+    if trips:
+        notify = "canary tripped: " + ", ".join(t["id"] for t in trips)
+    return {
+        "mode": "canary",
+        "open_canaries": len(open_recs),
+        "trips": trips,
+        "closed_no_data": closed_no_data,
+        "closed_clean": closed_clean,
+        "monitoring": monitoring,
+        "notify": notify,
+        "dry_run": bool(args.dry_run),
+    }
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
@@ -500,6 +1082,10 @@ def main(argv: "list[str] | None" = None) -> int:
                              "enqueuing consequences (byte-inert).")
     parser.add_argument("--id", default=None,
                         help="Review only the named intervention_id.")
+    parser.add_argument("--canary", action="store_true",
+                        help="Run the harness-change canary watcher mode "
+                             "(D2/D3 tripwire over open canary windows) "
+                             "instead of the efficacy review.")
     args = parser.parse_args(argv)
 
     repo_root = Path(args.repo_root)
@@ -517,6 +1103,33 @@ def main(argv: "list[str] | None" = None) -> int:
         pass
 
     today = datetime.date.today().isoformat()
+
+    # --canary: the run-boundary watcher cadence (a fully separate branch;
+    # never blocks a run — every read is fail-open).
+    if args.canary:
+        try:
+            payload = run_canary(repo_root, args, today)
+        except Exception as exc:  # noqa: BLE001 — fail-open: never block a run
+            payload = {"mode": "canary", "error": f"canary watcher degraded: "
+                       f"{exc}", "trips": [], "closed_no_data": [],
+                       "monitoring": [], "notify": None,
+                       "dry_run": bool(args.dry_run)}
+        if args.json:
+            sys.stdout.write(json.dumps(payload, indent=2) + "\n")
+        else:
+            trips = payload.get("trips", [])
+            sys.stdout.write(
+                f"efficacy-eval --canary: {payload.get('open_canaries', 0)} "
+                f"open, {len(trips)} tripped, "
+                f"{len(payload.get('closed_clean', []))} closed-clean, "
+                f"{len(payload.get('closed_no_data', []))} closed no-data\n")
+            for t in trips:
+                sys.stdout.write(
+                    f"  ⚠ canary tripped: {t['id']}\n"
+                    f"    reason: {t['reason']}\n"
+                    f"    {t['consequence']}\n")
+        return 0
+
     records = _enumerate_records(repo_root, args.id)
     events = lazy_core.read_intervention_telemetry(repo_root)
     run_ids = sorted({

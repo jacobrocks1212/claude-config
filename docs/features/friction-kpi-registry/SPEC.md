@@ -362,7 +362,7 @@ docs/kpi/registry.json  (committed; schema_version; the ONLY declaration surface
 | false-green build rate | build-queue | `results/<seq>.json` `hygiene.build_fidelity != "verified"` / `result_fidelity` | — |
 | queue wait time | build-queue | not yet — `results/<seq>.json` records `seq`/`exit_code`/`ended_at` but no queued-at/started-at pair (estimated — verify exact fields during Phase 2; may need a runner timestamp add) | — |
 | raw-invocation deny recurrence | build-queue | not recorded — `build-queue-enforce.sh` denies are not ledgered today; needs a best-effort hook-side append (fail-OPEN preserved) | — |
-| runaway/containment trip rate | containment | `lazy-deny-ledger.jsonl` (guard denies + `kind: process-friction`) | — |
+| runaway/containment trip rate | containment | the upstream-delivered `containment-refusal` telemetry event (the cleaner purpose-built signal — PHASES Phase 3 binds it via `trends.refusal_counts`, so this is a ledger-backed Phase-3 row); `lazy-deny-ledger.jsonl` (guard denies + `kind: process-friction`) remains a complementary source | `containment-refusal` events (D4-B vocabulary) |
 | halt dwell time | halt handling | date-granularity only, via `*_RESOLVED_<date>` sentinel renames | `halt` + `sentinel-resolved` events (D4-B vocabulary) |
 | cycles-per-completion | pipeline efficiency | nothing durable — marker counters are deleted at `--run-end` | `run-*`/`cycle-*`/`pseudo-applied` events |
 

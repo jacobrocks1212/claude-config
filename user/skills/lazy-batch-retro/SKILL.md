@@ -729,12 +729,44 @@ python3 ~/.claude/scripts/efficacy-eval.py --repo-root . --dry-run --json
 - **Never** run without `--dry-run` from this skill (verdict writes + REFUTED enqueues belong
   to the batch orchestrators' §1c.6 flush and on-demand operator runs, not the retro).
 
+### Canary outcomes (harness-change-canary-rollback D7 — cited alongside the verdicts)
+
+The same evaluator carries the **harness-change canary** watcher (`--canary`). A shipped
+control-surface change opens a canary observation window; the window closes `closed-clean` /
+`closed-clean (no-data)` or trips (`canary-revert-<id>` enqueued). Cite these outcomes in the
+same report-only, `--dry-run` shape as the efficacy verdicts — a retro's claim that a
+control-surface change is healthy must cite the canary result, not narrate it.
+
+Run (read-only — `--dry-run` writes zero records and fires zero enqueues; `--canary` never
+mutates a `main`-branch commit):
+
+```bash
+python3 ~/.claude/scripts/efficacy-eval.py --repo-root . --canary --dry-run --json
+```
+
+- For each `trips[]` entry, cite it wherever the artifacts would otherwise narrate a
+  control-surface change's health: `⚠ canary tripped: {id} — {reason}; enqueued
+  canary-revert-{id} (evidence attached)`. A trip is NOT a failed retro — it is a
+  flag-and-enqueue the operator triages (revert / redesign / close-as-noise).
+- List each `closed_clean` / `closed_no_data` id as a clean/no-data canary close — a clean
+  close does NOT pre-judge the efficacy verdict (that lands later on its own cadence); a
+  `(no-data)` close honestly means the window observed zero runs.
+- `monitoring[]` entries are open windows still accruing — report them as in-flight, not
+  outcomes.
+- **Degrade gracefully:** if the evaluator or `docs/interventions/` is unavailable, print one
+  skip line and continue — this citation must never fail the retro.
+
 ### Status-bookend integration
 
 The Step 8 final bookend gains an `**Intervention verdicts:**` line:
 
 - `**Intervention verdicts:** {C} confirmed, {R} refuted, {I} inconclusive due this scan; {T} escalated (needs triage).`
 - or `**Intervention verdicts:** step skipped — {reason}.`
+
+and a `**Canary outcomes:**` line:
+
+- `**Canary outcomes:** {P} tripped (enqueued), {C} closed-clean, {N} closed no-data, {O} still open this scan.`
+- or `**Canary outcomes:** step skipped — {reason}.`
 ## Step 6f: Parallel-run lane audit feed (lanes.json — demotions + false-`independent` markers)
 
 **Rationale (parallel-worktree-batch-execution D3/D4).** In a `/lazy-batch-parallel` run, a

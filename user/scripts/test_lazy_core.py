@@ -1025,6 +1025,184 @@ def test_parse_sentinel_leading_blanks():
 
 
 # ---------------------------------------------------------------------------
+# Tests: parse_sentinel tolerance for unquoted colon-space scalar values
+# (skip-mcp-test-frontmatter-unquoted-colon — WU-1)
+# ---------------------------------------------------------------------------
+
+def test_parse_sentinel_unquoted_colon_space_reason():
+    """An unquoted colon-space in a scalar `reason` value → read as a literal
+    string (no _die/SystemExit). This is the exact bug: an operator-authored
+    SKIP_MCP_TEST.md `reason` carrying a colon-space hard-halted parse_sentinel."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: skip-mcp-test\n"
+        "granted_by: operator\n"
+        "reason: untestable on this host: no real audio device\n"
+        "---\n\n"
+        "# Skip\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "SKIP_MCP_TEST.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.parse_sentinel(p)
+    assert isinstance(result, dict), f"expected dict, got {type(result)}"
+    assert result.get("kind") == "skip-mcp-test", f"kind mismatch: {result}"
+    assert result.get("granted_by") == "operator", f"granted_by mismatch: {result}"
+    assert result.get("reason") == "untestable on this host: no real audio device", (
+        f"reason should be the literal full string, got: {result.get('reason')!r}"
+    )
+
+
+def test_parse_sentinel_value_naming_key_value_pair():
+    """A scalar value that itself names a `key: value` pair → parses to the
+    literal string (no nested mapping, no _die)."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: blocked\n"
+        "skipped_by: deferred because config: value was missing\n"
+        "---\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "BLOCKED.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.parse_sentinel(p)
+    assert isinstance(result, dict), f"expected dict, got {type(result)}"
+    assert result.get("skipped_by") == "deferred because config: value was missing", (
+        f"skipped_by should be the literal string, got: {result.get('skipped_by')!r}"
+    )
+
+
+def test_parse_sentinel_trailing_colon_value():
+    """A value ending in a bare colon → read as a literal (no _die)."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: blocked\n"
+        "reason: waiting on:\n"
+        "---\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "BLOCKED.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.parse_sentinel(p)
+    assert isinstance(result, dict), f"expected dict, got {type(result)}"
+    assert result.get("reason") == "waiting on:", (
+        f"reason should be the literal 'waiting on:', got: {result.get('reason')!r}"
+    )
+
+
+def test_parse_sentinel_colon_no_space_is_plain_scalar_control():
+    """CONTROL: a colon with NO following space (`build:step`) is already a
+    valid plain scalar — the result is byte-identical to today (the tolerant
+    path is never reached because yaml.safe_load succeeds)."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: blocked\n"
+        "reason: build:step\n"
+        "---\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "BLOCKED.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.parse_sentinel(p)
+    assert isinstance(result, dict), f"expected dict, got {type(result)}"
+    assert result.get("reason") == "build:step", f"reason mismatch: {result}"
+
+
+def test_parse_sentinel_malformed_non_scalar_still_dies():
+    """NON-VACUITY: a genuinely-malformed frontmatter that is NOT a flat-scalar
+    colon case (an unclosed flow collection) must STILL _die/SystemExit — the
+    tolerant path must not mask real malformation."""
+    _guard()
+    import pytest as _pytest
+    content = (
+        "---\n"
+        "kind: blocked\n"
+        "reason: [unclosed, flow, collection\n"
+        "---\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "BLOCKED.md"
+        p.write_text(content, encoding="utf-8")
+        with _pytest.raises(SystemExit):
+            lazy_core.parse_sentinel(p)
+
+
+def test_parse_sentinel_well_formed_no_colon_unchanged():
+    """REGRESSION GUARD: a well-formed, no-colon sentinel is byte-identical to
+    pre-change (the tolerant path is never entered)."""
+    _guard()
+    content = (
+        "---\n"
+        "kind: validated\n"
+        "feature_id: my-feature\n"
+        "validated_commit: abc123\n"
+        "pass_count: 5\n"
+        "---\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "VALIDATED.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.parse_sentinel(p)
+    assert result == {
+        "kind": "validated",
+        "feature_id": "my-feature",
+        "validated_commit": "abc123",
+        "pass_count": 5,
+    }, f"well-formed parse drifted: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Tests: _yaml_fallback_scalar — quote-on-write hardening for the no-PyYAML
+# manual frontmatter fallback (skip-mcp-test-frontmatter-unquoted-colon — WU-3)
+# ---------------------------------------------------------------------------
+
+def test_yaml_fallback_scalar_quotes_colon_bearing_roundtrips():
+    """The no-PyYAML manual fallback quotes a colon-bearing scalar value so the
+    emitted `key: value` line is valid YAML, and parse_sentinel round-trips it to
+    the literal string (parity with what yaml.safe_dump emits)."""
+    _guard()
+    colon_reason = "untestable on this host: no real audio device"
+    rendered = lazy_core._yaml_fallback_scalar(colon_reason)
+    assert rendered.startswith("'") and rendered.endswith("'"), (
+        f"colon-bearing value must be single-quoted, got: {rendered!r}"
+    )
+    # Round-trip: build frontmatter exactly as the hardened fallback does.
+    content = (
+        "---\n"
+        "kind: skip-mcp-test\n"
+        f"reason: {rendered}\n"
+        "---\n\n# Sentinel\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "SKIP_MCP_TEST.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.parse_sentinel(p)
+    assert result.get("reason") == colon_reason, (
+        f"round-trip failed: {result.get('reason')!r}"
+    )
+    # A trailing-colon value is also quoted.
+    assert lazy_core._yaml_fallback_scalar("waiting on:").startswith("'"), (
+        "a trailing-colon value must be quoted"
+    )
+
+
+def test_yaml_fallback_scalar_leaves_plain_value_unchanged():
+    """A colon-free scalar value — and a colon-WITHOUT-space value (a valid plain
+    scalar) and a non-string — is rendered unchanged: no spurious quoting that
+    would drift the fallback's pre-existing output for the common case."""
+    _guard()
+    assert lazy_core._yaml_fallback_scalar("operator") == "operator"
+    # `build:step` (colon, no following space) is a valid plain scalar — safe_dump
+    # leaves it unquoted, so must the fallback.
+    assert lazy_core._yaml_fallback_scalar("build:step") == "build:step"
+    assert lazy_core._yaml_fallback_scalar(5) == "5"
+
+
+# ---------------------------------------------------------------------------
 # Tests: build_parked_entry
 # ---------------------------------------------------------------------------
 
@@ -16018,6 +16196,14 @@ _TESTS = [
     ("test_parse_sentinel_no_frontmatter", test_parse_sentinel_no_frontmatter),
     ("test_parse_sentinel_with_frontmatter", test_parse_sentinel_with_frontmatter),
     ("test_parse_sentinel_leading_blanks", test_parse_sentinel_leading_blanks),
+    ("test_parse_sentinel_unquoted_colon_space_reason", test_parse_sentinel_unquoted_colon_space_reason),
+    ("test_parse_sentinel_value_naming_key_value_pair", test_parse_sentinel_value_naming_key_value_pair),
+    ("test_parse_sentinel_trailing_colon_value", test_parse_sentinel_trailing_colon_value),
+    ("test_parse_sentinel_colon_no_space_is_plain_scalar_control", test_parse_sentinel_colon_no_space_is_plain_scalar_control),
+    ("test_parse_sentinel_malformed_non_scalar_still_dies", test_parse_sentinel_malformed_non_scalar_still_dies),
+    ("test_parse_sentinel_well_formed_no_colon_unchanged", test_parse_sentinel_well_formed_no_colon_unchanged),
+    ("test_yaml_fallback_scalar_quotes_colon_bearing_roundtrips", test_yaml_fallback_scalar_quotes_colon_bearing_roundtrips),
+    ("test_yaml_fallback_scalar_leaves_plain_value_unchanged", test_yaml_fallback_scalar_leaves_plain_value_unchanged),
     # spec_status
     ("test_spec_status_none_path", test_spec_status_none_path),
     ("test_spec_status_no_spec_md", test_spec_status_no_spec_md),
@@ -18797,16 +18983,36 @@ def test_detect_friction_meta_cycle_exempt_from_unexpected_commits():
         commits_since=9,
     )
     assert torn is not None and torn["reason"] == "cycle-bracket-break", torn
-    # Control: the SAME multi-commit shape on a kind='real' cycle still trips (b).
+    # Control: the SAME multi-commit shape on a kind='real' cycle with a RECORDED
+    # sub_skill still trips (b) — a single-commit skill (budget 1) with 9 commits
+    # is a genuine runaway, and its budget IS derivable, so detection is intact.
     real_marker = dict(meta_marker, kind="real")
     real = lazy_core.detect_cycle_bracket_friction(
         real_marker,
         current_run_started_at="2026-06-16T00:00:00Z",
         current_head_sha="bbbb2222",
-        sub_skill=None,
+        sub_skill="some-single-commit-skill",  # recorded → budget derivable (1)
         commits_since=9,
     )
     assert real is not None and real["reason"] == "unexpected-commits", real
+    # Regression (skip-mcp-test-frontmatter-unquoted-colon, harden 2026-07-04): a
+    # kind='real' cycle whose sub_skill was NEVER recorded (--cycle-begin omitted
+    # --sub-skill) is BUDGET-INDETERMINATE — the dispatch identity that selects the
+    # multi-commit ceiling is unknown, so signal (b) is fail-open-disabled rather
+    # than false-tripping on the sanctioned multi-commit work the (unknown) real
+    # skill legitimately did. This is the exact false positive that fired for an
+    # /execute-plan cycle: 3 per-WU commits, marker sub_skill=None, mis-derived
+    # budget=1. Signals (a)/(a.5) — the integrity signals — are sub_skill-
+    # independent and still fire (a torn bracket / stray branch always self-
+    # announces); only the budget-dependent commit signal is spared.
+    real_null = lazy_core.detect_cycle_bracket_friction(
+        real_marker,
+        current_run_started_at="2026-06-16T00:00:00Z",
+        current_head_sha="bbbb2222",
+        sub_skill=None,  # NOT recorded → indeterminate budget → fail-open, no trip
+        commits_since=9,
+    )
+    assert real_null is None, real_null
 
 
 def test_multi_commit_dispatch_skills_registry_membership():
@@ -30653,6 +30859,309 @@ _TESTS = _TESTS + [
      test_record_intervention_backfill_and_hardening_provenance),
 ]
 
+
+# ===========================================================================
+# harness-change-canary-rollback Phase 1 — registration + revertibility metadata
+#
+# WU-1: control-surface manifest resolution (fallback glob constant vs. present
+#       docs/gate/control-surfaces.json), touched-file derivation from the
+#       provenance commit-set, and the manifest-intersection arm decision.
+# WU-2: coupled-pair scope computation over lazy-parity-manifest.json + the
+#       CLAUDE.md pairs-table folded in as data.
+# WU-3: the record_intervention canary post-step (arms a canary: sub-map on a
+#       control-surface change; non-scoped change registers none).
+# ===========================================================================
+
+
+def test_canary_control_surfaces_fallback_and_manifest():
+    """`_canary_control_surfaces` returns the canary-owned fallback glob
+    constant when docs/gate/control-surfaces.json is absent, and the parsed
+    globs (manifest precedence) when the file is present."""
+    _guard()
+    assert hasattr(lazy_core, "_canary_control_surfaces")
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        # Absent manifest → fallback constant (mirrors the anti-overfit set).
+        fallback = lazy_core._canary_control_surfaces(repo)
+        assert isinstance(fallback, (list, tuple))
+        assert "user/scripts/lazy_core.py" in fallback
+        assert "user/hooks/**" in fallback
+        assert tuple(fallback) == tuple(lazy_core._CANARY_CONTROL_SURFACES_FALLBACK)
+        # Present manifest → its globs take precedence.
+        gate_dir = repo / "docs" / "gate"
+        gate_dir.mkdir(parents=True)
+        (gate_dir / "control-surfaces.json").write_text(
+            json.dumps({"globs": ["custom/only/**", "one_file.py"]}) + "\n",
+            encoding="utf-8",
+        )
+        present = lazy_core._canary_control_surfaces(repo)
+        assert list(present) == ["custom/only/**", "one_file.py"]
+        assert "user/scripts/lazy_core.py" not in present
+
+
+def test_canary_touched_files_from_commit():
+    """`_canary_touched_files` derives repo-relative POSIX paths from a commit
+    set by reusing the provenance git helper (never re-shelling ad hoc)."""
+    _guard()
+    assert hasattr(lazy_core, "_canary_touched_files")
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        _prov_git_fixture_repo(repo)
+        sha = _prov_git_commit_file(
+            repo, "user/scripts/lazy_core.py", "touch control surface")
+        touched = lazy_core._canary_touched_files(repo, [sha])
+        assert "user/scripts/lazy_core.py" in touched
+        # POSIX, repo-relative, no backslashes / leading ./
+        assert all("\\" not in f and not f.startswith("./") for f in touched)
+        # A non-git tree / empty commit set → empty, never raises.
+        nongit = Path(td) / "nongit"
+        nongit.mkdir()
+        assert lazy_core._canary_touched_files(nongit, ["deadbeef"]) == []
+        assert lazy_core._canary_touched_files(repo, []) == []
+
+
+def test_canary_intersects_arm_decision():
+    """`_canary_intersects` arms (True + matched surfaces) iff a touched file
+    matches a control-surface glob; a non-intersecting set does not."""
+    _guard()
+    assert hasattr(lazy_core, "_canary_intersects")
+    surfaces = lazy_core._CANARY_CONTROL_SURFACES_FALLBACK
+    # Exact-path match.
+    arm, hits = lazy_core._canary_intersects(
+        ["user/scripts/lazy_core.py", "docs/foo.md"], surfaces)
+    assert arm is True
+    assert hits == ["user/scripts/lazy_core.py"]
+    # ** glob match (segment-crossing).
+    arm2, hits2 = lazy_core._canary_intersects(["user/hooks/x.sh"], surfaces)
+    assert arm2 is True and hits2 == ["user/hooks/x.sh"]
+    # lazy*/** skill glob.
+    arm3, hits3 = lazy_core._canary_intersects(
+        ["user/skills/lazy-batch/SKILL.md"], surfaces)
+    assert arm3 is True
+    # Non-intersecting → no arm.
+    arm4, hits4 = lazy_core._canary_intersects(
+        ["docs/foo.md", "README.md"], surfaces)
+    assert arm4 is False and hits4 == []
+
+
+def test_compute_pair_scope():
+    """`_compute_pair_scope` returns BOTH halves of every coupled pair a
+    touched file hits (over lazy-parity-manifest.json), de-duplicated; a touched
+    file in no pair yields an empty scope; the CLAUDE.md pairs-table entries are
+    folded in as data for any pair absent from the manifest."""
+    _guard()
+    assert hasattr(lazy_core, "_compute_pair_scope")
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "parity.json"
+        # Synthetic manifest: ONE lazy-batch pair; the lazy-status pair is
+        # deliberately ABSENT so the CLAUDE.md fold must supply it.
+        manifest.write_text(json.dumps({
+            "mechanic_sets": {},
+            "pairs": [
+                {"canonical": "user/skills/lazy-batch/SKILL.md",
+                 "derived": "user/skills/lazy-bug-batch/SKILL.md"},
+                {"canonical": "user/skills/lazy-batch/SKILL.md",
+                 "derived": "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md"},
+            ],
+        }) + "\n", encoding="utf-8")
+
+        # Touch the canonical half → both halves of BOTH pairs it belongs to,
+        # canonical listed once (de-duplicated).
+        scope = lazy_core._compute_pair_scope(
+            ["user/skills/lazy-batch/SKILL.md"], manifest)
+        assert "user/skills/lazy-batch/SKILL.md" in scope
+        assert "user/skills/lazy-bug-batch/SKILL.md" in scope
+        assert "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md" in scope
+        assert scope.count("user/skills/lazy-batch/SKILL.md") == 1
+
+        # Touch a DERIVED half → the same pair returns both halves.
+        scope2 = lazy_core._compute_pair_scope(
+            ["user/skills/lazy-bug-batch/SKILL.md"], manifest)
+        assert set(scope2) >= {
+            "user/skills/lazy-batch/SKILL.md",
+            "user/skills/lazy-bug-batch/SKILL.md",
+        }
+
+        # Touch a file in NO pair → empty scope.
+        assert lazy_core._compute_pair_scope(["docs/foo.md"], manifest) == []
+
+        # CLAUDE.md-only pair (folded as data, absent from this manifest):
+        # touching one half still yields both halves of that pair.
+        scope3 = lazy_core._compute_pair_scope(
+            ["user/skills/lazy-status/SKILL.md"], manifest)
+        assert "user/skills/lazy-status/SKILL.md" in scope3
+        assert "user/skills/lazy-bug-status/SKILL.md" in scope3
+
+        # A missing/malformed manifest degrades to the CLAUDE.md fold only,
+        # never raises.
+        missing = Path(td) / "nope.json"
+        scope4 = lazy_core._compute_pair_scope(
+            ["user/skills/lazy/SKILL.md"], missing)
+        assert "user/skills/lazy/SKILL.md" in scope4
+        assert "user/skills/lazy-bug/SKILL.md" in scope4
+
+
+def _canary_repo_with_change(td: "Path", relpath: str, item_id: str,
+                             spec_body: str | None = None) -> "Path":
+    """git repo touching `relpath` in one commit past the seed, a recorded
+    commit bracket (seed..change) keyed by `item_id`, and an optional SPEC.md
+    at docs/features/<item_id>/SPEC.md. Returns the repo root."""
+    repo = Path(td) / f"repo-{item_id}"
+    repo.mkdir()
+    seed = _prov_git_fixture_repo(repo)
+    change = _prov_git_commit_file(repo, relpath, f"touch {relpath}")
+    ok = lazy_core.append_commit_bracket(item_id, seed, change)
+    assert ok is True, "fixture bracket append failed"
+    if spec_body is not None:
+        spec_dir = repo / "docs" / "features" / item_id
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "SPEC.md").write_text(spec_body, encoding="utf-8")
+    return repo
+
+
+def test_record_intervention_canary_arms_on_control_surface():
+    """A control-surface change registers a `canary:` sub-map (status open) with
+    the matched surfaces, the derived commit set, and the coupled-pair scope
+    (both halves); the whole map round-trips through parse_sentinel."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td) / "state"
+        state.mkdir()
+        _set_state_dir(state)
+        try:
+            item = "canary-feat"
+            repo = _canary_repo_with_change(
+                Path(td), "user/skills/lazy/SKILL.md", item, spec_body="# F\n")
+            res = lazy_core.record_intervention(
+                repo, item, pipeline="feature",
+                spec_path=repo / "docs" / "features" / item,
+                date="2026-07-04",
+            )
+            assert res["recorded"] is True, res
+            meta = lazy_core.parse_sentinel(
+                repo / "docs" / "interventions" / f"{item}.md")
+            canary = meta["canary"]
+            assert isinstance(canary, dict), canary
+            assert canary["status"] == "open"
+            assert "user/skills/lazy/SKILL.md" in canary["surfaces"]
+            assert isinstance(canary["surfaces"], list)
+            assert canary["commit_set"], "commit_set must be non-empty"
+            assert isinstance(canary["commit_set"], list)
+            # Pair scope carries BOTH halves of every pair the change hits.
+            ps = canary["pair_scope"]
+            assert isinstance(ps, list)
+            assert "user/skills/lazy/SKILL.md" in ps
+            assert "user/skills/lazy-bug/SKILL.md" in ps
+            assert "repos/algobooth/.claude/skills/lazy-cloud/SKILL.md" in ps
+            assert canary["window_runs"] == 10  # default
+            assert canary["degraded_revert_note"] is None
+            assert canary["opened"] == "2026-07-04"
+        finally:
+            _clear_state_dir()
+
+
+def test_record_intervention_no_canary_for_nonscoped():
+    """A change touching only non-control-surface files registers NO canary
+    (byte-identical to today — the record simply has no `canary` key)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td) / "state"
+        state.mkdir()
+        _set_state_dir(state)
+        try:
+            item = "canary-nonscoped"
+            repo = _canary_repo_with_change(
+                Path(td), "docs/notes/random.md", item, spec_body="# F\n")
+            res = lazy_core.record_intervention(
+                repo, item, pipeline="feature",
+                spec_path=repo / "docs" / "features" / item,
+            )
+            assert res["recorded"] is True
+            meta = lazy_core.parse_sentinel(
+                repo / "docs" / "interventions" / f"{item}.md")
+            assert "canary" not in meta, meta.get("canary")
+        finally:
+            _clear_state_dir()
+
+
+def test_record_intervention_canary_window_override():
+    """A per-record `canary_window_runs` override in the SPEC's Intervention
+    Hypothesis block is honored over the default 10."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td) / "state"
+        state.mkdir()
+        _set_state_dir(state)
+        try:
+            item = "canary-window"
+            spec = (
+                "# F\n\n## Intervention Hypothesis\n\n"
+                "- target_signal: event:gate-refusal\n"
+                "- expected_direction: decrease\n"
+                "- canary_window_runs: 5\n"
+            )
+            repo = _canary_repo_with_change(
+                Path(td), "user/scripts/lazy_core.py", item, spec_body=spec)
+            lazy_core.record_intervention(
+                repo, item, pipeline="feature",
+                spec_path=repo / "docs" / "features" / item,
+            )
+            meta = lazy_core.parse_sentinel(
+                repo / "docs" / "interventions" / f"{item}.md")
+            assert meta["canary"]["window_runs"] == 5
+        finally:
+            _clear_state_dir()
+
+
+def test_record_intervention_canary_degraded_note():
+    """A change flagged revert-unsafe records a non-null degraded_revert_note;
+    the default (unflagged) note is null (asserted in the arm test above)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td) / "state"
+        state.mkdir()
+        _set_state_dir(state)
+        try:
+            item = "canary-unsafe"
+            spec = (
+                "# F\n\n## Intervention Hypothesis\n\n"
+                "- target_signal: event:gate-refusal\n"
+                "- canary_revert_unsafe: true\n"
+            )
+            repo = _canary_repo_with_change(
+                Path(td), "user/scripts/bug-state.py", item, spec_body=spec)
+            lazy_core.record_intervention(
+                repo, item, pipeline="feature",
+                spec_path=repo / "docs" / "features" / item,
+            )
+            meta = lazy_core.parse_sentinel(
+                repo / "docs" / "interventions" / f"{item}.md")
+            assert meta["canary"]["degraded_revert_note"] is not None
+            assert isinstance(meta["canary"]["degraded_revert_note"], str)
+        finally:
+            _clear_state_dir()
+
+
+# harness-change-canary-rollback Phase 1 — WU-1 + WU-2 + WU-3.
+_TESTS = _TESTS + [
+    ("test_canary_control_surfaces_fallback_and_manifest",
+     test_canary_control_surfaces_fallback_and_manifest),
+    ("test_canary_touched_files_from_commit",
+     test_canary_touched_files_from_commit),
+    ("test_canary_intersects_arm_decision",
+     test_canary_intersects_arm_decision),
+    ("test_compute_pair_scope", test_compute_pair_scope),
+    ("test_record_intervention_canary_arms_on_control_surface",
+     test_record_intervention_canary_arms_on_control_surface),
+    ("test_record_intervention_no_canary_for_nonscoped",
+     test_record_intervention_no_canary_for_nonscoped),
+    ("test_record_intervention_canary_window_override",
+     test_record_intervention_canary_window_override),
+    ("test_record_intervention_canary_degraded_note",
+     test_record_intervention_canary_degraded_note),
+]
 
 
 # ===========================================================================

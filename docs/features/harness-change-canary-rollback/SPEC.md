@@ -13,6 +13,7 @@
 **Status:** Draft
 **Priority:** P2
 **Last updated:** 2026-07-04
+**Friction-reduction feature:** yes
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research
 2026-07-04 (Gemini research skipped by operator directive — see RESEARCH.md)
 
@@ -94,8 +95,8 @@ bug pipeline under full gates) approves and executes any revert.
 
 ### D2. Window sizing and tripwire bands
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the
-  pipeline's needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, HANDOFF.md;
+  recommendation A locked)`
 - **Question:** How long is the canary window, and what movement trips it? Single-operator
   cadence makes run-count more meaningful than wall-clock — an idle week must not close (or
   trip) a window.
@@ -115,13 +116,16 @@ bug pipeline under full gates) approves and executes any revert.
     point — the canary exists to be faster and more sensitive than steady-state review.
 - **Recommendation:** A with defaults 10 runs / 30-day ceiling / 25% / 2 incidents, all in one
   constants block, per-record overridable via the hypothesis block.
-- **Resolution:** OPEN — recommendation is A with those defaults; awaiting operator
-  confirmation.
+- **Resolution:** **A — operator-approved 2026-07-04 (HANDOFF.md, "do not re-ask").** Window =
+  next 10 completed runs after ship, closing early at 30 days; tripwire = targeted-signal
+  regression past the KPI band (else 25% relative with ≥3 post-ship occurrences) OR ≥2 attributable
+  fresh incidents. Defaults in one constants block, per-record overridable via the hypothesis
+  block.
 
 ### D3. Incident attribution rules
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the
-  pipeline's needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, HANDOFF.md;
+  recommendation A locked)`
 - **Question:** Which fresh incidents count against which open canary? Wrong attribution either
   blames an innocent change (noise, operator fatigue) or misses the guilty one (silent damage).
 - **Options:**
@@ -143,12 +147,18 @@ bug pipeline under full gates) approves and executes any revert.
 - **Recommendation:** A — conservative on unknown surfaces, transparent on shared ones. When
   `incident-auto-capture` ships, its clustered incidents replace raw breadcrumb/deny-entry
   counting as input (same attribution rule applied to cluster surfaces).
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A — operator-approved 2026-07-04 (HANDOFF.md, "do not re-ask").** Surface-based
+  attribution: an incident attributes iff its timestamp falls inside the window AND its emitting
+  surface maps into the canary's `surfaces:` set; unknown/unresolvable surfaces NEVER attribute; a
+  shared surface counts the incident against ALL matching open canaries (each trips its own
+  evidence-bearing item). Note: `incident-auto-capture` has landed on this branch (HANDOFF.md) — its
+  clustered incidents are the preferred input, with the same attribution rule applied to cluster
+  surfaces; raw deny-ledger/breadcrumb counting is the fallback.
 
 ### D4. Does any change class ever earn true auto-revert?
 
-- **Classification:** `product-behavior (OPEN — operator confirmation required via the
-  pipeline's needs-input round before implementation)`
+- **Classification:** `product-behavior (RESOLVED — operator-approved 2026-07-04, HANDOFF.md;
+  recommendation A locked — standing policy, operator-owned)`
 - **Question:** The stub leans no. Is there any class (e.g. pure-prose skill edits, doc-only
   changes) where a tripped canary may revert unattended?
 - **Options:**
@@ -165,9 +175,11 @@ bug pipeline under full gates) approves and executes any revert.
 - **Recommendation:** A — revisit only with ledger evidence (e.g. after N trips, if trip
   precision is high and triage latency is the dominant cost, a class could be proposed through
   the sibling gate's own sign-off).
-- **Resolution:** OPEN — recommendation is A (no auto-revert in v1); awaiting operator
-  confirmation. The stub's flag-and-enqueue constraint is treated as operator-set either way —
-  option B could only ever narrow it with explicit sign-off, never silently.
+- **Resolution:** **A — operator-approved 2026-07-04 (HANDOFF.md, "do not re-ask").** NO change
+  class earns true auto-revert in v1: every trip is flag-and-enqueue. This is a standing,
+  operator-owned policy — option B (a whitelisted low-risk revertible class) may only ever be
+  introduced later through the sibling gate's own sign-off protocol, never silently, and only on
+  accumulated trip-precision evidence.
 
 ### D5. Revert-item mechanics — evidence, commit set, and coupled-pair scope
 
@@ -343,17 +355,56 @@ every run boundary (end-of-run flush)
 | Clean close + handoff | Window matures with no trip | `closed-clean` stamp; efficacy review still fires later on its own cadence | record frontmatter + review section |
 | Never blocks a run | Watcher error (unreadable ledger fixture) | Run completes; window notes no-data; exit does not halt the flush | orchestrator flush output |
 
+## KPI Declaration
+
+**Friction-reduction feature:** yes — the canary shortens time-to-detect for the quiet class of
+harness change (fail-OPEN hooks, over-broad denies, state-script behavior), whose failures
+otherwise persist until a retro. Its own success is measurable, so it declares a KPI (the
+measurability gate, `/spec` Step 8.5).
+
+The canary's headline metric is **trip precision** — the fraction of canary trips whose enqueued
+`canary-revert-<id>` items were NOT closed-as-noise. High precision means the hair-triggered bands
+(D2) are earning their sensitivity rather than fatiguing the operator; low precision means the
+bands are mis-tuned. It is `up-is-good`. No baseline can exist before the canary has ever tripped,
+so the row is drafted `provenance: pending` / `band: null` (the honest D4-A ladder — never a
+fabricated zero). The row is added to `docs/kpi/registry.json` and its signal computation wired in
+**Phase 4** (the SPEC's "the canary system's own KPI row … registered" deliverable); the signal
+selector `telemetry-ledger` / `canary-trip-precision` is registered in `kpi-scorecard.py` at
+spec-finalization so this drafted row lints clean today and renders an honest NO-DATA until Phase 4
+lands the computation.
+
+```json
+{
+  "id": "canary-trip-precision",
+  "system": "harness-canary",
+  "title": "Canary trip precision",
+  "friction": "A canary that trips on noise trains the operator to ignore it; every false trip costs a triaged bug stub and erodes trust in the tripwire. Trip precision measures whether the hair-triggered bands are catching real regressions versus crying wolf.",
+  "signal": {
+    "source": "telemetry-ledger",
+    "selector": "canary-trip-precision"
+  },
+  "unit": "percent",
+  "direction": "up-is-good",
+  "baseline": {
+    "value": null,
+    "captured_at": null,
+    "window": "90d",
+    "provenance": "pending"
+  },
+  "band": null,
+  "review_by": "2026-12-01",
+  "notes": "Precision = trips whose canary-revert-<id> item was NOT closed-as-noise, over all trips in the window. Signal selector registered in kpi-scorecard.py _SOURCES at spec-finalization (renders NO-DATA until compute wired); computation + this registry row land in the feature's Phase 4. Baseline is unmeasurable until the canary has tripped ≥5 times — provenance stays 'pending' (honest, never a fabricated zero) and the band is set with --capture-baseline once real trip data exists."
+}
+```
+
 ## Open Questions
 
-- **D2 — window sizing + tripwire bands:** 10 runs with a 30-day ceiling, 25% relative band (or
-  the KPI's declared band), 2 attributable incidents — vs wall-clock-only or efficacy-identical
-  windows. Recommendation: the run-denominated defaults, per-record overridable.
-- **D3 — attribution rules:** surface-based, unknown-surface-never-attributes, shared surfaces
-  count against all matching canaries — vs most-recent-wins or content matching.
-  Recommendation: surface-based count-against-all.
-- **D4 — auto-revert class:** does any change class ever earn true auto-revert? Recommendation:
-  no class in v1 (the stub's lean, kept); any future class must pass the sibling gate's
-  sign-off protocol.
+- **D2 / D3 / D4 — RESOLVED** (operator-approved 2026-07-04, HANDOFF.md — see the Design
+  Decisions): D2 run-denominated window (10 runs / 30-day ceiling / 25% relative band or KPI band /
+  ≥2 attributable incidents, per-record overridable); D3 surface-based attribution
+  (unknown-surface-never-attributes, shared surfaces count against all matching); D4 no auto-revert
+  class in v1 (flag-and-enqueue always, a standing operator-owned policy). No open product-behavior
+  decisions remain.
 - Deferred empirical checks: exact telemetry-ledger run-identity fields for per-run window
   accrual (verify against `harness-telemetry-ledger` once locked); the breadcrumb→surface
   mapping table for each hook's `hook-error.json` shape (enumerate during Phase 2 from the hook

@@ -299,7 +299,11 @@ parked: {id} — {sentinel} ported to docs/features/{id}/ ({summary})
 budget: {used}/{max_cycles} cycles used (lanes {n}, tail {n}, serial re-run {n})
 ```
 
-3. `incident-scan.py` (per the batch flush contract §1c.6), then
+3. The full §1c.6 end-of-run flush at the MAIN root, composed from `/lazy-batch` by reference —
+   `incident-scan.py`, then `efficacy-eval.py --repo-root . --json`, then the harness-change canary
+   watch `efficacy-eval.py --canary --repo-root . --json` (harness-change-canary-rollback D6-A;
+   fail-open, NON-BLOCKING — a non-zero exit prints one warning and run-end continues; stage
+   `docs/interventions/` + any `docs/bugs/canary-revert-*` seed in the run-end commit) — then
    `lazy-state.py --run-end --repo-root <main root> --reason terminal --terminal-reason
    <reason>` for the parent marker. Leases for finished items are already released; a crash
    before this point is recoverable by construction (TTL reclaim + stale lane markers age out —

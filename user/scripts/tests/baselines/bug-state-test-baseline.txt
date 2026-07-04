@@ -20,6 +20,7 @@
   PASS [cloud-skip-mcp] cloud=True real_device=False: Step 9: skip-mcp-test → validated
   PASS [device-reopen] cloud=False real_device=True: Step 9: re-open device-deferred scenarios (real-device host)
   PASS [step9-skip-mcp] cloud=False real_device=True: Step 9: skip-mcp-test → validated
+  PASS [step9-skip-colon-reason] cloud=False real_device=True: Step 9: skip-mcp-test → validated
   PASS [step9-mcp-results] cloud=False real_device=True: Step 9b: write validated
   PASS [severity-ordering] cloud=False real_device=True: Step 4: investigate bug
   PASS [cloud-defer-no-validate-halts] cloud=True real_device=False: cloud-queue-exhausted

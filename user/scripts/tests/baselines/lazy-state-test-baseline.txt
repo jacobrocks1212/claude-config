@@ -61,6 +61,7 @@
   [docsonly-drift-validate] cloud=False skip_nr=False real_device=True: Step 9b: write validated
   [skip-pipeline-granted-needs-input] cloud=False skip_nr=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation
   [skip-operator-granted-validates] cloud=False skip_nr=False real_device=True: Step 9: skip-mcp-test → validated
+  [skip-operator-colon-reason-validates] cloud=False skip_nr=False real_device=True: Step 9: skip-mcp-test → validated
   [skip-mcp-test-granted-with-class-validates] cloud=False skip_nr=False real_device=True: Step 9: skip-mcp-test → validated
   [skip-mcp-test-granted-missing-class-refuses] cloud=False skip_nr=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation
   [skip-pipeline-authored-no-grant-refuses] cloud=False skip_nr=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation

@@ -4883,6 +4883,55 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         # NO VALIDATED.md — not yet validated.
         # NO DEFERRED_REQUIRES_DEVICE.md — pure skip path.
 
+    elif name == "skip-operator-colon-reason-validates":
+        # skip-mcp-test-frontmatter-unquoted-colon Phase 2 (end-to-end fixture):
+        # an operator-granted SKIP_MCP_TEST.md whose `reason:` carries an
+        # UNQUOTED colon-space must still route Step 9 → __write_validated_from_skip__
+        # instead of hard-halting (exit 2 via _die) at the strict YAML parse.
+        # RED before Phase 1 (parse_sentinel _die'd on the colon-bearing frontmatter,
+        # so compute_state exited 2 before ever reaching the skip route); GREEN after
+        # (parse_sentinel's tolerant re-parse reads the colon value as a literal).
+        # The SKIP_MCP_TEST.md is written RAW (NOT via _write_yaml_sentinel, whose
+        # yaml.safe_dump would auto-QUOTE the colon value and mask the bug) so the
+        # on-disk frontmatter reproduces the exact hand-authored failure shape.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-socr", "name": "Feature SOCR",
+                 "spec_dir": "feat-socr", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        socr = features / "feat-socr"
+        socr.mkdir()
+        (socr / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n"
+        )
+        (socr / "RESEARCH.md").write_text("# R\n")
+        (socr / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (socr / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+        _write_yaml_sentinel(
+            socr / "RETRO_DONE.md", "retro-done",
+            feature_id="feat-socr", date="2026-07-04",
+            rounds=1, retro_plans=["retro-1-feat-socr.md"],
+            mcp_validation_status="pending",
+        )
+        # RAW SKIP_MCP_TEST.md — an UNQUOTED colon-space in the `reason` value.
+        (socr / "SKIP_MCP_TEST.md").write_text(
+            "---\n"
+            "kind: skip-mcp-test\n"
+            "feature_id: feat-socr\n"
+            "reason: untestable on this host: no real audio device\n"
+            "alternative_validation: manual smoke test by operator\n"
+            "date: 2026-07-04\n"
+            "skipped_by: operator\n"
+            "granted_by: operator\n"
+            "---\n\n"
+            "# Skip\n",
+            encoding="utf-8",
+        )
+        # NO VALIDATED.md — not yet validated.
+        # NO DEFERRED_REQUIRES_DEVICE.md — pure skip path.
+
     elif name == "skip-mcp-test-granted-with-class-validates":
         # Provenance positive: granted_by: mcp-test + a spec_class citation is a
         # verified structural assessment by the validation step itself —
@@ -6065,6 +6114,15 @@ def run_smoke_tests() -> int:
             ("skip-operator-granted-validates", False, False, {
                 "sub_skill": "__write_validated_from_skip__",
                 "feature_id": "feat-sog",
+                "current_step": "Step 9: skip-mcp-test → validated",
+            }),
+            # skip-mcp-test-frontmatter-unquoted-colon Phase 2: an operator waiver
+            # whose `reason:` carries an UNQUOTED colon-space must still route to
+            # __write_validated_from_skip__ (parse_sentinel tolerant read) rather
+            # than exiting 2 at the strict YAML parse. RED before Phase 1.
+            ("skip-operator-colon-reason-validates", False, False, {
+                "sub_skill": "__write_validated_from_skip__",
+                "feature_id": "feat-socr",
                 "current_step": "Step 9: skip-mcp-test → validated",
             }),
             # Provenance positive: granted_by: mcp-test WITH a spec_class

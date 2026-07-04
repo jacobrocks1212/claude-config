@@ -118,8 +118,10 @@ class TestLintGreen:
         registry = ksc.load_registry(path)
         errors, warnings = ksc.lint_registry(registry, today=_TODAY)
         assert errors == []
-        # The seed set is exactly the six D8 rows.
-        assert len(registry["kpis"]) == 6
+        # The six D8 rows + the harness-change-canary-rollback trip-precision row.
+        assert len(registry["kpis"]) == 7
+        ids = {r["id"] for r in registry["kpis"]}
+        assert "canary-trip-precision" in ids
 
     def test_up_is_good_band_ordering_valid(self):
         row = _row(direction="up-is-good", band={"warn": 90, "breach": 80})
@@ -651,3 +653,319 @@ class TestTelemetrySelectors:
             _tel_row("cycles-per-completion"), repo_root=tmp_path, now=_NOW)
         assert value is None
         assert "completion" in note
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 (WU-9) — canary-trip-precision selector
+# ---------------------------------------------------------------------------
+
+def _canary_row(**overrides):
+    return _row(id="canary-trip-precision", system="harness-canary",
+                title="Canary trip precision",
+                signal={"source": "telemetry-ledger",
+                        "selector": "canary-trip-precision"},
+                unit="percent", direction="up-is-good",
+                baseline={"value": None, "captured_at": None,
+                          "window": "90d", "provenance": "pending"},
+                band=None, **overrides)
+
+
+def _write_intervention(repo_root: Path, rid: str, *, canary_status="tripped",
+                        opened="2026-07-01", enqueued="2026-07-02") -> None:
+    d = repo_root / "docs" / "interventions"
+    d.mkdir(parents=True, exist_ok=True)
+    lines = ["---", "kind: intervention", f"intervention_id: {rid}",
+             "canary:", f"  status: {canary_status}", f"  opened: '{opened}'"]
+    if enqueued is not None:
+        lines.append(f"canary_revert_enqueued: '{enqueued}'")
+    lines += ["---", "", "body", ""]
+    (d / f"{rid}.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _write_revert_bug(repo_root: Path, rid: str, *, status: str,
+                      archived: bool = False) -> None:
+    revert_id = f"canary-revert-{rid}"
+    base = repo_root / "docs" / "bugs"
+    d = (base / "_archive" / revert_id) if archived else (base / revert_id)
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SPEC.md").write_text(
+        f"# {revert_id}\n\n**Status:** {status}\n", encoding="utf-8")
+
+
+class TestCanaryTripPrecision:
+    def test_no_interventions_ledger_is_no_data(self, tmp_path):
+        value, note = ksc.compute_reading(_canary_row(), repo_root=tmp_path,
+                                          now=_NOW)
+        assert value is None
+        assert "never tripped" in note
+
+    def test_open_canary_no_trips_is_no_data_not_zero(self, tmp_path):
+        _write_intervention(tmp_path, "still-open", canary_status="open",
+                            enqueued=None)
+        value, note = ksc.compute_reading(_canary_row(), repo_root=tmp_path,
+                                          now=_NOW)
+        assert value is None                       # NEVER a fabricated 0
+        assert "no canary trips" in note
+
+    def test_precision_computed_from_trips_and_noise(self, tmp_path):
+        for i in range(4):
+            _write_intervention(tmp_path, f"trip-{i}")
+        _write_revert_bug(tmp_path, "trip-0", status="Won't-fix")    # noise
+        _write_revert_bug(tmp_path, "trip-1", status="Fixed")        # real revert
+        _write_revert_bug(tmp_path, "trip-2", status="In-progress")  # real, open
+        # trip-3 has no revert bug on disk → not noise (counts toward precision)
+        value, note = ksc.compute_reading(_canary_row(), repo_root=tmp_path,
+                                          now=_NOW)
+        assert note is None
+        assert value == 75.0                       # 3 of 4 not closed-as-noise
+
+    def test_archived_wont_fix_counts_as_noise(self, tmp_path):
+        _write_intervention(tmp_path, "arch-trip")
+        _write_revert_bug(tmp_path, "arch-trip", status="Won't-fix",
+                          archived=True)
+        value, note = ksc.compute_reading(_canary_row(), repo_root=tmp_path,
+                                          now=_NOW)
+        assert note is None
+        assert value == 0.0                        # single trip, closed-as-noise
+
+    def test_trip_outside_window_excluded_is_no_data(self, tmp_path):
+        _write_intervention(tmp_path, "old-trip", opened="2020-01-01",
+                            enqueued="2020-01-02")
+        value, note = ksc.compute_reading(_canary_row(), repo_root=tmp_path,
+                                          now=_NOW)
+        assert value is None
+        assert "no canary trips" in note
+
+    def test_stdout_renders_canary_row_as_no_data(self):
+        doc = ksc.render_scorecard(
+            _registry(_canary_row()),
+            {"canary-trip-precision": (None, "no canary trips in the window")},
+            today=_TODAY)
+        assert "Canary trip precision" in doc
+        assert "NO-DATA" in doc
+        line = next(l for l in doc.splitlines()
+                    if "Canary trip precision" in l)
+        assert "0" not in line.split("|")[2]       # current cell carries no zero
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — `/spec` measurability gate validator (WU-4.1) + baseline capture
+# ---------------------------------------------------------------------------
+
+_SPEC_HEADER = (
+    "# Sample Feature — Feature Specification\n\n"
+    "> One-line summary\n\n"
+    "**Status:** Draft\n**Priority:** P1\n**Last updated:** 2026-07-04\n\n"
+)
+
+
+def _spec(*, classification=None, keywords=False, declaration=None, body=""):
+    """Build a SPEC.md body with an optional classification line + declaration."""
+    text = _SPEC_HEADER
+    if classification is not None:
+        text += f"**Friction-reduction feature:** {classification}\n\n"
+    text += "---\n\n## Executive Summary\n\n"
+    if keywords:
+        text += ("This feature reduces friction and wasted cycles, cutting "
+                 "retry toil across the harness.\n\n")
+    else:
+        text += "A perfectly ordinary feature with a plain user purpose.\n\n"
+    text += body
+    if declaration is not None:
+        text += "\n## KPI Declaration\n\n" + declaration + "\n"
+    text += "\n## Open Questions\n\n- (none)\n"
+    return text
+
+
+class TestSpecClassificationParse:
+    def test_yes(self):
+        assert ksc.parse_spec_classification(
+            _spec(classification="yes")) == "yes"
+
+    def test_no(self):
+        assert ksc.parse_spec_classification(
+            _spec(classification="no")) == "no"
+
+    def test_missing_is_none(self):
+        assert ksc.parse_spec_classification(_spec()) is None
+
+    def test_case_insensitive(self):
+        assert ksc.parse_spec_classification(
+            _spec(classification="YES")) == "yes"
+
+
+class TestLintSpec:
+    def _lint(self, spec_text, registry=None):
+        if registry is None:
+            registry = _registry(_row(id="build-queue-false-green-rate"))
+        return ksc.lint_spec(spec_text, registry, today=_TODAY)
+
+    def test_missing_classification_is_error(self):
+        errors, _ = self._lint(_spec())
+        assert errors
+        assert any("Friction-reduction feature" in e for e in errors)
+
+    def test_no_ordinary_spec_is_clean(self):
+        errors, warnings = self._lint(_spec(classification="no"))
+        assert errors == []
+        assert warnings == []
+
+    def test_no_with_friction_keywords_is_advisory_warning(self):
+        errors, warnings = self._lint(
+            _spec(classification="no", keywords=True))
+        assert errors == []  # non-blocking
+        assert warnings
+        assert any("friction" in w.lower() for w in warnings)
+
+    def test_yes_without_declaration_section_is_error(self):
+        errors, _ = self._lint(_spec(classification="yes"))
+        assert errors
+        assert any("KPI Declaration" in e for e in errors)
+
+    def test_yes_with_resolving_id_is_clean(self):
+        errors, _ = self._lint(
+            _spec(classification="yes",
+                  declaration="- kpi: build-queue-false-green-rate"))
+        assert errors == []
+
+    def test_yes_with_unresolved_id_is_error(self):
+        errors, _ = self._lint(
+            _spec(classification="yes",
+                  declaration="- kpi: no-such-registered-kpi"))
+        assert errors
+        assert any("no-such-registered-kpi" in e for e in errors)
+
+    def test_yes_with_valid_json_draft_row_is_clean(self):
+        draft = json.dumps(_row(id="drafted-new-kpi"), indent=2)
+        errors, _ = self._lint(
+            _spec(classification="yes",
+                  declaration=f"```json\n{draft}\n```"))
+        assert errors == []
+
+    def test_yes_with_invalid_json_draft_row_is_error(self):
+        bad = json.dumps(_row(id="Bad_ID!"), indent=2)  # bad id regex
+        errors, _ = self._lint(
+            _spec(classification="yes",
+                  declaration=f"```json\n{bad}\n```"))
+        assert errors
+        assert any("Bad_ID!" in e or "draft" in e.lower() for e in errors)
+
+    def test_yes_with_malformed_json_is_error(self):
+        errors, _ = self._lint(
+            _spec(classification="yes",
+                  declaration="```json\n{ not valid json \n```"))
+        assert errors
+        assert any("json" in e.lower() for e in errors)
+
+    def test_yes_with_empty_declaration_is_error(self):
+        errors, _ = self._lint(
+            _spec(classification="yes", declaration="(nothing here)"))
+        assert errors
+
+
+class TestLintSpecCli:
+    def _run(self, tmp_path, spec_text, registry=None):
+        if registry is None:
+            registry = _registry(_row(id="build-queue-false-green-rate"))
+        _write_registry(tmp_path, registry)
+        spec = tmp_path / "SPEC.md"
+        spec.write_text(spec_text, encoding="utf-8")
+        return subprocess.run(
+            [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
+             "--lint", "--spec", str(spec), "--repo-root", str(tmp_path)],
+            capture_output=True, text=True)
+
+    def test_friction_spec_without_declaration_exits_one(self, tmp_path):
+        proc = self._run(tmp_path, _spec(classification="yes"))
+        assert proc.returncode == 1
+        assert "KPI Declaration" in proc.stdout
+
+    def test_ordinary_no_spec_exits_zero_untouched(self, tmp_path):
+        proc = self._run(tmp_path, _spec(classification="no"))
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+
+    def test_no_with_keywords_advisory_exits_zero(self, tmp_path):
+        proc = self._run(tmp_path, _spec(classification="no", keywords=True))
+        assert proc.returncode == 0, proc.stdout
+        assert "WARNING" in proc.stdout or "advisory" in proc.stdout.lower()
+
+    def test_resolving_declaration_exits_zero(self, tmp_path):
+        proc = self._run(
+            tmp_path,
+            _spec(classification="yes",
+                  declaration="- kpi: build-queue-false-green-rate"))
+        assert proc.returncode == 0, proc.stdout
+
+    def test_unresolved_id_exits_one(self, tmp_path):
+        proc = self._run(
+            tmp_path,
+            _spec(classification="yes", declaration="- kpi: nope-not-real"))
+        assert proc.returncode == 1
+        assert "nope-not-real" in proc.stdout
+
+    def test_missing_classification_exits_one(self, tmp_path):
+        proc = self._run(tmp_path, _spec())
+        assert proc.returncode == 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — `--capture-baseline` (WU-4.1)
+# ---------------------------------------------------------------------------
+
+class TestCaptureBaseline:
+    def _capture(self, tmp_path, kpi_id, env):
+        return subprocess.run(
+            [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
+             "--capture-baseline", kpi_id, "--repo-root", str(tmp_path)],
+            capture_output=True, text=True, env=env)
+
+    def test_stamps_measured_and_captured_at(self, tmp_path):
+        # A build-queue false-green row + a fixture results dir with data.
+        row = _bq_row(baseline={"value": None, "captured_at": None,
+                                "window": "30d", "provenance": "pending"},
+                      band=None)
+        _write_registry(tmp_path, _registry(row))
+        bq = _write_bq_results(tmp_path, [
+            _bq_record(1, build_fidelity="verified"),
+            _bq_record(2, build_fidelity="no-output",
+                       ended_at=datetime.datetime.now(
+                           datetime.timezone.utc).isoformat()),
+            _bq_record(1, build_fidelity="verified",
+                       ended_at=datetime.datetime.now(
+                           datetime.timezone.utc).isoformat()),
+        ])
+        env = dict(os.environ, KPI_BUILD_QUEUE_DIR=str(bq),
+                   LAZY_STATE_DIR=str(tmp_path / "state"))
+        proc = self._capture(tmp_path, "bq-false-green-rate", env)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        reg = ksc.load_registry(
+            tmp_path / "docs" / "kpi" / "registry.json")
+        b = reg["kpis"][0]["baseline"]
+        assert b["provenance"] == "measured"
+        assert b["value"] is not None
+        assert b["captured_at"] == datetime.date.today().isoformat()
+        # Registry remains lint-green after capture.
+        errors, _ = ksc.lint_registry(reg, today=datetime.date.today())
+        assert errors == []
+
+    def test_refuses_on_no_data(self, tmp_path):
+        row = _bq_row(baseline={"value": None, "captured_at": None,
+                                "window": "30d", "provenance": "pending"},
+                      band=None)
+        _write_registry(tmp_path, _registry(row))
+        env = dict(os.environ,
+                   KPI_BUILD_QUEUE_DIR=str(tmp_path / "nope"),
+                   LAZY_STATE_DIR=str(tmp_path / "state"))
+        proc = self._capture(tmp_path, "bq-false-green-rate", env)
+        assert proc.returncode == 1
+        # Baseline unchanged (still pending / null).
+        reg = ksc.load_registry(
+            tmp_path / "docs" / "kpi" / "registry.json")
+        assert reg["kpis"][0]["baseline"]["provenance"] == "pending"
+        assert reg["kpis"][0]["baseline"]["value"] is None
+
+    def test_unknown_id_refuses(self, tmp_path):
+        _write_registry(tmp_path, _registry(_row()))
+        env = dict(os.environ, LAZY_STATE_DIR=str(tmp_path / "state"))
+        proc = self._capture(tmp_path, "no-such-kpi", env)
+        assert proc.returncode == 1

@@ -781,6 +781,69 @@ def format_unknown_dependency_blocker(
 _FENCE = "---"
 
 
+# A flat top-level `key: value` frontmatter line (no leading indentation).
+# Group 1 = key, group 2 = the value (everything after the first colon+space).
+_FLAT_SCALAR_LINE_RE = re.compile(r"^([A-Za-z0-9_-]+):[ \t]+(.*)$")
+
+
+def _yaml_load_tolerant(yaml_body: str) -> dict[str, Any] | None:
+    """Rescue an unquoted colon-space (or trailing-colon) scalar VALUE.
+
+    Called ONLY on the `yaml.YAMLError` path of parse_sentinel (well-formed
+    frontmatter never reaches here — it parsed strictly). Operates per-line: for
+    each flat top-level ``key: value`` line whose value is a plain (unquoted, non
+    flow-collection, non block-scalar) scalar, single-quote the value so an
+    embedded ``: `` / trailing ``:`` is read as a literal instead of a nested
+    mapping. Re-invokes ``yaml.safe_load``; returns the dict on success or None
+    (caller then falls through to the original ``_die`` — genuinely-malformed
+    frontmatter, e.g. a broken indented block or an unclosed flow collection, is
+    NOT rescued and still hard-halts). Strict schema semantics for keys/kinds are
+    preserved: only VALUES are quoted, never keys or structure.
+    """
+    out_lines: list[str] = []
+    for line in yaml_body.splitlines():
+        m = _FLAT_SCALAR_LINE_RE.match(line)
+        if not m:
+            out_lines.append(line)
+            continue
+        key, value = m.group(1), m.group(2).rstrip()
+        # Leave values that are empty (null), already quoted, a flow collection,
+        # a block-scalar indicator, or an anchor/alias/tag — quoting those would
+        # change meaning or is unnecessary.
+        if not value or value[0] in ("'", '"', "[", "{", "|", ">", "&", "*", "!", "#"):
+            out_lines.append(line)
+            continue
+        escaped = value.replace("'", "''")
+        out_lines.append(f"{key}: '{escaped}'")
+    rescued = "\n".join(out_lines)
+    try:
+        data = yaml.safe_load(rescued)
+    except yaml.YAMLError:
+        return None
+    if isinstance(data, dict):
+        return data
+    return None
+
+
+def _yaml_fallback_scalar(value: Any) -> str:
+    """Render a scalar VALUE for the no-PyYAML manual frontmatter fallback.
+
+    The state scripts' ``_write_yaml_sentinel`` ImportError fallback emits
+    ``f"{k}: {v}"`` pairs by hand (used only when PyYAML is unavailable). A raw
+    ``str(value)`` for a value carrying a colon-space (``a: b``) or a trailing
+    colon (``waiting on:``) is INVALID YAML — the sentinel would then hard-halt
+    ``parse_sentinel`` on re-read. This quotes exactly those two cases (parity
+    with what ``yaml.safe_dump`` emits), single-quoting the value and doubling
+    any embedded single quote. A colon-free string, a colon-WITHOUT-space string
+    (``build:step`` — a valid plain scalar), and non-string values are rendered
+    unchanged (``str(value)``), so the common-case output is byte-identical to
+    before (skip-mcp-test-frontmatter-unquoted-colon — quote-on-write).
+    """
+    if isinstance(value, str) and (": " in value or value.endswith(":")):
+        return "'" + value.replace("'", "''") + "'"
+    return str(value)
+
+
 def parse_sentinel(path: Path) -> dict[str, Any] | None:
     """Parse a sentinel file's YAML frontmatter. Returns dict or None if absent."""
     if not path.exists():
@@ -816,6 +879,13 @@ def parse_sentinel(path: Path) -> dict[str, Any] | None:
     try:
         data = yaml.safe_load(yaml_body) or {}
     except yaml.YAMLError as exc:
+        # Tolerant re-parse: an unquoted colon-space (or trailing-colon) in a
+        # flat scalar value is quoted on-read and re-loaded. Only rescues that
+        # narrow case; genuinely-malformed frontmatter still falls through to
+        # _die below (skip-mcp-test-frontmatter-unquoted-colon).
+        rescued = _yaml_load_tolerant(yaml_body)
+        if rescued is not None:
+            return rescued
         _die(f"invalid YAML frontmatter: {exc}", path)
         return None  # pragma: no cover
     if not isinstance(data, dict):
@@ -10773,7 +10843,12 @@ def detect_cycle_bracket_friction(
           orchestrator-driven remediation dispatch (hardening / input-audit /
           recovery / apply-resolution) that legitimately commits an unbounded
           number of times and carries no sub_skill to budget — signal (b) is
-          skipped entirely for it (signal (a) still applies).
+          skipped entirely for it (signal (a) still applies). ALSO exempt when a
+          NON-meta cycle carries a falsy ``sub_skill`` (the marker was written by a
+          --cycle-begin that omitted --sub-skill): the commit budget is
+          INDETERMINATE without a dispatch identity, so applying the single-commit
+          default would false-positive every legitimately multi-commit real cycle —
+          signal (b) is disabled (fail-open), signals (a)/(a.5) still fire.
 
     Args:
         marker: the cycle marker dict from read_cycle_marker() (snapshotted at
@@ -10894,6 +10969,28 @@ def detect_cycle_bracket_friction(
         # signal never accidentally disables.
         if isinstance(budget_override, int) and budget_override > 0:
             budget = budget_override
+        elif not (sub_skill or "").strip():
+            # BUDGET-INDETERMINATE INPUT (adhoc-derive-multi-commit-budget…,
+            # harden 2026-07-04): a NON-meta cycle whose sub_skill was never
+            # recorded (the marker was written by a --cycle-begin that omitted
+            # --sub-skill) has NO derivable commit budget — the dispatch identity
+            # that selects the multi-commit ceiling is unknown, so the registry
+            # lookup below would fall to the single-commit default and
+            # false-positive EVERY legitimately multi-commit real cycle. That is
+            # the observed friction: an /execute-plan cycle whose --cycle-begin
+            # recorded sub_skill=None landed 3 sanctioned per-WU commits and
+            # tripped budget=1 (a FALSE unexpected-commits). Disable signal (b)
+            # for this degraded input — the SAME fail-open posture the meta
+            # exemption and the null-HEAD / null-commits guards already take ("a
+            # degraded input yields None signals, never a false positive"). The
+            # integrity signals (a) bracket-break and (a.5) branch-divergence were
+            # evaluated ABOVE and are sub_skill-independent, so they still fire; a
+            # genuine runaway with a RECORDED sub_skill is unaffected (its budget is
+            # derivable). Write-side complement: the /lazy-batch(-bug-batch) prose
+            # MANDATES --sub-skill on every real --cycle-begin, so this input never
+            # occurs for a sanctioned dispatch — this guard is the read-side
+            # backstop that stops the mis-recorded marker from manufacturing debt.
+            return None
         else:
             # Branch (3): DERIVE the budget from the `_MULTI_COMMIT_DISPATCH_SKILLS`
             # registry SSOT — membership ⇒ the multi-commit ceiling, else the
@@ -14958,6 +15055,7 @@ _INTERVENTION_FIELD_RE = re.compile(r"^[-*]\s*([a-z_]+)\s*:\s*(.+?)\s*$")
 _INTERVENTION_INDEPENDENCE_ENUM = ("independent", "self-emitted", "mixed")
 _INTERVENTION_INT_FIELDS = (
     "review_after_runs", "baseline_runs", "min_sample", "band_pct",
+    "canary_window_runs",
 )
 
 
@@ -14998,9 +15096,16 @@ def parse_intervention_hypothesis(spec_text: str) -> dict | None:
             raw[current] = raw[current] + " " + stripped
             continue
         current = None  # non-field prose — stop folding
-    for key in ("target_signal", "expected_direction"):
+    for key in ("target_signal", "expected_direction",
+                "canary_degraded_revert_note"):
         if key in raw:
             fields[key] = raw[key]
+    # canary_revert_unsafe (bool, D5 degraded-note trigger): tolerant truthy.
+    if "canary_revert_unsafe" in raw:
+        fields["canary_revert_unsafe"] = (
+            raw["canary_revert_unsafe"].strip().lower()
+            in ("true", "yes", "1", "on")
+        )
     if "signal_independence" in raw:
         value = raw["signal_independence"]
         head = value.split()[0].rstrip(":,;") if value.split() else value
@@ -15094,6 +15199,252 @@ def _render_intervention_record(meta: dict, body: str) -> str:
         allow_unicode=True,
     ).strip()
     return f"---\n{fm}\n---\n\n{body.rstrip()}\n"
+
+
+# ---------------------------------------------------------------------------
+# harness-change-canary-rollback Phase 1 — canary registration helpers.
+#
+# A shipped control-surface change enters a canary observation window: at
+# capture time (record_intervention below), if the change's touched-file set
+# (from the provenance change->commit-set mapping) intersects the
+# control-surface manifest, the record gains a `canary:` sub-map. All the
+# defaults live in ONE constants block; the manifest, when present, takes
+# precedence over the canary-owned fallback glob constant (which mirrors the
+# anti-overfit-design-gate's initial control-surface set until
+# docs/gate/control-surfaces.json ships). Read-only + fail-open throughout —
+# capture must NEVER error a completion.
+# ---------------------------------------------------------------------------
+
+# Window defaults (D2-A): next 10 completed runs after ship, 30-day ceiling.
+CANARY_WINDOW_RUNS_DEFAULT = 10
+CANARY_WINDOW_DAYS_CEILING = 30
+
+# The canary-owned fallback control-surface set — used only when
+# docs/gate/control-surfaces.json is absent (anti-overfit-design-gate ships
+# that manifest; the manifest takes precedence when present). Mirrors the
+# anti-overfit SPEC's initial set. Segment-aware glob semantics: `**` crosses
+# directory separators, `*`/`?` stay within a path segment.
+_CANARY_CONTROL_SURFACES_FALLBACK: tuple[str, ...] = (
+    "user/hooks/**",
+    "user/scripts/lazy-state.py",
+    "user/scripts/bug-state.py",
+    "user/scripts/lazy_core.py",
+    "user/scripts/lazy_guard.py",
+    "user/scripts/lazy_inject.py",
+    "user/scripts/lazy-parity-manifest.json",
+    "user/scripts/build-queue*.ps1",
+    "user/skills/lazy*/**",
+    "user/skills/harden-harness/**",
+    "user/skills/_components/*gate*.md",
+    "user/settings.json",
+)
+
+_CANARY_CONTROL_SURFACES_FILE = ("docs", "gate", "control-surfaces.json")
+
+
+def _canary_control_surfaces(repo_root: Path) -> list[str] | tuple[str, ...]:
+    """Resolve the control-surface glob set (manifest-when-present, else the
+    fallback constant).
+
+    Reads ``docs/gate/control-surfaces.json`` when present — a dict carrying a
+    ``globs`` / ``surfaces`` / ``control_surfaces`` list, or a bare list. Any
+    read/parse failure or an unrecognized shape degrades to the fallback
+    constant (never raises)."""
+    manifest_path = Path(repo_root).joinpath(*_CANARY_CONTROL_SURFACES_FILE)
+    try:
+        if manifest_path.is_file():
+            data = json.loads(manifest_path.read_text(encoding="utf-8"))
+            globs: list | None = None
+            if isinstance(data, list):
+                globs = data
+            elif isinstance(data, dict):
+                for key in ("globs", "surfaces", "control_surfaces"):
+                    if isinstance(data.get(key), list):
+                        globs = data[key]
+                        break
+            if globs is not None:
+                cleaned = [str(g).strip() for g in globs if str(g).strip()]
+                if cleaned:
+                    return cleaned
+    except (OSError, json.JSONDecodeError, ValueError):
+        pass
+    return _CANARY_CONTROL_SURFACES_FALLBACK
+
+
+def _canary_glob_to_re(glob: str) -> "re.Pattern":
+    """Compile a control-surface glob to an anchored regex with segment-aware
+    semantics: ``**`` crosses ``/`` (any depth), ``*`` matches within a segment,
+    ``?`` matches one non-separator char."""
+    out: list[str] = []
+    i = 0
+    n = len(glob)
+    while i < n:
+        if glob[i:i + 2] == "**":
+            out.append(".*")
+            i += 2
+            if i < n and glob[i] == "/":
+                i += 1  # swallow the trailing slash so `a/**` matches `a/x`
+        elif glob[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif glob[i] == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(glob[i]))
+            i += 1
+    return re.compile("^" + "".join(out) + "$")
+
+
+def _canary_touched_files(repo_root: Path, commit_set) -> list[str]:
+    """Derive the sorted, repo-relative POSIX file set touched by a commit set.
+
+    Reuses the provenance git helper ``_git_capture_lines`` (NOT an ad-hoc
+    subprocess) — one ``git show --name-only`` per sha, unioned. Any
+    unresolvable sha / non-git tree contributes nothing; the result is empty
+    rather than an error."""
+    files: set[str] = set()
+    for sha in commit_set or []:
+        sha = str(sha).strip()
+        if not sha:
+            continue
+        lines = _git_capture_lines(
+            repo_root, ["show", "--name-only", "--pretty=format:", sha])
+        if not lines:
+            continue
+        for ln in lines:
+            s = ln.strip()
+            if s:
+                files.add(_normalize_index_key(repo_root, s))
+    return sorted(files)
+
+
+def _canary_intersects(touched_files, surfaces) -> tuple[bool, list[str]]:
+    """Return (arm, matched_surfaces): whether any touched file matches a
+    control-surface glob, and the sorted list of the matching touched files
+    (the resolved file-identity ``surfaces:`` the watcher's D3 attribution
+    matches incident surfaces against — repo-relative POSIX paths)."""
+    pats = [_canary_glob_to_re(g) for g in (surfaces or [])]
+    hits = sorted({
+        f for f in (touched_files or [])
+        if any(p.match(f) for p in pats)
+    })
+    return (bool(hits), hits)
+
+
+# The coupled-pair table from the root CLAUDE.md, folded in as DATA for any
+# pair absent from lazy-parity-manifest.json (D5 — the pair scope must be
+# computable even for pairs the machine-readable manifest does not carry).
+# Kept in lockstep with the root CLAUDE.md "Coupled Skill Pairs" table.
+_CANARY_CLAUDE_MD_PAIRS: tuple[tuple[str, str], ...] = (
+    ("user/skills/lazy/SKILL.md",
+     "repos/algobooth/.claude/skills/lazy-cloud/SKILL.md"),
+    ("user/skills/lazy-batch/SKILL.md",
+     "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md"),
+    ("user/skills/lazy/SKILL.md", "user/skills/lazy-bug/SKILL.md"),
+    ("user/skills/lazy-batch/SKILL.md", "user/skills/lazy-bug-batch/SKILL.md"),
+    ("user/skills/lazy-status/SKILL.md",
+     "user/skills/lazy-bug-status/SKILL.md"),
+)
+
+
+def _canary_load_parity_pairs(manifest_path: Path) -> list[tuple[str, str]]:
+    """Read (canonical, derived) pairs from lazy-parity-manifest.json. Any
+    read/parse failure or unexpected shape degrades to an empty list (the
+    caller still folds in the CLAUDE.md pairs-table data)."""
+    try:
+        data = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return []
+    pairs: list[tuple[str, str]] = []
+    for p in (data.get("pairs") if isinstance(data, dict) else None) or []:
+        if not isinstance(p, dict):
+            continue
+        canonical = p.get("canonical")
+        derived = p.get("derived")
+        if isinstance(canonical, str) and isinstance(derived, str):
+            pairs.append((canonical, derived))
+    return pairs
+
+
+_CANARY_DEFAULT_REVERT_UNSAFE_NOTE = (
+    "Change flagged revert-unsafe at ship time (e.g. it migrated on-disk state "
+    "or a schema). A plain `git revert` of the commit set may not fully back it "
+    "out — the bug pipeline must determine actual revert feasibility with the "
+    "repo checked out (v1 records this note; no `git revert` dry-run machinery)."
+)
+
+
+def _maybe_arm_canary(
+    repo_root: Path,
+    intervention_id: str,
+    shipped_commit: str | None,
+    hyp: dict,
+    opened_date: str,
+) -> dict | None:
+    """Build the canary sub-map for a shipped change, or None when the change
+    does not touch the control-surface manifest (D1/D5).
+
+    Derives the touched-file + commit sets from the provenance change->commit-set
+    mapping (bracket-primary, message-grep fallback, single-commit last resort),
+    intersects them with the control-surface manifest, and — on a scope hit —
+    returns ``{opened, window_runs, surfaces, commit_set, pair_scope,
+    degraded_revert_note, status: open}`` (the frozen Phase-2 key set). Read-only
+    and fail-open: any derivation miss simply yields None (no canary)."""
+    touched = (derive_touched_from_brackets(repo_root, intervention_id)
+               or derive_touched_from_grep(repo_root, intervention_id))
+    commit_set = list(touched.get("commits") or [])
+    files = list(touched.get("files") or [])
+    if not commit_set and shipped_commit and shipped_commit != "unknown":
+        commit_set = [shipped_commit]
+    if not files:
+        files = _canary_touched_files(repo_root, commit_set)
+    arm, surfaces = _canary_intersects(files, _canary_control_surfaces(repo_root))
+    if not arm:
+        return None
+    manifest_path = (
+        Path(repo_root) / "user" / "scripts" / "lazy-parity-manifest.json"
+    )
+    pair_scope = _compute_pair_scope(files, manifest_path)
+    window_runs = hyp.get("canary_window_runs")
+    if not isinstance(window_runs, int) or window_runs <= 0:
+        window_runs = CANARY_WINDOW_RUNS_DEFAULT
+    note = hyp.get("canary_degraded_revert_note")
+    if not note and hyp.get("canary_revert_unsafe"):
+        note = _CANARY_DEFAULT_REVERT_UNSAFE_NOTE
+    return {
+        "opened": opened_date,
+        "window_runs": window_runs,
+        "surfaces": surfaces,
+        "commit_set": commit_set,
+        "pair_scope": pair_scope,
+        "degraded_revert_note": note if note else None,
+        "status": "open",
+    }
+
+
+def _compute_pair_scope(touched_files, manifest_path: Path) -> list[str]:
+    """Compute the coupled-pair scope for a set of touched files (D5).
+
+    A touched file matching EITHER half of a coupled pair yields BOTH halves in
+    the scope (reverting one half of a parity-guarded pair breaks the audit).
+    Pairs come from ``lazy-parity-manifest.json`` UNIONed with the root
+    CLAUDE.md pairs-table entries (folded in as data for any pair the manifest
+    does not carry). Result is de-duplicated, order-stable."""
+    pairs = _canary_load_parity_pairs(manifest_path)
+    seen_pairs = {frozenset(p) for p in pairs}
+    for p in _CANARY_CLAUDE_MD_PAIRS:
+        if frozenset(p) not in seen_pairs:
+            pairs.append(p)
+            seen_pairs.add(frozenset(p))
+    touched = set(touched_files or [])
+    scope: list[str] = []
+    for canonical, derived in pairs:
+        if canonical in touched or derived in touched:
+            for half in (canonical, derived):
+                if half not in scope:
+                    scope.append(half)
+    return scope
 
 
 def record_intervention(
@@ -15284,6 +15635,18 @@ def record_intervention(
         "(`## Review <date>` sections). Do not hand-edit the frontmatter — "
         "the evaluator is its sole post-capture writer.",
     ]
+    # --- Canary registration post-step (harness-change-canary-rollback D1/D5) ---
+    # Arm a canary window when the shipped change touches the control-surface
+    # manifest. Fail-open — a canary failure must never error a completion; a
+    # non-scoped change registers no canary (byte-identical to before).
+    try:
+        canary = _maybe_arm_canary(
+            repo_root, intervention_id, shipped_commit, hyp, shipped_date)
+        if canary is not None:
+            meta["canary"] = canary
+    except Exception:  # noqa: BLE001 — capture must never error a completion
+        pass
+
     _atomic_write(
         record_path, _render_intervention_record(meta, "\n".join(body_lines))
     )
