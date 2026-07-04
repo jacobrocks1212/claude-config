@@ -1710,9 +1710,15 @@ def _write_yaml_sentinel(path: Path, kind: str, **fields: Any) -> None:
         fm = {"kind": kind, **fields}
         body = "---\n" + yaml.safe_dump(fm, sort_keys=False).strip() + "\n---\n\n# Sentinel\n"
     except ImportError:
-        # Fallback: emit minimal frontmatter manually so the harness can run
-        # even if PyYAML is missing (parse_sentinel treats it as freeform → {}).
-        pairs = "\n".join(f"{k}: {v}" for k, v in {"kind": kind, **fields}.items())
+        # Fallback: emit minimal frontmatter manually so the harness can run even
+        # if PyYAML is missing. Colon-bearing scalar VALUES are single-quoted via
+        # lazy_core._yaml_fallback_scalar so the emitted `key: value` line is valid
+        # YAML (parity with safe_dump) and re-reads through parse_sentinel without
+        # hard-halting (skip-mcp-test-frontmatter-unquoted-colon — quote-on-write).
+        pairs = "\n".join(
+            f"{k}: {lazy_core._yaml_fallback_scalar(v)}"
+            for k, v in {"kind": kind, **fields}.items()
+        )
         body = f"---\n{pairs}\n---\n\n# Sentinel\n"
     path.write_text(body, encoding="utf-8")
 
@@ -1749,8 +1755,12 @@ def _write_yaml_blocked_sentinel(
             + (body if body else "# Blocked\n")
         )
     except ImportError:
+        # Colon-bearing scalar values are single-quoted (parity with safe_dump)
+        # via lazy_core._yaml_fallback_scalar so the manual fallback emits valid
+        # YAML on the no-PyYAML path (skip-mcp-test-frontmatter-unquoted-colon —
+        # quote-on-write; sibling of the _write_yaml_sentinel fallback above).
         pairs = "\n".join(
-            f"{k}: {v}" for k, v in {
+            f"{k}: {lazy_core._yaml_fallback_scalar(v)}" for k, v in {
                 "kind": "blocked",
                 "feature_id": feature_id,
                 "phase": phase,

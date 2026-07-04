@@ -825,6 +825,25 @@ def _yaml_load_tolerant(yaml_body: str) -> dict[str, Any] | None:
     return None
 
 
+def _yaml_fallback_scalar(value: Any) -> str:
+    """Render a scalar VALUE for the no-PyYAML manual frontmatter fallback.
+
+    The state scripts' ``_write_yaml_sentinel`` ImportError fallback emits
+    ``f"{k}: {v}"`` pairs by hand (used only when PyYAML is unavailable). A raw
+    ``str(value)`` for a value carrying a colon-space (``a: b``) or a trailing
+    colon (``waiting on:``) is INVALID YAML — the sentinel would then hard-halt
+    ``parse_sentinel`` on re-read. This quotes exactly those two cases (parity
+    with what ``yaml.safe_dump`` emits), single-quoting the value and doubling
+    any embedded single quote. A colon-free string, a colon-WITHOUT-space string
+    (``build:step`` — a valid plain scalar), and non-string values are rendered
+    unchanged (``str(value)``), so the common-case output is byte-identical to
+    before (skip-mcp-test-frontmatter-unquoted-colon — quote-on-write).
+    """
+    if isinstance(value, str) and (": " in value or value.endswith(":")):
+        return "'" + value.replace("'", "''") + "'"
+    return str(value)
+
+
 def parse_sentinel(path: Path) -> dict[str, Any] | None:
     """Parse a sentinel file's YAML frontmatter. Returns dict or None if absent."""
     if not path.exists():

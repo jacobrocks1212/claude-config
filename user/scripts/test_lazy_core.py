@@ -1156,6 +1156,53 @@ def test_parse_sentinel_well_formed_no_colon_unchanged():
 
 
 # ---------------------------------------------------------------------------
+# Tests: _yaml_fallback_scalar — quote-on-write hardening for the no-PyYAML
+# manual frontmatter fallback (skip-mcp-test-frontmatter-unquoted-colon — WU-3)
+# ---------------------------------------------------------------------------
+
+def test_yaml_fallback_scalar_quotes_colon_bearing_roundtrips():
+    """The no-PyYAML manual fallback quotes a colon-bearing scalar value so the
+    emitted `key: value` line is valid YAML, and parse_sentinel round-trips it to
+    the literal string (parity with what yaml.safe_dump emits)."""
+    _guard()
+    colon_reason = "untestable on this host: no real audio device"
+    rendered = lazy_core._yaml_fallback_scalar(colon_reason)
+    assert rendered.startswith("'") and rendered.endswith("'"), (
+        f"colon-bearing value must be single-quoted, got: {rendered!r}"
+    )
+    # Round-trip: build frontmatter exactly as the hardened fallback does.
+    content = (
+        "---\n"
+        "kind: skip-mcp-test\n"
+        f"reason: {rendered}\n"
+        "---\n\n# Sentinel\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "SKIP_MCP_TEST.md"
+        p.write_text(content, encoding="utf-8")
+        result = lazy_core.parse_sentinel(p)
+    assert result.get("reason") == colon_reason, (
+        f"round-trip failed: {result.get('reason')!r}"
+    )
+    # A trailing-colon value is also quoted.
+    assert lazy_core._yaml_fallback_scalar("waiting on:").startswith("'"), (
+        "a trailing-colon value must be quoted"
+    )
+
+
+def test_yaml_fallback_scalar_leaves_plain_value_unchanged():
+    """A colon-free scalar value — and a colon-WITHOUT-space value (a valid plain
+    scalar) and a non-string — is rendered unchanged: no spurious quoting that
+    would drift the fallback's pre-existing output for the common case."""
+    _guard()
+    assert lazy_core._yaml_fallback_scalar("operator") == "operator"
+    # `build:step` (colon, no following space) is a valid plain scalar — safe_dump
+    # leaves it unquoted, so must the fallback.
+    assert lazy_core._yaml_fallback_scalar("build:step") == "build:step"
+    assert lazy_core._yaml_fallback_scalar(5) == "5"
+
+
+# ---------------------------------------------------------------------------
 # Tests: build_parked_entry
 # ---------------------------------------------------------------------------
 
@@ -16155,6 +16202,8 @@ _TESTS = [
     ("test_parse_sentinel_colon_no_space_is_plain_scalar_control", test_parse_sentinel_colon_no_space_is_plain_scalar_control),
     ("test_parse_sentinel_malformed_non_scalar_still_dies", test_parse_sentinel_malformed_non_scalar_still_dies),
     ("test_parse_sentinel_well_formed_no_colon_unchanged", test_parse_sentinel_well_formed_no_colon_unchanged),
+    ("test_yaml_fallback_scalar_quotes_colon_bearing_roundtrips", test_yaml_fallback_scalar_quotes_colon_bearing_roundtrips),
+    ("test_yaml_fallback_scalar_leaves_plain_value_unchanged", test_yaml_fallback_scalar_leaves_plain_value_unchanged),
     # spec_status
     ("test_spec_status_none_path", test_spec_status_none_path),
     ("test_spec_status_no_spec_md", test_spec_status_no_spec_md),
