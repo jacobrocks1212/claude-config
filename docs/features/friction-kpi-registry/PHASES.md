@@ -53,16 +53,16 @@ source enum + per-source closed selector enum, direction enum, provenance enum, 
 ordering/pending coherence, `review_by` rot flagging.
 
 **Deliverables:**
-- [ ] `docs/kpi/registry.json` — `{"schema_version": 1, "kpis": [...]}` with the six D8 seed rows (build-queue false-green rate, build-queue queue wait time, build-queue raw-invocation deny recurrence, containment runaway-trip rate, halt dwell, cycles-per-completion), each carrying the full D2 row schema; build-queue rows `repo_scope: cognito-forms`; every baseline `provenance: pending` with `value: null`, `band: null` (no fabricated history), `notes` documenting the workstation-deferred signal gaps.
-- [ ] `user/scripts/kpi-scorecard.py` — module skeleton (stdlib-only; `_SCRIPTS_DIR` sys.path bootstrap) + `load_registry` + `lint_registry(registry, today)` returning `(errors, warnings)`; CLI `--lint` prints findings and exits non-zero on errors (warnings alone exit 0).
-- [ ] `user/scripts/test_kpi_scorecard.py` — importlib load of the dash-named module; lint green on the seeded real registry; red (named row + field) on each fixture violation: bad id, duplicate id, unknown source, unknown selector, bad direction, bad provenance, inverted band per direction, band present with pending baseline, malformed review_by; rot warning on a past `review_by`.
+- [x] `docs/kpi/registry.json` — `{"schema_version": 1, "kpis": [...]}` with the six D8 seed rows (build-queue false-green rate, build-queue queue wait time, build-queue raw-invocation deny recurrence, containment runaway-trip rate, halt dwell, cycles-per-completion), each carrying the full D2 row schema; build-queue rows `repo_scope: cognito-forms`; every baseline `provenance: pending` with `value: null`, `band: null` (no fabricated history), `notes` documenting the workstation-deferred signal gaps.
+- [x] `user/scripts/kpi-scorecard.py` — module skeleton (stdlib-only; `_SCRIPTS_DIR` sys.path bootstrap) + `load_registry` + `lint_registry(registry, today)` returning `(errors, warnings)`; CLI `--lint` prints findings and exits non-zero on errors (warnings alone exit 0).
+- [x] `user/scripts/test_kpi_scorecard.py` — importlib load of the dash-named module; lint green on the seeded real registry; red (named row + field) on each fixture violation: bad id, duplicate id, unknown source, unknown selector, bad direction, bad provenance, inverted band per direction, band present with pending baseline, malformed review_by; rot warning on a past `review_by`.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/kpi-scorecard.py --lint --repo-root .`
 exits 0 on the seeded registry; corrupting any row's `signal.source` to an unknown value makes
 it exit 1 naming the row id and field.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Lint green on the seeded registry, red on each fixture violation. *(Evidence: `SKIP_MCP_TEST.md` — `test_kpi_scorecard.py` lint suite + a live `--lint` run.)* <!-- verification-only -->
+- [x] Lint green on the seeded registry, red on each fixture violation. *(Evidence: `SKIP_MCP_TEST.md` — `test_kpi_scorecard.py` lint suite + a live `--lint` run.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface (claude-config has no Tauri/MCP app). Verification is `pytest`.
 

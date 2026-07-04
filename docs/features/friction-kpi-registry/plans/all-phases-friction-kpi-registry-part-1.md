@@ -57,9 +57,9 @@ python3 lint-skills.py --skills-dir <root>/user/skills --repos-dir <root>/repos
 
 ## Phase 1 — Registry + lint
 
-- [ ] WU-1.1 — `test_kpi_scorecard.py`: importlib loader + lint red/green fixtures (bad id, dup id, unknown source/selector, bad direction/provenance, inverted band per direction, band-with-pending-baseline, malformed review_by, rot warning) — written FIRST, failing (module absent).
-- [ ] WU-1.2 — `kpi-scorecard.py`: constants (enums, id regex), `load_registry`, `lint_registry(registry, today)` → `(errors, warnings)`; CLI `--lint` (exit 1 on errors; warnings exit 0).
-- [ ] WU-1.3 — `docs/kpi/registry.json` — six D8 seed rows, full D2 schema, all `provenance: pending` / `value: null` / `band: null` (honest: no history in this container), build-queue rows `repo_scope: cognito-forms`, notes documenting deferred signal gaps; real-registry lint test green.
+- [x] WU-1.1 — `test_kpi_scorecard.py`: importlib loader + lint red/green fixtures (bad id, dup id, unknown source/selector, bad direction/provenance, inverted band per direction, band-with-pending-baseline, malformed review_by, rot warning) — written FIRST, failing (module absent).
+- [x] WU-1.2 — `kpi-scorecard.py`: constants (enums, id regex), `load_registry`, `lint_registry(registry, today)` → `(errors, warnings)`; CLI `--lint` (exit 1 on errors; warnings exit 0).
+- [x] WU-1.3 — `docs/kpi/registry.json` — six D8 seed rows, full D2 schema, all `provenance: pending` / `value: null` / `band: null` (honest: no history in this container), build-queue rows `repo_scope: cognito-forms`, notes documenting deferred signal gaps; real-registry lint test green.
 
 ## Phase 2 — Scorecard over computable-today signals
 
