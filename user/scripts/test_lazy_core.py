@@ -26061,6 +26061,79 @@ def test_eval_evidence_observation_gap_partial_no_provenance_refuses():
         assert v["verdict"] == "refuse", v
 
 
+def test_observation_gap_promotable_shared_predicate():
+    """The SHARED observation_gap_promotable helper — the SINGLE home for the
+    scoped observation-gap partial rule now used by the apply gate, the
+    completion-integrity gate, AND the Step-9 routing in lazy-state.py /
+    bug-state.py. This is the regression that closes the Step-9 no-route deadlock
+    (community-sharing: result partial, 10/10 MCP-driveable scope, 3 spec_class'd
+    exemptions re-dispatched /mcp-test every cycle because the routing accepted
+    ONLY result=='all-passing'). If any of the three sites drifts from this
+    predicate the deadlock reopens — so the predicate itself is pinned here.
+    """
+    _guard()
+    ogp = lazy_core.observation_gap_promotable
+
+    # PROMOTES — the live community-sharing shape: partial + non-empty exemptions
+    # each carrying a non-empty spec_class provenance.
+    assert ogp(
+        {
+            "result": "partial",
+            "observation_gap_exemptions": [
+                {"surface": "import-share", "spec_class": "clipboard-io"},
+                {"surface": "export-share", "spec_class": "clipboard-io"},
+                {"surface": "share-link", "spec_class": "os-share-sheet"},
+            ],
+        }
+    ) is True
+
+    # all-passing is NOT a 'partial' — the helper is the partial-promotion
+    # predicate only; the callers OR it with the all-passing literal.
+    assert ogp({"result": "all-passing"}) is False
+
+    # partial with NO exemptions key → not promotable.
+    assert ogp({"result": "partial"}) is False
+
+    # partial with an EMPTY exemptions list → not promotable.
+    assert ogp({"result": "partial", "observation_gap_exemptions": []}) is False
+
+    # partial with a provenance-LESS exemption (no spec_class) → not promotable
+    # (the citation is what distinguishes a verified assessment from a skip).
+    assert ogp(
+        {
+            "result": "partial",
+            "observation_gap_exemptions": [{"surface": "import-share"}],
+        }
+    ) is False
+
+    # partial with an empty/whitespace spec_class → not promotable.
+    assert ogp(
+        {
+            "result": "partial",
+            "observation_gap_exemptions": [
+                {"surface": "s", "spec_class": "   "}
+            ],
+        }
+    ) is False
+
+    # partial with a non-dict exemption entry → not promotable.
+    assert ogp(
+        {"result": "partial", "observation_gap_exemptions": ["not-a-dict"]}
+    ) is False
+
+    # A genuine MCP-scope FAILURE still returns True HERE (the helper is HALF the
+    # AND — the pass==total cross-check is the callers' responsibility). This
+    # pins the contract: the helper does NOT read pass/total.
+    assert ogp(
+        {
+            "result": "partial",
+            "pass_count": 4,
+            "total_count": 10,
+            "observation_gap_exemptions": [{"surface": "s", "spec_class": "c"}],
+        }
+    ) is True
+
+
 def test_eval_evidence_head_drift_docs_only_warn_exempt():
     """validated_commit != HEAD, drift is *.md only → warn-exempt."""
     _guard()
@@ -28487,6 +28560,9 @@ _TESTS = _TESTS + [
      test_eval_evidence_observation_gap_partial_with_failure_refuses),
     ("test_eval_evidence_observation_gap_partial_no_provenance_refuses",
      test_eval_evidence_observation_gap_partial_no_provenance_refuses),
+    # Shared predicate — pins the Step-9 routing / apply / completion mirror.
+    ("test_observation_gap_promotable_shared_predicate",
+     test_observation_gap_promotable_shared_predicate),
     # Gap 2 — M4 ensure_runtime soft owned-unverified-serving READY on lock-None.
     ("test_ensure_runtime_lock_none_serving_our_tools_is_soft_ready",
      test_ensure_runtime_lock_none_serving_our_tools_is_soft_ready),

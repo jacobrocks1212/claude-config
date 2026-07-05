@@ -101,6 +101,8 @@ from lazy_core import (
     phases_mcp_runtime_not_required,
     spec_status,
     commit_drift_verdict,
+    observation_gap_promotable,
+    _coerce_evidence_count,
 )
 
 
@@ -3377,7 +3379,34 @@ def compute_state(
             # 100%-passing results already on disk?
             if mcp_results_file.exists():
                 meta = parse_sentinel(mcp_results_file) or {}
-                if meta.get("result") == "all-passing":
+                # Accept EITHER a canonical all-passing run OR a sanctioned
+                # observation-gap partial (result: partial whose every exemption
+                # carries a spec_class provenance). The latter routes through the
+                # SHARED observation_gap_promotable helper — the SAME predicate
+                # the __write_validated_from_results__ apply gate and the
+                # completion-integrity gate use. Before this mirror the Step-9
+                # routing accepted ONLY 'all-passing', so a valid observation-gap
+                # partial fell through to 'Run MCP tests' and re-dispatched
+                # /mcp-test every cycle — the deadlock one layer UP from the
+                # completion gate's warning (community-sharing: result partial,
+                # 10/10 MCP-driveable scope passing, 3 spec_class'd exemptions).
+                #
+                # observation_gap_promotable is HALF the AND — the promotion also
+                # requires the MCP-driveable scope to be fully passing
+                # (pass_count == total_count), which the apply + completion gates
+                # cross-check downstream. We enforce that SAME cross-check here so
+                # a partial with a GENUINE MCP-scope failure (pass < total) does
+                # NOT route to write-validated; it falls through to a re-run.
+                _obs_gap = observation_gap_promotable(meta)
+                if _obs_gap:
+                    _pass = _coerce_evidence_count(meta.get("pass_count"))
+                    _total = _coerce_evidence_count(meta.get("total_count"))
+                    # A malformed or genuinely-failing scope is NOT promotable —
+                    # drop back to result=='all-passing'-only handling (which this
+                    # partial is not), i.e. fall through to the MCP re-run below.
+                    if _pass is None or _total is None or _pass != _total:
+                        _obs_gap = False
+                if meta.get("result") == "all-passing" or _obs_gap:
                     # Freshness gate: ensure the results were validated against the
                     # CURRENT HEAD commit, not a stale one. If validated_commit is
                     # present and doesn't match HEAD, classify the drift via the

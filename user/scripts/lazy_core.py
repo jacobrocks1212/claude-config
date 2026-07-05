@@ -2932,18 +2932,12 @@ def evaluate_completion_evidence(feature_dir: Path, repo_root: Path) -> dict:
     # completion-integrity gate. A genuine MCP-scope failure (pass < total) or a
     # provenance-less exemption falls through to the unchanged refusal.
     _result_literal = results_meta.get("result")
-    _exemptions = results_meta.get("observation_gap_exemptions")
-    _observation_gap_ok = (
-        _result_literal == "partial"
-        and isinstance(_exemptions, list)
-        and len(_exemptions) > 0
-        and all(
-            isinstance(e, dict)
-            and isinstance(e.get("spec_class"), str)
-            and e.get("spec_class", "").strip() != ""
-            for e in _exemptions
-        )
-    )
+    # Shared predicate (observation_gap_promotable) — the SINGLE home for the
+    # scoped observation-gap partial rule. This gate MUST mirror the apply gate
+    # and the Step-9 routing exactly; routing all three through one helper is
+    # what keeps them from diverging (the divergence that reintroduced the
+    # deadlock one layer up at the Step-9 MCP routing — community-sharing).
+    _observation_gap_ok = observation_gap_promotable(results_meta)
     if _result_literal != "all-passing" and not _observation_gap_ok:
         return _refuse(
             f"MCP_TEST_RESULTS.md result is "
@@ -3050,6 +3044,54 @@ def _git_diff_name_only(
     except (OSError, subprocess.SubprocessError):
         pass
     return None
+
+
+def observation_gap_promotable(meta: dict) -> bool:
+    """Is this MCP_TEST_RESULTS.md metadata a sanctioned observation-gap partial?
+
+    The SINGLE home for the "scoped observation-gap partial" promotion predicate.
+    THREE routing/gate sites route through this helper so they cannot diverge
+    (the divergence that produced the 2026-07 Step-9 observation-gap DEADLOCK —
+    see hardening-log Round for community-sharing): (1) the
+    ``__write_validated_from_results__`` apply gate in ``apply_pseudo``, (2) the
+    completion-integrity gate in ``evaluate_completion_evidence``, and (3) the
+    Step-9 MCP routing in ``lazy-state.py`` / ``bug-state.py``.
+
+    Background (Gap 1 coupling,
+    harness-mcp-observation-gap-disposition-and-hijacked-runtime, Phase 1): some
+    behavior classes are SPEC-LOCKED to the unit/WDIO test tier (see
+    ``docs/features/mcp-testing/SPEC.md``) and thus have no MCP UI driver to
+    exercise them end-to-end. A run over such a feature honestly carries
+    ``result: partial`` even though its MCP-driveable scope fully passes. The
+    downstream apply + completion gates ALREADY accept this disposition; the
+    Step-9 routing did not, so a valid observation-gap partial re-dispatched
+    ``/mcp-test`` every cycle — an infinite loop ONE LAYER UP from the deadlock
+    the completion gate's comment warns about.
+
+    Promotion is gated NARROWLY — a ``result: partial`` promotes ONLY when its
+    ``observation_gap_exemptions`` is a NON-EMPTY list whose EVERY entry is a
+    mapping carrying a non-empty ``spec_class`` provenance string (the citation
+    that distinguishes a verified untestable-class assessment from a convenience
+    skip — mirroring the SKIP_MCP_TEST.md ``spec_class``-required discipline).
+
+    This predicate is HALF of the AND: callers MUST still enforce the
+    ``pass_count == total_count`` cross-check separately, so a ``partial`` with a
+    GENUINE MCP-scope failure (pass < total) is NOT promoted. A ``partial`` with
+    no exemptions, or a provenance-less exemption, returns False here.
+    """
+    if meta.get("result") != "partial":
+        return False
+    exemptions = meta.get("observation_gap_exemptions")
+    return (
+        isinstance(exemptions, list)
+        and len(exemptions) > 0
+        and all(
+            isinstance(e, dict)
+            and isinstance(e.get("spec_class"), str)
+            and e.get("spec_class", "").strip() != ""
+            for e in exemptions
+        )
+    )
 
 
 def commit_drift_verdict(
@@ -4159,28 +4201,13 @@ def apply_pseudo(
         # EXISTING refusal — the genuine-failure refusal is NOT relaxed.
         result_literal = results_meta.get("result")
         observation_gap_exemptions = results_meta.get("observation_gap_exemptions")
-        observation_gap_promotion = False
-        if result_literal == "partial":
-            # Validate the exemptions block. It must be a non-empty list whose
-            # every entry is a mapping carrying a non-empty `spec_class` provenance
-            # string. Anything else → not a sanctioned observation-gap disposition,
-            # fall through to the refusal (do NOT silently promote).
-            exemptions_valid = (
-                isinstance(observation_gap_exemptions, list)
-                and len(observation_gap_exemptions) > 0
-                and all(
-                    isinstance(e, dict)
-                    and isinstance(e.get("spec_class"), str)
-                    and e.get("spec_class", "").strip() != ""
-                    for e in observation_gap_exemptions
-                )
-            )
-            if exemptions_valid:
-                # The MCP-driveable scope must still be fully passing — that is the
-                # count cross-check below (pass_count == total_count). We mark the
-                # promotion candidate here; the count gate is the second half of
-                # the AND and refuses a genuine MCP-scope failure on its own.
-                observation_gap_promotion = True
+        # Shared predicate (observation_gap_promotable) — the SINGLE home for the
+        # scoped observation-gap partial rule, mirrored across this apply gate,
+        # the completion-integrity gate, and the Step-9 routing so they cannot
+        # diverge. This is HALF the AND: the count cross-check below
+        # (pass_count == total_count) is the other half and refuses a genuine
+        # MCP-scope failure on its own.
+        observation_gap_promotion = observation_gap_promotable(results_meta)
         if result_literal != "all-passing" and not observation_gap_promotion:
             return _refused(
                 f"MCP_TEST_RESULTS.md result is {result_literal!r} — expected "

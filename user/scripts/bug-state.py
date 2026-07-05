@@ -98,6 +98,8 @@ from lazy_core import (
     phases_mcp_runtime_not_required,
     spec_status,
     commit_drift_verdict,
+    observation_gap_promotable,
+    _coerce_evidence_count,
 )
 
 # ---------------------------------------------------------------------------
@@ -1486,7 +1488,23 @@ def compute_state(
             # 100%-passing results already on disk?
             if mcp_results_file.exists():
                 meta = parse_sentinel(mcp_results_file) or {}
-                if meta.get("result") == "all-passing":
+                # Accept EITHER a canonical all-passing run OR a sanctioned
+                # observation-gap partial — mirrors lazy-state.py's Step 9 via the
+                # SHARED observation_gap_promotable helper (the SAME predicate the
+                # apply gate + completion-integrity gate use). Without this mirror
+                # a valid observation-gap partial re-dispatched /mcp-test every
+                # cycle (the deadlock one layer UP from the completion gate). The
+                # helper is HALF the AND — the promotion also requires the
+                # MCP-driveable scope fully passing (pass_count == total_count),
+                # cross-checked here so a genuine MCP-scope failure does NOT
+                # route to write-validated.
+                _obs_gap = observation_gap_promotable(meta)
+                if _obs_gap:
+                    _pass = _coerce_evidence_count(meta.get("pass_count"))
+                    _total = _coerce_evidence_count(meta.get("total_count"))
+                    if _pass is None or _total is None or _pass != _total:
+                        _obs_gap = False
+                if meta.get("result") == "all-passing" or _obs_gap:
                     # Freshness gate (mirrors lazy-state.py's Step 9): the
                     # results must have been validated against the CURRENT
                     # HEAD commit. If validated_commit is present and doesn't
