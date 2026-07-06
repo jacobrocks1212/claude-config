@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-06
+**Fixed:** 2026-07-06
+**Fix commit:** 7192c6f
 **Placement:** docs/bugs/adhoc-cycle-begin-real-requires-sub-skill
 **Related:** `docs/bugs/skip-mcp-test-frontmatter-unquoted-colon` (Round 3 parent — shipped the read-side guard, commit `d650926`); `docs/bugs/adhoc-derive-multi-commit-budget-from-dispatch-sites` (open, out of scope); `docs/bugs/_archive/adhoc-derive-cycle-commit-budget` (the `_MULTI_COMMIT_DISPATCH_SKILLS` SSOT that derives branch-3 budget)
 
