@@ -2406,6 +2406,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/build-queue-enforce-cd-prefix-bypass/PHASES.md": [
+    {
+      "id": "build-queue-enforce-cd-prefix-bypass",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-enforce-cd-prefix-bypass/plans/all-phases-2026-07-06.md": [
+    {
+      "id": "build-queue-enforce-cd-prefix-bypass",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/byref-dispatch-undercounts-forward-cycles/PHASES.md": [
     {
       "id": "byref-dispatch-undercounts-forward-cycles",

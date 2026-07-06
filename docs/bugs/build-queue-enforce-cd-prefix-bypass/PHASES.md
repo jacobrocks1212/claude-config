@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Fixed
 
 **MCP runtime:** not-required — this is hook (bash + inline-Python) and skill/PowerShell-wrapper work in claude-config, a repo with NO app surface (no `src-tauri/`, no `package.json`). It is structurally outside MCP reach (the "no MCP-reachable surface" untestable class). Every deliverable is validated by the `user/scripts/test_hooks.py` pipe-test harness (which spawns the real hooks over crafted PreToolUse payloads) — the suite already carries a section explicitly tagged `build-queue-enforce-cd-prefix-bypass` and is **green (130/131 passed, 1 legitimately skipped, 0 failed this cycle)**.
 
@@ -51,7 +51,7 @@ Per `/spec-phases` Step 2.7 — every load-bearing claim here is **code-provable
 - No production edit is owed. The bqe deny-surface re-anchor was implemented under `b85b0c3` (sibling bug `build-queue-outcome-opacity-and-inspect-deny`, whose Phase 1 goal — "anchor bqe deny surface to invoke-vs-reference" — is the same mechanical change this bug's prong 1 requires); `long-build-ownership-guard.sh` was already command-position-anchored. Both header comment blocks (bqe 18-46, long-build 14-29) now positively document the closed `cd`-prefix blind spot.
 - Executor action for this phase: run `python3 user/scripts/test_hooks.py` and confirm the bqe + long-build sections are green; tick. No file mutation expected.
 
-**Status:** Complete — verified 2026-07-06 via `/execute-plan`: `test_hooks.py` 130/131 passed, 1 skipped, 0 failed; all cited symbols/line numbers confirmed on disk (Read/Grep this cycle).
+**Status:** Complete
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/test_hooks.py` reports `0 failed` with the `test_bqe_denies_cd_prefixed_*`, `test_bqe_denies_restore_then_build_compound`, and `test_longbuild_guard_denies_cd_prefixed_*` cases passing.
 
@@ -84,7 +84,7 @@ Per `/spec-phases` Step 2.7 — every load-bearing claim here is **code-provable
 - No production edit owed. The `-Project` parameter + skill/doc wiring is present on disk. **Open-Question resolutions recorded:** (a) surface = a `-Project` param on `/msbuild` (chosen over a separate skill); (b) `build-filtered.ps1` gained native single-project support (chosen over a bare forward to `dotnet build <csproj>`). Both are the more-complete choices and are what shipped.
 - Executor action for this phase: confirm the four citations on disk; tick. No mutation expected.
 
-**Status:** Complete — verified 2026-07-06 via `/execute-plan`: all four citations confirmed on disk (`build-filtered.ps1` `-Project` param + conditional target; `msbuild/SKILL.md` lines 4/16/29; `mstest/SKILL.md` line 11 pointer; `CLAUDE.local.md` line 64/96 targeted-compile path).
+**Status:** Complete
 
 **Minimum Verifiable Behavior:** `grep -n 'Project' repos/cognito-forms/.claude/scripts/build-filtered.ps1` shows the param + conditional target; `repos/cognito-forms/.claude/skills/msbuild/SKILL.md` documents `-Project`; `mstest/SKILL.md` line 11 points at it.
 
@@ -116,7 +116,7 @@ Per `/spec-phases` Step 2.7 — every load-bearing claim here is **code-provable
 - No production edit owed. The banner-trust / recovery prose landed with the sibling build-queue outcome-opacity + false-green work (`7722211 fix(build-queue-outcome-opacity-and-inspect-deny): Phase 4 — point build/test skills at the authoritative banner`; `42b77ab fix(build-queue-false-green): … banner/status no-output arms`). It directly addresses the empty-output / missing-task-output confusion in symptom #3.
 - Theory 3 was SECONDARY and is substantially addressed by the banner-as-source-of-truth contract; no further ergonomics work is scheduled. Executor action: confirm citations; tick.
 
-**Status:** Complete — verified 2026-07-06 via `/execute-plan`: banner-trust + `run_in_background` poll-path prose confirmed present in both `msbuild/SKILL.md` and `mstest/SKILL.md`.
+**Status:** Complete
 
 **Minimum Verifiable Behavior:** `msbuild/SKILL.md` and `mstest/SKILL.md` each contain the "trust the banner … do NOT `cat`/`grep` the runner or `results/<seq>.json`" instruction and the `run_in_background` poll path.
 
