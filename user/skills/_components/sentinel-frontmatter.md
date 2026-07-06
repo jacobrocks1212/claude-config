@@ -428,6 +428,21 @@ either way). Keep in lockstep with AlgoBooth's
 
 #### `SKIP_MCP_TEST.md` — `kind: skip-mcp-test`
 
+> **SCOPE — whole-feature, permanent; there is NO row/phase scoping.** A `SKIP_MCP_TEST.md`
+> waives the MCP-validation gate for the **ENTIRE feature** — its mere presence routes Step 9
+> straight to `__write_validated_from_skip__` (workstation) / validated (cloud), *before*
+> `MCP_TEST_RESULTS.md` is even consulted. It has **no** single-row, single-phase, or "just this
+> one verification row" scope: writing it to skip *part* of a feature's validation silently waives
+> *all* of it and hijacks the feature-level route (observed 2026-07-05, recording-panel — a
+> corrective-phase single-row skip short-circuited the whole feature past `/mcp-test`, and combined
+> with a stale `VALIDATED.md` produced an unroutable completion state that took three
+> coherence-recovery cycles to reconcile). A **scoped / partial** skip — "these N rows are
+> MCP-unobservable but the rest passed" — MUST instead be an `observation_gap_exemptions:` block on
+> `MCP_TEST_RESULTS.md` (`result: partial`, each exemption carrying a `spec_class`), which the
+> shared `lazy_core.observation_gap_promotable` gate promotes to a
+> `validated-modulo-observation-gaps` receipt (see `MCP_TEST_RESULTS.md` below). Reach for
+> `SKIP_MCP_TEST.md` ONLY when the ENTIRE feature is un-testable on any host.
+
 Required:
 
 ```yaml
