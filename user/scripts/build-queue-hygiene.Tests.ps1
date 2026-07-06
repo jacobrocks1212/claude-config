@@ -989,3 +989,60 @@ Describe 'scope-in-caller guard — hygiene dot-source is a top-level statement 
 		$isNestedInScriptBlock | Should -Be $false -Because "the build-queue-hygiene.ps1 dot-source in $callerName must be a top-level statement (e.g. inside a top-level try{}), not a scriptblock argument to Get-SafeValue -- otherwise & `$Block runs it in a child scope and every function it defines is discarded"
 	}
 }
+
+Describe 'scope-in-caller guard -- buildLogPath assignment is main-scope, not Get-SafeValue child scope (regression guard)' {
+	# NOTE: this Describe block does NOT dot-source or invoke build-queue-runner.ps1 -- it is a
+	# top-level script with a param() block that EXECUTES real build machinery on load. Every
+	# assertion here reads the caller SOURCE via AST parse only.
+	#
+	# Bug context: build-queue-runner.ps1 initializes $buildLogPath = $null at script (main)
+	# scope, then re-assigns it INSIDE a `Get-SafeValue { ... $buildLogPath = Join-Path
+	# $logsDir "$Seq.build.log" ... }` scriptblock argument. Get-SafeValue invokes its
+	# scriptblock with `& $Block`, which runs in a CHILD scope -- so that re-assignment is
+	# discarded and the main-scope $buildLogPath stays $null. The downstream build-log
+	# classifier then reads $null and force-fails every successful build. The fix (a later
+	# work unit) moves the $buildLogPath = Join-Path ... assignment out of the Get-SafeValue
+	# scriptblock into a top-level (or try{}/if{} statement-block, NOT scriptblock-expression)
+	# statement. This guard is RED today (the assignment is nested inside a Get-SafeValue
+	# scriptblock argument) and must go GREEN once the assignment becomes a true main-scope
+	# statement.
+	#
+	# Uses its own BeforeAll-scoped helper (Pester v5 splits Discovery from Run, so helpers
+	# defined outside BeforeAll/It only exist at Discovery time and are gone by the time It
+	# bodies run) -- independent of the sibling Describe block above so this guard has no
+	# cross-block dependency.
+
+	BeforeAll {
+		function Test-HasScriptBlockExprAncestor2 {
+			param($Node)
+
+			$ancestor = $Node.Parent
+			while ($null -ne $ancestor) {
+				if ($ancestor -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
+					return $true
+				}
+				$ancestor = $ancestor.Parent
+			}
+			return $false
+		}
+	}
+
+	It 'assigns $buildLogPath = Join-Path ...build.log at main scope, not inside Get-SafeValue' {
+		$callerPath = Join-Path $PSScriptRoot 'build-queue-runner.ps1'
+
+		$ast = [System.Management.Automation.Language.Parser]::ParseFile($callerPath, [ref]$null, [ref]$null)
+
+		$assignments = $ast.FindAll({
+			param($n)
+			$n -is [System.Management.Automation.Language.AssignmentStatementAst]
+		}, $true)
+
+		$buildLogPathAssignments = @($assignments | Where-Object {
+			$_.Left.Extent.Text -match 'buildLogPath' -and $_.Right.Extent.Text -match 'build\.log'
+		})
+		$buildLogPathAssignments.Count | Should -Be 1 -Because 'there should be exactly one $buildLogPath = Join-Path ... "$Seq.build.log" assignment in build-queue-runner.ps1 (distinct from the $buildLogPath = $null initializer)'
+
+		$isNestedInScriptBlock = Test-HasScriptBlockExprAncestor2 -Node $buildLogPathAssignments[0]
+		$isNestedInScriptBlock | Should -Be $false -Because 'the $buildLogPath build-log-path assignment in build-queue-runner.ps1 must be a main/script-scope statement, not a scriptblock argument to Get-SafeValue -- otherwise & $Block runs it in a child scope, the main-scope $buildLogPath stays $null, and the downstream build-log classifier force-fails every successful build'
+	}
+}
