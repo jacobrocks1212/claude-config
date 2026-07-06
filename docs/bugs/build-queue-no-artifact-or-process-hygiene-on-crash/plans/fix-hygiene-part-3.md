@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: build-queue-no-artifact-or-process-hygiene-on-crash
-status: Ready
+status: Complete
 created: 2026-06-30
 complexity: complex
 phases: [4, 5]

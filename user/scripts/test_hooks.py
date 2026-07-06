@@ -3461,6 +3461,55 @@ def test_containment_agentid_present_denies_lazy_batch_invocation():
             )
 
 
+def test_containment_agentid_present_allows_lazy_batch_path_reference():
+    """SUBAGENT payload whose Bash command merely REFERENCES a lazy-batch* skill
+    file path (cat/grep/ls/git add) must ALLOW — the false-positive that recurred
+    8x in claude-config (docs/bugs/adhoc-incident-hook-deny-4b767b). RED against
+    the current unanchored _LAZY_BATCH_RE (benign `cat` denies today)."""
+    _guard()
+    benign = (
+        "cat user/skills/lazy-batch/SKILL.md",
+        "cat ~/.claude/skills/lazy-batch/SKILL.md",
+        "grep -rn foo repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md",
+        "ls user/skills/lazy-bug-batch/",
+        "git add user/skills/lazy-batch/SKILL.md",
+    )
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for cmd in benign:
+            result = _run_containment(
+                _bash_preToolUse_json(cmd, agent_id=_SUBAGENT_AGENT_ID), state_dir
+            )
+            assert _containment_decision(result) != "deny", (
+                f"subagent benign lazy-batch path reference {cmd!r} must NOT deny; "
+                f"stdout: {result.stdout!r}"
+            )
+
+
+def test_containment_agentid_present_denies_lazy_batch_invocation_extra_forms():
+    """SUBAGENT payload actually INVOKING a nested batch orchestrator (chained,
+    bug-batch, or a headless `claude -p` spawn) must still DENY — the anchored
+    pair must preserve every real-runaway form."""
+    _guard()
+    runaway = (
+        "cd foo && /lazy-batch",
+        "/lazy-bug-batch 10",
+        "claude --dangerously-skip-permissions -p '/lazy-bug-batch 10'",
+    )
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for cmd in runaway:
+            result = _run_containment(
+                _bash_preToolUse_json(cmd, agent_id=_SUBAGENT_AGENT_ID), state_dir
+            )
+            assert _containment_decision(result) == "deny", (
+                f"subagent nested batch invocation {cmd!r} must deny; "
+                f"stdout: {result.stdout!r}"
+            )
+
+
 def test_containment_agentid_absent_allows_lazy_batch_invocation():
     """MAIN-THREAD payload (agent_id absent) invoking /lazy-batch → allow (the
     orchestrator may invoke the batch)."""
@@ -5592,6 +5641,10 @@ _TESTS = [
      test_containment_agentid_present_denies_recursive_agent_with_marker),
     ("test_containment_agentid_present_denies_lazy_batch_invocation",
      test_containment_agentid_present_denies_lazy_batch_invocation),
+    ("test_containment_agentid_present_allows_lazy_batch_path_reference",
+     test_containment_agentid_present_allows_lazy_batch_path_reference),
+    ("test_containment_agentid_present_denies_lazy_batch_invocation_extra_forms",
+     test_containment_agentid_present_denies_lazy_batch_invocation_extra_forms),
     ("test_containment_agentid_absent_allows_lazy_batch_invocation",
      test_containment_agentid_absent_allows_lazy_batch_invocation),
     ("test_containment_agentid_present_denies_routing_flags_no_marker",

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: build-queue-copy-lock-stale-dll-false-success
-status: Ready
+status: Complete
 created: 2026-07-01
 complexity: complex
 phases: [1]
@@ -65,9 +65,9 @@ Upstream plans and PHASES.md files this plan was authored against.
 
 ## Work Units
 
-- [ ] WU-1 — build-filtered.ps1 exit-code propagation + failure-signature scan
-- [ ] WU-2 — `Test-BuildLogFailure` pure function + Pester block
-- [ ] WU-3 — runner log-parse override + `build_fidelity` hygiene field
+- [x] WU-1 — build-filtered.ps1 exit-code propagation + failure-signature scan
+- [x] WU-2 — `Test-BuildLogFailure` pure function + Pester block
+- [x] WU-3 — runner log-parse override + `build_fidelity` hygiene field
 
 ---
 

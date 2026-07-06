@@ -188,6 +188,14 @@ All paths verified `exists: yes` except `build-queue-hygiene.ps1` (stamped **net
 
 **Completion (gate-owned):** the `__mark_fixed__` gate (bug pipeline) flips SPEC.md **Status** to `Fixed`, writes the `FIXED.md` receipt, strikes the ROADMAP/queue entry, and archives the bug dir once this phase's runtime verification passes. Do NOT author a status-flip/receipt checkbox.
 
+**Implementation Notes (Phase 4–5, execute-plan part 3 — verify cycle 2026-07-06):**
+- All four part-3 WUs' implementation landed OUT-OF-BAND via the sibling `build-queue-false-green` bug work; this cycle VERIFIED each against the deliverable intent and finalized the plan-part ledger (flipped `fix-hygiene-part-3.md` `status: Ready → Complete`).
+- WU-1 (`test-filtered.ps1`): counters `$resultLineCount`/`$summarySeen`, post-pipeline `$dotnetExit = $LASTEXITCODE`, and distinguished exit via `Get-TestOutcomeExitCode` — exit `3` (no results captured) + a warning; the sibling work ALSO added exit `5` (filter matched zero tests, summary Total=0) as a distinct signal (superset of the planned zero-output guard).
+- WU-2 (`build-queue-runner.ps1`): `$resultFidelity` classifier (`n/a` non-test op / `no-output` exit 3 / `no-tests-matched` exit 5 / `verified`) recorded into the existing `hygiene` result sub-object (no second result write); `$isTestOp` path-inferred as planned.
+- WU-3 (`build-queue-status.ps1`): reads the active/last `results/<seq>.json` `hygiene` and prints a `hygiene (seq N):` line (recycled / quarantined / fidelity / build_fidelity / lockers_reaped), degrading to `hygiene: (not recorded)` for legacy files via `Get-SafeValue`; stays read-only.
+- WU-4 (docs): runner header `.DESCRIPTION` schema block, `claude-config/CLAUDE.md` build-queue table note, and the cognito `CLAUDE.local.md` "Running Tests" recovery block trimmed to the `/build-queue-status` pointer.
+- The Phase-4 runtime spike (deliverable 1) and its conditional root-cause fix (deliverable 3) remain operator/runtime-owned (no Cognito worktree/runtime here); the two defensive layers are correct regardless of the spike outcome. The `<!-- verification-only -->` rows stay unticked for the `/mcp-test` / operator gate — the bug pipeline's `__mark_fixed__` gate owns final closure.
+
 ---
 
 ## Batch / ordering note

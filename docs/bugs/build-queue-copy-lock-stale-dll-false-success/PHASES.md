@@ -42,6 +42,7 @@ No net-new paths outside those stamped `create` (`Test-BuildLogFailure`, `Get-Dl
 
 **Runtime Verification** *(checked by manual run — NOT by the implementation agent):*
 - [ ] <!-- verification-only --> Drive `build-filtered.ps1` against a project whose `bin/Debug` DLL is locked (repro the MSB3027 case) and confirm it exits nonzero (the pre-fix baseline exits 0).
+  _(Coherence-recovery 2026-07-06: left unticked — no on-disk evidence (captured locked-DLL build log, exit-code transcript) exists for this manual Windows-runtime check. `VALIDATED.md`/`SKIP_MCP_TEST.md` attest only the structural MCP-skip waiver, not this spike. Requires an actual Windows run before ticking; flagged for the next implementation/verification cycle.)_
 
 **MCP Integration Test Assertions:** N/A — no runtime-observable MCP surface (harness scripts).
 
@@ -65,6 +66,7 @@ No net-new paths outside those stamped `create` (`Test-BuildLogFailure`, `Get-Dl
 - **Files modified:** `repos/cognito-forms/.claude/scripts/build-filtered.ps1` (130L), `user/scripts/build-queue-hygiene.ps1` (519L), `user/scripts/build-queue-hygiene.Tests.ps1` (200L, +9 `Test-BuildLogFailure` tests), `user/scripts/build-queue-runner.ps1` (194L).
 - **Gate:** `Invoke-Pester build-queue-hygiene.Tests.ps1` → 22 passed / 3 failed / 25 total. The 3 failures (`Add-ProcessToBuildJob`/`Stop-BuildJobTree`/`Reset-CompilerServer` zero-handle) are PRE-EXISTING Job-Object sandbox quirks — verified 13/3/16 on the stashed baseline (delta = exactly the +9 new passing tests, zero new failures). All parse-checks PARSE OK.
 - **Pitfall:** the runner-override end-to-end (`Start-Process`/real `$proc`) is not cleanly Pester-unit-testable without spawning a real child; the pure classifier is exhaustively unit-tested and the override decision is a 6-line if/else composed from it. End-to-end is owned by the Phase-1 manual `<!-- verification-only -->` runtime row (a real locked-DLL build).
+- **Plan-part-1 verify/reconcile (2026-07-06):** ground-truth re-verified on the work branch that all three WU deliverables are present and committed — `build-filtered.ps1` `$buildLogFailure`/`$buildExit`/`$effectiveExit`+`exit $effectiveExit` (L34/65/70-74/130), `Test-BuildLogFailure` in `build-queue-hygiene.ps1` (L1339-1417) with the `Describe 'Test-BuildLogFailure'` block (Tests L143-200: seq-346 MSB3027 shape→failure, clean→no-failure, fail-open null/empty/non-string), and the runner override + `build_fidelity` field in `build-queue-runner.ps1` (L160/168/179/192-194/254). `plans/all-phases-copy-lock-part-1.md` WU boxes ticked + frontmatter flipped `Ready`→`Complete`. Pester gate is Windows/PowerShell-only (no `pwsh` on the Linux cloud host) — the green run (22 passed / 3 pre-existing Job-Object sandbox failures) is recorded in the 2026-07-01 notes above; the manual `<!-- verification-only -->` runtime row (L44) stays unchecked, owned by manual Windows verification.
 
 ---
 
@@ -82,6 +84,7 @@ No net-new paths outside those stamped `create` (`Test-BuildLogFailure`, `Get-Dl
 
 **Runtime Verification** *(checked by manual run — NOT by the implementation agent):*
 - [ ] <!-- verification-only --> **Runtime spike (must observe the running system, not a code trace):** reproduce a held `bin/Debug` lock (leftover `testhost`), run a build through the queue, and confirm (a) the locker is reaped before the copy and (b) the build's copy now succeeds (fresh `bin/Debug` timestamp) rather than tripping MSB3027. Record the observed PIDs + timestamps as evidence.
+  _(Coherence-recovery 2026-07-06: left unticked — the deliverable itself explicitly requires recording observed PIDs + timestamps as evidence, and no such record exists on disk anywhere in this bug's directory. Requires an actual Windows run reproducing the held lock before ticking; flagged for the next implementation/verification cycle.)_
 
 **MCP Integration Test Assertions:** N/A — harness scripts.
 
@@ -118,6 +121,7 @@ No net-new paths outside those stamped `create` (`Test-BuildLogFailure`, `Get-Dl
 
 **Runtime Verification** *(checked by manual run — NOT by the implementation agent):*
 - [ ] <!-- verification-only --> **Runtime spike:** run a real `/mstest` against a passing project and confirm the emitted summary is parsed (real pass count shown, no spurious "no-output"/exit-3) — validating the regex against actual emitted output, not a fixture string.
+  _(Coherence-recovery 2026-07-06: left unticked — no on-disk evidence (captured live `/mstest` transcript against a real passing project) exists for this manual Windows-runtime check; the Phase 3 Implementation Notes confirm only the Pester-fixture gate, not this live spike. Requires an actual Windows `/mstest` run before ticking; flagged for the next implementation/verification cycle.)_
 
 **MCP Integration Test Assertions:** N/A — harness scripts.
 
@@ -166,6 +170,7 @@ No net-new paths outside those stamped `create` (`Test-BuildLogFailure`, `Get-Dl
 - **StrictMode pitfall (WU-8, caught + fixed in-gate):** `@(if (...) {} else {})` collapses to `$null` under `Set-StrictMode`, and `@($varHoldingNull)` yields `Count=1` not `0` — so the naive form mis-rendered `lockers_reaped` on legacy results files. Final form `$lockersReaped = @(if ($null -ne $lockersReapedRaw) { $lockersReapedRaw })` is verified correct for both populated and absent cases.
 - **Files modified:** `user/scripts/build-queue-status.ps1` (191L), `repos/cognito-forms/.claude/skills/msbuild/SKILL.md` (42L), `repos/cognito-forms/.claude/skills/mstest/SKILL.md` (45L). All three file-disjoint — dispatched as one same-message Sonnet batch.
 - **Gate:** independent status-render gate against a synthetic `results/<seq>.json` → `log-failure-override` renders Red with the `[BUILD LIED]` tag + `lockers_reaped=2 (40380,40381)`; legacy file (no new fields) renders `build_fidelity=n/a | lockers_reaped=0` without throwing. `project-skills.py` → exit 0, `lint-skills.py` → exit 0. (Both `/msbuild` + `/mstest` are repo-scoped skills, so they have no `skills-projected/` copy by design — the projector only expands the 85 user-level skills; edits verified through the source + symlink chain. NOTE: `python` on this host is a Microsoft Store app-execution-alias stub — use `py` to invoke the projector/lint.)
+- **Plan-part-3 verify/reconcile (2026-07-06):** ground-truth re-verified on the work branch that all three WU deliverables are present and committed — `build-queue-status.ps1` hygiene render reads `hygiene.build_fidelity`/`hygiene.lockers_reaped` via `Get-SafeValue`, builds the extended `$line` (`build_fidelity=... | lockers_reaped=...`), and the `Get-HygieneHighlight`-driven Red `[BUILD LIED - copy-lock override fired]` branch (L164-192); `msbuild/SKILL.md` carries the `## Recognizing a copy-lock false-success` subsection (L38-42); `mstest/SKILL.md` carries the `## Stale-DLL trap (--no-build)` subsection (L41-45, naming exit 4). `plans/all-phases-copy-lock-part-3.md` WU boxes were already ticked (landed with the Phase-4 commit); frontmatter flipped `Ready`→`Complete` this cycle. Gates re-run: `project-skills.py` → 86 skills / 96 components / no errors (exit 0); `lint-skills.py` → no broken/embedded patterns (the one reported `planner-resolution` finding is a pre-existing, unrelated `write-plan-cognito` skill-catalog gap — not touched by this part). The WU-8 synthetic-results-JSON render and the Pester suite stay Windows/PowerShell-only (no `pwsh` on this Linux cloud host), same as Parts 1-2 — deferred to manual Windows verification, not blocking this reconcile. This is the terminal phase (4 of 4); PHASES.md carries no top-level `**Status:**` field (only SPEC.md does, gate-owned) so none is flipped here — all four plan parts are now `status: Complete`, ready for `__mark_fixed__` at SPEC's `Concluded` gate.
 
 ---
 

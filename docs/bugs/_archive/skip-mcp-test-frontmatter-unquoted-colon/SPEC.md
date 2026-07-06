@@ -9,9 +9,11 @@
 > current mitigation is prose discipline ("quote colon-bearing values"), exactly the
 > human-remembered invariant the harness mission says to replace with a mechanical guarantee.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P0
 **Discovered:** 2026-07-04
+**Fixed:** 2026-07-06
+**Fix commit:** 7e0aa7c
 **Placement:** docs/bugs/skip-mcp-test-frontmatter-unquoted-colon
 **Related:** `user/scripts/lazy_core.py` (`parse_sentinel` line ~817 — the `yaml.safe_load` + `_die` on `YAMLError`; `skip_waiver_refusal`; `evaluate_completion_evidence`); `user/scripts/lazy-state.py` (Step-9 completion leg lines ~3336 & ~3361 — `skip_waiver_refusal(parse_sentinel(skip_mcp_file) …)`); `bug-state.py` (mirrored Step-9 read); `user/skills/_components/sentinel-frontmatter.md` (canonical sentinel schema — mirror AlgoBooth `check-docs-consistency.ts` / `check-bugs-consistency.ts` if the tolerance changes; those validators live in AlgoBooth, NOT this repo). Recurring-friction origin: the parallel-worktree-batch-execution + friction-kpi-registry lane HANDOFFs both carry the standing warning "SKIP_MCP_TEST.md (quote YAML values with colons!)".
 
