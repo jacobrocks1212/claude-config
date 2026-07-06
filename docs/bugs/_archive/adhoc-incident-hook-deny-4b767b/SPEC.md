@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-04
+**Fixed:** 2026-07-06
+**Fix commit:** b3453a6
 **Placement:** docs/bugs/adhoc-incident-hook-deny-4b767b
 **Related:** auto-captured by `incident-scan.py` (incident-auto-capture) — `ADHOC_BRIEF.md` + `INCIDENT.md` in this dir; reuse target `user/hooks/build-queue-enforce.sh` (`_CMD_START` anchor) + `user/hooks/long-build-ownership-guard.sh` (the pattern it mirrors); `user/scripts/test_hooks.py::test_containment_agentid_present_denies_lazy_batch_invocation` (existing coverage the fix must preserve)
 
