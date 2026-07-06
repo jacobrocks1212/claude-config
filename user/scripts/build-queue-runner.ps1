@@ -104,15 +104,15 @@ try {
 		PassThru     = $true
 	}
 	if ($isBuildOp) {
+		$logsDir = Join-Path $StateRoot 'logs'
 		Get-SafeValue {
-			$logsDir = Join-Path $StateRoot 'logs'
 			if (-not (Test-Path $logsDir)) {
 				$null = New-Item -ItemType Directory -Path $logsDir -Force
 			}
-			$buildLogPath = Join-Path $logsDir "$Seq.build.log"
-			$startProcParams['RedirectStandardOutput'] = $buildLogPath
-			$startProcParams['RedirectStandardError']  = (Join-Path $logsDir "$Seq.build.err.log")
 		}
+		$buildLogPath = Join-Path $logsDir "$Seq.build.log"
+		$startProcParams['RedirectStandardOutput'] = $buildLogPath
+		$startProcParams['RedirectStandardError']  = (Join-Path $logsDir "$Seq.build.err.log")
 	}
 
 	# Reap any lingering in-worktree DLL lockers BEFORE the build starts, so a leftover

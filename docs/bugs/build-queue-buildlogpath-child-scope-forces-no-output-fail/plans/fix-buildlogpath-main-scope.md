@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: build-queue-buildlogpath-child-scope-forces-no-output-fail
-status: Ready
+status: Complete
 created: 2026-07-06
 complexity: complex
 phases: []
@@ -54,7 +54,7 @@ Adjacent prior-art (same defect CLASS, already Fixed — read for the test patte
 ## Work Units
 
 - [x] WU-1 — RED regression guard: `$buildLogPath` bound at runner script scope
-- [ ] WU-2 — Fix: bind `$buildLogPath` in main scope (turns WU-1 green)
+- [x] WU-2 — Fix: bind `$buildLogPath` in main scope (turns WU-1 green)
 
 Runtime Verification (operator-owned; `/execute-plan` does NOT tick these):
 
