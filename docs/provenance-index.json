@@ -203,6 +203,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "skip-mcp-test-frontmatter-unquoted-colon",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-pipeline-visualizer",
       "type": "feature",
       "provenance": "backfilled"
@@ -3522,6 +3527,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "skip-mcp-test-frontmatter-unquoted-colon",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "stale-marker-arms-validate-deny-on-unrelated-dispatches",
       "type": "bug",
       "provenance": "backfilled"
@@ -3712,6 +3722,48 @@
       "id": "single-slot-marker-ownership-race-disarms-owning-run",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/skip-mcp-test-frontmatter-unquoted-colon/DEFERRED_NON_CLOUD.md": [
+    {
+      "id": "skip-mcp-test-frontmatter-unquoted-colon",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/skip-mcp-test-frontmatter-unquoted-colon/PHASES.md": [
+    {
+      "id": "skip-mcp-test-frontmatter-unquoted-colon",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/skip-mcp-test-frontmatter-unquoted-colon/SKIP_MCP_TEST.md": [
+    {
+      "id": "skip-mcp-test-frontmatter-unquoted-colon",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/skip-mcp-test-frontmatter-unquoted-colon/SPEC.md": [
+    {
+      "id": "skip-mcp-test-frontmatter-unquoted-colon",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/skip-mcp-test-frontmatter-unquoted-colon/VALIDATED.md": [
+    {
+      "id": "skip-mcp-test-frontmatter-unquoted-colon",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/skip-mcp-test-frontmatter-unquoted-colon/plans/all-phases-skip-mcp-test-unquoted-colon.md": [
+    {
+      "id": "skip-mcp-test-frontmatter-unquoted-colon",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/stale-marker-arms-validate-deny-on-unrelated-dispatches/FIXED.md": [
@@ -5419,6 +5471,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "skip-mcp-test-frontmatter-unquoted-colon",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "code-doc-provenance-linkage",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5949,6 +6006,13 @@
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/specs/turn-routing-enforcement/hardening-log/2026-07.md": [
+    {
+      "id": "skip-mcp-test-frontmatter-unquoted-colon",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "manifest.psd1": [
@@ -6612,6 +6676,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "skip-mcp-test-frontmatter-unquoted-colon",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "stub-spec-route-loops-until-queue-stub-cleared",
       "type": "bug",
       "provenance": "backfilled"
@@ -7053,6 +7122,11 @@
       "id": "per-feature-cycle-cap-defers-incomplete-work",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "skip-mcp-test-frontmatter-unquoted-colon",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "stub-spec-route-loops-until-queue-stub-cleared",

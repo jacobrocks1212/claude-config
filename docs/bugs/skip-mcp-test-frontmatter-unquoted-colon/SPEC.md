@@ -9,7 +9,7 @@
 > current mitigation is prose discipline ("quote colon-bearing values"), exactly the
 > human-remembered invariant the harness mission says to replace with a mechanical guarantee.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P0
 **Discovered:** 2026-07-04
 **Placement:** docs/bugs/skip-mcp-test-frontmatter-unquoted-colon
