@@ -14,11 +14,11 @@
 
 **Deliverables:**
 - [x] `user/scripts/build-queue-hygiene.Tests.ps1`: add the RED regression guard (new `Describe` block) asserting, for each of `build-queue.ps1`, `build-queue-runner.ps1`, `build-queue-status.ps1`, that the statement dot-sourcing `build-queue-hygiene.ps1` is a **top-level statement** — NOT nested inside a `Get-SafeValue { … }` / `& { … }` scriptblock. Confirm this test is RED against the current tree before touching the three caller scripts (it must fail because the dot-source is currently wrapped in `Get-SafeValue` in all three).
-- [ ] `user/scripts/build-queue.ps1:47-49`: replace `Get-SafeValue { . (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1') }` with a top-level `try { . (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1') } catch { }`.
-- [ ] `user/scripts/build-queue-runner.ps1:66-68`: same fix, same replacement text.
-- [ ] `user/scripts/build-queue-status.ps1:31`: same fix, same replacement text.
-- [ ] `user/scripts/build-queue-status.ps1:26-30`: rewrite the stale comment — remove the "only on a load error" framing; state plainly that the previous `Get-SafeValue`-wrapped dot-source discarded hygiene functions into a child scope on every run (permanent degrade, not an error-path edge case), and that the fix restores them to script scope while keeping the `try/catch` fail-open for a genuinely missing/broken hygiene file.
-- [ ] Tests: the new regression guard in `build-queue-hygiene.Tests.ps1` (RED before the three edits, GREEN after).
+- [x] `user/scripts/build-queue.ps1:47-49`: replace `Get-SafeValue { . (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1') }` with a top-level `try { . (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1') } catch { }`.
+- [x] `user/scripts/build-queue-runner.ps1:66-68`: same fix, same replacement text.
+- [x] `user/scripts/build-queue-status.ps1:31`: same fix, same replacement text.
+- [x] `user/scripts/build-queue-status.ps1:26-30`: rewrite the stale comment — remove the "only on a load error" framing; state plainly that the previous `Get-SafeValue`-wrapped dot-source discarded hygiene functions into a child scope on every run (permanent degrade, not an error-path edge case), and that the fix restores them to script scope while keeping the `try/catch` fail-open for a genuinely missing/broken hygiene file.
+- [x] Tests: the new regression guard in `build-queue-hygiene.Tests.ps1` (RED before the three edits, GREEN after).
 
 **Minimum Verifiable Behavior:** `Invoke-Pester -Path user/scripts/build-queue-hygiene.Tests.ps1` passes in full, including the new scope-in-caller regression guard, after the three edits (and fails on the guard alone, before the edits, proving RED→GREEN). AND the SPEC's minimal isolation repro confirms the mechanism directly:
 ```powershell
@@ -28,8 +28,8 @@ try { . .\build-queue-hygiene.ps1 } catch { }; (Get-Command New-BuildJobObject -
 ```
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `Invoke-Pester -Path user/scripts/build-queue-hygiene.Tests.ps1` passes in full, including the new scope-in-caller guard, on the patched tree.
-- [ ] <!-- verification-only --> The SPEC's minimal isolation repro (top-level `try { . hygiene.ps1 } catch {}` vs. the old `Get-SafeValue { . hygiene.ps1 }`) confirms hygiene functions resolve at script scope after the fix. OPTIONAL heavier manual check (operator, on a real Cognito worktree): a real queued build (e.g. `/nxbuild`) waits for the real build to finish, prints the authoritative `RESULT` banner as the wrapper's last stdout line, and `results/<seq>.json` contains the rich verdict-bearing shape (`counts`/`hygiene`) instead of the bare 3-field fallback.
+- [x] <!-- verification-only --> `Invoke-Pester -Path user/scripts/build-queue-hygiene.Tests.ps1` passes in full, including the new scope-in-caller guard, on the patched tree.
+- [x] <!-- verification-only --> The SPEC's minimal isolation repro (top-level `try { . hygiene.ps1 } catch {}` vs. the old `Get-SafeValue { . hygiene.ps1 }`) confirms hygiene functions resolve at script scope after the fix. OPTIONAL heavier manual check (operator, on a real Cognito worktree): a real queued build (e.g. `/nxbuild`) waits for the real build to finish, prints the authoritative `RESULT` banner as the wrapper's last stdout line, and `results/<seq>.json` contains the rich verdict-bearing shape (`counts`/`hygiene`) instead of the bare 3-field fallback.
 
 **MCP Integration Test Assertions:**
 N/A — no MCP-runtime-observable behavior (PowerShell tooling; verified via Pester + isolated PS repro).
@@ -66,8 +66,17 @@ Either approach directly guards the SPEC's stated recurrence risk: "if someone r
 - **Review verdict:** PASS — ground-truth verified (wc -l 991, grep line 940, status all matched); assertion-vs-intent clean (`It` name matches the `Should -Be $false` assertion; not tautological — passes iff the dot-source is genuinely top-level).
 - **Files modified:** `user/scripts/build-queue-hygiene.Tests.ps1`.
 
+#### Batch 2 (WU-2 — three scope fixes + status comment rewrite) — 2026-07-06
+- **Work completed (Sonnet impl-agent):** Moved each of the three `Get-SafeValue { . (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1') }` dot-sources to a top-level `try { . (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1') } catch { }` — `build-queue.ps1:47-49`, `build-queue-runner.ps1:66-68`, `build-queue-status.ps1` (was line 31, now line 35 after the comment grew). Rewrote the stale `build-queue-status.ps1:26-30` comment to state the child-scope discard was a PERMANENT every-run degrade (not a load-error edge case) and that the top-level `try/catch` retains fail-open for a genuinely missing/broken hygiene file. `Get-SafeValue` function definitions and all its other legitimate value-guard uses left untouched.
+- **Ground-truth verified (orchestrator re-ran):** exactly ONE hygiene dot-source per file, all top-level; the remaining `Get-SafeValue {` matches are the function defs + genuine value-guards (none the hygiene import); diffstat +14/−10 across the 3 files.
+- **Proof-of-GREEN (orchestrator re-ran):** `Invoke-Pester` → 100 passed / 3 failed. The 3 scope-in-caller guard `It`s (one per caller) all PASS now (`… at script scope, not inside Get-SafeValue`). The 3 remaining failures are the SAME documented pre-existing baseline noise (Add-ProcessToBuildJob/Stop-BuildJobTree zero-handle, Reset-CompilerServer `[bool]` read) — unchanged by this work. Clean RED→GREEN (Batch 1 97/6 → Batch 2 100/3).
+- **Mechanism confirmed (SPEC isolation repro):** old `Get-SafeValue { . hygiene.ps1 }` → `New-BuildJobObject` defined=**False** (child-scope discard); fixed `try { . hygiene.ps1 } catch {}` → defined=**True** (resolves at script scope). Both Runtime Verification rows satisfied by the same run (MCP runtime: not-required).
+- **Files modified:** `user/scripts/build-queue.ps1`, `user/scripts/build-queue-runner.ps1`, `user/scripts/build-queue-status.ps1`.
+
 ## Review Notes
 
 **Review verdict:** PASS (2026-07-06) — decomposition matches the Concluded SPEC and the verified touchpoint audit. Single fix phase; file:line targets confirmed against the real tree; verification distributed within the phase (Pester scope-in-caller guard + isolated PS repro); no gate-owned rows; verdict-persistence explicitly out of scope per operator decision.
 
 **Batch 1 review verdict:** PASS (2026-07-06) — RED regression guard authored and independently confirmed RED for the right reason (3 new guard Its fail on the `ScriptBlockExpressionAst`-on-ancestor-chain assertion). See Implementation Notes Batch 1.
+
+**Batch 2 review verdict:** PASS (2026-07-06) — three scope fixes + comment rewrite applied exactly as planned; ground-truth verified (one top-level hygiene dot-source per file; `Get-SafeValue` defs/uses intact); QG GREEN (100/3, the 3 guard Its flipped RED→GREEN, baseline noise unchanged); SPEC isolation repro confirms the mechanism (child-scope False → script-scope True). See Implementation Notes Batch 2.

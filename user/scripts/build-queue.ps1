@@ -44,9 +44,9 @@ function Get-SafeValue {
 	try { & $Block } catch { $Fallback }
 }
 
-Get-SafeValue {
+try {
 	. (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1')
-}
+} catch { }
 
 function Test-PidAlive {
 	param([int]$ProcId)

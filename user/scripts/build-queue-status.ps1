@@ -23,12 +23,16 @@ function Get-SafeValue {
 	try { & $Block } catch { $Fallback }
 }
 
-# Dot-source the hygiene helpers so this status view and its Pester coverage
-# select the SAME per-build highlight arm (Get-HygieneHighlight) — the status
-# script reads state dirs and is not itself dot-source-testable. Fail-open: a
-# load error leaves Get-HygieneHighlight undefined and the highlight section
-# below degrades to a plain (un-highlighted) line.
-Get-SafeValue { . (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1') }
+# Dot-source the hygiene helpers at SCRIPT scope so this status view and its
+# Pester coverage select the SAME per-build highlight arm (Get-HygieneHighlight).
+# NOTE: this dot-source was previously wrapped in Get-SafeValue { ... }, which
+# runs its block via & (a child scope) — so the hygiene functions were discarded
+# on return on EVERY run, leaving Get-HygieneHighlight permanently undefined here
+# (a silent permanent degrade, not just a load-error edge case). The top-level
+# try/catch keeps fail-open for a genuinely missing/broken hygiene file: on a load
+# error Get-HygieneHighlight stays undefined and the highlight section below
+# degrades to a plain (un-highlighted) line.
+try { . (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1') } catch { }
 
 function Format-Elapsed {
 	param([string]$IsoTimestamp)

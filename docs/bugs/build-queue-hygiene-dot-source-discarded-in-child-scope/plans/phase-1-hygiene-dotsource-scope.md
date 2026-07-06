@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: build-queue-hygiene-dot-source-discarded-in-child-scope
-status: Ready
+status: Complete
 created: 2026-07-06
 complexity: complex
 phases: [1]
@@ -73,7 +73,7 @@ This is a claude-config **harness bug fix over PowerShell tooling** — the defa
 ## Work Units
 
 - [x] WU-1 — RED regression guard: scope-in-caller AST assertion
-- [ ] WU-2 — Three scope fixes + status comment rewrite (turns the guard GREEN)
+- [x] WU-2 — Three scope fixes + status comment rewrite (turns the guard GREEN)
 
 ---
 
@@ -119,10 +119,10 @@ and **confirm the new block is RED** (all three `It`s fail) against the current 
 #### WU-2 — Three scope fixes + status comment rewrite (turns the guard GREEN)  *(Batch 2)*
 
 **Scope (from PHASES):**
-- [ ] `user/scripts/build-queue.ps1:47-49`: replace `Get-SafeValue { . (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1') }` with a top-level `try { . (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1') } catch { }`.
-- [ ] `user/scripts/build-queue-runner.ps1:66-68`: same fix, same replacement text.
-- [ ] `user/scripts/build-queue-status.ps1:31`: same fix, same replacement text.
-- [ ] `user/scripts/build-queue-status.ps1:26-30`: rewrite the stale comment — remove the "only on a load error" framing; state plainly that the previous `Get-SafeValue`-wrapped dot-source discarded hygiene functions into a child scope on EVERY run (permanent degrade, not an error-path edge case), and that the fix restores them to script scope while keeping the `try/catch` fail-open for a genuinely missing/broken hygiene file.
+- [x] `user/scripts/build-queue.ps1:47-49`: replace `Get-SafeValue { . (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1') }` with a top-level `try { . (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1') } catch { }`.
+- [x] `user/scripts/build-queue-runner.ps1:66-68`: same fix, same replacement text.
+- [x] `user/scripts/build-queue-status.ps1:31`: same fix, same replacement text.
+- [x] `user/scripts/build-queue-status.ps1:26-30`: rewrite the stale comment — remove the "only on a load error" framing; state plainly that the previous `Get-SafeValue`-wrapped dot-source discarded hygiene functions into a child scope on EVERY run (permanent degrade, not an error-path edge case), and that the fix restores them to script scope while keeping the `try/catch` fail-open for a genuinely missing/broken hygiene file.
 
 **Coupling reason (why these four deliverables are ONE work unit):** the single WU-1 regression guard asserts all three callers at once and stays RED until **all three** dot-sources are moved to script scope — fixing one or two leaves the guard RED and the fix un-verifiable, so the three edits form one atomic "turn-the-guard-GREEN" unit. The `:26-30` comment rewrite rides on the same file (`build-queue-status.ps1`) as the `:31` fix and is inseparable from it. (This is the sanctioned tight-coupling exception to the 1-deliverable-per-WU default; splitting produces untestable partial states.)
 
