@@ -936,3 +936,56 @@ Describe 'Get-HygieneHighlight (WU-3 status-view highlight selector)' {
 		$hl.Color | Should -BeNullOrEmpty
 	}
 }
+
+Describe 'scope-in-caller guard — hygiene dot-source is a top-level statement (regression guard)' {
+	# NOTE: this Describe block does NOT dot-source or invoke any of the three callers below --
+	# they are top-level scripts with param() blocks that EXECUTE real queue/build/status
+	# machinery on load. Every assertion here reads caller SOURCE via AST parse only.
+	#
+	# Bug context: each caller loads build-queue-hygiene.ps1 via
+	#   Get-SafeValue { . (Join-Path $PSScriptRoot 'build-queue-hygiene.ps1') }
+	# Get-SafeValue invokes its scriptblock with `& $Block`, which runs in a CHILD scope --
+	# so every function the dot-source defines is discarded and undefined back in the
+	# caller's real script scope. The fix (a later work unit) moves the dot-source to a
+	# top-level `try { . ... } catch { }` instead. This guard is RED today (dot-source is
+	# wrapped in a Get-SafeValue scriptblock argument) and must go GREEN once the dot-source
+	# becomes a true top-level statement.
+	#
+	# Uses BeforeAll (not a bare Describe-body function def) and It -ForEach (not a bare
+	# foreach loop) -- Pester v5 splits Discovery from Run, so code/loop-vars outside
+	# BeforeAll/It only exist at Discovery time and are gone by the time It bodies run.
+
+	BeforeAll {
+		function Test-HasScriptBlockExpressionAncestor {
+			param($Node)
+
+			$ancestor = $Node.Parent
+			while ($null -ne $ancestor) {
+				if ($ancestor -is [System.Management.Automation.Language.ScriptBlockExpressionAst]) {
+					return $true
+				}
+				$ancestor = $ancestor.Parent
+			}
+			return $false
+		}
+	}
+
+	It "dot-sources build-queue-hygiene.ps1 at script scope, not inside Get-SafeValue (<_>)" -ForEach @('build-queue.ps1', 'build-queue-runner.ps1', 'build-queue-status.ps1') {
+		$callerName = $_
+		$callerPath = Join-Path $PSScriptRoot $callerName
+
+		$ast = [System.Management.Automation.Language.Parser]::ParseFile($callerPath, [ref]$null, [ref]$null)
+
+		$dotSources = $ast.FindAll({
+			param($n)
+			$n -is [System.Management.Automation.Language.CommandAst] -and
+				$n.InvocationOperator -eq [System.Management.Automation.Language.TokenKind]::Dot
+		}, $true)
+
+		$hygieneDotSources = @($dotSources | Where-Object { $_.Extent.Text -match 'build-queue-hygiene\.ps1' })
+		$hygieneDotSources.Count | Should -Be 1 -Because "there should be exactly one dot-source of build-queue-hygiene.ps1 in $callerName"
+
+		$isNestedInScriptBlock = Test-HasScriptBlockExpressionAncestor -Node $hygieneDotSources[0]
+		$isNestedInScriptBlock | Should -Be $false -Because "the build-queue-hygiene.ps1 dot-source in $callerName must be a top-level statement (e.g. inside a top-level try{}), not a scriptblock argument to Get-SafeValue -- otherwise & `$Block runs it in a child scope and every function it defines is discarded"
+	}
+}
