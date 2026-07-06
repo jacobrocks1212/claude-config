@@ -25,8 +25,8 @@
 
 | # | item | state | sev |
 |---|------|-------|------|
-| 1 | [adhoc-incident-hook-deny-4b767b](docs/bugs/adhoc-incident-hook-deny-4b767b/SPEC.md) | Validate | — |
-| | status: Validate · phase 0/1 · next: run mcp-test · The `_LAZY_BATCH_RE` recursion trip in `lazy-cycle-containment.sh` matches a `lazy-batch` token ANYWHERE in a subagent's Bash command — including benign file-path references (`cat`/`grep`/`ls`/`git add` on the `lazy-batch*` skill files). | | |
+| 1 | [adhoc-incident-hook-deny-4b767b](docs/bugs/adhoc-incident-hook-deny-4b767b/SPEC.md) | Complete | — |
+| | status: Complete · phase 0/1 · next: done · The `_LAZY_BATCH_RE` recursion trip in `lazy-cycle-containment.sh` matches a `lazy-batch` token ANYWHERE in a subagent's Bash command — including benign file-path references (`cat`/`grep`/`ls`/`git add` on the `lazy-batch*` skill files). | | |
 | 2 | [adhoc-cycle-begin-real-requires-sub-skill](docs/bugs/adhoc-cycle-begin-real-requires-sub-skill/SPEC.md) | Spec | — |
 | | status: Spec · next: spec | | |
 | 3 | [skip-mcp-test-frontmatter-unquoted-colon](docs/bugs/skip-mcp-test-frontmatter-unquoted-colon/SPEC.md) | Validate | P0 |
