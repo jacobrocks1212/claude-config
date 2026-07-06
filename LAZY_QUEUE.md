@@ -25,8 +25,8 @@
 
 | # | item | state | sev |
 |---|------|-------|------|
-| 1 | [build-queue-copy-lock-stale-dll-false-success](docs/bugs/build-queue-copy-lock-stale-dll-false-success/SPEC.md) | Complete | — |
-| | status: Complete · phase 1/4 · next: done · An MSB3027 copy-lock failure (obj/ rebuilt fresh, copy to bin/Debug blocked by a leftover locker) makes MSBuild log "Build FAILED" while still exiting 0. | | |
+| 1 | [build-queue-copy-lock-stale-dll-false-success](docs/bugs/build-queue-copy-lock-stale-dll-false-success/SPEC.md) | ⛔ Blocked | — |
+| | status: Blocked · phase 1/4 · next: resolve blocker · An MSB3027 copy-lock failure (obj/ rebuilt fresh, copy to bin/Debug blocked by a leftover locker) makes MSBuild log "Build FAILED" while still exiting 0. | | |
 | 2 | [test-filtered-stale-check-hardcodes-bin-debug](docs/bugs/test-filtered-stale-check-hardcodes-bin-debug/SPEC.md) | Validate | — |
 | | status: Validate · phase 0/1 · next: run mcp-test · The Phase-3 stale-DLL guard assumes every test project outputs to `bin\Debug\`, so it fires exit-4 "stale" on *every* `/mstest -TestDll "Cognito.Forms.UnitTests"` run — a false positive no rebuild can clear, which drives agents to bypass the sanctioned test path with hand-rolled `--no-build` scratchpad runners. | | |
 | 3 | [build-queue-recycle-kills-concurrent-worktree-build](docs/bugs/build-queue-recycle-kills-concurrent-worktree-build/SPEC.md) | Implement | — |
@@ -54,4 +54,5 @@
 - ⬡ build-queue-generalization — needs-input
 - ⬡ build-queue-eta-priority-lanes — needs-input
 - ⬡ claude-config-ci — needs-input
+- ⛔ build-queue-copy-lock-stale-dll-false-success — blocked
 - ⛔ build-queue-no-artifact-or-process-hygiene-on-crash — blocked
