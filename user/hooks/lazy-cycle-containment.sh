@@ -179,11 +179,33 @@ LIFECYCLE_PATTERNS = (
     "dev:kill", "dev:restart", "kill-port 3333", "kill-port 1420",
 )
 
+# Command-position anchor (mirrors build-queue-enforce.sh / long-build-ownership-guard.sh):
+# a nested batch is a runaway only when the token INVOKES a command — either the
+# start of the string, or immediately after a shell separator (`&&`, `||`, `|`,
+# `;`, `(`, `{`, newline), with optional leading `NAME=value` env assignments.
+# A `lazy-batch*` token appearing as an ARGUMENT to a read verb
+# (`cat user/skills/lazy-batch/SKILL.md`, `grep ... lazy-bug-batch/`) does NOT
+# begin a command segment and so must NOT trip the recursion deny — this is the
+# false-positive fixed in docs/bugs/adhoc-incident-hook-deny-4b767b.
+_ENV_PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*"
+_CMD_START = r"(?:^|[\n;&|({])\s*" + _ENV_PREFIX
+
 # Recursive batch invocation: a dispatched cycle subagent must never start a
-# nested /lazy* batch orchestrator (the literal runaway path). Matches a
-# /lazy-batch (or /lazy-bug-batch / -cloud) slash-command token anywhere in the
-# Bash command.
-_LAZY_BATCH_RE = re.compile(r"/lazy(?:-bug)?-batch(?:-cloud)?\b")
+# nested /lazy* batch orchestrator (the literal runaway path). Two anchored
+# signals (either match = deny):
+#   Direct form   — a /lazy(-bug)?-batch(-cloud)? slash-command that BEGINS a
+#                   command segment. The `(?!/)` lookahead ensures a
+#                   `.../lazy-batch/...` PATH segment (token followed by `/`)
+#                   never matches.
+#   Nested-spawn  — a headless `claude -p '/lazy-batch …'` runaway, with `claude`
+#                   ALSO anchored to a command-segment start so the `.claude/`
+#                   path component never false-matches.
+_LAZY_BATCH_DIRECT_RE = re.compile(
+    _CMD_START + r"/lazy(?:-bug)?-batch(?:-cloud)?\b(?!/)"
+)
+_LAZY_BATCH_NESTED_RE = re.compile(
+    _CMD_START + r"claude\b[^\n;&|]*/lazy(?:-bug)?-batch(?:-cloud)?\b"
+)
 
 # Carve-out shared roots: always allowed in a commit even when not under the
 # marker's feature dir (these are cross-feature shared state, not a 2nd feature).
@@ -389,7 +411,7 @@ def main():
 
     if is_subagent:
         # --- Recursive batch invocation (the literal runaway path). ---
-        if _LAZY_BATCH_RE.search(command):
+        if _LAZY_BATCH_DIRECT_RE.search(command) or _LAZY_BATCH_NESTED_RE.search(command):
             _deny(CORRECTIVE, "lazy-batch-invocation")
 
         # --- Loop-formation: lazy-state.py / bug-state.py routing flags. ---

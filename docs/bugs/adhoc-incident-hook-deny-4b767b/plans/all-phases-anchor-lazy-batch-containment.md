@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: adhoc-incident-hook-deny-4b767b
-status: Ready
+status: Complete
 created: 2026-07-06
 complexity: complex
 phases: [1]
@@ -55,7 +55,7 @@ claude-config is the **harness repo** — it has NO Tauri/MCP dev runtime and NO
 
 ## Work Units
 
-- [ ] WU-1 — Anchor `_LAZY_BATCH_RE` to a command-segment start + regression tests
+- [x] WU-1 — Anchor `_LAZY_BATCH_RE` to a command-segment start + regression tests
 
 ---
 
