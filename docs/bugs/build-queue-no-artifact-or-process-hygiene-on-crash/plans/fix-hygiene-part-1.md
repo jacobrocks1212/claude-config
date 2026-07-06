@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: build-queue-no-artifact-or-process-hygiene-on-crash
-status: Ready
+status: Complete
 created: 2026-06-30
 complexity: complex
 phases: [1, 2]
@@ -91,10 +91,10 @@ All WUs are **sequential, single-WU batches** — Phases 1–4 across the whole 
 #### WU-1 — Hygiene module + Job-Object reap helpers
 
 - **Scope (PHASES P1 deliverables 1, 3, 4):**
-  - [ ] Create `user/scripts/build-queue-hygiene.ps1`, dot-sourceable, exposing the Job-Object P/Invoke surface: `New-BuildJobObject` (`CreateJobObject` + `SetInformationJobObject` with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`), `Add-ProcessToBuildJob` (`AssignProcessToJobObject`), `Stop-BuildJobTree` (`TerminateJobObject` + close handle).
-  - [ ] Every public function FAILS OPEN — a non-Windows host or any P/Invoke failure logs a warning (to stderr/`Write-Warning`) and returns a benign sentinel; it MUST NOT throw in a way that aborts the caller's build.
-  - [ ] The reap scopes to Job-Object membership ONLY — there is no `Get-Process dotnet | Stop-Process` global kill anywhere in the module (Locked Decision 2: never touches a sibling worktree's live build).
-  - [ ] Optional Pester smoke (`user/scripts/build-queue-hygiene.Tests.ps1`) for the non-P/Invoke surface (fail-open guards, parameter validation, the no-global-kill property).
+  - [x] Create `user/scripts/build-queue-hygiene.ps1`, dot-sourceable, exposing the Job-Object P/Invoke surface: `New-BuildJobObject` (`CreateJobObject` + `SetInformationJobObject` with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`), `Add-ProcessToBuildJob` (`AssignProcessToJobObject`), `Stop-BuildJobTree` (`TerminateJobObject` + close handle).
+  - [x] Every public function FAILS OPEN — a non-Windows host or any P/Invoke failure logs a warning (to stderr/`Write-Warning`) and returns a benign sentinel; it MUST NOT throw in a way that aborts the caller's build.
+  - [x] The reap scopes to Job-Object membership ONLY — there is no `Get-Process dotnet | Stop-Process` global kill anywhere in the module (Locked Decision 2: never touches a sibling worktree's live build).
+  - [x] Optional Pester smoke (`user/scripts/build-queue-hygiene.Tests.ps1`) for the non-P/Invoke surface (fail-open guards, parameter validation, the no-global-kill property).
 - **TDD:** partial — the P/Invoke create/assign/terminate cannot be unit-tested (needs real OS handles + processes; covered by PHASES Runtime Verification). The fail-open guards and the "no global Stop-Process" invariant ARE Pester-testable.
 - **Files to create/modify:**
   - `user/scripts/build-queue-hygiene.ps1` — **net-new** module.

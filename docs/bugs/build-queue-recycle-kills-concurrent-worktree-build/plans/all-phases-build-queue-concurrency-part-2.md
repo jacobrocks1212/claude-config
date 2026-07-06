@@ -36,7 +36,7 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 
 ## References — Upstream Artifacts
 
-(none — no formal hard-dep block on a Complete upstream. Phase 3 is the *inverse* of the shipped `build-queue-enforce-cd-prefix-bypass` fix and shares that hook/regex family; if the executor needs the deny-side history, read `docs/bugs/build-queue-enforce-cd-prefix-bypass/` under this repo. Not required to execute the WUs below.)
+(none — no formal hard-dep block on a Complete upstream. Phase 3 is the *inverse* of the shipped `build-queue-enforce-cd-prefix-bypass` fix and shares that hook/regex family; if the executor needs the deny-side history, read `docs/bugs/_archive/build-queue-enforce-cd-prefix-bypass/` under this repo. Not required to execute the WUs below.)
 
 ## Plan-specific execution notes (OVERRIDES the contract's default gate rows)
 

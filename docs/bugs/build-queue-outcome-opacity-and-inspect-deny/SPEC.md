@@ -6,7 +6,7 @@
 **Severity:** P2
 **Discovered:** 2026-07-03
 **Placement:** docs/bugs/build-queue-outcome-opacity-and-inspect-deny
-**Related:** `docs/bugs/build-queue-enforce-cd-prefix-bypass/` (the unanchored-regex change that introduced the false-positive; its SPEC line 90 *predicted* this), `docs/bugs/build-queue-orphaned-result-on-wrapper-kill/`, `docs/bugs/build-queue-recycle-kills-concurrent-worktree-build/`, `user/hooks/build-queue-enforce.sh`, `user/scripts/build-queue-runner.ps1`, `user/scripts/build-queue.ps1`, `repos/cognito-forms/.claude/skills/{msbuild,mstest,nxbuild,nxtest}/SKILL.md`
+**Related:** `docs/bugs/_archive/build-queue-enforce-cd-prefix-bypass/` (the unanchored-regex change that introduced the false-positive; its SPEC line 90 *predicted* this), `docs/bugs/build-queue-orphaned-result-on-wrapper-kill/`, `docs/bugs/build-queue-recycle-kills-concurrent-worktree-build/`, `user/hooks/build-queue-enforce.sh`, `user/scripts/build-queue-runner.ps1`, `user/scripts/build-queue.ps1`, `repos/cognito-forms/.claude/skills/{msbuild,mstest,nxbuild,nxtest}/SKILL.md`
 
 ---
 
@@ -85,7 +85,7 @@ Recent build-queue hardening (last ~10 commits) fixed honesty/hygiene at the *re
 
 ### Related Documentation
 
-- `docs/bugs/build-queue-enforce-cd-prefix-bypass/SPEC.md` line 90 — explicitly predicted the unanchored-match false-positive and deferred it as acceptable.
+- `docs/bugs/_archive/build-queue-enforce-cd-prefix-bypass/SPEC.md` line 90 — explicitly predicted the unanchored-match false-positive and deferred it as acceptable.
 - `user/hooks/CLAUDE.md` — fail-OPEN + deny-via-JSON contract (any fix must preserve both).
 - `repos/cognito-forms/CLAUDE.local.md` (Build & Test Workflow) — the sanctioned-skills contract the enforcement protects.
 

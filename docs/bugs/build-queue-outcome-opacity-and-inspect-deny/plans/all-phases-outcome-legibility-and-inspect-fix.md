@@ -35,7 +35,7 @@ This bug has no `**Depends on:**` hard-dep block (bug SPEC uses `**Related:**` o
 
 **(none — this plan has no completed hard upstream dependencies)**
 
-For context, the SPEC's `**Related:**` cross-links (read only if a WU's behavior is unclear): `docs/bugs/build-queue-enforce-cd-prefix-bypass/SPEC.md` (line 90 predicted this false-positive), `user/hooks/CLAUDE.md` (fail-OPEN + deny-via-JSON contract — any hook fix MUST preserve both).
+For context, the SPEC's `**Related:**` cross-links (read only if a WU's behavior is unclear): `docs/bugs/_archive/build-queue-enforce-cd-prefix-bypass/SPEC.md` (line 90 predicted this false-positive), `user/hooks/CLAUDE.md` (fail-OPEN + deny-via-JSON contract — any hook fix MUST preserve both).
 
 ---
 

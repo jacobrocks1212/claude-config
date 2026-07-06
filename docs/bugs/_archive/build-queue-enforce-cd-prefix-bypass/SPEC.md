@@ -2,9 +2,11 @@
 
 > The `build-queue-enforce.sh` PreToolUse hook fails open whenever a heavy build is chained behind a leading command (`cd "…" && dotnet build …`), because its deny regexes are anchored to the start of the command. Agents — trained by the repo's own `AGENTS.md`/`/msbuild` examples to write exactly that form — bypass the queue and run raw `dotnet build`/`dotnet test`. A reinforcing skill-capability gap (no single-project build path) gives them a reason to.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-06-24
+**Fixed:** 2026-07-06
+**Fix commit:** 3e04a72
 **Placement:** docs/bugs/build-queue-enforce-cd-prefix-bypass
 **Related:** `docs/bugs/build-queue-orphaned-result-on-wrapper-kill/`, `user/hooks/build-queue-enforce.sh`, `user/hooks/long-build-ownership-guard.sh`, `repos/cognito-forms/.claude/skills/{msbuild,mstest,nxbuild,nxtest}/SKILL.md`
 

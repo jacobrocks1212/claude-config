@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: build-queue-copy-lock-stale-dll-false-success
-status: Ready
+status: Complete
 created: 2026-07-01
 complexity: complex
 phases: [2, 3]
@@ -68,10 +68,10 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 
 ## Work Units
 
-- [ ] WU-4 — `Get-DllLockers` + `Stop-DllLockers` + reap Pester block (Phase 2)
-- [ ] WU-5 — runner pre-build reap call + `lockers_reaped` hygiene field (Phase 2)
-- [ ] WU-6 — test-filtered.ps1 modern-summary regex + parsed-count emission + Pester block (Phase 3)
-- [ ] WU-7 — test-filtered.ps1 `--no-build` staleness guard + guard Pester block (Phase 3)
+- [x] WU-4 — `Get-DllLockers` + `Stop-DllLockers` + reap Pester block (Phase 2)
+- [x] WU-5 — runner pre-build reap call + `lockers_reaped` hygiene field (Phase 2)
+- [x] WU-6 — test-filtered.ps1 modern-summary regex + parsed-count emission + Pester block (Phase 3)
+- [x] WU-7 — test-filtered.ps1 `--no-build` staleness guard + guard Pester block (Phase 3)
 
 ---
 
@@ -84,9 +84,9 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 #### WU-4 — `Get-DllLockers` + `Stop-DllLockers` + reap Pester block
 
 - **Scope (PHASES deliverables):**
-  - [ ] `build-queue-hygiene.ps1`: new `Get-DllLockers -WorktreeRoot` — enumerate processes holding handles on `bin/Debug/**/*.dll` under the worktree. Prefer the Windows Restart Manager API (`RmStartSession`/`RmRegisterResources`/`RmGetList`) via `Add-Type` P/Invoke (reuse the existing native-methods pattern); return a typed locker list. Fail-open via `Get-SafeValue`.
-  - [ ] `build-queue-hygiene.ps1`: new `Stop-DllLockers` — terminate only the lockers `Get-DllLockers` returned that are within/for this worktree; never touch VBCSCompiler or out-of-worktree processes. Return the reaped PIDs.
-  - [ ] Tests: `build-queue-hygiene.Tests.ps1` — `Describe 'DLL Locker Reap'`: fail-open on a bad/absent worktree, no-op when nothing is locked, and (fixture) a spawned process holding a temp-file handle is identified by `Get-DllLockers` and freed by `Stop-DllLockers`.
+  - [x] `build-queue-hygiene.ps1`: new `Get-DllLockers -WorktreeRoot` — enumerate processes holding handles on `bin/Debug/**/*.dll` under the worktree. Prefer the Windows Restart Manager API (`RmStartSession`/`RmRegisterResources`/`RmGetList`) via `Add-Type` P/Invoke (reuse the existing native-methods pattern); return a typed locker list. Fail-open via `Get-SafeValue`.
+  - [x] `build-queue-hygiene.ps1`: new `Stop-DllLockers` — terminate only the lockers `Get-DllLockers` returned that are within/for this worktree; never touch VBCSCompiler or out-of-worktree processes. Return the reaped PIDs.
+  - [x] Tests: `build-queue-hygiene.Tests.ps1` — `Describe 'DLL Locker Reap'`: fail-open on a bad/absent worktree, no-op when nothing is locked, and (fixture) a spawned process holding a temp-file handle is identified by `Get-DllLockers` and freed by `Stop-DllLockers`.
 - **TDD:** yes (the spawned-handle fixture drives both functions).
 - **Coupling reason:** `Get-DllLockers` and `Stop-DllLockers` are mutually dependent — `Stop` consumes `Get`'s output, they live in the same file, and the meaningful test (spawn → identify → free) exercises both together. Merged into one WU per sizing rule 2 (2 functions + tests, ≤ 3 deliverables).
 - **Files to create/modify:** `user/scripts/build-queue-hygiene.ps1` [VERIFY: `grep -n "NativeMethods\|Add-Type\|function Get-SafeValue" "C:/Users/JacobMadsen/source/repos/claude-config/user/scripts/build-queue-hygiene.ps1"` → P/Invoke class ~L46-117, `Get-SafeValue` L39]
@@ -103,7 +103,7 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 #### WU-5 — runner pre-build reap call + `lockers_reaped` hygiene field
 
 - **Scope (PHASES deliverables):**
-  - [ ] `build-queue-runner.ps1`: call the reap before `New-BuildJobObject`; record `lockers_reaped` (PID list / count) in the hygiene block.
+  - [x] `build-queue-runner.ps1`: call the reap before `New-BuildJobObject`; record `lockers_reaped` (PID list / count) in the hygiene block.
 - **TDD:** partial — reap logic is unit-tested in WU-4; this WU is the runner wiring, verified by the reap functions being in scope + the hygiene field appearing. The end-to-end "copy now succeeds" claim is the Phase-2 manual runtime spike (out of scope).
 - **Files to create/modify:** `user/scripts/build-queue-runner.ps1` [VERIFY: `grep -n "New-BuildJobObject\|hygiene\|result_fidelity" "C:/Users/JacobMadsen/source/repos/claude-config/user/scripts/build-queue-runner.ps1"` → `New-BuildJobObject` call L83, hygiene block L118-127]
 - **Implementation goal:**
@@ -128,9 +128,9 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 #### WU-6 — test-filtered.ps1 modern-summary regex + parsed-count emission + Pester block
 
 - **Scope (PHASES deliverables):**
-  - [ ] `test-filtered.ps1`: extend the summary regex to also match modern output — `Passed!  - Failed: X, Passed: Y, Skipped: Z, Total: N` and the `Failed! - …` variant — so `summarySeen` sets and `resultLineCount` reflects the real counts. Preserve the exit-3 contract (fires ONLY on genuine zero-output).
-  - [ ] `test-filtered.ps1`: emit a parsed pass/fail/total line to the filtered output so `/mstest` surfaces a real count.
-  - [ ] Tests: a Pester block feeding representative modern + legacy `dotnet test` output lines and asserting `summarySeen`/count/exit behavior.
+  - [x] `test-filtered.ps1`: extend the summary regex to also match modern output — `Passed!  - Failed: X, Passed: Y, Skipped: Z, Total: N` and the `Failed! - …` variant — so `summarySeen` sets and `resultLineCount` reflects the real counts. Preserve the exit-3 contract (fires ONLY on genuine zero-output).
+  - [x] `test-filtered.ps1`: emit a parsed pass/fail/total line to the filtered output so `/mstest` surfaces a real count.
+  - [x] Tests: a Pester block feeding representative modern + legacy `dotnet test` output lines and asserting `summarySeen`/count/exit behavior.
 - **TDD:** yes.
 - **Files to create/modify:** `repos/cognito-forms/.claude/scripts/test-filtered.ps1` [VERIFY: `grep -n "summarySeen\|resultLineCount\|Test Run (Passed" "C:/Users/JacobMadsen/source/repos/claude-config/repos/cognito-forms/.claude/scripts/test-filtered.ps1"` → summary regex L60, `resultLineCount` L22/39/46, `summarySeen` L23/62, exit-3 L74-76]
 - **Test files:** `repos/cognito-forms/.claude/scripts/test-filtered.Tests.ps1` — **net-new (create)** [VERIFY: no existing file — `ls "C:/Users/JacobMadsen/source/repos/claude-config/repos/cognito-forms/.claude/scripts/test-filtered.Tests.ps1"` should miss; if it exists, extend it instead].
@@ -149,8 +149,8 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 #### WU-7 — test-filtered.ps1 `--no-build` staleness guard + guard Pester block
 
 - **Scope (PHASES deliverables):**
-  - [ ] `test-filtered.ps1`: staleness guard near the `--no-build` args — before running, if the target `bin/Debug` test DLL is older than its source project (or the worktree's last recorded build `build_fidelity` was a failure/override), emit a clear WARN (and a distinct exit code, or a refuse-with-guidance) telling the agent to rebuild rather than silently testing stale bits.
-  - [ ] Tests: a stale-DLL fixture triggering the guard.
+  - [x] `test-filtered.ps1`: staleness guard near the `--no-build` args — before running, if the target `bin/Debug` test DLL is older than its source project (or the worktree's last recorded build `build_fidelity` was a failure/override), emit a clear WARN (and a distinct exit code, or a refuse-with-guidance) telling the agent to rebuild rather than silently testing stale bits.
+  - [x] Tests: a stale-DLL fixture triggering the guard.
 - **TDD:** yes (mtime-fixture drives the guard).
 - **Files to create/modify:** `repos/cognito-forms/.claude/scripts/test-filtered.ps1` [VERIFY: `grep -n "no-build\|testProjectPath" "C:/Users/JacobMadsen/source/repos/claude-config/repos/cognito-forms/.claude/scripts/test-filtered.ps1"` → `--no-build` args L26, `$testProjectPath` L16]. **File overlaps WU-6 → Batch 2 (sequential after WU-6).**
 - **Test files:** `repos/cognito-forms/.claude/scripts/test-filtered.Tests.ps1` (extend the file WU-6 created).
