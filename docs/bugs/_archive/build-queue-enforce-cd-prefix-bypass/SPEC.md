@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-06-24
+**Fixed:** 2026-07-06
+**Fix commit:** 3e04a72
 **Placement:** docs/bugs/build-queue-enforce-cd-prefix-bypass
 **Related:** `docs/bugs/build-queue-orphaned-result-on-wrapper-kill/`, `user/hooks/build-queue-enforce.sh`, `user/hooks/long-build-ownership-guard.sh`, `repos/cognito-forms/.claude/skills/{msbuild,mstest,nxbuild,nxtest}/SKILL.md`
 

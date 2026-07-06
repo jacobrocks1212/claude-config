@@ -25,7 +25,7 @@
 
 | # | item | state | sev |
 |---|------|-------|------|
-| 1 | [build-queue-enforce-cd-prefix-bypass](docs/bugs/build-queue-enforce-cd-prefix-bypass/SPEC.md) | Complete | — |
+| 1 | [build-queue-enforce-cd-prefix-bypass](docs/bugs/_archive/build-queue-enforce-cd-prefix-bypass/SPEC.md) | Complete | — |
 | | status: Complete · next: done · The `build-queue-enforce.sh` PreToolUse hook fails open whenever a heavy build is chained behind a leading command (`cd "…" && dotnet build …`), because its deny regexes are anchored to the start of the command. | | |
 | 2 | [build-queue-no-artifact-or-process-hygiene-on-crash](docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash/SPEC.md) | Implement | — |
 | | status: Implement · phase 0/5 · next: execute plan · A crashed or killed build leaves orphaned compiler/test child processes and a truncated 0-byte output artifact behind. | | |
