@@ -153,6 +153,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "adhoc-cycle-begin-real-requires-sub-skill",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "adhoc-derive-cycle-commit-budget",
       "type": "bug",
       "provenance": "backfilled"
@@ -2050,6 +2055,27 @@
       "id": "adhoc-checkpoint-resume-field-complete-continuity",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/adhoc-cycle-begin-real-requires-sub-skill/PHASES.md": [
+    {
+      "id": "adhoc-cycle-begin-real-requires-sub-skill",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-cycle-begin-real-requires-sub-skill/SPEC.md": [
+    {
+      "id": "adhoc-cycle-begin-real-requires-sub-skill",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-cycle-begin-real-requires-sub-skill/plans/fix-cycle-begin-real-requires-sub-skill.md": [
+    {
+      "id": "adhoc-cycle-begin-real-requires-sub-skill",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/adhoc-derive-cycle-commit-budget/ADHOC_BRIEF.md": [
@@ -6125,6 +6151,11 @@
   ],
   "user/scripts/CLAUDE.md": [
     {
+      "id": "adhoc-cycle-begin-real-requires-sub-skill",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "adhoc-derive-cycle-commit-budget",
       "type": "bug",
       "provenance": "backfilled"
@@ -6277,6 +6308,11 @@
   ],
   "user/scripts/bug-state.py": [
     {
+      "id": "adhoc-cycle-begin-real-requires-sub-skill",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "byref-dispatch-undercounts-forward-cycles",
       "type": "bug",
       "provenance": "backfilled"
@@ -6393,6 +6429,11 @@
     }
   ],
   "user/scripts/lazy-state.py": [
+    {
+      "id": "adhoc-cycle-begin-real-requires-sub-skill",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "budget-guard-defers-near-complete-feature",
       "type": "bug",

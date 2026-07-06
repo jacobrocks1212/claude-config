@@ -2,7 +2,7 @@
 
 > A real cycle marker written with `sub_skill=None` (orchestrator omitted `--sub-skill`) makes the `--cycle-end` commit-budget indeterminate — the recurring unexpected-commits false-positive class. Harden the WRITE side so the marker can never be born sub_skill-less on a real cycle.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-06
 **Placement:** docs/bugs/adhoc-cycle-begin-real-requires-sub-skill

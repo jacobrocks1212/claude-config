@@ -1,6 +1,6 @@
 # Implementation Phases — `--cycle-begin --kind real` must require/validate `--sub-skill`
 
-**Status:** In-progress
+**Status:** Fixed
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
