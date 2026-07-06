@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: build-queue-enforce-cd-prefix-bypass
-status: Ready
+status: Complete
 created: 2026-07-06
 complexity: mechanical
 phases: [1, 2, 3]
@@ -28,11 +28,11 @@ Also (static, no runtime): confirm the skill/script citations in `../PHASES.md`'
 
 ## Phase 1 — Hook hardening (command-position deny, both hooks)
 
-### WU-1: Verify the command-position deny surface + allow-list precedence (both hooks) [ ]
+### WU-1: Verify the command-position deny surface + allow-list precedence (both hooks) [x]
 
-- [ ] `user/hooks/build-queue-enforce.sh`: `_CMD_START` anchor (line 114) drives `_DOTNET_BUILD_RE`/`_DOTNET_TEST_RE`/`_NX_BUILD_TEST_RE`/`_FILTERED_SCRIPT_DIRECT_RE`; `_suppress_safe` (151-157, applied 379) re-derives allow-list precedence so `dotnet restore && dotnet build` denies; `_BYPASS_RE` (87) + `_WRAPPER_RE` (92) escape hatches intact. **No edit — verify on disk.**
-- [ ] `user/hooks/long-build-ownership-guard.sh`: `_CMD_START` anchor (105) on `_LONG_BUILD_RE` (106-112) closes the same `cd`-prefix blind spot for the long-build redirect set. **No edit — verify on disk.**
-- [ ] `user/scripts/test_hooks.py`: bqe cd-prefix/pipeline/compound/allow suite (4841-5058) + long-build cd-prefix suite (5061+) present and green. **No edit — run the gate.**
+- [x] `user/hooks/build-queue-enforce.sh`: `_CMD_START` anchor (line 114) drives `_DOTNET_BUILD_RE`/`_DOTNET_TEST_RE`/`_NX_BUILD_TEST_RE`/`_FILTERED_SCRIPT_DIRECT_RE`; `_suppress_safe` (151-157, applied 379) re-derives allow-list precedence so `dotnet restore && dotnet build` denies; `_BYPASS_RE` (87) + `_WRAPPER_RE` (92) escape hatches intact. **No edit — verify on disk.**
+- [x] `user/hooks/long-build-ownership-guard.sh`: `_CMD_START` anchor (105) on `_LONG_BUILD_RE` (106-112) closes the same `cd`-prefix blind spot for the long-build redirect set. **No edit — verify on disk.**
+- [x] `user/scripts/test_hooks.py`: bqe cd-prefix/pipeline/compound/allow suite (4841-5058) + long-build cd-prefix suite (5061+) present and green. **No edit — run the gate.**
 
 **Verification:** the Gate above (green `test_hooks.py`; bqe + long-build sections PASS).
 
@@ -40,12 +40,12 @@ Also (static, no runtime): confirm the skill/script citations in `../PHASES.md`'
 
 ## Phase 2 — Skill capability (single-project build path)
 
-### WU-2: Verify the sanctioned single-project compile path [ ]
+### WU-2: Verify the sanctioned single-project compile path [x]
 
-- [ ] `repos/cognito-forms/.claude/scripts/build-filtered.ps1`: `[string]$Project = ""` (9) + conditional `$buildTarget` (22). **No edit — verify on disk.**
-- [ ] `repos/cognito-forms/.claude/skills/msbuild/SKILL.md`: `-Project` documented (4, 16, 29). **No edit — verify on disk.**
-- [ ] `repos/cognito-forms/.claude/skills/mstest/SKILL.md`: `/msbuild -Project` pointer (11). **No edit — verify on disk.**
-- [ ] `repos/cognito-forms/CLAUDE.local.md`: targeted-compile path documented in Build & Test Workflow. **No edit — verify on disk.**
+- [x] `repos/cognito-forms/.claude/scripts/build-filtered.ps1`: `[string]$Project = ""` (9) + conditional `$buildTarget` (22). **No edit — verify on disk.**
+- [x] `repos/cognito-forms/.claude/skills/msbuild/SKILL.md`: `-Project` documented (4, 16, 29). **No edit — verify on disk.**
+- [x] `repos/cognito-forms/.claude/skills/mstest/SKILL.md`: `/msbuild -Project` pointer (11). **No edit — verify on disk.**
+- [x] `repos/cognito-forms/CLAUDE.local.md`: targeted-compile path documented in Build & Test Workflow. **No edit — verify on disk.**
 
 **Verification:** `grep -n 'Project' repos/cognito-forms/.claude/scripts/build-filtered.ps1` shows the param + conditional target; the skill citations resolve; `test_bqe_allows_build_queue_wrapper_with_filtered_exec` (part of the green gate) confirms a `-Project`-carrying wrapper call is not spuriously denied.
 
@@ -53,10 +53,10 @@ Also (static, no runtime): confirm the skill/script citations in `../PHASES.md`'
 
 ## Phase 3 — Background-poll ergonomics (trust-the-banner contract)
 
-### WU-3: Verify the banner-trust outcome contract in the build/test skills [ ]
+### WU-3: Verify the banner-trust outcome contract in the build/test skills [x]
 
-- [ ] `msbuild/SKILL.md`: trust-the-banner instruction + no-`cat`/`grep`-the-runner + `FAIL` next-actions (34, 38-46) + `run_in_background` poll path (36). **No edit — verify on disk.**
-- [ ] `mstest/SKILL.md`: same banner-trust contract + exit-code guidance (37, 41-47) + `run_in_background` poll path (39). **No edit — verify on disk.**
+- [x] `msbuild/SKILL.md`: trust-the-banner instruction + no-`cat`/`grep`-the-runner + `FAIL` next-actions (34, 38-46) + `run_in_background` poll path (36). **No edit — verify on disk.**
+- [x] `mstest/SKILL.md`: same banner-trust contract + exit-code guidance (37, 41-47) + `run_in_background` poll path (39). **No edit — verify on disk.**
 
 **Verification:** both skills contain the "trust the banner … do NOT `cat`/`grep` the runner or `results/<seq>.json`" instruction and the background poll path.
 

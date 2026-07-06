@@ -2,6 +2,8 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress
+
 **MCP runtime:** not-required — this is hook (bash + inline-Python) and skill/PowerShell-wrapper work in claude-config, a repo with NO app surface (no `src-tauri/`, no `package.json`). It is structurally outside MCP reach (the "no MCP-reachable surface" untestable class). Every deliverable is validated by the `user/scripts/test_hooks.py` pipe-test harness (which spawns the real hooks over crafted PreToolUse payloads) — the suite already carries a section explicitly tagged `build-queue-enforce-cd-prefix-bypass` and is **green (130/131 passed, 1 legitimately skipped, 0 failed this cycle)**.
 
 > **STATE OF THE FIX (read first).** The full fix for this bug — BOTH prongs of the SPEC's `## Fix Direction` (hook hardening + skill capability) AND the regression suite the SPEC's Open Questions asked for — is **already implemented and green on disk**. It landed out-of-band as a side-effect of the sibling build-queue work (`b85b0c3 fix(build-queue-outcome-opacity-and-inspect-deny): Phase 1 — anchor bqe deny surface to invoke-vs-reference`, plus the build-skill `-Project` / banner-trust commits `7722211` / `42b77ab` and the pre-existing command-position anchoring in `long-build-ownership-guard.sh`). This PHASES.md is therefore an **honest verify-and-reconcile record**: each phase's deliverables carry the exact on-disk citation showing the work is ALREADY satisfied, and are left **unchecked** as the machine record that `/execute-plan` ticks after its verify pass (per the plan-frontmatter lifecycle, checkbox ticks + the plan `Complete` flip are `/execute-plan`'s to write — never a producer's), so the pipeline can carry the bug through `/execute-plan` (a fast verify-and-tick: run `test_hooks.py` green + confirm the static citations, no fresh implementation) → the `__mark_fixed__` gate (which owns the terminal Status flip, the `FIXED.md` receipt, and the archive) on the strength of the green regression suite rather than requiring a human to hand-close it. No fresh production edit is scheduled.
@@ -34,20 +36,22 @@ Per `/spec-phases` Step 2.7 — every load-bearing claim here is **code-provable
 
 **Contradiction correction (mechanical, applied in-plan):** the SPEC's `## Evidence Collected → Source Code` quotes the OLD `^\s*`-anchored `_DOTNET_BUILD_RE` at "lines 76-98" and the fall-through `_allow()` at "line 293". Those line numbers and the anchored form are stale — the file on disk has been re-anchored to `_CMD_START` (bqe line 114/117; the `_allow()` fall-through is now line 396). The SPEC's *reasoning* about the defect remains correct for the pre-fix state; this PHASES.md records the post-fix reality. (The SPEC body's stale line/anchor citations are a Minor doc-drift item for a later `/retro`-class reconciliation, not fix scope.)
 
-## Phase 1: Hook hardening — command-position (unanchored) deny surface, both hooks
+## Phase 1: Hook hardening — command-position (unanchored) deny surface, both hooks [x]
 
 **Scope:** Deny a heavy build wherever it sits at a command position (string start OR immediately after a shell separator, tolerating a leading `NAME=value` env prefix), not only at the literal start — closing the `cd "…" && <build>` / pipeline / `;`-chain bypass in BOTH `build-queue-enforce.sh` (the four Cognito build verbs) and `long-build-ownership-guard.sh` (the three long-build verbs). Re-derive allow-list precedence per-build-verb so a compound like `dotnet restore && dotnet build` still denies. This is the SPEC's `## Fix Direction` prong 1 (defense-in-depth, prong A).
 
 **Deliverables:**
-- [ ] `build-queue-enforce.sh` deny regexes anchored to `_CMD_START = (?:^|[\n;&|({])\s* + _ENV_PREFIX` (line 114), so `_DOTNET_BUILD_RE`/`_DOTNET_TEST_RE` (117-118), `_NX_BUILD_TEST_RE` (122-129), and `_FILTERED_SCRIPT_DIRECT_RE` (135-141) all fire from a command-segment start regardless of a leading `cd &&`. *(Landed via `b85b0c3`; verified on disk.)*
-- [ ] Allow-list precedence re-derived per-occurrence: `_suppress_safe` (151-157) blanks the safe `dotnet restore|--version|-v|ef|msbuild` / `nx lint|typecheck|format` occurrences out of a scratch copy BEFORE the heavy-build scan (applied line 379), so a compound `dotnet restore && dotnet build` still denies a surviving real build; `BUILD_QUEUE_BYPASS=1` remains the escape hatch (`_BYPASS_RE`, 87/362); the sanctioned `build-queue.ps1` wrapper is allowed before the deny surface (`_WRAPPER_RE`, 92/373). *(Verified on disk.)*
-- [ ] `long-build-ownership-guard.sh` given the identical `_CMD_START` anchor (105) on `_LONG_BUILD_RE` (`tauri build` / `cargo build --release` / `npm run build`, 106-112), closing the same `cd`-prefix blind spot for the long-build redirect set. *(Verified on disk.)*
-- [ ] False-positive guard preserved: a build token used as an ARGUMENT to a read verb (`cat build-filtered.ps1`, `grep … test-filtered.ps1`, `find … -name build-filtered.ps1`, `echo tauri build`) does NOT match because it does not begin a command segment. *(Verified by `test_bqe_allows_{cat,grep,tail,find}_*` + `test_longbuild_guard_allows_*_referencing_*`.)*
-- [ ] Regression suite in `user/scripts/test_hooks.py` (the SPEC's Open Question — where do hook tests live): cd-prefix, pipeline, compound `restore && build`, bare-restore-allow, bypass-token-allow, out-of-Cognito-scope-allow, cd-prefixed filtered-script/nx cases (bqe, 4841-5058) and cd-prefixed cargo/tauri/npm cases (long-build, 5061+). **Suite green this cycle (130/131 passed, 0 failed).**
+- [x] `build-queue-enforce.sh` deny regexes anchored to `_CMD_START = (?:^|[\n;&|({])\s* + _ENV_PREFIX` (line 114), so `_DOTNET_BUILD_RE`/`_DOTNET_TEST_RE` (117-118), `_NX_BUILD_TEST_RE` (122-129), and `_FILTERED_SCRIPT_DIRECT_RE` (135-141) all fire from a command-segment start regardless of a leading `cd &&`. *(Landed via `b85b0c3`; verified on disk.)*
+- [x] Allow-list precedence re-derived per-occurrence: `_suppress_safe` (151-157) blanks the safe `dotnet restore|--version|-v|ef|msbuild` / `nx lint|typecheck|format` occurrences out of a scratch copy BEFORE the heavy-build scan (applied line 379), so a compound `dotnet restore && dotnet build` still denies a surviving real build; `BUILD_QUEUE_BYPASS=1` remains the escape hatch (`_BYPASS_RE`, 87/362); the sanctioned `build-queue.ps1` wrapper is allowed before the deny surface (`_WRAPPER_RE`, 92/373). *(Verified on disk.)*
+- [x] `long-build-ownership-guard.sh` given the identical `_CMD_START` anchor (105) on `_LONG_BUILD_RE` (`tauri build` / `cargo build --release` / `npm run build`, 106-112), closing the same `cd`-prefix blind spot for the long-build redirect set. *(Verified on disk.)*
+- [x] False-positive guard preserved: a build token used as an ARGUMENT to a read verb (`cat build-filtered.ps1`, `grep … test-filtered.ps1`, `find … -name build-filtered.ps1`, `echo tauri build`) does NOT match because it does not begin a command segment. *(Verified by `test_bqe_allows_{cat,grep,tail,find}_*` + `test_longbuild_guard_allows_*_referencing_*`.)*
+- [x] Regression suite in `user/scripts/test_hooks.py` (the SPEC's Open Question — where do hook tests live): cd-prefix, pipeline, compound `restore && build`, bare-restore-allow, bypass-token-allow, out-of-Cognito-scope-allow, cd-prefixed filtered-script/nx cases (bqe, 4841-5058) and cd-prefixed cargo/tauri/npm cases (long-build, 5061+). **Suite green this cycle (130/131 passed, 0 failed).**
 
 #### Implementation Notes (Phase 1 — pre-landed out-of-band; verified 2026-07-06)
 - No production edit is owed. The bqe deny-surface re-anchor was implemented under `b85b0c3` (sibling bug `build-queue-outcome-opacity-and-inspect-deny`, whose Phase 1 goal — "anchor bqe deny surface to invoke-vs-reference" — is the same mechanical change this bug's prong 1 requires); `long-build-ownership-guard.sh` was already command-position-anchored. Both header comment blocks (bqe 18-46, long-build 14-29) now positively document the closed `cd`-prefix blind spot.
 - Executor action for this phase: run `python3 user/scripts/test_hooks.py` and confirm the bqe + long-build sections are green; tick. No file mutation expected.
+
+**Status:** Complete — verified 2026-07-06 via `/execute-plan`: `test_hooks.py` 130/131 passed, 1 skipped, 0 failed; all cited symbols/line numbers confirmed on disk (Read/Grep this cycle).
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/test_hooks.py` reports `0 failed` with the `test_bqe_denies_cd_prefixed_*`, `test_bqe_denies_restore_then_build_compound`, and `test_longbuild_guard_denies_cd_prefixed_*` cases passing.
 
@@ -66,19 +70,21 @@ Per `/spec-phases` Step 2.7 — every load-bearing claim here is **code-provable
 
 ---
 
-## Phase 2: Skill capability — sanctioned single-project build path (remove the bypass incentive)
+## Phase 2: Skill capability — sanctioned single-project build path (remove the bypass incentive) [x]
 
 **Scope:** Give agents a fast, queue-routed targeted-compile path so a raw `dotnet build <csproj>` is no longer the rational move for a quick "did my one file compile?" check. This is the SPEC's `## Fix Direction` prong 2 (Theory 2 — the contributing capability gap). Resolves two of the SPEC's Open Questions: single-project surfaces as a `-Project` **parameter** on `/msbuild` (not a separate skill), and `build-filtered.ps1` gains **native** single-project support (not a passthrough to raw `dotnet build`).
 
 **Deliverables:**
-- [ ] `build-filtered.ps1` accepts `[string]$Project = ""` (line 9) and targets `"$projectRoot\$Project"` when set, else `"$projectRoot\Cognito.sln"` (line 22) — a native single-project filtered build, still serialized through the queue wrapper. *(Verified on disk.)*
-- [ ] `/msbuild` documents `-Project "<relative/path/to.csproj>"` as the sanctioned fast single-project compile (SKILL.md usage line 16, forward-arg contract line 29, argument-hint line 4), forwarding it verbatim to `build-filtered.ps1` under the `build-queue.ps1` lock. *(Verified on disk.)*
-- [ ] `/mstest` (which runs `--no-build`) points agents at `/msbuild -Project "<csproj>"` for a fast targeted compile before testing (SKILL.md line 11), removing the `--no-build`-only friction the SPEC called out. *(Verified on disk.)*
-- [ ] `repos/cognito-forms/CLAUDE.local.md` Build & Test Workflow documents the `/msbuild -Project` targeted-compile path as the in-loop alternative to a full-solution build (Building section). *(Verified on disk.)*
+- [x] `build-filtered.ps1` accepts `[string]$Project = ""` (line 9) and targets `"$projectRoot\$Project"` when set, else `"$projectRoot\Cognito.sln"` (line 22) — a native single-project filtered build, still serialized through the queue wrapper. *(Verified on disk.)*
+- [x] `/msbuild` documents `-Project "<relative/path/to.csproj>"` as the sanctioned fast single-project compile (SKILL.md usage line 16, forward-arg contract line 29, argument-hint line 4), forwarding it verbatim to `build-filtered.ps1` under the `build-queue.ps1` lock. *(Verified on disk.)*
+- [x] `/mstest` (which runs `--no-build`) points agents at `/msbuild -Project "<csproj>"` for a fast targeted compile before testing (SKILL.md line 11), removing the `--no-build`-only friction the SPEC called out. *(Verified on disk.)*
+- [x] `repos/cognito-forms/CLAUDE.local.md` Build & Test Workflow documents the `/msbuild -Project` targeted-compile path as the in-loop alternative to a full-solution build (Building section). *(Verified on disk.)*
 
 #### Implementation Notes (Phase 2 — pre-landed out-of-band; verified 2026-07-06)
 - No production edit owed. The `-Project` parameter + skill/doc wiring is present on disk. **Open-Question resolutions recorded:** (a) surface = a `-Project` param on `/msbuild` (chosen over a separate skill); (b) `build-filtered.ps1` gained native single-project support (chosen over a bare forward to `dotnet build <csproj>`). Both are the more-complete choices and are what shipped.
 - Executor action for this phase: confirm the four citations on disk; tick. No mutation expected.
+
+**Status:** Complete — verified 2026-07-06 via `/execute-plan`: all four citations confirmed on disk (`build-filtered.ps1` `-Project` param + conditional target; `msbuild/SKILL.md` lines 4/16/29; `mstest/SKILL.md` line 11 pointer; `CLAUDE.local.md` line 64/96 targeted-compile path).
 
 **Minimum Verifiable Behavior:** `grep -n 'Project' repos/cognito-forms/.claude/scripts/build-filtered.ps1` shows the param + conditional target; `repos/cognito-forms/.claude/skills/msbuild/SKILL.md` documents `-Project`; `mstest/SKILL.md` line 11 points at it.
 
@@ -97,18 +103,20 @@ Per `/spec-phases` Step 2.7 — every load-bearing claim here is **code-provable
 
 ---
 
-## Phase 3: Background-poll ergonomics — trust-the-banner outcome contract (Theory 3, secondary)
+## Phase 3: Background-poll ergonomics — trust-the-banner outcome contract (Theory 3, secondary) [x]
 
 **Scope:** Reduce the "sanctioned path is error-prone under friction, so I fall back to raw `dotnet`" failure (SPEC symptom #3 / Theory 3, marked SECONDARY). Make the build/test skills tell agents to trust the authoritative one-line banner as the outcome of record and NOT to `cat`/`grep` the runner or `results/<seq>.json` to disambiguate an `exit_code=0` — the ambiguity that led the subagent to abandon the background path.
 
 **Deliverables:**
-- [ ] `/msbuild` instructs the agent to trust the `build-queue: seq=<N> op=msbuild RESULT=<PASS|FAIL> (result_fidelity=…)` banner as the last stdout line and NOT to `cat`/`grep` the runner or `results/<seq>.json`; names the concrete next action inline on `FAIL` (`log-failure-override` copy-lock, `no-output` false-green) (SKILL.md line 34, plus the two recovery sections 38-46). *(Verified on disk.)*
-- [ ] `/mstest` carries the same banner-trust contract (`RESULT=<PASS|FAIL|NO-TESTS-MATCHED> tests=<T> failed=<F>`) and distinct exit-code guidance (stale-DLL exit 4, zero-match exit 5) so a red/empty result is disambiguated by the banner, not by second-guessing `exit_code` (SKILL.md lines 37, 41-47). *(Verified on disk.)*
-- [ ] Both skills give an explicit `run_in_background: true` + poll `results/<seq>.json` path for >10-min runs, with the `seq` sourced from the `enqueued as seq=N` line (msbuild line 36, mstest line 39) — the ergonomic gap symptom #3 hit, now documented. *(Verified on disk.)*
+- [x] `/msbuild` instructs the agent to trust the `build-queue: seq=<N> op=msbuild RESULT=<PASS|FAIL> (result_fidelity=…)` banner as the last stdout line and NOT to `cat`/`grep` the runner or `results/<seq>.json`; names the concrete next action inline on `FAIL` (`log-failure-override` copy-lock, `no-output` false-green) (SKILL.md line 34, plus the two recovery sections 38-46). *(Verified on disk.)*
+- [x] `/mstest` carries the same banner-trust contract (`RESULT=<PASS|FAIL|NO-TESTS-MATCHED> tests=<T> failed=<F>`) and distinct exit-code guidance (stale-DLL exit 4, zero-match exit 5) so a red/empty result is disambiguated by the banner, not by second-guessing `exit_code` (SKILL.md lines 37, 41-47). *(Verified on disk.)*
+- [x] Both skills give an explicit `run_in_background: true` + poll `results/<seq>.json` path for >10-min runs, with the `seq` sourced from the `enqueued as seq=N` line (msbuild line 36, mstest line 39) — the ergonomic gap symptom #3 hit, now documented. *(Verified on disk.)*
 
 #### Implementation Notes (Phase 3 — pre-landed out-of-band; verified 2026-07-06)
 - No production edit owed. The banner-trust / recovery prose landed with the sibling build-queue outcome-opacity + false-green work (`7722211 fix(build-queue-outcome-opacity-and-inspect-deny): Phase 4 — point build/test skills at the authoritative banner`; `42b77ab fix(build-queue-false-green): … banner/status no-output arms`). It directly addresses the empty-output / missing-task-output confusion in symptom #3.
 - Theory 3 was SECONDARY and is substantially addressed by the banner-as-source-of-truth contract; no further ergonomics work is scheduled. Executor action: confirm citations; tick.
+
+**Status:** Complete — verified 2026-07-06 via `/execute-plan`: banner-trust + `run_in_background` poll-path prose confirmed present in both `msbuild/SKILL.md` and `mstest/SKILL.md`.
 
 **Minimum Verifiable Behavior:** `msbuild/SKILL.md` and `mstest/SKILL.md` each contain the "trust the banner … do NOT `cat`/`grep` the runner or `results/<seq>.json`" instruction and the `run_in_background` poll path.
 
