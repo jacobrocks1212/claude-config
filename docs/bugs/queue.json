@@ -2,12 +2,6 @@
   "_note": "Ordering is hybrid (explicit queue order + severity fallback). HEAD: the P0 'skip-mcp-test-frontmatter-unquoted-colon' hardening bug is the merged-view head \u2014 /lazy-batch's unified driver picks it FIRST. The 10 build-queue/harness bugs below it carry a DEPRIORITIZED queue-entry severity of null (real severity lives in each SPEC's **Severity:** line) so they sort to merged priority 99 \u2014 AFTER every feature \u2014 set 2026-07-04 (resume-lanes-hardening) because they are PowerShell/Pester build-queue defects untestable off a Windows workstation and were otherwise interleaving ahead of the feature queue in the merged view. The two adhoc-* bugs were already null-severity. Restore a bug's priority by removing its queue entry (autodiscovery re-reads the SPEC severity) or setting an explicit severity here.",
   "queue": [
     {
-      "id": "skip-mcp-test-frontmatter-unquoted-colon",
-      "name": "SKIP_MCP_TEST frontmatter unquoted colon breaks the strict sentinel parser at the completion gate",
-      "spec_dir": "skip-mcp-test-frontmatter-unquoted-colon",
-      "severity": "P0"
-    },
-    {
       "id": "build-queue-enforce-cd-prefix-bypass",
       "name": "Build-Queue Enforcement Bypassed by `cd`-Prefixed Build Commands \u2014 Investigation Spec",
       "spec_dir": "build-queue-enforce-cd-prefix-bypass",

@@ -25,7 +25,7 @@
 
 | # | item | state | sev |
 |---|------|-------|------|
-| 1 | [skip-mcp-test-frontmatter-unquoted-colon](docs/bugs/skip-mcp-test-frontmatter-unquoted-colon/SPEC.md) | Complete | P0 |
+| 1 | [skip-mcp-test-frontmatter-unquoted-colon](docs/bugs/_archive/skip-mcp-test-frontmatter-unquoted-colon/SPEC.md) | Complete | P0 |
 | | status: Complete · next: done · A `SKIP_MCP_TEST.md` waiver whose YAML frontmatter carries an **unquoted colon-space inside a value** (e.g. | | |
 | 2 | [build-queue-enforce-cd-prefix-bypass](docs/bugs/build-queue-enforce-cd-prefix-bypass/SPEC.md) | Spec | — |
 | | status: Spec · next: spec · The `build-queue-enforce.sh` PreToolUse hook fails open whenever a heavy build is chained behind a leading command (`cd "…" && dotnet build …`), because its deny regexes are anchored to the start of the command. | | |
