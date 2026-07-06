@@ -28,6 +28,22 @@ Work test-first within your lane:
 
 If your lane has deliverables with no testable behavior (pure config, scaffolding), implement them directly and say so in the report.
 
+### Bug-fix lanes — serving-path regression test (MANDATORY)
+
+If your lane implements a **bug fix**, its failing-test-first test MUST be a **serving-path
+regression test** — a test that exercises the symptom's *actual serving path* (the path the SPEC's
+root-cause trace cites as producing the observed symptom), asserting on the **observable symptom**,
+not on the fix's *internal target*. A test that asserts a stored value / facet / private helper the
+symptom's surface never reads does **NOT** qualify — it certifies the proxy, not the symptom.
+
+- *Example (linked-person pill):* assert on `GetLinkedPersonAsync` / the `linked-person` serving
+  path — **not** on `CompositeEntryIndex.SubmitterPersonEntryId` (an internal facet the pill does
+  not read).
+- Capture and paste the **RED output where the test reproduces the ORIGINAL symptom** (the assertion
+  fails because the symptom is present pre-fix), then the **GREEN output** after your fix (symptom
+  gone). Label both clearly in your report's TDD evidence — this RED→GREEN on the serving path is the
+  bug's completion evidence (`~/.claude/skills/_components/symptom-reproduction-gate.md`).
+
 ## Verification Commands (Tier 1 — use these EXACTLY)
 
 All build/test runs MUST go through the queue-routed skills (`Skill` tool). They serialize machine-globally against other worktrees/sessions and emit filtered output. NEVER run raw `dotnet`/`npx nx` and NEVER run a full-solution `/msbuild` (no `-Project`).

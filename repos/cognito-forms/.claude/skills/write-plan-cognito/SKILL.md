@@ -106,6 +106,25 @@ Build a directed acyclic graph of all pending phases. Execution order respects t
 
 !`cat .claude/skill-config/touchpoint-audit-gate.md 2>/dev/null || cat ~/.claude/skills/_components/touchpoint-audit-gate.md`
 
+### Bug-fix reachability check (SEAM A — extends the touchpoint audit; planning-time HALT)
+
+For a **bug fix**, the touchpoint audit above verifies each planned fix site *exists* — that is
+**not enough**. Add a reachability column to the Step C audit table: for the planned fix site,
+show it lies **on the symptom's traced serving path** from the SPEC's root-cause trace
+(`~/.claude/skills/_components/root-cause-trace-gate.md`), not merely that it exists. The fix site
+must be a node the symptom's surface actually *reads* on its serving path (`file:line` from the
+trace).
+
+| Planned fix site | Exists? | On traced serving path? | Evidence (trace hop `file:line`) |
+|------------------|---------|-------------------------|----------------------------------|
+| `...` | yes | **yes / NO** | `...` |
+
+A fix site that **exists but is not on the traced serving path is a planning-time HALT** — it is
+the 57585 failure (a fix that edits a value the symptom never reads). Interactive: surface it and
+refuse to draft the plan. `--batch`: write `NEEDS_INPUT.md` per the halt protocol above. If the
+SPEC carries no serving-path trace at all, that too is a halt — `/spec-bug`/`/plan-bug`'s
+root-cause trace gate should have produced it before planning.
+
 ---
 
 ## Step 2.5: Partition into Lanes and Parts (MANDATORY — BEFORE DRAFTING)
@@ -344,6 +363,7 @@ The generic autonomous-execution policy (COMPONENT LOADING PROTOCOL, the generic
 >    - After the full build, check `git status --short -- "Cognito.Web.Client/libs/types/server-types/"` — any NEW diff means the typegen seam missed something; reconcile before proceeding.
 >    - Failures: dispatch Sonnet fix agents, re-run the failing gate. Two failed fix attempts = blocking issue.
 > 2. **Integration verification:** read `~/.claude/skills/_components/integration-verification.md` and follow it (cross-lane integration, spec alignment, full-stack coverage for user-facing changes).
+> 2b. **Symptom reproduction (SEAM B — MANDATORY for bug fixes; this repo has no MCP step).** Because this repo declares "No MCP integration test step," the bug-completion evidence bar is enforced HERE. Read `~/.claude/skills/_components/symptom-reproduction-gate.md`. A bug-fix part may not be reported complete without the REQUIRED rung: a **serving-path regression test** — a `/mstest`-run test on the symptom's *actual serving path* (a service/controller test exercising the real path the symptom is served through, e.g. `GetLinkedPersonAsync` / the `linked-person` endpoint), verified RED→GREEN — **NOT** a unit test asserting on the fix's *internal target* (a stored value / facet / private helper). A `local-ui-tests` Selenium run or a `/write-manual-testing-doc` artifact observing the original symptom gone at the user surface is accepted as a STRONGER alternative. Bind the evidence to the SPEC's `## Reproduction Steps`. If only an internal-target unit test exists, the part is NOT complete — route a serving-path regression-test lane.
 > 3. **CLAUDE.md review:** read `~/.claude/skills/_components/claude-md-review.md` and follow it.
 > 4. Leave everything uncommitted — the developer commits manually (repo policy).
 

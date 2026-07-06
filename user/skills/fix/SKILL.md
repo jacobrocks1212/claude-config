@@ -263,6 +263,14 @@ If any item is unchecked, go back and complete it. Do NOT launch the next batch.
 !`cat .claude/skill-config/integration-verification.md 2>/dev/null || cat ~/.claude/skills/_components/integration-verification.md`
 ```
 
+**Bug-fix completion (SEAM B — do NOT complete a bug fix on unit-green alone).** When `/fix`
+targets a bug, the completion bar is the sharpened "Bug fixed" rule in
+`~/.claude/skills/verification-before-completion/SKILL.md` and the evidence ladder in
+`~/.claude/skills/_components/symptom-reproduction-gate.md`: reproduce the ORIGINAL symptom at its
+reported surface and confirm it is gone (serving-path regression test red→green, or a
+runtime/manual repro). A unit test asserting on the fix's internal target is NOT sufficient. The
+`integration-verification.md` bug-fix clause injected above enforces this at part-completion.
+
 #### CLAUDE.md Update Step
 
 ```

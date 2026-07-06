@@ -134,7 +134,7 @@ In work repos (`git config user.email == jacob@cognitoforms.com`):
 
 - **Commits:** allowed locally (Claude can checkpoint freely)
 - **Push:** blocked by a PreToolUse hook on the `Bash` tool
-- **Squash-push:** Jacob explicitly invokes `/push "commit message"` which squashes all branch commits into one clean commit and pushes with a bypass token
+- **Push:** Jacob explicitly invokes `/push` which pushes the branch commits **as-is** (no squash by default) with a bypass token. Pass `--squash` to squash all branch commits into one clean commit first (`/push --squash "commit message"`).
 
 The hook lives at `~/.claude/hooks/block-work-repo-git-push.sh`. Personal repos are unaffected.
 

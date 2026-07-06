@@ -35,6 +35,20 @@ If this phase connects modules that were previously isolated (e.g., wiring an Ev
 
 **Why this exists:** Isolated module tests pass while end-to-end integration remains broken — wiring bugs live at the seams between layers. This step prevents "all tests pass but the feature doesn't work" scenarios.
 
+### Verify Bug-Fix Symptom Reproduction (MANDATORY for bug fixes — NOT N/A-able)
+
+If this change is a **bug fix**, reproduce the SPEC's **original symptom** against the pre-fix
+state and confirm it no longer occurs **at the reported surface**. A green unit test on the fix's
+*internal target* (a stored value, a facet, a private helper) does **NOT** satisfy this — see
+`~/.claude/skills/_components/symptom-reproduction-gate.md` for the evidence ladder (REQUIRED:
+serving-path regression test, red→green; STRONGER: runtime/manual artifact).
+
+This clause is **not answerable "N/A"** for a suppress-a-value or change-a-value fix: such a fix
+has an observable symptom by definition, so "no user-facing API added" does not exempt it. Compose
+this with (do not duplicate) the full-stack smoke above — the symptom's serving path IS the path
+to smoke-test. The only legitimate non-bug outcome is: "this change is not a bug fix" — state that
+and move on.
+
 ### Fix Integration Issues
 
 If issues found: fix them and update PHASES.md (if applicable) with notes about what was fixed.

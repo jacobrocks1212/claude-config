@@ -25,3 +25,27 @@ The entry indexing system provides a fast, queryable data store for form entries
 5.  **Data Persistence**: `IndexRepository` takes the index document and performs the necessary CRUD operation against the Cosmos DB container.
 
 6.  **Querying**: The Entries page UI makes a request to the `ODataController`. The controller parses the OData query, calls `EntryIndexService` to fetch the data, and the service uses `IndexRepository` to execute the efficient query against Cosmos DB, returning the results without hitting the primary transactional database.
+
+## 3. Cosmos Containers & Database Topology
+
+All entry-index containers live in the **same Cosmos account and database** (`cognitoIndexes` by default), bound via `config.CosmosOptions`. Each `Repository<T>` resolves its container as `cosmosClient.GetContainer(CosmosOptions.DatabaseName, ContainerName)` — the database comes from the shared options object and only `ContainerName` varies per repository. Repos wired to the same `config.CosmosOptions` therefore share one account + one database and differ only by container.
+
+Containers on this shared `CosmosOptions` account/database (all partitioned by `Organization.Id`):
+
+| Container | Repository | Holds |
+| --- | --- | --- |
+| `FormEntryIndex` | `IndexRepository` | `CompositeEntryIndex` documents |
+| `EntryReferences` | `EntryDependencyRepository` | entry dependency/reference records |
+| `PersonSubmissionIndex` | `PersonSubmissionRepository` | person↔submission linkage records |
+
+Separately-provisioned Cosmos options (their **own** account/database, not the index DB): CognitoPay (`CognitoPayCosmosOptions` — Payment/Payout/Dispute/Order) and audit log (`AuditLogCosmosOptions` — `OrgAuditLog`).
+
+### PersonSubmissionIndex is not a pure projection
+
+Unlike `CompositeEntryIndex` (fully derivable from `FormEntry` data in Table Storage), `PersonSubmissionIndex` linkage data **cannot be 100% regenerated** from entry data. Links are only backfilled when the user intentionally acts on a pre-existing entry after enabling person tracking, so re-deriving from entries does not reproduce the exact linkage the user saw. Restoring the container is the only exact-recovery path unless auto-backfill of links is added.
+
+### Backup & recovery reality (confirmed with system-team, 2026-07)
+
+- The index Cosmos account uses **periodic backups only** — no self-service point-in-time restore (PITR).
+- Restore granularity is **whole-database**: recovery means restoring the entire `cognitoIndexes` DB into a new account and copying out just the needed container. There is no per-org or per-document targeting, and because the DB is shared across all index containers and tenants, a restore to recover one org's linkage rows is an all-tenant operation.
+- There is **no app-level backup** of `PersonSubmissionIndex`. The `[ExcludeFromBackup]` attribute on the model only gates the Table Storage `EntityBackup` system (read by `AzureStore<T>`) and has **no effect on Cosmos** — it does not add or remove any Cosmos backup behavior.

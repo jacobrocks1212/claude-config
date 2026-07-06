@@ -72,9 +72,31 @@ identically in cloud and workstation.
    This is the gate-level enforcement of the same invariant `lazy-state.py`
    routes around (it re-opens rather than completing while the sentinel exists).
 
+2b. **Symptom-reproduction check (BUG PATH ONLY — `__mark_fixed__`).** This
+   precondition applies **only** when the caller is the bug pipeline's
+   `__mark_fixed__` (a `docs/bugs/**` item); feature completion (`__mark_complete__`)
+   is unchanged and MUST skip it. For a bug, the validation-sentinel check in Step 2
+   is **not sufficient** — a bug may not flip `Fixed` without a symptom-reproduction
+   attestation per `~/.claude/skills/_components/symptom-reproduction-gate.md`:
+
+   !`cat ~/.claude/skills/_components/symptom-reproduction-gate.md`
+
+   Concretely, confirm the SPEC/PHASES/plan record carries the REQUIRED rung — a
+   serving-path regression test (red→green on the symptom's *actual serving path*,
+   NOT the fix's internal target), or the STRONGER runtime/manual artifact — bound
+   to the SPEC's `## Reproduction Steps`. **`SKIP_MCP_TEST.md` satisfies the MCP
+   validation-sentinel requirement (Step 2) but does NOT satisfy symptom
+   reproduction for bugs** — the serving-path regression test lives in ordinary
+   unit-test land and needs no MCP surface, so a no-MCP repo does not get a bypass
+   here. If no symptom-reproduction attestation is present → **refuse** (Step 4),
+   with a decision naming the missing serving-path evidence (e.g. "bug flip to Fixed
+   with only a unit test on the fix's internal target — no serving-path regression
+   test or runtime artifact reproducing the original symptom gone at its reported
+   surface").
+
 3. **All preconditions pass → delegate the receipt write + status flip + sentinel
    cleanup to the script.** The gate's responsibility here is to VERIFY (steps 1–2a
-   above) and then, on pass, to call the script as the single author:
+   above, plus 2b on the bug path) and then, on pass, to call the script as the single author:
 
    ```
    python3 ~/.claude/scripts/lazy-state.py \
@@ -129,7 +151,7 @@ identically in cloud and workstation.
 
    Commit the resulting file changes per project policy after the script exits 0.
 
-4. **Refuse path (any precondition in steps 1–2a fails).** Do NOT flip. Do NOT
+4. **Refuse path (any precondition in steps 1–2a fails, or the bug-path 2b symptom-reproduction check fails).** Do NOT flip. Do NOT
    write `COMPLETED.md`. This means the state script emitted `__mark_complete__`
    for a feature that isn't actually finishable — a genuine inconsistency. Write
    `{spec_path}/NEEDS_INPUT.md` (`written_by: completion-integrity-gate`,
