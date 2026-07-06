@@ -132,6 +132,15 @@ Limit to 2-4 focused questions per round. Continue rounds until symptoms are cle
 
 Mark each confirmed item as `VERIFIED` in the spec. Mark unconfirmed items as `REPORTED` or `SUSPECTED`.
 
+**`symptom-verified` ≠ `cause-traced` (MANDATORY distinction).** These status tags describe a
+**symptom** — an observed behavior confirmed with the user. A `[VERIFIED]` symptom means *the
+symptom is real*; it says **nothing** about *why* it happens. A causal finding ("symptom X is
+produced by value/code Y") is a separate claim carrying its own label — `traced` (serving-path
+chain cited `file:line`, fix-site-on-path shown) or `asserted` (hypothesis). **Never let a
+`[VERIFIED]` symptom upgrade an `asserted` cause to fact** — that laundering is the exact 57585
+failure. Symptom verification and cause tracing are enforced separately: symptoms here in Step 5,
+causes by the root-cause trace gate at Step 6.
+
 ---
 
 ## Step 4: Determine Placement
@@ -197,9 +206,16 @@ Write the SPEC.md with this structure. Before writing, run `git branch --show-cu
 
 ## Reproduction Steps
 
-1. {step}
-2. {step}
-3. {observed result}
+<!-- MUST be a concrete, followable recipe — exact command, HTTP call, or manual UI steps —
+     NOT free prose. This is the artifact the symptom-reproduction gate
+     (_components/symptom-reproduction-gate.md) binds to at completion: the serving-path
+     regression test / runtime artifact that proves the ORIGINAL symptom is gone maps back to
+     these steps. A SPEC whose repro is vague prose (no runnable/followable steps) blocks that
+     completion gate — write steps someone else could execute verbatim. -->
+
+1. {exact step — command / HTTP call / UI action}
+2. {exact step}
+3. {observed result at the reported surface}
 
 **Expected:** {what should happen}
 **Actual:** {what does happen}
@@ -264,6 +280,17 @@ After writing the spec, present a summary to the user:
 > Ready to create a fix plan?
 
 **Concluding the investigation — status transition (MANDATORY):**
+
+**Root-cause trace gate (SEAM A — HARD BLOCK, runs BEFORE the status flip):**
+
+!`cat ~/.claude/skills/_components/root-cause-trace-gate.md`
+
+Apply the gate above before flipping `Investigating → Concluded`: for each causal finding this
+SPEC intends to lock, the symptom's serving path must be **`traced`** (chain cited `file:line`,
+fix-site-on-path shown), not merely **`asserted`**. An `asserted` link may NOT conclude this SPEC
+— interactive: refuse and name the untraced link; `--batch`: write `NEEDS_INPUT.md`
+(`written_by: root-cause-trace-gate`) and STOP. Do not proceed to the transition below until the
+finding is `traced`.
 
 When the investigation reaches a proven conclusion — root cause identified, affected area understood, theories confirmed or ruled out — you MUST update the SPEC's `**Status:**` line from `Investigating` to `Concluded` before stopping or transitioning. This is the signal that `bug-state.py` uses to route to `/plan-bug` (which authors `PHASES.md`) rather than re-dispatching `/spec-bug`. Leaving it as `Investigating` causes `bug-state.py` to loop `/spec-bug` indefinitely.
 
