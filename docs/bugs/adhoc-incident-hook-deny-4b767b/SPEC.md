@@ -2,7 +2,7 @@
 
 > The `_LAZY_BATCH_RE` recursion trip in `lazy-cycle-containment.sh` matches a `lazy-batch` token ANYWHERE in a subagent's Bash command — including benign file-path references (`cat`/`grep`/`ls`/`git add` on the `lazy-batch*` skill files). In claude-config, the very repo that houses those skill files, a cycle subagent doing legitimate lazy-pipeline investigation trips the containment deny repeatedly. The deny is a false positive; the fix is to anchor the trip to an actual command invocation, mirroring the `_CMD_START` carve-out already proven in `build-queue-enforce.sh`.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-04
 **Placement:** docs/bugs/adhoc-incident-hook-deny-4b767b

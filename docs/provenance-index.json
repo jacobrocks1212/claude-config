@@ -2136,6 +2136,27 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/adhoc-incident-hook-deny-4b767b/PHASES.md": [
+    {
+      "id": "adhoc-incident-hook-deny-4b767b",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-incident-hook-deny-4b767b/SPEC.md": [
+    {
+      "id": "adhoc-incident-hook-deny-4b767b",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-incident-hook-deny-4b767b/plans/all-phases-anchor-lazy-batch-containment.md": [
+    {
+      "id": "adhoc-incident-hook-deny-4b767b",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/adhoc-parity-merged-view-fixture-stale-archive-fixed/ADHOC_BRIEF.md": [
     {
       "id": "adhoc-parity-merged-view-fixture-stale-archive-fixed",
@@ -4353,6 +4374,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/friction-kpi-registry/SKIP_MCP_TEST.md": [
+    {
+      "id": "adhoc-incident-hook-deny-4b767b",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/friction-kpi-registry/SPEC.md": [
     {
       "id": "harness-telemetry-ledger",
@@ -6049,6 +6077,11 @@
   ],
   "user/hooks/lazy-cycle-containment.sh": [
     {
+      "id": "adhoc-incident-hook-deny-4b767b",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
@@ -6866,6 +6899,11 @@
     }
   ],
   "user/scripts/test_hooks.py": [
+    {
+      "id": "adhoc-incident-hook-deny-4b767b",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "cycle-subagent-fabricates-policy-or-stray-branch",
       "type": "bug",
