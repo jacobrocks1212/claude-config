@@ -1,4 +1,4 @@
-# Lazy Queue — .   (run active 🔒)
+# Lazy Queue — claude-config   (run active 🔒)
 
 ## Features (8)
 
@@ -25,28 +25,28 @@
 
 | # | item | state | sev |
 |---|------|-------|------|
-| 1 | [build-queue-no-artifact-or-process-hygiene-on-crash](docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash/SPEC.md) | Implement | — |
-| | status: Implement · phase 0/5 · next: execute plan · A crashed or killed build leaves orphaned compiler/test child processes and a truncated 0-byte output artifact behind. | | |
-| 2 | [build-queue-copy-lock-stale-dll-false-success](docs/bugs/build-queue-copy-lock-stale-dll-false-success/SPEC.md) | Implement | — |
-| | status: Implement · phase 1/4 · next: execute plan · An MSB3027 copy-lock failure (obj/ rebuilt fresh, copy to bin/Debug blocked by a leftover locker) makes MSBuild log "Build FAILED" while still exiting 0. | | |
-| 3 | [test-filtered-stale-check-hardcodes-bin-debug](docs/bugs/test-filtered-stale-check-hardcodes-bin-debug/SPEC.md) | Validate | — |
+| 1 | [build-queue-copy-lock-stale-dll-false-success](docs/bugs/build-queue-copy-lock-stale-dll-false-success/SPEC.md) | Complete | — |
+| | status: Complete · phase 1/4 · next: done · An MSB3027 copy-lock failure (obj/ rebuilt fresh, copy to bin/Debug blocked by a leftover locker) makes MSBuild log "Build FAILED" while still exiting 0. | | |
+| 2 | [test-filtered-stale-check-hardcodes-bin-debug](docs/bugs/test-filtered-stale-check-hardcodes-bin-debug/SPEC.md) | Validate | — |
 | | status: Validate · phase 0/1 · next: run mcp-test · The Phase-3 stale-DLL guard assumes every test project outputs to `bin\Debug\`, so it fires exit-4 "stale" on *every* `/mstest -TestDll "Cognito.Forms.UnitTests"` run — a false positive no rebuild can clear, which drives agents to bypass the sanctioned test path with hand-rolled `--no-build` scratchpad runners. | | |
-| 4 | [build-queue-recycle-kills-concurrent-worktree-build](docs/bugs/build-queue-recycle-kills-concurrent-worktree-build/SPEC.md) | Implement | — |
+| 3 | [build-queue-recycle-kills-concurrent-worktree-build](docs/bugs/build-queue-recycle-kills-concurrent-worktree-build/SPEC.md) | Implement | — |
 | | status: Implement · phase 0/4 · next: execute plan · The crash-hygiene fix recycles VBCSCompiler machine-wide after **every** build, on the stated invariant that "the queue serializes builds, so no concurrent build's compiler server is ever killed." That invariant is violable in two ways — the stale-lock reclaim can admit a second concurrent build on a transiently-unreadable `active.lock`, and off-queue **bypass** builds run invisibly to serialization — so a build finishing in worktree A can `Stop-Process -Force` the VBCSCompiler that worktree B's build is actively using, producing MSB4166 / a partial compile / a `Build FAILED`-but-exit-0 → a stale or never-updated test DLL in worktree B. | | |
-| 5 | [write-plan-plans-bypass-build-queue-skills](docs/bugs/write-plan-plans-bypass-build-queue-skills/SPEC.md) | Spec | — |
+| 4 | [write-plan-plans-bypass-build-queue-skills](docs/bugs/write-plan-plans-bypass-build-queue-skills/SPEC.md) | Spec | — |
 | | status: Spec · next: spec · The Cognito Forms variant of `/write-plan` bakes **raw** `dotnet build` / `dotnet test` / `npx nx test` commands into the plans it generates (both the orchestrator's in-loop gate steps and the dispatched lane agents' verification commands). | | |
-| 6 | [build-queue-orphaned-result-on-wrapper-kill](docs/bugs/build-queue-orphaned-result-on-wrapper-kill/SPEC.md) | Validate | — |
+| 5 | [build-queue-orphaned-result-on-wrapper-kill](docs/bugs/build-queue-orphaned-result-on-wrapper-kill/SPEC.md) | Validate | — |
 | | status: Validate · phase 0/2 · next: run mcp-test · The queue wrapper writes `results/<seq>.json` and releases `active.lock` only after the detached build it is *tailing* exits. | | |
-| 7 | [crlf-hook-blanket-enforce-mixed-eol](docs/bugs/crlf-hook-blanket-enforce-mixed-eol/SPEC.md) | Spec | — |
+| 6 | [crlf-hook-blanket-enforce-mixed-eol](docs/bugs/crlf-hook-blanket-enforce-mixed-eol/SPEC.md) | Spec | — |
 | | status: Spec · next: spec · `normalize-crlf.ps1` enforces a single blanket convention (CRLF on every non-`.sh` file) on the Cognito Forms repo, but the repo's *committed* EOL is mixed: `.cs` is CRLF, `NotificationTemplates/**/*.html` is LF. | | |
-| 8 | [worktree-claude-doc-drift](docs/bugs/worktree-claude-doc-drift/SPEC.md) | Validate | — |
+| 7 | [worktree-claude-doc-drift](docs/bugs/worktree-claude-doc-drift/SPEC.md) | Validate | — |
 | | status: Validate · phase 3/3 · next: run mcp-test · Per-repo Claude docs are inconsistent across the Cognito Forms git worktrees: personal subdir `CLAUDE.local.md` files exist only in the main worktree, and team-owned tracked docs vary by branch — because the claude-config symlink manifest covers neither. | | |
-| 9 | [build-queue-outcome-opacity-and-inspect-deny](docs/bugs/build-queue-outcome-opacity-and-inspect-deny/SPEC.md) | Validate | — |
+| 8 | [build-queue-outcome-opacity-and-inspect-deny](docs/bugs/build-queue-outcome-opacity-and-inspect-deny/SPEC.md) | Validate | — |
 | | status: Validate · phase 2/4 · next: run mcp-test · Agents routinely can't tell what a `/msbuild` `/mstest` `/nxbuild` `/nxtest` invocation actually did — pass, fail, zero-match, or broken log capture all surface as the same `exit_code=0` with suppressed output — so they try to inspect the runner script / results JSON / logs to disambiguate. | | |
-| 10 | [adhoc-align-cycle-commit-count-with-budget-population](docs/bugs/adhoc-align-cycle-commit-count-with-budget-population/SPEC.md) | Spec | — |
+| 9 | [adhoc-align-cycle-commit-count-with-budget-population](docs/bugs/adhoc-align-cycle-commit-count-with-budget-population/SPEC.md) | Spec | — |
 | | status: Spec · next: spec | | |
-| 11 | [adhoc-derive-multi-commit-budget-from-dispatch-sites](docs/bugs/adhoc-derive-multi-commit-budget-from-dispatch-sites/SPEC.md) | Spec | — |
+| 10 | [adhoc-derive-multi-commit-budget-from-dispatch-sites](docs/bugs/adhoc-derive-multi-commit-budget-from-dispatch-sites/SPEC.md) | Spec | — |
 | | status: Spec · next: spec | | |
+| 11 | [build-queue-no-artifact-or-process-hygiene-on-crash](docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash/SPEC.md) | ⛔ Blocked | — |
+| | status: Blocked · phase 0/5 · next: resolve blocker · A crashed or killed build leaves orphaned compiler/test child processes and a truncated 0-byte output artifact behind. | | |
 
 ## Needs attention
 
@@ -54,3 +54,4 @@
 - ⬡ build-queue-generalization — needs-input
 - ⬡ build-queue-eta-priority-lanes — needs-input
 - ⬡ claude-config-ci — needs-input
+- ⛔ build-queue-no-artifact-or-process-hygiene-on-crash — blocked
