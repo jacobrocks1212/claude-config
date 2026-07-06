@@ -1,4 +1,4 @@
-# Lazy Queue — .   (run active 🔒)
+# Lazy Queue — claude-config   (run active 🔒)
 
 ## Features (8)
 
@@ -25,8 +25,8 @@
 
 | # | item | state | sev |
 |---|------|-------|------|
-| 1 | [adhoc-cycle-begin-real-requires-sub-skill](docs/bugs/adhoc-cycle-begin-real-requires-sub-skill/SPEC.md) | Validate | — |
-| | status: Validate · phase 1/1 · next: run mcp-test · A real cycle marker written with `sub_skill=None` (orchestrator omitted `--sub-skill`) makes the `--cycle-end` commit-budget indeterminate — the recurring unexpected-commits false-positive class. | | |
+| 1 | [adhoc-cycle-begin-real-requires-sub-skill](docs/bugs/adhoc-cycle-begin-real-requires-sub-skill/SPEC.md) | Complete | — |
+| | status: Complete · phase 1/1 · next: done · A real cycle marker written with `sub_skill=None` (orchestrator omitted `--sub-skill`) makes the `--cycle-end` commit-budget indeterminate — the recurring unexpected-commits false-positive class. | | |
 | 2 | [skip-mcp-test-frontmatter-unquoted-colon](docs/bugs/skip-mcp-test-frontmatter-unquoted-colon/SPEC.md) | Validate | P0 |
 | | status: Validate · next: run mcp-test · A `SKIP_MCP_TEST.md` waiver whose YAML frontmatter carries an **unquoted colon-space inside a value** (e.g. | | |
 | 3 | [build-queue-enforce-cd-prefix-bypass](docs/bugs/build-queue-enforce-cd-prefix-bypass/SPEC.md) | Spec | — |
