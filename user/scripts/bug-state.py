@@ -4933,7 +4933,7 @@ def run_smoke_tests() -> int:
         _write_cmg_marker()
         r = subprocess.run(
             [sys.executable, _this_script, "--cycle-begin", "--bug-id", "bug-cmg2",
-             "--nonce", "cafe", "--repo-root", str(td_path)],
+             "--nonce", "cafe", "--sub-skill", "execute-plan", "--repo-root", str(td_path)],
             capture_output=True, text=True, env=_cmg_env(orchestrator=True),
         )
         if r.returncode != 0:
@@ -4948,6 +4948,66 @@ def run_smoke_tests() -> int:
             except (OSError, json.JSONDecodeError):
                 pass
         print(f"  {'PASS' if cmg_ok else 'FAIL'} [{fix_cmg}] subagent cycle-end/begin refused, orchestrator allowed")
+
+        # -------------------------------------------------------------------
+        # Fixture: --cycle-begin --kind real requires --sub-skill
+        # (adhoc-cycle-begin-real-requires-sub-skill) — coupled-pair mirror of
+        # lazy-state.py. A --kind real dispatch that omits --sub-skill must be
+        # refused (non-zero exit, no marker mutation) BEFORE the marker is
+        # ever written; --kind meta remains exempt and still succeeds without
+        # --sub-skill. Driven via subprocess so the real CLI handler runs.
+        # -------------------------------------------------------------------
+        fix_rrs = "cycle-begin-real-requires-sub-skill"
+        rrs_ok = True
+        try:
+            rrs_state = td_path / "rrs-state"
+            rrs_state.mkdir(parents=True, exist_ok=True)
+            rrs_marker = rrs_state / "lazy-cycle-active.json"
+            rrs_env = {k: v for k, v in os.environ.items()
+                       if k not in ("LAZY_CYCLE_SUBAGENT",)}
+            rrs_env["LAZY_STATE_DIR"] = str(rrs_state)
+            rrs_env["LAZY_ORCHESTRATOR"] = "1"
+            # (a) --kind real without --sub-skill ⇒ non-zero exit, no marker.
+            r = subprocess.run(
+                [sys.executable, _this_script, "--cycle-begin",
+                 "--bug-id", "bug-rrs", "--nonce", "deadbeef",
+                 "--kind", "real", "--repo-root", str(td_path)],
+                capture_output=True, text=True, env=rrs_env,
+            )
+            if r.returncode == 0:
+                failures.append(f"[{fix_rrs}] real cycle w/o --sub-skill must exit non-zero; got 0")
+                rrs_ok = False
+            if rrs_marker.exists():
+                failures.append(f"[{fix_rrs}] refused real cycle must NOT write a marker")
+                rrs_ok = False
+            # (b) --kind meta without --sub-skill ⇒ exit 0 (exemption preserved).
+            r = subprocess.run(
+                [sys.executable, _this_script, "--cycle-begin",
+                 "--bug-id", "bug-rrs", "--nonce", "cafefeed",
+                 "--kind", "meta", "--repo-root", str(td_path)],
+                capture_output=True, text=True, env=rrs_env,
+            )
+            if r.returncode != 0:
+                failures.append(f"[{fix_rrs}] meta cycle w/o --sub-skill must exit 0; got {r.returncode}: {r.stderr}")
+                rrs_ok = False
+            if not rrs_marker.exists():
+                failures.append(f"[{fix_rrs}] meta cycle must write a marker")
+                rrs_ok = False
+            # (c) regression: --kind real WITH --sub-skill still succeeds.
+            r = subprocess.run(
+                [sys.executable, _this_script, "--cycle-begin",
+                 "--bug-id", "bug-rrs", "--nonce", "abad1dea",
+                 "--kind", "real", "--sub-skill", "execute-plan",
+                 "--repo-root", str(td_path)],
+                capture_output=True, text=True, env=rrs_env,
+            )
+            if r.returncode != 0:
+                failures.append(f"[{fix_rrs}] real cycle w/ --sub-skill must exit 0; got {r.returncode}: {r.stderr}")
+                rrs_ok = False
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"[{fix_rrs}] unexpected error: {exc!r}")
+            rrs_ok = False
+        print(f"  {'PASS' if rrs_ok else 'FAIL'} [{fix_rrs}] real requires --sub-skill, meta exempt, regression green")
 
         # -------------------------------------------------------------------
         # Fixture: --reorder-queue (no-sanctioned-queue-reorder-command P3).
@@ -5751,6 +5811,7 @@ def run_smoke_tests() -> int:
             r = subprocess.run(
                 [sys.executable, _cbfo_script, "--cycle-begin",
                  "--bug-id", "bug-cbfo", "--nonce", "beef",
+                 "--sub-skill", "execute-plan",
                  "--repo-root", str(cbfo_repo)],
                 capture_output=True, text=True, env=cbfo_env,
             )
@@ -6630,6 +6691,13 @@ def main() -> int:
         lazy_core.refuse_cycle_marker_mutation_if_subagent("--cycle-begin")
         if not args.bug_id or not args.nonce:
             _die("--cycle-begin requires --bug-id and --nonce")
+        # adhoc-cycle-begin-real-requires-sub-skill: coupled-pair mirror of
+        # lazy-state.py — a --kind real dispatch that omits --sub-skill writes
+        # a marker with sub_skill=None, making the --cycle-end commit budget
+        # indeterminate. Require it up front, before any marker mutation.
+        # --kind meta remains exempt (see lazy_core.py:10962).
+        if args.kind == "real" and not (args.sub_skill or "").strip():
+            _die("--cycle-begin --kind real requires --sub-skill")
         # hardening-blind-to-process-friction Phase 2 (D1) — coupled-pair mirror
         # of lazy-state.py: snapshot the live run identity + current HEAD sha into
         # the cycle marker so --cycle-end can detect a torn bracket / unexpected

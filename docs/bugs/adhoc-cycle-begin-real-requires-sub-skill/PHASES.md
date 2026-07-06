@@ -1,5 +1,7 @@
 # Implementation Phases — `--cycle-begin --kind real` must require/validate `--sub-skill`
 
+**Status:** In-progress
+
 > Phases for [`SPEC.md`](./SPEC.md)
 
 **MCP runtime:** not-required — this is a pure state-script CLI validation change (Python argparse handler + in-file `--test` smoke fixtures + docs). There is no app/MCP-reachable surface; per `docs/features/mcp-testing/SPEC.md` this is the "build tooling / no app integration" untestable class. Validation is via the scripts' own `--test` smoke harnesses and `lazy_parity_audit.py`, not the MCP HTTP server.
@@ -38,12 +40,20 @@ No net-new files. No contradictions surfaced — the SPEC's serving-path trace m
 **Scope:** Add write-side validation so a `--kind real` cycle marker can never be born with `sub_skill=None`, mirrored across both state scripts as a coupled-pair edit, with `--test` smoke fixtures proving both the refusal and the meta exemption, and a docs promotion of the prose contract to documented hard enforcement.
 
 **Deliverables:**
-- [ ] In `user/scripts/lazy-state.py` `--cycle-begin` handler (after the id+nonce `_die` at ~11015), add: `if args.kind == "real" and not (args.sub_skill or "").strip(): _die("--cycle-begin --kind real requires --sub-skill")`. The guard runs BEFORE any run-marker read or `write_cycle_marker` call, so a refused real cycle mutates zero marker state.
-- [ ] In `user/scripts/bug-state.py` `--cycle-begin` handler (after the id+nonce `_die` at ~6632), add the byte-parallel guard (same condition, same message text). Coupled-pair mirror.
-- [ ] Add two `--test` smoke fixtures to `user/scripts/lazy-state.py`: (a) `--cycle-begin --feature-id … --nonce … --kind real` WITHOUT `--sub-skill` exits non-zero AND writes no cycle marker; (b) `--cycle-begin --feature-id … --nonce … --kind meta` WITHOUT `--sub-skill` exits 0. Follow the existing subprocess-fixture scaffold (~`9625`).
-- [ ] Add the mirrored two `--test` fixtures to `user/scripts/bug-state.py` (bug-id variant), following its scaffold (~`5227`).
-- [ ] Update `user/scripts/CLAUDE.md`: promote the `--cycle-begin` "MANDATES `--sub-skill`" prose to a documented HARD enforcement (a `--kind real` cycle now script-refuses a missing `--sub-skill`; `--kind meta` remains exempt). Note the Round-3 read-side guard (`lazy_core.py:10972-10993`) is RETAINED as defense-in-depth for legacy/meta/degraded markers.
-- [ ] Tests: both scripts' `--test` harnesses pass (`python3 user/scripts/lazy-state.py --test` and `python3 user/scripts/bug-state.py --test` both exit 0), and `python3 user/scripts/lazy_parity_audit.py --repo-root .` exits 0.
+- [x] In `user/scripts/lazy-state.py` `--cycle-begin` handler (after the id+nonce `_die` at ~11015), add: `if args.kind == "real" and not (args.sub_skill or "").strip(): _die("--cycle-begin --kind real requires --sub-skill")`. The guard runs BEFORE any run-marker read or `write_cycle_marker` call, so a refused real cycle mutates zero marker state.
+- [x] In `user/scripts/bug-state.py` `--cycle-begin` handler (after the id+nonce `_die` at ~6632), add the byte-parallel guard (same condition, same message text). Coupled-pair mirror.
+- [x] Add two `--test` smoke fixtures to `user/scripts/lazy-state.py`: (a) `--cycle-begin --feature-id … --nonce … --kind real` WITHOUT `--sub-skill` exits non-zero AND writes no cycle marker; (b) `--cycle-begin --feature-id … --nonce … --kind meta` WITHOUT `--sub-skill` exits 0. Follow the existing subprocess-fixture scaffold (~`9625`).
+- [x] Add the mirrored two `--test` fixtures to `user/scripts/bug-state.py` (bug-id variant), following its scaffold (~`5227`).
+- [x] Update `user/scripts/CLAUDE.md`: promote the `--cycle-begin` "MANDATES `--sub-skill`" prose to a documented HARD enforcement (a `--kind real` cycle now script-refuses a missing `--sub-skill`; `--kind meta` remains exempt). Note the Round-3 read-side guard (`lazy_core.py:10972-10993`) is RETAINED as defense-in-depth for legacy/meta/degraded markers.
+- [x] Tests: both scripts' `--test` harnesses pass (`python3 user/scripts/lazy-state.py --test` and `python3 user/scripts/bug-state.py --test` both exit 0), and `python3 user/scripts/lazy_parity_audit.py --repo-root .` exits 0.
+
+**Implementation Notes (2026-07-06):**
+- Guard landed verbatim as specified in both scripts, immediately after the existing id+nonce `_die`, before the run-marker read / `reconcile_cycle_begin_git_consistency` / `write_cycle_marker` calls — zero marker mutation on refusal.
+- New fixture `cycle-begin-real-requires-sub-skill` added to both `--test` harnesses (mirrored, `--feature-id`/`--bug-id` variant), asserting: (a) real+no-sub-skill refuses with no marker written, (b) meta+no-sub-skill still succeeds and writes a marker, (c) real+sub-skill regression stays green.
+- **Regression fallout (not anticipated by the SPEC/plan):** three existing `--cycle-begin` fixture call sites per script relied on the (until now unenforced) `--kind real` default WITHOUT passing `--sub-skill` and asserted exit 0 — `cycle-marker-mutation-guard` fixture (d), `cycle-begin-git-consistency-reconciliation` fixture (lazy-state.py only), and `cycle-end-bracket-fail-open` fixture (both scripts). Each was auditing an orthogonal concern (marker overwrite, git-lock reconciliation, fail-open bracket append) and would have started failing under the new guard. Fixed by adding `--sub-skill execute-plan` to those five invocations (3 in lazy-state.py, 2 in bug-state.py) — no assertion logic changed, only the fixture's own `--cycle-begin` setup call. Confirmed via a full sweep of every `"--cycle-begin"` call site in both files before landing the guard, not just the two call sites the plan named.
+- Docs: `user/scripts/CLAUDE.md`'s `--cycle-begin` CLI reference line now documents the hard enforcement + cross-references the retained read-side guard and the (unmodified) `lazy_core.py:10990` prose comment.
+- Gates run: `lazy-state.py --test`, `bug-state.py --test`, `lazy_parity_audit.py --repo-root .`, `doc-drift-lint.py --repo-root .` — all exit 0.
+- Files modified: `user/scripts/lazy-state.py`, `user/scripts/bug-state.py`, `user/scripts/CLAUDE.md`.
 
 **Minimum Verifiable Behavior:** `LAZY_ORCHESTRATOR=1 python3 user/scripts/lazy-state.py --cycle-begin --feature-id feat-x --nonce deadbeef --kind real --repo-root <tmp-repo>` (no `--sub-skill`) exits non-zero with the corrective stderr `--cycle-begin --kind real requires --sub-skill` and writes no cycle marker; the same command with `--kind meta` exits 0; the same command with `--kind real --sub-skill execute-plan` exits 0. This is exercised deterministically by the new `--test` smoke fixtures.
 

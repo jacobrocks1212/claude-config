@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: adhoc-cycle-begin-real-requires-sub-skill
-status: Ready
+status: Complete
 created: 2026-07-06
 phases: [1]
 complexity: mechanical
@@ -50,9 +50,9 @@ Where this plan's repo uses non-default gates or component paths (a harness-conf
 
 ## Work Units
 
-- [ ] WU-1 — lazy-state.py: `--kind real` requires `--sub-skill` guard + two `--test` fixtures
-- [ ] WU-2 — bug-state.py: coupled-pair mirror of the guard + two `--test` fixtures
-- [ ] WU-3 — user/scripts/CLAUDE.md: promote prose contract to documented hard enforcement
+- [x] WU-1 — lazy-state.py: `--kind real` requires `--sub-skill` guard + two `--test` fixtures
+- [x] WU-2 — bug-state.py: coupled-pair mirror of the guard + two `--test` fixtures
+- [x] WU-3 — user/scripts/CLAUDE.md: promote prose contract to documented hard enforcement
 
 ---
 
