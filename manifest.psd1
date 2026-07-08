@@ -23,10 +23,18 @@
     )
     Repos = @{
         # doc-drift:deliberate-divergence: algobooth — repos/algobooth/ has no Repos entry on
-        # purpose: the live repo was deleted locally and its manifest entry dropped (47b4fa4),
-        # but repos/algobooth/.claude/skills stays tracked as the cloud halves of the /lazy
-        # coupled pairs (lazy-cloud, lazy-batch-cloud). Do NOT re-add an entry while the live
-        # repo does not exist.
+        # purpose. This manifest is shared across machines: on the WORK laptop the repo does not
+        # exist locally, and a Repos entry made setup.ps1 recreate an empty personal-repo husk
+        # dir there — 47b4fa4 dropped the entry to stop that. On the PERSONAL machine the repo IS
+        # live and actively developed; its .claude symlinks already exist, so it needs no entry
+        # to (re)create them — it only needs its symlink targets present in-repo. So the tracked
+        # content under repos/algobooth/.claude/ stays tracked (resolves the personal machine's
+        # symlinks; inert on the work laptop, since no entry ⇒ setup.ps1 skips it): skills/ (cloud
+        # halves of the /lazy pairs — lazy-cloud, lazy-batch-cloud, mcp-test) AND skill-config/
+        # (quality-gates, catalogs, runtime guidance — the mcp-test commit/quality rules). NOTE:
+        # 47b4fa4 over-deleted skill-config + settings.local.json too; skill-config restored
+        # (settings.local.json intentionally left out — its last version was stale host cruft).
+        # Do NOT re-add a Repos entry while the work laptop lacks the live repo.
         'cognito-forms' = @{
             Path           = 'C:\Users\JacobMadsen\source\repos\Cognito Forms'
             RootFiles      = @(
