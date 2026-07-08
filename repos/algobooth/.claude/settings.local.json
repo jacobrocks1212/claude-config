@@ -1,0 +1,52 @@
+{
+  "env": {
+    "BASH_ENV": "/home/jacob/repos/claude-config/user/scripts/claude-bash-env.sh"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git --version:*)",
+      "Bash(git config:*)",
+      "Bash(dir:*)",
+      "Bash(powershell.exe -Command:*)",
+      "Bash(npm run type-check:*)",
+      "Bash(npm run lint)",
+      "Bash(npm run build:*)",
+      "Bash(npm run test:run:*)",
+      "Bash(npm run dev)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_wait_for",
+      "Bash(npm ls:*)",
+      "Bash(findstr:*)",
+      "Bash(node -e:*)",
+      "mcp__plugin_playwright_playwright__browser_type",
+      "mcp__plugin_playwright_playwright__browser_console_messages",
+      "mcp__plugin_playwright_playwright__browser_evaluate",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "mcp__plugin_playwright_playwright__browser_close",
+      "Bash(npm install:*)",
+      "Bash(curl:*)",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "mcp__plugin_playwright_playwright__browser_press_key",
+      "Bash(more:*)",
+      "mcp__plugin_playwright_playwright__browser_select_option",
+      "mcp__plugin_playwright_playwright__browser_run_code",
+      "Skill(test-driven-development)",
+      "Bash(git add:*)",
+      "Skill(commit)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Skill(rust-best-practices)",
+      "Skill(vuejs-development)",
+      "Skill(typescript-advanced-types)",
+      "Bash(cargo check:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo test:*)",
+      "Bash(npm run qg:*)",
+      "Bash(python:*)",
+      "Bash(npm run tauri:dev:*)",
+      "Bash(ls:*)"
+    ]
+  },
+  "prefersReducedMotion": true
+}

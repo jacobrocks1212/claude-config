@@ -29,11 +29,12 @@
         # live and actively developed; its .claude symlinks already exist, so it needs no entry
         # to (re)create them — it only needs its symlink targets present in-repo. So the tracked
         # content under repos/algobooth/.claude/ stays tracked (resolves the personal machine's
-        # symlinks; inert on the work laptop, since no entry ⇒ setup.ps1 skips it): skills/ (cloud
-        # halves of the /lazy pairs — lazy-cloud, lazy-batch-cloud, mcp-test) AND skill-config/
-        # (quality-gates, catalogs, runtime guidance — the mcp-test commit/quality rules). NOTE:
-        # 47b4fa4 over-deleted skill-config + settings.local.json too; skill-config restored
-        # (settings.local.json intentionally left out — its last version was stale host cruft).
+        # symlinks; inert on the work laptop, since no entry ⇒ setup.ps1 skips it): skills/
+        # (algobooth-ui, production-build + the cloud /lazy halves lazy-cloud, lazy-batch-cloud,
+        # mcp-test), skill-config/ (quality-gates, catalogs, runtime guidance — the mcp-test
+        # commit/quality rules), AND settings.local.json (env.BASH_ENV + allow-list). NOTE:
+        # 47b4fa4 over-deleted all three; all restored from 47b4fa4^ — settings.local.json cleaned
+        # of 33 dead JacobMadsen/strudel-dj one-shot commit allows (kept env + 42 generic entries).
         # Do NOT re-add a Repos entry while the work laptop lacks the live repo.
         'cognito-forms' = @{
             Path           = 'C:\Users\JacobMadsen\source\repos\Cognito Forms'
