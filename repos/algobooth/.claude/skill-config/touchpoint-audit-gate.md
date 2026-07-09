@@ -62,3 +62,7 @@ If you do skip, record the skip reason in the plan's §Touchpoint Summary along 
 ### Heuristic note
 
 The audit is regex-based, not AST. Some `block` verdicts may be conservative. The `AskUserQuestion` branch above covers the case where the human disagrees with the block. Document any overrides explicitly in §Plan Notes so the decision is auditable.
+
+### AGPL / IP placement gate (strudel-sidecar/)
+
+**Any new file under `strudel-sidecar/` must be justified against the SPEC's `## AGPL / IP Placement` section** — `strudel-sidecar/` is public AGPL code (`docs/legal/AGPL_PUBLICATION_MANIFEST.md`), so an unjustified file there is a disclosure, not a refactor. This applies to plans (`/write-plan`, `/implement-phase`) AND out-of-band fixes (`/fix`), which land sidecar code just as easily. If the driving SPEC lacks the section, or there is no SPEC (ad-hoc fix), record the justification explicitly in the plan/fix notes — why the code can't be host-side computation over data that already crosses the wire — and honor the coupled updates: a new kind of `audio_event.capnp` payload → `docs/legal/AGPL_ISOLATION.md` updated in the same commit; a new AGPL dependency or any server-side Strudel execution → `AGPL_PUBLICATION_MANIFEST.md` entry first. If the placement can't be justified, surface it (`AskUserQuestion` / `NEEDS_INPUT.md`) instead of silently landing sidecar code.

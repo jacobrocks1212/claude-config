@@ -42,3 +42,14 @@ If the feature affects audio output (new DSP, effects, gain changes, routing, mi
 ### MCP Test Scenario
 
 If the feature introduces new MCP tools or observable behaviors, the spec should note that a `/mcp-test` scenario will be created or updated during implementation. Reference the scenario path: `docs/testing/mcp-tests/{feature-slug}.md`.
+
+## AGPL / IP Placement (AlgoBooth — required SPEC section)
+
+Any SPEC for a feature touching **pattern evaluation, the sidecar, or IPC** MUST include an `## AGPL / IP Placement` section answering, in order:
+
+- **(a)** Does any part need `@strudel/*`/`superdough`, live `Pattern` objects, or the eval scheduler? If **no** → all code lands host-side; state that and move on (the remaining questions are N/A).
+- **(b)** For each sidecar-side piece: why can't it be host-side computation over data that already crosses the wire? (`strudel-sidecar/` is public AGPL code — see `docs/legal/AGPL_PUBLICATION_MANIFEST.md`.)
+- **(c)** Does it add a new kind of payload to `audio_event.capnp`? → `docs/legal/AGPL_ISOLATION.md` must be updated in the same commit.
+- **(d)** Does it introduce a new AGPL dependency (e.g. `hydra-synth`) or any server-side Strudel execution? → manifest entry first.
+
+Features with no contact with pattern evaluation, the sidecar, or IPC may omit the section. Downstream gates enforce this: `/spec-phases`' AGPL / IP Placement audit refuses to draft phases against a touching SPEC that lacks the section, and the planning/fix touchpoint gate refuses unjustified new files under `strudel-sidecar/`.
