@@ -54,3 +54,15 @@ Record the OBSERVED ground truth (the actual tool calls + numbers, or the logged
 **Step D — NEEDS_INPUT fallback (genuinely-ambiguous only).** Reserve `NEEDS_INPUT.md` for the case where the missing tool's surface/shape cannot be inferred from the SPEC at all (so even a stub deliverable cannot be named). A merely-missing tool with an inferable surface is auto-authored, never halted.
 
 > **Worked example.** A SPEC names `set_slip_pad_template` in `## Validation Criteria`. The audit enumerates `{set_slip_pad_template}`, greps `tool-methods.ts` + the `inventory::submit!` sites via `mcp-tool-catalog.md` — zero hits in both → ledger row `set_slip_pad_template | no | no hits in either source` → auto-authored up-front deliverable `- [ ] Register MCP tool \`set_slip_pad_template\` (required by Validation Criteria; absent from catalog)`. The tool now lands BEFORE `/mcp-test`, eliminating the corrective loop (the `f5-slip-mode` failure mode). A SPEC whose tools all resolve to `registered? = yes` produces a clean ledger and no auto-authored phase.
+
+---
+
+#### AGPL / IP Placement Audit (AlgoBooth — BEFORE DRAFTING PHASES)
+
+> **Why this gate exists.** `strudel-sidecar/` is publicly published AGPL code (`docs/legal/AGPL_PUBLICATION_MANIFEST.md`) — every file placed there is disclosed. Placement is an IP decision made at SPEC time; phases must not silently move logic sidecar-side.
+
+**Step A — Locate the SPEC's `## AGPL / IP Placement` section.** It is REQUIRED for any SPEC touching pattern evaluation, the sidecar, or IPC. If the feature touches those surfaces and the SPEC lacks the section: interactive → refuse to draft phases and route back to `/spec` to author it (questions (a)–(d): sidecar-runtime need? per-piece why-not-host-side? new `audio_event.capnp` payload kind? new AGPL dependency / server-side Strudel execution?); `--batch` → `NEEDS_INPUT.md`. If the feature touches none of those surfaces, record the skip reason and move on.
+
+**Step B — Justify every sidecar-side deliverable.** Any phase deliverable that creates or grows a file under `strudel-sidecar/` must map to a sidecar-side piece the section's question (b) justifies (why it can't be host-side computation over data that already crosses the wire). An unjustified sidecar-side deliverable is a placement change — move it host-side or route the placement question back to the SPEC; never draft it as-is.
+
+**Step C — Schedule the coupled legal artifacts.** A phase adding a new kind of payload to `audio_event.capnp` must carry `docs/legal/AGPL_ISOLATION.md` updated **in the same commit** as an explicit deliverable. A phase introducing a new AGPL dependency (e.g. `hydra-synth`) or any server-side Strudel execution must be preceded by a `docs/legal/AGPL_PUBLICATION_MANIFEST.md` entry deliverable (manifest entry first).
