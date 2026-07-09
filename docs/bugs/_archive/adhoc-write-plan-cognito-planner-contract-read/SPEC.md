@@ -8,6 +8,8 @@
 **Status:** Fixed
 **Severity:** P3
 **Discovered:** 2026-07-09 (evidence: `attribute_predispatch.py --full` over the sandbox subagent transcript — contract read = 2nd largest Read at 17.8KB)
+**Fixed:** 2026-07-09
+**Fix commit:** 39af3ce
 **Placement:** docs/bugs/adhoc-write-plan-cognito-planner-contract-read
 **Related:** `repos/cognito-forms/.claude/skills/write-plan-cognito/SKILL.md`; `docs/bugs/adhoc-lane-plan-single-lane-seam-classification` (same run)
 

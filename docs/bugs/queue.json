@@ -8,12 +8,6 @@
       "severity": null
     },
     {
-      "id": "adhoc-write-plan-cognito-planner-contract-read",
-      "name": "write-plan-cognito: planner-side lane-contract read is unmandated",
-      "spec_dir": "adhoc-write-plan-cognito-planner-contract-read",
-      "severity": null
-    },
-    {
       "id": "test-filtered-stale-check-hardcodes-bin-debug",
       "name": "test-filtered.ps1 stale-check hardcodes `bin\\Debug\\` \u2014 permanent false positive for non-default OutputPath test projects \u2014 Investigation Spec",
       "spec_dir": "test-filtered-stale-check-hardcodes-bin-debug",
