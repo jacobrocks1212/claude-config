@@ -13,6 +13,7 @@
 > ping-ponging a build between owners.
 
 **Status:** Draft
+**Friction-reduction feature:** yes
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research
@@ -100,7 +101,7 @@ transient builds (the recycle bug's Vector B) stop being invisible to serializat
   single standard format eliminates that class. The existing skill-config precedent for
   non-markdown machine-read config already exists (`ado-doc-integration.yml`,
   `capabilities.txt`).
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** DECIDED 2026-07-09 — operator confirmed recommendation A (see Locked Decisions table).
 
 ### D2. Manifest schema (per-op entry shape)
 
@@ -202,7 +203,7 @@ transient builds (the recycle bug's Vector B) stop being invisible to serializat
   anchoring (the invoke-vs-reference discrimination from
   `build-queue-outcome-opacity-and-inspect-deny`), deny-via-JSON, fail-OPEN with the
   `hook-error.json` breadcrumb.
-- **Resolution:** OPEN — recommendation is B; awaiting operator confirmation (this decides
+- **Resolution:** DECIDED 2026-07-09 — operator confirmed recommendation B (see Locked Decisions table) (this decides
   which repos are gated and how enforcement can degrade).
 
 ### D5. Arbitration with the orchestrator-takeover contract (transient builds and the queue)
@@ -252,7 +253,7 @@ transient builds (the recycle bug's Vector B) stop being invisible to serializat
   Cognito build finishing while a Tauri build runs correctly skips the compiler recycle. D is
   the fallback if live-fire testing exposes friction between `run_transient_build`'s awaiting
   and the wrapper's tail loop.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (this shapes how
+- **Resolution:** DECIDED 2026-07-09 — operator confirmed recommendation A (see Locked Decisions table) (this shapes how
   the autonomous pipeline runs AlgoBooth's long builds).
 
 ### D6. Cross-repo queue fairness
@@ -296,7 +297,7 @@ transient builds (the recycle bug's Vector B) stop being invisible to serializat
   a large hygiene-rewrite cost and no current consumer. Whether the hook should be
   silently inert or loudly inert off-workstation is the one operator-visible nuance — recommend
   silently inert (fail-OPEN family behavior).
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (v1 scope
+- **Resolution:** DECIDED 2026-07-09 — operator confirmed recommendation A (see Locked Decisions table) (v1 scope
   boundary).
 
 ### D8. Skill migration path (Cognito four + AlgoBooth siblings)
@@ -467,6 +468,13 @@ Estimate: ~4 sessions (Phases 1-2 one, Phase 3 one, Phase 4 one, Phase 5 folds i
 | Enforcement fail-OPEN | Manifest unreadable / no python / non-git cwd | Command allowed; `hook-error.json` breadcrumb on internal error | `test_hooks.py` |
 | No takeover ping-pong | Subagent raw `tauri build` in manifested AlgoBooth | One `LONG-BUILD-OWNERSHIP-TAKEOVER` deny; orchestrator wrapper invocation allowed (wrapper exemption) | `test_hooks.py` ordered-chain case |
 | Bypass + wrapper exemptions intact | `BUILD_QUEUE_BYPASS=1 dotnet build`; wrapper invocation carrying `-Exec *-filtered.ps1` | Both allowed | `test_hooks.py` existing cases stay green |
+
+## KPI Declaration
+
+Existing registry rows (docs/kpi/registry.json) — generalization extends the measured enforcement/fidelity surface to opted-in repos:
+
+- kpi: build-queue-false-green-rate
+- kpi: build-queue-raw-invocation-deny-recurrence
 
 ## Locked Decisions (2026-07-09 — Jacob, interactive decision round)
 

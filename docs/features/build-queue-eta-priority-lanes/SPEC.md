@@ -12,6 +12,7 @@
 > lock/reclaim/hygiene/occupancy machinery untouched.
 
 **Status:** Draft
+**Friction-reduction feature:** yes
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research
@@ -145,7 +146,7 @@ regression of the fidelity/hygiene invariants the recent bug fixes paid for.
 - **Recommendation:** A. It puts the prediction exactly where the waiting already happens, uses
   `≈` and `?` so a prediction is never mistaken for a measurement, and leaves the banner
   contract byte-identical (asserted by the existing `Format-BuildQueueBanner` Pester cases).
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (this is the
+- **Resolution:** DECIDED 2026-07-09 — operator confirmed recommendation A (see Locked Decisions table) (this is the
   operator/agent-visible display shape).
 
 ### D4. Lane admission rule: explicit per-op lane class, not a duration-percentile threshold
@@ -174,7 +175,7 @@ regression of the fidelity/hygiene invariants the recent bug fixes paid for.
   misclassification is a one-line manifest fix. Note `mstest` is only *usually* fast (an
   unfiltered full run is minutes) — lane assignment is a policy statement about typical use,
   and the starvation bound (D5) caps the damage of an occasional slow fast-lane op.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (configurability
+- **Resolution:** DECIDED 2026-07-09 — operator confirmed recommendation A (see Locked Decisions table) (configurability
   boundary: who classifies ops, and in which file).
 
 ### D5. Lane mechanics + starvation bound: two logical lanes over ONE slot, K consecutive-fast cap
@@ -208,7 +209,7 @@ regression of the fidelity/hygiene invariants the recent bug fixes paid for.
   operator prefers near-FIFO. The counter file is advisory scheduling state — if it is missing
   or corrupt, readers treat it as `K` (i.e. fast-lane privilege suspended, pure FIFO), so the
   failure mode is the old behavior, never a livelock.
-- **Resolution:** OPEN — recommendation is A with K=3; awaiting operator confirmation (the
+- **Resolution:** DECIDED 2026-07-09 — operator confirmed recommendation A with K=3 (see Locked Decisions table) (the
   starvation bound is the operator-felt latency policy).
 
 ### D6. Preemption: never
@@ -230,7 +231,7 @@ regression of the fidelity/hygiene invariants the recent bug fixes paid for.
   runs to its own exit; preemption converts normal operation into the crash path. The lane rule
   already caps fast-op latency at "one heavy build," which is the irreducible cost of a
   single-slot machine.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation (per the stub,
+- **Resolution:** DECIDED 2026-07-09 — operator confirmed recommendation A (see Locked Decisions table) (per the stub,
   respected as a recommendation, not silently locked).
 
 ### D7. No-fidelity-regression constraint: lanes are admission-order-only
@@ -370,6 +371,12 @@ Estimate: ~3 sessions (1: Phases 1-2; 2: Phase 3; 3: Phase 4 + live verification
 | No preemption | Fast ticket arrives mid-heavy-build | Active build runs to exit; no kill/requeue | Live check; absence of kill paths in diff |
 | Fidelity invariants intact | Lane scenarios incl. reclaim window | Reclaim still global-lowest-seq; occupancy/recycle gating call pattern unchanged | Phase 4 Pester net |
 | Degraded-state safety | Delete/corrupt `stats/` or `fast-passes.count` mid-queue | ETAs → `?`; admission → pure FIFO; builds complete normally | Manual fault injection |
+
+## KPI Declaration
+
+Existing registry row (docs/kpi/registry.json) — the blind-wait friction this feature targets is exactly the queue-wait median:
+
+- kpi: build-queue-wait-time-p50
 
 ## Locked Decisions (2026-07-09 — Jacob, interactive decision round)
 
