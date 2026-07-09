@@ -1,6 +1,6 @@
 ---
 name: retro
-description: Retrospective analysis of completed work — identifies issues, incorrect assumptions, and workflow improvements. After writing the retro plan, dispatches a Sonnet spec-body-fixer (Step 6b.5) to propagate Minor doc-drift divergences (resolved-research checklists, stale counts, deferred-API surface entries, stale Status) into SPEC.md inline and annotates the plan's Minor rows with the fix commit — Significant rows untouched. RETRO_DONE.md (Step 6c) only fires when the Significant table is empty.
+description: Retrospective analysis of completed work — identifies issues, wrong assumptions, and workflow improvements; propagates Minor doc-drift fixes into SPEC.md. RETRO_DONE.md fires only on an empty Significant table.
 argument-hint: [feature-name | SPEC path | PHASES path] [--auto]
 plan-mode: never
 ---

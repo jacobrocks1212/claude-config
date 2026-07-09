@@ -1,6 +1,6 @@
 ---
 name: systematic-debugging
-description: USE WHEN encountering bugs, errors, test failures, unexpected behavior, or something not working. USE BEFORE proposing any fix. USE WHEN something is broken, failing, crashing, or behaving incorrectly. Triggers on "bug", "broken", "not working", "failing", "error", "crash", "wrong", "unexpected", "doesn't work", "issue", "problem", "fix this".
+description: USE WHEN encountering bugs, errors, test failures, or unexpected behavior. USE BEFORE proposing any fix. Triggers on 'bug', 'broken', 'failing', 'error', 'crash', 'not working'.
 ---
 
 # Systematic Debugging

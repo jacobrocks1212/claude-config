@@ -1,6 +1,6 @@
 ---
 name: human-writing
-description: USE WHEN writing documentation, README files, blog posts, user-facing text, commit messages, PR descriptions, or any prose content. USE WHEN content should sound natural, human, and conversational. USE WHEN avoiding AI-sounding text, corporate speak, or making writing more authentic. Triggers on "write", "documentation", "README", "blog", "article", "human-like", "natural", "conversational", "less robotic", "rewrite", "improve writing", "make it sound better".
+description: USE WHEN writing prose — docs, READMEs, blogs, commit messages, PR descriptions — that should sound natural and human, avoiding AI-sounding or corporate tone. Triggers on 'write', 'rewrite', 'make it sound better'.
 ---
 
 # Human-Style Writing

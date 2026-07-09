@@ -1,6 +1,6 @@
 ---
 name: tailwind-design-system
-description: USE WHEN working with Tailwind CSS, styling, CSS classes, design tokens, theming, or dark mode. USE WHEN building UI components, buttons, forms, cards, or any styled elements. USE WHEN discussing responsive design, design systems, or component variants. Triggers on "Tailwind", "CSS", "styling", "class", "theme", "dark mode", "responsive", "design system", "component library", "CVA", "variant".
+description: USE WHEN styling with Tailwind CSS — design tokens, theming, dark mode, responsive design, component variants/CVA. Triggers on 'Tailwind', 'CSS', 'theme', 'design system'.
 ---
 
 # Tailwind Design System

@@ -1,6 +1,6 @@
 ---
 name: lazy
-description: Stateless dispatcher — infers project state from filesystem via lazy-state.py, invokes exactly ONE sub-skill per invocation to progress the current feature. Distinguishes STUB specs (canonical `> Draft (pre-Gemini)` trailer OR queue.json `"stub": true` → Step 4.5 dispatches interactive /spec to shape the baseline via AskUserQuestion) from STRUCTURED specs awaiting research (no stub markers, missing RESEARCH.md → Step 5 halts on needs-research and waits for the user's Gemini upload — single-turn, no conversation). The `__mark_complete__` special action runs an MCP-coverage audit (Gate 1) before the SPEC flip — uncovered SPEC Locked Decisions route to authoring the missing MCP coverage (or a documented test-exempt note) per the completeness-first standing policy (D7), deferring the flip; the operator is never asked
+description: Stateless feature-pipeline dispatcher — reads state via lazy-state.py and invokes exactly ONE sub-skill per invocation (stub-spec handling, needs-research halt, gated __mark_complete__).
 argument-hint: [optional: "status" to report, "skip" to skip current feature, or an ad-hoc task / `--adhoc "<task>"` to enqueue work at the top of the queue]
 plan-mode: never
 ---

@@ -1,6 +1,6 @@
 ---
 name: ingest-research
-description: Ingest Gemini deep-research results into per-feature RESEARCH.md + RESEARCH_SUMMARY.md, then update SPEC.md to drop the > Draft (pre-Gemini) trailer and clear queue.json "stub": true. Default mode scans docs/gemini-sprint/results/*.txt; optional path args ingest one-off files from anywhere (Downloads, phone-synced folders, etc.). Designed for dispatch by /lazy-batch's Step 0.5 pre-loop ingest check; also invocable standalone.
+description: Ingest Gemini deep-research results into per-feature RESEARCH.md + RESEARCH_SUMMARY.md and clear stub markers. Scans docs/gemini-sprint/results/ by default; path args ingest one-off files. Dispatched by /lazy-batch Step 0.5 or standalone.
 argument-hint: [<path-to-research-file> ...]
 plan-mode: never
 model: sonnet

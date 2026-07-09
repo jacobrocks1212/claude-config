@@ -1,6 +1,6 @@
 ---
 name: onboard
-description: Read-only codebase onboarding — inventories structure, finds entry points, traces real execution paths, and explains a repo using only code-grounded facts. Use when orienting in an unfamiliar codebase or asking "where do I start" / "what owns this behavior".
+description: Read-only codebase onboarding — structure, entry points, real execution paths, code-grounded explanation. Use when orienting in an unfamiliar repo or asking 'where do I start'.
 argument-hint: "[area or question, e.g. 'payments flow' or 'where submissions persist']"
 plan-mode: never
 allowed-tools: ["Read", "Glob", "Grep", "Bash", "Agent"]

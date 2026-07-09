@@ -52,6 +52,14 @@ Brief each `Explore` agent (read-only — it must NOT edit anything):
 
 Use `find_symbol_usages` / `get_callers` to assess blast radius for any symbol the plan will change.
 
+**Fallback — dispatch unavailable:** if this context cannot dispatch subagents (the `Agent` tool
+is not exposed to the current agent type, or dispatch is denied by policy in the current run —
+e.g. the lazy cycle-subagent inline override), perform the SAME per-file verification inline with
+the tree-sitter tools / `Read` / `Grep`, answering every bullet of the briefing above per file.
+The gate's substance is the verified audit table, not the dispatch mechanism. Note
+`verified: inline (dispatch unavailable)` above the Step C table so the exit check below is
+honest about method. Never skip the gate because fan-out failed.
+
 ### Step C — Synthesize the verified audit table
 
 Collapse all agent findings into one table. This is the gate's output artifact:
@@ -96,7 +104,8 @@ The drafting step that follows this gate MUST consume the Step C table:
   the real symbols.
 
 **Gate exit check (all must be true before proceeding to draft/write the artifact):**
-- [ ] Every candidate touchpoint was verified by an `Explore` agent (not from memory).
+- [ ] Every candidate touchpoint was verified against the live codebase — by an `Explore` agent,
+      or inline per the Step B fallback when dispatch is unavailable (never from memory).
 - [ ] The Step C audit table exists and every planned path is `exists: yes` or `net-new`.
 - [ ] Every reuse directive names a concrete `file:symbol`.
 - [ ] Every contradiction was either corrected in-plan (mechanical) or escalated via `NEEDS_INPUT.md`

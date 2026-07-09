@@ -5,19 +5,24 @@
 #
 # TWO INDEPENDENT TRIPS:
 #
-# 1. agent_id-targeted (D4 — arming-free, the load-bearing recursion trip):
+# 1. agent_id-targeted (D4 — arming-free, the load-bearing routing/lifecycle trip):
 #    a dispatched cycle subagent is EXACTLY the context where the PreToolUse
 #    payload carries an `agent_id` field (Claude Code injects it ONLY when the
 #    hook fires from within a subagent; it is ABSENT on the main thread —
 #    confirmed against the installed version's hook-input schema). So whenever
-#    `agent_id` is present this hook DENIES the recursion/lifecycle/routing ops
-#    a runaway needs to form a loop: recursive Agent/Task dispatch, a nested
-#    /lazy-batch invocation, the orchestrator-only lazy-state.py/bug-state.py
-#    routing+lifecycle flags, and dev:kill/dev:restart — with NO marker arming
-#    required. When `agent_id` is ABSENT (the main-thread orchestrator) all of
-#    these are ALLOWED, so the orchestrator is never self-denied (this fixes the
-#    Proven-Finding-#3 self-deny defect — the orchestrator's own legitimate
-#    cycle dispatch + between-cycle lifecycle ops always pass).
+#    `agent_id` is present this hook DENIES the lifecycle/routing ops a runaway
+#    needs to form a loop: a nested /lazy-batch invocation, a /lazy* Skill call,
+#    the orchestrator-only lazy-state.py/bug-state.py routing+lifecycle flags,
+#    and dev:kill/dev:restart — with NO marker arming required. When `agent_id`
+#    is ABSENT (the main-thread orchestrator) all of these are ALLOWED, so the
+#    orchestrator is never self-denied (this fixes the Proven-Finding-#3
+#    self-deny defect — the orchestrator's own legitimate cycle dispatch +
+#    between-cycle lifecycle ops always pass).
+#    NOTE (2026-07-09): recursive Agent/Task dispatch is NO LONGER denied — the
+#    harness allows nested subagent dispatch, and denying it broke mandated
+#    read-only fan-outs (touchpoint-audit-gate). A runaway can't advance the
+#    pipeline through plain Agent dispatch alone; the ops above stay denied.
+#    See docs/bugs/adhoc-containment-denies-mandated-explore-fanout.
 #
 # 2. marker-gated (retained complementary carrier): while the CYCLE-SUBAGENT
 #    marker (~/.claude/state/lazy-cycle-active.json) is present, the 2nd-feature
@@ -150,9 +155,9 @@ def _resolve_marker_path(cwd):
 CORRECTIVE = (
     "you are a single cycle subagent — STOP after your commit+push+report; "
     "routing the next cycle is the orchestrator's job. This op "
-    "(lazy-state.py routing/lifecycle, dev:kill/restart, recursive Agent "
-    "dispatch, or a second-feature/over-ceiling commit) is DENIED in-flight "
-    "while a cycle dispatch is active."
+    "(lazy-state.py routing/lifecycle, dev:kill/restart, a /lazy* skill or "
+    "nested batch invocation, or a second-feature/over-ceiling commit) is "
+    "DENIED in-flight while a cycle dispatch is active."
 )
 
 # Commit-count backstop ceiling (SPEC §C2 Open Question — generous; tunable).
@@ -380,12 +385,14 @@ def main():
 
     tool_name = payload.get("tool_name", "")
 
-    # --- Recursive dispatch: Agent/Task tool call from a subagent is denied. ---
-    if tool_name in ("Agent", "Task"):
-        if is_subagent:
-            _deny(CORRECTIVE, "recursive-agent-dispatch")
-        # main-thread orchestrator dispatch → allow (no self-deny).
-        _allow()
+    # --- Recursive dispatch: DELIBERATELY NOT DENIED (operator decision 2026-07-09).
+    #     The harness DOES allow subagents to dispatch Agent/Task (verified live:
+    #     a general-purpose subagent's Agent call reaches this hook), and blanket-
+    #     denying it broke legitimate mandated fan-outs (touchpoint-audit-gate's
+    #     Explore dispatch — docs/bugs/adhoc-containment-denies-mandated-explore-fanout).
+    #     Runaway containment does NOT need it: a runaway cannot advance the
+    #     pipeline without lazy-state.py routing/lifecycle ops, /lazy* skills, or
+    #     a nested batch invocation — all still denied below. ---
 
     # --- Skill-tool /lazy* intercept (cycle-subagent-runs-orchestrator-work Phase 3,
     #     defense-in-depth): a subagent must not invoke /lazy* via the Skill tool,

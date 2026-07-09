@@ -1,6 +1,6 @@
 ---
 name: disk-cleanup
-description: Audit and recover disk space on Jacob's Windows dev machine. Invoke when the user reports low disk space or asks to analyze/clean up disk usage. Use the read-only scan scripts first, then target the biggest offenders with the destructive scripts only after explicit approval.
+description: Audit and recover disk space on this Windows machine. Read-only scans first; destructive cleanup only after explicit approval. Use on low-disk-space reports.
 version: 1.0.0
 allowed-tools: ["Bash", "Read", "Edit", "Write"]
 ---

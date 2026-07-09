@@ -41,7 +41,7 @@ The "user" of this harness-internals feature is the orchestrator (and, by extens
 
 - **Long-build prose rule** — `repos/algobooth/.claude/skill-config/long-build-ownership.md`: orchestrator owns long builds, runs them `Bash run_in_background: true` from the main session, `cargo check --release` before a packaged `tauri build`. Advisory; no enforcement.
 - **`--ensure-runtime` subcommand** — `lazy_core.ensure_runtime(repo_root, *, config, probe, restart, stale_check)` (`user/scripts/lazy_core.py` ~L6166), surfaced as `lazy-state.py --ensure-runtime`. Probe `/health` → `stale_check` (native source newer than boot stamp) → `restart()` (background `dev:restart`, bounded curl-until-200) → assert MCP tool present. Returns `{status, mcp_tools_present, health_code}`. AlgoBooth specifics parameterized in `_ENSURE_RUNTIME_DEFAULT_CONFIG`; injectable callables keep `--test` hermetic. Called from `/lazy-batch` Step 1d.0 (orchestrator session).
-- **Cycle-subagent containment** — `lazy-cycle-containment.sh` + `lazy-state.py --cycle-begin/--cycle-end` already deny a subagent a defined set of orchestrator-only ops (recursive dispatch, `dev:kill`/`dev:restart`, etc.). This is the existing enforcement seam the long-build/runtime ownership rule extends.
+- **Cycle-subagent containment** — `lazy-cycle-containment.sh` + `lazy-state.py --cycle-begin/--cycle-end` already deny a subagent a defined set of orchestrator-only ops (routing/lifecycle flags, `dev:kill`/`dev:restart`, etc.; the former recursive-dispatch deny was removed 2026-07-09 — see `docs/bugs/adhoc-containment-denies-mandated-explore-fanout`). This is the existing enforcement seam the long-build/runtime ownership rule extends.
 
 ### Locked mechanism (post-research)
 

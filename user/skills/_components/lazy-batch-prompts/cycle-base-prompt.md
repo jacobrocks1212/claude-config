@@ -133,8 +133,9 @@ Completeness-first (D7 — standing policy, pre-authorized, both modes):
 
 <!-- @section inline-override pipelines=feature,bug modes=workstation skills=all -->
 Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
-  This subagent does NOT have the `Agent` tool — any Agent() call fails and
-  wastes the cycle. Regardless of what the dispatched skill's SKILL.md says about
+  Do NOT use the `Agent` tool — sub-subagent dispatch is FORBIDDEN in a cycle
+  (policy; do not rely on the tool being absent or on a hook denying it).
+  Regardless of what the dispatched skill's SKILL.md says about
   spawning sub-subagents (test-agent, impl-agent, research subagents A–G, etc.),
   perform ALL of it INLINE with Read / Edit / Write. The dispatch-level
   prohibition (in addition to the TERMINAL STOP categorical ban on pipeline ops):
@@ -146,8 +147,9 @@ Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
 
 <!-- @section cloud-override pipelines=feature,bug modes=cloud skills=all -->
 Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
-  This cloud subagent does NOT have the `Agent` tool — any Agent() call fails
-  and wastes the cycle. Perform ALL skill-mandated sub-subagent work (test-agent,
+  Do NOT use the `Agent` tool — sub-subagent dispatch is FORBIDDEN in a cloud
+  cycle (policy; do not rely on the tool being absent or on a hook denying it).
+  Perform ALL skill-mandated sub-subagent work (test-agent,
   impl-agent, research subagents A–G, etc.) INLINE with Read / Edit / Write. The
   dispatch-level prohibition (in addition to the TERMINAL STOP categorical ban on
   pipeline ops): never invoke another /lazy or /lazy-batch. Do NOT write BLOCKED.md

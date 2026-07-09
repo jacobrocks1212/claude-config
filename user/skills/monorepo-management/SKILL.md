@@ -1,6 +1,6 @@
 ---
 name: monorepo-management
-description: USE WHEN working with monorepos, workspaces, multiple packages, or multi-project repositories. USE WHEN using Nx, Turborepo, pnpm workspaces, or npm workspaces. USE WHEN managing shared dependencies, building across packages, or organizing code in apps/ and packages/. Triggers on "monorepo", "workspace", "Nx", "Turborepo", "pnpm", "packages/", "apps/", "shared dependencies", "multi-package", "affected", "turbo.json", "nx.json".
+description: USE WHEN working with monorepos or workspaces — Nx, Turborepo, pnpm/npm workspaces, shared dependencies, affected builds. Triggers on 'monorepo', 'workspace', 'Nx', 'affected', 'turbo.json'.
 ---
 
 # Monorepo Management

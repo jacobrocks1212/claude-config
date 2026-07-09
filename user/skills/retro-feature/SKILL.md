@@ -1,6 +1,6 @@
 ---
 name: retro-feature
-description: Run the Step 9 retro phase end-to-end as a single subagent invocation. Loops /retro + /execute-plan until RETRO_DONE.md is on disk, a BLOCKED.md / NEEDS_INPUT.md halt fires, or max-rounds is reached. Mirrors /plan-feature's composition shape — consolidates a multi-cycle state-machine phase into one orchestrator round-trip.
+description: Run the Step 9 retro phase end-to-end in one subagent invocation — loops /retro + /execute-plan until RETRO_DONE.md, a halt sentinel, or max-rounds.
 argument-hint: <path/to/feature-dir-or-SPEC.md> [--max-rounds N] [--batch]
 plan-mode: never
 allowed-tools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit", "Agent"]

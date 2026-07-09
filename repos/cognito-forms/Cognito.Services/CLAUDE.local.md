@@ -2,84 +2,24 @@
 
 ## Gotchas
 - **ASP.NET MVC** (System.Web.Mvc) — NOT Web API, NOT .NET Core (in net472 mode)
-- **Dual-target framework**: Builds `net472` by default, `net10.0` for NETCORE Debug. Use `*.Framework.cs` / `*.Core.cs` suffix pattern for platform-specific code.
-- Check project's .csproj for LangVersion before using newer C# syntax
-- Controllers inherit `BaseController` (extends `Controller`), NOT `ApiController`
+- **Dual-target framework**: builds `net472` by default, `net10.0` for NETCORE Debug. Use `*.Framework.cs` / `*.Core.cs` suffix pattern for platform-specific code.
+- Controllers inherit `BaseController` (extends `Controller`), NOT `ApiController`; main API controllers live under `Controllers/SvcControllers/`
 - Return types: `JsonNetResult<T>`, `SerializeToResponseStream()`, NOT `IActionResult`
 - SvcControllers take `Module<IXyzService>` as constructor parameter (Autofac DI)
-- **Static assets (JS/CSS/HTML) don't need backend builds** — Files in `Views/` like `build.js`, `build.htm`, `build.scss` are served directly by IIS. Only `.cs` file changes require `dotnet build`.
-
-## Controller Organization
-```
-Controllers/
-  Core/              Admin/internal endpoints (PlanCoreController, TemporaryCoreController)
-  SvcControllers/    Main API — the primary controller directory
-    Form/            FormsAdminController, FormsPublicController, LoadFormController, SignatureController
-    Auth/            Authentication controllers
-    Integrations/    FileStorageController, IntegrationController, OauthController
-    Payment/         PaymentAdminController, PaymentAccountController
-    CognitoPay/      CognitoPayAccountController, CognitoDisputesController, CognitoPayPaymentController
-  StripeController   Webhook handler
-  PublicSite/        Marketing pages
-```
-
-## BaseController
-```csharp
-public abstract class BaseController : Controller
-{
-    protected ICoreService CoreService { get; set; }
-    protected JsonNetResult<object> JsonResult(object value);
-    protected void SerializeToResponseStream(object value);
-    protected T Deserialize<T>(string json, IStorageContext context);
-    protected string Serialize(object value, ...);
-}
-```
-
-## DI
-- `WebAppModule.cs` (Autofac) — registers web-layer services
-- `WebApplication.cs` — app startup, route registration
-
-## Infrastructure/
-- `Authentication/` — AuthManager, SessionManager
-- `Authorization/` — Authorization logic
-- `Integration/` — OAuthService, IOauthService
-- `Vue/` — Server-side Vue model/template/CSS builders for form rendering
-- `Routes/` — OrgScopedRoute and custom routing
-- Also: `Astro/`, `RateLimiting/`, `Square/`, `Telemetry/`
-
-## Views/
-Server-rendered MVC views — legacy pages, marketing, email templates, OAuth callbacks.
-- `Views/Shared/` — build.js, build.htm, build.scss (form builder UI)
-- `Views/Admin/` — entries.js, publish.js (admin pages)
-- `Views/LoadForm/` — form rendering pages
+- **Static assets (JS/CSS/HTML) don't need backend builds** — files in `Views/` like `build.js`, `build.htm`, `build.scss` are served directly by IIS. Only `.cs` changes require a build.
 
 ## build.js — MANDATORY Skill Invocation
-
-**BEFORE editing `Views/Shared/build.js`, you MUST invoke the `/build-js` skill.**
-
-This skill provides an auto-generated index of the 22K+ line file, helping you:
-- Find existing code before proposing changes (avoid duplicates)
-- Locate HasChanges rules, event handlers, and computed properties
-- Understand file structure and insertion points
-
-If the index is stale, regenerate it:
+**BEFORE editing `Views/Shared/build.js` (22K+ lines), you MUST invoke the `/build-js` skill** — an auto-generated index for finding existing code before proposing changes (avoid duplicates), locating HasChanges rules / event handlers / computed properties, and insertion points. If stale, regenerate (worktree-aware):
 ```bash
 node ~/.claude/skills/build-js/tools/generate-index.mjs
 ```
 
-The script supports git worktrees automatically.
-
----
-
 ## build.js Vue Integration Pattern
+Adding a new Form property that needs Vue binding in build.htm requires **ALL THREE** steps:
 
-When adding a new Form property that needs Vue binding in build.htm, you must complete **ALL THREE** steps:
-
-### 1. Add Computed Property for Vue Binding
-The `{binding propertyName}` syntax in build.htm requires a computed property in build.js to serialize the data:
-
+### 1. Computed property for the Vue binding
+The `{binding propertyName}` syntax in build.htm requires a computed property in build.js — without it, the binding returns `undefined` silently. Search `form.meta.addProperty` for the insertion point:
 ```javascript
-// Search for "form.meta.addProperty" to find the insertion point
 form.meta.addProperty({ name: "myNewSettings", type: Object }).calculated({
     calculate: function () {
         var settings = Cognito.Forms.model.currentForm.get_MyNewSettings();
@@ -94,16 +34,10 @@ form.meta.addProperty({ name: "myNewSettings", type: Object }).calculated({
 });
 ```
 
-### 2. Add to HasChanges Rule
-Add the property to the `onChangeOf` array in the HasChanges rule (search for `"HasChanges"` and `onChangeOf`):
+### 2. Add to HasChanges rule
+Add the property to the `onChangeOf` array in the HasChanges rule (search `"HasChanges"` and `onChangeOf`) — without it, changes won't mark the form dirty.
 
-```javascript
-onChangeOf: ["...", "PeopleFormSettings", "MyNewSettings", "..."]
-```
-
-### 3. Add Event Handler
-Create the handler function that updates the form and marks it dirty:
-
+### 3. Event handler
 ```javascript
 Cognito.Forms.MyNewSettingsChanged = function (settings) {
     var form = Cognito.Forms.model.currentForm;
@@ -115,34 +49,18 @@ Cognito.Forms.MyNewSettingsChanged = function (settings) {
 ```
 
 ### Setting Enum Properties in ExoModel
-
-When setting C# enum properties from Vue/TypeScript string values, use `Cognito.getEnumWithName()`:
-
+Vue components send enum values as strings; passing one straight to a setter throws "a value of type X was expected". Convert with `Cognito.getEnumWithName(Cognito.Forms.EnumTypeName, stringValue)` — the enum type name must match the C# enum type (e.g. `PeopleLinkingMode`, `PeopleUpdateBehavior`, `FieldType`, `FieldSubType`):
 ```javascript
-// WRONG - will throw "a value of type X was expected"
+// WRONG
 existingSettings.set_LinkingMode(settings.LinkingMode);  // string "PersonField"
-
-// CORRECT - converts string to ExoModel enum type
+// CORRECT
 existingSettings.set_LinkingMode(
     Cognito.getEnumWithName(Cognito.Forms.PeopleLinkingMode, settings.LinkingMode)
 );
 ```
 
-**Pattern:** `Cognito.getEnumWithName(Cognito.Forms.EnumTypeName, stringValue)`
-
-The enum type name must match the C# enum type (e.g., `PeopleLinkingMode`, `PeopleUpdateBehavior`, `FieldType`, `FieldSubType`).
-
-### Common Mistakes
-
-1. **Missing computed property** — The `{binding propertyName}` syntax requires a computed property in build.js. Without it, the binding returns `undefined` silently.
-
-2. **String enum values** — Vue components send enum values as strings. Use `Cognito.getEnumWithName()` to convert them to proper ExoModel enum types before calling setters.
-
-3. **Missing HasChanges rule** — Without adding the property to the HasChanges rule, changes won't mark the form dirty.
-
 ## build.js Token Field Rewriting
-
-`convertFieldInfosToTokens()` (around line 14073) transforms server `FieldInfo` objects into client-side tokens. It **rewrites several fields** — the client token shape differs from the server shape:
+`convertFieldInfosToTokens()` transforms server `FieldInfo` objects into client-side tokens. It **rewrites several fields** — the client token shape differs from the server shape:
 
 | Field | Server value | Client value after conversion |
 |-------|-------------|-------------------------------|
@@ -153,16 +71,4 @@ The enum type name must match the C# enum type (e.g., `PeopleLinkingMode`, `Peop
 ### Filtering person-field-nested tokens
 Because sections get `InternalName = ""`, they are invisible in the person field token list. To filter out person fields nested under OTHER person fields (without filtering section-nested person fields), check whether any other person field token's `InternalName` is a prefix of the current token's `InternalName + '.'`. Do NOT use `Id.includes('.')` — that conflates section nesting with person-field nesting. The shared utility `filterDirectPersonFields` in `identify-submitter.ts` implements this correctly.
 
-## Queue/
-`ProcessQueueTask` — background job dispatch from web tier.
-
----
-
-## Maintaining This Document
-
-Update this file when:
-- Adding new architectural patterns or service hierarchies
-- Discovering non-obvious gotchas that would trip up future developers
-- Renaming or restructuring directories/files mentioned here
-
-Do NOT add: version numbers, line numbers, test counts, or other specifics that change frequently.
+Maintenance: record non-obvious gotchas and pattern/structure changes here; do NOT add version numbers, line numbers, or test counts.

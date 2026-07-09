@@ -1,5 +1,6 @@
 ---
 description: Brainstorm, research, and draft a feature spec
+argument-hint: [feature description or work-item id]
 allowed-tools: ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "AskUserQuestion", "Agent", "WebSearch"]
 name: spec
 ---
@@ -197,6 +198,10 @@ Update each task to `in_progress` when starting it, `completed` when done. After
 ---
 
 ## Phase 0: Project Context Discovery
+
+!`cat .claude/skill-config/spec-evidence-gathering.md 2>/dev/null || cat ~/.claude/skills/_components/spec-evidence-gathering.md`
+
+After the evidence-gathering fleet returns, synthesize its findings alongside the steps below.
 
 Before starting, understand the project:
 

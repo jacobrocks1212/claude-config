@@ -160,7 +160,7 @@
     ],
     "ask": []
   },
-  "enableAllProjectMcpServers": true,
+  "enableAllProjectMcpServers": false,
   "enabledMcpjsonServers": [
     "ado"
   ]

@@ -1,6 +1,6 @@
 ---
 name: lazy-bug-status
-description: Read-only bug pipeline dashboard — runs bug-state.py and formats its output. Shows current bug, queue progress from docs/bugs/queue.json, next /lazy-bug action, blockers, and MCP/validation status. NO mutations. Drives docs/bugs/ (NOT docs/features/).
+description: Read-only bug-pipeline dashboard — runs bug-state.py and formats queue progress, next action, blockers. NO mutations. Drives docs/bugs/.
 argument-hint: [optional: "--cloud" to use the cloud state machine]
 model: haiku
 plan-mode: never

@@ -1,6 +1,6 @@
 ---
 name: atomic-thinking
-description: Invoke Aristotelian first-principles reasoning. Before proceeding with the task, decompose every undefined or load-bearing term down to its atomic meaning, then reason up from those primitives instead of from analogies, conventions, or borrowed framings.
+description: First-principles mode: decompose every load-bearing term to its atomic meaning, then reason up from those primitives instead of analogies, conventions, or borrowed framings.
 ---
 
 # Atomic Thinking

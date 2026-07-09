@@ -1,6 +1,6 @@
 ---
 name: har-analysis
-description: USE WHEN analyzing HAR (HTTP Archive) files for debugging network requests, cookies, headers, or API calls. USE WHEN user provides a .har file or asks about network traffic analysis. Triggers on "HAR", "har file", "network capture", "HTTP archive", "analyze requests", "debug network".
+description: USE WHEN analyzing HAR (HTTP Archive) files — network requests, cookies, headers, API calls. Triggers on 'HAR', 'network capture', 'analyze requests'.
 version: 2.0.0
 ---
 

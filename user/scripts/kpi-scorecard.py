@@ -85,6 +85,25 @@ _SOURCES: dict[str, frozenset] = {
     "sentinel-scan": frozenset({
         "open-halt-count",
     }),
+    # Offline session-log corpus, mined on demand by mine-sessions'
+    # attribute_predispatch.py (pre-first-dispatch context attribution). No
+    # state-script collector exists, so compute returns honest NO-DATA for these
+    # (the `no computation registered` fall-through) — registering the selectors
+    # lets the plan-execution context-diet features' drafted `## KPI Declaration`
+    # rows lint clean, same pattern as canary-trip-precision above.
+    "session-log-mining": frozenset({
+        "predispatch-phases-read-bytes",   # phases-slice-scoped-reads
+        "predispatch-spec-read-bytes",     # spec-excerpt-scoped-plans
+        "predispatch-skill-body-bytes",    # execute-plan-skill-diet
+        "predispatch-plan-read-bytes",     # lean-plan-files
+        # cognito-pr-review efficiency features: registered at spec-finalization
+        # so their drafted `## KPI Declaration` rows lint clean (compute returns
+        # honest NO-DATA until a collector is wired), same pattern as above.
+        "review-run-fresh-tokens",             # pr-review-size-aware-pipeline-downshift
+        "sweep-agent-first-turn-ctx-tokens",   # pr-review-sweep-rule-sharding-and-read-dedup
+        "buddy-first-ask-ctx-tokens",          # pr-review-buddy-phase0-subagent-isolation
+        "turn1-baseline-ctx-tokens-noncognito",  # pr-review-plugin-repo-scoping-and-orphan-purge
+    }),
 }
 
 _DIRECTIONS = frozenset({"down-is-good", "up-is-good"})

@@ -1,6 +1,6 @@
 ---
 name: investigate
-description: USE WHEN a root cause must be CONFIRMED before anyone fixes anything — a feature has failed validation twice (validation_escalation), a landed fix did not change the live symptom, inline diagnosis is ballooning past a few probes, or an operator wants an evidence-backed root-cause record. Produces INVESTIGATION.md (seam table + hypothesis ledger + repro + fix scope). NEVER fixes production code.
+description: USE WHEN a root cause must be CONFIRMED before fixing — validation failed twice, a landed fix didn't change the symptom, or inline diagnosis is ballooning. Produces INVESTIGATION.md; NEVER fixes production code.
 argument-hint: <spec-or-bug-dir> [symptom...]
 ---
 

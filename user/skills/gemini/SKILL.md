@@ -1,6 +1,6 @@
 ---
 name: gemini
-description: USE WHEN user explicitly asks to use Gemini, Google AI, or wants a second opinion from another AI model. USE WHEN user requests Gemini-specific features or wants to compare responses. Triggers on "Gemini", "Google AI", "second opinion", "ask Gemini", "use Gemini", "another model".
+description: USE WHEN the user explicitly asks for Gemini/Google AI or a second opinion from another AI model. Triggers on 'Gemini', 'ask Gemini', 'second opinion'.
 ---
 
 # Gemini Research Integration

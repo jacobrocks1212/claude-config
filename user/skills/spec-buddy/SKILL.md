@@ -1,6 +1,6 @@
 ---
 name: spec-buddy
-description: Partition-walk co-design skill — walks a feature spec one partition at a time, arriving at each with autonomous recon, a confidence-scored evidence-cited check-in, and liberal AskUserQuestion to co-author decisions before persisting each part to a downstream-compatible SPEC.md.
+description: Partition-walk co-design of a feature spec — autonomous recon per partition, evidence-cited check-ins, liberal AskUserQuestion, persisting each part to a downstream-compatible SPEC.md.
 allowed-tools: ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "AskUserQuestion", "Agent", "WebSearch"]
 ---
 

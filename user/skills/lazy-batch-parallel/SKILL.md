@@ -1,6 +1,6 @@
 ---
 name: lazy-batch-parallel
-description: Sanctioned parallel-worktree coordinator for the feature pipeline (workstation-only v1 — claude-config + AlgoBooth). Shards dep-ready, independent:true queue items across git worktree lanes (one lane branch + one per-worktree keyed lane marker + one lazy_coord fencing lease per item), runs the parallel-safe front half in lanes, and remains the SINGLE WRITER of every contended resource — merging lane branches in deterministic queue order (conflict ⇒ demote to serial re-run), then running the validation + __mark_complete__ tail serially at the main root. A parked lane never stalls its siblings.
+description: Sanctioned parallel-worktree coordinator for the feature pipeline — shards independent queue items across worktree lanes, merges lane branches in queue order, runs the validation tail serially. Concurrency contract in SKILL.md.
 argument-hint: <max-cycles, e.g. 24> [--lanes <N, default 2>] [--park] [--adhoc "<task>"]
 plan-mode: never
 model: opus

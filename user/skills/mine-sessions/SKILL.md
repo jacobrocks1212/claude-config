@@ -1,6 +1,6 @@
 ---
 name: mine-sessions
-description: Mine Claude Code session history (transcripts) to find patterns, friction, and evidence across past sessions — without blowing up context. Use when asked to look back at prior sessions, audit how a command/skill behaved, or draw conclusions from session history.
+description: Mine Claude Code session transcripts for patterns, friction, and evidence across past sessions without blowing up context. Use when asked to look back at prior sessions.
 argument-hint: [what to investigate]
 ---
 
@@ -67,6 +67,24 @@ python ~/.claude/skills/mine-sessions/scripts/render_session.py <session.jsonl> 
     --grep "COMPACTION" --max-chars 300 > out.txt
 ```
 Turn headers look like `===== [#42 assistant ctx=187432] <<COMPACTION>> =====`. Filters: `--grep` (regex over rendered turn text), `--ctx-min K` (only turns with ≥K-thousand-token footprint), `--max-chars` (per-turn truncation). Useful greps once rendered: `<<COMPACTION>>`, `<<HUMAN>>`, `<<TOOL_ERROR>>`, `[Agent `, `[Skill `, `[Bash]`, or any domain string.
+
+### 3. `attribute_predispatch.py` — attribute context up to the first subagent dispatch
+Answers "what fills the window before the orchestrator dispatches its first agent". Walks each
+transcript until the first `Agent`/`Task` tool_use, bucketing the bytes every source contributed:
+`command-expansion` / `user-text` (incl. skill-body expansions and continuation summaries) /
+`assistant-text` / `tool:<name>` — with per-file breakout for `Read` and per-command for `Bash`.
+Reports turn-1 ctx (the startup baseline, which lives outside the transcript), dispatch-turn ctx,
+per-session tables, cross-session category medians, and the top individual contributors (files).
+
+```bash
+python ~/.claude/skills/mine-sessions/scripts/attribute_predispatch.py \
+    --from-digest digest.json --min-agents 1 --top 25 --out attribution.json
+```
+Accepts positional `.jsonl` paths or `--from-digest` (a `digest_sessions.py --out` file; filter
+with `--min-agents`, cap with `--top-sessions`). `--until-tool` retargets the stop tool.
+`--full` attributes the ENTIRE transcript (no dispatch cutoff; the "dispatch" columns become
+end-of-run) — use it for subagent transcripts (`subagents/agent-*.jsonl`) and sessions that
+never dispatch.
 
 ---
 

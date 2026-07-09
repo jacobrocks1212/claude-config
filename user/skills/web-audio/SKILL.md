@@ -1,6 +1,6 @@
 ---
 name: web-audio
-description: Production-tested patterns for fault-tolerant browser audio with zero-lag rapid-fire support. Use when implementing sound effects, background music, voice feedback, or any audio playback in web applications. Covers AudioContext singleton, preloading, cloneNode for rapid-fire, autoplay handling, and Web Audio API effects.
+description: Fault-tolerant browser audio patterns — AudioContext singleton, preloading, cloneNode rapid-fire, autoplay handling, Web Audio effects. Use when implementing audio playback in web apps.
 ---
 
 # Web Audio Browser Patterns

@@ -1,6 +1,6 @@
 ---
 name: machine-perf
-description: Report this Windows machine's live performance — uptime, CPU load, memory, disk, and the top resource-consuming processes. Use when the user asks "how is my machine doing", "what's my uptime", "check performance", "is something hogging CPU/memory", or for a general health snapshot.
+description: Report this Windows machine's live performance — uptime, CPU, memory, disk, top processes. Use for 'how is my machine doing' or a health snapshot.
 argument-hint: "[--json] [--top N]"
 model: haiku
 plan-mode: never

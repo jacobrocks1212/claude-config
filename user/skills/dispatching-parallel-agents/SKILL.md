@@ -1,6 +1,6 @@
 ---
 name: dispatching-parallel-agents
-description: USE WHEN there are multiple tasks, files, or problems to work on simultaneously. USE WHEN fixing multiple bugs, tests, or issues at once. USE WHEN tasks are independent and can run in parallel. Triggers on "multiple", "several", "all these", "fix these tests", "parallel", "at the same time", "concurrently", "2+ tasks", "batch of".
+description: USE WHEN multiple independent tasks, files, or bugs can be worked simultaneously. Triggers on 'multiple', 'all these', 'fix these tests', 'parallel', 'concurrently'.
 ---
 
 # Dispatching Parallel Agents

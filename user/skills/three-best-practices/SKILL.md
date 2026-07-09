@@ -1,6 +1,6 @@
 ---
 name: three-best-practices
-description: Three.js performance optimization and best practices guidelines. Use when writing, reviewing, or optimizing Three.js code. Triggers on tasks involving 3D scenes, WebGL/WebGPU rendering, geometries, materials, textures, lighting, shaders, or TSL.
+description: Three.js performance and best practices. Use when writing, reviewing, or optimizing Three.js — scenes, WebGL/WebGPU, geometries, materials, lighting, shaders, TSL.
 license: MIT
 metadata:
   author: three-agent-skills

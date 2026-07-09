@@ -1,6 +1,6 @@
 ---
 name: architecture-patterns
-description: USE WHEN discussing backend architecture, system design, code organization, layers, dependencies, services, repositories, or domain modeling. USE WHEN building APIs, services, or any backend code. Covers Clean Architecture, Hexagonal Architecture, DDD, CQRS, and code structure patterns. Triggers on "architecture", "design pattern", "repository", "service layer", "domain", "clean code", "separation of concerns", "dependency injection", "SOLID".
+description: USE WHEN designing or building backend architecture — layers, services, repositories, domain modeling, DI. Covers Clean/Hexagonal Architecture, DDD, CQRS. Triggers on 'architecture', 'design pattern', 'service layer', 'SOLID'.
 ---
 
 # Architecture Patterns

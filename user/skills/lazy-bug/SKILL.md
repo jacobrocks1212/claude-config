@@ -1,6 +1,6 @@
 ---
 name: lazy-bug
-description: Stateless dispatcher — infers bug state from filesystem via bug-state.py, invokes exactly ONE sub-skill per invocation to progress the current bug. Drives docs/bugs/ (NOT docs/features/). The `__mark_fixed__` special action performs the archive-on-fix flow: writes/verifies FIXED.md receipt (kind: fixed, gated by the completion-integrity gate), sets SPEC **Status:** Fixed + **Fixed:** and **Fix commit:** header lines, git mv to docs/bugs/_archive/, repoints inbound root-relative references, and commits. Receipt is FIXED.md (kind: fixed); Won't-fix bugs are receipt-EXEMPT. No research/Gemini steps, no stub-spec step, no realign step — N/A to bugs. Status vocab: Open | Investigating | In-progress | Fixed | Won't-fix.
+description: Stateless bug-pipeline dispatcher — reads state via bug-state.py, invokes exactly ONE sub-skill per invocation; __mark_fixed__ runs the gated FIXED.md archive-on-fix flow. Drives docs/bugs/.
 argument-hint: [optional: "status" to report, "skip" to skip current bug, or an ad-hoc task / `--adhoc "<task>"` to enqueue work at the top of the queue]
 plan-mode: never
 ---

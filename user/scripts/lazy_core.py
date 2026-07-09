@@ -11279,9 +11279,12 @@ def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
 # reachable signals. The deny SCOPE (which ops) stays in lockstep across both.
 #
 # CYCLE_REFUSED_OPS MUST stay in lockstep with the C2 hook's loop-formation /
-# lifecycle / recursive-dispatch deny-set (the agent_id trip in
-# lazy-cycle-containment.sh: recursive Agent/Task, nested /lazy-batch, the
-# LOOP_FORMATION_FLAGS routing flags, and dev:kill/dev:restart) — they are
+# lifecycle deny-set (the agent_id trip in lazy-cycle-containment.sh:
+# /lazy* Skill invocations, nested /lazy-batch, the LOOP_FORMATION_FLAGS
+# routing flags, and dev:kill/dev:restart; recursive Agent/Task dispatch was
+# REMOVED from the C2 deny set 2026-07-09 — the harness allows nested dispatch
+# and the deny broke mandated read-only Explore fan-outs, see
+# docs/bugs/adhoc-containment-denies-mandated-explore-fanout) — they are
 # intentionally redundant defense-in-depth. A divergence is a coverage hole. The
 # allow-listed ops a legitimately-dispatched subagent needs
 # (`--neutralize-sentinel`, `--verify-ledger`) and all read/probe ops are

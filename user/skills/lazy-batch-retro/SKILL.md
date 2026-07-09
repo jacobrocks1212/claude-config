@@ -1,6 +1,6 @@
 ---
 name: lazy-batch-retro
-description: Audit and grade a completed /lazy-batch or /lazy-batch-cloud run for skill-compliance. Read-only. Writes per-feature review artifacts under docs/features/<feat>/LAZY_BATCH_REVIEW_<date>.md. After writing, Step 6c runs the shared audit-table-validator component over every artifact, annotating Compliance Matrix / Findings rows with ⚠ NOT-FOUND-IN-SPEC or ⚠ CROSS-FEATURE-DUP markers so the next audit walker spots misattributions and copy-paste errors before walking them as gaps. Triggers on 'audit batch', 'grade batch', 'review batch run', '/lazy-batch-retro'.
+description: Audit and grade a completed /lazy-batch(-cloud) run for skill-compliance. Read-only; writes per-feature LAZY_BATCH_REVIEW artifacts with audit-table validation markers. Triggers on 'audit batch', 'grade batch'.
 argument-hint: [session-id | --branch <ref> | --features <feat,feat,...>]
 plan-mode: never
 model: opus

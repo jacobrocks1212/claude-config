@@ -1,6 +1,6 @@
 ---
 name: harden-harness
-description: USE WHEN a marked orchestrator run hits a misroute (validate-deny), a no-route condition (cycle_prompt_refused, marker/state divergence), an inject-hook error against a live marker, a process-friction ledger entry (torn cycle bracket or unexpected commits), or manually for harness friction observed outside enforcement. The harness-hardening stage: root-causes why the route broke, implements mechanical fixes autonomously under full gates, and surfaces contract/policy forks via NEEDS_INPUT.md.
+description: Harness-hardening stage: USE WHEN a marked orchestrator run hits a misroute, no-route condition, inject-hook error, or process-friction ledger entry — root-causes the broken route, fixes mechanically under full gates, forks policy via NEEDS_INPUT.md.
 argument-hint: [description of the observed friction or no-route condition]
 ---
 

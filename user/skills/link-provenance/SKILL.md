@@ -1,6 +1,6 @@
 ---
 name: link-provenance
-description: Manually link out-of-pipeline work (a teammate PR, a hotfix range) into the provenance ledger — derive the touched-file set via the producer's --dry-run, draft the IMPLEMENTED.md body, get operator approval, then write THROUGH lazy-state.py --link-provenance (the one-writer producer). Never hand-writes IMPLEMENTED.md or docs/provenance-index.json.
+description: Manually link out-of-pipeline work (teammate PR, hotfix range) into the provenance ledger through lazy-state.py --link-provenance — never hand-writes IMPLEMENTED.md or the provenance index.
 argument-hint: --id <slug> (--commits <A..B> | --pr <n>)
 plan-mode: never
 model: sonnet

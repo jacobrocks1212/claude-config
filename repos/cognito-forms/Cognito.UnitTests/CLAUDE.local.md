@@ -7,58 +7,15 @@
 - `TestContext.Properties` drives test store behavior (auto-save, test directory).
 
 ## BaseTest Architecture
+All test classes inherit `BaseTest`: DI scope management (`diScope`), test fixtures (`TestOrg`, `TestUser`, `AdminSession`, `PublicSession`), service mocking, queue helpers.
 
-### Inheritance Pattern
-```
-BaseTest (abstract)
-  └── Your test class
-```
-All test classes inherit `BaseTest` which provides:
-- DI scope management via `diScope`
-- Test fixtures: `TestOrg`, `TestUser`, `AdminSession`, `PublicSession`
-- Service mocking via `MockService<T>()`
-- Queue processing helpers
-
-### Lifecycle
-```
-[TestInitialize] Initialize()
-  → Creates diScope
-  → Sets up HttpContext.Current
-  → Flushes CoreService
-  → Loads TestOrg based on [Org] attribute
-  → Logs in user based on [User] attribute
-  → Applies [FeatureFlag] overrides
-
-[TestCleanup] Cleanup()
-  → Flushes CoreService
-  → Disposes diScope
-```
+Lifecycle: `[TestInitialize] Initialize()` creates `diScope`, sets up `HttpContext.Current`, flushes `CoreService`, loads `TestOrg` per `[Org]`, logs in per `[User]`, applies `[FeatureFlag]` overrides. `[TestCleanup] Cleanup()` flushes `CoreService`, disposes `diScope`.
 
 ## Service Mocking
-
-### MockService<T>() — Interface Mocking
-```csharp
-var mockPayment = MockService<IPaymentService>();
-mockPayment.Setup(p => p.ProcessPayment(...)).Returns(...);
-// Service is automatically registered in DI
-```
-
-### RegisterService<T>() — Direct Registration
-```csharp
-RegisterService<IMyService>(new FakeMyService());
-// Or with factory:
-RegisterService<IMyService>(ctx => new FakeMyService(ctx.Resolve<IDep>()));
-```
-
-### TestServiceRegistry Pattern
-`TestServiceRegistry` implements `IRegistrationSource` to allow overriding services after the DI scope is created. Overrides registered via `MockService<T>()` or `RegisterService<T>()` are resolved last.
-
-### GetService<T>() — Resolution
-```csharp
-var service = GetService<IFormsService>();                    // Gets override if registered
-var realService = GetService<IFormsService>(ignoreOverrides: true);  // Gets real impl
-var orgService = GetService<IFormsService>(someOrg);          // Org-scoped resolution
-```
+- `MockService<IPaymentService>()` — interface mock, automatically registered in DI.
+- `RegisterService<IMyService>(instance)` or `RegisterService<IMyService>(ctx => new FakeMyService(ctx.Resolve<IDep>()))` — direct registration.
+- `TestServiceRegistry` (`IRegistrationSource`) allows overriding services AFTER the DI scope is created; overrides resolve last.
+- `GetService<T>()` returns the override if registered; `GetService<T>(ignoreOverrides: true)` returns the real impl; `GetService<T>(someOrg)` resolves org-scoped.
 
 ## Test Attributes
 
@@ -73,65 +30,18 @@ var orgService = GetService<IFormsService>(someOrg);          // Org-scoped reso
 | `[TestFileStore(CanStoreFiles = true)]` | Enables file storage in tests |
 
 ## Queue Testing
-
-```csharp
-// Isolate queue to avoid cross-test contamination
-var queue = EnsureIsolatedTestQueue();
-
-// Execute code that enqueues messages...
-
-// Process queued messages
-await ProcessQueue(queue);
-```
-
-## Common Test IDs
-```csharp
-protected const string TestOrgId = "d4f559e4-efdc-4431-9ccb-1d6ef949146f";
-protected const string TestUserId = "91da6154-e4e2-43c2-a03a-880620e52682";
-// See BaseTest.cs for full list of test fixture IDs
-```
+Isolate first with `EnsureIsolatedTestQueue()`, run the enqueueing code, then `await ProcessQueue(queue)`.
 
 ## Key Files
 | File | Purpose |
 |------|---------|
-| `BaseTest.cs` | Abstract base for all tests |
+| `BaseTest.cs` | Abstract base for all tests; defines test fixture ID constants (`TestOrgId`, `TestUserId`, ...) |
 | `TestFiles/` | JSON fixtures for TestStore entities |
 | `Attributes/` | Test attributes (Org, User, FeatureFlag, etc.) |
 | `_snapshots/` | Snapshot files for Snapper assertions (co-located with tests) |
 
 ## Snapshot Testing
-
-Uses the **Snapper** library (`using Snapper;`) with `ShouldMatchSnapshot()` extension method.
-
-### Updating Snapshots
-
-To update snapshots when tests fail due to expected changes, set the `UpdateSnapshots` environment variable:
-```bash
-UpdateSnapshots=true dotnet test "Cognito.UnitTests/Cognito.UnitTests.csproj" --filter "Name~TestName" --no-build
-```
-
-Or update a single test programmatically:
-```csharp
-result.ShouldMatchSnapshot(SnapshotSettings.New().UpdateSnapshots(true));
-```
-
-### Snapshot File Location
-Snapshots are stored in `_snapshots/` folders alongside test files:
-- `ServiceTests/Indexing/_snapshots/TestClassName_TestMethodName.json`
-
-### Utilities
-`Utilities/SnapshotUtilities.cs` provides normalization methods for:
-- `NormalizeIds()` — Replace dynamic IDs with stable values
-- `NormalizeDateTimes()` — Replace DateTime values
-- `NormalizeGuids()` — Replace GUIDs
-
----
-
-## Maintaining This Document
-
-Update this file when:
-- Adding new architectural patterns or service hierarchies
-- Discovering non-obvious gotchas that would trip up future developers
-- Renaming or restructuring directories/files mentioned here
-
-Do NOT add: version numbers, line numbers, test counts, or other specifics that change frequently.
+Uses the **Snapper** library (`using Snapper;`) with `ShouldMatchSnapshot()`.
+- Snapshots live in `_snapshots/` beside the test file: `ServiceTests/Indexing/_snapshots/TestClassName_TestMethodName.json`.
+- Update all on a run: set the `UpdateSnapshots=true` environment variable for the test run. Update one test programmatically: `result.ShouldMatchSnapshot(SnapshotSettings.New().UpdateSnapshots(true))`.
+- `Utilities/SnapshotUtilities.cs` normalizes dynamic values: `NormalizeIds()`, `NormalizeDateTimes()`, `NormalizeGuids()`.

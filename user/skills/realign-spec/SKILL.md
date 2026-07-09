@@ -1,6 +1,6 @@
 ---
 name: realign-spec
-description: Read-only reality check on completed upstream features. Diffs the current SPEC+PHASES against upstream PHASES.md (and optionally upstream plans) and writes a plans/realign-<date>.md with drift assessment and a recommended next step. With --apply, also acts on the recommendation (inline-edit / add-phase / write BLOCKED.md).
+description: Read-only drift check of a completed upstream feature's SPEC+PHASES against upstream; writes plans/realign-<date>.md with a recommended next step. --apply acts on it.
 argument-hint: <path/to/SPEC.md> [--apply]
 plan-mode: never
 allowed-tools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit", "Skill"]

@@ -1,6 +1,6 @@
 ---
 name: providing-performance-optimization-advice
-description: Provide comprehensive prioritized performance optimization recommendations for frontend, backend, and infrastructure. Use when analyzing bottlenecks or seeking improvement strategies. Trigger with phrases like "optimize performance", "improve speed", or "performance recommendations".
+description: Prioritized performance-optimization recommendations across frontend, backend, and infrastructure. Triggers on 'optimize performance', 'improve speed', 'performance recommendations'.
 version: 1.0.0
 allowed-tools: ["Read", "Write", "Edit", "Grep", "Glob"]
 license: MIT

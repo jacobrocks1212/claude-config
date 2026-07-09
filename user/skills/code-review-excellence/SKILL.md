@@ -1,6 +1,6 @@
 ---
 name: code-review-excellence
-description: USE WHEN reviewing code, PRs, pull requests, diffs, or changes. USE WHEN asked to check code quality, give feedback, or evaluate implementations. USE WHEN merging, approving, or discussing code changes. Covers constructive feedback, catching bugs, security review, performance review, and best practices. Triggers on "review", "PR", "pull request", "code quality", "feedback", "check this code", "look at this", "merge".
+description: USE WHEN reviewing code, PRs, or diffs, or asked for code-quality feedback. Covers constructive feedback, bug catching, security and performance review. Triggers on 'review', 'PR', 'code quality', 'feedback'.
 ---
 
 # Code Review Excellence

@@ -1,6 +1,6 @@
 ---
 name: typescript-advanced-types
-description: USE WHEN working with TypeScript types, generics, interfaces, or type definitions. USE WHEN creating type-safe code, fixing type errors, or defining complex types. USE WHEN dealing with utility types, conditional types, mapped types, infer, or type guards. Triggers on "TypeScript", "type", "generic", "interface", "extends", "infer", "Pick", "Omit", "Partial", "Record", "type error", "type-safe", "typing".
+description: USE WHEN working with TypeScript types — generics, interfaces, utility/conditional/mapped types, infer, type guards, type errors. Triggers on 'type', 'generic', 'Pick/Omit/Partial', 'type-safe'.
 ---
 
 # TypeScript Advanced Types

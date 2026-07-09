@@ -1,6 +1,6 @@
 ---
 name: mixmi-mixer-architecture
-description: Complete technical reference for professional mixer system architecture, audio routing, recording implementation, and internal mechanics. Use when building DJ interfaces, dual-deck mixers, or audio routing systems with Tone.js and Web Audio API.
+description: Mixer-system architecture reference — audio routing, recording, internals with Tone.js/Web Audio. Use when building DJ interfaces or dual-deck mixers.
 ---
 
 # DJ Mixer Architecture Reference

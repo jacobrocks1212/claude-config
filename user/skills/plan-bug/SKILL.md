@@ -1,6 +1,6 @@
 ---
 name: plan-bug
-description: Bug-pipeline analog of /plan-feature — ensure PHASES.md exists (author it from the concluded investigation SPEC if missing) and run /write-plan as a single subagent round-trip for a bug past the interactive investigation gate. Drives docs/bugs/ (NOT docs/features/). Closes the gap where a /spec-bug cycle concludes the investigation but never authors PHASES.md, causing bug-state.py to loop on spec-bug. Consumed by /lazy-bug-batch (and /lazy-bug) the way /plan-feature is consumed by /lazy-batch — one consolidating planning round-trip past the interactive gate.
+description: Bug-pipeline analog of /plan-feature — authors PHASES.md from a concluded investigation SPEC if missing and runs /write-plan as one subagent round-trip. Drives docs/bugs/.
 argument-hint: <path/to/SPEC.md>
 plan-mode: never
 allowed-tools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit", "Agent"]

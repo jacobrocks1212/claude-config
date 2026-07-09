@@ -1,6 +1,6 @@
 ---
 name: babysit
-description: Babysit a GitHub PR's CI until it reaches a terminal state. Polls `gh pr checks` on a recurring cron (default every 5 min), reports each cycle, auto-resolves safe failures (lint, formatting, trivial test breaks), and stops itself once all required checks settle.
+description: Babysit a GitHub PR's CI to a terminal state — polls gh pr checks on a recurring cron, auto-resolves safe failures (lint, formatting, trivial tests), stops when required checks settle.
 argument-hint: [PR number or URL] [cadence e.g. 10m] — both optional; PR is inferred from chat/branch if omitted
 plan-mode: never
 ---
