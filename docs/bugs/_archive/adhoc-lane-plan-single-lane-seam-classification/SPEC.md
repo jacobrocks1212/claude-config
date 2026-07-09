@@ -10,6 +10,8 @@
 **Status:** Fixed
 **Severity:** P3
 **Discovered:** 2026-07-09 (the sandbox planner improvised a plan-specific note stating the seam is not run)
+**Fixed:** 2026-07-09
+**Fix commit:** 8df90cd
 **Placement:** docs/bugs/adhoc-lane-plan-single-lane-seam-classification
 **Related:** `repos/cognito-forms/.claude/skills/write-plan-cognito/{SKILL.md,execution-contract-cognito-lanes.md}`; `docs/bugs/adhoc-write-plan-cognito-planner-contract-read` (same run)
 
