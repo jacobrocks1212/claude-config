@@ -14,6 +14,24 @@ Every change to this repo should be evaluated against that goal:
 
 The harness **self-improves**: retros (`/lazy-batch-retro`), investigations (`/investigate`), and the routing/hardening stage feed observed friction back into this repo as contract changes. Friction observed in a run is a bug report against this repo.
 
+## Branching Policy (HARD REQUIREMENT)
+
+**All work in this repo lands on `main`.** Commit directly to `main` — do **not** create
+long-lived feature branches, and do **not** open PRs for claude-config changes. This is a
+solo-operator config repo; the branch-and-PR round-trip is pure friction here, and stray `claude/*`
+branches from cloud/web sessions accumulate as merge debt. If a session starts on a branch other
+than `main`, land the work on `main` (fast-forward or cherry-pick) and delete the branch.
+
+**Housekeeping:** already-merged and stale branches should be pruned so the remote stays
+essentially `main`-only. A branch that is behind `main` is never "merged back" — its merge would
+revert `main`'s history; port any genuinely-unique content forward by hand instead.
+
+**Sole exception — the pipeline's ephemeral internal branches.** The lazy/parallel pipeline creates
+short-lived *work branches* and *worktree lane branches* (`lazy-batch-parallel`, the run marker's
+`work_branch`, the stray-branch sentinel hooks). These are created, merged-back, and deleted
+**within a single run** and never persist. They are machinery, not the feature branches this policy
+prohibits.
+
 ## Directory Layout
 
 ```
