@@ -2,7 +2,7 @@
 
 > Per-repo Claude docs are inconsistent across the Cognito Forms git worktrees: personal subdir `CLAUDE.local.md` files exist only in the main worktree, and team-owned tracked docs vary by branch — because the claude-config symlink manifest covers neither.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-02
 **Placement:** claude-config/docs/bugs/worktree-claude-doc-drift/

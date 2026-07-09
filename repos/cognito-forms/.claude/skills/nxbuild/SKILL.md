@@ -35,7 +35,13 @@ Build frontend projects in the Nx monorepo showing only errors and build summary
 
 3. Run the command using Bash with `timeout: 600000` (10 min). A build can legitimately exceed the default 2-min Bash timeout; the higher ceiling costs nothing for fast builds because Bash returns as soon as the command exits. Do not interpret or reformat the output. The invocation prints an authoritative one-line `build-queue: seq=<N> op=nxbuild RESULT=<PASS|FAIL> (result_fidelity=...)` banner as its LAST stdout line — trust that line for the outcome. Do NOT `cat`/`grep` the runner script (`build-queue-runner.ps1`) or `results/<seq>.json` to disambiguate an `exit_code=0`. On `RESULT=FAIL` the banner names the next action inline — read `logs/<seq>.build.err.log`, or `build produced no output; delete obj/bin and rebuild` on a `build_fidelity: no-output` false-green (see below).
 
-4. If the build is expected to exceed 10 minutes, run the same command with `run_in_background: true` instead, then poll its log and read `$HOME/.claude/state/build-queue/results/<seq>.json` (the `exit_code` field) for the outcome — the `seq` is printed in the `build-queue: enqueued as seq=N` line.
+4. If the build is expected to exceed 10 minutes, run the same command with `run_in_background: true` instead. The `build-queue: enqueued as seq=N` line it returns is NOT an outcome — never end your turn or report a result on it. Follow the run to its authoritative result with the await helper (foreground Bash, `timeout: 600000`):
+   ```
+   powershell.exe -ExecutionPolicy Bypass -File "$HOME/.claude/scripts/build-queue-await.ps1" -Seq <N>
+   ```
+   It blocks until `results/<seq>.json` exists, re-emits the same authoritative `build-queue: seq=<N> op=nxbuild RESULT=...` banner as its LAST stdout line, and exits with the build's exit code. On its distinct await-timeout exit (`124`, `result not yet present for seq=N`) the build is still running — re-run the helper or check `/build-queue-status`; NEVER treat a timeout as success, and do not hand-read `results/<seq>.json` instead.
+
+   **Foreground-timeout recovery:** if a foreground run is killed by the 10-min Bash timeout before the banner prints, recover the seq from the `build-queue: enqueued as seq=N` line already in the output and run the same await helper — do NOT re-enqueue the build.
 
 ## Recognizing a no-output false-green (`build_fidelity: no-output`)
 

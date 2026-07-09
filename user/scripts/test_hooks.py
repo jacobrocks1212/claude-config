@@ -3239,9 +3239,12 @@ def test_containment_allows_unrelated_bash():
         )
 
 
-def test_containment_denies_recursive_agent_dispatch():
+def test_containment_allows_recursive_agent_dispatch():
     """A recursive Agent tool call from a subagent (agent_id) while the marker is
-    present → deny.  (D4: recursion deny keys on agent_id.)"""
+    present → ALLOW.  (2026-07-09: the harness allows nested dispatch; the blanket
+    recursion deny broke mandated read-only Explore fan-outs — see
+    docs/bugs/adhoc-containment-denies-mandated-explore-fanout. Regression guard:
+    re-introducing the deny fails this test.)"""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "state"
@@ -3250,8 +3253,9 @@ def test_containment_denies_recursive_agent_dispatch():
         result = _run_containment(
             _agent_preToolUse_json(agent_id=_SUBAGENT_AGENT_ID), state_dir
         )
-        assert _containment_decision(result) == "deny", (
-            f"Agent dispatch under marker must deny; stdout: {result.stdout!r}"
+        assert _containment_decision(result) != "deny", (
+            f"subagent Agent dispatch must NOT deny (removed 2026-07-09); "
+            f"stdout: {result.stdout!r}"
         )
 
 
@@ -3380,9 +3384,12 @@ def test_containment_fail_open_on_malformed_json():
 # hook-input schema: `agent_id?: "Subagent identifier. Present only when the
 # hook fires from within a subagent ... Absent for the main thread"`).
 #
-#   - agent_id PRESENT  (subagent) → deny recursive Agent dispatch, /lazy-batch
-#     invocation, lazy-state/bug-state routing+lifecycle flags, dev:kill/restart
+#   - agent_id PRESENT  (subagent) → deny /lazy-batch invocation, /lazy* Skill
+#     calls, lazy-state/bug-state routing+lifecycle flags, dev:kill/restart
 #     — REGARDLESS of whether a cycle marker is present (arming-free).
+#     Recursive Agent/Task dispatch is NO LONGER denied (removed 2026-07-09 —
+#     harness-legal nested dispatch, needed for mandated Explore fan-outs; see
+#     docs/bugs/adhoc-containment-denies-mandated-explore-fanout).
 #   - agent_id ABSENT   (main-thread orchestrator) → allow all of the above; the
 #     orchestrator is never self-denied.
 #
@@ -3391,10 +3398,10 @@ def test_containment_fail_open_on_malformed_json():
 # ===========================================================================
 
 
-def test_containment_agentid_present_denies_recursive_agent_no_marker():
+def test_containment_agentid_present_allows_recursive_agent_no_marker():
     """SUBAGENT-shaped payload (agent_id present) + recursive Agent call, with
-    NO cycle marker → deny.  This is the literal D4 fix: containment fires
-    without any marker arming."""
+    NO cycle marker → ALLOW (recursion deny removed 2026-07-09 — nested dispatch
+    is harness-legal and needed for mandated Explore fan-outs)."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "state"
@@ -3405,8 +3412,8 @@ def test_containment_agentid_present_denies_recursive_agent_no_marker():
         assert result.returncode == 0, (
             f"hook must exit 0; got {result.returncode}; stderr: {result.stderr!r}"
         )
-        assert _containment_decision(result) == "deny", (
-            f"subagent Agent dispatch (agent_id present, no marker) must deny; "
+        assert _containment_decision(result) != "deny", (
+            f"subagent Agent dispatch (agent_id present, no marker) must NOT deny; "
             f"stdout: {result.stdout!r}"
         )
 
@@ -3427,9 +3434,10 @@ def test_containment_agentid_absent_allows_main_thread_agent_no_marker():
         )
 
 
-def test_containment_agentid_present_denies_recursive_agent_with_marker():
-    """SUBAGENT payload + Agent call WITH a marker present → still deny (the
-    agent_id trip and the legacy marker path agree)."""
+def test_containment_agentid_present_allows_recursive_agent_with_marker():
+    """SUBAGENT payload + Agent call WITH a marker present → ALLOW (recursion
+    deny removed 2026-07-09; the marker-gated tripwires are Bash-only and do not
+    consult Agent calls)."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "state"
@@ -3438,9 +3446,9 @@ def test_containment_agentid_present_denies_recursive_agent_with_marker():
         result = _run_containment(
             _agent_preToolUse_json(agent_id=_SUBAGENT_AGENT_ID), state_dir
         )
-        assert _containment_decision(result) == "deny", (
-            f"subagent Agent dispatch (agent_id present, marker present) must deny; "
-            f"stdout: {result.stdout!r}"
+        assert _containment_decision(result) != "deny", (
+            f"subagent Agent dispatch (agent_id present, marker present) must NOT "
+            f"deny; stdout: {result.stdout!r}"
         )
 
 
@@ -4997,6 +5005,90 @@ def test_bqe_allows_bypass_token_with_cd_prefixed_build():
         )
 
 
+def test_bqe_allows_bypass_leading_build_segment_after_cd():
+    """`cd "..." && BUILD_QUEUE_BYPASS=1 dotnet build ...` → allow. The bypass
+    token is recognized per segment (matching the deny surface's segment
+    awareness), so a token leading the build's own segment behind a cd prefix
+    works — the asymmetry where deny was unanchored but bypass was
+    leading-anchored is closed."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = f'cd "{repo}" && BUILD_QUEUE_BYPASS=1 dotnet build ./Cognito.sln -c Debug'
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert result.returncode == 0, f"hook must exit 0; stderr={result.stderr!r}"
+        assert _containment_decision(result) != "deny", (
+            f"cd-prefixed BUILD_QUEUE_BYPASS=1 build must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_allows_env_prefixed_bypass_after_cd():
+    """`cd "..." && NAME=val BUILD_QUEUE_BYPASS=1 dotnet build ...` → allow
+    (other leading env assignments before the token, per-segment form)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = (f'cd "{repo}" && MSBUILDDEBUGPATH=/tmp BUILD_QUEUE_BYPASS=1 '
+               f'dotnet build ./Cognito.sln')
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert _containment_decision(result) != "deny", (
+            f"env-prefixed bypass in a cd-prefixed segment must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_allows_env_prefixed_bypass_leading():
+    """`NAME=val BUILD_QUEUE_BYPASS=1 dotnet build ...` → allow (unchanged
+    leading form with other env assignments before the token)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = "MSBUILDDEBUGPATH=/tmp BUILD_QUEUE_BYPASS=1 dotnet build ./Cognito.sln"
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert _containment_decision(result) != "deny", (
+            f"leading env-prefixed bypass must allow (unchanged); stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_denies_bypass_in_other_segment():
+    """`cd "..." && BUILD_QUEUE_BYPASS=1 echo prep && dotnet build ...` → deny.
+    The bypass suppresses ONLY the segment it leads — a real un-bypassed build
+    in another segment must still deny (segment-aware bypass detection must
+    not re-open the enforcement escape the cd-prefix-bypass fix closed)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = (f'cd "{repo}" && BUILD_QUEUE_BYPASS=1 echo prep && '
+               f'dotnet build ./Cognito.sln')
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert _containment_decision(result) == "deny", (
+            f"un-bypassed build in a different segment must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_denies_bypass_token_as_argument():
+    """`echo BUILD_QUEUE_BYPASS=1 && dotnet build ...` → deny. The token as a
+    mid-segment ARGUMENT (not a leading env assignment of the build segment)
+    must not bypass."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = "echo BUILD_QUEUE_BYPASS=1 && dotnet build ./Cognito.sln"
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert _containment_decision(result) == "deny", (
+            f"bypass token as an argument must not bypass; stdout={result.stdout!r}"
+        )
+
+
 def test_bqe_denies_cd_prefixed_filtered_script():
     """A raw `cd "..." && powershell ... build-filtered.ps1` → deny (filtered
     script invoked directly, not through the wrapper)."""
@@ -5458,14 +5550,16 @@ def test_events_straybranch_deny_appends_event():
 
 
 def test_events_containment_deny_appends_event():
-    """Containment recursive-Agent deny (agent_id trip) → one kind:deny event
-    (signature: recursive-agent-dispatch)."""
+    """Containment /lazy* Skill deny (agent_id trip) → one kind:deny event
+    (signature: skill-lazy-family). (Re-pointed 2026-07-09 from the removed
+    recursive-agent-dispatch deny to the retained Skill-tool deny.)"""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "state"
         state_dir.mkdir()
         result = _run_containment(
-            _agent_preToolUse_json(agent_id=_SUBAGENT_AGENT_ID), state_dir
+            _skill_preToolUse_json("lazy-batch", agent_id=_SUBAGENT_AGENT_ID),
+            state_dir,
         )
         assert _containment_decision(result) == "deny", result.stdout
         events = _read_hook_events(state_dir)
@@ -5473,7 +5567,7 @@ def test_events_containment_deny_appends_event():
         e = events[0]
         assert e["kind"] == "deny", e
         assert e["hook"] == "lazy-cycle-containment", e
-        assert e["signature"] == "recursive-agent-dispatch", e
+        assert e["signature"] == "skill-lazy-family", e
 
 
 def test_events_bqe_deny_appends_event():
@@ -5618,8 +5712,8 @@ _TESTS = [
      test_containment_denies_lifecycle_commands),
     ("test_containment_allows_narrow_ops",        test_containment_allows_narrow_ops),
     ("test_containment_allows_unrelated_bash",    test_containment_allows_unrelated_bash),
-    ("test_containment_denies_recursive_agent_dispatch",
-     test_containment_denies_recursive_agent_dispatch),
+    ("test_containment_allows_recursive_agent_dispatch",
+     test_containment_allows_recursive_agent_dispatch),
     ("test_containment_denies_second_feature_commit",
      test_containment_denies_second_feature_commit),
     ("test_containment_allows_same_feature_commit",
@@ -5633,12 +5727,12 @@ _TESTS = [
     ("test_containment_fail_open_on_malformed_json",
      test_containment_fail_open_on_malformed_json),
     # hardening-blind-to-process-friction Phase 1 (D4) — agent_id-targeted trip
-    ("test_containment_agentid_present_denies_recursive_agent_no_marker",
-     test_containment_agentid_present_denies_recursive_agent_no_marker),
+    ("test_containment_agentid_present_allows_recursive_agent_no_marker",
+     test_containment_agentid_present_allows_recursive_agent_no_marker),
     ("test_containment_agentid_absent_allows_main_thread_agent_no_marker",
      test_containment_agentid_absent_allows_main_thread_agent_no_marker),
-    ("test_containment_agentid_present_denies_recursive_agent_with_marker",
-     test_containment_agentid_present_denies_recursive_agent_with_marker),
+    ("test_containment_agentid_present_allows_recursive_agent_with_marker",
+     test_containment_agentid_present_allows_recursive_agent_with_marker),
     ("test_containment_agentid_present_denies_lazy_batch_invocation",
      test_containment_agentid_present_denies_lazy_batch_invocation),
     ("test_containment_agentid_present_allows_lazy_batch_path_reference",

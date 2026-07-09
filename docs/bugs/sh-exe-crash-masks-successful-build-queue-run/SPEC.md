@@ -2,7 +2,7 @@
 
 > Git Bash's `sh.exe` intermittently segfaults while hosting a `build-queue.ps1` invocation from the Bash tool. The tool reports `Segmentation fault` / exit 139 and a `sh.exe.stackdump` file appears in the repo root, but `build-queue.ps1` had already run to completion and the wrapped build had genuinely succeeded — the crash is in the shell process, not in the queued operation. Nothing in the harness tells an agent to disbelieve the shell-level signal and check the seq's own log/banner first.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-08
 **Placement:** docs/bugs/sh-exe-crash-masks-successful-build-queue-run

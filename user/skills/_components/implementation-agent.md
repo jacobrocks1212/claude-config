@@ -33,6 +33,8 @@ After implementation, run the test command and confirm:
 - No existing tests were broken by your changes
 - The implementation satisfies the spec requirements
 
+**Turn-end gate (build/test completion):** your verification build/tests must run to **COMPLETION** — never left backgrounded — and be **GREEN**, with the completed pass/fail summary pasted, BEFORE you end your turn. A bare enqueue/launch line (e.g. `build-queue: enqueued as seq=N`) is NOT a result. If a queue-routed build was backgrounded or its wrapper was killed by a shell timeout, run `~/.claude/scripts/build-queue-await.ps1 -Seq N` to block until the authoritative `RESULT=` banner and paste that. If you genuinely cannot complete verification, state explicitly in your report that verification is incomplete — never imply green.
+
 ### DO NOT Pre-Diagnose State (MANDATORY)
 
 If your first action is to grep/search for a symbol the orchestrator told you to add and you find that it already exists, you MUST NOT conclude "the work was already done in a prior session" and exit. The overwhelmingly common cause of this false positive is the subagent confusing its own intermediate edits for prior work — you cannot tell from a working-tree grep whether you added the symbol five minutes ago or it was there at session start.
@@ -46,6 +48,8 @@ Before declaring ANY deliverable "already complete," all of the following are ma
 5. If ALL checks pass, your report must paste the exact `git log` output (commit SHA and ISO date) to substantiate the claim. The orchestrator will independently re-run `git log -1 --oneline -- <file>` and reject the claim if the most recent commit is from the current session.
 
 "Already done" is a hypothesis, not a conclusion. Unsubstantiated "already complete" claims are treated as NEEDS-REWORK by default.
+
+**Turn-end gate reminder:** do not produce the report below until the build/tests have COMPLETED (never backgrounded) and are GREEN — await the `RESULT=` banner via `~/.claude/scripts/build-queue-await.ps1 -Seq N` if needed, or state explicitly that verification is incomplete.
 
 ### Required Final Report Format (MANDATORY — NO EXCEPTIONS)
 

@@ -2,7 +2,7 @@
 
 > The crash-hygiene fix recycles VBCSCompiler machine-wide after **every** build, on the stated invariant that "the queue serializes builds, so no concurrent build's compiler server is ever killed." That invariant is violable in two ways — the stale-lock reclaim can admit a second concurrent build on a transiently-unreadable `active.lock`, and off-queue **bypass** builds run invisibly to serialization — so a build finishing in worktree A can `Stop-Process -Force` the VBCSCompiler that worktree B's build is actively using, producing MSB4166 / a partial compile / a `Build FAILED`-but-exit-0 → a stale or never-updated test DLL in worktree B.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-02
 **Placement:** docs/bugs/build-queue-recycle-kills-concurrent-worktree-build

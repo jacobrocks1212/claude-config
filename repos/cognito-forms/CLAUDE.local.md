@@ -8,19 +8,14 @@
   <structure>
     Backend: Cognito.Core/ (domain), Cognito/ (business logic), Cognito.Services/ (web/API), Cognito.Queue*/ (jobs)
     Frontend: Cognito.Web.Client/apps/{spa,client,marketing,website}, libs/{model.js,vuemodel,element-ui,types,api,utils,shared-components,styles,content-data-layer,importers,workflow-diagram}
-    Tests: Cognito.UnitTests/ (unit), Cognito.Forms.UnitTests/ (integration) — both MSTest
+    Tests: Cognito.UnitTests/ (unit), Cognito.Forms.UnitTests/ (Selenium/browser integration) — both MSTest
   </structure>
 
   <subdirectory-docs>
     These directories have their own CLAUDE.local.md with detailed patterns:
-    - Cognito.Core/          — Domain layer: model hierarchy, service interfaces, DI
-    - Cognito/               — Business logic: service hierarchy, data layer, storage patterns
-    - Cognito.Services/      — Web/API: ASP.NET MVC controllers, BaseController, routing
-    - Cognito.Web.Client/    — Frontend monorepo: Nx project mapping, apps, libs
-    - Cognito.Web.Client/libs/model.js/  — Reactive entity/type/property/rule framework
-    - Cognito.Web.Client/libs/vuemodel/  — Vue 2 reactivity bridge for model.js
-    - Cognito.Web.Client/apps/client/    — Form rendering app: extensions, converters, web-api
-    - Cognito.Web.Client/apps/spa/       — Builder/admin: GlobalState, composables, Element UI
+    Cognito.Core/ (domain layer, DI), Cognito/ (services, data layer, storage), Cognito.Services/ (MVC controllers, routing),
+    Cognito.Web.Client/ (Nx monorepo map), libs/model.js/ (reactive entity framework), libs/vuemodel/ (Vue 2 bridge),
+    apps/client/ (form rendering: extensions, converters, web-api), apps/spa/ (builder/admin: GlobalState, composables, Element UI)
   </subdirectory-docs>
 
   <knowledge-base>
@@ -40,16 +35,22 @@
       moment the fix lands.
   </coding-conventions>
 
+  <subagent-dispatch>
+    Prefer restricted agent types for read-only work: Explore (or an agent with an explicit narrow
+    tools list) instead of a default "All tools" general-purpose agent. Unrestricted subagents in
+    this repo inherit the full skill/plugin/MCP surface (~2–4x the baseline tokens of a restricted
+    agent) — reserve them for work that actually edits files or runs builds.
+  </subagent-dispatch>
+
   <claude-config>
     Claude Code config for this repo is authored in the `claude-config` repo and symlinked in.
     This file itself (`CLAUDE.local.md`), plus `.claude/{CLAUDE.md, settings.json, settings.local.json,
     skill-config, skills, commands, knowledge}`, are symlinks into
     `~/source/repos/claude-config/repos/cognito-forms/`.
 
-    - Editing through a symlink writes through to `claude-config` — but the Edit tool refuses to
-      write through symlinks, so edit the real target under `claude-config/repos/cognito-forms/`.
-    - These files are NOT tracked by this repo's git; `git status` here never shows them. Commit
-      config changes in the `claude-config` repo instead.
+    - The Edit tool refuses to write through symlinks — edit the real target under
+      `claude-config/repos/cognito-forms/`. These files are NOT tracked by this repo's git;
+      commit config changes in the `claude-config` repo.
     - Mappings live in `claude-config/manifest.psd1`; `claude-config/setup.ps1 check|repair` verifies them.
     - See `~/source/repos/CLAUDE.md` ("Claude Config") and `claude-config/CLAUDE.md` for the full system.
   </claude-config>
@@ -57,92 +58,37 @@
 
 # Build & Test Workflow
 
-**The build/test skills are the ONLY sanctioned way to build or test in this repo: `/msbuild`, `/mstest`, `/nxbuild`, `/nxtest`.** They route every build/test through the machine-global build queue, which serializes runs across worktrees/sessions and emits filtered output. Raw `dotnet build` / `dotnet test` / `npx nx test` run off-queue: they are blocked by a PreToolUse hook in Cognito worktrees, reintroduce the cross-worktree DLL-copy-lock contention (MSB3027/MSB3021) the queue exists to prevent, and dump unfiltered output into context. Do NOT invoke raw `dotnet`/`npx nx` to build or test — always use a skill. The raw command shapes shown below are reference only (the skills wrap them).
+**The build/test skills are the ONLY sanctioned way to build or test in this repo: `/msbuild`, `/mstest`, `/nxbuild`, `/nxtest`.** They route every build/test through the machine-global build queue, which serializes runs across worktrees/sessions and emits filtered output (errors + summary only — prevents context bloat). Raw `dotnet build` / `dotnet test` / `npx nx build|test` run off-queue: they are blocked by a PreToolUse hook in Cognito worktrees, reintroduce cross-worktree DLL-copy-lock contention (MSB3027/MSB3021), and dump unfiltered output into context. Any raw command shapes shown below are reference only (the skills wrap them).
 
-## Building
+**Shell crash ≠ build failure.** Git Bash's `sh.exe` can intermittently segfault around a build-queue invocation (exit 139, `Segmentation fault`, a `sh.exe.stackdump` in the repo root) even though the detached build ran to completion. On any shell-level crash or abrupt tool error around a queue call, do not trust the shell's exit signal: run `/build-queue-status`, then read the seq's own artifacts (`~/.claude/state/build-queue/logs/<seq>.log`, `<seq>.build.log`, `results/<seq>.json`) for the real outcome before re-running or investigating a "failure".
+
+## Building (backend)
+
 - **`/msbuild`** — full-solution filtered build (also regenerates server types). The authoritative build.
-- **`/msbuild -Project "<relative/path/to.csproj>"`** — fast single-project incremental build (path relative to repo root, e.g. `Cognito.UnitTests/Cognito.UnitTests.csproj`). The sanctioned targeted-compile path; use it in-loop instead of a full-solution build.
-- Underlying command (reference): `dotnet build "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.sln" -verbosity:minimal`.
+- **`/msbuild -Project "<relative/path/to.csproj>"`** — fast single-project incremental build (e.g. `Cognito.UnitTests/Cognito.UnitTests.csproj`). The sanctioned targeted-compile path; use it in-loop instead of a full-solution build.
+- Underlying command (reference): `dotnet build "…\Cognito.sln" -verbosity:minimal`.
 
-## Running Tests
-Use the **`/mstest` skill** — filtered test output (passed/failed tests, errors, summary), routed through the queue. Underlying command (reference only — do not run directly):
-```bash
-dotnet test "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.UnitTests\Cognito.UnitTests.csproj" --filter "ClassName~MyTestClass" --verbosity minimal
-```
-- Default project: `Cognito.UnitTests` — **all** service/unit tests live here (including `EntryIndexServiceTests`, `PersonSubmissionIndexingTests`, `ShouldInvalidateIndexTests`, etc.)
-- `Cognito.Forms.UnitTests` is the **Selenium/browser integration** test project — only use `-TestDll "Cognito.Forms.UnitTests"` for browser-based tests
-- Filter syntax: `ClassName~Foo`, `Name~Bar`, `FullyQualifiedName~Baz`
-- Tests run with `--no-build` — build first with `/msbuild` if needed
-- **Do not relocate test output to dodge DLL-copy-lock contention.** `dotnet test --artifacts-path`/`--output` to a temp dir breaks net472 tests that resolve content files at relative paths (e.g. `bin\Cognito.Services\Web.config`, `_snapshots/*`, FakeAzure data) — they fail en masse with `DirectoryNotFoundException`/`AggregateException`, which masquerades as a logic regression. If `bin\Debug\*.dll` is locked (MSB3027/MSB3021 "used by another process"), the build queue now automatically reaps leftover build processes, recycles VBCSCompiler, and quarantines 0-byte/truncated DLLs between runs — check `/build-queue-status` for the per-build hygiene outcome (recycled / quarantined / fidelity) before manually killing anything.
-- **When removing/renaming a serialized or persisted property, the snapshot tests are the authority — not grep.** Snapshot/golden keys are transformed from the C# name (e.g. `Enabled` → `PeopleFormSettings_Enabled` in the schema snapshot, `Settings_PeopleForm_Enabled` in the OpenAPI snapshot). A grep for the source symbol will miss re-keyed fixtures. After the change, run the snapshot suite (`SchemaGeneratorTests`, `JsonUtility*SerializationTests`, etc.) and let failures enumerate every fixture that needs updating.
+## Backend Tests
 
-## Running Frontend Tests
-Use the **`/nxtest` skill** (queue-routed, filtered). Underlying command (reference only — do not run directly):
-```bash
-cd "C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.Web.Client" && npx nx test <project> -- --testPathPattern="<pattern>" --no-coverage
-```
-- Nx project names (NOT directory names): `cognito-client`, `cognito-spa`, `@cognitoforms/model.js`, `@cognitoforms/vuemodel`, etc.
-- Use `npx nx show projects` to list all available project names
-- `--testPathPattern` filters by file path (e.g., `"migrate-selection-fields"`)
-- First run may be slow due to dependency builds (model.js, vuemodel, element-ui)
+- **`/mstest`** — filtered test runner (passed/failed, errors, summary), queue-routed.
+- Default project: `Cognito.UnitTests` — **all** service/unit tests live here (including `EntryIndexServiceTests`, `PersonSubmissionIndexingTests`, `ShouldInvalidateIndexTests`, etc.). Use `-TestDll "Cognito.Forms.UnitTests"` ONLY for Selenium/browser integration tests.
+- Filter syntax: `ClassName~Foo`, `Name~Bar`, `FullyQualifiedName~Baz`.
+- Tests run with `--no-build` — build first with `/msbuild` if needed.
+- **Do not relocate test output to dodge DLL-copy-lock contention.** `dotnet test --artifacts-path`/`--output` to a temp dir breaks net472 tests that resolve content files at relative paths (`bin\Cognito.Services\Web.config`, `_snapshots/*`, FakeAzure data) — they fail en masse with `DirectoryNotFoundException`, masquerading as a logic regression. If `bin\Debug\*.dll` is locked (MSB3027/MSB3021), the build queue automatically reaps leftover build processes, recycles VBCSCompiler, and quarantines 0-byte/truncated DLLs between runs — check `/build-queue-status` for the per-build hygiene outcome before manually killing anything.
+- **When removing/renaming a serialized or persisted property, the snapshot tests are the authority — not grep.** Snapshot/golden keys are transformed from the C# name (e.g. `Enabled` → `PeopleFormSettings_Enabled` in the schema snapshot, `Settings_PeopleForm_Enabled` in the OpenAPI snapshot), so a grep for the source symbol misses re-keyed fixtures. Run the snapshot suite (`SchemaGeneratorTests`, `JsonUtility*SerializationTests`, etc.) and let failures enumerate every fixture needing updates.
 
-## Build Verification
+## Frontend Build & Tests
 
-For build verification in plans, use the `/msbuild` skill which runs the filtered build script:
-```
-/msbuild
-```
-
-This runs `build-filtered.ps1` which shows only errors + summary (prevents context bloat). Pass `-Project "<csproj>"` for a fast single-project incremental build instead of the full solution.
-
-Do not run `dotnet build` directly — it bypasses the queue and is blocked by a hook in Cognito worktrees.
-
-## Test Verification
-
-For running backend tests, use the `/mstest` skill which runs the filtered test script:
-```
-/mstest
-```
-
-This runs `test-filtered.ps1` which shows only passed/failed tests, errors, and summary (prevents context bloat).
-
-Do not run `dotnet test` directly — it bypasses the queue and is blocked by a hook in Cognito worktrees.
-
-## Frontend Build Verification
-
-For frontend build verification, use the `/nxbuild` skill:
-```
-/nxbuild
-```
-
-This runs `client-build-filtered.ps1` which shows only errors + summary (prevents context bloat).
-
-Options:
-- `-Project "cognito-spa"` — build specific project
-- `-All` — build all projects
-- Common projects: `cognito-spa`, `cognito-client`, `@cognitoforms/model.js`, `@cognitoforms/vuemodel`
-
-## Frontend Test Verification
-
-For running frontend tests, use the `/nxtest` skill:
-```
-/nxtest
-```
-
-This runs `client-test-filtered.ps1` which shows only PASS/FAIL tests, errors, and summary (prevents context bloat).
-
-Options:
-- `-Project "cognito-spa"` — test specific project (default: cognito-spa)
-- `-Pattern "Button"` — filter by file path (--testPathPattern)
-- `-Filter "should render"` — filter by test name (--testNamePattern)
-- `-NoCoverage` — skip coverage for faster runs
+- **`/nxbuild`** — filtered frontend build. Options: `-Project "cognito-spa"`, `-All`.
+- **`/nxtest`** — filtered frontend test runner. Options: `-Project "cognito-spa"` (default), `-Pattern "Button"` (file path filter), `-Filter "should render"` (test name filter), `-NoCoverage`.
+- Nx project names (NOT directory names): `cognito-client`, `cognito-spa`, `@cognitoforms/model.js`, `@cognitoforms/vuemodel`, … — `npx nx show projects` lists all.
+- First run may be slow due to dependency builds (model.js, vuemodel, element-ui).
 
 <csharp-workflow>
   <mandatory-skills>
     When editing ANY .cs file, you MUST invoke these skills FIRST:
     1. csharp-cognito - C# patterns and Cognito conventions
     2. architecture-patterns - Clean architecture, DDD, service patterns
-
     DO NOT proceed with C# edits until these skills are loaded.
   </mandatory-skills>
 
@@ -152,96 +98,40 @@ Options:
   </file-management>
 
   <syntax-rules>
-    C# version varies by project — check the project's .csproj LangVersion before using newer syntax.
+    C# version varies by project — check the .csproj LangVersion before using newer syntax.
     Most projects use LangVersion 8.0; Cognito.Core and Cognito.Services use LangVersion 10.
-
-    SAFE EVERYWHERE (C# 8):
-    - Nullable reference types (#nullable enable)
-    - Using declarations (using var x = ...)
-    - Switch expressions (x switch { ... })
-    - Async streams (IAsyncEnumerable)
-    - Indices and ranges (^1, ..)
-    - Null-coalescing assignment (??=)
-    - Pattern matching with property/positional patterns
-
-    SAFE IN CORE/SERVICES ONLY (C# 9-10):
-    - Records, init-only setters, target-typed new
-    - Pattern matching with and/or/not
-
-    AVOID EVERYWHERE:
-    - File-scoped namespaces (namespace X;) — not used in this codebase
-    - Required members, raw string literals, generic attributes (C# 11+)
+    - SAFE EVERYWHERE (C# 8): nullable reference types, using declarations, switch expressions,
+      async streams, indices/ranges (^1, ..), ??=, property/positional pattern matching
+    - SAFE IN CORE/SERVICES ONLY (C# 9-10): records, init-only setters, target-typed new, and/or/not patterns
+    - AVOID EVERYWHERE: file-scoped namespaces (not used in this codebase); required members,
+      raw string literals, generic attributes (C# 11+)
   </syntax-rules>
 </csharp-workflow>
 
 <frontend-workflow>
   <mandatory-skills>
-    When editing frontend files in Cognito.Web.Client/, invoke relevant skills:
-
-    For .vue files: vue, vue-composition-api, vuejs-development
-    For .ts/.tsx files: typescript-advanced-types
-    For styling: tailwind-design-system (if using Tailwind)
-    Always: nx-monorepo, frontend-design (for UI work)
+    When editing frontend files in Cognito.Web.Client/:
+    .vue files: vue, vue-composition-api | .ts/.tsx: typescript-advanced-types |
+    styling: tailwind-design-system (if Tailwind) | always: nx-workspace-patterns, frontend-design (UI work)
   </mandatory-skills>
 
   <conventions>
-    - Vue 2.7 with Composition API (NOT Vue 3)
-    - TypeScript strict mode
-    - Nx monorepo structure: apps/{spa,client,marketing,website}
-    - Use composables for shared logic
-    - Prefer ref() over reactive() for primitives
+    - Vue 2.7 with Composition API (NOT Vue 3); TypeScript strict mode
+    - Nx monorepo: apps/{spa,client,marketing,website}
+    - Use composables for shared logic; prefer ref() over reactive() for primitives
   </conventions>
 </frontend-workflow>
 
 <work-logging>
-  ## Work Logging
-
   Scoped to Cognito Forms sessions only (2026-06-11) — other repos no longer log.
 
-  The `work-logging-plugin` MCP server exposes `work_log_append` — an append-only JSONL logger
-  that captures significant engineering work for future interview prep, portfolio generation, and career analysis.
-  Records are persisted to `~/.interview-prep/work-log.jsonl`.
+  Call the `work-logging-plugin` MCP tool `work_log_append` at the **end** of any session that
+  produces meaningful engineering output (completed plans, real code changes). Skip for trivial
+  edits, config tweaks, or exploratory research. Records persist to `~/.interview-prep/work-log.jsonl`.
 
-  ### When to call it
-  Call `work_log_append` at the **end** of any session that produces meaningful engineering output.
-  This includes completing a `/write-plan`, or any other skill-driven work that results in real code changes.
-  Skip it for trivial edits, config tweaks, or exploratory research that doesn't produce artifacts.
-
-  ### Required parameters
-  | Parameter | Type | Description |
-  |-----------|------|-------------|
-  | `skill` | string | Skill name that completed (e.g., "write-plan") |
-  | `project` | string | Project identifier (e.g., "cognito-forms") |
-  | `title` | string | One-line title of the work |
-  | `summary` | string | 1-3 sentence narrative of what was accomplished |
-  | `files_modified` | string[] | Paths of all changed files |
-
-  ### Optional parameters (include when available)
-  | Parameter | Type | Description |
-  |-----------|------|-------------|
-  | `branch` | string | Git branch name |
-  | `commit` | string | Git commit SHA |
-  | `phases_md` | string | Path to PHASES.md (if phased implementation) |
-  | `spec_md` | string | Path to SPEC.md (if implementing a spec) |
-  | `technologies` | string[] | Tech stack used (e.g., ["Rust", "TypeScript"]) |
-  | `patterns` | string[] | Design patterns applied (e.g., ["observer-pattern", "memoization"]) |
-  | `technical_context` | string | Architecture decisions, tradeoffs, constraints |
-  | `extra` | object | Arbitrary additional fields merged into the record |
-
-  ### Example
-  ```
-  work_log_append(
-    skill="write-plan",
-    project="cognito-forms",
-    title="DC bias regression in voice synthesis",
-    summary="Fixed pw parameter defaulting to 0 causing DC output. Added boundary validation in set_pw().",
-    files_modified=["src/voice.rs", "tests/voice_test.rs"],
-    branch="bugfix/dc-bias",
-    commit="abc1234",
-    technologies=["Rust"],
-    patterns=["boundary-validation"]
-  )
-  ```
+  Required: `skill`, `project` ("cognito-forms"), `title`, `summary` (1-3 sentences), `files_modified`.
+  Include when available: `branch`, `commit`, `phases_md`, `spec_md`, `technologies`, `patterns`,
+  `technical_context`. (Full parameter docs are on the tool schema.)
 </work-logging>
 
 ## Backend Gotchas
@@ -267,8 +157,7 @@ Canonical example: `EntryIndexService.ResolveCustomerEntryIdAsync` (PersonField 
 
 ## Branch-aware doc context
 
-Most `p/*` work branches are backed by a docs directory under `../cog-docs/docs/bugs/<id>-<slug>/` or `../cog-docs/docs/features/<slug>/` (SPEC.md, PHASES.md, plans/). A `SessionStart` hook (`load-branch-docs-context.sh`) resolves the current branch to that directory via a `**Branch:**` field in its SPEC.md or PHASES.md and injects a pointer at session start.
+Most `p/*` work branches are backed by a docs directory under `../cog-docs/docs/bugs/<id>-<slug>/` or `../cog-docs/docs/features/<slug>/` (SPEC.md, PHASES.md, plans/). A `SessionStart` hook (`load-branch-docs-context.sh`) resolves the current branch to that directory via a `**Branch:** <branch>` line in its SPEC.md or PHASES.md and injects a pointer at session start.
 
-- **When the hook surfaces a pointer:** before doing any work on the branch, read that directory's SPEC.md and PHASES.md to re-familiarize yourself with the in-progress work.
-- **When the hook is silent but branch docs likely exist** (an un-stamped dir): list `../cog-docs/docs/{bugs,features}`, resolve the directory by slug or work-item id, review it, and add a `**Branch:** <current-branch>` line to that SPEC.md or PHASES.md so future sessions resolve automatically (self-heal/backfill).
-- The field format the hook matches: a line `**Branch:** <branch>` (the value may be backticked and may carry a trailing parenthetical note).
+- **When the hook surfaces a pointer:** read that directory's SPEC.md and PHASES.md before doing any work on the branch.
+- **When the hook is silent but branch docs likely exist:** list `../cog-docs/docs/{bugs,features}`, resolve the directory by slug or work-item id, review it, and backfill a `**Branch:** <current-branch>` line into its SPEC.md or PHASES.md so future sessions resolve automatically.

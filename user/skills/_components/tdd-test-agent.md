@@ -25,6 +25,8 @@ After writing all tests, run the test command and confirm:
 - Failures are for the expected reasons (missing implementation, not broken test setup)
 - No existing tests were broken by your changes
 
+**Turn-end gate (test-run completion):** the RED state must come from a **COMPLETED** test run — never from a backgrounded/enqueued run you did not follow to its result. A bare enqueue/launch line (e.g. `build-queue: enqueued as seq=N`) is NOT a captured RED state. If a queue-routed run was backgrounded or its wrapper was killed by a shell timeout, run `~/.claude/scripts/build-queue-await.ps1 -Seq N` to block until the authoritative `RESULT=` banner before capturing the failure output. If you genuinely cannot complete the run, state explicitly in your report that RED-state verification is incomplete.
+
 ### Required Final Report Format (MANDATORY — NO EXCEPTIONS)
 
 Your report MUST end with a fenced code block labeled `GROUND-TRUTH OUTPUT` containing the LITERAL paste of these command outputs, captured at the end of your work — not reconstructed from memory, not summarized, not paraphrased.

@@ -2,7 +2,7 @@
 
 > An implementation/test subagent invokes a build-queue skill with `run_in_background: true`, gets an immediate `enqueued as seq=N` return, and ends its turn on the enqueue — never seeing the authoritative `RESULT=` banner. The orchestrator is notified "Agent finished" while verification is still incomplete.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-09
 **Placement:** docs/bugs/subagent-backgrounds-verification-ends-turn-before-green

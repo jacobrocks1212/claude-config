@@ -2,7 +2,7 @@
 
 > The Cognito Forms variant of `/write-plan` bakes **raw** `dotnet build` / `dotnet test` / `npx nx test` commands into the plans it generates (both the orchestrator's in-loop gate steps and the dispatched lane agents' verification commands). Those raw commands do **not** route through the machine-global build-queue serializer (`build-queue.ps1`), so generated plans reintroduce exactly the cross-worktree/cross-session DLL-lock contention the queue exists to prevent — and forgo the output filtering that keeps build/test noise out of context. The four wrapper skills (`/msbuild` `/mstest` `/nxbuild` `/nxtest`) are the only queue entry points; the generated plans must use them.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-24
 **Placement:** docs/bugs/write-plan-plans-bypass-build-queue-skills
@@ -103,3 +103,11 @@ Decided with Jacob this session: **both** the orchestrator **and** the dispatche
 - **Can a dispatched Sonnet subagent invoke a wrapper skill (`Skill` tool), including one with `model: haiku` frontmatter?** If not, lane agents must use the direct `build-queue.ps1` Bash invocation (fix option b). Needs a quick runtime check before committing to fix option (a).
 - **Do we close the build-side contention hole now (add an incremental queue op/skill) or defer it** and only route tests + full builds through the queue? This is the main scope fork for `/plan-bug`.
 - **Should the typegen incremental `Cognito.Services` build stay raw** (it has no skill equivalent and is explicitly excluded from `/msbuild` by `quality-gates.md`), with an inline justification comment, or also move behind a new incremental op?
+
+## Resolution (2026-07-09)
+
+The three fix-scope decisions above were resolved as follows (orchestrator-chosen during the interactive bug-fix orchestration; surfaced to Jacob for review):
+
+- **D1 — gates use the skills, everywhere: DONE (largely pre-landed).** The skill was rewritten (write-plan-cognito v3, uncommitted at fix time) so the plan template, Tier-1/Tier-2 gates, and `quality-gates.md` all mandate `/msbuild [-Project]` / `/mstest -Filter` / `/nxbuild` / `/nxtest` and explicitly forbid raw `dotnet`/`npx nx`. Verified by grep: zero raw build/test commands remain in `write-plan-cognito/` (SKILL.md, lane-agent-briefing.md, execution-contract-cognito-lanes.md) or `skill-config/quality-gates.md`.
+- **D2 — lane agents reach the queue: option (a) primary, option (b) fallback.** The lane execution contract grants lane agents the `Skill` tool for `/msbuild`/`/mstest`/`/nxtest` (resolving Verified Symptom 3's missing tool grant). Because the "can a Sonnet subagent invoke a wrapper skill" runtime check remains unverified, `lane-agent-briefing.md` now also carries the zero-dependency fallback: direct `build-queue.ps1 -Op <op> -Exec <filtered-script>` invocation via Bash (hook-allowed, same queue entry point), plus the "trust the final `build-queue:` RESULT banner" instruction. Raw `dotnet`/`npx nx` remains forbidden on every path.
+- **D3 — build-side contention hole: CLOSED by `/msbuild -Project` (not deferred).** Since this SPEC was written, `build-filtered.ps1`/`/msbuild` gained a `-Project` single-project incremental op (queue-serialized, filtered), so Proven Finding 2's "full-solution-only" gap no longer exists. The Tier-1 incremental build and the typegen `Cognito.Services` build now route through `/msbuild -Project "…"` — no new queue op needed, and the typegen build is no longer raw (third open question mooted).

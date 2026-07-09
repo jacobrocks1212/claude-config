@@ -22,7 +22,7 @@ Repo-scoped variant of `/write-plan` tuned for this repo's cost profile: slow ba
 
 **Flow:** Load context → partition into lanes and parts → draft ONE self-contained plan per part → write plan file(s) → report path(s).
 
-**Critical: each plan part must be fully self-contained.** It may be executed after the context window is cleared. Every execution instruction, loop control, blocking-issue protocol, and completion step MUST be baked into the generated plan itself. Execution-time components are referenced by file path (not inlined) — the executing session reads them from disk on demand.
+**Critical: each plan part must be self-contained via its pointer block.** It may be executed after the context window is cleared. Self-contained does NOT mean the execution policy is inlined — it means the plan carries (a) a pointer block naming the two on-disk contracts (generic + Cognito-lane) the executor must `Read`, and (b) ALL per-plan content (touchpoint audit, schedule, lanes, batch structure, plan-specific notes). The lane policy is **single-sourced** in `.claude/skills/write-plan-cognito/execution-contract-cognito-lanes.md` — never re-emit it into a plan (that was the ~16KB/plan dual-sourcing defect this v2 removed).
 
 ---
 
@@ -152,8 +152,9 @@ Classify each phase **at plan time**:
 
 - **Sequenced** — the phase's backend deliverables touch any generated-contract source: classes with `[ExportToTypeScript]`, anything under `Cognito.Core/Model/` or `Cognito.Core/DataTransfer/`, or other types the frontend consumes via `libs/types/server-types/`. Execution order: backend lane → orchestrator typegen step → frontend lane.
 - **Parallel** — no generated-contract impact. Backend and frontend lanes dispatch concurrently **in one assistant message** (the harness's only real-parallelism path; see the executor contract's **Parallelism & background builds** section). For the executor to exploit this, a `Parallel` batch must be machine-evidently file-disjoint — see the batch-structure rule in Step 3.
+- **Single-lane (no seam)** — the phase has exactly one lane (backend-only or frontend-only), so there is no backend→frontend handoff: the L.2 typegen seam NEVER runs mid-phase and no second lane exists to dispatch — even when a backend-only phase touches generated-contract sources (any resulting `server-types/**` diff is produced and reconciled at the part-end Tier 2 full `/msbuild`, which regenerates types). Classify every one-lane phase this way — do not force it into `Sequenced` (misleads the executor into looking for a seam step / a phantom frontend lane) or `Parallel` (implies a second concurrent lane). Its batches are `Solo` by construction. *(Back-compat: v3 plans written before this value express one-lane phases as `Sequenced` plus a plan-specific note that the seam is not run — executors treat that identically; no contract-version bump.)*
 
-When unsure, classify Sequenced — a wrong Parallel costs rework; a wrong Sequenced costs only wall-clock.
+When unsure **between Parallel and Sequenced** (two-lane phases), classify Sequenced — a wrong Parallel costs rework; a wrong Sequenced costs only wall-clock.
 
 **Make disjointness machine-evident (so the D4 executor can same-message-batch).** The generated executor reads the contract's same-message file-disjoint batching rule: it dispatches a batch's lanes in ONE message ONLY when the plan proves they are file-disjoint. So every `Parallel`-seam batch you author MUST make that proof checkable without re-deriving it: each lane in the batch lists its exact `Files to create/modify`, and no two same-batch lanes share a file. Backend and frontend lanes are disjoint by construction (the file-overlap rule), and neither owns `Cognito.Web.Client/libs/types/server-types/**` (orchestrator-owned) — so a `Parallel` BE+FE batch is provably disjoint as long as both lanes' file lists are present and non-overlapping. Do not change lane semantics for this — just ensure the file lists are explicit enough that the executor's disjointness check passes. `Sequenced` batches stay one-lane-per-batch (the typegen seam separates them), so no same-message claim applies.
 
@@ -168,7 +169,11 @@ When unsure, classify Sequenced — a wrong Parallel costs rework; a wrong Seque
 
 ## Step 3: Draft the Plan
 
-Write a **fully self-contained** plan for each part. Everything below is plan template content — write it into the plan, filling bracketed values.
+Write a **pointer-based** plan for each part (self-contained via its pointer block + per-plan content — see the "Critical" note at the top of this skill). Everything below is plan template content — write it into the plan, filling bracketed values.
+
+**SPEC-excerpt discipline (v3):** you read the full SPEC.md at Step 1b — the executor never does (a measured ~14–38KB read per session it doesn't need). Each phase's `#### SPEC excerpts` block must therefore be **sufficient on its own**: quote verbatim every Locked Decision row, requirement, and acceptance criterion the phase's lanes implement, each tagged with its SPEC section/LD id so escalation reads are targeted. Excerpting too little forces the executor into a full-SPEC escalation read (and each escalation is recorded against the plan); excerpting whole sections wholesale just moves the bloat — quote the rows the lanes act on, not their surrounding narrative.
+
+**Planner-side contract consultation (scoped — never the full file):** the executor Reads both execution contracts at run time; the planner does NOT need them to draft a plan — this SKILL.md carries the lane semantics required for partitioning and the templates below. Consult `execution-contract-cognito-lanes.md` ONLY when drafting a `## Plan-specific execution notes` row that cites or deltas a specific contract behavior (e.g. the L.2 typegen seam, Part Completion): list its headings first (`grep -n "^#" .claude/skills/write-plan-cognito/execution-contract-cognito-lanes.md`), then range-`Read` just the section(s) the note touches (~1–3KB) — never the whole ~18KB contract (a measured planner-context sink with no accuracy payoff over the scoped read). A plan whose notes section is `(none — the two contracts govern unmodified)` warrants zero contract reads.
 
 ---
 
@@ -179,52 +184,25 @@ Write a **fully self-contained** plan for each part. Everything below is plan te
 > **PHASES.md files:** [paths, with feature names and phase counts]
 > **SPEC.md files:** [paths]
 > **Total phases in this part:** X
-> **Plan version:** cognito-lanes-v1 (reference-based — components loaded from disk per step)
+> **Plan version:** cognito-lanes-v3 (pointer-based — execution policy lives on disk; SPEC content rides as scoped excerpts)
 
-**Execution-policy pointer (write this verbatim — single-source the generic policy):**
+**Execution-policy pointer (write this verbatim — the ONLY policy content in the plan):**
 
-The generic autonomous-execution policy (COMPONENT LOADING PROTOCOL, the generic MANDATORY RULES, the generic Phase-Selection Loop, Blocking Issue Protocol, and Completion report) is **single-sourced** in `~/.claude/skills/_components/execution-contract.md`. Emit this pointer block, then emit ONLY the Cognito lane-specific overrides below it — do NOT re-emit the generic sections the contract already carries:
+The execution policy is **single-sourced in two on-disk contracts** — the generic
+`~/.claude/skills/_components/execution-contract.md` and the Cognito lane specialization
+`.claude/skills/write-plan-cognito/execution-contract-cognito-lanes.md` (repo-relative). Do NOT
+re-emit ANY policy section into the plan — no EXECUTION MODEL, no Component Reference Card, no
+MANDATORY RULES, no Execution Protocol / L.0–L.7 steps, no Blocking Issue Protocol, no Completion
+or Work Log sections. Write only this pointer block:
 
-> ## Execution Policy — single-sourced + Cognito lane overrides
+> ## Execution Policy — single-sourced (pointer only)
 >
-> This plan's baseline autonomous-execution policy lives in **`~/.claude/skills/_components/execution-contract.md`**. The executing session MUST `Read` it before executing any batch and follow it as the operating contract. The Cognito-lane sections written below this pointer (lane-based EXECUTION MODEL, the lane Component Reference Card, the lane MANDATORY RULES, the lane Execution Protocol with the typegen seam and tiered queue-routed gates, and the no-auto-commit repo policy) **override the contract's generic defaults** wherever they differ — they are not duplication, they are the Cognito-lane specialization. Where neither this plan nor the repo's `.claude/skill-config/` overrides a contract rule, the contract governs.
-
-**Lane EXECUTION MODEL (Cognito override — write verbatim):**
-
-> ## EXECUTION MODEL — READ THIS FIRST (Cognito lane override)
+> This plan carries NO inlined execution policy. The executing session MUST, before executing any batch:
 >
-> This plan uses an **orchestrator + Sonnet lane-agent** architecture:
+> 1. `Read` **`~/.claude/skills/_components/execution-contract.md`** — the generic autonomous-execution contract.
+> 2. `Read` **`.claude/skills/write-plan-cognito/execution-contract-cognito-lanes.md`** (repo-relative from the worktree root; contract version: cognito-lanes-v3) — the Cognito lane specialization. It defines the lane EXECUTION MODEL, the lane Component Reference Card, the lane MANDATORY RULES, the lane Execution Protocol (Steps L.0–L.7 + typegen seam + tiered queue-routed gates + Part Completion), the Blocking Issue Protocol, the Completion report, and the Work Log step.
 >
-> | Role | What it does | Allowed tools |
-> |------|-------------|---------------|
-> | **Orchestrator (you)** | Read plan, compose Agent prompts, dispatch lane agents, run the typegen seam step, review output, run quality gates, update tracking docs | `Agent`, `Read`, `Bash` (gates/typegen only), `Skill` (build/test gates — `/msbuild` `/mstest` `/nxbuild` `/nxtest`), `TaskCreate`/`TaskUpdate` |
-> | **Sonnet lane agent** | Write ALL source and test code for ONE lane — tests first (RED), then implementation (GREEN) | `Edit`, `Write`, `Read`, `Bash`, `Grep`, `Glob`, `Skill` (for `/msbuild`, `/mstest`, `/nxtest` — the only sanctioned build/test path) |
->
-> **HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.cs`, `.ts`, `.vue`, `.js`, `.tsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, the plan file's frontmatter, `work-log.jsonl`. The ONLY source-adjacent artifact you regenerate directly is `Cognito.Web.Client/libs/types/server-types/**` — via the typegen script, never by hand.
->
-> **Dispatch pattern:** `Agent({ description: "...", model: "sonnet", prompt: "<FULL self-contained context — lane definition + lane-agent briefing — the agent has zero prior context>" })`
->
-> **Dispatch-census note (overrides generic executor expectations):** This plan uses inline-TDD lane agents. ONE lane agent serves as BOTH the test agent and the implementation agent for its lane — its briefing mandates failing-tests-first with pasted RED and GREEN output. For any dispatch census, count each lane agent as one test-agent AND one impl-agent. A batch with ≥ 1 lane-agent dispatch satisfies the per-batch dispatch contract; do NOT dispatch separate test/impl agents.
-
-(The COMPONENT LOADING PROTOCOL is part of the single-sourced `execution-contract.md` pointed to above — do NOT re-emit it. The Cognito Component Reference Card below OVERRIDES the contract's default card, because this lane uses lane-specific steps L.0–L.7, repo-relative components, and queue-routed gates.)
-
-**Lane Component Reference Card (Cognito override — write verbatim):**
-
-> ## Component Reference Card (Cognito lane override)
->
-> | Step | Component | Path |
-> |------|-----------|------|
-> | Step 0 | Task Tracking | `~/.claude/skills/_components/task-tracking.md` |
-> | Step L.0 | Source Re-read | `~/.claude/skills/_components/source-reread.md` |
-> | Step L.1 | Lane Agent Briefing | `.claude/skills/write-plan-cognito/lane-agent-briefing.md` (repo-relative) |
-> | Step L.3 | Lane Review | `~/.claude/skills/_components/subagent-review.md` |
-> | Step L.3 | Mount-Site Verification | `~/.claude/skills/_components/mount-site-verification.md` |
-> | Step L.4 | PHASES.md Update | `~/.claude/skills/_components/phases-update.md` |
-> | Step L.5 / Part-end | Quality Gates (tiered) | `.claude/skill-config/quality-gates.md` (repo-relative) |
-> | Step L.6 | Commit Policy | `.claude/skill-config/commit-policy.md` (repo-relative — this repo: no auto-commits) |
-> | Part-end | Integration Verification | `~/.claude/skills/_components/integration-verification.md` |
-> | Part-end | CLAUDE.md Review | `~/.claude/skills/_components/claude-md-review.md` |
-> | Final | Work Log | `~/.claude/skills/_components/work-log.md` |
+> **Precedence (most-specific wins):** this plan's "Plan-specific execution notes" → the lane contract → the generic contract. After any context compaction, re-read this plan first, then both contracts, before resuming.
 
 **References section (write this, listing each upstream artifact read in Step 1b.1):**
 
@@ -236,29 +214,13 @@ The generic autonomous-execution policy (COMPONENT LOADING PROTOCOL, the generic
 >
 > (If none: `(none — this plan has no completed hard upstream dependencies)`.)
 
-**Lane MANDATORY RULES (Cognito override — write verbatim; these replace the contract's generic rules for this lane plan):**
-
-> ## MANDATORY RULES — DO NOT SKIP ANY STEP (Cognito lane override)
->
-> 1. ALL source and test code is written by Sonnet lane agents via the `Agent` tool. The orchestrator never edits source/test files. The ONLY exception: trivial PASS-WITH-FIXES items (a few lines).
-> 2. All lane-agent edits happen in the current worktree — NEVER create worktrees for agents.
-> 3. Every lane with testable behavior follows inline TDD — the lane agent writes failing tests first and pastes RED then GREEN ground-truth output.
-> 4. Lane agents use Tier 1 verification commands only, routed through the queue skills: `/msbuild -Project "<csproj>"` for an incremental project build and `/mstest -Filter "ClassName~…"` / `/nxtest -Project … -Pattern … -NoCoverage` for filtered tests. Never raw `dotnet`/`npx nx`. Nobody runs a full-solution `/msbuild` (no `-Project`) except the orchestrator at part-end Tier 2 (or on an escalation trigger).
-> 5. Sequenced phases: the frontend lane is NOT dispatched until the typegen seam step completes and the server-types diff is reviewed.
-> 6. Every lane's output is reviewed (ground-truth re-run included) before PHASES.md is updated or the next batch launches.
-> 7. PHASES.md is updated after EACH batch completes (not deferred).
-> 8. NO git commits or pushes at any point — repo policy. All git operations are manual (see commit-policy component).
-> 9. The part-end Tier 2 gate (full-solution `/msbuild` (no `-Project`) + filtered `/mstest`/`/nxtest` for all touched areas) is MANDATORY and 100%-pass before this plan part is reported complete.
-> 10. This plan is self-contained — follow it exactly without relying on external context.
-> 11. Before each step, `Read` the component files listed for that step from disk.
-
 **Execution Schedule (fill in from the phase queue):**
 
 > ## Execution Schedule
 >
 > | Step | Feature | Phase | Title | Seam | Lanes | Blocked by |
 > |------|---------|-------|-------|------|-------|------------|
-> | 1 | [feature] | P[N] | [title] | Parallel \| Sequenced | BE, FE | — |
+> | 1 | [feature] | P[N] | [title] | Parallel \| Sequenced \| Single-lane | BE, FE | — |
 > | ... | | | | | | |
 
 **Per-Phase Plans — for each phase in execution order:**
@@ -267,8 +229,16 @@ The generic autonomous-execution policy (COMPONENT LOADING PROTOCOL, the generic
 >
 > **Goal:** [one sentence]
 > **Entry criteria:** [prerequisite phases]
-> **SPEC.md references:** [sections]
-> **Seam classification:** [Parallel | Sequenced] — [one-line justification: which deliverables do/don't touch generated contracts]
+> **Seam classification:** [Parallel | Sequenced | Single-lane (no seam)] — [one-line justification: which deliverables do/don't touch generated contracts; for Single-lane, name the one lane and note the part-end Tier 2 build reconciles any `server-types/**` diff]
+>
+> #### SPEC excerpts (authoritative for this phase — executor does NOT read SPEC.md)
+>
+> > **[SPEC section heading / LD id]** (SPEC.md § [section])
+> > [verbatim quote of the requirement / Locked Decision row / acceptance criterion]
+>
+> > ... (one blockquote per requirement this phase's lanes implement)
+>
+> **Escalation rule:** these excerpts are the working SPEC content for this phase. Read the on-disk SPEC.md ONLY if an excerpt is ambiguous, contradicts observed code, or a lane needs context the excerpt doesn't carry — then read just the named section, and record the escalation + reason in the phase's Implementation Notes (it means the planner under-excerpted).
 >
 > #### Work Units (Lanes)
 >
@@ -283,116 +253,23 @@ The generic autonomous-execution policy (COMPONENT LOADING PROTOCOL, the generic
 > | 1 | P[N]-BE [+ P[N]-FE if Parallel seam] | [Yes if Parallel seam / Solo] | BE: [files]; FE: [files] — no shared file | |
 > | [seam] | — typegen seam step — | — | — | Sequenced phases only |
 > | 2 | P[N]-FE | Solo | FE: [files] | Sequenced phases only |
+>
+> (Single-lane (no seam) phases: exactly one `Solo` batch — no seam row, no batch 2.)
 
-**Lane Execution Protocol (Cognito override — write this entire section into the plan; the lane steps L.0–L.7, typegen seam, and tiered gates replace the contract's generic per-batch steps):**
+**Plan-specific execution notes (write this section — per-plan deltas ONLY):**
 
-> ## Execution Protocol (Cognito lane override)
->
-> ### Phase Selection Loop
->
-> Repeat until all phases in the Execution Schedule are complete or a blocking issue triggers early exit:
->
-> 1. **Select ready phase(s):** entry criteria satisfied (prerequisite phases' deliverables all checked off). Phases from different features may run concurrently when the schedule allows and no lanes conflict on files.
-> 2. **Announce:** "Implementing [feature] Phase N: [title]"
-> 3. **Review prior context:** re-read previously completed phases' Implementation Notes in PHASES.md — they take priority over this plan where they diverge.
-> 4. **Execute all batches** per the Per-Batch Steps below.
-> 5. **Report:** "[feature] Phase N: [title] — complete (uncommitted, per repo policy)"
-> 6. **Loop.**
->
-> ### Step 0: Initialize Task Tracking (MANDATORY — BEFORE ANYTHING ELSE)
->
-> Read `~/.claude/skills/_components/task-tracking.md` and follow it. Create one task per lane (not per deliverable).
->
-> ### Per-Batch Steps
->
-> #### Step L.0: Re-read Source Documents (MANDATORY)
->
-> Read `~/.claude/skills/_components/source-reread.md` and follow it. Re-read from disk: PHASES.md (current phase + prior Implementation Notes), SPEC.md (relevant sections), and this plan file.
->
-> #### Step L.1: Dispatch Lane Agent(s)
->
-> **PRE-FLIGHT:** confirm you will use `Agent` with `model: "sonnet"` for ALL code changes and will NOT edit source/test files yourself.
->
-> Read `.claude/skills/write-plan-cognito/lane-agent-briefing.md`. For each lane in this batch, compose an Agent prompt containing: (1) the lane definition from this plan (scope, files, test expectations, implementation goal, spec requirements, Tier 1 commands), (2) the relevant SPEC.md excerpts, (3) prior Implementation Notes that affect this lane, (4) the lane-agent briefing verbatim.
->
-> Parallel-seam phases: dispatch the backend and frontend lane agents in a SINGLE message. Sequenced phases: dispatch only the backend lane now.
->
-> **Failed-agent recovery:** if a lane agent fails or returns garbage, re-dispatch once with the failure context appended. Two failures on the same lane = blocking issue.
->
-> #### Step L.2: Typegen Seam (Sequenced phases only — between backend and frontend lanes)
->
-> After the backend lane passes review (Step L.3 runs for the backend lane FIRST in sequenced phases):
->
-> 1. Incremental build of the Services chain (NOT the full solution), queue-serialized + filtered:
->    `/msbuild -Project "Cognito.Services/Cognito.Services.csproj"`
-> 2. Regenerate types in place:
->    `powershell.exe -Command "cd 'C:\Users\JacobMadsen\source\repos\Cognito Forms\Cognito.Web.Client\libs\types\typegen'; ./generate-server-types.ps1 -UpdateInPlace"`
-> 3. Review the diff: `git status --short -- "Cognito.Web.Client/libs/types/server-types/"` then `git diff -- "Cognito.Web.Client/libs/types/server-types/"`. Confirm the type changes match the backend lane's contract changes — nothing missing, nothing unexpected. Unexpected diffs = treat as a backend-lane review finding (NEEDS-REWORK the backend lane).
-> 4. Dispatch the frontend lane (return to Step L.1) — its briefing must note that regenerated types are already on disk.
->
-> If a Sequenced phase's backend lane turns out to produce NO server-types diff, note that in PHASES.md and continue — the classification was conservative, no harm done.
->
-> #### Step L.3: Review Lane Output (MANDATORY BLOCKING GATE)
->
-> Read `~/.claude/skills/_components/subagent-review.md` and follow its complete protocol (including the Ground-Truth Verification Gate), plus `~/.claude/skills/_components/mount-site-verification.md` for new files.
->
-> **Cognito gate-cost rules for the ground-truth re-run:** re-run the EQUIVALENT queue-routed test command the lane used — `/mstest -Filter "ClassName~<same filter>"` for backend, or `/nxtest -Project <same project> -Pattern <same pattern> -NoCoverage` for frontend. The falsified-report check compares PASS/FAIL outcome, not byte-identical output, so the equivalent skill command is sufficient. `/mstest` is already `--no-build` and filtered, so it is cheap. NEVER trigger a build (no full-solution `/msbuild`, no `/msbuild -Project`) as part of ground-truth verification. For inline-TDD lanes, the TDD-discipline checks read the lane agent's OWN pasted RED output as the red-state evidence — verify the failures were for the right reason (behavioral, not compile/setup errors) and that the GREEN run passes the same filter.
->
-> #### Step L.4: Update PHASES.md (MANDATORY)
->
-> Read `~/.claude/skills/_components/phases-update.md` and follow it. Check off completed deliverables; add Implementation Notes (date, work completed, integration notes, pitfalls, files modified).
->
-> #### Step L.5: Quality Gates (Tier 1 — already satisfied; verify, don't re-run)
->
-> Read `.claude/skill-config/quality-gates.md`. In-loop (Tier 1), the lane agent's verified ground-truth output IS the gate — do not run additional builds or test passes beyond the Step L.3 re-run. **Escalation check:** if this batch changed server-side types consumed by the frontend beyond what the typegen seam handled, added a field to a widely-constructed entity, or renamed/re-exported a module — run the Tier 2 gate NOW (see Part Completion) before proceeding.
->
-> #### Step L.6: Commit Step
->
-> Read `.claude/skill-config/commit-policy.md`. **This repo: no auto-commits, no pushes — this step is a no-op.** Proceed.
->
-> #### Step L.7: Proceed to Next Batch
->
-> Checklist (all must be true): review report with verdict produced; ground-truth verified; PHASES.md updated; escalation check done. If any item is unchecked, go back.
->
-> ### Part Completion (after ALL phases in this plan part)
->
-> 1. **Tier 2 authoritative gate (MANDATORY, 100% pass):**
->    - C# changes: `/msbuild` (full-solution, no `-Project` — also regenerates server types authoritatively) → `/mstest` filtered to ALL test classes touched by this part (never unfiltered).
->    - Frontend changes: `/nxbuild` (touched projects) → `/nxtest` (touched projects).
->    - Mixed: C# pair then frontend pair.
->    - After the full build, check `git status --short -- "Cognito.Web.Client/libs/types/server-types/"` — any NEW diff means the typegen seam missed something; reconcile before proceeding.
->    - Failures: dispatch Sonnet fix agents, re-run the failing gate. Two failed fix attempts = blocking issue.
-> 2. **Integration verification:** read `~/.claude/skills/_components/integration-verification.md` and follow it (cross-lane integration, spec alignment, full-stack coverage for user-facing changes).
-> 2b. **Symptom reproduction (SEAM B — MANDATORY for bug fixes; this repo has no MCP step).** Because this repo declares "No MCP integration test step," the bug-completion evidence bar is enforced HERE. Read `~/.claude/skills/_components/symptom-reproduction-gate.md`. A bug-fix part may not be reported complete without the REQUIRED rung: a **serving-path regression test** — a `/mstest`-run test on the symptom's *actual serving path* (a service/controller test exercising the real path the symptom is served through, e.g. `GetLinkedPersonAsync` / the `linked-person` endpoint), verified RED→GREEN — **NOT** a unit test asserting on the fix's *internal target* (a stored value / facet / private helper). A `local-ui-tests` Selenium run or a `/write-manual-testing-doc` artifact observing the original symptom gone at the user surface is accepted as a STRONGER alternative. Bind the evidence to the SPEC's `## Reproduction Steps`. If only an internal-target unit test exists, the part is NOT complete — route a serving-path regression-test lane.
-> 3. **CLAUDE.md review:** read `~/.claude/skills/_components/claude-md-review.md` and follow it.
-> 4. Leave everything uncommitted — the developer commits manually (repo policy).
+This is the ONLY place plan-level policy deviations live. Everything generic stays in the two
+contracts. Write a `## Plan-specific execution notes` section containing ONLY the items below
+that actually apply (omit rows that don't — an empty section is written as `(none — the two
+contracts govern unmodified)`):
 
-**Blocking Issue Protocol — write this into the plan:**
-
-> ## Blocking Issue Protocol
+> ## Plan-specific execution notes
 >
-> If a blocking issue is encountered:
->
-> 1. **Stop all in-progress work.** Do not dispatch new agents.
-> 2. Do NOT commit anything (repo policy) — leave the working tree as-is and describe its state precisely in the report.
-> 3. **Print a blocking-issue report:** completed phases, blocked phase + reason, exact working-tree state (`git status --short` output), recovery suggestion, remaining phases not attempted.
-> 4. **Do not work around the blocker.**
->
-> Blocking issues include: circular phase dependencies; a lane agent failing twice; a Tier 2 failure unfixable in two attempts; a typegen run that fails or produces irreconcilable diffs; entry criteria referencing a feature/phase not in the input set; anything requiring architectural decisions beyond the specs.
-
-**Completion section — write this into the plan:**
-
-> ## Completion
->
-> When all phases in this part are complete and the Part Completion steps have passed:
->
-> Print a completion report: features/phases implemented, lane dispatch census (lane agents dispatched, batches executed), Tier 2 gate result, files modified (grouped by lane), Implementation Notes summary, and the reminder that the working tree is intentionally uncommitted for manual review (`git status --short` snapshot).
-
-**Work Log — write this into the plan:**
-
-> ## Append to Work Log (MANDATORY)
->
-> Read `~/.claude/skills/_components/work-log.md` and follow it. Call work_log_append with skill, project (`cognito-forms`), title, summary, files_modified, and technical_context.
+> - **Typegen seam:** [e.g. "N/A this part — no generated-contract changes; if the part-end full `/msbuild` produces any `server-types/**` diff, treat it as a finding and reconcile before completing." OR "Phase N is Sequenced — run the L.2 typegen seam between its BE and FE lanes."]
+> - **Single-writer files:** [any file shared by sequential sub-lanes, with the dispatch-order rule — e.g. "`CoreService.cs` is single-writer across P6-BE-A then P6-BE-B; B dispatches only after A passes review and re-reads the file from disk."]
+> - **Tier 2 gate commands (exact):** [the exact part-end `/msbuild` → `/mstest -Filter "..."` / `/nxbuild -Project ...` → `/nxtest -Project ... -Pattern ... -NoCoverage` invocations for the areas this part touches]
+> - **Additional blocking triggers:** [phase-specific blocking issues beyond the lane contract's generic list]
+> - **Component overrides:** [only if this plan overrides a Component Reference Card row — otherwise omit]
 
 ---
 

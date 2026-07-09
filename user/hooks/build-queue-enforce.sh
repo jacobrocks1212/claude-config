@@ -36,8 +36,13 @@
 # before the unanchored heavy-build scan; if any real heavy build survives the
 # suppression, the command is denied.
 #
-# BYPASS TOKEN (L6): any command with BUILD_QUEUE_BYPASS=1 as a leading env
-# assignment is allowed through immediately (before deny-matching).
+# BYPASS TOKEN (L6): recognized PER SEGMENT, matching the deny surface's
+# segment awareness. A whole command led by the token is allowed through
+# immediately (before deny-matching); a token leading any LATER command
+# segment (`cd "..." && BUILD_QUEUE_BYPASS=1 dotnet build ...`) suppresses
+# that segment from the deny scan — but ONLY that segment: a real un-bypassed
+# build in another segment still denies (the segment-aware bypass must not
+# re-open the enforcement escape the cd-prefix-bypass fix closed).
 #
 # CLOSED BLIND SPOT: a `cd <dir> && dotnet build` no longer bypasses the deny
 # matcher (the build verb is detected wherever it sits in the command). The
@@ -83,8 +88,15 @@ STATE_DIR = os.environ.get("LAZY_STATE_DIR") or os.path.join(
     os.path.expanduser("~"), ".claude", "state"
 )
 
-# Match the bypass token as a leading env assignment.
+# Match the bypass token as a leading env assignment. Applied to the whole
+# command (fast-path allow) AND per segment via _suppress_bypassed_segments.
 _BYPASS_RE = re.compile(r"^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*BUILD_QUEUE_BYPASS=1(?:\s|$)")
+
+# Shell separators that begin a new command segment (mirrors _CMD_START's
+# character class). Splitting on these yields per-segment strings _BYPASS_RE
+# can be matched against, so the bypass token is recognized when it leads the
+# build's own segment behind a `cd "..." && ` (or `;`/pipeline) prefix.
+_SEGMENT_SPLIT_RE = re.compile(r"([\n;&|({])")
 
 # Match the sanctioned wrapper — allow before any deny-check.
 # Matches the wrapper script name anywhere in the command (it may appear inside
@@ -155,6 +167,20 @@ def _suppress_safe(command):
     suppressed = _DOTNET_SAFE_RE.sub(" ", command)
     suppressed = _NX_SAFE_RE.sub(" ", suppressed)
     return suppressed
+
+
+def _suppress_bypassed_segments(command):
+    """Return a scratch copy of *command* with every segment led by
+    BUILD_QUEUE_BYPASS=1 blanked out (length-preserving), so the deny scan
+    skips a deliberately-bypassed build segment (`cd "..." &&
+    BUILD_QUEUE_BYPASS=1 dotnet build ...`) while a real un-bypassed build in
+    any OTHER segment still matches. Shell env-assignment semantics are
+    per-segment, so per-segment recognition is the correct scope."""
+    parts = _SEGMENT_SPLIT_RE.split(command)
+    return "".join(
+        " " * len(part) if _BYPASS_RE.match(part) else part
+        for part in parts
+    )
 
 
 # incident-auto-capture Phase 1 (D2): the tool-call cwd, captured in main() so
@@ -266,7 +292,9 @@ def _redirect_reason(op, command):
             "so they do not thrash the machine. `/msbuild` routes through the queue "
             "automatically.\n"
             "  Correct: /msbuild\n"
-            "  Emergency one-off: BUILD_QUEUE_BYPASS=1 dotnet build ..."
+            "  Emergency one-off: BUILD_QUEUE_BYPASS=1 dotnet build ... — the token must "
+            "lead the build's own command segment (a `cd \"...\" && BUILD_QUEUE_BYPASS=1 "
+            "...` prefix is recognized)."
         )
     if op == "dotnet-test":
         # Try to extract a --filter value for the redirect hint.
@@ -278,7 +306,9 @@ def _redirect_reason(op, command):
             "so they do not thrash the machine. `/mstest` routes through the queue "
             "automatically.\n"
             f"  Correct: /mstest{filter_hint}\n"
-            "  Emergency one-off: BUILD_QUEUE_BYPASS=1 dotnet test ..."
+            "  Emergency one-off: BUILD_QUEUE_BYPASS=1 dotnet test ... — the token must "
+            "lead the test's own command segment (a `cd \"...\" && BUILD_QUEUE_BYPASS=1 "
+            "...` prefix is recognized)."
         )
     if op == "nx-build":
         return (
@@ -287,7 +317,9 @@ def _redirect_reason(op, command):
             "so they do not thrash the machine. `/nxbuild` routes through the queue "
             "automatically.\n"
             "  Correct: /nxbuild\n"
-            "  Emergency one-off: BUILD_QUEUE_BYPASS=1 npx nx build ..."
+            "  Emergency one-off: BUILD_QUEUE_BYPASS=1 npx nx build ... — the token must "
+            "lead the build's own command segment (a `cd \"...\" && BUILD_QUEUE_BYPASS=1 "
+            "...` prefix is recognized)."
         )
     if op == "nx-test":
         return (
@@ -296,7 +328,9 @@ def _redirect_reason(op, command):
             "so they do not thrash the machine. `/nxtest` routes through the queue "
             "automatically.\n"
             "  Correct: /nxtest\n"
-            "  Emergency one-off: BUILD_QUEUE_BYPASS=1 npx nx test ..."
+            "  Emergency one-off: BUILD_QUEUE_BYPASS=1 npx nx test ... — the token must "
+            "lead the test's own command segment (a `cd \"...\" && BUILD_QUEUE_BYPASS=1 "
+            "...` prefix is recognized)."
         )
     if op == "filtered-build":
         return (
@@ -306,7 +340,9 @@ def _redirect_reason(op, command):
             "so they do not thrash the machine. The skills route through the queue "
             "automatically.\n"
             "  Correct: /msbuild (backend) or /nxbuild (frontend)\n"
-            "  Emergency one-off: BUILD_QUEUE_BYPASS=1 ..."
+            "  Emergency one-off: BUILD_QUEUE_BYPASS=1 ... — the token must lead the "
+            "build's own command segment (a `cd \"...\" && BUILD_QUEUE_BYPASS=1 ...` "
+            "prefix is recognized)."
         )
     if op == "filtered-test":
         return (
@@ -316,12 +352,16 @@ def _redirect_reason(op, command):
             "so they do not thrash the machine. The skills route through the queue "
             "automatically.\n"
             "  Correct: /mstest (backend) or /nxtest (frontend)\n"
-            "  Emergency one-off: BUILD_QUEUE_BYPASS=1 ..."
+            "  Emergency one-off: BUILD_QUEUE_BYPASS=1 ... — the token must lead the "
+            "test's own command segment (a `cd \"...\" && BUILD_QUEUE_BYPASS=1 ...` "
+            "prefix is recognized)."
         )
     return (
         "BUILD QUEUE ENFORCED — use the appropriate skill (/msbuild, /mstest, /nxbuild, /nxtest) "
         "instead of running the build command directly.\n"
-        "  Emergency one-off: BUILD_QUEUE_BYPASS=1 ..."
+        "  Emergency one-off: BUILD_QUEUE_BYPASS=1 ... — the token must lead the "
+        "build's own command segment (a `cd \"...\" && BUILD_QUEUE_BYPASS=1 ...` "
+        "prefix is recognized)."
     )
 
 
@@ -373,10 +413,13 @@ def main():
     if _WRAPPER_RE.search(command):
         _allow()
 
-    # Suppress the safe dotnet/nx variants per-occurrence, then scan the scratch
-    # copy for any surviving heavy build (unanchored). A leading `dotnet restore`
-    # no longer masks a trailing `dotnet build`.
-    scan = _suppress_safe(command)
+    # Suppress bypassed segments (BUILD_QUEUE_BYPASS=1 leading a segment) and
+    # the safe dotnet/nx variants per-occurrence, then scan the scratch copy
+    # for any surviving heavy build (unanchored). A leading `dotnet restore`
+    # no longer masks a trailing `dotnet build`, and a `cd "..." &&
+    # BUILD_QUEUE_BYPASS=1 <build>` is recognized as bypassed while a
+    # token-less build behind the same prefix still denies.
+    scan = _suppress_safe(_suppress_bypassed_segments(command))
 
     # Deny surface.
     if _DOTNET_BUILD_RE.search(scan):

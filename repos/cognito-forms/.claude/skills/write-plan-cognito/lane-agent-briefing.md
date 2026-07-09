@@ -24,7 +24,7 @@ Work test-first within your lane:
 1. **Write the failing tests first** for the lane's test expectations. Do NOT write implementation code yet.
 2. **Run the tests and capture the RED state** using your verification commands below. Confirm each test fails *for the right reason* — a missing/incorrect behavior, not a compile error, missing import, or test-setup bug. Save this output; you will paste it in your report.
 3. **Implement** until the tests pass. Do not weaken, delete, or reshape tests to fit the implementation — if a test was wrong, fix it and note why in your report.
-4. **Run the tests and capture the GREEN state.** All tests in your lane's filter must pass.
+4. **Run the tests and capture the GREEN state.** All tests in your lane's filter must pass. **Turn-end gate:** the RED and GREEN captures must come from COMPLETED runs — never end your turn on a backgrounded/enqueued build or a bare `build-queue: enqueued as seq=N` line. If a run was backgrounded or its wrapper died before the banner, run `~/.claude/scripts/build-queue-await.ps1 -Seq N` to block until the authoritative `RESULT=` banner; if you genuinely cannot complete verification, say so explicitly in your report — never imply green.
 
 If your lane has deliverables with no testable behavior (pure config, scaffolding), implement them directly and say so in the report.
 
@@ -66,6 +66,16 @@ All build/test runs MUST go through the queue-routed skills (`Skill` tool). They
 /nxtest -Project <nx-project> -Pattern "<pattern>" -NoCoverage
 ```
 
+**Outcome signal:** every queue-routed run prints an authoritative one-line `build-queue: seq=<N> op=<op> RESULT=<PASS|FAIL|NO-TESTS-MATCHED> …` banner as its LAST stdout line — trust that line for the outcome; do not re-derive it from the surrounding output.
+
+**Fallback (only if the `Skill` tool is missing from your toolset):** invoke the queue wrapper directly via Bash — it is the same sanctioned entry point the skills use and is hook-allowed:
+
+```
+REPO_ROOT=$(git rev-parse --show-toplevel) && powershell.exe -ExecutionPolicy Bypass -File "$HOME/.claude/scripts/build-queue.ps1" -Op mstest -Exec "$REPO_ROOT/.claude/scripts/test-filtered.ps1" -Filter "ClassName~<YourTestClass>"
+```
+
+(`-Op msbuild -Exec "$REPO_ROOT/.claude/scripts/build-filtered.ps1" -Project "…"` for incremental builds; `-Op nxtest -Exec "$REPO_ROOT/.claude/scripts/client-test-filtered.ps1" …` for frontend.) Never fall back to raw `dotnet`/`npx nx` — those run off-queue and are hook-blocked.
+
 ## Hard Boundaries
 
 - Touch ONLY files inside your lane scope. If correctness genuinely requires touching a file outside it, STOP work on that deliverable and report the conflict instead of editing.
@@ -74,6 +84,8 @@ All build/test runs MUST go through the queue-routed skills (`Skill` tool). They
 - Build and test ONLY through the queue-routed skills (`/msbuild -Project …`, `/mstest -Filter …`, `/nxtest …`). Never run raw `dotnet`/`npx nx`, never a full-solution `/msbuild` (no `-Project`), and never an unfiltered test run.
 
 ## Report Format (MANDATORY)
+
+Do not produce this report until your build/tests have COMPLETED (never backgrounded) and the outcome banner has printed — a bare `build-queue: enqueued as seq=N` line is not a result; await it via `~/.claude/scripts/build-queue-await.ps1 -Seq N` first, or state explicitly that verification is incomplete.
 
 End your report with:
 

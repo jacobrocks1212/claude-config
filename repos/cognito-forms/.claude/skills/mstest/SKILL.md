@@ -36,7 +36,17 @@ MSTest filter expressions: `ClassName~Foo`, `Name~Bar`, `FullyQualifiedName~Baz`
 
 3. Run the command using Bash with `timeout: 600000` (10 min). A test run can legitimately exceed the default 2-min Bash timeout; the higher ceiling costs nothing for fast runs because Bash returns as soon as the command exits. Do not interpret or reformat the output. The invocation prints an authoritative one-line `build-queue: seq=<N> op=mstest RESULT=<PASS|FAIL|NO-TESTS-MATCHED> tests=<T> failed=<F> (result_fidelity=...)` banner as its LAST stdout line — trust that line for the outcome. Do NOT `cat`/`grep` the runner script (`build-queue-runner.ps1`) or `results/<seq>.json` to disambiguate an `exit_code=0`. See the exit-code guidance below for the banner's next-actions.
 
-4. If the run is expected to exceed 10 minutes, run the same command with `run_in_background: true` instead, then poll its log and read `$HOME/.claude/state/build-queue/results/<seq>.json` (the `exit_code` field) for the outcome — the `seq` is printed in the `build-queue: enqueued as seq=N` line.
+4. If the run is expected to exceed 10 minutes, run the same command with `run_in_background: true` instead. The `build-queue: enqueued as seq=N` line it returns is NOT an outcome — never end your turn or report a result on it. Follow the run to its authoritative result with the await helper (foreground Bash, `timeout: 600000`):
+   ```
+   powershell.exe -ExecutionPolicy Bypass -File "$HOME/.claude/scripts/build-queue-await.ps1" -Seq <N>
+   ```
+   It blocks until `results/<seq>.json` exists, re-emits the same authoritative `build-queue: seq=<N> op=mstest RESULT=...` banner as its LAST stdout line, and exits with the run's exit code. On its distinct await-timeout exit (`124`, `result not yet present for seq=N`) the run is still going — re-run the helper or check `/build-queue-status`; NEVER treat a timeout as success, and do not hand-read `results/<seq>.json` instead.
+
+   **Foreground-timeout recovery:** if a foreground run is killed by the 10-min Bash timeout before the banner prints, recover the seq from the `build-queue: enqueued as seq=N` line already in the output and run the same await helper — do NOT re-enqueue the run.
+
+## Log files: `<seq>.build.log` vs `<seq>.log`
+
+Test-run output for this op lands in `~/.claude/state/build-queue/logs/<seq>.log`. But when a red run traces back to a build problem (e.g. the stale-DLL exit 4 below sends you to `/msbuild`), note that a **build** op's real transcript is that seq's `<seq>.build.log` (stderr: `<seq>.build.err.log`) — for build ops the sibling `<seq>.log` is the runner's own near-empty log, not the build output.
 
 ## Stale-DLL trap (--no-build)
 

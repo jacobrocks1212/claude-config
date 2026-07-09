@@ -36,8 +36,8 @@ Design to encode:
 - Repo PowerShell conventions: `$null` never `/dev/null`; defensive reads matching the sibling scripts (`build-queue-hygiene.ps1`, `build-queue-runner.ps1`).
 
 **Deliverables:**
-- [ ] `user/scripts/build-queue-await.ps1` (net-new) — `-Seq`/`-TimeoutSeconds`/`-PollIntervalMs`/`-StateRoot`, bounded poll on `results/<Seq>.json`, defensive field reads, dot-sources `build-queue-hygiene.ps1`, calls `Format-BuildQueueBanner`, banner as last stdout line, exits with the build's `exit_code`; distinct non-zero exit + `result not yet present for seq=N` on await-timeout.
-- [ ] Tests: `user/scripts/build-queue-await.Tests.ps1` (net-new Pester, sibling convention to `user/scripts/build-queue-hygiene.Tests.ps1`) — drives the **real** `Format-BuildQueueBanner` against a **real** fixture `results/<seq>.json`, asserting the re-emitted banner matches the wrapper's authoritative line for PASS / FAIL / NO-TESTS-MATCHED shapes, that exit code mirrors the fixture's `exit_code`, and that a missing results file yields the distinct await-timeout exit + message.
+- [x] `user/scripts/build-queue-await.ps1` (net-new) — `-Seq`/`-TimeoutSeconds`/`-PollIntervalMs`/`-StateRoot`, bounded poll on `results/<Seq>.json`, defensive field reads, dot-sources `build-queue-hygiene.ps1`, calls `Format-BuildQueueBanner`, banner as last stdout line, exits with the build's `exit_code`; distinct non-zero exit + `result not yet present for seq=N` on await-timeout. (Timeout exit 124; malformed-result/hygiene-load-failure exit 125. Note: today's runner result JSON carries no `op` — read defensively, banner op empty until the runner records it.)
+- [x] Tests: `user/scripts/build-queue-await.Tests.ps1` (net-new Pester, sibling convention to `user/scripts/build-queue-hygiene.Tests.ps1`) — drives the **real** `Format-BuildQueueBanner` against a **real** fixture `results/<seq>.json`, asserting the re-emitted banner matches the wrapper's authoritative line for PASS / FAIL / NO-TESTS-MATCHED shapes, that exit code mirrors the fixture's `exit_code`, and that a missing results file yields the distinct await-timeout exit + message. (TDD RED 7-fail → GREEN 8/8, incl. a deferred-write blocking case + log-failure-override + defensive-shape cases.)
 
 **Minimum Verifiable Behavior:** `Invoke-Pester user/scripts/build-queue-await.Tests.ps1` passes — including the case that writes a fixture `results/<seq>.json` (with `exit_code`, `op`, `counts`, `hygiene.{result_fidelity,build_fidelity}`), runs `build-queue-await.ps1 -Seq <n> -StateRoot <fixture-root>`, and asserts the last stdout line equals the banner produced by the real `Format-BuildQueueBanner` for that fixture, plus the timeout-absent case.
 
@@ -60,11 +60,11 @@ Design to encode:
 **Scope:** Rewrite the §4 (step "4.") background-fallback prose in each of the four Cognito build-queue SKILL.md files so the unenforced "then poll results/<seq>.json" instruction becomes ONE uniform, mechanical instruction: run `user/scripts/build-queue-await.ps1 -Seq N` (seq taken from the `build-queue: enqueued as seq=N` return line) and trust ITS re-emitted banner + exit code as authoritative. Also add Gap 2 recovery: a FOREGROUND build whose wrapper is killed by the 10-min Bash timeout before the banner prints uses the same helper against the seq from its `enqueued as seq=N` line. File-disjoint from Phase 3.
 
 **Deliverables:**
-- [ ] `repos/cognito-forms/.claude/skills/msbuild/SKILL.md` — §4 rewritten to run `build-queue-await.ps1 -Seq N` + Gap 2 (foreground-timeout) recovery.
-- [ ] `repos/cognito-forms/.claude/skills/mstest/SKILL.md` — same §4 rewrite + Gap 2.
-- [ ] `repos/cognito-forms/.claude/skills/nxbuild/SKILL.md` — same §4 rewrite + Gap 2.
-- [ ] `repos/cognito-forms/.claude/skills/nxtest/SKILL.md` — same §4 rewrite + Gap 2.
-- [ ] Tests: none (docs-only prose change; verified by lint + projection — see MVB).
+- [x] `repos/cognito-forms/.claude/skills/msbuild/SKILL.md` — §4 rewritten to run `build-queue-await.ps1 -Seq N` + Gap 2 (foreground-timeout) recovery.
+- [x] `repos/cognito-forms/.claude/skills/mstest/SKILL.md` — same §4 rewrite + Gap 2.
+- [x] `repos/cognito-forms/.claude/skills/nxbuild/SKILL.md` — same §4 rewrite + Gap 2.
+- [x] `repos/cognito-forms/.claude/skills/nxtest/SKILL.md` — same §4 rewrite + Gap 2.
+- [x] Tests: none (docs-only prose change; verified by lint + projection — see MVB).
 
 **Minimum Verifiable Behavior:** `python ~/.claude/scripts/lint-skills.py` runs clean AND `python ~/.claude/scripts/project-skills.py` re-projects the affected skills without error (these are standalone SKILL.md files, not injected components, so lint clean + successful re-projection is the check). Manual read confirms all four §4 sections carry the identical `build-queue-await.ps1 -Seq N` instruction and Gap 2 foreground-timeout recovery.
 
@@ -89,10 +89,10 @@ Design to encode:
 **Scope:** Add an explicit turn-end gate to the three subagent contract files. Today the "confirm GREEN before ending your turn" obligation exists only implicitly as a report-format requirement (paste a GROUND-TRUTH block); no gate forbids ending a turn on a backgrounded/incomplete build. Add a gate stating: the build/tests must be **COMPLETED** (never left backgrounded) AND **GREEN**, with the completed pass/fail summary pasted, BEFORE the agent ends its turn / produces its report — and reference `user/scripts/build-queue-await.ps1` as the mechanism that turns a backgrounded/timeout-killed enqueue into a followable, completed result. Prose-only (v1); the mechanical Stop-hook backstop is explicitly deferred. File-disjoint from Phase 2.
 
 **Deliverables:**
-- [ ] `user/skills/_components/implementation-agent.md` — turn-end gate added in the §Verification area (~line 29) and immediately before the required-report block (~line 104), referencing `build-queue-await.ps1`.
-- [ ] `user/skills/_components/tdd-test-agent.md` — turn-end gate added in the §Verification / RED-state capture area (~line 21).
-- [ ] `repos/cognito-forms/.claude/skills/write-plan-cognito/lane-agent-briefing.md` — turn-end gate added at GREEN-capture (~line 27) and in the GROUND-TRUTH block (~line 86).
-- [ ] Tests: none (prose contract; verified by projection + lint — see MVB).
+- [x] `user/skills/_components/implementation-agent.md` — turn-end gate added in the §Verification area (~line 29) and immediately before the required-report block (~line 104), referencing `build-queue-await.ps1`.
+- [x] `user/skills/_components/tdd-test-agent.md` — turn-end gate added in the §Verification / RED-state capture area (~line 21).
+- [x] `repos/cognito-forms/.claude/skills/write-plan-cognito/lane-agent-briefing.md` — turn-end gate added at GREEN-capture (~line 27) and in the Report Format lead-in (the GROUND-TRUTH block's section).
+- [x] Tests: none (prose contract; verified by projection + lint — see MVB).
 
 **Minimum Verifiable Behavior:** `python ~/.claude/scripts/project-skills.py` re-projects the affected components without error (these files are `!cat`-injected into consuming skills, so successful projection of the resolved output is the load-bearing check that no injection broke) AND `python ~/.claude/scripts/lint-skills.py` runs clean. Manual read of the projected output confirms the turn-end gate text ("COMPLETED, never backgrounded" + "GREEN with pass/fail summary pasted" + `build-queue-await.ps1` reference) appears in each consuming skill.
 
