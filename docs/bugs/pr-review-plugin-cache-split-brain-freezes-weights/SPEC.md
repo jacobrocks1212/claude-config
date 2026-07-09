@@ -2,7 +2,7 @@
 
 > Claude Code serves the cognito-pr-review plugin from the versioned install cache (`~/.claude/plugins/cache/local-tools/cognito-pr-review/2.9.0/`, snapshotted 2026-06-30), while the calibration writers (`disposition-calibration.ts`, invoked with an explicit symlink path) mutate the claude-config repo copy — so `knowledge/` (weights + rules) exists in two silently divergent versions, and repo-side weight/rule edits are invisible to cache-served consumers until a version bump reinstalls the plugin.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-09
 **Placement:** docs/bugs/pr-review-plugin-cache-split-brain-freezes-weights
@@ -123,8 +123,9 @@ No file in the plugin references `${CLAUDE_PLUGIN_ROOT}` (grep across commands/ 
 1. **Move mutable state out of the plugin entirely** — relocate `weights.yaml` to a stable, version-independent absolute path (e.g. `~/.claude/state/cognito-pr-review/weights.yaml`), read/written by `post-process.ts`, `disposition-calibration.ts`, and the sweep agent's instruction via that one absolute path (with a one-time migration copy + a tombstone comment in the plugin's knowledge/ copy). Calibration then survives version bumps and the cache/repo question becomes irrelevant for weights. Preferred: it separates *mutable state* from *shipped definition*, which is the actual design error.
 2. **Version-bump discipline (short-term operational fix)** — treat any `knowledge/` or command/agent edit as requiring a `plugin.json` version bump + plugin update so the cache re-snapshots; add a check (doc-drift-lint-style) that fails when the cache copy diverges from the repo at the same version.
 3. **Resolve every internal path through one root** — replace prose-relative paths (sweep.md:47) and per-file absolute paths with `${CLAUDE_PLUGIN_ROOT}` so at least all *definition-side* reads are self-consistent with the served snapshot, and scripts receive the root explicitly. (Complements fix 1; does not by itself un-freeze the cache.)
+4. **Convert to an in-place-loaded plugin form** *(docs-confirmed viable 2026-07-09)* — Claude Code has NO serve-from-source mode for marketplace plugins (the cache is always the serving location), but two in-place forms exist: `--plugin-dir <path>` (per-session, not persisted) and **`@skills-dir` plugins** (a plugin living under `~/.claude/skills/<name>/` with `.claude-plugin/plugin.json`, discovered in place with no caching; `/reload-plugins` picks up non-SKILL.md edits). Migrating cognito-pr-review to the `@skills-dir` form would eliminate the cache entirely — the strongest structural resolution, at the cost of a marketplace→skills-dir migration and re-verifying agent/command registration behavior. Evaluate against fix 1 at `/plan-bug` (fix 1 solves only the mutable-state half; fix 4 solves definitions too).
 
 ## Open Questions
 
 - Which physical `weights.yaml` does the sweep agent resolve in live runs — the cache root or the symlink root? (Both exist; the instruction at agents/sweep.md:47 names neither. Answerable by mining a sweep subagent transcript's Read paths; irrelevant once fix 1 lands, since both would point at the state path.)
-- Does Claude Code offer a "development/linked" plugin install mode that serves directly from the marketplace path (which would obviate the cache for this locally-authored plugin)? If so, switching the install mode may be a simpler fix than 1—3.
+- ~~Does Claude Code offer a "development/linked" plugin install mode that serves directly from the marketplace path?~~ **ANSWERED (2026-07-09, Claude Code docs):** No — marketplace plugins always serve from the versioned cache; there is no linked/dev serving mode. The in-place alternatives are `--plugin-dir` (per-session) and `@skills-dir` plugins — captured as Candidate Root Fix 4 above.

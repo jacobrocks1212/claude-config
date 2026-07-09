@@ -1,0 +1,19 @@
+version: 1
+ema_alpha: 0.25
+
+category_multipliers:
+  consistency: 0.8
+
+# Legacy bare-scalar source_weights on purpose — exercises the loaders' back-compat path.
+source_weights:
+  investigation: 0.9
+  intrafile: 0.7
+  reuse: 0.7
+
+rule_weights:
+  defensive-null-checks:
+    weight: 0.7
+    data_points: 0
+  invalid-hardcoded-entity-id:
+    weight: 0.525
+    data_points: 0

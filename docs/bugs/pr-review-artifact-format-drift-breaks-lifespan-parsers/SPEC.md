@@ -2,7 +2,7 @@
 
 > The synthesizer-v2 Standardized Issue Block (and buddy Phase 2) emit findings as `**Location:** {file}:{line}`, but `post-process.ts`'s previous-review parser and `calibrate-weights.ts`'s artifact parser still match the retired `**File:**` / numbered-bracket-header formats — so re-review lifespan tracking silently annotates 0 findings and bulk calibration would parse 0 findings, counting every human comment as a false negative.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-09
 **Placement:** docs/bugs/pr-review-artifact-format-drift-breaks-lifespan-parsers

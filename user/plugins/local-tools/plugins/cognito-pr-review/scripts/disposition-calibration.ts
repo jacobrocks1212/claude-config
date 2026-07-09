@@ -1,8 +1,32 @@
 #!/usr/bin/env npx tsx
-import { readFileSync, writeFileSync } from "fs";
-import { resolve, dirname, basename } from "path";
-import { fileURLToPath } from "url";
+/**
+ * disposition-calibration.ts - EMA weight calibration from buddy-session dispositions
+ *
+ * Statistical design (bug: pr-review-ema-calibration-statistical-design-drives-lane-death):
+ *   - PER-PR AGGREGATION: one EMA step per (rule | source) key per run — the signal is the
+ *     kept/total ratio of that run's dispositions for the key, never N sequential steps
+ *     (which let a single review multiplicatively crater a weight, e.g. 0.7 × 0.75^8 ≈ 0.075).
+ *   - CLAMP: calibrated weights land in [WEIGHT_FLOOR, WEIGHT_CEIL] (weight-constants.ts),
+ *     with WEIGHT_FLOOR > MIN_EFFECTIVE_WEIGHT so calibration alone can never push a lane
+ *     under post-process's drop threshold.
+ *   - ANNEALED ALPHA: alpha = min(ema_alpha, max(0.05, 1/(n+1))) where n = the key's
+ *     data_points before this run.
+ *
+ * Weights are read from / written to the live state file (~/.claude/state/cognito-pr-review/
+ * weights.yaml, seeded from the plugin's shipped defaults) unless --weights overrides.
+ * source_weights entries use the nested { weight, data_points } schema; legacy bare-scalar
+ * entries are still read (and surgically rewritten in place, weight only).
+ */
+import { readFileSync, writeFileSync, existsSync } from "fs";
+import { basename } from "path";
 import yaml from "js-yaml";
+import {
+	annealedAlpha,
+	clampWeight,
+	ensureWeightsState,
+	normalizeSourceWeight,
+	type SourceWeightEntry,
+} from "./weight-constants.ts";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -47,7 +71,8 @@ interface RuleWeight {
 interface WeightsConfig {
 	version?: number;
 	ema_alpha?: number;
-	source_weights: Record<string, number>;
+	// Nested { weight, data_points } schema; legacy bare-scalar entries still accepted.
+	source_weights: Record<string, number | SourceWeightEntry>;
 	rule_weights: Record<string, RuleWeight>;
 	[key: string]: unknown;
 }
@@ -57,7 +82,11 @@ interface Delta {
 	kind: "rule" | "source";
 	oldVal: number;
 	newVal: number;
+	newDataPoints: number;
 	signal: number;
+	alpha: number;
+	samples: number;
+	legacyScalar: boolean;
 }
 
 // ── CLI ────────────────────────────────────────────────────────────────────────
@@ -75,8 +104,6 @@ function parseArgs(argv: string[]): CliArgs {
 	let findingsPath = "";
 	let weightsPath = "";
 	let dryRun = false;
-
-	const scriptDir = dirname(fileURLToPath(import.meta.url));
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -100,7 +127,9 @@ function parseArgs(argv: string[]): CliArgs {
 		process.exit(1);
 	}
 	if (!weightsPath) {
-		weightsPath = resolve(scriptDir, "..", "knowledge", "weights.yaml");
+		// Default to the live mutable state file (seeded from shipped defaults on first
+		// use) — calibration must never write into the plugin's versioned cache copy.
+		weightsPath = ensureWeightsState();
 	}
 
 	return { sessionPath, findingsPath, weightsPath, dryRun };
@@ -155,9 +184,60 @@ function applyEma(alpha: number, signal: number, old: number): number {
 
 // ── Surgical text replacement ──────────────────────────────────────────────────
 
-function replaceSourceScalar(text: string, source: string, newVal: number): string {
-	const re = new RegExp(`(^  ${source}:[ \\t]+)[\\d.]+`, "m");
-	return text.replace(re, `$1${newVal}`);
+/**
+ * Surgically update a source_weights entry inside the source_weights: section only.
+ * Handles the nested { weight, data_points } schema; falls back to the legacy
+ * bare-scalar form (weight replaced in place; data_points has nowhere to live).
+ */
+function replaceSourceEntry(text: string, source: string, newWeight: number, newDp: number): string {
+	const lines = text.split("\n");
+
+	// Locate the top-level source_weights: section
+	let i = 0;
+	while (i < lines.length && lines[i].replace(/\r$/, "") !== "source_weights:") i++;
+	if (i >= lines.length) return text;
+	i++;
+
+	const nestedHeader = `  ${source}:`;
+	const scalarRe = new RegExp(`^(  ${source}:[ \\t]+)[\\d.]+`);
+
+	while (i < lines.length) {
+		const stripped = lines[i].replace(/\r$/, "");
+
+		// Left the section: a non-empty line that is neither indented nor a comment
+		if (stripped.length > 0 && !stripped.startsWith(" ") && !stripped.startsWith("#")) break;
+
+		if (stripped === nestedHeader) {
+			// Nested form: scan the entry's indented fields
+			i++;
+			let weightReplaced = false;
+			let dpReplaced = false;
+			while (i < lines.length) {
+				const fieldStripped = lines[i].replace(/\r$/, "");
+				if (fieldStripped.length > 0 && !fieldStripped.startsWith("    ") && !fieldStripped.startsWith("\t")) break;
+				if (!weightReplaced && /^    weight:/.test(fieldStripped)) {
+					lines[i] = lines[i].replace(/(^\s*weight:\s*)[\d.]+/, `$1${newWeight}`);
+					weightReplaced = true;
+				} else if (!dpReplaced && /^    data_points:/.test(fieldStripped)) {
+					lines[i] = lines[i].replace(/(^\s*data_points:\s*)[\d]+/, `$1${newDp}`);
+					dpReplaced = true;
+				}
+				if (weightReplaced && dpReplaced) break;
+				i++;
+			}
+			return lines.join("\n");
+		}
+
+		if (scalarRe.test(stripped)) {
+			// Legacy scalar form — replace the weight in place
+			lines[i] = lines[i].replace(scalarRe, `$1${newWeight}`);
+			return lines.join("\n");
+		}
+
+		i++;
+	}
+
+	return text;
 }
 
 function replaceRuleWeight(text: string, ruleId: string, newWeight: number, newDp: number): string {
@@ -194,6 +274,15 @@ function replaceRuleWeight(text: string, ruleId: string, newWeight: number, newD
 function main(): void {
 	const { sessionPath, findingsPath, weightsPath, dryRun } = parseArgs(process.argv);
 
+	// Guarded session read: a cache without a buddy session is a normal condition
+	// (non-buddy review), not a crash.
+	if (!existsSync(sessionPath)) {
+		process.stdout.write(
+			"[disposition-calibration] no session file — nothing to calibrate (non-buddy cache?)\n"
+		);
+		return;
+	}
+
 	const sessionRaw = readFileSync(sessionPath, "utf-8");
 	const session = JSON.parse(sessionRaw) as BuddySession;
 
@@ -220,15 +309,15 @@ function main(): void {
 	const SKIP_SOURCES = new Set(["reviewer"]);
 	const SWEEP_SOURCE = "sweep";
 
-	const deltas: Delta[] = [];
-
-	const mutableWeights: WeightsConfig = {
-		...weights,
-		source_weights: { ...weights.source_weights },
-		rule_weights: Object.fromEntries(
-			Object.entries(weights.rule_weights).map(([k, v]) => [k, { ...v }])
-		),
-	};
+	// ── Per-PR aggregation: bucket this run's dispositions per (rule | source) key ──
+	// One EMA step per key per run; signal = kept/total for the key.
+	interface Aggregate {
+		kind: "rule" | "source";
+		key: string;
+		kept: number;
+		total: number;
+	}
+	const aggregates = new Map<string, Aggregate>();
 
 	for (const disp of allDispositions) {
 		if (SKIP_SOURCES.has(disp.source)) continue;
@@ -241,20 +330,64 @@ function main(): void {
 			continue;
 		}
 
-		const signal = toSignal(disp.severity);
+		let kind: "rule" | "source";
+		let key: string;
+		if (matched.source === SWEEP_SOURCE && matched.rule_id && weights.rule_weights[matched.rule_id]) {
+			kind = "rule";
+			key = matched.rule_id;
+		} else if (disp.source !== SWEEP_SOURCE && weights.source_weights[disp.source] !== undefined) {
+			kind = "source";
+			key = disp.source;
+		} else {
+			continue;
+		}
 
-		if (matched.source === SWEEP_SOURCE && matched.rule_id && mutableWeights.rule_weights[matched.rule_id]) {
-			const entry = mutableWeights.rule_weights[matched.rule_id];
-			const oldWeight = entry.weight;
-			const newWeight = applyEma(alpha, signal, oldWeight);
-			deltas.push({ key: matched.rule_id, kind: "rule", oldVal: oldWeight, newVal: newWeight, signal });
-			entry.weight = newWeight;
-			entry.data_points = entry.data_points + 1;
-		} else if (disp.source !== SWEEP_SOURCE && mutableWeights.source_weights[disp.source] !== undefined) {
-			const oldVal = mutableWeights.source_weights[disp.source];
-			const newVal = applyEma(alpha, signal, oldVal);
-			deltas.push({ key: disp.source, kind: "source", oldVal, newVal, signal });
-			mutableWeights.source_weights[disp.source] = newVal;
+		const aggKey = `${kind}|${key}`;
+		let agg = aggregates.get(aggKey);
+		if (!agg) {
+			agg = { kind, key, kept: 0, total: 0 };
+			aggregates.set(aggKey, agg);
+		}
+		agg.total++;
+		agg.kept += toSignal(disp.severity);
+	}
+
+	const deltas: Delta[] = [];
+
+	for (const agg of aggregates.values()) {
+		const signal = parseFloat((agg.kept / agg.total).toFixed(4));
+
+		if (agg.kind === "rule") {
+			const entry = weights.rule_weights[agg.key];
+			const effectiveAlpha = annealedAlpha(alpha, entry.data_points ?? 0);
+			const newWeight = parseFloat(clampWeight(applyEma(effectiveAlpha, signal, entry.weight)).toFixed(4));
+			deltas.push({
+				key: agg.key,
+				kind: "rule",
+				oldVal: entry.weight,
+				newVal: newWeight,
+				newDataPoints: (entry.data_points ?? 0) + 1,
+				signal,
+				alpha: effectiveAlpha,
+				samples: agg.total,
+				legacyScalar: false,
+			});
+		} else {
+			const rawEntry = weights.source_weights[agg.key];
+			const entry = normalizeSourceWeight(rawEntry)!;
+			const effectiveAlpha = annealedAlpha(alpha, entry.data_points);
+			const newWeight = parseFloat(clampWeight(applyEma(effectiveAlpha, signal, entry.weight)).toFixed(4));
+			deltas.push({
+				key: agg.key,
+				kind: "source",
+				oldVal: entry.weight,
+				newVal: newWeight,
+				newDataPoints: entry.data_points + 1,
+				signal,
+				alpha: effectiveAlpha,
+				samples: agg.total,
+				legacyScalar: typeof rawEntry === "number",
+			});
 		}
 	}
 
@@ -268,10 +401,9 @@ function main(): void {
 
 		for (const d of deltas) {
 			if (d.kind === "source") {
-				text = replaceSourceScalar(text, d.key, d.newVal);
+				text = replaceSourceEntry(text, d.key, d.newVal, d.newDataPoints);
 			} else {
-				const entry = mutableWeights.rule_weights[d.key];
-				text = replaceRuleWeight(text, d.key, d.newVal, entry.data_points);
+				text = replaceRuleWeight(text, d.key, d.newVal, d.newDataPoints);
 			}
 		}
 
@@ -281,7 +413,7 @@ function main(): void {
 	process.stdout.write("Calibration delta summary:\n");
 	for (const d of deltas) {
 		process.stdout.write(
-			`  ${d.key}: ${d.oldVal} → ${d.newVal} (signal ${d.signal})\n`
+			`  ${d.key}: ${d.oldVal} → ${d.newVal} (signal ${d.signal} over ${d.samples} disposition(s), α ${d.alpha})\n`
 		);
 	}
 	if (dryRun) {

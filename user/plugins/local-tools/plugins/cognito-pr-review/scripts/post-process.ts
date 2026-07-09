@@ -3,24 +3,37 @@
  * post-process.ts - Deterministic post-processing for combined PR review findings
  *
  * Processes combined findings JSON from investigation + sweep agents:
- * 1. Recomputes effective_weight from weights.yaml (authoritative source)
- * 2. Drops sweep findings below minimum threshold
- * 3. Deduplicates by file:line (prefers investigation over sweep)
+ * 1. Recomputes effective_weight from the live weights state file (authoritative source;
+ *    seeded from knowledge/weights.yaml shipped defaults — see weight-constants.ts)
+ * 2. Drops SWEEP findings below minimum threshold (sweep lane only — Opus-lane sources
+ *    are never threshold-dropped; a zeroed lane raises a lane_zeroed warning instead)
+ * 3. Deduplicates by file:line — cross-lane co-located pairs collapse Opus-over-sweep;
+ *    same-lane pairs collapse only on a normalized-title match (distinct findings at the
+ *    same location both survive)
  * 4. Ranks by tier > severity > effective_weight
- * 5. Filters out-of-scope files via manifest
+ * 5. Filters out-of-scope files via manifest (paths normalized on both sides)
  * 6. Annotates finding lifespans for re-reviews
+ *
+ * Every dropped finding is recorded in the payload's drops[] (step + reason).
  *
  * Input JSON shape (CombinedFindings):
  *   { investigation: [{ findings, escalations, group }], sweep: { findings, escalations }, manifest_path, previous_review_path? }
  *
  * Usage:
- *   npx tsx post-process.ts --input findings.json --manifest <cogDocsItemDir>/.pr-review/pr-cache/12345/manifest.json [--previous-review <cogDocsItemDir>/PR-12345.md]
+ *   npx tsx post-process.ts --input findings.json --manifest <cogDocsItemDir>/.pr-review/pr-cache/12345/manifest.json [--previous-review <cogDocsItemDir>/PR-12345.md] [--weights path/to/weights.yaml] [--summary]
+ *
+ * --summary emits a one-line count summary to stderr (stdout stays the pure
+ * processed-findings JSON, safe to shell-redirect to processed-findings.json).
  */
 
 import { readFileSync } from "fs";
-import { resolve, dirname } from "path";
-import { fileURLToPath } from "url";
 import yaml from "js-yaml";
+import {
+	MIN_EFFECTIVE_WEIGHT,
+	ensureWeightsState,
+	normalizeSourceWeight,
+	type SourceWeightEntry,
+} from "./weight-constants.ts";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -113,7 +126,8 @@ interface WeightsConfig {
 	ema_alpha: number;
 	category_multipliers: Record<string, number>;
 	rule_weights: Record<string, { weight: number; data_points: number }>;
-	source_weights: Record<string, number>;
+	// Nested { weight, data_points } schema; legacy bare-scalar entries still accepted.
+	source_weights: Record<string, number | SourceWeightEntry>;
 }
 
 interface Manifest {
@@ -145,11 +159,24 @@ interface PreviousFindingRef {
 	iteration: number;
 }
 
+interface DropRecord {
+	step: 2 | 3 | 5;
+	stage: "threshold" | "dedup" | "scope";
+	reason: string;
+	source: string;
+	file: string;
+	line: number;
+	title?: string;
+}
+
 interface OutputPayload {
 	processed_findings: ProcessedFinding[];
 	dropped_count: number;
 	dedup_count: number;
+	scope_filtered_count: number;
+	lane_zeroed: string[];
 	lifespan_annotations: number;
+	drops: DropRecord[];
 }
 
 // ── Category mapping ───────────────────────────────────────────────────────────
@@ -167,8 +194,8 @@ const CATEGORY_MAP: Record<string, string> = {
 };
 
 // ── Constants ──────────────────────────────────────────────────────────────────
+// MIN_EFFECTIVE_WEIGHT is shared with disposition-calibration via weight-constants.ts.
 
-const MIN_EFFECTIVE_WEIGHT = 0.3;
 const LINE_PROXIMITY_RANGE = 20;
 
 const TIER_ORDER: Record<string, number> = { critical: 0, important: 1, skim: 2 };
@@ -176,14 +203,21 @@ const SEVERITY_ORDER: Record<string, number> = { blocking: 0, important: 1, nit:
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function loadWeights(): WeightsConfig {
-	const scriptDir = dirname(fileURLToPath(import.meta.url));
-	const weightsPath = resolve(scriptDir, "..", "knowledge", "weights.yaml");
+function loadWeights(weightsPathOverride: string | null): WeightsConfig {
+	let weightsPath: string;
+	try {
+		// Live mutable copy under ~/.claude/state/cognito-pr-review/ (seeded from the
+		// plugin's shipped defaults on first use); --weights overrides for tests/tools.
+		weightsPath = weightsPathOverride ?? ensureWeightsState();
+	} catch (err) {
+		error(`Failed to resolve/seed weights state file: ${err}`);
+		return process.exit(1);
+	}
 	try {
 		const raw = readFileSync(weightsPath, "utf-8");
 		return yaml.load(raw) as WeightsConfig;
 	} catch (err) {
-		error(`Failed to load weights.yaml at ${weightsPath}: ${err}`);
+		error(`Failed to load weights at ${weightsPath}: ${err}`);
 		return process.exit(1);
 	}
 }
@@ -240,7 +274,7 @@ function computeEffectiveWeight(
 		const categoryMultiplier = getCategoryMultiplier(finding.rule_category as string, weights);
 		base = ruleWeight * categoryMultiplier;
 	} else {
-		base = weights.source_weights?.[finding.source] ?? 0.7;
+		base = normalizeSourceWeight(weights.source_weights?.[finding.source])?.weight ?? 0.7;
 	}
 	return base * resolveConfidence(finding);
 }
@@ -289,6 +323,17 @@ function parsePreviousReview(filePath: string): PreviousFindingRef[] {
 		}
 	}
 
+	// Pattern 4: Standardized Issue Block (current synthesizer-v2 format) -
+	// "**Location:** `path/to/file.cs:42`" under a "### {title}" heading
+	const locationPattern = /\*\*Location:\*\*\s*`?([^:`\n]+):(\d+)`?/g;
+	while ((match = locationPattern.exec(content)) !== null) {
+		const file = match[1].trim();
+		const line = parseInt(match[2], 10);
+		if (!refs.some(r => r.file === file && r.line === line)) {
+			refs.push({ file, line, iteration: maxIteration });
+		}
+	}
+
 	// Extract titles for investigation findings (### Finding title above **File:**)
 	const titleFilePattern = /###\s+(.+)\n(?:.*\n)*?\*\*File:\*\*\s*`?([^:`\n]+):(\d+)`?/g;
 	while ((match = titleFilePattern.exec(content)) !== null) {
@@ -297,6 +342,18 @@ function parsePreviousReview(filePath: string): PreviousFindingRef[] {
 		const line = parseInt(match[3], 10);
 		const existing = refs.find(r => r.file === file && r.line === line);
 		if (existing) {
+			existing.title = title;
+		}
+	}
+
+	// Title association for Standardized Issue Blocks (### {title} above **Location:**)
+	const titleLocationPattern = /###\s+(.+)\n(?:.*\n)*?\*\*Location:\*\*\s*`?([^:`\n]+):(\d+)`?/g;
+	while ((match = titleLocationPattern.exec(content)) !== null) {
+		const title = match[1].trim();
+		const file = match[2].trim();
+		const line = parseInt(match[3], 10);
+		const existing = refs.find(r => r.file === file && r.line === line);
+		if (existing && !existing.title) {
 			existing.title = title;
 		}
 	}
@@ -410,7 +467,27 @@ function step1_computeWeights(
 	return { findings };
 }
 
-function step2_dropBelowThreshold(findings: ProcessedFinding[]): {
+function dropRecord(
+	f: ProcessedFinding,
+	step: 2 | 3 | 5,
+	stage: "threshold" | "dedup" | "scope",
+	reason: string
+): DropRecord {
+	return {
+		step,
+		stage,
+		reason,
+		source: f.source,
+		file: f.file as string,
+		line: f.line as number,
+		title: f.title as string | undefined,
+	};
+}
+
+function step2_dropBelowThreshold(
+	findings: ProcessedFinding[],
+	drops: DropRecord[]
+): {
 	findings: ProcessedFinding[];
 	droppedCount: number;
 } {
@@ -418,8 +495,14 @@ function step2_dropBelowThreshold(findings: ProcessedFinding[]): {
 	const kept: ProcessedFinding[] = [];
 
 	for (const f of findings) {
-		if (f.effective_weight < MIN_EFFECTIVE_WEIGHT) {
+		// The minimum-weight drop applies to the SWEEP lane only. Opus-lane sources
+		// (investigation, reuse, intrafile) are never threshold-dropped — calibration
+		// drift zeroing those lanes silently was the source_weights-drift bug.
+		if (f.source === "sweep" && f.effective_weight < MIN_EFFECTIVE_WEIGHT) {
 			droppedCount++;
+			drops.push(
+				dropRecord(f, 2, "threshold", `sweep effective_weight ${f.effective_weight} < ${MIN_EFFECTIVE_WEIGHT}`)
+			);
 		} else {
 			kept.push(f);
 		}
@@ -428,42 +511,77 @@ function step2_dropBelowThreshold(findings: ProcessedFinding[]): {
 	return { findings: kept, droppedCount };
 }
 
-function step3_deduplicate(findings: ProcessedFinding[]): {
+function step3_deduplicate(
+	findings: ProcessedFinding[],
+	drops: DropRecord[]
+): {
 	findings: ProcessedFinding[];
 	dedupCount: number;
 } {
-	const seen = new Map<string, ProcessedFinding>();
+	// file:line buckets may legitimately hold MULTIPLE distinct findings. Only two
+	// collapse cases are treated as "same issue":
+	//   1. Cross-lane co-located (Opus-class vs sweep): the sweep finding is assumed
+	//      to be the same issue caught by the cheaper lane — Opus wins (historical intent).
+	//   2. Same-lane with a matching normalized title: a true duplicate — highest
+	//      effective_weight wins.
+	// Distinct same-lane findings at the same location BOTH survive (the old code
+	// silently discarded one of them purely by location collision).
+	const seen = new Map<string, ProcessedFinding[]>();
 	let dedupCount = 0;
+
+	const isOpus = (f: ProcessedFinding): boolean => f.source !== "sweep";
+	const normTitle = (f: ProcessedFinding): string =>
+		((f.title as string) ?? "").trim().toLowerCase();
 
 	for (const f of findings) {
 		const key = locationKey(f.file as string, f.line as number);
-		const existing = seen.get(key);
+		const bucket = seen.get(key);
 
-		if (!existing) {
-			seen.set(key, f);
+		if (!bucket) {
+			seen.set(key, [f]);
 			continue;
 		}
 
-		dedupCount++;
+		let collapsed = false;
+		for (let i = 0; i < bucket.length; i++) {
+			const existing = bucket[i];
+			const crossLane = isOpus(f) !== isOpus(existing);
 
-		// Opus-lane sources (investigation, reuse, intrafile) beat sweep; within Opus-lane keep highest weight
-		const incomingIsOpus = f.source === "investigation" || f.source === "reuse" || f.source === "intrafile";
-		const existingIsOpus = existing.source === "investigation" || existing.source === "reuse" || existing.source === "intrafile";
-
-		if (incomingIsOpus && !existingIsOpus) {
-			// Incoming Opus-lane displaces existing sweep
-			seen.set(key, f);
-		} else if (existingIsOpus && !incomingIsOpus) {
-			// Keep existing Opus-lane finding; discard sweep challenger
-		} else {
-			// Both same tier (Opus vs Opus, or sweep vs sweep) — keep highest effective_weight
-			if (f.effective_weight > existing.effective_weight) {
-				seen.set(key, f);
+			if (crossLane) {
+				dedupCount++;
+				if (isOpus(f)) {
+					drops.push(
+						dropRecord(existing, 3, "dedup", `co-located sweep finding superseded by ${f.source} at same location`)
+					);
+					bucket[i] = f;
+				} else {
+					drops.push(
+						dropRecord(f, 3, "dedup", `co-located sweep finding superseded by ${existing.source} at same location`)
+					);
+				}
+				collapsed = true;
+				break;
 			}
+
+			if (normTitle(f) === normTitle(existing)) {
+				dedupCount++;
+				if (f.effective_weight > existing.effective_weight) {
+					drops.push(dropRecord(existing, 3, "dedup", "lower-weight duplicate (same lane, same title)"));
+					bucket[i] = f;
+				} else {
+					drops.push(dropRecord(f, 3, "dedup", "lower-weight duplicate (same lane, same title)"));
+				}
+				collapsed = true;
+				break;
+			}
+		}
+
+		if (!collapsed) {
+			bucket.push(f);
 		}
 	}
 
-	return { findings: Array.from(seen.values()), dedupCount };
+	return { findings: Array.from(seen.values()).flat(), dedupCount };
 }
 
 function step4_rank(findings: ProcessedFinding[]): ProcessedFinding[] {
@@ -486,12 +604,37 @@ function step4_rank(findings: ProcessedFinding[]): ProcessedFinding[] {
 	});
 }
 
+/** Normalize a path for scope comparison: forward slashes, no leading ./ or /, casefolded.
+ * (Mirrors the normalizePath approach of the archived calibrate-weights.ts.) */
+function normalizeScopePath(p: string): string {
+	return p
+		.replace(/\\/g, "/")
+		.replace(/^\.\//, "")
+		.replace(/^\//, "")
+		.toLowerCase();
+}
+
 function step5_filterOutOfScope(
 	findings: ProcessedFinding[],
-	manifest: Manifest
-): ProcessedFinding[] {
-	const manifestFiles = new Set(manifest.files.map(f => f.path));
-	return findings.filter(f => manifestFiles.has(f.file as string));
+	manifest: Manifest,
+	drops: DropRecord[]
+): { findings: ProcessedFinding[]; scopeFilteredCount: number } {
+	// Both sides normalized — an agent emitting `.\Foo\Bar.cs` or a casing variant of a
+	// manifest path must match, not be silently discarded.
+	const manifestFiles = new Set(manifest.files.map(f => normalizeScopePath(f.path)));
+	const kept: ProcessedFinding[] = [];
+	let scopeFilteredCount = 0;
+
+	for (const f of findings) {
+		if (manifestFiles.has(normalizeScopePath(f.file as string))) {
+			kept.push(f);
+		} else {
+			scopeFilteredCount++;
+			drops.push(dropRecord(f, 5, "scope", "file not in manifest scope (after normalization)"));
+		}
+	}
+
+	return { findings: kept, scopeFilteredCount };
 }
 
 function step6_annotateLifespan(
@@ -525,6 +668,8 @@ interface CliArgs {
 	inputPath: string;
 	manifestPath: string;
 	previousReviewPath: string | null;
+	weightsPath: string | null;
+	summary: boolean;
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -532,6 +677,8 @@ function parseArgs(argv: string[]): CliArgs {
 	let inputPath = "";
 	let manifestPath = "";
 	let previousReviewPath: string | null = null;
+	let weightsPath: string | null = null;
+	let summary = false;
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -541,6 +688,10 @@ function parseArgs(argv: string[]): CliArgs {
 			manifestPath = args[++i];
 		} else if (arg === "--previous-review" && args[i + 1]) {
 			previousReviewPath = args[++i];
+		} else if (arg === "--weights" && args[i + 1]) {
+			weightsPath = args[++i];
+		} else if (arg === "--summary") {
+			summary = true;
 		}
 	}
 
@@ -553,25 +704,26 @@ function parseArgs(argv: string[]): CliArgs {
 		process.exit(1);
 	}
 
-	return { inputPath, manifestPath, previousReviewPath };
+	return { inputPath, manifestPath, previousReviewPath, weightsPath, summary };
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 function main(): void {
-	const { inputPath, manifestPath, previousReviewPath } = parseArgs(process.argv);
+	const { inputPath, manifestPath, previousReviewPath, weightsPath, summary } = parseArgs(process.argv);
 
 	// Load inputs
 	const combined = loadJSON<CombinedFindings>(inputPath, "input findings");
 	const manifest = loadJSON<Manifest>(manifestPath, "manifest");
-	const weights = loadWeights();
+	const weights = loadWeights(weightsPath);
 
 	// Pipeline
+	const drops: DropRecord[] = [];
 	const { findings: weighted } = step1_computeWeights(combined, weights);
-	const { findings: thresholded, droppedCount } = step2_dropBelowThreshold(weighted);
-	const { findings: deduped, dedupCount } = step3_deduplicate(thresholded);
+	const { findings: thresholded, droppedCount } = step2_dropBelowThreshold(weighted, drops);
+	const { findings: deduped, dedupCount } = step3_deduplicate(thresholded, drops);
 	const ranked = step4_rank(deduped);
-	const scoped = step5_filterOutOfScope(ranked, manifest);
+	const { findings: scoped, scopeFilteredCount } = step5_filterOutOfScope(ranked, manifest, drops);
 
 	let final = scoped;
 	let lifespanAnnotations = 0;
@@ -582,15 +734,45 @@ function main(): void {
 		lifespanAnnotations = result.lifespanAnnotations;
 	}
 
+	// Lane-zeroed detection: any lane that entered the pipeline with findings but
+	// ends with zero kept is loudly flagged — a silently-emptied lane (esp. the
+	// Opus lanes) is how calibration drift went unnoticed.
+	const inputLanes = new Set(weighted.map(f => f.source));
+	const keptLanes = new Set(final.map(f => f.source));
+	const laneZeroed = Array.from(inputLanes).filter(l => !keptLanes.has(l)).sort();
+	if (laneZeroed.length > 0) {
+		error(`WARNING: lane(s) zeroed by post-processing: ${laneZeroed.join(", ")} — every finding from these lanes was dropped`);
+	}
+
 	// Output
 	const output: OutputPayload = {
 		processed_findings: final,
 		dropped_count: droppedCount,
 		dedup_count: dedupCount,
+		scope_filtered_count: scopeFilteredCount,
+		lane_zeroed: laneZeroed,
 		lifespan_annotations: lifespanAnnotations,
+		drops,
 	};
 
 	process.stdout.write(JSON.stringify(output, null, 2) + "\n");
+
+	// One-line count summary on stderr — the only output the orchestrator needs to
+	// read when stdout is shell-redirected to processed-findings.json.
+	// New keys are appended at the END (documented format — additive only).
+	if (summary) {
+		const severityCounts: Record<string, number> = { blocking: 0, important: 0, nit: 0 };
+		for (const f of final) {
+			const sev = (f.severity as string) ?? "nit";
+			severityCounts[sev] = (severityCounts[sev] ?? 0) + 1;
+		}
+		error(
+			`summary: total=${final.length} blocking=${severityCounts.blocking} ` +
+			`important=${severityCounts.important} nit=${severityCounts.nit} ` +
+			`dropped=${droppedCount} deduped=${dedupCount} lifespan=${lifespanAnnotations} ` +
+			`scope_filtered=${scopeFilteredCount} lane_zeroed=${JSON.stringify(laneZeroed)}`
+		);
+	}
 }
 
 main();

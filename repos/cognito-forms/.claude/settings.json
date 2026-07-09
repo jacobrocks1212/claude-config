@@ -1,4 +1,11 @@
 {
+  "enabledPlugins": {
+    "cognito-pr-review@local-tools": true,
+    "notion@claude-plugins-official": false,
+    "warp@claude-code-warp": false,
+    "context7-plugin@context7-marketplace": false,
+    "pr-review-toolkit@claude-plugins-official": false
+  },
   "hooks": {
     "PreToolUse": [
       {

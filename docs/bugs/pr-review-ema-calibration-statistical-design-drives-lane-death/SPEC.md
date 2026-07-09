@@ -2,7 +2,7 @@
 
 > The disposition-EMA writer (`disposition-calibration.ts`) applies an unclamped, per-disposition, binary-signal EMA (α=0.25) to a single scalar per source lane — so a lane whose findings map mostly to nits (intrafile by construction) converges to its nit keep-rate, which sits below `post-process.ts`'s 0.3 drop threshold. Lane death is the design's steady state, not an accident; the sibling threshold bug is the symptom surface, this is the generator.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-09
 **Placement:** docs/bugs/pr-review-ema-calibration-statistical-design-drives-lane-death

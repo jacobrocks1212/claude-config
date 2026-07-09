@@ -61,6 +61,63 @@
         }
       ],
       "escalations": []
+    },
+    {
+      "group": "group-I-distinct-pair",
+      "findings": [
+        {
+          "file": "I.cs",
+          "line": 5,
+          "severity": "important",
+          "title": "Missing cancellation token on async call",
+          "hypothesis": "Long-running call cannot be cancelled",
+          "evidence": { "snippet": "await service.RunAsync();", "reference": "I.cs:5" },
+          "suggestion": "Pass the ambient CancellationToken",
+          "escalation_candidate": false,
+          "specialist_domain": null
+        },
+        {
+          "file": "I.cs",
+          "line": 5,
+          "severity": "nit",
+          "title": "Sync-over-async wrapper hides exception context",
+          "hypothesis": "Wrapper loses stack context on failure",
+          "evidence": { "snippet": "await service.RunAsync();", "reference": "I.cs:5" },
+          "suggestion": "Await directly instead of wrapping",
+          "escalation_candidate": false,
+          "specialist_domain": null
+        }
+      ],
+      "escalations": []
+    },
+    {
+      "group": "group-J-true-duplicate",
+      "findings": [
+        {
+          "file": "J.cs",
+          "line": 3,
+          "severity": "important",
+          "title": "Duplicate validation logic",
+          "hypothesis": "Same check exists in the shared validator",
+          "evidence": { "snippet": "if (x == null) throw;", "reference": "J.cs:3" },
+          "suggestion": "Use the shared validator",
+          "escalation_candidate": false,
+          "specialist_domain": null
+        },
+        {
+          "file": "J.cs",
+          "line": 3,
+          "severity": "important",
+          "title": "duplicate validation logic",
+          "confidence": "UNVERIFIED",
+          "hypothesis": "Same check exists in the shared validator",
+          "evidence": { "snippet": "if (x == null) throw;", "reference": "J.cs:3" },
+          "suggestion": "Use the shared validator",
+          "escalation_candidate": false,
+          "specialist_domain": null
+        }
+      ],
+      "escalations": []
     }
   ],
   "reuse": [
@@ -178,6 +235,34 @@
         "title": "Defensive null check missing on public method parameter",
         "description": "Parameter is used without null guard",
         "suggestion": "Add null check",
+        "rule_id": "defensive-null-checks",
+        "rule_category": "code-consistency",
+        "effective_weight": 0.56,
+        "tier": "skim",
+        "escalation_candidate": false,
+        "specialist_domain": null
+      },
+      {
+        "file": "./K.cs",
+        "line": 21,
+        "severity": "nit",
+        "title": "Defensive null check missing (path-variant file ref)",
+        "description": "Agent emitted a ./-prefixed path for an in-scope file",
+        "suggestion": "Add null check",
+        "rule_id": "defensive-null-checks",
+        "rule_category": "code-consistency",
+        "effective_weight": 0.56,
+        "tier": "skim",
+        "escalation_candidate": false,
+        "specialist_domain": null
+      },
+      {
+        "file": "Z.cs",
+        "line": 4,
+        "severity": "nit",
+        "title": "Finding on a file outside the manifest",
+        "description": "Should be scope-filtered with a drop record",
+        "suggestion": "n/a",
         "rule_id": "defensive-null-checks",
         "rule_category": "code-consistency",
         "effective_weight": 0.56,

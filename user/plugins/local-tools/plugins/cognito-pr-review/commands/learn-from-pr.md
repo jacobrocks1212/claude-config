@@ -16,18 +16,18 @@ Extract new review rules from a completed PR by analyzing senior reviewer feedba
 
 Rules are stored as YAML files in `{plugin_root}/knowledge/rules/`:
 
-| File | Category | Target Agent |
-|------|----------|--------------|
-| csharp-architecture.yaml | C# backend patterns | cognito-architecture |
-| api-design.yaml | HTTP/REST API patterns | cognito-api-design |
-| frontend-vue.yaml | Vue/TypeScript patterns | cognito-frontend |
-| performance.yaml | Performance optimization | cognito-architecture |
-| testing.yaml | Test patterns | cognito-test-coverage |
-| code-consistency.yaml | General consistency | cognito-consistency-checker |
-| security.yaml | Security patterns | cognito-architecture |
-| template-binding.yaml | build.js/ExoWeb bindings | cognito-frontend |
+| File | Category | Live Consumer(s) |
+|------|----------|------------------|
+| csharp-architecture.yaml | C# backend patterns | sweep |
+| api-design.yaml | HTTP/REST API patterns | sweep |
+| frontend-vue.yaml | Vue/TypeScript patterns | sweep |
+| performance.yaml | Performance optimization | sweep |
+| testing.yaml | Test patterns | sweep |
+| code-consistency.yaml | General consistency | cognito-consistency-checker, cognito-intra-file-consistency, sweep |
+| security.yaml | Security patterns | sweep |
+| template-binding.yaml | build.js/ExoWeb bindings | sweep |
 
-Rules are embedded into agent prompts by `/cognito-pr-review:rebuild-agents`.
+Rules are embedded into agent prompts by `/cognito-pr-review:rebuild-agents` (categories map 1:1 to the rule files — no intermediate agent-mapping layer).
 
 ## Workflow
 
@@ -103,28 +103,44 @@ Based on matching results, classify each plugin finding:
 - **False Positive (FP):** Plugin finding has no matching human comment → `signal = 0.0`
 - **False Negative (FN):** Human comment has no matching plugin finding → candidate for new rule (feed into step 3)
 
-#### 2.5.4 Update Weights via EMA
+#### 2.5.4 Update Weights via the Calibration Helper
 
-For each TP or FP finding that has a `rule_id` (sweep findings):
+**Do NOT hand-compute EMA math here.** `scripts/disposition-calibration.ts` is the single calibration implementation — all weight updates route through it.
 
-1. Load `{plugin_root}/knowledge/weights.yaml`
-2. Find the rule entry under `rule_weights`
-3. Apply EMA update:
+1. **Serialize the TP/FP classifications** into a session-shaped file at `{cacheDir}/calibration-session.json` (same schema the helper accepts from `buddy-session.json`):
+   ```json
+   {
+     "pr_id": {PR_ID},
+     "cache_dir": "{cacheDir}",
+     "chunks": [
+       {
+         "index": 0,
+         "dispositions": [
+           { "finding_ref": "<basename>:<line>", "source": "<finding source>", "severity": "<original severity>" },
+           { "finding_ref": "<basename>:<line>", "source": "<finding source>", "severity": "dismiss" }
+         ]
+       }
+     ]
+   }
    ```
-   new_weight = α × signal + (1 - α) × old_weight
+   - **TP** finding → a disposition carrying its original kept severity (signal 1)
+   - **FP** finding → a disposition with `"severity": "dismiss"` (signal 0)
+   - `finding_ref` uses the standard convention: `<basename>:<line>` (line-less findings: `<basename>#<slug>`)
+2. **Shell the helper:**
+   ```bash
+   npx tsx {plugin_root}/scripts/disposition-calibration.ts \
+     --session {cacheDir}/calibration-session.json \
+     --findings {cacheDir}/processed-findings.json \
+     --weights ~/.claude/state/cognito-pr-review/weights.yaml
    ```
-   Where:
-   - `α` = `ema_alpha` from weights.yaml (default 0.25)
-   - `signal` = 1.0 for TP, 0.0 for FP
-   - `old_weight` = current weight for the rule
-4. Increment `data_points` by 1
-5. Write the updated weights.yaml
+   The helper owns the EMA math (per-PR aggregation, floor/ceiling clamping, α annealing — constants in `scripts/weight-constants.ts`), updates `rule_weights` (sweep findings) and `source_weights` (non-sweep findings), and performs the comment-preserving surgical YAML write.
+3. **Surface the printed delta summary** to the user.
 
-Investigation findings (no rule_id) are not weight-calibrated — they don't have associated rules.
+The `--weights` target is the mutable state file `~/.claude/state/cognito-pr-review/weights.yaml` (seeded from the plugin's `knowledge/weights.yaml` on first use; the knowledge copy is shipped defaults and is never calibrated in place).
 
 #### 2.5.5 Update Calibration Metadata
 
-After updating weights:
+After the helper runs, in the state file (`~/.claude/state/cognito-pr-review/weights.yaml`):
 1. Set `last_calibrated` to today's date (YYYY-MM-DD format)
 2. Append the PR ID to `calibration_prs` list (if not already present)
 
@@ -152,14 +168,16 @@ The §2.5.2/§2.5.4 path above (Haiku semantic judge → GitHub-comment matching
 npx tsx {plugin_root}/scripts/disposition-calibration.ts \
   --session {cacheDir}/buddy-session.json \
   --findings {cacheDir}/processed-findings.json \
-  --weights {plugin_root}/knowledge/weights.yaml
+  --weights ~/.claude/state/cognito-pr-review/weights.yaml
 ```
 
 Surface the printed delta summary to the user.
 
-**Consume + clear the `pending-calibration` marker:** if `{cacheDir}/pending-calibration.json` exists (written by `review-pr.md` Step 12.7 on non-buddy completion), read it to recover the cache dir and PR, run the calibration command above for that cache dir, then delete the marker (`rm -f {cacheDir}/pending-calibration.json`) so it is consumed exactly once.
+**Gate the helper on the session file:** only invoke the disposition helper when `{cacheDir}/buddy-session.json` exists — non-buddy caches have none (their disposition signal is the human PR comments, calibrated via §2.5.1–2.5.6 above). If the helper is invoked without a session file anyway, it exits cleanly with a "nothing to calibrate" diagnostic rather than an ENOENT error.
 
-The helper (`scripts/disposition-calibration.ts`) is the **single calibration implementation for dispositions** — reused by both buddy and non-buddy paths. Do not re-implement the EMA math here; all disposition-to-weight updates route through that helper.
+**Consume + clear the `pending-calibration` marker:** if `{cacheDir}/pending-calibration.json` exists (written by `review-pr.md` Step 12.7 on non-buddy completion), read it to recover the cache dir and PR ID, then run the **§2.5.1–2.5.6 comment-matching calibration** for that PR — the marker payload (cache dir + PR ID) is exactly what §2.5 needs, and the semantics are *calibrate after human feedback*: the marker defers calibration until reviewer comments exist to match against. Do NOT point the marker at the disposition helper — a non-buddy cache has no `buddy-session.json` to feed it. After the §2.5 pass completes, delete the marker (`rm -f {cacheDir}/pending-calibration.json`) so it is consumed exactly once.
+
+The helper (`scripts/disposition-calibration.ts`) is the **single calibration implementation** — reused by the buddy path (dispositions), the §2.5.4 comment-matching path (synthetic `calibration-session.json`), and `/cognito-pr-review:calibrate`. Do not re-implement the EMA math anywhere; all weight updates route through that helper.
 
 ### 3. Analyze Each Comment
 

@@ -1,0 +1,27 @@
+{
+  "pr_id": 99998,
+  "cache_dir": "/tmp/disp-test-cache",
+  "chunks": [
+    {
+      "index": 0,
+      "status": "done",
+      "dispositions": [
+        { "finding_ref": "foo.ts:9 (a)", "source": "investigation", "severity": "dismiss" },
+        { "finding_ref": "foo.ts:9 (b)", "source": "investigation", "severity": "dismiss" },
+        { "finding_ref": "foo.ts:9 (c)", "source": "investigation", "severity": "dismiss" },
+        { "finding_ref": "foo.ts:9 (d)", "source": "investigation", "severity": "dismiss" }
+      ]
+    },
+    {
+      "index": 1,
+      "status": "done",
+      "dispositions": [
+        { "finding_ref": "foo.ts:9 (e)", "source": "investigation", "severity": "dismiss" },
+        { "finding_ref": "foo.ts:9 (f)", "source": "investigation", "severity": "dismiss" },
+        { "finding_ref": "foo.ts:9 (g)", "source": "investigation", "severity": "dismiss" },
+        { "finding_ref": "foo.ts:9 (h)", "source": "investigation", "severity": "dismiss" }
+      ]
+    }
+  ],
+  "added_observations": []
+}

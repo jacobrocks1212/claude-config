@@ -1,0 +1,19 @@
+version: 1
+ema_alpha: 0.25
+
+# nested-schema comment preservation check
+source_weights:
+  investigation:
+    weight: 0.38
+    data_points: 3
+  intrafile:
+    weight: 0.7
+    data_points: 0
+  reuse: 0.7
+
+rule_weights:
+
+  # api-design rules
+  appropriate-http-methods:
+    weight: 0.7
+    data_points: 9

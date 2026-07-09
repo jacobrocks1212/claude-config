@@ -18,8 +18,11 @@
 
 import { execSync } from "child_process";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
+import { fileURLToPath } from "url";
 import { createTwoFilesPatch } from "diff";
+import yaml from "js-yaml";
 
 function stripBom(content: string): string {
   return content.charCodeAt(0) === 0xFEFF ? content.slice(1) : content;
@@ -128,6 +131,7 @@ interface ManifestFile {
   path: string;
   type: string;
   linesChanged: number;
+  substantive: boolean;
   cachedFile: string;
   cachedDiff: string;
   baselines: Array<{
@@ -172,6 +176,9 @@ interface Manifest {
   iterationDiffFile: string | null;
   structuralContextFiles: string[];
   weights: string;
+  // Count of files where substantive === true. Named in snake_case verbatim per the
+  // size-aware-downshift SPEC — review-pr.md Step 1.7 routes on this value.
+  substantive_count: number;
 }
 
 interface ThreadComment {
@@ -1183,6 +1190,43 @@ function countLines(content: string): number {
   return content.split("\n").length;
 }
 
+// A file is "substantive" if it is not a pure test file, a config file, or a
+// generated type — the same exclusion list review-pr.md Step 5b uses when
+// clustering. Deterministic so the Step 1.7 size router and the Step 5b cluster
+// floor read one authoritative count (manifest.substantive_count).
+export function isSubstantiveFile(filePath: string): boolean {
+  const lower = filePath.replace(/\\/g, "/").toLowerCase();
+  const base = path.basename(lower);
+
+  // Pure test files: test directories, C# test projects, *.test.* / *.spec.* / *Tests.cs
+  if (/(^|\/)(tests?|__tests__)\//.test(lower)) return false;
+  if (/\.tests?\//.test(lower)) return false;
+  if (/\.(test|spec)\.[a-z]+$/.test(base)) return false;
+  if (/tests?\.cs$/.test(base)) return false;
+
+  // Generated output: generated dirs, *.g.cs / *.designer.cs / *.generated.*, TS declaration files
+  if (/(^|\/)generated(\/|$)/.test(lower)) return false;
+  if (/\.(g|designer|generated)\.[a-z]+$/.test(base)) return false;
+  if (base.endsWith(".d.ts")) return false;
+
+  // Config files
+  const configExts = [
+    ".config", ".yml", ".yaml", ".csproj", ".props", ".targets", ".sln",
+    ".editorconfig", ".gitignore", ".gitattributes",
+  ];
+  if (configExts.some((ext) => base.endsWith(ext))) return false;
+  const configBasenames = new Set([
+    "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock",
+    "nx.json", "project.json", "web.config", "app.config",
+  ]);
+  if (configBasenames.has(base)) return false;
+  if (base.startsWith("tsconfig.")) return false;
+  if (/^\.(eslintrc|prettierrc)/.test(base)) return false;
+  if (/^(jest|vite|vitest|webpack|babel)\.config\./.test(base)) return false;
+
+  return true;
+}
+
 // Determine aspects from file types
 function determineAspects(files: ManifestFile[]): string[] {
   const aspects = new Set<string>();
@@ -1546,6 +1590,7 @@ async function prepPR(prId: number, force = false, contextLines = DEFAULT_CONTEX
       path: filePath,
       type: fileType,
       linesChanged: 0, // Will be filled in
+      substantive: isSubstantiveFile(filePath),
       cachedFile: `files/${filePath}`,
       cachedDiff: `diffs/${filePath}.diff`,
       baselines: [],
@@ -1651,10 +1696,14 @@ async function prepPR(prId: number, force = false, contextLines = DEFAULT_CONTEX
     iterationDiffFile: iterationDiffData ? "iteration-diff.json" : null,
     structuralContextFiles,
     weights: "weights.yaml",
+    substantive_count: validFiles.filter((f) => f.substantive).length,
   };
 
   // Write manifest
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+  // Cache sidecars (weights snapshot, rule shards, pr-brief)
+  emitCacheSidecars(cacheDir, manifest, iterationDiffData);
 
   // Verification
   console.error(`\nVerification:`);
@@ -1666,6 +1715,229 @@ async function prepPR(prId: number, force = false, contextLines = DEFAULT_CONTEX
   console.log(JSON.stringify(manifest, null, 2));
 
   return manifest;
+}
+
+// ============================================================================
+// Cache sidecars — weights snapshot, rule shards, pr-brief
+// (feature: pr-review-sweep-rule-sharding-and-read-dedup)
+// ============================================================================
+
+const PLUGIN_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * Resolve the mutable weights state file (~/.claude/state/cognito-pr-review/weights.yaml),
+ * seeding it from the plugin's knowledge/weights.yaml (shipped defaults) when absent.
+ * Same seed-then-read semantics as post-process.ts's loadWeights(); replicated locally —
+ * these scripts are CLI-on-import modules and do not import from each other.
+ */
+function resolveWeightsFile(): string {
+  const seedPath = path.join(PLUGIN_ROOT, "knowledge", "weights.yaml");
+  const stateDir = path.join(os.homedir(), ".claude", "state", "cognito-pr-review");
+  const statePath = path.join(stateDir, "weights.yaml");
+  try {
+    if (!fs.existsSync(statePath)) {
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.copyFileSync(seedPath, statePath);
+      console.error(`  Seeded weights state file from knowledge/weights.yaml: ${statePath}`);
+    }
+    return statePath;
+  } catch (err) {
+    console.error(
+      `Warning: could not seed weights state file (${err}); falling back to knowledge/weights.yaml`
+    );
+    return seedPath;
+  }
+}
+
+/**
+ * Warn when the plugin source version differs from the installed cache version —
+ * command/agent definition edits serve from the versioned cache until a bump+reinstall
+ * (bug pr-review-plugin-cache-split-brain-freezes-weights). Best-effort; never blocks prep.
+ */
+function warnOnVersionDivergence(): void {
+  try {
+    const manifestPath = path.join(PLUGIN_ROOT, ".claude-plugin", "plugin.json");
+    const localVersion = JSON.parse(stripBom(fs.readFileSync(manifestPath, "utf-8"))).version;
+    const installedPath = path.join(os.homedir(), ".claude", "plugins", "installed_plugins.json");
+    const installed = JSON.parse(stripBom(fs.readFileSync(installedPath, "utf-8")));
+    const entries = installed?.plugins?.["cognito-pr-review@local-tools"];
+    const installedVersion = Array.isArray(entries) ? entries[0]?.version : undefined;
+    if (localVersion && installedVersion && localVersion !== installedVersion) {
+      console.error(
+        `Warning: plugin source version ${localVersion} != installed cache version ${installedVersion} — command/agent definitions serve from the cache until the plugin is version-bumped and reinstalled.`
+      );
+    }
+  } catch {
+    // best-effort version check only
+  }
+}
+
+/**
+ * Snapshot the resolved weights (state file, seeded from knowledge/weights.yaml on
+ * first use) into the cache as JSON so the sweep agent's reads stay cache-only and
+ * the whole run sees one pinned weights view. post-process.ts reads the same state
+ * file directly (same values — the snapshot is taken the same run).
+ */
+function emitWeightsSnapshot(cacheDir: string): void {
+  const weightsPath = resolveWeightsFile();
+  try {
+    const parsed = yaml.load(stripBom(fs.readFileSync(weightsPath, "utf-8")));
+    fs.writeFileSync(
+      path.join(cacheDir, "weights-snapshot.json"),
+      JSON.stringify(parsed, null, 2)
+    );
+  } catch (err) {
+    console.error(`Warning: failed to snapshot weights from ${weightsPath}: ${err}`);
+  }
+}
+
+/**
+ * Copy the rendered rule shards (knowledge/rendered/<category>.md, generated by
+ * /cognito-pr-review:rebuild-agents) into {cacheDir}/rules/ so sweep reads rules
+ * cache-only. All 8 shards are copied (~68KB total); the sweep dispatch prompt
+ * names the applicable subset, so sweep never opens the others.
+ */
+function copyRuleShards(cacheDir: string): void {
+  const renderedDir = path.join(PLUGIN_ROOT, "knowledge", "rendered");
+  if (!fs.existsSync(renderedDir)) {
+    console.error(
+      "Warning: knowledge/rendered/ not found — run /cognito-pr-review:rebuild-agents to generate rule shards"
+    );
+    return;
+  }
+  const outDir = path.join(cacheDir, "rules");
+  fs.mkdirSync(outDir, { recursive: true });
+  for (const name of fs.readdirSync(renderedDir).filter((f) => f.endsWith(".md"))) {
+    fs.copyFileSync(path.join(renderedDir, name), path.join(outDir, name));
+  }
+}
+
+/** Count added/removed lines in a unified diff (excluding +++/--- headers). */
+function countDiffAddsDels(diffContent: string): { adds: number; dels: number } {
+  let adds = 0;
+  let dels = 0;
+  for (const line of diffContent.split("\n")) {
+    if (line.startsWith("+") && !line.startsWith("+++")) adds++;
+    else if (line.startsWith("-") && !line.startsWith("---")) dels++;
+  }
+  return { adds, dels };
+}
+
+/** Up to maxEntries hunk-header contexts (deterministic per-file diff summary). */
+function summarizeDiffHunks(diffContent: string, maxEntries = 5): string[] {
+  const hunks: string[] = [];
+  for (const line of diffContent.split("\n")) {
+    if (line.startsWith("@@")) {
+      hunks.push(line.length > 160 ? `${line.slice(0, 160)}…` : line);
+      if (hunks.length >= maxEntries) break;
+    }
+  }
+  return hunks;
+}
+
+/**
+ * Emit {cacheDir}/pr-brief.md — a condensed, deterministic whole-PR summary for
+ * the two planning agents (journey-planner, triage), which read it INSTEAD of
+ * the raw diff set and open individual diffs only when the brief is
+ * insufficient for a specific file. Investigation/sweep/checker agents keep
+ * reading real diffs.
+ */
+function emitPrBrief(
+  cacheDir: string,
+  manifest: Manifest,
+  iterationDiffData: IterationDiffData | null
+): void {
+  const lines: string[] = [];
+  lines.push(`# PR Brief — ${manifest.pr.title}`);
+  lines.push("");
+  lines.push(
+    "> Deterministic summary generated by prep-pr.ts for the whole-PR planning agents (journey-planner, triage). Open an individual diff under `diffs/` only when this brief is insufficient for a specific file."
+  );
+  lines.push("");
+
+  // Objectives — from pr-context.json when present (PR mode), else the manifest header.
+  lines.push("## Objectives");
+  lines.push("");
+  const contextPath = path.join(cacheDir, "pr-context.json");
+  let objectivesWritten = false;
+  if (fs.existsSync(contextPath)) {
+    try {
+      const ctx = JSON.parse(stripBom(fs.readFileSync(contextPath, "utf-8"))) as Record<string, unknown>;
+      const desc = typeof ctx.description === "string" ? ctx.description.trim() : "";
+      if (desc) {
+        lines.push(desc.length > 2000 ? `${desc.slice(0, 2000)}…` : desc);
+        objectivesWritten = true;
+      }
+      const workItems = Array.isArray(ctx.workItems) ? (ctx.workItems as Array<Record<string, unknown>>) : [];
+      if (workItems.length > 0) {
+        lines.push("");
+        lines.push("Work items:");
+        for (const wi of workItems) {
+          lines.push(`- ${wi.type ?? "item"} #${wi.id}: ${wi.title ?? ""}`);
+        }
+        objectivesWritten = true;
+      }
+    } catch {
+      // tolerate malformed context; fall through to the manifest fallback
+    }
+  }
+  if (!objectivesWritten) {
+    lines.push(`${manifest.pr.title} (by ${manifest.pr.author}, ${manifest.pr.sourceBranch} → ${manifest.pr.targetBranch})`);
+  }
+  lines.push("");
+
+  // Iteration delta on re-review.
+  if (manifest.isReReview && iterationDiffData) {
+    lines.push("## Iteration Delta (re-review)");
+    lines.push("");
+    lines.push(
+      `Iteration ${manifest.pr.iterationId} vs previous reviewed iteration ${manifest.previousIterationId}. Files changed in this iteration:`
+    );
+    for (const f of iterationDiffData.filesAdded) lines.push(`- ${f} (added)`);
+    for (const f of iterationDiffData.filesModified) lines.push(`- ${f} (modified)`);
+    for (const f of iterationDiffData.filesRemoved) lines.push(`- ${f} (removed)`);
+    lines.push("");
+  }
+
+  // Per-file entries.
+  const substantiveCount = manifest.files.filter((f) => f.substantive).length;
+  lines.push(`## Files (${manifest.files.length} changed, ${substantiveCount} substantive)`);
+  lines.push("");
+  for (const file of manifest.files) {
+    let adds = 0;
+    let dels = 0;
+    let hunks: string[] = [];
+    const diffPath = path.join(cacheDir, file.cachedDiff);
+    if (fs.existsSync(diffPath)) {
+      const diffContent = stripBom(fs.readFileSync(diffPath, "utf-8"));
+      ({ adds, dels } = countDiffAddsDels(diffContent));
+      hunks = summarizeDiffHunks(diffContent);
+    }
+    const flags: string[] = [file.type];
+    if (!file.substantive) flags.push("non-substantive (test/config/generated)");
+    if (!file.cachedFile) flags.push("large file — diff only");
+    lines.push(`### ${file.path}`);
+    lines.push(`+${adds}/−${dels} — ${flags.join(", ")}`);
+    for (const hunk of hunks) {
+      lines.push(`- \`${hunk}\``);
+    }
+    lines.push("");
+  }
+
+  fs.writeFileSync(path.join(cacheDir, "pr-brief.md"), lines.join("\n"));
+}
+
+/** Emit all cache sidecars; called by both PR and local prep modes. */
+function emitCacheSidecars(
+  cacheDir: string,
+  manifest: Manifest,
+  iterationDiffData: IterationDiffData | null
+): void {
+  warnOnVersionDivergence();
+  emitWeightsSnapshot(cacheDir);
+  copyRuleShards(cacheDir);
+  emitPrBrief(cacheDir, manifest, iterationDiffData);
+  console.error("  Sidecars: weights-snapshot.json, rules/, pr-brief.md");
 }
 
 // Local mode prep function
@@ -1713,6 +1985,7 @@ async function prepLocal(
       path: filePath,
       type: fileType,
       linesChanged: 0, // Will be filled in
+      substantive: isSubstantiveFile(filePath),
       cachedFile: `files/${filePath}`,
       cachedDiff: `diffs/${filePath}.diff`,
       baselines: [],
@@ -1787,11 +2060,15 @@ async function prepLocal(
     iterationDiffFile: null,
     structuralContextFiles: [],
     weights: "weights.yaml",
+    substantive_count: validFiles.filter((f) => f.substantive).length,
   };
 
   // Write manifest
   const manifestPath = path.join(cacheDir, "manifest.json");
   fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+
+  // Cache sidecars (weights snapshot, rule shards, pr-brief)
+  emitCacheSidecars(cacheDir, manifest, null);
 
   // Verification
   console.error(`\nVerification:`);

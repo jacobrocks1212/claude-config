@@ -2,7 +2,7 @@
 
 > `post-process.ts` step 3 dedups by exact `file:line` and keeps exactly one finding per location even when the co-located findings describe different issues (the loser is discarded, counted only as a "dedup"); step 5 drops any finding whose `file` string doesn't exactly match a manifest path (no normalization for separators, leading slash, or case) and those drops appear in **no** counter — invisible loss.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-09
 **Placement:** docs/bugs/pr-review-postprocess-dedup-scope-filter-silent-drops

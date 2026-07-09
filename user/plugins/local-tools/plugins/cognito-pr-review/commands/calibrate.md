@@ -46,8 +46,9 @@ One-time bulk calibration that analyzes historical PR reviews against actual hum
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│  Step 6: Apply EMA Updates to weights.yaml                      │
-│  - α = 0.25; signal = 1.0 (TP) or 0.0 (FP)                     │
+│  Step 6: Apply EMA Updates via disposition-calibration.ts       │
+│  - Serialize TP/FP per PR → calibration-session.json            │
+│  - Shell the helper (single EMA implementation)                 │
 │  - Skipped if --dry-run                                         │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
@@ -173,37 +174,35 @@ Track FN patterns: for each unmatched human comment, record the file, comment te
 
 Group all TP/FP/FN results by rule ID (for rule-based findings) and by category (for aggregate reporting).
 
-### Step 6: Apply EMA Updates
+### Step 6: Apply EMA Updates via the Calibration Helper
 
-For each rule that had at least one TP or FP result:
+**Do NOT hand-compute EMA math here.** `scripts/disposition-calibration.ts` is the single calibration implementation — this step serializes the Step 5 classifications and shells the helper, once per PR (the helper performs per-PR aggregation internally: one bounded EMA step per (lane|rule) per run).
 
-```
-new_weight = α × signal + (1 − α) × old_weight
-```
+For each calibrated PR:
 
-Where:
-- `α = 0.25` (read `ema_alpha` from `weights.yaml`; fall back to 0.25 if not set)
-- `signal = 1.0` for TP, `0.0` for FP
-- If a rule had both TP and FP results, average the signals before applying: `signal = TP_count / (TP_count + FP_count)`
-- Increment the rule's `data_points` by `(TP_count + FP_count)`
+1. **Locate the PR's cache dir** (`<cogDocsItemDir>/.pr-review/pr-cache/{id}/`). The helper joins dispositions against `{cacheDir}/processed-findings.json`; if the cache or that file no longer exists (old review, cache cleaned), **skip this PR's weight update** and note it in the report — classifications without the findings join cannot be calibrated.
 
-Read current `weights.yaml` from:
-```
-~/.claude/plugins/local-tools/plugins/cognito-pr-review/knowledge/weights.yaml
-```
+2. **Serialize the PR's TP/FP classifications** into `{cacheDir}/calibration-session.json` (same session shape `buddy-session.json` uses):
+   - TP finding → disposition with its original kept severity (signal 1)
+   - FP finding → disposition with `"severity": "dismiss"` (signal 0)
+   - `finding_ref`: `<basename>:<line>` (line-less: `<basename>#<slug>`)
 
-For each affected rule, update:
-- `weight`: new computed weight (rounded to 4 decimal places)
-- `data_points`: incremented count
-- `last_calibrated`: today's date (ISO 8601)
+3. **Shell the helper:**
+   ```bash
+   npx tsx {plugin_root}/scripts/disposition-calibration.ts \
+     --session {cacheDir}/calibration-session.json \
+     --findings {cacheDir}/processed-findings.json \
+     --weights ~/.claude/state/cognito-pr-review/weights.yaml
+   ```
+   The helper owns the EMA math (per-PR aggregation, floor/ceiling clamp, α annealing — constants in `scripts/weight-constants.ts`), updates `rule_weights` and `source_weights`, and does the comment-preserving surgical write. The `--weights` target is the mutable state file (seeded from `knowledge/weights.yaml` on first use; the knowledge copy is shipped defaults and is never written).
 
-At the top level of `weights.yaml`, also update:
+4. **Collect the helper's printed deltas** for the report.
+
+After all PRs, update the state file's top-level metadata:
 - `calibration_prs`: append the PR IDs processed in this run (deduplicate against any already listed)
 - `last_bulk_calibration`: today's date
 
-**If `--dry-run`:** Do NOT write `weights.yaml`. Instead, log each rule's computed `new_weight` alongside the current `old_weight` for comparison.
-
-**If not `--dry-run`:** Write the updated `weights.yaml` back to disk.
+**If `--dry-run`:** Do NOT invoke the helper and do NOT write anything. Report the Step 5 classifications (per-rule TP/FP counts and derived signals) only — computed new weights are not simulated, since the EMA math lives solely in the helper.
 
 ### Step 7: Write Calibration Report
 
@@ -288,13 +287,13 @@ Dry run complete — no weights updated.
 
 ## Notes
 
-- **Buddy-session disposition calibration** routes through the shared helper `scripts/disposition-calibration.ts` — the single implementation of the EMA update for disposition signals. Any bulk or replay calibration of dispositioned buddy sessions should invoke that helper rather than duplicating the EMA logic here.
+- **ALL weight calibration** routes through the shared helper `scripts/disposition-calibration.ts` — the single EMA implementation (this command's Step 6, `learn-from-pr` §2.5.4/§2.5.7, and the buddy session close all shell it). Never duplicate the EMA logic in prose. The legacy bulk script `calibrate-weights.ts` is archived (`archived/`) — do not resurrect it; it destroyed YAML comments and used hardcoded paths.
 
 - This command is designed for **one-time bulk calibration** after initial plugin deployment, or after accumulating a batch of reviewed PRs.
 - For **ongoing incremental calibration**, use `/cognito-pr-review:learn-from-pr` after each reviewed PR. That command updates weights for a single PR immediately after human review.
 - The Haiku semantic judge is essential — proximity filtering alone would produce too many false matches in large files with many comments on nearby lines.
-- Rules without a `rule_id` in the plugin finding cannot be individually calibrated; they contribute to FN counts only.
-- Weights file path: `~/.claude/plugins/local-tools/plugins/cognito-pr-review/knowledge/weights.yaml`
+- Rules without a `rule_id` in the plugin finding cannot be individually calibrated; the helper routes them through `source_weights` for their lane instead. Unmatched human comments contribute to FN counts only.
+- Weights state file (calibration target): `~/.claude/state/cognito-pr-review/weights.yaml` — seeded from `{plugin_root}/knowledge/weights.yaml` (shipped defaults, never written)
 - Review artifacts path: `cog-docs/docs/{bugs,features}/*/PR-*.md` (under `C:\Users\JacobMadsen\source\repos\cog-docs`)
 - PR comments path: `.claude.local/slop/pr-comments/` (relative to `C:\Users\JacobMadsen\source\repos\Cognito Forms`)
 - `get-pr-comments.ps1` lives at the Cognito Forms repo root; always `cd` into the repo before running it

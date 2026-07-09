@@ -186,6 +186,32 @@ Produce markdown following this EXACT structure:
 - {strength 2}
 ```
 
+## Machine-Readable Sidecar (`PR-{id}-findings.json`)
+
+Alongside the narrative markdown, ALSO write a machine-readable findings sidecar named `PR-{id}-findings.json` in the **same directory as the review artifact** (`PR-{id}.md` — in the main pipeline that is the resolved `<cogDocsItemDir>`). This sidecar is the structured twin of the rendered review: downstream tooling (re-review lifespan tracking, calibration joins) parses it instead of scraping the markdown.
+
+Content: a JSON array of exactly the kept findings you rendered (all four source sections), in rendered order:
+
+```json
+[
+  {
+    "id": "{basename}:{line}",
+    "title": "{Issue title}",
+    "file": "{file}",
+    "line": {line or null},
+    "severity": "{blocking | important | suggestion}",
+    "source": "{investigation | sweep | reuse | intrafile | reviewer}",
+    "verdict": "{verdict for reuse/intrafile findings; null otherwise}",
+    "rule_id": "{rule_id for sweep findings; null otherwise}",
+    "confidence": "{CONFIRMED | UNVERIFIED | null}"
+  }
+]
+```
+
+- `id` follows the standard finding-ref convention: `{basename}:{line}`; line-less findings use `{basename}#{kebab-case-title-slug}`.
+- Field values come from `processed_findings` verbatim — do not re-derive or re-normalize them.
+- Emit the sidecar even when there are zero kept findings (`[]`) — its presence signals the review completed post-processing.
+
 ## Narrative Guidelines
 
 - The Summary should read like a senior engineer's assessment, not a tool output
@@ -223,6 +249,6 @@ Do NOT read from the local codebase. Consequently, every **Proposed fix** code s
 
 ## Important Notes
 
-- This agent replaces the old `review-synthesizer.md` (Haiku-based). The old agent remains as legacy reference but `review-pr.md` will reference `synthesizer-v2`.
+- This agent replaces the old `review-synthesizer.md` (Haiku-based), which is archived under `archived/cognito-pr-review-v1-agents/`. `review-pr.md` references `synthesizer-v2`.
 - The deterministic post-processing (effective_weight, dedup, ranking, filtering) is already done before this agent runs. Your job is narrative + formatting, not data processing.
 - The findings in `processed_findings` are already sorted by tier, severity, and weight. Preserve this ordering.

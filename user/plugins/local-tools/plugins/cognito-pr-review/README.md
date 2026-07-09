@@ -1,4 +1,4 @@
-# Cognito PR Review Plugin v2.5
+# Cognito PR Review Plugin
 
 Custom PR review plugin for Cognito Forms that uses a hierarchical investigation-driven pipeline: deterministic prep → planning → triage → parallel investigation/sweep/reuse-candidacy → deterministic post-processing → synthesis.
 
@@ -32,7 +32,7 @@ Custom PR review plugin for Cognito Forms that uses a hierarchical investigation
 │  - 1 Investigation Agent per critical group (Opus)               │
 │    Solver-Verifier protocol, full codebase access                │
 │  - 1 Sweep Agent for important+skim files (Sonnet)               │
-│    95 YAML rules, weight-aware thresholds, escalation rights     │
+│    115 YAML rules, weight-aware thresholds, escalation rights    │
 │  - Reuse-Candidacy Stage (Opus) — runs concurrently              │
 │    Clusters net-new files; 1 cognito-consistency-checker per     │
 │    cluster; emits reuse findings with verdict (reuse / extend /  │
@@ -131,23 +131,15 @@ A lighter, inline-first alternative to `review-pr` and `review-pr-buddy` for the
 | triage | File classification (critical/important/skim) | Opus |
 | investigation | Deep-dive critical areas with Solver-Verifier | Opus |
 | sweep | Rule-based review with weight-aware thresholds | Sonnet |
+| cognito-consistency-checker | Per-cluster reuse-candidacy analysis | Opus |
+| cognito-intra-file-consistency | Per-cluster intra-file duplication + conventions | Opus |
 | synthesizer-v2 | Narrative review synthesis | Sonnet |
 
-### Legacy Agents (v1 reference)
-
-| Agent | Focus | Model |
-|-------|-------|-------|
-| cognito-architecture | C# patterns, DI, StorageContext, async | Opus |
-| cognito-frontend | Vue 2.7, TypeScript, dialogs | Opus |
-| cognito-api-design | Controllers, HTTP methods, types | Opus |
-| cognito-consistency-checker | Pattern consistency | Opus |
-| cognito-test-coverage | Test quality, coverage gaps, entity IDs | Opus |
-| cognito-behavior | Behavior correctness verification | Opus |
-| review-synthesizer | v1 aggregation and deduplication | Haiku |
+The six v1 agents (`cognito-architecture`, `cognito-frontend`, `cognito-api-design`, `cognito-behavior`, `cognito-test-coverage`, `review-synthesizer`) were archived 2026-07-09 to `claude-config/archived/cognito-pr-review-v1-agents/` — no pipeline command dispatched them.
 
 ## Rules
 
-95 rules organized as YAML in `knowledge/rules/`:
+115 rules organized as YAML in `knowledge/rules/`:
 
 | File | Category |
 |------|----------|
@@ -177,25 +169,20 @@ Per-rule EMA weights calibrated against human reviewer feedback:
 │   ├── journey-planner.md          # v2: PR lifecycle + planner
 │   ├── triage.md                   # v2: file classification
 │   ├── investigation.md            # v2: deep-dive critical areas
-│   ├── sweep.md                    # v2: rule-based review (95 rules embedded)
-│   ├── synthesizer-v2.md           # v2: narrative synthesis
-│   ├── cognito-architecture.md     # v1 legacy
-│   ├── cognito-api-design.md       # v1 legacy
-│   ├── cognito-frontend.md         # v1 legacy
-│   ├── cognito-consistency-checker.md  # v1 legacy
-│   ├── cognito-test-coverage.md    # v1 legacy
-│   ├── cognito-behavior.md         # v1 legacy
-│   └── review-synthesizer.md       # v1 legacy
+│   ├── sweep.md                    # v2: rule-based review (115 rules embedded)
+│   ├── cognito-consistency-checker.md      # v2: per-cluster reuse-candidacy
+│   ├── cognito-intra-file-consistency.md   # v2: per-cluster intra-file consistency
+│   └── synthesizer-v2.md           # v2: narrative synthesis
 ├── commands/
 │   ├── review-pr.md                # Main review orchestration (v2 pipeline)
 │   ├── review-pr-buddy.md          # Interactive pair-review (buddy mode)
+│   ├── spot-check.md               # Lightweight inline-first spot check
 │   ├── learn-from-pr.md            # Extract rules + EMA calibration
 │   ├── calibrate.md                # Bulk weight calibration
 │   ├── weights.md                  # View/adjust weights
 │   └── rebuild-agents.md           # Re-embed rules into agent prompts
 ├── knowledge/
 │   ├── weights.yaml                # EMA rule weights + category multipliers
-│   ├── code-review-rules.md        # Legacy reference
 │   └── rules/
 │       ├── csharp-architecture.yaml
 │       ├── api-design.yaml

@@ -183,6 +183,15 @@ Consistency findings use the same `findings` array and JSON schema as regular fi
 
 ---
 
+## Output Delivery (self-written)
+
+When your assignment specifies an output path (review-pr dispatches always do — `{cacheDir}/agent-output/investigation-{group-slug}.json`):
+
+1. Write your complete JSON output object (schema below) to that path yourself, creating the `agent-output/` directory if needed.
+2. Your final message must be ONLY a one-line confirmation with counts, e.g. `Wrote agent-output/investigation-core-services.json — 3 findings (1 blocking, 2 important), 1 escalation.` Do NOT repeat the JSON in your final message — the orchestrator reads the file, not your transcript.
+
+If no output path was specified (e.g. a spot-check dispatch), emit the JSON object as your final message instead — legacy callers parse it from your reply.
+
 ## Output Format
 
 Emit a single JSON object conforming exactly to this schema. Include the `"group"` field — use the group name from your assignment.
@@ -235,4 +244,4 @@ Emit a single JSON object conforming exactly to this schema. Include the `"group
 
 ## Allowed Tools
 
-Read (unrestricted — both cache and local codebase), Grep, Glob, get_file_structure, find_symbol_usages, get_callers, get_callees, get_dependencies
+Read (unrestricted — both cache and local codebase), Grep, Glob, Write (ONLY your assigned `{cacheDir}/agent-output/investigation-*.json` output file — nothing else), get_file_structure, find_symbol_usages, get_callers, get_callees, get_dependencies

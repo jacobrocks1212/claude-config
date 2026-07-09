@@ -157,6 +157,89 @@ describe("disposition-calibration EMA updates", () => {
 	});
 });
 
+describe("disposition-calibration per-PR aggregation + clamp + annealing", () => {
+	const eightDismissPath = join(fxDir, "disp-buddy-session-8dismiss.json");
+	const nestedFixturePath = join(fxDir, "disp-weights-nested.yaml");
+
+	function copyNestedToTemp(label: string): string {
+		const dest = join(os.tmpdir(), `disp-weights-nested-${label}-${Date.now()}.yaml`);
+		fs.copyFileSync(nestedFixturePath, dest);
+		return dest;
+	}
+
+	interface NestedWeightsFile {
+		ema_alpha: number;
+		source_weights: Record<string, number | { weight: number; data_points: number }>;
+		rule_weights: Record<string, RuleWeight>;
+	}
+
+	test("8 dismissals in one run = ONE bounded EMA step on a legacy scalar (0.9 → 0.675, not 0.9·0.75^8)", () => {
+		const weightsFile = copyWeightsToTemp("8dismiss");
+		runCli(eightDismissPath, weightsFile);
+		const w = loadWeights(weightsFile);
+		assert.strictEqual(
+			w.source_weights["investigation"],
+			0.675,
+			`expected ONE aggregated step 0.25*0 + 0.75*0.9 = 0.675 but got ${w.source_weights["investigation"]} (sequential-step bug would give ≈0.09)`
+		);
+	});
+
+	test("nested schema: 8 dismissals clamp at WEIGHT_FLOOR 0.35 and increment data_points", () => {
+		const weightsFile = copyNestedToTemp("clamp");
+		runCli(eightDismissPath, weightsFile);
+		const raw = fs.readFileSync(weightsFile, "utf-8");
+		const w = yaml.load(raw) as NestedWeightsFile;
+		const inv = w.source_weights["investigation"] as { weight: number; data_points: number };
+		// 0.25*0 + 0.75*0.38 = 0.285 → clamped to 0.35
+		assert.strictEqual(inv.weight, 0.35, `expected clamp at 0.35 but got ${inv.weight}`);
+		assert.strictEqual(inv.data_points, 4, `expected data_points 3+1=4 but got ${inv.data_points}`);
+		assert.ok(raw.includes("# nested-schema comment preservation check"), "comments must survive the surgical write");
+	});
+
+	test("annealed alpha: rule with data_points 9 moves at alpha 0.1, not ema_alpha 0.25", () => {
+		const weightsFile = copyNestedToTemp("anneal");
+		runCli(sessionPath, weightsFile);
+		const w = yaml.load(fs.readFileSync(weightsFile, "utf-8")) as NestedWeightsFile;
+		// sweep dismiss on appropriate-http-methods (data_points 9): alpha = min(0.25, max(0.05, 1/10)) = 0.1
+		// 0.1*0 + 0.9*0.7 = 0.63
+		assert.strictEqual(w.rule_weights["appropriate-http-methods"].weight, 0.63);
+		assert.strictEqual(w.rule_weights["appropriate-http-methods"].data_points, 10);
+		// nested investigation entry (data_points 3): kept → alpha 0.25 → 0.25*1 + 0.75*0.38 = 0.535
+		const inv = w.source_weights["investigation"] as { weight: number; data_points: number };
+		assert.strictEqual(inv.weight, 0.535);
+		assert.strictEqual(inv.data_points, 4);
+		// mixed schema: legacy scalar reuse entry still updates in place
+		assert.strictEqual(w.source_weights["reuse"], 0.525);
+	});
+});
+
+describe("disposition-calibration guarded session read (bug 4 helper half)", () => {
+	test("missing session file → clean diagnostic exit, not an ENOENT stack", () => {
+		const weightsFile = copyWeightsToTemp("missing-session");
+		const before = fs.readFileSync(weightsFile, "utf-8");
+		const missingSession = join(os.tmpdir(), `no-such-session-${Date.now()}.json`);
+
+		let out = "";
+		let cliError: unknown = null;
+		try {
+			out = execSync(
+				`npx tsx disposition-calibration.ts --session "${missingSession}" --findings "${findingsPath}" --weights "${weightsFile}"`,
+				{ cwd: scriptsDir, encoding: "utf-8" }
+			);
+		} catch (err) {
+			cliError = err;
+		}
+
+		assert.ok(cliError === null, `CLI must exit 0 on a missing session file but threw: ${cliError}`);
+		assert.ok(
+			out.includes("no session file — nothing to calibrate"),
+			`stdout must carry the diagnostic, got: ${out}`
+		);
+		const after = fs.readFileSync(weightsFile, "utf-8");
+		assert.strictEqual(after, before, "weights must be untouched when there is no session");
+	});
+});
+
 describe("disposition-calibration zero-disposition no-op", () => {
 	test("empty session leaves weights file byte-for-byte identical", () => {
 		const tempWeightsPath = copyWeightsToTemp("empty-session");

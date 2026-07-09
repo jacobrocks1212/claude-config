@@ -2,7 +2,7 @@
 
 > EMA-calibrated `source_weights` in the cognito-pr-review plugin drifted below `post-process.ts`'s `MIN_EFFECTIVE_WEIGHT` (0.3), so `step2_dropBelowThreshold` discarded every investigation + intra-file finding — including CONFIRMED important ones — leaving only the sweep lane.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-09
 **Placement:** docs/bugs/pr-review-source-weights-drift-zeroes-opus-lane

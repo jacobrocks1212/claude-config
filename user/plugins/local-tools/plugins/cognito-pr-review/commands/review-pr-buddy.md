@@ -18,8 +18,8 @@ An interactive, senior-architect pair-review command. Unlike the autonomous `/re
 
 Three phases:
 
-1. **Phase 0 — Non-interactive prep.** Delegates entirely to `commands/review-pr.md` Steps 1–8. Produces the journey file and `{cacheDir}/processed-findings.json` (including reuse findings) without involving you.
-2. **Phase 1 — Interactive walk.** Steps through every `### Step N: {Group}` chunk in the journey file's `## Manual Review Guide` using a two-pass loop: first an independent read (orientation + reviewer reasoning before pre-computed findings are revealed), then a reconciliation pass against tool findings. Captures a severity disposition (Blocking / Important / Suggestion / Dismiss) for every finding — tool-surfaced and reviewer-authored — via `AskUserQuestion`. Progress is checkpointed continuously to `{cacheDir}/buddy-session.json`.
+1. **Phase 0 — Non-interactive prep (delegated subagent).** Dispatches ONE `general-purpose` subagent that executes `commands/review-pr.md` Steps 1–8.5 end-to-end — dispatching the pipeline's specialist agents itself — and returns only the small `phase0-result.json` envelope. The orchestrator never reads `review-pr.md`, the journey, triage JSON, agent outputs, or `processed-findings.json` whole; its window stays near-fresh for the walk.
+2. **Phase 1 — Interactive walk.** Steps through every chunk in `{cacheDir}/chunk-index.json` (derived from the journey's `## Manual Review Guide`), lazy-loading exactly one chunk's journey slice, diffs, and findings shard at a time, using a two-pass loop: first an independent read (orientation + reviewer reasoning before pre-computed findings are revealed), then a reconciliation pass against tool findings. Captures a severity disposition (Blocking / Important / Suggestion / Dismiss) for every finding — tool-surfaced and reviewer-authored — via `AskUserQuestion`. Progress is checkpointed continuously to `{cacheDir}/buddy-session.json`.
 3. **Phase 2 — Curated synthesis.** Writes the final `PR-{id}.md` review in synthesizer-v2 format containing _only_ the findings you kept (with their severity and optional comment notes). The autonomous synthesizer agent is NOT invoked — the interactive session IS the synthesis.
 
 ---
@@ -32,32 +32,68 @@ Parse arguments exactly as `commands/review-pr.md` specifies:
 - **No PR ID / "local"**: Local Mode
 - **aspects**: `all`, `csharp`, `frontend`, `api`, `consistency`, `testing` — defaults to `all`
 - **sequential**: If present, pipeline agents run sequentially instead of in parallel
+- **--full**: Force the full pipeline in the Phase-0 delegate (overrides review-pr.md Step 1.7 size routing)
+- **--spot**: Force the downshifted path in the Phase-0 delegate (overrides Step 1.7 routing)
 - **--local**: Force local mode
 - **--base <branch>**: Target branch for local diff (default: `main`)
 - **--include-untracked**: Include untracked files in local mode
 
-Derive `cacheDir` from the Step 1 manifest output (its `cacheDir` field):
+Derive `cacheDir` from the Phase-0 result envelope (its `cacheDir` field — see Phase 0 below):
 - PR Mode: `<cogDocsItemDir>/.pr-review/pr-cache/{pr_id}/` — under the resolved cog-docs item dir
 - Local Mode: `.claude/pr-cache/local/`
 
 ---
 
-## Phase 0 — Non-Interactive Prep (Delegation)
+## Phase 0 — Non-Interactive Prep (Delegated Subagent)
 
-Execute the steps defined in `commands/review-pr.md` Step 1 through Step 8 — prep → cache marker → cog-docs dest → journey → triage → planner-validate → reuse-candidacy + investigation + sweep → aggregate → post-process. Do not re-specify them here; `commands/review-pr.md` is the single source of truth for those step bodies.
+Phase 0 executes OUTSIDE your context window. Do NOT read `commands/review-pr.md`, the journey file, triage output, agent outputs, or `processed-findings.json` in this phase — the delegate does all of that. `commands/review-pr.md` remains the single source of pipeline truth; this is delegation, not duplication.
 
-On successful completion of Step 8:
-- The journey file is at `<cogDocsItemDir>/PR-{pr_id}-journey.md` (PR mode) or `.claude.local/reviews/` for local mode
-- `{cacheDir}/processed-findings.json` is on disk, including `source:"reuse"` findings from Step 5b
+**Nested-dispatch regression probe (cheap, first task):** dispatch a trivial `general-purpose` agent whose only instruction is to dispatch one nested Explore agent and report success. Nesting was probe-confirmed working 2026-07-09; this is a regression check, not a decision gate. If the probe FAILS, fall back to executing `review-pr.md` Steps 1–8.5 yourself with zero-echo discipline (all artifacts file-piped per their self-write contracts; post-process via shell redirect; no body transcription into your context) and tell the reviewer the fallback engaged. Otherwise:
+
+**Dispatch ONE Phase-0 delegate:**
+
+```
+Agent:
+  subagent_type: general-purpose
+  prompt: |
+    You are the Phase-0 prep delegate for an interactive buddy review of PR {pr_id | "local"}.
+
+    Read ~/.claude/plugins/local-tools/plugins/cognito-pr-review/commands/review-pr.md and
+    execute Step 1 through Step 8.5 EXACTLY as written — including the Step 1.7 size route —
+    with these arguments: {forward PR_ID / aspects / sequential / --full / --spot / --local /
+    --base / --include-untracked verbatim}.
+
+    You dispatch the pipeline's specialist agents yourself (journey-planner, triage,
+    investigation, sweep, reuse-candidacy, intra-file consistency). Write every artifact to
+    disk exactly where review-pr.md specifies.
+
+    Buddy-specific carve-outs:
+    - STOP after Step 8.5. Do NOT execute Step 9 (synthesizer) or any later step — the
+      interactive buddy session IS the synthesis.
+    - If Step 1.7 routes DOWNSHIFTED: execute D1–D3 and D5, SKIP D4 (inline synthesis —
+      the buddy walk replaces it), run the Step 8.5 emitter, then stop. Do NOT resume at
+      Step 10.
+
+    Your final message: ONLY the verbatim contents of {cacheDir}/phase0-result.json — no
+    commentary, no summaries, no artifact bodies. On any pipeline failure, instead return
+    "PHASE0-FAILED:" followed by the failing step number and the error verbatim.
+```
+
+**On delegate return:**
+
+- Reply starts with `PHASE0-FAILED:` → report the delegate's error to the reviewer **verbatim** and STOP — the same contract as a Step-1 prep failure.
+- Otherwise parse the envelope JSON — `{pr_id, cacheDir, cogDocsItemDir, journey_path, chunk_count, finding_counts, chunk_index_path}`. This envelope is the ONLY Phase-0 data that enters your window; everything else stays on disk for lazy per-chunk loading.
 
 Announce to the reviewer:
 
-> "Prep complete. Journey file and processed findings are ready. Starting the interactive walk now."
+> "Prep complete (delegated): {sum of finding_counts} findings across {chunk_count} chunks. Starting the interactive walk now."
 
 Initialize Task-tool tracking for the three high-level phases:
 - Phase 0 (complete)
 - Phase 1 (in-progress)
 - Phase 2 (pending)
+
+**Downshifted-route note:** on a small PR the envelope may carry `journey_path: null` and `chunk_count: 1` — review-pr.md Step 1.7 downshifted the run and the chunk index holds one synthetic whole-PR chunk. The walk handles this uniformly: orientation teaches from the chunk's diffs and findings directly, and there are no journey `**Perspective:**`/`**Predictive questions:**` prompts to pose.
 
 ---
 
@@ -65,11 +101,9 @@ Initialize Task-tool tracking for the three high-level phases:
 
 ### Setup
 
-Read the journey file (`<cogDocsItemDir>/PR-{pr_id}-journey.md` in PR mode) and locate the `## Manual Review Guide` section. Extract every `### Step N: {Group Name}` chunk — each chunk has `**Files:**`, `**Perspective:**`, `**Predictive questions:**`, `**Complexity:**`, and `**loc_estimate:**`.
+Read `{chunk_index_path}` (from the envelope) — `chunk-index.json` — and NOTHING else. Each chunk entry carries `{index, group, complexity, files, journey_lines, diff_paths, finding_refs}`; the finding↔chunk join was computed deterministically at Step 8.5 (a finding belongs to a chunk if its `file` appears in that chunk's journey `**Files:**` list — the same rule this command used to apply inline). Do NOT read the journey file whole and do NOT read `processed-findings.json` whole — per-chunk data is loaded lazily inside the loop below.
 
-Read `{cacheDir}/processed-findings.json` into memory. Findings carry a `file` field; a finding belongs to a chunk if its `file` appears in that chunk's `**Files:**` list.
-
-Initialize `{cacheDir}/buddy-session.json` (see schema below). If the file already exists (compaction recovery — see below), read it and resume from the first chunk whose `"status"` is not `"done"`.
+Initialize `{cacheDir}/buddy-session.json` (see schema below) from the envelope + chunk index: one `chunks[]` entry per chunk-index entry (status `"pending"`; `loc_estimate` is filled in from the journey slice when the chunk is loaded, `0` until then), `total_chunks` = `chunk_count`, plus the additive top-level `chunk_index_path`. If the file already exists (compaction recovery — see below), read it and resume from the first chunk whose `"status"` is not `"done"`.
 
 ### Finding ID Convention
 
@@ -84,7 +118,17 @@ A human-readable descriptor MAY follow in parentheses — e.g. `identify-submitt
 
 **Stream hygiene:** During the walk, the harness may emit `<task-notification>` lines (Task-tool status updates). Do NOT echo these into the reviewer-facing output — suppress them entirely. Surface only the orient / teach / diagram / disposition content to the reviewer.
 
-For each chunk, in order, run these six steps:
+For each chunk, in order, run these seven steps:
+
+#### 0. Load (lazy — this chunk only)
+
+Load exactly chunk *k*'s working set, nothing more:
+
+- **Journey slice:** if the chunk's `journey_lines` is non-null, do a ranged Read of `journey_path` covering lines `[start, end]` — this yields the chunk's `**Files:**`, `**Perspective:**`, `**Predictive questions:**`, `**Complexity:**`, and `**loc_estimate:**`. If `journey_lines` is null (downshifted route or the catch-all chunk), there is no journey prose — orient from the diffs and findings directly.
+- **Diffs:** the chunk's `diff_paths` (plus cached files for surrounding context as needed).
+- **Findings shard:** `{cacheDir}/findings-by-chunk/chunk-{k}.json` — the chunk's full finding objects. The shard union across chunks equals `processed-findings.json`; never open the whole findings file during the walk.
+
+Nothing outside chunk *k* enters the window.
 
 #### 1. Orient
 
@@ -128,7 +172,7 @@ _AI-role framing:_ The diagram is a facilitation and orientation aid — a tool 
 
 #### 2. Independent Read — Pass 1
 
-Present the chunk's implementation and its bundled tests. Pose the chunk's `**Perspective:**` persona and `**Predictive questions:**` verbatim. Invite the reviewer to read cold and record their own observations.
+Present the chunk's implementation and its bundled tests. Pose the chunk's `**Perspective:**` persona and `**Predictive questions:**` verbatim (from the journey slice; on a journey-less chunk there are none — invite a cold read of the diffs without persona framing). Invite the reviewer to read cold and record their own observations.
 
 **Pre-computed tool findings are NOT shown in this pass.** This is the anti-anchoring step — the reviewer reasons independently before seeing what the pipeline flagged.
 
@@ -164,7 +208,7 @@ Both filters run before the grouped finding display below. Only findings that pa
 
 ---
 
-Reveal the chunk's pre-computed findings from `processed-findings.json` (investigation, sweep, reuse, intrafile) as a reconciliation against the reviewer's Pass-1 take: where they overlap, where the tool flagged something the reviewer didn't catch, and that the tool may have missed domain-intent issues the reviewer caught.
+Reveal the chunk's pre-computed findings from its findings shard (`findings-by-chunk/chunk-{k}.json` — investigation, sweep, reuse, intrafile) as a reconciliation against the reviewer's Pass-1 take: where they overlap, where the tool flagged something the reviewer didn't catch, and that the tool may have missed domain-intent issues the reviewer caught.
 
 Present each finding that passes both pre-filters in the **Standardized Issue Block** — the same shape `synthesizer-v2.md` defines (`## Standardized Issue Block`) and Phase 2 emits post-disposition. The block is the reveal display; the Step-4 disposition prompt below is unchanged.
 
@@ -185,7 +229,7 @@ Keep findings **grouped by source** under their section headings, and keep the p
 
 Highlight blocking and important findings. Do not bury them in a flat list. If no pre-computed findings exist (after the pre-filters), state: "No pre-computed findings for this group."
 
-**Pre-disposition `**Severity:**` semantics (explicit).** Here, the block's `**Severity:**` field carries the pipeline's **recommended / tool-computed** severity — read from the `processed-findings.json` `tier`, or for reuse/intrafile from the verdict→severity mapping (`refactor`/`reuse` → important, `extend`/`wrap` → nit/suggestion, `inconsistent` → nit/suggestion). This is a **recommendation only — NOT the reviewer's disposition**, which is captured by the Step-4 prompt that immediately follows (the reviewer may override it). Note that **post-disposition** (Phase 2's `PR-{id}.md` and in-chat digest) the same `**Severity:**` field carries the reviewer's *chosen* severity — so the pre- and post-disposition surfaces use one field with two clearly-scoped meanings and do not read as contradictory. `**Confidence:**` carries the existing `CONFIRMED` / `UNVERIFIED` / `—` label, identical to the Step-4 inline label.
+**Pre-disposition `**Severity:**` semantics (explicit).** Here, the block's `**Severity:**` field carries the pipeline's **recommended / tool-computed** severity — read from the finding object's `tier` (in the chunk's shard), or for reuse/intrafile from the verdict→severity mapping (`refactor`/`reuse` → important, `extend`/`wrap` → nit/suggestion, `inconsistent` → nit/suggestion). This is a **recommendation only — NOT the reviewer's disposition**, which is captured by the Step-4 prompt that immediately follows (the reviewer may override it). Note that **post-disposition** (Phase 2's `PR-{id}.md` and in-chat digest) the same `**Severity:**` field carries the reviewer's *chosen* severity — so the pre- and post-disposition surfaces use one field with two clearly-scoped meanings and do not read as contradictory. `**Confidence:**` carries the existing `CONFIRMED` / `UNVERIFIED` / `—` label, identical to the Step-4 inline label.
 
 **Author the Proposed fix + Proposed PR comment at reveal time, for every revealed finding** — including findings the reviewer may subsequently dismiss. This authoring moves earlier than Phase 2 (it used to happen in Phase 2's "Collect Curated Content"); Phase 2 **reuses** what was authored here for the kept findings — do NOT re-author from scratch there.
 
@@ -198,7 +242,7 @@ _AI-role framing:_ These are mechanical-triage and cross-file-dependency aids �
 
 **Default — batched multi-disposition prompt:** Use a single `AskUserQuestion` with one question per finding (the multi-question form) to disposition ALL of a chunk's findings in one prompt — tool-surfaced (Pass 2) AND reviewer-authored Pass-1 observations. Do NOT issue 6–16 separate one-at-a-time asks; that is the fallback only when a single finding genuinely needs isolated deliberation (e.g. the reviewer explicitly asks to discuss one finding in depth before continuing). Batching is the default; one-at-a-time is the exception.
 
-For each finding in the batched prompt, display its confidence label inline — read from the `confidence` field in `processed-findings.json` — BEFORE presenting the severity choices:
+For each finding in the batched prompt, display its confidence label inline — read from the `confidence` field on the finding object in the chunk's shard — BEFORE presenting the severity choices:
 - `CONFIRMED` — the pipeline self-verified this finding
 - `UNVERIFIED` — the pipeline could not self-verify this finding
 - If the `confidence` field is absent or null, show `—` (do not guess or invent a label)
@@ -221,7 +265,7 @@ Any non-dismissed finding may carry an optional free-text comment note. Prompt f
 
 > "Want to auto-disposition all remaining findings at their recommended severities? This records an explicit verdict for each one — no findings are silently skipped or dropped."
 
-If the reviewer accepts: iterate over every remaining undispositioned finding, assign its recommended severity (using the tool-supplied severity or, if absent, `dismiss` as the default for flagged-low-priority findings — always use the most specific recommended value available), and write an explicit `dispositions[]` entry for each in `buddy-session.json`. This path is NOT a skip or drop — it produces real, recorded dispositions that Phase 4's calibration and the WU-5a Completeness Sweep can consume. An undispositioned finding yields no calibration signal; the escape hatch converts "I'd dismiss/accept all the rest" into explicit recorded signal. The Completeness Sweep gate (Phase 2) treats escape-hatch-dispositioned findings as fully satisfied — they have explicit verdicts.
+If the reviewer accepts: iterate over every remaining undispositioned finding, assign its recommended severity (using the tool-supplied severity or, if absent, `dismiss` as the default for flagged-low-priority findings — always use the most specific recommended value available), and write an explicit `dispositions[]` entry for each in `buddy-session.json`. This path is NOT a skip or drop — it produces real, recorded dispositions that Phase 4's calibration and the WU-5a Completeness Sweep can consume. An undispositioned finding yields no calibration signal; the escape hatch converts "I'd dismiss/accept all the rest" into explicit recorded signal. The Completeness Sweep gate (Phase 2) treats escape-hatch-dispositioned findings as fully satisfied — they have explicit verdicts. Calibration-wise the hatch is bounded: `disposition-calibration.ts` aggregates per-PR (one EMA step per lane/rule per run), so a mass-dismissal session moves a weight by a single bounded step — it cannot cliff a weight through repeated per-disposition decay.
 
 Reviewer-authored Pass-1 observations become severity-tagged findings with `source: "reviewer"`. If there are no tool findings and the reviewer recorded no Pass-1 observations, use `AskUserQuestion` to ask whether they want to add an observation before moving on.
 
@@ -247,8 +291,8 @@ At any point in the walk, the reviewer may:
 
 On session start, before looping, check whether `{cacheDir}/buddy-session.json` already exists. If it does:
 
-1. Read it and find the first chunk whose `"status"` is not `"done"`.
-2. Resume the two-pass loop from that chunk — do not re-run completed chunks.
+1. Read it; recover `chunk_index_path` from its top level (fallbacks: `{cacheDir}/chunk-index.json`, and `{cacheDir}/phase0-result.json` for the full envelope). Find the first chunk whose `"status"` is not `"done"`.
+2. Read the chunk index + that chunk's findings shard ONLY — not the whole journey, not `processed-findings.json` — and resume the two-pass loop from that chunk (strictly less data than a full re-read). Do not re-run completed chunks.
 3. Announce: "Resuming buddy session at chunk {n} of {total}: '{group name}'."
 
 If all chunks are `"done"`, skip to Phase 2.
@@ -259,6 +303,7 @@ If all chunks are `"done"`, skip to Phase 2.
 {
 	"pr_id": "<id or 'local'>",
 	"cache_dir": "<path>",
+	"chunk_index_path": "<path to {cacheDir}/chunk-index.json — additive; recovery anchor for lazy loads>",
 	"phase": "0|1|2",
 	"current_chunk_index": 0,
 	"total_chunks": 0,
@@ -300,7 +345,7 @@ When all chunks are complete (all `"status": "done"`), update the Task tracker: 
 
 Before collecting curated content, assert that every finding presented in Phase 1 has a recorded disposition in `buddy-session.json`:
 
-- Every tool finding from `processed-findings.json` for every chunk (investigation, sweep, reuse, intrafile).
+- Every tool finding from every chunk's findings shard (`findings-by-chunk/chunk-{k}.json` for every chunk in the index — the shard union equals `processed-findings.json` by construction, so sweeping the shards is a complete sweep). Verify by count: compare total sharded findings against the envelope's `finding_counts` sum.
 - Every reviewer Pass-1 observation captured in `pass1_observations[]`.
 
 No finding may proceed to synthesis undispositioned. If any are missing a disposition entry in `dispositions[]`:
@@ -354,13 +399,23 @@ The Summary section should reflect the reviewer's overall assessment as shaped b
 
 ### Write Review Artifact
 
-Read `{cacheDir}/pr-context.json` for the `cogDocsItemDir` field (always set in PR mode) — mirror the write logic from `commands/review-pr.md` Step 10 exactly:
+Use `cogDocsItemDir` from the Phase-0 envelope (always set in PR mode) — mirror the write logic from `commands/review-pr.md` Step 10 exactly:
 
 **PR Mode:**
 - Write `<cogDocsItemDir>/PR-{pr_id}.md`
-- Finalize `<cogDocsItemDir>/PR-{pr_id}-journey.md` (already created there in Phase 0)
+- Finalize `<cogDocsItemDir>/PR-{pr_id}-journey.md` (already created there in Phase 0; skip when the envelope's `journey_path` is null — the downshifted route produces no journey)
 
 **Local Mode:** Write `.claude.local/reviews/LOCAL-{branch}-{timestamp}.md`
+
+### Machine-Readable Sidecar (`PR-{id}-findings.json`)
+
+Alongside the curated review, ALSO write the machine-readable findings sidecar `PR-{id}-findings.json` in the same directory as `PR-{id}.md` — the same sidecar `agents/synthesizer-v2.md` defines (see its "Machine-Readable Sidecar" section; keep the schemas identical). Content: a JSON array of exactly the kept (non-dismissed) findings you rendered, in rendered order, each with `id` / `title` / `file` / `line` / `severity` / `source` / `verdict` / `rule_id` / `confidence`:
+
+- `id` follows the buddy finding-ref convention: `{basename}:{line}`; line-less findings use `{basename}#{kebab-case-slug}`.
+- `severity` is the reviewer's disposition severity (`blocking | important | suggestion`); reviewer-authored findings carry `source: "reviewer"`.
+- Field values come from the session's finding objects verbatim — do not re-derive them.
+- Emit the sidecar even when zero findings were kept (`[]`).
+- Local Mode: write `LOCAL-{branch}-{timestamp}-findings.json` beside the local review artifact.
 
 ### REVIEWED.md Sentinel
 
@@ -395,14 +450,16 @@ Silently invoke the shared `disposition-calibration.ts` helper against this sess
 npx tsx {plugin_root}/scripts/disposition-calibration.ts \
   --session {cacheDir}/buddy-session.json \
   --findings {cacheDir}/processed-findings.json \
-  --weights {plugin_root}/knowledge/weights.yaml
+  --weights ~/.claude/state/cognito-pr-review/weights.yaml
 ```
+
+The `--weights` target is the **mutable state file** (seeded from the plugin's `knowledge/weights.yaml` on first use), not the plugin's knowledge copy — calibration written to the state path survives plugin version bumps.
 
 This is the **same single implementation** used by `/learn-from-pr` — one helper, not a buddy-specific copy.
 
 Print a summary of the weight deltas reported by the helper: per-rule and per-source old→new values. This summary is the only user-visible output of this step.
 
-If the session has zero usable dispositions, the helper no-ops and leaves `weights.yaml` byte-identical — print "No dispositions recorded — weights unchanged."
+If the session has zero usable dispositions, the helper no-ops and leaves the state file byte-identical — print "No dispositions recorded — weights unchanged."
 
 Non-fatal: if the helper invocation fails, WARN the reviewer and continue. Never block the session close on calibration.
 

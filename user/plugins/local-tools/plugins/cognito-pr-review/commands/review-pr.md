@@ -12,7 +12,7 @@ Run a PR review using Cognito-specific patterns derived from senior reviewer fee
 
 ## Architecture Overview
 
-This command uses a hierarchical planner pipeline: deterministic prep → planning → triage → parallel investigation/sweep/reuse-candidacy/intra-file-consistency → deterministic post-processing → synthesis.
+This command uses a size-routed hierarchical pipeline: deterministic prep → size router (small PRs take a downshifted, spot-check-shaped path that KEEPS sentinels + calibration) → planning → self-checked triage → parallel investigation/sweep/reuse-candidacy/intra-file-consistency (all agents self-write their outputs) → deterministic post-processing → synthesis.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -24,22 +24,26 @@ This command uses a hierarchical planner pipeline: deterministic prep → planni
 └──────────────────────────────────────────────────────────────────┘
                               ↓
 ┌──────────────────────────────────────────────────────────────────┐
+│  Step 1.7: Size Router (deterministic)                           │
+│  - manifest.substantive_count ≤ 5 → Downshifted Path (D1–D5):    │
+│    inline review + ≤1 investigation + inline synthesis; KEEPS    │
+│    REVIEWED.md + pending-calibration; resumes at Step 10         │
+│  - otherwise → full pipeline below (--full / --spot override)    │
+└──────────────────────────────────────────────────────────────────┘
+                              ↓ (full pipeline)
+┌──────────────────────────────────────────────────────────────────┐
 │  Step 2: Journey/Planner Agent (Opus)                            │
 │  - Produces persistent PR-{id}-journey.md                        │
-│  - Contains: overview, objectives, file map, review guide        │
+│  - Compact form for small / ≤2-thread PRs                        │
 │  - Re-review: appends new iteration section                      │
 └──────────────────────────────────────────────────────────────────┘
                               ↓
 ┌──────────────────────────────────────────────────────────────────┐
-│  Step 3: Triage Agent (Opus)                                     │
+│  Step 3: Triage Agent (Opus) — with mandatory self-check         │
 │  - Classifies files: critical / important / skim                 │
-│  - Re-review: tier boost for changed + unresolved files          │
-└──────────────────────────────────────────────────────────────────┘
-                              ↓
-┌──────────────────────────────────────────────────────────────────┐
-│  Step 4: Planner Validates Triage                                │
-│  - Cross-checks against prep data                                │
-│  - Overrides misclassifications with rationale                   │
+│  - Self-checks planner Rules 1–3; logs overrides                 │
+│  - Re-review: emits reReviewScope (changed ∪ unresolved)         │
+│  (Step 4 planner re-invoke removed — folded into Step 3)         │
 └──────────────────────────────────────────────────────────────────┘
                               ↓
 ┌──────────────────────────────────────────────────────────────────┐
@@ -48,15 +52,16 @@ This command uses a hierarchical planner pipeline: deterministic prep → planni
 │  - 1 Sweep Agent for important+skim files (Sonnet) │             │
 │  Step 5b: Reuse-Candidacy Stage (parallel)         │             │
 │  - 1 Reuse Agent per cluster (Opus)                │             │
-│    (cognito-consistency-checker, ≤6 clusters)      │             │
+│    (≤6 clusters; ONE cluster if ≤4 substantive)    │             │
 │  Step 5b: Intra-File Consistency Stage (parallel)  │             │
 │  - 1 Intra-File Agent per cluster (Opus)           ┘             │
-│    (cognito-intra-file-consistency, ≤6 clusters)                 │
+│    (≤6 clusters; ONE cluster if ≤4 substantive)                  │
+│  All agents self-write {cacheDir}/agent-output/*.json            │
 └──────────────────────────────────────────────────────────────────┘
                               ↓
 ┌──────────────────────────────────────────────────────────────────┐
-│  Step 6: Planner Evaluates Sweep Escalations                     │
-│  - Evaluates sweep escalation candidates                         │
+│  Step 6: Orchestrator Evaluates Sweep Escalations (inline)       │
+│  - Judges escalation candidates itself — no planner dispatch     │
 │  - Optionally spawns ad-hoc investigation agents                 │
 └──────────────────────────────────────────────────────────────────┘
                               ↓
@@ -67,8 +72,8 @@ This command uses a hierarchical planner pipeline: deterministic prep → planni
                               ↓
 ┌──────────────────────────────────────────────────────────────────┐
 │  Step 8: Deterministic Post-Processing (TypeScript)              │
-│  - scripts/post-process.ts                                       │
-│  - EMA weights, dedup, rank, filter, lifespan                    │
+│  - scripts/post-process.ts (stdout → processed-findings.json)    │
+│  - EMA weights, dedup, rank, filter, lifespan; --summary counts  │
 └──────────────────────────────────────────────────────────────────┘
                               ↓
 ┌──────────────────────────────────────────────────────────────────┐
@@ -95,6 +100,8 @@ This command uses a hierarchical planner pipeline: deterministic prep → planni
 - **PR_ID**: First numeric token (e.g., `17890`)
 - **aspects**: `all`, `csharp`, `frontend`, `api`, `consistency`, `testing` — defaults to `all`
 - **sequential**: If present, run investigation agents sequentially instead of in parallel
+- **--full**: Force the full pipeline regardless of PR size (overrides Step 1.7 routing)
+- **--spot**: Force the downshifted path regardless of PR size (overrides Step 1.7 routing)
 - **--local**: Force local mode
 - **--base <branch>**: Target branch for local diff (default: `main`)
 - **--include-untracked**: Include untracked files in local review
@@ -153,6 +160,66 @@ The prep script (Step 1) **guarantees** `cogDocsItemDir` is set. It resolves the
 
 Read `{cacheDir}/pr-context.json` and confirm `cogDocsItemDir` is present (it always will be in PR mode). All artifacts — cache, review, and journey — live under it. State which directory was chosen, and whether it was newly created (the prep log prints `Created cog-docs item dir: ...` when it creates one).
 
+### Step 1.7: Size-Aware Route (deterministic, silent)
+
+Read `substantive_count` from `{cacheDir}/manifest.json` — the prep script's count of files that are not pure test files, config files, or generated types (`SMALL_MAX = 5`). Route:
+
+- `--full` in arguments → **full pipeline**, regardless of size.
+- `--spot` in arguments → **downshifted path**, regardless of size.
+- Otherwise: `substantive_count <= 5` → **downshifted path**; else → **full pipeline**.
+
+**Announce the route up front, never prompt** — e.g. "3 substantive files → downshifted review (spot-check shape; sentinels + calibration kept)" or "7 substantive files → full pipeline". On re-reviews also announce the iteration scope (see Step 3).
+
+**Downshifted route:** remove the Step 1.5 marker now (`rm -f .claude/pr-cache/pr-review-active.json`) — this path has no cache-only agent, and the inline review + optional investigation agent need normal codebase read access (the same rationale `spot-check.md` documents for skipping the marker). Then follow the **Downshifted Path (D1–D5)** below and resume at Step 10. Steps 2–9, 11, and 12.5 are skipped.
+
+**Full route:** continue with Step 2. If the manifest predates `substantive_count` (older cache), re-run prep with `--force`; if that is not possible, take the full pipeline.
+
+### Downshifted Path (D1–D5)
+
+A review-pr-native spot-check shape: prep + inline review + at most one investigation agent + inline synthesis — but unlike `/spot-check` (which stays untouched and standalone), this path **keeps the learning loop**: REVIEWED.md (Step 12.6), the pending-calibration marker (Step 12.7), and a minimal `processed-findings.json` so buddy mode and `/learn-from-pr` operate uniformly on both routes.
+
+**D1 — Scope.** The whole PR: all manifest files (there are ≤5 substantive ones). No journey, triage, sweep, reuse, or intra-file agents run on this path.
+
+**D2 — Inline review.** Read the cached diffs (and cached files for surrounding context) and review directly with senior-Cognito-reviewer judgment: correctness, DI/storage/async pattern issues, and test gaps on changed behavior — the same inline-first discipline as `commands/spot-check.md` Step 3.
+
+**D3 — Conditional escalation (≤1 investigation agent).** If a change cannot be confidently resolved inline — a subtle correctness risk, a non-obvious blast radius, or a pattern needing codebase verification — dispatch **exactly one** investigation agent scoped to that area (spot-check's Step-4 rule). Include in its prompt: `Write your output to: {cacheDir}/agent-output/investigation-downshift.json` (the agent self-writes; its reply is a one-line confirmation + counts). Most small PRs warrant none.
+
+**D4 — Inline synthesis.** Compose the review yourself in the synthesizer-v2 format (same section and omission rules `spot-check.md` Step 5 documents), with two deviations: (a) add a `**Route:** downshifted ({N} substantive files)` line in the header block for auditability; (b) this IS the authoritative review — Step 10 writes it to `PR-{pr_id}.md`, not to a `-spot-` stamped file.
+
+**D5 — Minimal processed-findings.json.** Write `{cacheDir}/processed-findings.json` in the standard schema:
+
+```json
+{
+  "processed_findings": [
+    {
+      "file": "path/from/manifest.cs",
+      "line": 42,
+      "severity": "blocking | important | nit",
+      "title": "...",
+      "hypothesis": "...",
+      "evidence": { "snippet": "...", "reference": "..." },
+      "suggestion": "...",
+      "confidence": "CONFIRMED | UNVERIFIED",
+      "source": "investigation",
+      "group": "downshift-inline",
+      "effective_weight": 0.7
+    }
+  ],
+  "dropped_count": 0,
+  "dedup_count": 0,
+  "lifespan_annotations": 0
+}
+```
+
+- Findings from the D3 agent (if dispatched): copy from `agent-output/investigation-downshift.json`, keeping its `group`.
+- Your own inline findings: `group: "downshift-inline"`.
+- All downshifted findings carry `source: "investigation"` and `effective_weight: 0.7` — the `investigation` source key is deliberate (locked decision: disposition calibration and post-process treat downshifted findings identically to investigation findings; do NOT invent a new source key).
+- Zero findings → `"processed_findings": []` (still write the file).
+
+After writing the file, run the Step 8.5 sidecar emitter: `npx tsx ~/.claude/plugins/local-tools/plugins/cognito-pr-review/scripts/emit-chunk-index.ts --cache-dir {cacheDir}` — with no journey on this route it emits a single synthetic whole-PR chunk, so buddy-mode consumption stays uniform across both routes. On failure: WARN and continue.
+
+**Then resume at Step 10** (write review) → Step 12 (report — include the route) → Step 12.6 (REVIEWED.md) → Step 12.7 (pending-calibration.json) → Step 13. Skip Step 12.5 — the marker was already removed at Step 1.7.
+
 ### Step 2: Launch Journey/Planner Agent
 
 Read the manifest to understand PR context, then launch the journey/planner agent:
@@ -192,42 +259,30 @@ Agent:
     {If re-review: PR context with thread statuses: {cacheDir}/pr-context.json}
     
     TASK: Classify all files into critical/important/skim tiers.
-    Output triage JSON with critical, important, skim arrays.
-    Each entry: { group, files, rationale, investigationFocus, reReviewNote }
+    Run your Mandatory Self-Check Pass (Rules 1–3) and log overrides.
+    Output triage JSON with critical, important, skim arrays plus
+    overrides[] and selfCheckCompleted: true.
+    Each tier entry: { group, files, rationale, investigationFocus, reReviewNote }
+    {If re-review: Also emit reReviewScope (files / carriedForward).}
 ```
 
-Capture the triage JSON output.
+Capture the triage JSON output. The agent self-checks the former planner-validation rules (Rules 1–3) before emitting — verify the JSON carries `selfCheckCompleted: true` and an `overrides` array (empty is fine). If either is missing, re-invoke triage once with a reminder; do not proceed on an unchecked draft.
 
-### Step 4: Planner Validates Triage
+**Inline coverage check (former planner Rule 4):** count files per tier in the triage JSON. If the majority are `skim` but the PR description indicates significant behavioral or architectural change, do not auto-override — record a triage confidence warning and surface it in the Step 12 report.
 
-Re-invoke the journey-planner agent to cross-check the triage:
+**Re-review scoping:** on re-reviews the triage JSON carries `reReviewScope` — `files` (changed since last iteration ∪ unresolved threads) and `carriedForward` (unchanged and resolved). Steps 5 and 5b dispatch agents ONLY over `reReviewScope.files`; carried-forward files keep their prior findings via the `--previous-review` lifespan machinery (Steps 7–8). Announce the scope: "iteration {n} — re-reviewing {k} changed files (iteration diff); {m} unchanged files carried forward."
 
-```
-Agent (journey-planner):
-  prompt: |
-    PLANNER VALIDATION MODE
-    
-    Triage JSON to validate:
-    {triage JSON from step 3}
-    
-    Cache directory: {cacheDir}
-    Journey file: <cogDocsItemDir>/PR-{pr_id}-journey.md
-    
-    Cross-check the triage against prep data:
-    - Files touching core services classified as skim? → Override to important/critical
-    - Files central to PR objectives classified below important? → Override
-    - Re-review files that changed since last iteration classified as skim? → Override to at least important
-    
-    Return the validated/amended triage JSON with any overrides logged.
-```
+### Step 4: (Removed — folded into Step 3)
 
-Use the validated triage for subsequent steps.
+The separate planner-validation re-invoke is gone: triage self-checks Rules 1–3 itself (see its `overrides` log), and the Rule-4 coverage count is the orchestrator-inline check in Step 3. Use the triage JSON from Step 3 directly for all subsequent steps. (The step number is retained so existing cross-references — e.g. buddy's "Steps 1–8" delegation — stay stable.)
 
 ### Step 5: Dispatch Investigation + Sweep in Parallel
 
 **Aspect filtering:** If the user specified aspects (e.g., `csharp`, `frontend`), filter which files go through the pipeline. Triage still classifies all files, but investigation/sweep agents only receive files matching the requested aspects.
 
-**For each critical group** from validated triage, launch an investigation agent:
+**Re-review scoping:** on re-reviews, dispatch investigation agents only for critical groups containing at least one `reReviewScope.files` member (scope each agent's file list to the in-scope files), and give the sweep agent only in-scope important/skim files. Carried-forward files are not re-dispatched.
+
+**For each critical group** from the triage JSON, launch an investigation agent (compute the group slug — the group name lowercased with spaces replaced by hyphens, e.g. "Core Service Changes" → "core-service-changes" — when building the prompt):
 
 ```
 Agent (for each critical group):
@@ -246,9 +301,22 @@ Agent (for each critical group):
     {For large files: structural-context/{filename}.md path}
     
     Cache directory: {cacheDir}
+
+    ## Output
+    Write your output to: {cacheDir}/agent-output/investigation-{group-slug}.json
 ```
 
-**Launch sweep agent** on all important + skim files:
+**Launch sweep agent** on all important + skim files.
+
+First compute the **applicable rule shards** from the manifest's file types among the sweep tier assignment (important + skim files) — the applicability mapping lives in `agents/sweep.md`'s shard manifest table:
+
+- Any `.cs` file → `csharp-architecture.md`, `api-design.md`
+- Any `.vue`/`.ts`/`.tsx` file → `frontend-vue.md`, `template-binding.md`
+- Any `.cs`/`.vue`/`.ts`/`.tsx` file → `performance.md`
+- Any test file (either stack) → `testing.md`
+- Always → `code-consistency.md`, `security.md`
+
+List each applicable shard once (both-stack categories load once). The shards were copied into `{cacheDir}/rules/` by the prep script.
 
 ```
 Agent:
@@ -262,18 +330,24 @@ Agent:
     Important: {list of important files with groups}
     Skim: {list of skim files with groups}
     
+    Applicable rule shards (read ONLY these; weights from {cacheDir}/weights-snapshot.json):
+    {list of applicable {cacheDir}/rules/<category>.md paths}
+    
     Apply weight-aware thresholds:
     - Important tier: effective_weight >= 0.5
     - Skim tier: effective_weight >= 0.7
+
+    ## Output
+    Write your output to: {cacheDir}/agent-output/sweep.json
 ```
 
 All investigation agents + sweep agent launch in parallel (or sequentially if `sequential` arg was provided).
 
-**After each agent completes**, write its raw JSON output to `{cacheDir}/agent-output/`:
-- Investigation agents: `{cacheDir}/agent-output/investigation-{group-slug}.json` (the agent already emits a `"group"` field in its JSON)
+**Each agent writes its own output file** (the same self-write contract the reuse/intrafile agents carry) and replies with a one-line confirmation + counts. Do NOT transcribe agent output into files yourself — after each agent completes, just confirm its file exists:
+- Investigation agents: `{cacheDir}/agent-output/investigation-{group-slug}.json`
 - Sweep agent: `{cacheDir}/agent-output/sweep.json`
 
-Create the `agent-output/` directory if it doesn't exist. The group slug should be the group name lowercased with spaces replaced by hyphens (e.g., "Core Service Changes" → "core-service-changes").
+If an agent's output file is missing after it completes, re-request that agent once; do not reconstruct its output from the transcript.
 
 ### Step 5b: Reuse-Candidacy Stage (parallel with Step 5)
 
@@ -281,7 +355,7 @@ This stage runs **concurrently with Step 5** — it does NOT add serial latency.
 
 **Cluster the files:**
 
-From `manifest.baselines[]` (populated by the prep script), select net-new or substantially-modified substantive files: services, types, components, helpers. Exclude pure test files, config files, and generated types. Group them into at most 6 clusters by domain area or shared concern (e.g., "Workflow Services", "Frontend Components", "API Types"). Each cluster should contain 1–6 files.
+From `manifest.baselines[]` (populated by the prep script), select net-new or substantially-modified substantive files: services, types, components, helpers. Exclude pure test files, config files, and generated types (the manifest's per-file `substantive` flag encodes this same exclusion list). On re-reviews, restrict eligibility to `reReviewScope.files`. Group them into at most 6 clusters by domain area or shared concern (e.g., "Workflow Services", "Frontend Components", "API Types"). Each cluster should contain 1–6 files. **Single-cluster floor:** if 4 or fewer substantive files are eligible for this pass, form exactly ONE cluster — cluster agents handle 1–6 files, and a tiny PR must not fan out multiple agents per stage.
 
 If `manifest.baselines[]` is empty or the manifest has no substantive net-new files, skip this step.
 
@@ -325,7 +399,7 @@ The cluster slug is the cluster name lowercased with spaces replaced by hyphens 
 
 **Cluster the files for intra-file analysis:**
 
-Select all substantively-modified substantive files from the manifest: services, types, components, helpers — any triage tier. Exclude pure test files, config files, and generated types. Unlike the reuse pass, `manifest.baselines[]` is NOT required; any modified substantive file is eligible. Group them into at most 6 clusters by domain area or shared concern (1–6 files each).
+Select all substantively-modified substantive files from the manifest: services, types, components, helpers — any triage tier. Exclude pure test files, config files, and generated types (the manifest's per-file `substantive` flag encodes this same exclusion list). Unlike the reuse pass, `manifest.baselines[]` is NOT required; any modified substantive file is eligible. On re-reviews, restrict eligibility to `reReviewScope.files`. Group them into at most 6 clusters by domain area or shared concern (1–6 files each). **Single-cluster floor:** if 4 or fewer substantive files are eligible for this pass, form exactly ONE cluster — same floor as the reuse pass.
 
 If no substantive modified files are present, skip this pass.
 
@@ -365,28 +439,14 @@ Agent (for each cluster — up to 6):
 
 The cluster slug is the cluster name lowercased with spaces replaced by hyphens — the same convention as the reuse pass. Step 7's aggregate script already discovers `intrafile-*.json` files from `{cacheDir}/agent-output/`, and Step 8's post-process routes their findings through the investigation lane with verdict→severity mapping (`refactor`/`reuse` → `important`, `inconsistent` → `nit`, `consistent`/`acceptable-new` → dropped).
 
-### Step 6: Planner Evaluates Sweep Escalations
+### Step 6: Evaluate Sweep Escalations (orchestrator-inline)
 
-If the sweep agent returned any escalations:
+If the sweep output contains escalations, judge each one yourself — no agent dispatch for the judgment:
 
-```
-Agent (journey-planner):
-  prompt: |
-    ESCALATION EVALUATION MODE
-    
-    Sweep escalations:
-    {escalations JSON}
-    
-    For each escalation, decide:
-    - Is this worthy of a dedicated investigation agent?
-    - Or can it be included as-is in the findings?
-    
-    If spawning ad-hoc investigators, specify the group and focus.
-```
+- **Worthy of investigation-depth review** (a credible blocking / security / data-integrity concern that cannot be settled from the evidence already in hand) → spawn an ad-hoc investigation agent for it, with the same self-write contract: `Write your output to: {cacheDir}/agent-output/investigation-escalation-{slug}.json`.
+- **Otherwise** → the finding already sits in sweep's output and flows through aggregation as-is; no action needed.
 
-If planner approves ad-hoc investigators, spawn them and collect their output.
-
-If no escalations, skip this step.
+Be conservative — escalations rarely warrant a dedicated agent. If sweep returned no escalations, skip this step.
 
 ### Step 7: Aggregate Findings JSON
 
@@ -403,12 +463,26 @@ The script reads all `investigation-*.json` and `sweep.json` from `{cacheDir}/ag
 ### Step 8: Run Deterministic Post-Processing
 
 ```bash
-npx tsx ~/.claude/plugins/local-tools/plugins/cognito-pr-review/scripts/post-process.ts --input {cacheDir}/combined-findings.json --manifest {cacheDir}/manifest.json [--previous-review <cogDocsItemDir>/PR-{pr_id}.md]
+npx tsx ~/.claude/plugins/local-tools/plugins/cognito-pr-review/scripts/post-process.ts --input {cacheDir}/combined-findings.json --manifest {cacheDir}/manifest.json --summary [--previous-review <cogDocsItemDir>/PR-{pr_id}.md] > {cacheDir}/processed-findings.json
 ```
 
 The `--previous-review` flag is only included for re-reviews.
 
-Capture stdout (processed findings JSON). Write to `{cacheDir}/processed-findings.json`.
+Stdout is shell-redirected straight to `{cacheDir}/processed-findings.json` — do NOT capture the findings JSON into your context or Write the file yourself. `--summary` prints the one line you need on stderr:
+
+```
+[post-process] summary: total=N blocking=B important=I nit=X dropped=D deduped=E lifespan=L scope_filtered=N lane_zeroed=[...]
+```
+
+Use those counts for the Step 12 report; open `processed-findings.json` only with targeted reads if a specific finding must be inspected. If `scope_filtered` is non-zero or `lane_zeroed` is non-empty, surface that in the Step 12 report — scope-filtered findings were dropped for pointing outside the PR's file set (path-normalization mismatches land here), and a zeroed lane means an entire finding source was filtered out.
+
+### Step 8.5: Emit Chunk Index + Phase-0 Envelope (deterministic)
+
+```bash
+npx tsx ~/.claude/plugins/local-tools/plugins/cognito-pr-review/scripts/emit-chunk-index.ts --cache-dir {cacheDir}
+```
+
+Deterministically derives the buddy-mode lazy-loading sidecars from artifacts already on disk: `{cacheDir}/chunk-index.json` (journey `### Step N` chunks joined to processed findings), `{cacheDir}/findings-by-chunk/chunk-{k}.json` shards (every processed finding in exactly one shard; findings matching no chunk land in a trailing catch-all chunk), and `{cacheDir}/phase0-result.json` (the Phase-0 result envelope: pr_id, cacheDir, cogDocsItemDir, journey path, chunk count, per-source finding counts, chunk index path). The journey is discovered via `manifest.journeyFile`. Purely additive — the autonomous pipeline does not consume these files; `review-pr-buddy.md` loads chunks lazily from them. On failure: WARN and continue (non-buddy reviews are unaffected; a buddy Phase-0 delegate treats a Step 8.5 failure as a Phase-0 failure).
 
 ### Step 9: Launch Synthesizer Agent
 
@@ -422,7 +496,7 @@ Agent:
     Read these files:
     - Processed findings: {cacheDir}/processed-findings.json
     - Journey file: <cogDocsItemDir>/PR-{pr_id}-journey.md
-    - Triage classification: {validated triage JSON inline or file path}
+    - Triage classification: {triage JSON from Step 3, inline or file path}
     
     PR metadata:
     - Author: {author}
@@ -456,15 +530,17 @@ mkdir -p ".claude.local/reviews"
 
 ### Step 11: Finalize Journey File
 
-The journey file was already created in Step 2. No additional action needed unless planner has updates.
+The journey file was already created in Step 2. No additional action needed.
 
 ### Step 12: Print Completion Output
 
 Report to user:
+- Route taken — `downshifted (N substantive files)` or `full pipeline` — and, on re-reviews, the iteration scope announcement
 - Cache directory path
 - Review artifact path
-- Journey file path
-- Summary stats (findings count by tier, dropped, deduped)
+- Journey file path (full pipeline only)
+- Summary stats (findings count by severity, dropped, deduped — from the Step 8 `--summary` stderr line; on the downshifted path, from your inline synthesis)
+- Any triage confidence warning from the Step 3 inline coverage check
 
 ### Step 12.5: Cleanup Cache Boundary Marker
 
@@ -567,31 +643,33 @@ find .claude/pr-cache -maxdepth 1 -type d -mtime +7 -exec rm -rf {} \; 2>/dev/nu
 
 **prep-pr.ts** (deterministic TypeScript):
 - Fetches PR data, timeline, iteration diffs, thread statuses, structural context
-- Manifest v2 with structural context for large files
+- Manifest v2 with structural context for large files, per-file `substantive` flags, and `substantive_count` (the Step 1.7 router input)
 - Uses GitHub REST API for all data — no dependency on local git branch state
 - Resolves/creates the cog-docs item dir and writes the cache to `<cogDocsItemDir>/.pr-review/pr-cache/{pr-number}/` (hard-fails if no cog-docs repo)
 
 **journey-planner** (Opus):
 - Creates persistent journey file at `<cogDocsItemDir>/PR-{id}-journey.md`
 - Contains: overview, objectives, file change map, manual review guide, PR lifecycle
-- Validates triage classifications as hierarchical planner
-- Evaluates sweep escalations for ad-hoc investigation dispatch
+- Compact journey form when `substantive_count <= 5` or the PR has ≤2 behavioral threads
 - Re-review: appends new iteration section to existing journey
 
 **triage** (Opus):
 - Classifies files into critical / important / skim tiers
+- Mandatory self-check pass (former planner-validation Rules 1–3) with an `overrides` log
 - Groups related files for investigation assignments
-- Re-review: tier boost for changed + unresolved files
+- Re-review: tier boost for changed + unresolved files; emits `reReviewScope`
 
 **investigation** (Opus):
 - Deep-dive critical areas with Solver-Verifier protocol
 - One agent per critical group from triage
 - Reads cached diffs + structural context for large files
+- Self-writes `{cacheDir}/agent-output/investigation-{group-slug}.json`
 
 **sweep** (Sonnet):
 - Rule-based review of important + skim files
 - Weight-aware thresholds (important >= 0.5, skim >= 0.7)
 - Escalation pathway for findings that warrant deeper investigation
+- Self-writes `{cacheDir}/agent-output/sweep.json`
 
 **cognito-consistency-checker** (Opus) — reuse-candidacy stage:
 - One agent per cluster of net-new / substantially-modified substantive files (≤6 clusters)
@@ -603,6 +681,9 @@ find .claude/pr-cache -maxdepth 1 -type d -mtime +7 -exec rm -rf {} \; 2>/dev/nu
 - EMA weight application, deduplication, ranking, filtering
 - Lifespan annotation for re-review tracking
 - Deterministic — no LLM involved
+- Stdout (the processed-findings JSON) is shell-redirected to `processed-findings.json`; `--summary` emits a one-line stderr count summary for the orchestrator
+
+**emit-chunk-index.ts** (deterministic TypeScript): derives chunk-index.json + findings-by-chunk/ shards + phase0-result.json for buddy-mode lazy loading (Step 8.5; journey-less single-chunk fallback on the downshifted route).
 
 **synthesizer-v2** (Sonnet):
 - Narrative review synthesis from processed findings + journey
@@ -615,11 +696,14 @@ Investigation agent tool list is defined in the agent prompt (agents/investigati
 ## Notes
 
 - No more 6 parallel specialist agents — replaced by journey → triage → investigation+sweep → post-process → synthesize
+- Size-aware routing: ≤5 substantive files auto-downshift to the spot-check shape while KEEPING sentinels + calibration (`--full`/`--spot` override); `/spot-check` remains the standalone, no-sentinel command
 - Synthesizer is Sonnet (not Haiku)
-- Post-processing is deterministic TypeScript (not LLM)
-- Journey file is a persistent artifact for human consumption
-- Triage validation prevents cascading misclassification
-- Escalation pathway from sweep to investigation
+- Post-processing is deterministic TypeScript (not LLM); its stdout is shell-redirected, never transited through orchestrator context
+- Investigation/sweep/reuse/intrafile agents all self-write their `agent-output/*.json`
+- Journey file is a persistent artifact for human consumption (compact form for small PRs)
+- Triage self-check (the former planner-validation rules) prevents cascading misclassification without a third Opus dispatch
+- Re-reviews scope fan-out to `reReviewScope.files` (iteration diff ∪ unresolved threads); carried-forward findings ride the lifespan machinery
+- Escalation pathway from sweep to investigation (orchestrator-judged inline)
 - Prep script is deterministic TypeScript (not LLM) — ensures correct file counts
 - Uses GitHub REST API for all data — no dependency on local git branch state
 - Cache is reused if iteration and commit unchanged

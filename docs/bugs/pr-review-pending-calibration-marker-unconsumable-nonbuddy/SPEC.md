@@ -2,7 +2,7 @@
 
 > `review-pr.md` Step 12.7 writes `pending-calibration.json` only on the NON-buddy path (buddy never reaches Step 12), but `learn-from-pr.md`'s marker-consume instruction runs the disposition helper against `{cacheDir}/buddy-session.json` — a file only buddy produces. On every marker the mechanism can ever fire for, the helper's first read throws ENOENT: the deferred-calibration loop is broken by construction.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-09
 **Placement:** docs/bugs/pr-review-pending-calibration-marker-unconsumable-nonbuddy
