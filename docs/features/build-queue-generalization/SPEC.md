@@ -468,22 +468,17 @@ Estimate: ~4 sessions (Phases 1-2 one, Phase 3 one, Phase 4 one, Phase 5 folds i
 | No takeover ping-pong | Subagent raw `tauri build` in manifested AlgoBooth | One `LONG-BUILD-OWNERSHIP-TAKEOVER` deny; orchestrator wrapper invocation allowed (wrapper exemption) | `test_hooks.py` ordered-chain case |
 | Bypass + wrapper exemptions intact | `BUILD_QUEUE_BYPASS=1 dotnet build`; wrapper invocation carrying `-Exec *-filtered.ps1` | Both allowed | `test_hooks.py` existing cases stay green |
 
+## Locked Decisions (2026-07-09 — Jacob, interactive decision round)
+
+| # | id | Decision |
+|---|----|----------|
+| 1 | D1 manifest-format | JSON at `.claude/skill-config/build-queue-ops.json` (one standard parser per language; markdown-table option rejected for silent deny-surface drift risk under fail-OPEN) |
+| 2 | D4 enforcement-scope-gate | Manifest presence is the primary gate PLUS the Cognito remote-match legacy fallback for a broken/missing manifest (a silently-disarmed hook would re-open the recycle bug's Vector B); fallback retirement is a later, separate decision |
+| 3 | D5 transient-build-arbitration | Route orchestrator-takeover long builds THROUGH the queue as manifested ops (one serializer; hygiene + banner + occupancy visibility). Option D (defer AlgoBooth ops) remains the sanctioned fallback if Phase-4 live-fire friction appears |
+| 4 | D7 v1-platform-scope | Workstation-only; cloud/non-Windows explicitly exempt; hook silently inert off-Windows |
+
 ## Open Questions
 
-- **D1 — Manifest format/location:** JSON at `.claude/skill-config/build-queue-ops.json` vs a
-  markdown table. Standing recommendation: JSON (one standard parser in each language; a
-  two-bespoke-parser markdown table risks silent deny-surface drift under fail-OPEN).
-- **D4 — Enforcement scope gate:** manifest presence as the sole gate vs manifest presence plus
-  a Cognito remote-match legacy fallback for a broken/missing manifest. Standing recommendation:
-  keep the fallback (a silently-disarmed hook re-opens the recycle bug's Vector B), retire later.
-- **D5 — Transient-build arbitration:** route orchestrator-takeover long builds THROUGH the
-  queue as manifested ops (one serializer, hygiene + banner + occupancy visibility) vs keeping
-  two disjoint lanes vs deferring AlgoBooth build ops from v1. Standing recommendation: route
-  through the queue (option A), with option D (defer) as the fallback if live-fire friction
-  appears.
-- **D7 — v1 platform scope:** workstation-only with cloud/non-Windows explicitly exempt and the
-  hook silently inert off-Windows. Standing recommendation: yes — every queue consumer is a
-  Windows workstation session; a `pwsh` port has no current consumer.
 - **Deferred empirical checks (implementation-time, not decisions):** confirm
   `run_transient_build` composes cleanly with the wrapper's foreground tail (D5-A live-fire,
   Phase 4); confirm the cargo log-failure signature set against a real failing

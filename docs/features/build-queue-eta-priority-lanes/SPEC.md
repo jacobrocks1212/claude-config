@@ -371,20 +371,17 @@ Estimate: ~3 sessions (1: Phases 1-2; 2: Phase 3; 3: Phase 4 + live verification
 | Fidelity invariants intact | Lane scenarios incl. reclaim window | Reclaim still global-lowest-seq; occupancy/recycle gating call pattern unchanged | Phase 4 Pester net |
 | Degraded-state safety | Delete/corrupt `stats/` or `fast-passes.count` mid-queue | ETAs → `?`; admission → pure FIFO; builds complete normally | Manual fault injection |
 
+## Locked Decisions (2026-07-09 — Jacob, interactive decision round)
+
+| # | id | Decision |
+|---|----|----------|
+| 1 | D3 eta-surfacing | Enqueue echo + waiting-position lines + status view, with `≈`/`?` markers; NEVER the authoritative outcome banner (stays outcome-only) |
+| 2 | D4 lane-admission | Explicit per-op `lane` class — manifest field once `build-queue-generalization` lands, interim static map in the wrapper until then (duration-percentile auto-threshold rejected: opaque, flappy at cold start) |
+| 3 | D5 lane-mechanics | Two logical lanes over the single slot with a consecutive-fast-passes starvation cap, K=3 (after 3 consecutive fast admissions the oldest heavy waiter is admitted) |
+| 4 | D6 preemption | Never — a running build always completes; lanes reorder admission only (preemption would convert normal operation into the crash path the hygiene bugs closed) |
+
 ## Open Questions
 
-- **D3 — ETA surfacing:** enqueue echo + waiting lines + status view, never the outcome banner.
-  Standing recommendation: yes (option A) — predictions ride the pre-outcome surfaces with `≈`/`?`
-  markers; the authoritative last-line banner stays outcome-only.
-- **D4 — Lane admission rule:** explicit per-op `lane` class (manifest field / interim static
-  map) vs a duration-percentile auto-threshold. Standing recommendation: explicit class —
-  deterministic across invocations, defined at cold start, immune to stats-file state.
-- **D5 — Lane mechanics + starvation bound:** two logical lanes over the single slot with a
-  consecutive-fast-passes cap; K=3 default (K=1 = near-FIFO fallback). Standing recommendation:
-  A with K=3.
-- **D6 — Preemption:** never interrupt a running build. Standing recommendation: no preemption
-  (lanes cap fast latency at one heavy build; preemption converts normal operation into the
-  crash path the hygiene bugs closed).
 - **Deferred empirical checks (implementation-time, not decisions):** measure real per-op
   duration spread from the first weeks of ring data before considering a p90 "worst case"
   display; confirm the position-line ETA composition reads tickets cheaply enough at realistic
