@@ -1,4 +1,9 @@
 ---
+# decision 4 (dispatch-guard-denies-workstation-subsubagent-split): this skill's
+# contract orchestrates sub-subagents. --cycle-begin copies this capability onto
+# the cycle marker so the dispatch guard honors the workstation sub-subagent
+# exemption without a hardcoded skill list.
+subagent-model: true
 name: retro-feature
 description: Run the Step 9 retro phase end-to-end in one subagent invocation — loops /retro + /execute-plan until RETRO_DONE.md, a halt sentinel, or max-rounds.
 argument-hint: <path/to/feature-dir-or-SPEC.md> [--max-rounds N] [--batch]

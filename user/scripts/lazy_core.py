@@ -10750,6 +10750,87 @@ def delete_run_marker(clear_registry: bool = False) -> bool:
 _CYCLE_MARKER_FILENAME = "lazy-cycle-active.json"
 
 
+# Frontmatter flag a skill declares to state "my contract orchestrates
+# sub-subagents" (e.g. /execute-plan's test-agent/impl-agent split,
+# /spec-phases' phase-writer launch, /spec's Explore fan-outs). The cycle
+# marker copies this capability at --cycle-begin so the dispatch guard can
+# honor the workstation sub-subagent exemption WITHOUT a hardcoded skill list
+# (dispatch-guard-denies-workstation-subsubagent-split, decision 4 Round-11
+# amendment: the discriminator MUST be a general skill-declared predicate —
+# an allow-list re-opens the gap for every new sub-subagent-model skill).
+_SUBAGENT_MODEL_FLAG_RE = re.compile(
+    r"^subagent-model:\s*true\s*$", re.IGNORECASE | re.MULTILINE
+)
+
+
+def skill_declares_subagent_model(
+    sub_skill: str | None,
+    *,
+    repo_root: "str | Path | None" = None,
+) -> bool:
+    """True iff *sub_skill*'s SKILL.md frontmatter declares ``subagent-model: true``.
+
+    The predicate source of truth for the guard's workstation sub-subagent
+    exemption (decision 4). Resolution order:
+
+      1. Repo-scoped skill: ``<repo_root>/.claude/skills/<name>/SKILL.md``
+         (when *repo_root* is provided) — covers repo-local skills like
+         AlgoBooth's mcp-test family.
+      2. User-level skill: ``<this module's parent.parent>/skills/<name>/SKILL.md``
+         — resolves to ``~/.claude/skills/`` for the live copy and
+         ``<claude-config>/user/skills/`` for the repo copy (the same
+         module-path trick _default_cycle_template_dir uses).
+
+    Only the leading YAML frontmatter block (between the first two ``---``
+    lines) is consulted, so prose mentioning the flag never false-positives.
+
+    FAIL-CLOSED: a falsy/pseudo (``__*``) sub_skill, a missing SKILL.md, an
+    unreadable file, or an absent flag all return False — the exemption never
+    fires on uncertainty (the pre-fix deny is the safe degradation).
+
+    Args:
+        sub_skill: dispatched skill name (leading "/" tolerated); None → False.
+        repo_root: optional repo root for the repo-scoped lookup.
+
+    Returns:
+        True only when the frontmatter flag is explicitly ``true``.
+    """
+    try:
+        if not sub_skill or sub_skill.startswith("__"):
+            return False
+        norm = sub_skill[1:] if sub_skill.startswith("/") else sub_skill
+        # Refuse path-traversal shapes outright (the name is a directory key).
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", norm):
+            return False
+        candidates: list[Path] = []
+        if repo_root:
+            candidates.append(
+                Path(repo_root) / ".claude" / "skills" / norm / "SKILL.md"
+            )
+        candidates.append(
+            Path(__file__).resolve().parent.parent / "skills" / norm / "SKILL.md"
+        )
+        for skill_md in candidates:
+            try:
+                if not skill_md.is_file():
+                    continue
+                text = skill_md.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            # Extract the leading frontmatter block only.
+            if not text.startswith("---"):
+                continue
+            end = text.find("\n---", 3)
+            if end == -1:
+                continue
+            frontmatter = text[3:end]
+            if _SUBAGENT_MODEL_FLAG_RE.search(frontmatter):
+                return True
+        return False
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def write_cycle_marker(
     feature_id: str,
     nonce: str,
@@ -10760,6 +10841,7 @@ def write_cycle_marker(
     begin_head_sha: str | None = None,
     sub_skill: str | None = None,
     sub_skill_args: str | None = None,
+    subagent_model: bool | None = None,
     now: float | None = None,
 ) -> dict:
     """Write (or overwrite) the cycle-subagent marker to the state dir.
@@ -10800,6 +10882,16 @@ def write_cycle_marker(
         commits, which the fixed budget of 3 false-positived as unexpected-commits;
         hardening Round 20 D2). Additive (default None) → legacy markers degrade to
         the fixed per-sub_skill budget, never a crash.
+      - subagent_model (bool): whether the dispatched sub_skill's SKILL.md
+        frontmatter declares ``subagent-model: true`` (see
+        skill_declares_subagent_model). Copied here at --cycle-begin so the
+        dispatch guard's workstation sub-subagent exemption reads a marker
+        field, never SKILL.md itself (dispatch-guard-denies-workstation-
+        subsubagent-split, decision 4). Callers may pass an explicit bool to
+        override; the default None computes it from the sub_skill, using the
+        live run marker's repo_root (best-effort) for the repo-scoped lookup.
+        Additive — legacy markers without the field read as falsy (no
+        exemption), never a crash.
 
     Self-healing staleness: if a marker already EXISTS (a prior dispatch crashed
     without `--cycle-end`), it is OVERWRITTEN and the event logged. The
@@ -10823,6 +10915,20 @@ def write_cycle_marker(
         session_id = (
             os.environ.get("CLAUDE_SESSION_ID")
             or os.environ.get("CLAUDE_CODE_SESSION_ID")
+        )
+    # decision 4: stamp the sub_skill's declared sub-subagent capability onto
+    # the marker (explicit override wins; None → compute). The run marker's
+    # repo_root feeds the repo-scoped SKILL.md lookup; every read is
+    # best-effort and the helper is fail-closed, so a degraded read stamps
+    # False (no exemption) and never blocks the marker write.
+    if subagent_model is None:
+        _sm_repo_root = None
+        try:
+            _sm_repo_root = (read_run_marker() or {}).get("repo_root")
+        except Exception:  # noqa: BLE001
+            _sm_repo_root = None
+        subagent_model = skill_declares_subagent_model(
+            sub_skill, repo_root=_sm_repo_root
         )
     state_dir = claude_state_dir()
     marker_path = state_dir / _CYCLE_MARKER_FILENAME
@@ -10871,6 +10977,10 @@ def write_cycle_marker(
         # execute-plan commit budget by the plan's declared phase count. Additive
         # (default None) → legacy markers degrade to the fixed per-sub_skill budget.
         "sub_skill_args": sub_skill_args,
+        # decision 4 (dispatch-guard-denies-workstation-subsubagent-split): the
+        # sub_skill's declared sub-subagent capability, read by the guard's
+        # workstation exemption. bool — never None (fail-closed compute above).
+        "subagent_model": bool(subagent_model),
     }
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
     return marker
@@ -12395,6 +12505,111 @@ def append_dispatch_by_reference_event(
         return True
     except Exception:  # noqa: BLE001
         # Fail-open: a ledger write must never propagate to the guard.
+        return False
+
+
+def emission_consumed_by_nonce(nonce: str) -> bool:
+    """Return True iff a registry entry with this nonce exists AND is consumed.
+
+    dispatch-guard-denies-workstation-subsubagent-split (decision 4, 2026-07-10):
+    this is the CONSUMED FENCE for the guard's workstation sub-subagent
+    exemption. The cycle marker is written by ``--cycle-begin`` BEFORE the
+    orchestrator's own worker dispatch, so "cycle marker active" alone would
+    open a window where the orchestrator itself could improvise an unregistered
+    dispatch under its freshly-armed cycle marker. Requiring the cycle's OWN
+    registered emission to already be consumed closes that window: consumption
+    happens only on the guard-ALLOWed worker dispatch, session tool calls are
+    serial, and the marker is cleared at ``--cycle-end`` — so any unregistered
+    Agent prompt arriving while (marker active AND its emission consumed) can
+    only originate INSIDE the in-flight cycle worker.
+
+    Deliberately ignores TTL and the run-start gate: the question is "did the
+    dispatch land", not "is the entry still dispatchable" (a long cycle may
+    outlive the 1800 s registry TTL and its sub-subagent dispatches must not
+    start re-denying mid-cycle).
+
+    Read-only and FAIL-CLOSED: any error (missing/corrupt registry, absent
+    nonce) returns False — the exemption never fires on uncertainty, so a
+    failure here degrades to the pre-fix deny, never to a spurious allow.
+
+    Args:
+        nonce: the cycle marker's dispatch nonce.
+
+    Returns:
+        True when the entry exists and its ``consumed`` flag is truthy.
+    """
+    try:
+        if not nonce:
+            return False
+        for entry in _load_registry().get("entries", []):
+            if entry.get("nonce") == nonce:
+                return bool(entry.get("consumed", False))
+        return False
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def append_worker_subdispatch_event(
+    *,
+    tool_use_id: str,
+    sha12: str,
+    item_id: str | None = None,
+    sub_skill: str | None = None,
+    now: float | None = None,
+) -> bool:
+    """Append one ``worker_subdispatch: true`` audit event to the deny ledger.
+
+    dispatch-guard-denies-workstation-subsubagent-split (decision 4): every
+    guard ALLOW taken through the workstation sub-subagent exemption writes an
+    auditable record to the same deny ledger used by denies, auto-readmits, and
+    by-reference dispatches, so the exemption path is retro-gradable and
+    distinguishable from a registered-prompt allow.
+
+    Event shape (mirrors append_dispatch_by_reference_event for reader
+    uniformity):
+
+        {"ts": <epoch float>, "tool_use_id": <str>,
+         "worker_subdispatch": true, "sha12": <12 hex chars>,
+         "item_id": <str|None>, "sub_skill": <str|None>, "acked": true}
+
+    ``acked`` is True because an exempted sub-subagent dispatch owes NO
+    hardening debt — it is a sanctioned dispatch path (the cycle worker
+    following its skill's own orchestration model), not a harness gap — so it
+    must never inflate ``pending_hardening()`` or block ``--run-end``.
+
+    Best-effort / fail-open: swallows its own write errors and returns False
+    rather than raising (a ledger failure must never affect the allow).
+
+    Args:
+        tool_use_id: the dispatched Agent tool_use_id.
+        sha12: first 12 hex chars of the dispatched prompt's sha256.
+        item_id: the active cycle marker's feature/bug id (optional).
+        sub_skill: the active cycle marker's sub_skill (optional).
+        now: epoch float for ts (injectable for hermetic tests).
+
+    Returns:
+        True if the line was appended; False on any write failure (fail-open).
+    """
+    if now is None:
+        now = time.time()
+    try:
+        event = {
+            "ts": now,
+            "tool_use_id": tool_use_id,
+            # Discriminator field: retro readers filter on this to see exempted
+            # worker sub-subagent dispatches separately from other allow paths.
+            "worker_subdispatch": True,
+            "sha12": sha12,
+            "item_id": item_id,
+            "sub_skill": sub_skill,
+            # Pre-acked: a sanctioned dispatch path owes no hardening debt.
+            "acked": True,
+        }
+        ledger_path = claude_state_dir() / _DENY_LEDGER_FILENAME
+        with ledger_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(event) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
         return False
 
 

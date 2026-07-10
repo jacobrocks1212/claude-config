@@ -31945,5 +31945,127 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# dispatch-guard-denies-workstation-subsubagent-split (decision 4, 2026-07-10)
+# — the skill-declared sub-subagent capability predicate, the consumed fence,
+# and the cycle-marker stamping the guard's workstation exemption reads.
+# ---------------------------------------------------------------------------
+
+def test_skill_declares_subagent_model_user_level():
+    """The user-level SKILL.md frontmatter flag drives the predicate: skills
+    with a sub-subagent orchestration model read True; single-context skills,
+    pseudo-skills, and junk names all fail closed to False."""
+    _guard()
+    # Flagged: /execute-plan's test-agent/impl-agent split (the Round-9 case)
+    # and /spec-phases' phase-writer launch (the Round-11 case).
+    assert lazy_core.skill_declares_subagent_model("execute-plan") is True
+    assert lazy_core.skill_declares_subagent_model("/spec-phases") is True
+    # Not flagged: a single-context skill keeps the deny (no exemption).
+    assert lazy_core.skill_declares_subagent_model("realign-spec") is False
+    # Fail-closed shapes: falsy, pseudo-skill, unknown, path traversal.
+    assert lazy_core.skill_declares_subagent_model(None) is False
+    assert lazy_core.skill_declares_subagent_model("") is False
+    assert lazy_core.skill_declares_subagent_model("__mark_complete__") is False
+    assert lazy_core.skill_declares_subagent_model("no-such-skill-xyz") is False
+    assert lazy_core.skill_declares_subagent_model("../../etc/passwd") is False
+
+
+def test_skill_declares_subagent_model_repo_scoped():
+    """A repo-scoped .claude/skills/<name>/SKILL.md with the flag is honored
+    when repo_root is passed; without repo_root the same name reads False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        skill_dir = repo / ".claude" / "skills" / "repo-only-skill"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: repo-only-skill\nsubagent-model: true\n---\n# X\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.skill_declares_subagent_model(
+            "repo-only-skill", repo_root=repo
+        ) is True
+        assert lazy_core.skill_declares_subagent_model("repo-only-skill") is False
+        # Flag mentioned only in PROSE (no frontmatter block hit) → False.
+        prose_dir = repo / ".claude" / "skills" / "prose-only-skill"
+        prose_dir.mkdir(parents=True)
+        (prose_dir / "SKILL.md").write_text(
+            "---\nname: prose-only-skill\n---\n\nsubagent-model: true\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.skill_declares_subagent_model(
+            "prose-only-skill", repo_root=repo
+        ) is False
+
+
+def test_emission_consumed_by_nonce_fence():
+    """The consumed fence: True only for an existing, consumed registry entry.
+    Unconsumed, unknown, and falsy nonces all fail closed to False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            entry = lazy_core.register_emission("cycle prompt body", "cycle")
+            nonce = entry["nonce"]
+            # Registered but NOT yet dispatched → fence closed.
+            assert lazy_core.emission_consumed_by_nonce(nonce) is False
+            assert lazy_core.consume_nonce(nonce, consumer="toolu_x") is True
+            # Dispatch landed → fence open.
+            assert lazy_core.emission_consumed_by_nonce(nonce) is True
+            # Unknown / falsy nonces fail closed.
+            assert lazy_core.emission_consumed_by_nonce("feedbeef") is False
+            assert lazy_core.emission_consumed_by_nonce("") is False
+        finally:
+            _clear_state_dir()
+
+
+def test_write_cycle_marker_stamps_subagent_model():
+    """--cycle-begin's marker write copies the skill capability: a flagged
+    sub_skill stamps subagent_model=True, an unflagged one False, and an
+    explicit override wins over the computed value."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            m = lazy_core.write_cycle_marker(
+                feature_id="f", nonce="a1", sub_skill="execute-plan"
+            )
+            assert m["subagent_model"] is True, m
+            on_disk = json.loads(
+                (Path(td) / _CYCLE_MARKER_FILENAME).read_text(encoding="utf-8")
+            )
+            assert on_disk["subagent_model"] is True, on_disk
+            m2 = lazy_core.write_cycle_marker(
+                feature_id="f", nonce="a2", sub_skill="realign-spec"
+            )
+            assert m2["subagent_model"] is False, m2
+            # Explicit override wins (tests / emergency escape hatch).
+            m3 = lazy_core.write_cycle_marker(
+                feature_id="f", nonce="a3", sub_skill="realign-spec",
+                subagent_model=True,
+            )
+            assert m3["subagent_model"] is True, m3
+            # Meta/pseudo dispatches never stamp the capability.
+            m4 = lazy_core.write_cycle_marker(
+                feature_id="f", nonce="a4", kind="meta",
+                sub_skill="__mark_complete__",
+            )
+            assert m4["subagent_model"] is False, m4
+        finally:
+            _clear_state_dir()
+
+
+_TESTS = _TESTS + [
+    ("test_skill_declares_subagent_model_user_level",
+     test_skill_declares_subagent_model_user_level),
+    ("test_skill_declares_subagent_model_repo_scoped",
+     test_skill_declares_subagent_model_repo_scoped),
+    ("test_emission_consumed_by_nonce_fence",
+     test_emission_consumed_by_nonce_fence),
+    ("test_write_cycle_marker_stamps_subagent_model",
+     test_write_cycle_marker_stamps_subagent_model),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

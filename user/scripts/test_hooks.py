@@ -6339,6 +6339,193 @@ _TESTS = [
 
 
 # ---------------------------------------------------------------------------
+# dispatch-guard-denies-workstation-subsubagent-split (decision 4, 2026-07-10)
+# — the guard's workstation sub-subagent exemption: under a live BOUND
+# workstation run marker, an UNREGISTERED Agent prompt is ALLOWED iff an active
+# cycle marker declares a sub-subagent model (skill frontmatter capability
+# stamped at --cycle-begin) AND the cycle's own registered emission is already
+# consumed (worker in flight). Every other configuration keeps the deny.
+# ---------------------------------------------------------------------------
+
+_WORKER_PROMPT = (
+    "You are a TEST-WRITING agent (TDD). You write FAILING tests plus the "
+    "minimal module scaffold needed for them to COMPILE and fail at runtime."
+)
+
+
+def _arm_worker_in_flight(
+    state_dir: Path,
+    session_id: str,
+    *,
+    cloud: bool = False,
+    sub_skill: str = "execute-plan",
+    consume: bool = True,
+    bound: bool = True,
+) -> None:
+    """Arm the full worker-in-flight state: a run marker (bound to *session_id*
+    unless ``bound=False``), a registered cycle emission (consumed unless
+    ``consume=False``), and a cycle marker naming *sub_skill*."""
+    _set_state_dir(state_dir)
+    try:
+        lazy_core.write_run_marker(
+            pipeline="feature",
+            cloud=cloud,
+            repo_root=str(state_dir / "fixture-repo"),
+            max_cycles=10,
+            now=time.time(),
+            session_id=session_id if bound else None,
+        )
+        entry = lazy_core.register_emission("the emitted cycle prompt", "cycle")
+        if consume:
+            lazy_core.consume_nonce(entry["nonce"], consumer="toolu_worker_dispatch")
+        lazy_core.write_cycle_marker(
+            feature_id="feat-x", nonce=entry["nonce"], sub_skill=sub_skill,
+        )
+    finally:
+        _clear_state_dir()
+
+
+def test_guard_worker_subdispatch_exemption_allows():
+    """Worker in flight (bound workstation marker + subagent-model cycle marker
+    + consumed cycle emission) → an unregistered worker-composed prompt is
+    ALLOWED, and the allow is audited as a pre-acked worker_subdispatch ledger
+    event (no hardening debt)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        session = str(uuid.uuid4())
+        _arm_worker_in_flight(state_dir, session)
+
+        result = _run_guard_py(
+            _e1_preToolUse_json(_WORKER_PROMPT, session_id=session), env
+        )
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout.strip())
+        hso = payload.get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "allow", (
+            f"worker sub-subagent dispatch must be ALLOWED; got: {payload}"
+        )
+        assert "sub-subagent" in hso.get("permissionDecisionReason", ""), hso
+
+        # Audit trail: one pre-acked worker_subdispatch event, zero debt.
+        ledger = state_dir / "lazy-deny-ledger.jsonl"
+        assert ledger.exists(), "exemption allow must write the audit event"
+        events = [
+            json.loads(line)
+            for line in ledger.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        subdispatch = [e for e in events if e.get("worker_subdispatch")]
+        assert len(subdispatch) == 1, events
+        assert subdispatch[0].get("acked") is True, subdispatch[0]
+        assert subdispatch[0].get("sub_skill") == "execute-plan", subdispatch[0]
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.pending_hardening() == 0, (
+                "an exempted sub-subagent allow must never book hardening debt"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_guard_worker_subdispatch_denied_before_consume():
+    """The consumed fence: with the cycle marker armed but the cycle's emission
+    NOT yet consumed (the pre-dispatch window where the orchestrator itself
+    could improvise), the unregistered prompt keeps the deny."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        session = str(uuid.uuid4())
+        _arm_worker_in_flight(state_dir, session, consume=False)
+
+        result = _run_guard_py(
+            _e1_preToolUse_json(_WORKER_PROMPT, session_id=session), env
+        )
+        payload = json.loads(result.stdout.strip())
+        assert payload["hookSpecificOutput"]["permissionDecision"] == "deny", (
+            f"pre-consume window must keep the deny; got: {payload}"
+        )
+
+
+def test_guard_worker_subdispatch_denied_without_capability():
+    """A cycle marker whose sub_skill does NOT declare a sub-subagent model
+    (subagent_model=False) keeps the deny even with the emission consumed."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        session = str(uuid.uuid4())
+        _arm_worker_in_flight(state_dir, session, sub_skill="realign-spec")
+
+        result = _run_guard_py(
+            _e1_preToolUse_json(_WORKER_PROMPT, session_id=session), env
+        )
+        payload = json.loads(result.stdout.strip())
+        assert payload["hookSpecificOutput"]["permissionDecision"] == "deny", (
+            f"non-subagent-model skill must keep the deny; got: {payload}"
+        )
+
+
+def test_guard_worker_subdispatch_denied_on_cloud():
+    """Cloud keeps the ban (lazy-batch-cloud CLOUD OVERRIDE — LOAD-BEARING):
+    the exemption never fires under a run marker with cloud=True."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        session = str(uuid.uuid4())
+        _arm_worker_in_flight(state_dir, session, cloud=True)
+
+        result = _run_guard_py(
+            _e1_preToolUse_json(_WORKER_PROMPT, session_id=session), env
+        )
+        payload = json.loads(result.stdout.strip())
+        assert payload["hookSpecificOutput"]["permissionDecision"] == "deny", (
+            f"cloud run must keep the deny; got: {payload}"
+        )
+
+
+def test_guard_worker_subdispatch_denied_unbound_marker():
+    """An UNBOUND run marker (no orchestrator allow has stamped it — no worker
+    can be in flight) keeps the deny regardless of the cycle-marker state."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        session = str(uuid.uuid4())
+        _arm_worker_in_flight(state_dir, session, bound=False)
+
+        result = _run_guard_py(
+            _e1_preToolUse_json(_WORKER_PROMPT, session_id=session), env
+        )
+        payload = json.loads(result.stdout.strip())
+        assert payload["hookSpecificOutput"]["permissionDecision"] == "deny", (
+            f"unbound (pre-bind) marker must keep the deny; got: {payload}"
+        )
+
+
+_TESTS = _TESTS + [
+    ("test_guard_worker_subdispatch_exemption_allows",
+     test_guard_worker_subdispatch_exemption_allows),
+    ("test_guard_worker_subdispatch_denied_before_consume",
+     test_guard_worker_subdispatch_denied_before_consume),
+    ("test_guard_worker_subdispatch_denied_without_capability",
+     test_guard_worker_subdispatch_denied_without_capability),
+    ("test_guard_worker_subdispatch_denied_on_cloud",
+     test_guard_worker_subdispatch_denied_on_cloud),
+    ("test_guard_worker_subdispatch_denied_unbound_marker",
+     test_guard_worker_subdispatch_denied_unbound_marker),
+]
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 

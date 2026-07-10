@@ -1,4 +1,9 @@
 ---
+# decision 4 (dispatch-guard-denies-workstation-subsubagent-split): this skill's
+# contract orchestrates sub-subagents. --cycle-begin copies this capability onto
+# the cycle marker so the dispatch guard honors the workstation sub-subagent
+# exemption without a hardcoded skill list.
+subagent-model: true
 name: plan-feature
 description: Run spec-phases and write-plan as a single subagent invocation for a feature past the interactive gates (SPEC + RESEARCH_SUMMARY present). Used by /lazy-batch to consolidate planning into one orchestrator round-trip.
 argument-hint: <path/to/SPEC.md>

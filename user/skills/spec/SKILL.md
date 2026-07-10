@@ -1,4 +1,9 @@
 ---
+# decision 4 (dispatch-guard-denies-workstation-subsubagent-split): this skill's
+# contract orchestrates sub-subagents. --cycle-begin copies this capability onto
+# the cycle marker so the dispatch guard honors the workstation sub-subagent
+# exemption without a hardcoded skill list.
+subagent-model: true
 description: Brainstorm, research, and draft a feature spec
 argument-hint: [feature description or work-item id]
 allowed-tools: ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "AskUserQuestion", "Agent", "WebSearch"]

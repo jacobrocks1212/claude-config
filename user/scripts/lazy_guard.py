@@ -803,6 +803,75 @@ def guard(stdin_text: str) -> str | None:
                 tool_use_id=tool_use_id, sha=sha, prompt=prompt,
             )
 
+    # --- 2b. Workstation sub-subagent exemption. ------------------------------
+    # dispatch-guard-denies-workstation-subsubagent-split (decision 4 resolution,
+    # 2026-07-10): the workstation-recursive-subagent-dispatch feature (5ff570b)
+    # authorizes a cycle worker to FOLLOW its skill's own sub-subagent
+    # orchestration model (/execute-plan's test-agent/impl-agent split,
+    # /spec-phases' phase-writer launch, /spec's Explore fan-outs, ...).  Those
+    # prompts are composed BY the worker and can never be script-emitted registry
+    # entries (a worker is refuse_if_cycle_active-banned from --emit-dispatch),
+    # so without this branch every one of them fell through to the :839 default
+    # deny and booked a no-op hardening debt.
+    #
+    # ALLOW an unregistered prompt iff ALL of (operator-blessed discriminator —
+    # option 1 + consumed fence; NEEDS_INPUT.md decision 4):
+    #   1. WORKSTATION run: the run marker's `cloud` flag is falsy.  Cloud keeps
+    #      the inline-override ban (lazy-batch-cloud "CLOUD OVERRIDE —
+    #      LOAD-BEARING"), so cloud runs must never take this branch.
+    #   2. The run marker is BOUND (an orchestrator allow already stamped it) —
+    #      pre-bind, no worker can be in flight.
+    #   3. An active cycle marker exists whose `subagent_model` field is True —
+    #      the dispatched sub_skill's SKILL.md frontmatter declares
+    #      `subagent-model: true`, copied onto the marker at --cycle-begin
+    #      (general skill-declared predicate, NEVER a hardcoded skill list —
+    #      decision 4's Round-11 amendment).
+    #   4. CONSUMED FENCE: the cycle marker's own registered emission is already
+    #      consumed.  --cycle-begin writes the marker BEFORE the orchestrator's
+    #      worker dispatch; consumption happens only on that guard-ALLOWed
+    #      dispatch and session tool calls are serial, so once (marker active AND
+    #      emission consumed) holds, an unregistered Agent prompt can only
+    #      originate INSIDE the in-flight worker.  This closes the window where
+    #      the orchestrator itself could improvise under a freshly-armed marker.
+    #
+    # The containment hook independently keeps policing lifecycle/pipeline
+    # OPERATIONS inside the sub-subagent, and a bare @@lazy-ref prompt was
+    # already hard-denied above — this branch only ever admits literal worker-
+    # composed prompts.  Every allow is audited to the deny ledger
+    # (worker_subdispatch: true, pre-acked — no hardening debt).
+    #
+    # FAIL-CLOSED: any error in this block falls through to the existing deny
+    # paths below (never a spurious allow; the guard's outer fail-OPEN contract
+    # is unchanged).
+    try:
+        if (
+            not marker.get("cloud")
+            and marker.get("session_id") is not None
+        ):
+            cycle = lazy_core.read_cycle_marker()
+            if (
+                cycle is not None
+                and cycle.get("subagent_model") is True
+                and lazy_core.emission_consumed_by_nonce(cycle.get("nonce"))
+            ):
+                lazy_core.append_worker_subdispatch_event(
+                    tool_use_id=tool_use_id,
+                    sha12=sha[:12],
+                    item_id=cycle.get("feature_id"),
+                    sub_skill=cycle.get("sub_skill"),
+                )
+                reason = (
+                    "workstation sub-subagent dispatch allowed — active cycle "
+                    f"marker ({cycle.get('feature_id')}, sub_skill "
+                    f"{cycle.get('sub_skill')}) declares a sub-subagent model "
+                    "and its cycle dispatch is consumed (worker in flight); "
+                    f"prompt sha12 {sha[:12]} audited as worker_subdispatch"
+                )
+                return _allow_json(reason)
+    except Exception:  # noqa: BLE001
+        # Fail-closed for the exemption: fall through to the deny paths below.
+        pass
+
     # --- 3. No matching entry at all. ----------------------------------------
     # F2c (lazy-validation-readiness Phase 2): before falling through to the full
     # corrective deny (which appends hardening debt to the ledger), check whether

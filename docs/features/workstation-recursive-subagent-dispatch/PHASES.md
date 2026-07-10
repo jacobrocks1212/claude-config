@@ -36,3 +36,22 @@ Single-session implementation (autonomous).
 - [x] `python3 -m pytest user/scripts/test_lazy_core.py -k emit_cycle_prompt` green; full baseline tests green (template change alters no fixture output)
 - [x] `python3 user/scripts/lazy-state.py --test` + `bug-state.py --test` green
 - [x] `python3 user/scripts/lazy_parity_audit.py --repo-root .` exit 0; `project-skills.py` + `lint-skills.py` clean; projected lazy-batch spot-checked
+
+### Phase 4 (post-completion follow-up, 2026-07-10): dispatch-guard allow branch
+
+**Status:** Complete
+**Phase kind:** corrective
+
+The original rollout lifted the ban in prose and fixed the *containment* hook but
+overlooked the *dispatch* guard (`lazy_guard.py`), which kept denying every
+workstation sub-subagent dispatch under a live run marker and booking a no-op
+hardening debt per denial. Root-caused and fixed via
+`docs/bugs/dispatch-guard-denies-workstation-subsubagent-split/` after the
+operator resolved `turn-routing-enforcement` decision 4 (active-cycle-marker
+exemption keyed on a general `subagent-model: true` SKILL-frontmatter capability
++ consumed-emission fence; cloud keeps the unconditional deny).
+
+- [x] `lazy_guard.py` branch 2b (workstation sub-subagent exemption, fail-closed)
+- [x] `lazy_core.py` capability predicate + consumed fence + `worker_subdispatch` audit + cycle-marker stamping
+- [x] `subagent-model: true` frontmatter on the ten sub-subagent-model skills
+- [x] 4 unit + 5 guard pipe-tests; all four suites green

@@ -1,4 +1,9 @@
 ---
+# decision 4 (dispatch-guard-denies-workstation-subsubagent-split): this skill's
+# contract orchestrates sub-subagents. --cycle-begin copies this capability onto
+# the cycle marker so the dispatch guard honors the workstation sub-subagent
+# exemption without a hardcoded skill list.
+subagent-model: true
 description: Draft a TDD implementation plan for a PHASES.md phase using parallel Sonnet subagents (reference-based components)
 argument-hint: <path/to/PHASES.md> [phase number]
 name: implement-phase

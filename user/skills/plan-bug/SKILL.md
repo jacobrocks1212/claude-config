@@ -1,4 +1,9 @@
 ---
+# decision 4 (dispatch-guard-denies-workstation-subsubagent-split): this skill's
+# contract orchestrates sub-subagents. --cycle-begin copies this capability onto
+# the cycle marker so the dispatch guard honors the workstation sub-subagent
+# exemption without a hardcoded skill list.
+subagent-model: true
 name: plan-bug
 description: Bug-pipeline analog of /plan-feature — authors PHASES.md from a concluded investigation SPEC if missing and runs /write-plan as one subagent round-trip. Drives docs/bugs/.
 argument-hint: <path/to/SPEC.md>

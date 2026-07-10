@@ -329,7 +329,7 @@ python3 ~/.claude/scripts/lazy-state.py \
 
 **What this does.** The marker (`~/.claude/state/lazy-run-marker.json`) is the single on/off switch for the inject + validate-deny hooks. While the marker is present:
 - The inject hook (`lazy-route-inject.sh`) fires on every UserPromptSubmit turn, runs the full probe form, and injects the route (`LAZY-ROUTE (hook-injected, turn N): …`) into the model's context via `additionalContext` — the orchestrator does NOT need to remember to probe; the probe arrives with the turn.
-- The validate-deny guard (`lazy-dispatch-guard.sh`) checks every `Agent` dispatch against the prompt registry; an unregistered prompt is denied with a corrective recipe.
+- The validate-deny guard (`lazy-dispatch-guard.sh`) checks every `Agent` dispatch against the prompt registry; an unregistered prompt is denied with a corrective recipe. Sole exception (workstation runs only): a cycle worker's own sub-subagent dispatch while its cycle is in flight — the active cycle marker's `sub_skill` declares `subagent-model: true` (SKILL frontmatter, stamped at `--cycle-begin`) AND the cycle's registered dispatch is already consumed — is allowed and audited (`worker_subdispatch`, pre-acked) instead of denied. Cloud runs keep the unconditional deny.
 
 Interactive sessions (no marker) are **completely untouched** — both hooks exit instantly on the `test -f` fast path. The marker is script-owned: `--run-start` writes it; `--run-end` deletes it. The orchestrator never hand-writes the marker file.
 

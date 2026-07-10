@@ -1,4 +1,9 @@
 ---
+# decision 4 (dispatch-guard-denies-workstation-subsubagent-split): this skill's
+# contract orchestrates sub-subagents. --cycle-begin copies this capability onto
+# the cycle marker so the dispatch guard honors the workstation sub-subagent
+# exemption without a hardcoded skill list.
+subagent-model: true
 description: Decompose 1+ feature specs into PHASES.md files using parallel Sonnet subagents, with holistic cross-feature review
 argument-hint: <path/to/SPEC1.md> [path/to/SPEC2.md] [...]
 name: spec-phases-batch
