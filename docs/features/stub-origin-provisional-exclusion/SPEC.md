@@ -2,7 +2,7 @@
 
 > Special-case stub-origin decisions in the provisional-acceptance tier: a `NEEDS_INPUT.md` whose decisions shaped a BASELINE the operator has never seen (a park-mode stub-spec `/spec` Phase-1 round, or a `/spec-bug` pre-conclusion halt) is marked `stub_origin: true` by its producer and is NEVER provisionally accepted — baseline-gating forks always park for the operator, no matter how low their per-decision divergence grades look.
 
-**Status:** In-progress
+**Status:** Complete
 **Priority:** P1
 **Last updated:** 2026-07-09
 **Friction-reduction feature:** no

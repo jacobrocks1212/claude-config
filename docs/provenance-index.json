@@ -4022,6 +4022,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "stub-origin-provisional-exclusion",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "toolify-auto-promotion",
       "type": "feature",
       "provenance": "backfilled"
@@ -5768,6 +5773,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/stub-origin-provisional-exclusion/PHASES.md": [
+    {
+      "id": "stub-origin-provisional-exclusion",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/stub-origin-provisional-exclusion/SPEC.md": [
+    {
+      "id": "stub-origin-provisional-exclusion",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/toolify-auto-promotion/COMPLETED.md": [
     {
       "id": "toolify-auto-promotion",
@@ -6519,6 +6538,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "stub-origin-provisional-exclusion",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
@@ -6681,6 +6705,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "stub-origin-provisional-exclusion",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "toolify-auto-promotion",
       "type": "feature",
       "provenance": "backfilled"
@@ -6831,6 +6860,11 @@
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "stub-origin-provisional-exclusion",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "unified-pipeline-orchestrator",
@@ -7461,6 +7495,11 @@
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "stub-origin-provisional-exclusion",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/tests/baselines/lazy-state-test-baseline.txt": [
@@ -7523,6 +7562,11 @@
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "stub-origin-provisional-exclusion",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "toolify-auto-promotion",
@@ -7636,6 +7680,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "stub-origin-provisional-exclusion",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "workstation-recursive-subagent-dispatch",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -7658,6 +7707,11 @@
   "user/skills/_components/lazy-batch-prompts/input-audit-prompt.md": [
     {
       "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "stub-origin-provisional-exclusion",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -7720,6 +7774,11 @@
     },
     {
       "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "stub-origin-provisional-exclusion",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -7864,6 +7923,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "stub-origin-provisional-exclusion",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
@@ -7956,7 +8020,19 @@
   ],
   "user/skills/restart-windows-claude/SKILL.md": [
     {
+      "id": "stub-origin-provisional-exclusion",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "workstation-recursive-subagent-dispatch",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/spec-bug/SKILL.md": [
+    {
+      "id": "stub-origin-provisional-exclusion",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -7978,6 +8054,11 @@
       "id": "research-prompt-leaks-identity-doc-meta",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "stub-origin-provisional-exclusion",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "workspace/CLAUDE.md": [

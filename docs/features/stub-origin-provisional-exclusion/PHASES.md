@@ -1,6 +1,6 @@
 # Stub-Origin Provisional Exclusion — Implementation Phases
 
-**Status:** In-progress
+**Status:** Complete
 **Spec:** [SPEC.md](SPEC.md)
 **Last updated:** 2026-07-09
 **MCP runtime:** not-required — one `lazy_core` predicate clause + component/skill prose + `--test` fixtures; no app surface. Validation is the state scripts' `--test` harnesses, regenerated baselines, `pytest test_lazy_core.py`, `lazy_parity_audit.py` — the Step-9 gate grants the structural MCP-skip.
