@@ -8107,11 +8107,21 @@ def test_emit_cycle_prompt_binding_matrix_real_template():
                 assert not residue, f"{ctx}: unbound token residue {residue}"
                 # Always-present anchor (retro grader keys on this literal).
                 assert "Operating mode: batch" in prompt, f"{ctx}: missing 'Operating mode: batch'"
-                # Mode-specific load-bearing override anchor.
+                # Mode-specific load-bearing dispatch-policy anchor.
+                # workstation-recursive-subagent-dispatch (2026-07-09): the
+                # workstation INLINE OVERRIDE was lifted — workstation cycle
+                # prompts now carry the dispatch-permitted policy marker; cloud
+                # keeps the inline override verbatim.
                 if cloud:
                     assert "CLOUD OVERRIDE — LOAD-BEARING" in prompt, f"{ctx}: missing cloud override anchor"
+                    assert "WORKSTATION DISPATCH — LOAD-BEARING" not in prompt, (
+                        f"{ctx}: workstation dispatch policy leaked into a cloud prompt"
+                    )
                 else:
-                    assert "INLINE OVERRIDE — LOAD-BEARING" in prompt, f"{ctx}: missing inline override anchor"
+                    assert "WORKSTATION DISPATCH — LOAD-BEARING" in prompt, f"{ctx}: missing workstation dispatch anchor"
+                    assert "INLINE OVERRIDE — LOAD-BEARING" not in prompt, (
+                        f"{ctx}: retired inline-override marker leaked into a workstation prompt"
+                    )
                 assert result["model"] == "opus", f"{ctx}: expected opus model, got {result['model']!r}"
 
 

@@ -46,10 +46,10 @@
      ── RULE INVENTORY (each rule survives EXACTLY ONCE, in one section) ────
      R1  batch mode .............................. section: task
      R2  D7 completeness-first ................... section: d7
-     R3  inline override (no Agent tool) ......... section: inline-override
-     R4  test-first within each batch ........... section: skill-execute-plan
+     R3  sub-subagent dispatch policy ............ sections: workstation-dispatch (permitted + guardrails) / cloud-override (inline, ban retained)
+     R4  test-first within each batch ........... sections: skill-execute-plan / skill-execute-plan-cloud
      R5  atomic gate+commit (chained command) ... section: turn-end (referenced by skill-execute-plan)
-     R6  substantive review, skip falsification . section: skill-execute-plan
+     R6  substantive review, skip falsification . sections: skill-execute-plan / skill-execute-plan-cloud
      R7  status honesty (no premature flip) ..... section: status-honesty
      R8  resume safety (plan-part + per-WU) ...... section: resume-safety
      R9  canonical sentinel filenames ........... section: hard-contract (item 1)
@@ -174,19 +174,31 @@ PARK-MODE INTERACTION CONTRACT (/spec under park mode — SPEC D13, LOAD-BEARING
   BLOCKED.md (blocker_kind: pre-research-input-required) exactly as the
   non-park batch contract specifies.
 
-<!-- @section inline-override pipelines=feature,bug modes=workstation skills=all -->
-Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):
-  Do NOT use the `Agent` tool — sub-subagent dispatch is FORBIDDEN in a cycle
-  (policy; do not rely on the tool being absent or on a hook denying it).
-  Regardless of what the dispatched skill's SKILL.md says about
-  spawning sub-subagents (test-agent, impl-agent, research subagents A–G, etc.),
-  perform ALL of it INLINE with Read / Edit / Write. The dispatch-level
-  prohibition (in addition to the TERMINAL STOP categorical ban on pipeline ops):
-  never invoke another /lazy or /lazy-batch. Do NOT write BLOCKED.md because of
-  this dispatch limit — handling it inline is what this override is for. The
-  dispatched skill's SKILL.md stays authoritative for everything else (batch
-  ordering, sentinels, commit policy, file-shape invariants, plan-checkbox
-  semantics) — re-read it from disk if any non-dispatch detail is unclear.
+<!-- @section workstation-dispatch pipelines=feature,bug modes=workstation skills=all -->
+Sub-subagent dispatch policy (WORKSTATION DISPATCH — LOAD-BEARING):
+  You MAY use the `Agent` tool (workstation-recursive-subagent-dispatch,
+  2026-07-09 — the former INLINE-OVERRIDE ban is lifted on workstation; cloud
+  cycles keep it). When the dispatched skill's SKILL.md defines a sub-subagent
+  orchestration model — /execute-plan's Sonnet test-agent + impl-agent split,
+  /retro's research subagents, read-only Explore fan-outs — FOLLOW that model:
+  the skill's own contract is authoritative again, including its structural
+  test-first agent separation. Dispatch is a tool, not an obligation — for a
+  small mechanical batch, inline Read/Edit/Write remains the cheaper right
+  choice.
+  GUARDRAILS (each is load-bearing):
+  - The TERMINAL STOP categorical ban binds you AND every sub-subagent you
+    dispatch: no /lazy*-family skill invocations, no run-lifecycle/routing ops
+    (--run-start / --run-end / --apply-pseudo / --enqueue-adhoc /
+    --cycle-begin / --cycle-end / dev:kill / dev:restart), no second-feature
+    commits. RESTATE this prohibition in EVERY sub-subagent prompt you
+    compose — the containment hook is the backstop, not the contract.
+  - Single-writer discipline: never run two sub-subagents that edit the same
+    files concurrently. You remain the cycle's single integrator — the
+    turn-end verify/commit gates are YOURS, and a sub-subagent's completion
+    claim is not evidence (verify the work on disk before ticking anything).
+  - Scope containment: sub-subagents work ONLY inside this {item_label}'s
+    scope. Delegating the entire cycle wholesale to one sub-subagent is
+    re-dispatching, not orchestrating — forbidden.
 
 <!-- @section cloud-override pipelines=feature,bug modes=cloud skills=all -->
 Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
@@ -208,7 +220,34 @@ Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
   cycle never dispatches /mcp-test, and `Complete` (which asserts MCP-validated)
   is never honest here; the honest cloud terminal is `In-progress`.
 
-<!-- @section skill-execute-plan pipelines=feature,bug modes=workstation,cloud skills=execute-plan,retro-feature -->
+<!-- @section skill-execute-plan pipelines=feature,bug modes=workstation skills=execute-plan,retro-feature -->
+/execute-plan (and retro-feature's inner execute-plan loop) — execution:
+  - EXECUTE ONLY THE DISPATCHED PLAN PART (HARD — ISSUE 2, d8-effect-chains run):
+    run EXACTLY the plan file passed to you — never a sibling part, never "the part
+    that's actually ready." Check the dispatched part's `> **Entry criteria:**` /
+    `Plan series` "execute parts strictly in order" prerequisites FIRST. If a
+    prerequisite part is not `status: Complete`, STOP and write BLOCKED.md
+    (`blocker_kind: prerequisite-part-incomplete`) naming the unmet part — do NOT
+    silently switch to it. (Live incident: dispatched on Sonnet for the mechanical
+    part-2, the subagent silently executed the complex part-1 instead, then died
+    resultless.) If the dispatched part's real work exceeds its declared
+    `complexity:` tier (e.g. complex work under a Sonnet dispatch), STOP with
+    BLOCKED.md `blocker_kind: model-tier-mismatch` rather than grinding it out.
+  - TEST-FIRST PER BATCH (R4): follow the plan's test-agent → impl-agent
+    sub-subagent model per the WORKSTATION DISPATCH policy above — the failing
+    tests land (and fail for the right reason) BEFORE implementation. When you
+    judge a small mechanical batch cheaper inline, keep the same discipline
+    manually: failing tests first, then implement until they pass.
+  - SUBSTANTIVE REVIEW (R6): for work done by sub-subagents, apply the
+    dispatched skill's subagent-review contract (their reports are untrusted —
+    re-verify against the working tree). For work you did inline yourself, skip
+    subagent-review.md's Step 1.5 re-run-and-diff (it polices a SEPARATE
+    subagent's report) but still do the substantive review (spec alignment,
+    deliverable coverage, edge cases, propagation) and run the gates.
+  - ATOMIC GATE+COMMIT (R5): the final action of each batch / plan-part
+    completion is the ONE chained command from the turn-end contract below.
+
+<!-- @section skill-execute-plan-cloud pipelines=feature,bug modes=cloud skills=execute-plan,retro-feature -->
 /execute-plan (and retro-feature's inner execute-plan loop) — inline execution:
   - EXECUTE ONLY THE DISPATCHED PLAN PART (HARD — ISSUE 2, d8-effect-chains run):
     run EXACTLY the plan file passed to you — never a sibling part, never "the part

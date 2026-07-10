@@ -67,6 +67,8 @@ the historical / manually-authored spec archive (not under pipeline management).
 ~~- Cross-Platform Setup (`cross-platform-setup`) — stdlib-Python `setup.py bootstrap|check|repair` over a portable manifest so Linux/cloud containers can materialize the symlink layout; ends the recurring windows-portability rediscovery.~~  ✅ COMPLETE
 ~~- Park-Provisional Acceptance (`park-provisional-acceptance`) — a third decision tier between the D2 two-key mechanical auto-accept and the product-class park: under `--park --park-provisional`, low-divergence (divergence two-key graded) recommended options are provisionally accepted at park time so the feature keeps implementing overnight; `NEEDS_INPUT_PROVISIONAL.md` + a triple-layer completion backstop guarantee operator ratify-or-redirect before completion, with redirects scoped by the recorded `decision_commit`. *(Added 2026-07-09, implemented same-session.)*~~  ✅ COMPLETE
 
+- Workstation Recursive Sub-Subagent Dispatch (`workstation-recursive-subagent-dispatch`) — lift the cycle-subagent inline-override on workstation so the dispatched skill's own sub-subagent orchestration (test-agent/impl-agent split, research fan-outs) is authoritative again, restoring the structural TDD guarantee; cloud keeps the inline override; retro grading self-heals by prompt marker. *(Added 2026-07-09, implemented same-session.)*
+
 ## Tier 3 — proposed (repo-exploration stubs 2026-07-04, high-ambition)
 
 - Sanctioned Parallel-Worktree Batch Execution (`parallel-worktree-batch-execution`) — a coordinator that shards dependency-independent queue items across worktrees (per-item branch + marker arbitration extending the ownership model, containment unchanged); the biggest throughput multiplier available.

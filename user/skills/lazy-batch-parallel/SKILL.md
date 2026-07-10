@@ -228,8 +228,11 @@ marker, telemetry ledger all per lane, for free.
 
 Mirror the `/lazy-batch` Step 1 cycle loop PER LANE, against the lane root. For each lane with
 budget remaining (round-robin; a background `Agent` dispatch per lane may run concurrently —
-lane subagents have no `Agent` tool themselves and perform skills inline, exactly the
-`/lazy-batch` cycle-subagent execution model):
+lane subagents follow the `/lazy-batch` cycle-subagent execution model exactly, including the
+workstation dispatch policy (workstation-recursive-subagent-dispatch, 2026-07-09): a lane cycle
+subagent MAY dispatch sub-subagents per the emitted prompt's "WORKSTATION DISPATCH —
+LOAD-BEARING" guardrails; sub-subagents inherit the terminal-stop ban and work only inside the
+lane's worktree + item scope, so the fencing/lease/single-writer-trio model is unaffected):
 
 1. **Probe:** `lazy-state.py --repeat-count --probe --repo-root <worktree> --feature-id <id>
    [--forward-cycles/--meta-cycles/--max-cycles from the LANE's counters]`.

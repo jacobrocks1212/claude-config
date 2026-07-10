@@ -81,9 +81,13 @@ See `~/.claude/skills/lazy-batch/SKILL.md` HARD CONSTRAINTS for the full text of
 
 **10. HARD CONSTRAINT — stop-authorization (mirrors `/lazy-batch` HARD CONSTRAINT 10).** The orchestrator MUST NOT end a bug-pipeline run except on `max-cycles` or a genuine script-emitted terminal. The ONLY legitimate no-`AskUserQuestion` stops are: (a) `forward_cycles >= max_cycles`, and (b) a `terminal_reason` in {`all-bugs-fixed`, `max-cycles`, `queue-missing`, `blocked-halt-for-manual`, `needs-research`, `queue-blocked-on-research`} returned by `bug-state.py` in the CURRENT cycle's probe. Any DESIRE to stop for any other reason routes through the budget-and-queue-guard `AskUserQuestion` first; a checkpoint stop MAY proceed only after operator confirmation via `bug-state.py --run-end --reason checkpoint --operator-authorized`. An attended `--run-end --reason checkpoint` without `--operator-authorized` is REFUSED (exit 1, marker kept). When ending on a genuine terminal, pass `--run-end --reason terminal --terminal-reason <reason>` (sanctioned set above, or `--operator-authorized` required). See `/lazy-batch` HARD CONSTRAINT 10 for the full incident description (2026-06-14 / lazy-validation-readiness Phase 7).
 
-**Cycle-subagent execution model:** Same as `/lazy-batch` — the dispatched cycle subagent MUST
-NOT use the `Agent` tool (inline-override policy; see `/lazy-batch`'s paragraph for the
-2026-07-09 harness note); all skills run inline using `Edit`/`Write`/`Read`.
+**Cycle-subagent execution model:** Same as `/lazy-batch` (workstation-recursive-subagent-dispatch,
+2026-07-09) — the dispatched cycle subagent MAY use the `Agent` tool; the dispatched skill's own
+sub-subagent orchestration model is authoritative, under the emitted prompt's "WORKSTATION
+DISPATCH — LOAD-BEARING" guardrails (terminal-stop ban restated in every sub-subagent prompt,
+single-writer / sole-integrator discipline, scope containment). Inline execution of small
+mechanical batches remains sanctioned. See `/lazy-batch`'s "Cycle-subagent execution model"
+paragraph for the full contract + history.
 
 **Meta-dispatch by-reference — PREFER `dispatch_prompt_ref` at ALL `--emit-dispatch` sites (mirrors `/lazy-batch` Phase 7 / lazy-validation-readiness).** Every `bug-state.py --emit-dispatch <class>` call emits BOTH `dispatch_prompt` AND `dispatch_prompt_ref` (`@@lazy-ref nonce=<hex>`). When dispatching any meta-dispatch prompt (hardening, recovery, apply-resolution, coherence-recovery, input-audit, investigation, etc.), PREFER `dispatch_prompt_ref` over the verbatim `dispatch_prompt`. Fall back to `dispatch_prompt` verbatim ONLY when `dispatch_prompt_ref` is absent or null. See `/lazy-batch`'s "Meta-dispatch by-reference" paragraph (§1d) for the full rationale.
 

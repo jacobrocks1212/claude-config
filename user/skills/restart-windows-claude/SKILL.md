@@ -33,7 +33,27 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/Users/Jacob/restart-w
 
 Optional args (append after the path): `-Name <name>` for a different RC session
 name (default `algobooth`); `-NoRecycle` to leave an existing same-named session
-running instead of recycling it.
+running instead of recycling it; `-Model <id>` to pin the session's model (injects
+`--model <id>`; empty = session default).
+
+> **SAFEGUARD — confirm the exact model code before dispatching with `-Model`.**
+> Model IDs drift between releases and the 1M-context variant carries a bracket
+> suffix. NEVER guess or reuse a remembered id. Read the current environment's
+> stated exact model ID (e.g. the harness reports Opus 4.8 / 1M as
+> `claude-opus-4-8[1m]`) and confirm it with the user (AskUserQuestion) before
+> launching. Passing a stale or wrong id silently launches the session on the
+> wrong model.
+
+> **Spawning vs. restarting:** the default `-Name algobooth` *recycles* (kills)
+> any existing same-named RC session — including possibly the one issuing this
+> command. To spawn an *additional* session, pass a distinct `-Name`
+> (e.g. `-Name algobooth-opus1m`) so nothing is recycled.
+
+Example — spawn an additional Opus-1M session alongside the default one:
+
+```bash
+powershell.exe -NoProfile -File C:/Users/Jacob/restart-windows-claude.ps1 -Name algobooth-opus1m -Model "claude-opus-4-8[1m]"
+```
 
 ## Verify
 The authoritative check is the user's phone: ~15s after running, a session named
