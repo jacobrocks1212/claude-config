@@ -1,6 +1,6 @@
 ---
-description: Generate a lane-based implementation plan for ALL phases across 1+ PHASES.md files — Cognito Forms variant (backend/frontend lanes, tiered gates, typegen seam)
-argument-hint: <path/to/PHASES1.md> [path/to/PHASES2.md] [...]
+description: Generate a lane-based implementation plan across 1+ PHASES.md files (all unchecked phases by default; optionally target specific phases) — Cognito Forms variant (backend/frontend lanes, tiered gates, typegen seam)
+argument-hint: <path/to/PHASES1.md> [path/to/PHASES2.md] [...] [--phase <id> ...]
 name: write-plan-cognito
 plan-mode: never
 ---
@@ -30,6 +30,8 @@ Repo-scoped variant of `/write-plan` tuned for this repo's cost profile: slow ba
 
 If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation. Strip `--batch` before resolving PHASES.md paths.
 
+**A phase selector is IGNORED under `--batch`.** The optional `--phase <id>` / bare `phase <id>` selector (Step 1a) is an interactive-operator convenience only. When `--batch` is present, discard any selector token and keep today's behavior exactly — full PHASES.md read (Step 1b) and plan every unchecked phase (Step 1c / Step 2). The autonomous path always plans the whole queue.
+
 - **Skip the Step 1a `AskUserQuestion`** — refuse cleanly with an error if no paths are supplied.
 - For genuine ambiguity during drafting (a phase's deliverables admit two materially different lane decompositions), write `NEEDS_INPUT.md` and halt rather than picking arbitrarily. Operational/mechanical choices (file paths, naming, part cutoffs, seam classification) MUST be auto-accepted; only genuine design forks halt.
 
@@ -58,14 +60,23 @@ Echo the entire `## Decision Context` section to chat before returning. STOP wit
 
 !`cat .claude/skill-config/cog-doc-track-open.md 2>/dev/null || cat ~/.claude/skills/_components/cog-doc-track-open.md`
 
-### 1a. Resolve PHASES.md Paths
+### 1a. Resolve PHASES.md Paths (+ optional phase selector)
 
-- `$ARGUMENTS` must contain 1+ `.md` paths. If none are provided, use **AskUserQuestion** to ask for them.
+- **Parse the optional phase selector first, then strip it.** `$ARGUMENTS` may carry a repeatable phase selector — a canonical flag `--phase <id>` and/or a bare trailing `phase <id>` token (the form an operator types, e.g. `… PHASES.md phase 9`). Ids are phase tokens (`3`, `3.5`, `12`, …). Collect every selected id into a `TARGET_PHASES` set, then **remove the selector tokens** (`--phase`, `phase`, and their id arguments) from `$ARGUMENTS` so they are not mistaken for `.md` paths. If `--batch` is present, discard the selector entirely (see Batch Mode) — `TARGET_PHASES` is empty on the batch path.
+- `$ARGUMENTS` must contain 1+ `.md` paths (after selector stripping). If none are provided, use **AskUserQuestion** to ask for them.
 - For each PHASES.md, confirm the file exists. If not, report and exclude it.
 
 ### 1b. Read Everything
 
-For **each** PHASES.md:
+**Phase-targeted read (when `TARGET_PHASES` is non-empty and NOT `--batch`).** The operator scoped the plan to specific phase id(s), so slice instead of reading the whole file. For **each** PHASES.md, run the deterministic scoped reader (canonical command + flags in `~/.claude/skills/_components/source-reread.md` lines 9-18 — do not reinvent it):
+
+```bash
+python ~/.claude/scripts/phases-slice.py <path/to/PHASES.md> --phase <id> [--phase <id> ...] --notes all
+```
+
+Pass one `--phase <id>` per targeted id; `--notes all` appends the sibling `IMPLEMENTATION_NOTES.md` sections. This prints the phase index plus the full slice (and notes) of each targeted phase — the working context for those phases. If the script is unavailable (exit 1), fall back to `grep -n '^#\{2,3\} Phase' <PHASES.md>` + a bounded offset/limit `Read` of only the targeted phase section(s). Then continue with steps 2-3 below (SPEC.md, feature name) as normal.
+
+**Full read (default — no phase selector).** For **each** PHASES.md:
 1. Read the PHASES.md file **in full** — including all previously completed phases and their Implementation Notes
 2. Read the sibling SPEC.md in the same directory — source of truth for correctness
 3. Note the feature name (directory name)
@@ -88,7 +99,7 @@ Procedure:
 
 ### 1c. Build the Cross-Feature Phase Queue
 
-Scan all loaded PHASES.md files. For each phase with unchecked deliverables (`- [ ]`):
+Scan all loaded PHASES.md files. **When `TARGET_PHASES` is non-empty (interactive phase-targeted invocation), restrict the scan to the targeted phase id(s) only** — plan those phases and skip all others, even if other phases have unchecked deliverables. When `TARGET_PHASES` is empty (default / `--batch`), scan every phase as usual. For each phase in scope with unchecked deliverables (`- [ ]`):
 1. Record its feature, phase number, title, entry criteria, and files it will create/modify
 2. Parse entry criteria for cross-feature and intra-feature dependencies
 

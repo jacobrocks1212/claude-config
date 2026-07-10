@@ -1,7 +1,7 @@
 ---
 name: write-plan-cloud
-description: Generate a FULLY self-contained implementation plan for a GitHub Copilot cloud coding agent — all spec/context/commands inlined, zero references to SPEC/PHASES or on-disk components, single-agent execution, PR as the deliverable
-argument-hint: <path/to/PHASES.md> [path/to/PHASES2.md ...]
+description: Generate a FULLY self-contained implementation plan for a GitHub Copilot cloud coding agent — all spec/context/commands inlined, zero references to SPEC/PHASES or on-disk components, single-agent execution, PR as the deliverable (all unchecked phases by default; optionally target specific phases)
+argument-hint: <path/to/PHASES.md> [path/to/PHASES2.md ...] [--phase <id> ...]
 plan-mode: never
 ---
 
@@ -38,14 +38,18 @@ The plan must inline a *lot* of distilled source — full SPEC intent, verbatim 
 
 > **Orchestrator vs. cloud agent — do not conflate.** The subagents here run *locally, at plan-authoring time*, to build YOUR context efficiently. They are unrelated to the cloud agent, which still works solo (Step 2). Using subagents to *write* the plan is fine and encouraged; the *plan you emit* must never tell the cloud agent to spawn any.
 
-### 1a. Resolve PHASES.md Paths
+### 1a. Resolve PHASES.md Paths (+ optional phase selector)
 
-- `$ARGUMENTS` must contain 1+ `.md` paths (a feature/bug PHASES.md, typically under `../cog-docs/docs/{features,bugs}/<slug>/`). If none are provided, use **AskUserQuestion** to ask which feature/bug to plan.
+- **Parse the optional phase selector first, then strip it.** `$ARGUMENTS` may carry a repeatable phase selector — a canonical flag `--phase <id>` and/or a bare trailing `phase <id>` token (the form an operator types, e.g. `… PHASES.md phase 9`). Ids are phase tokens (`3`, `3.5`, `12`, …). Collect every selected id into a `TARGET_PHASES` set, then **remove the selector tokens** (`--phase`, `phase`, and their id arguments) from `$ARGUMENTS` so they are not mistaken for `.md` paths. The selector is an interactive-operator convenience; if `--batch` is ever present, discard it and keep the default full-scope behavior — `TARGET_PHASES` is empty on that path.
+- `$ARGUMENTS` must contain 1+ `.md` paths (a feature/bug PHASES.md, typically under `../cog-docs/docs/{features,bugs}/<slug>/`), after selector stripping. If none are provided, use **AskUserQuestion** to ask which feature/bug to plan.
 - Confirm each file exists. If one doesn't, report and exclude it.
 
 ### 1b. Read ONLY the PHASES.md spine yourself
 
-The orchestrator reads **only the PHASES.md file(s)** directly — they are small, and you need them in your own context to scope the work and partition it (Step 2). For **each** PHASES.md: read it in full, identify which phases/deliverables this plan covers (the unchecked `- [ ]` items unless the user scoped a subset), and note the feature/bug slug. Everything heavier (SPEC, source tree, conventions, upstream plans) is delegated below — do NOT read those into your own context.
+The orchestrator reads **only the PHASES.md file(s)** directly — they are small, and you need them in your own context to scope the work and partition it (Step 2). Everything heavier (SPEC, source tree, conventions, upstream plans) is delegated below — do NOT read those into your own context.
+
+- **Phase-targeted (`TARGET_PHASES` non-empty).** The operator scoped this plan to specific phase id(s), so slice instead of reading the whole file. For **each** PHASES.md, run the deterministic scoped reader (canonical command + flags in `~/.claude/skills/_components/source-reread.md` lines 9-18 — do not reinvent it): `python ~/.claude/scripts/phases-slice.py <path/to/PHASES.md> --phase <id> [--phase <id> ...] --notes all` (one `--phase` per targeted id). This plan covers ONLY the targeted phases' unchecked `- [ ]` deliverables. If the script is unavailable (exit 1), fall back to `grep -n '^#\{2,3\} Phase' <PHASES.md>` + a bounded offset/limit `Read` of only the targeted phase section(s).
+- **Default (no selector).** For **each** PHASES.md: read it in full, identify which phases/deliverables this plan covers (the unchecked `- [ ]` items), and note the feature/bug slug.
 
 ### 1c. Dispatch Parallel Context Subagents (preserve your window)
 
