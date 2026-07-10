@@ -103,7 +103,7 @@ This replaces the old **zero-context halt** (a bare `PushNotification` + STOP th
 
    Commit `BLOCKED.md` with message `docs({feature_id}): record blocker resolution path`. Do NOT push (consistent with other orchestrator-inline commits; the apply subagent pushes).
 
-6. **Dispatch the Opus apply-resolution subagent to ENACT the chosen path.** Prompt:
+6. **Dispatch the apply-resolution subagent to ENACT the chosen path — via `{STATE_SCRIPT} --emit-dispatch apply-resolution`, NOT by hand-composing the prompt below.** During a marked run the dispatch guard (`lazy-dispatch-guard.sh`) DENIES any `Agent` dispatch whose prompt was not script-emitted this turn. The ONLY sanctioned route is the consuming skill's **Step 1h apply-resolution wiring**: run `{STATE_SCRIPT} --emit-dispatch apply-resolution` (binding `resolution_kind=blocked`, the chosen option into `chosen_path`, and the other `@requires` context keys), then dispatch the returned `dispatch_prompt` **VERBATIM** using the returned `dispatch_model` (by-reference). The prompt block below is the apply-resolution subagent's CONTRACT — what the emitted prompt covers — and is shown for REFERENCE ONLY; it is NOT the orchestrator's composition source. Do not paste, hand-compose, or hand-edit it into an `Agent` call (that hand-composed-prompt-reaching-the-guard path is exactly the divergence the guard exists to catch). For reference, the emitted prompt directs the subagent to:
 
    ```
    You are enacting an operator-chosen resolution for a BLOCKED {ITEM} in the
@@ -207,14 +207,19 @@ This replaces the old **zero-context halt** (a bare `PushNotification` + STOP th
    {ADD_PHASE}, and Edit/Write/Read/Bash for everything else.
    ```
 
-   Dispatch:
+   Dispatch (by-reference — NOT a hand-composed prompt): dispatch the `dispatch_prompt`
+   returned by `{STATE_SCRIPT} --emit-dispatch apply-resolution` (the consuming skill's Step 1h
+   wiring) **VERBATIM** as an `Agent` call, using the returned `dispatch_model`. Do NOT paste the
+   reference prompt block above into an `Agent` call — a hand-composed prompt reaching the
+   dispatch guard is DENIED and routes a hardening stage. The reference block above is the
+   emitted prompt's contract, shown so you can verify the emitted text, not compose it:
 
    ```
    Agent({
      description: "{SKILL} blocked-resolve: {feature_name}",
      subagent_type: "general-purpose",
-     model: "opus",
-     prompt: <the prompt above>
+     model: <dispatch_model from the --emit-dispatch apply-resolution output>,
+     prompt: <dispatch_prompt from the --emit-dispatch apply-resolution output — VERBATIM>
    })
    ```
 
