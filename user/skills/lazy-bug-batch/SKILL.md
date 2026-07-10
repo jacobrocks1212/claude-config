@@ -1,7 +1,7 @@
 ---
 name: lazy-bug-batch
 description: Autonomous bug-pipeline orchestrator — loops on bug-state.py, one subagent per cycle, /spec-bug → /plan-bug → /execute-plan → __mark_fixed__ (gated archive-on-fix). Documents only differences from /lazy-batch.
-argument-hint: <max-cycles, e.g. 10> [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue] [--park] [--per-feature-cycle-cap <N>] [--strict-research-halt]
+argument-hint: <max-cycles, e.g. 10> [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue] [--park] [--park-provisional] [--per-feature-cycle-cap <N>] [--strict-research-halt]
 plan-mode: never
 model: opus
 allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
@@ -116,10 +116,10 @@ algorithm. Bug-pipeline token substitutions:
 - Error message: `/lazy-bug-batch requires a positive integer max-cycles.`
 - Ambiguous max-cycles question: same shape, prefix `/lazy-bug-batch`.
 - `--allow-research-skip` is **NOT recognized** — refuse with: `/lazy-bug-batch: --allow-research-skip is not valid for the bug pipeline (no research steps). Usage: /lazy-bug-batch <N> [--adhoc "<task>"] [--park]`.
-- `--adhoc` and `--park` tokens are recognized with identical semantics to `/lazy-batch`.
+- `--adhoc`, `--park`, and `--park-provisional` tokens are recognized with identical semantics to `/lazy-batch` (park-provisional-acceptance: `--park-provisional` requires `--park`; Step 1a appends it to every `bug-state.py` probe; eligible parked-class sentinels route `__provisional_accept__` — driven with `bug-state.py --provisionalize-sentinel` and a `resolution_kind="provisional"` apply dispatch; an unratified `NEEDS_INPUT_PROVISIONAL.md` blocks `__mark_fixed__` mechanically, parks for ratification once validated, and halts non-park probes on `needs-ratification` → Step 1g-ratify binds `provisional-ratification.md` with `{STATE_SCRIPT}` = `bug-state.py`, `{ITEM}` = bug. The T7 report carries the same `### Provisionally accepted decisions (--park-provisional)` digest table).
 - `--per-feature-cycle-cap <N>` (optional) → pass `--per-feature-cycle-cap <N>` to every `bug-state.py` probe in Step 1a. When the budget guard trips, the `budget_guard` probe field is non-null; read it for the §1c.6 budget-guard trip notification. NO divergence from `/lazy-batch` semantics — same flag, same probe field, same notification.
 - `--strict-research-halt` (optional) → pass `--strict-research-halt` to every `bug-state.py` probe in Step 1a. Restores legacy halt-on-first-gated-head; default-off (skip-ahead is default-on). The bug pipeline has no research steps but shares the same skip-ahead logic when a bug is BLOCKED and `independent: true` successors exist. NO divergence from `/lazy-batch` semantics.
-- Unknown-token error: `/lazy-bug-batch: unrecognized argument \`{token}\`. Usage: /lazy-bug-batch <N> [--adhoc "<task>"] [--park] [--per-feature-cycle-cap <N>] [--strict-research-halt]`.
+- Unknown-token error: `/lazy-bug-batch: unrecognized argument \`{token}\`. Usage: /lazy-bug-batch <N> [--adhoc "<task>"] [--park] [--park-provisional] [--per-feature-cycle-cap <N>] [--strict-research-halt]`.
 
 **Standing-directive echo-back protocol:** same as `/lazy-batch` Step 0.
 
@@ -133,6 +133,7 @@ Initialize counters and per-session state (bug-pipeline bindings):
 - `prev_cycle_signature = None` — tuple `(feature_id, sub_skill, sub_skill_args, current_step)`
 - `adhoc_task = <parsed>` — from `--adhoc`
 - `park_mode = <parsed>` — `true` if `--park`
+- `park_provisional_mode = <parsed>` — `true` if `--park-provisional` (requires `park_mode`; else argument error); `provisional_accepted = []` — digest rows per `/lazy-batch`
 
 Print the start banner — **T1 per `~/.claude/skills/_components/orchestrator-voice.md`** (≤4 lines; this skill is the contract's own T1 example):
 
@@ -269,7 +270,7 @@ carrying an unresolved `NEEDS_INPUT.md` (instead of halting on `needs-input`) OR
 the JSON output — each entry tagged `sentinel_kind` (`needs-input` | `blocked`) — the input to
 the Step 1g park path, the Step 1g-flush, and the §1c.6 park notifications. When every remaining
 bug is parked, the script returns the distinct `queue-exhausted-all-parked` terminal (handled in
-Step 1b). When `park_mode == false`, call the script plain (NEITHER flag) — existing behavior,
+Step 1b). When `park_provisional_mode == true`, ALSO append `--park-provisional` (identical semantics to `/lazy-batch` Step 1a — eligible sentinels route `__provisional_accept__`; the park-mode-only `provisional[]` key surfaces pending ratifications). When `park_mode == false`, call the script plain (NEITHER flag) — existing behavior,
 byte-for-byte; the `parked[]` key never appears, and a bug-local `BLOCKED.md` still halts on
 `blocked` (Step 1h).
 
@@ -292,6 +293,7 @@ If `terminal_reason` is set:
   per-bug blocks — park mode defers everything parkable. Only the global/environment terminals
   below still halt mid-run.
 - **`needs-input`**: see Step 1g (decision-resume mode). Auto-resolves scope-class decisions per
+- **`needs-ratification`** (park-provisional-acceptance): the bug carries an unratified `NEEDS_INPUT_PROVISIONAL.md` from a prior `--park-provisional` run. See **Step 1g-ratify** — identical semantics to `/lazy-batch`, bound to `bug-state.py` / bugs: run the shared `provisional-ratification.md` affordance (ratify → neutralize; redirect → `resolution_kind: ratify-redirect` apply dispatch + `decision_commit`-scoped corrective phase; defer → sentinel stays, `__mark_fixed__` stays blocked), then continue the loop. Not a stop.
   D7 first; resolves the remaining product-class decisions inline via `AskUserQuestion`, resumes.
 - **`completion-unverified`**: a bug's SPEC claims Fixed but no FIXED.md receipt exists. See
   Step 1i — re-print the gap and `AskUserQuestion` the path (reopen & re-validate / grandfather
@@ -755,6 +757,14 @@ flush ({parked_count} parked this run)"`. Continue the queue walk. Flush later v
 - **(c) Run end** — flush before the final batch report whenever `parked_count > 0`.
 
 See `~/.claude/skills/_components/parked-flush.md`
+
+---
+
+### 1g-ratify. Provisional-ratification mode (`terminal_reason == "needs-ratification"`)
+
+Identical to `/lazy-batch` Step 1g-ratify with the bug bindings — `{SKILL}` = `/lazy-bug-batch`, `{STATE_SCRIPT}` = `bug-state.py`, `{ITEM}` = bug, `{ADD_PHASE}` = `/add-phase`, `{PUSH_RULE}` = workstation. Each ratification interaction is a META cycle. Apply the shared handler exactly, then continue the loop:
+
+`~/.claude/skills/_components/provisional-ratification.md`
 
 ---
 

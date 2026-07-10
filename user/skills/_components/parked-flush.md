@@ -78,20 +78,30 @@ to Step 1. (`meta_cycles` is still incremented per flushed item below and displa
 count; the run's only hard stop remains the forward-cycle cap, `forward_cycles >= max_cycles`.)
 
 **Step 1 — Collect unresolved parked items, partitioned by kind.** Build the set
-`pending_flush` from BOTH parked sentinel kinds (read each item's `sentinel_kind` from the
+`pending_flush` from ALL parked sentinel kinds (read each item's `sentinel_kind` from the
 probe's `parked[]` entry, or — if reconstructing from disk — from the live sentinel filename):
 
   - **needs-input** items: sentinel still named `{spec_path}/NEEDS_INPUT.md` (not yet renamed
     to `NEEDS_INPUT_RESOLVED*.md`). These are deferred decisions.
   - **blocked** items: sentinel still named `{spec_path}/BLOCKED.md` (not yet renamed to
     `BLOCKED_RESOLVED*.md`). These are deferred blocks.
+  - **provisional** items (park-provisional-acceptance): sentinel named
+    `{spec_path}/NEEDS_INPUT_PROVISIONAL.md` (not yet renamed to
+    `NEEDS_INPUT_PROVISIONAL_RESOLVED*.md`). These are provisionally-accepted decisions
+    awaiting ratification — the probe parks such an item once its implementation +
+    validation are done (`VALIDATED.md` present), and the probe's park-mode
+    `provisional[]` key lists every one observed mid-pipeline; the flush processes the
+    PARKED (ratification-ready) ones and MAY also offer ratification for still-in-flight
+    `provisional[]` entries at trigger (c) run-end (early ratification is always safe —
+    the choice is already applied).
 
 Already-resolved items (renamed sentinels) are excluded — they re-enter the queue naturally
 on the next state-script probe and require no action here. Partition `pending_flush` into
-`pending_needs_input[]` (kind `needs-input`) and `pending_blocked[]` (kind `blocked`). If BOTH
-are empty, the flush is a no-op (proceed to run-end report or resume loop). The needs-input
-items flow through Steps 2–5; the blocked items are handled by Step 2.6 (and counted in the
-Step 5/6 digest alongside the decision flushes).
+`pending_needs_input[]` (kind `needs-input`), `pending_blocked[]` (kind `blocked`), and
+`pending_provisional[]` (kind `provisional`). If ALL are empty, the flush is a no-op (proceed
+to run-end report or resume loop). The needs-input items flow through Steps 2–5; the blocked
+items are handled by Step 2.6; the provisional items by Step 2.7 (each counted in the Step
+5/6 digest alongside the decision flushes).
 
 **Step 2 — Validate each needs-input sentinel (needs-input items ONLY).** This step processes
 `pending_needs_input[]` ONLY — blocked items are NOT run through the `## Decision Context`
@@ -276,6 +286,25 @@ The `halt-for-manual` choice for a blocked item behaves as in Step 1h — it pre
 `BLOCKED.md` and STOPs the run (the lone stopping exception). Otherwise the loop continues after
 the flush per Step 7.
 
+**Step 2.7 — Ratify provisional-parked items (`pending_provisional[]` — provisional kind ONLY;
+park-provisional-acceptance).** For each item in `pending_provisional[]` (sentinel still named
+`{spec_path}/NEEDS_INPUT_PROVISIONAL.md`), run the shared ratification affordance — do NOT
+invent a new resolution path and do NOT run these through the Step-2 needs-input schema check
+(a provisional file legitimately carries an appended `## Resolution`; its validation rules are
+the component's own). Bind the same pipeline tokens this component already bound (`{SKILL}`,
+`{STATE_SCRIPT}`, `{ITEM}`, `{PUSH_RULE}`, plus `{ADD_PHASE}` per the consuming skill's Step 1h
+binding) and apply, per item:
+
+`~/.claude/skills/_components/provisional-ratification.md`
+
+Cycle accounting per that component's step 5 (one META cycle per ratification interaction;
+`cycle_log` action `"▶ parked-flush (provisional — ratified|redirected|deferred)"`). A
+**Ratify** outcome neutralizes the sentinel and the {ITEM} re-enters at the next probe (its
+only remaining route is the now-unblocked completion); a **Redirect** dispatches the
+ratify-redirect apply subagent (corrective phase scoped by the recorded `decision_commit`);
+a **Defer** leaves the sentinel — the {ITEM} stays completion-blocked and re-surfaces next
+run. Record every outcome in the run-end provisional digest table.
+
 **Step 3 — Print the Zero-Context Operator Briefing, then flush via batched `AskUserQuestion`
 calls.** This is a HARD REQUIREMENT: assume the operator has been away for hours and has zero
 session context. Before issuing any `AskUserQuestion` call, print to chat:
@@ -340,9 +369,9 @@ follow `~/.claude/skills/_components/decision-resume.md` steps 4–6 exactly:
 **Step 5 — Fire the flush PushNotification.** After all `AskUserQuestion` calls and their
 apply-resolution dispatches are issued, fire one PushNotification per §1c.6 flush policy:
 
-  - `/lazy-batch`: `"lazy-batch flush — {N} parked item(s) flushed (decisions + blocks) ready for your input"`
-    (where `{N}` is `len(pending_needs_input) + len(pending_blocked)` items flushed, i.e., the
-    item count across BOTH kinds, not the question count).
+  - `/lazy-batch`: `"lazy-batch flush — {N} parked item(s) flushed (decisions + blocks + ratifications) ready for your input"`
+    (where `{N}` is `len(pending_needs_input) + len(pending_blocked) + len(pending_provisional)`
+    items flushed, i.e., the item count across ALL kinds, not the question count).
   - `/lazy-bug-batch`: `"lazy-bug-batch flush — {N} parked decision(s) ready for your input"`.
   - `/lazy-batch-cloud`: `"lazy-batch-cloud flush — {N} parked decision(s) ready for your
     input"`.
@@ -362,12 +391,13 @@ apply-resolution dispatches are issued, fire one PushNotification per §1c.6 flu
     — the 4-tuple, matching every other signature. The synthetic sub_skill token distinguishes
     this from any real-skill cycle.
 
-**Step 7 — Post-flush continuation.** After all items in BOTH `pending_needs_input` and
-`pending_blocked` are processed:
+**Step 7 — Post-flush continuation.** After all items in `pending_needs_input`,
+`pending_blocked`, and `pending_provisional` are processed:
 
   - If this flush was triggered by **(a) operator message** or **(b) queue-exhausted-with-parked
     guard**: return to Step 1a. The now-renamed sentinels (`NEEDS_INPUT_RESOLVED*.md` /
-    `BLOCKED_RESOLVED*.md`) mean the previously-parked items re-enter naturally on the next probe.
+    `BLOCKED_RESOLVED*.md` / `NEEDS_INPUT_PROVISIONAL_RESOLVED*.md`) mean the previously-parked
+    items re-enter naturally on the next probe.
     DO NOT halt; DO NOT print the final report (the loop continues). (Exception: a blocked item
     resolved as `halt-for-manual` STOPs per Step 2.6, like Step 1h.)
   - If this flush was triggered by **(c) run end**: proceed to print the final batch report.

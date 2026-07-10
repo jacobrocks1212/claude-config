@@ -144,6 +144,16 @@
           "evidence": "1g-flush\\. Parked-decision flush"
         },
         {
+          "heading": "### 1g-ratify. Provisional-ratification mode (`terminal_reason == \"needs-ratification\"`)",
+          "coverage": "restated",
+          "evidence": "1g-ratify\\. Provisional-ratification mode"
+        },
+        {
+          "heading": "### Provisionally accepted decisions (`--park-provisional`)",
+          "coverage": "inherited",
+          "evidence": "Provisionally accepted decisions"
+        },
+        {
           "heading": "### 1h. Blocked-resolution mode (`terminal_reason == \"blocked\"`)",
           "coverage": "restated",
           "evidence": "1h\\. Blocked-resolution mode"
@@ -366,6 +376,16 @@
           "heading": "### 1g-flush. Parked-decision flush (`--park` only)",
           "coverage": "restated",
           "evidence": "1g-flush\\. Parked-decision flush"
+        },
+        {
+          "heading": "### 1g-ratify. Provisional-ratification mode (`terminal_reason == \"needs-ratification\"`)",
+          "coverage": "inherited",
+          "evidence": "Step 1g-ratify"
+        },
+        {
+          "heading": "### Provisionally accepted decisions (`--park-provisional`)",
+          "coverage": "inherited",
+          "evidence": "Provisionally accepted decisions"
         },
         {
           "heading": "### 1h. Blocked-resolution mode (`terminal_reason == \"blocked\"`)",

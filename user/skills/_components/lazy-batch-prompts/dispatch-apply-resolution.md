@@ -1,9 +1,13 @@
 <!-- @requires item_name,spec_path,sentinel_path,resolution_summary,resolution_kind,chosen_path,item_id,cwd -->
 <!-- dispatch-apply-resolution.md — emitted by emit_dispatch_prompt("apply-resolution", ...)
      Derived from decision-resume.md (Step 1g) + blocked-resolution.md (Step 1h) dispatch
-     prompts. Covers BOTH shapes: resolution_kind="needs-input" (decision-resume) and
-     resolution_kind="blocked" (blocked-resolution). The orchestrator sets resolution_kind
-     and chosen_path from probe output + user answer before calling emit_dispatch_prompt.
+     prompts. Covers FOUR shapes: resolution_kind="needs-input" (decision-resume),
+     resolution_kind="blocked" (blocked-resolution), resolution_kind="provisional"
+     (__provisional_accept__ propagation — park-provisional-acceptance; NEVER neutralizes),
+     and resolution_kind="ratify-redirect" (provisional-ratification redirect — propagates
+     the changed choice, authors the decision_commit-scoped corrective phase, neutralizes).
+     The orchestrator sets resolution_kind and chosen_path from probe output + user answer
+     before calling emit_dispatch_prompt.
      TOKENS: standard pipeline tokens + @requires keys above. -->
 
 <!-- @section role pipelines=feature,bug modes=workstation,cloud -->
@@ -118,6 +122,65 @@ appended ## Resolution section (chosen path + operator notes). Then enact EXACTL
   WORK-BRANCH-ONLY: commit to the CURRENT branch only (git rev-parse --abbrev-ref HEAD at
   start); NEVER create a new branch, NEVER --force.
 
+<!-- @section provisional-steps pipelines=feature,bug modes=workstation,cloud -->
+<!-- Applies when resolution_kind == "provisional" (__provisional_accept__, park-provisional-acceptance). -->
+
+Steps (provisional-accept path — resolution_kind: provisional):
+
+The sentinel (the sentinel path shown above — NEEDS_INPUT_PROVISIONAL.md) was ALREADY
+provisionally accepted by the script (`--provisionalize-sentinel`): its ## Resolution
+carries resolved_by: auto-provisional, a decision_commit sha, and per-decision
+**Choice:** lines naming the recommended options taken. Your job is PROPAGATION ONLY:
+
+1. Read the sentinel fully (frontmatter + ## Decision Context + ## Resolution).
+2. For EACH decision, propagate the auto-accepted **Choice:** into SPEC.md and/or
+   PHASES.md exactly as the needs-input path's step 2 describes — surgical, mechanical,
+   no scope changes. Note in your summary any decision with no doc impact.
+3. DO NOT NEUTRALIZE AND DO NOT RENAME the sentinel. NEEDS_INPUT_PROVISIONAL.md is the
+   operator's ratification claim-check: it must SURVIVE until the operator ratifies or
+   redirects (the completion gates key on it). Renaming or resolving it here would
+   silently waive the operator's deferred authority — that is the one hard failure mode
+   of this path.
+4. Commit per .claude/skill-config/commit-policy.md (or the standard pattern); message:
+   `docs(<item_id>): propagate provisionally-accepted decision(s) into SPEC/PHASES`.
+   WORK-BRANCH-ONLY, never a new branch, never --force.
+
+<!-- @section ratify-redirect-steps pipelines=feature,bug modes=workstation,cloud -->
+<!-- Applies when resolution_kind == "ratify-redirect" (provisional-ratification redirect). -->
+
+Steps (ratification-redirect path — resolution_kind: ratify-redirect):
+
+The operator REDIRECTED one or more provisionally-accepted decisions: the sentinel's
+appended ## Ratification section (outcome: redirected) names the NEW choice(s); the
+earlier ## Resolution (resolved_by: auto-provisional) names the OLD auto-accepted
+choice(s) and the decision_commit sha recorded at acceptance time.
+
+1. Read the sentinel fully (Decision Context + Resolution + Ratification).
+2. Propagate each REDIRECTED choice into SPEC.md / PHASES.md, replacing the design
+   narrative the provisional propagation wrote for the old choice. Ratified (unchanged)
+   decisions need no edits.
+3. Scope the implementation correction: run
+   `git diff --stat <decision_commit>..HEAD -- <the {item_label}'s paths>` — that diff is
+   the ONLY code that could embody the old choice. Author ONE corrective phase in
+   PHASES.md (follow the /add-phase conventions — you MAY use the Skill tool to invoke
+   /add-phase): `**Phase kind:** corrective`, In-progress, unchecked deliverables that
+   re-align exactly the affected surfaces from that diff to the redirected choice. Do NOT
+   revert commits; forward-fix.
+4. Neutralize the sentinel so the halt clears:
+
+<!-- @section neutralize-provisional-feature pipelines=feature modes=workstation,cloud -->
+     python3 ~/.claude/scripts/lazy-state.py --neutralize-sentinel <sentinel_path>
+
+<!-- @section neutralize-provisional-bug pipelines=bug modes=workstation,cloud -->
+     python3 ~/.claude/scripts/bug-state.py --neutralize-sentinel <sentinel_path>
+
+<!-- @section ratify-redirect-tail pipelines=feature,bug modes=workstation,cloud -->
+   (canonical rename → NEEDS_INPUT_PROVISIONAL_RESOLVED_<YYYY-MM-DD>.md, git-mv-aware,
+   collision-safe; never a frontmatter kind: flip). The corrective phase's unchecked
+   deliverables re-enter the {item_label} in the queue naturally on the next probe.
+5. Commit; message: `docs(<item_id>): apply ratification redirect (<chosen_path>) + corrective phase`.
+   WORK-BRANCH-ONLY, never a new branch, never --force.
+
 <!-- @section push-rule-workstation pipelines=feature,bug modes=workstation -->
 Push the work branch after committing: git push origin $(git rev-parse --abbrev-ref HEAD).
 
@@ -130,7 +193,7 @@ CONSTRAINTS:
 - You do NOT run git commit or git push to any remote other than the current branch. NEVER force-push. NEVER create a new branch.
 - You MAY NOT spawn further subagents (no Agent tool). You MAY use the Skill tool for /add-phase or /plan-bug if the resolution calls for it, and Edit/Write/Read/Bash for all other work.
 - You MAY edit SPEC.md, PHASES.md, and the sentinel file — this dispatch exists to authorize exactly those edits.
-- Sentinel neutralization (rename) is mandatory for all paths EXCEPT the "Defer" blocked-resolution path, which deliberately LEAVES BLOCKED.md IN PLACE.
+- Sentinel neutralization (rename) is mandatory for all paths EXCEPT (a) the "Defer" blocked-resolution path, which deliberately LEAVES BLOCKED.md IN PLACE, and (b) the resolution_kind: provisional path, which MUST NOT touch the NEEDS_INPUT_PROVISIONAL.md filename (it is the operator's ratification claim-check).
 - The {forbidden_status} status must NOT be set on any {item_label} doc unless a valid {receipt_name} receipt already exists.
 
 <!-- @section return-format pipelines=feature,bug modes=workstation,cloud -->

@@ -1,7 +1,7 @@
 ---
 name: lazy-batch-parallel
 description: Sanctioned parallel-worktree coordinator for the feature pipeline — shards independent queue items across worktree lanes, merges lane branches in queue order, runs the validation tail serially. Concurrency contract in SKILL.md.
-argument-hint: <max-cycles, e.g. 24> [--lanes <N, default 2>] [--park] [--adhoc "<task>"]
+argument-hint: <max-cycles, e.g. 24> [--lanes <N, default 2>] [--park] [--park-provisional] [--adhoc "<task>"]
 plan-mode: never
 model: opus
 allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
@@ -93,7 +93,17 @@ P7. **Containment unchanged, armed per lane (D9).** Export `LAZY_ORCHESTRATOR=1`
 `$ARGUMENTS` tokens: positive integer → `max_cycles` (default 10); `--lanes <N>` → requested
 lane count (default 2; `< 1` → refuse); `--park` → park mode for the DEMOTED-serial phase and
 resolution modes (lanes ALWAYS park-on-sentinel per P6 — that is the parallel mode's defining
-failure isolation, not an opt-in); `--adhoc "<task>"` → Step 0.45. Unknown tokens are an error
+failure isolation, not an opt-in); `--park-provisional` → provisional acceptance (park-provisional-acceptance, SPEC D10; requires `--park`): the coordinator passes
+`--park-provisional` through to EVERY lane probe (with the lane's `--repo-root <worktree>`),
+so an eligible `NEEDS_INPUT.md` routes `__provisional_accept__` INSIDE the lane — a
+pipeline-advancing lane cycle (docs-only writes in the lane's own `docs/features/<slug>/`,
+committed on the lane branch; P1 disjoint ownership holds; P6 park is unchanged for
+everything else, and the acceptance is a probe ROUTE, not a sentinel halt, so P6 never fires
+for it). The `NEEDS_INPUT_PROVISIONAL.md` + `## Resolution` ride the queue-order merge to the
+work branch; the serial tail can VALIDATE the feature but `__mark_complete__` stays
+mechanically blocked until ratification — the coordinator's flush (Step 6) surfaces the
+ratification affordance (`provisional-ratification.md`) at the main root exactly like other
+parked sentinels; `--adhoc "<task>"` → Step 0.45. Unknown tokens are an error
 (same shape as `/lazy-batch`).
 
 Initialize: `forward_cycles = 0`, `meta_cycles = 0` (monotonic, HARD CONSTRAINT 8), `cycle_log

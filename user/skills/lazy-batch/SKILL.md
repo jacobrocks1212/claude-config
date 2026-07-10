@@ -1,7 +1,7 @@
 ---
 name: lazy-batch
 description: Autonomous feature-pipeline orchestrator — loops on lazy-state.py, one Opus subagent per cycle, drives /spec → /plan-feature → /execute-plan → /mcp-test → gated __mark_complete__; halts resolve via AskUserQuestion.
-argument-hint: <max-cycles, e.g. 10> [--allow-research-skip] [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue] [--park] [--per-feature-cycle-cap <N>] [--strict-research-halt]
+argument-hint: <max-cycles, e.g. 10> [--allow-research-skip] [--adhoc "<task>" — enqueue an ad-hoc task at the top of the queue] [--park] [--park-provisional] [--per-feature-cycle-cap <N>] [--strict-research-halt]
 plan-mode: never
 model: opus
 allowed-tools: ["Bash", "Read", "Agent", "Write", "Edit", "AskUserQuestion"]
@@ -51,7 +51,7 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 
 - **Positive integer** → `max_cycles`. If absent, default to `10`. If a non-numeric / `< 1` integer is supplied, refuse with:
 
-  > `/lazy-batch` requires a positive integer max-cycles. Usage: `/lazy-batch <N> [--allow-research-skip] [--adhoc "<task>"] [--park]`. Default: 10.
+  > `/lazy-batch` requires a positive integer max-cycles. Usage: `/lazy-batch <N> [--allow-research-skip] [--adhoc "<task>"] [--park] [--park-provisional]`. Default: 10.
 
   **Ambiguous max-cycles (Deliverable D — clarify, never silently coerce):** if the token is present but non-integer in a way that suggests a _quantity_ the user had in mind — e.g. `"infinity"`, `"lots"`, `"max"`, `"all"`, `"unlimited"` — do NOT silently translate it to a hard-coded default. Instead, ask ONE clarifying `AskUserQuestion` before proceeding:
 
@@ -63,13 +63,15 @@ This is the **workstation** orchestrator. The cloud variant is `/lazy-batch-clou
 
 - **`--park`** (optional flag) → sets `park_mode = true`. Default `false`. Enables "park-and-continue" mode. **This flag is opt-in and off by default. Without it, the orchestrator's behavior is byte-for-byte the existing one** — a `NEEDS_INPUT.md` halts the loop into the existing Step 1g resolution-and-wait. The `--park` flag may appear in any position relative to the cycle-count arg (e.g. `/lazy-batch --park 30` and `/lazy-batch 30 --park` are equivalent). The full park/flush/auto-accept semantics (what happens when park mode is active) are defined in Steps 1g, 1h, and 1i of this skill — this token purely enables the mode.
 
+- **`--park-provisional`** (optional flag; park-provisional-acceptance) → sets `park_provisional_mode = true`. Default `false`. **Valid ONLY alongside `--park`** — `--park-provisional` without `--park` is an argument error (same refusal shape as an unknown token, citing the usage line). When active, Step 1a appends `--park-provisional` to every probe: a park-eligible `NEEDS_INPUT.md` that passes the script's fail-closed provisional predicate (divergence two-key `divergence` + `audit_divergence` both ∈ {isolated, contained}, every decision carrying a `**Recommendation:**`, never two-key-mechanical / gate-written sentinels — `lazy_core.provisional_eligibility`) routes the **`__provisional_accept__`** pseudo-skill instead of parking: the recommended options are provisionally taken, the sentinel becomes `NEEDS_INPUT_PROVISIONAL.md`, and the feature KEEPS IMPLEMENTING this run. The operator's authority is deferred, never waived — an unratified provisional file blocks completion mechanically, parks the feature for ratification at the flush once validated, and halts non-park probes on `needs-ratification` (Step 1g-ratify). Ineligible sentinels park exactly as plain `--park`.
+
 - **`--per-feature-cycle-cap <N>`** (optional flag) → arms the per-feature budget guard with a fixed ceiling `N`; **OFF by default** (the guard never arms without this flag — the whole-run `max-cycles` is the sole default budget). Pass `--per-feature-cycle-cap <N>` to every `lazy-state.py` probe invocation in Step 1a to opt-in. The orchestrator itself does NOT compute the ceiling — that is `lazy-state.py`'s job; this flag merely threads the override in. When the budget guard trips, the `budget_guard` probe field surfaces the ceiling in the PushNotification (see §1c.6 budget-guard notification).
 
 - **`--strict-research-halt`** (optional flag) → pass `--strict-research-halt` to every `lazy-state.py` probe invocation in Step 1a, restoring the legacy halt-on-first-gated-head behavior (disabling the default-on dependency-aware skip-ahead). **Default (flag absent):** the new dependency-aware skip-ahead is ON — when the queue head is research-gated or BLOCKED, `lazy-state.py` automatically advances to the next independent, `independent: true`-marked queue item (if one exists) instead of halting immediately. Pass `--strict-research-halt` only when you want the pre-feature strict behavior (halt as soon as the queue head is gated, regardless of downstream items). The gated head is always surfaced (notification + end-of-run flush in the batch report) regardless of whether skip-ahead advanced past it.
 
 Unknown tokens are an error:
 
-> `/lazy-batch`: unrecognized argument `{token}`. Usage: `/lazy-batch <N> [--allow-research-skip] [--adhoc "<task>"] [--park] [--per-feature-cycle-cap <N>] [--strict-research-halt]`.
+> `/lazy-batch`: unrecognized argument `{token}`. Usage: `/lazy-batch <N> [--allow-research-skip] [--adhoc "<task>"] [--park] [--park-provisional] [--per-feature-cycle-cap <N>] [--strict-research-halt]`.
 
 **Standing-directive echo-back protocol (Deliverable C):** mid-run operator messages that imply a change to the orchestrator's operating mode MUST be acknowledged with a single `AskUserQuestion` echo-back BEFORE the mode takes effect. A "standing directive" is any message that implies one of:
 
@@ -98,6 +100,7 @@ Initialize counters and per-session state:
 - `prev_cycle_signature = None` — tuple `(feature_id, sub_skill, sub_skill_args, current_step)` from the most recent cycle (pseudo-skill or real-skill). Drives the Step 1d loop-guard hint. `None` until at least one cycle has dispatched. **`sub_skill_args` is part of the tuple deliberately:** a multi-part `/execute-plan` sequence (part-1 → part-2 → part-3) returns the same `(feature_id, sub_skill, current_step)` on every part but a *different* `sub_skill_args` (the plan-part path), which is real forward progress, not a loop. Omitting `sub_skill_args` made the loop-guard false-trigger on every multi-part plan. Including it lets the guard fire only on a genuine no-progress repeat (identical part re-returned).
 - `adhoc_task = <parsed>` — the ad-hoc task text from `--adhoc` (empty string if the flag was present with no text; unset/`None` if the flag was absent). See Step 0.45.
 - `park_mode = <parsed>` — `true` if `--park` was present, `false` otherwise. When `false`, all halt behavior is byte-for-byte the existing one.
+- `park_provisional_mode = <parsed>` — `true` if `--park-provisional` was present (requires `park_mode`), `false` otherwise. `provisional_accepted = []` — the run-end digest rows for every `__provisional_accept__` applied this run (feature, decision titles, chosen options, divergence grades, decision_commit, sentinel path, ratification outcome when the flush ran one).
 
 ---
 
@@ -411,6 +414,8 @@ The `--forward-cycles` and `--meta-cycles` flags are NO LONGER passed on probe i
 
 **Park-mode probe flag (`--park` only).** When `park_mode == true` (the `--park` invocation flag), append BOTH `--park-needs-input` AND `--park-blocked` to EVERY `lazy-state.py` probe invocation in this step (base or enriched form alike). With these flags, the script skips features carrying an unresolved `NEEDS_INPUT.md` (instead of halting on `needs-input`) OR a feature-local `BLOCKED.md` (instead of halting on `blocked`), and reports them in a `parked[]` array on the JSON output — each entry tagged `sentinel_kind` (`needs-input` | `blocked`) — the input to the Step 1g park path, the Step 1g-flush, and the §1c.6 park notifications. When every remaining feature is parked, the script returns the distinct `queue-exhausted-all-parked` terminal (handled in Step 1b). When `park_mode == false`, call the script plain (NEITHER flag) — existing behavior, byte-for-byte; the `parked[]` key never appears, and a feature-local `BLOCKED.md` still halts on `blocked` (Step 1h).
 
+**Provisional probe flag (`--park --park-provisional` only; park-provisional-acceptance).** When `park_provisional_mode == true`, ALSO append `--park-provisional` to every probe (the script hard-errors on the flag without `--park-needs-input`, so the pairing is mechanical). An eligible parked-class `NEEDS_INPUT.md` (fail-closed `lazy_core.provisional_eligibility`: divergence two-key `divergence` + `audit_divergence` both ∈ {isolated, contained}, a `**Recommendation:**` per decision, never two-key-mechanical / gate-written) then routes the `__provisional_accept__` pseudo-skill (Step 1c.5) instead of appearing in `parked[]`. In park mode the probe also surfaces a `provisional[]` array (present only when non-empty) listing every feature carrying an unratified `NEEDS_INPUT_PROVISIONAL.md` — input to the §1c.6 provisional notifications, the parked-flush Step 2.7 ratification branch, and the T7 provisional digest.
+
 If the script exits non-zero, run `python3 ~/.claude/scripts/lazy-state.py --run-end` (idempotent — safe even if the marker is absent), surface the error, push a PushNotification, print the final batch report (see Step 2), and STOP.
 
 Parse the JSON output. Extract: `feature_id`, `feature_name`, `spec_path`, `current_step`, `sub_skill`, `sub_skill_args`, `terminal_reason`, `notify_message`, `diagnostics`.
@@ -421,6 +426,7 @@ If `terminal_reason` is set:
 
 - **`blocked`**: see Step 1h (blocked-resolution mode). **Not a terminal halt anymore — and most blockers no longer ask.** Step 1h FIRST applies the **research-blocked carve-out** (component step 1a-research): a `blocked` feature carrying a co-located live `NEEDS_RESEARCH.md` + `RESEARCH_PROMPT.md` with `RESEARCH.md` absent is a research gap, NOT a product fork — route it to **Step 4 (Research Halt)** and surface the research prompt for the operator to paste into Gemini; do NOT run the blocked-resolution `AskUserQuestion` and do NOT add-a-phase (a research gap is filled by Gemini research, not a corrective phase). Otherwise Step 1h classifies the blocker per `completeness-policy.md` §3: a sequencing-only blocker (every resolution path converges on the same product behavior) is auto-resolved — add-phase + fix now, or `/spec-bug` / ad-hoc spin-off + dependency-gate + requeue-to-tail — logged + push-notified, no question. Only a genuine product fork takes the operator path: re-print the `BLOCKED.md` body verbatim, run `AskUserQuestion` for the resolution path (add a phase / defer to queue tail / halt-for-manual / custom), record the choice, dispatch the Opus apply-resolution subagent to enact it (neutralizing `BLOCKED.md` via rename), and return to Step 1a. The loop continues; do NOT print the final batch report — UNLESS the operator chooses "Halt for manual fix", which keeps `BLOCKED.md` untouched and STOPs (the legacy behavior, now one option among several). **Park-mode exception (`park_mode == true`):** this terminal is NOT reached for a feature-local block — the `--park-blocked` probe flag (Step 1a) parks the blocked feature into `parked[]` and advances the queue, so Step 1h does NOT fire for it; the block is deferred to the Step 1g-flush (which re-prints the `BLOCKED.md` body and runs the SAME resolution affordance at run-end). Per SPEC D5, this includes escalation/mcp-validation per-feature blocks (`validation_escalation`, `blocker_kind: mcp-validation`) — park mode defers everything parkable. Only the global/environment terminals below (`queue-missing`, `device-queue-exhausted`, etc.) still halt mid-run.
 - **`needs-input`**: see Step 1g (decision-resume mode). **Not a terminal state for the orchestrator anymore.** Step 1g first auto-resolves any scope-class decisions per `completeness-policy.md` (D7 — step 1b of the component, both modes, never asked); for the remaining product-class decisions it re-prints the rich `## Decision Context`, runs `AskUserQuestion`, appends `## Resolution`, dispatches the Sonnet apply-resolution subagent (which edits SPEC.md / PHASES.md and neutralizes the sentinel), and returns to Step 1a. The loop continues; do NOT print the final batch report.
+- **`needs-ratification`** (park-provisional-acceptance): the feature carries an unratified `NEEDS_INPUT_PROVISIONAL.md` — a prior `--park-provisional` run auto-accepted its recommended option(s) and the operator has not yet confirmed. Only reachable on a NON-park probe (in park mode the file is workable mid-pipeline and parks with `sentinel_kind: provisional` once validated). See **Step 1g-ratify**: run the shared `provisional-ratification.md` affordance (zero-context briefing incl. what was built since `decision_commit`, then `AskUserQuestion` — Ratify / Redirect-to-alternative / Defer), enact the outcome (ratify → neutralize inline; redirect → `resolution_kind: ratify-redirect` apply dispatch authoring the `decision_commit`-scoped corrective phase; defer → leave the sentinel), and **continue the loop**. Not a stop.
 - **`needs-research`**: see Step 4 (research halt). Behavior depends on `allow_research_skip`:
   - **Default (`allow_research_skip == false`)**: Step 4 writes `NEEDS_RESEARCH.md`, prints the inline-prompt halt announcement, PushNotifications, prints the final batch report, and STOPs. The orchestrator does NOT advance past the research-pending feature — this is critical for ordered queues where downstream features depend on upstream work.
   - **Opt-in (`allow_research_skip == true`)**: legacy batching behavior — Step 4 writes `NEEDS_RESEARCH.md`, adds `feature_id` to `research_pending`, **DOES NOT increment either counter**, flips `skip_needs_research = true`, and returns to Step 1a so the next state-script call passes `--skip-needs-research` and either advances to a ready feature or returns `queue-blocked-on-research`.
@@ -483,6 +489,7 @@ The orchestrator fires `PushNotification` at exactly four canonical event points
 
    **`--terminal-reason <reason>` (SHOULD — deprecated to omit).** When ending a run on a genuine terminal (not an operator-authorized checkpoint), pass `--run-end --reason terminal --terminal-reason <reason>` where `<reason>` is one of the sanctioned set: `all-features-complete`, `all-bugs-fixed`, `max-cycles`, `cloud-queue-exhausted`, `device-queue-exhausted`, `host-capability-saturated`, `queue-missing`, `blocked-halt-for-manual`, `needs-research`, `queue-blocked-on-research`. The script validates `<reason>` against `lazy_core.SANCTIONED_STOP_TERMINAL` — an unsanctioned reason requires `--operator-authorized` or the call is refused (exit 1, marker kept). Omitting `--terminal-reason` is back-compat (the script infers `terminal` if `--reason` is absent) but is deprecated; include it for stop-authorization validation and retro auditability. (Phase 7 / lazy-validation-readiness.)
 3. **flush** (`--park` mode only) — fired when parked decisions are collected and sent to the operator via the batched `AskUserQuestion` (the WU-4 flush protocol). The notification signals that the operator's input is being requested. Message: `"lazy-batch flush — {N} parked decision(s) ready for your input"`.
+3b. **provisional-accept** (`--park --park-provisional` only; park-provisional-acceptance) — fired ONCE per `__provisional_accept__` applied (Step 1c.5 step 4). Message: `"provisional-accept {feature_name} — {N} decision(s) auto-accepted on recommendation (divergence: {divergence}/{audit_divergence}); ratification pending ({len(provisional_accepted)} provisional this run)"`. T5 chat line: `⏳ provisional {feature_name} — {N} decision(s) accepted on recommendation · ratification pending`. Ratification interactions later fire their own notification per `provisional-ratification.md` step 5. Same dedup discipline as point 1 (once per acceptance; the acceptance itself is naturally once-per-sentinel — the rename makes it unrepeatable).
 4. **run-end** (both modes) — fired when the run terminates and the final batch report is printed. This point largely coincides with the terminal halts above; stating it as a named point ensures every run termination path fires a notification, even if a new exit path is added that does not fit one of the named terminal reasons.
 5. **budget-guard trip** (both modes, when budget guard fires mid-cycle) — fired ONCE per feature that the budget guard defers/evicts (the `budget_guard` probe field is non-null in the cycle's probe output). The orchestrator reads the `budget_guard` field from the probe JSON and fires:
 
@@ -523,6 +530,7 @@ If `sub_skill` starts with `__` (double-underscore), it is a **pseudo-skill** �
 
 Follow `~/.claude/skills/lazy/SKILL.md` Step 3's protocol for each pseudo-skill exactly (the wrapper and orchestrator do the same thing here):
 
+- **`__provisional_accept__`** (park-provisional-acceptance — emitted only under `--park --park-provisional` when the walk reaches a provisional-ELIGIBLE `NEEDS_INPUT.md`) — provisionally accept the sentinel's recommended option(s) and keep the feature moving. Sequence: **(1)** run `python3 ~/.claude/scripts/lazy-state.py --provisionalize-sentinel <spec_path>/NEEDS_INPUT.md` — the script is the single author of the acceptance (re-validates the fail-closed predicate, appends `## Resolution` with `resolved_by: auto-provisional` + `decision_commit: <HEAD>`, renames the file to `NEEDS_INPUT_PROVISIONAL.md`; a refusal exits 1 with ZERO writes — on refusal do NOT hand-write anything; the feature simply parks on the next probe, and the refusal reason goes in the cycle log). **(2)** Commit the renamed sentinel per policy (`docs(<feature_id>): provisionally accept decision(s) on recommendation [--park-provisional]`). **(3)** Dispatch the apply-resolution subagent via `--emit-dispatch apply-resolution` with `resolution_kind="provisional"`, `sentinel_path="<spec_path>/NEEDS_INPUT_PROVISIONAL.md"`, `chosen_path="<the accepted option label(s)>"` — it propagates the choices into SPEC/PHASES and MUST NOT neutralize (the `_PROVISIONAL` filename is the operator's ratification claim-check). **(4)** Fire the §1c.6 provisional-accept PushNotification and append the digest row to `provisional_accepted[]` (feature, decision titles, chosen options, both divergence grades, `decision_commit`, sentinel path). This is a **meta cycle** — increment `meta_cycles` (it resolves process state; the feature's next probe resumes forward work). The feature remains completion-blocked until ratification (Step 1g-ratify / the flush's Step 2.7 branch).
 - **`__grant_skip_no_mcp_surface__`** — emitted at Step 9 (workstation only) when the feature's PHASES declares `**MCP runtime:** not-required` AND the repo has no app surface (no `src-tauri/`, no `package.json`). Run `python3 ~/.claude/scripts/lazy-state.py --apply-pseudo __grant_skip_no_mcp_surface__ <spec_path>` (the script is the single author of the SKIP_MCP_TEST.md write — `granted_by: pipeline-structural`, re-verified by `skip_waiver_refusal`; idempotent; refuses if the repo has an app surface or PHASES is not `not-required`), then commit + push per policy. This is the structural short-circuit that avoids dispatching a wasted `/mcp-test` Opus cycle whose only job would be to confirm there is nothing to test. The next probe routes to `__write_validated_from_skip__`. Pipeline-advancing → `forward_cycles`.
 - **`__write_validated_from_skip__`** — run `python3 ~/.claude/scripts/lazy-state.py --apply-pseudo __write_validated_from_skip__ <spec_path>` (the script is the single author of the VALIDATED.md write — it reads SKIP_MCP_TEST.md, writes VALIDATED.md, and is idempotent), then commit + push per policy.
 - **`__write_validated_from_results__`** — run `python3 ~/.claude/scripts/lazy-state.py --apply-pseudo __write_validated_from_results__ <spec_path>` (the script reads MCP_TEST_RESULTS.md, writes VALIDATED.md with the extracted scenarios, and is idempotent), then commit + push per policy. **The script is the SINGLE author of VALIDATED.md — hand-writing it is the one remaining integrity side-door and is banned** (the 2026-06-11 run's endgame bypass). The apply is **gated**: it refuses (`refused:<reason>`, zero writes, exit 1) on missing/wrong-kind MCP_TEST_RESULTS.md, on `result` ≠ `all-passing`, on `pass_count != total_count`, and on a `validated_commit` that doesn't match HEAD (stale results). On a refusal, do NOT retry blindly and do NOT hand-write the sentinel — the refusal names expected vs found; the honest route is a fresh `/mcp-test` cycle that produces genuinely passing, fresh results (the refusal on stale/partial results IS the pipeline working).
@@ -989,6 +997,31 @@ orchestrators):
 
 ---
 
+### 1g-ratify. Provisional-ratification mode (`terminal_reason == "needs-ratification"`)
+
+**No meta-cap check** — `meta_cycles` is uncapped; the run's only hard stop remains the
+`forward_cycles >= max_cycles` cap at Step 1c.
+
+Triggered when a NON-park probe finds an unratified `NEEDS_INPUT_PROVISIONAL.md` — a prior
+`--park-provisional` run auto-accepted the recommended option(s) and the operator must now
+ratify or redirect before the feature can complete (park-provisional-acceptance). This mode is
+a sanctioned `AskUserQuestion` resolution mode under HARD CONSTRAINT 5 (same class as Steps
+1g/1h/1i).
+
+**Pipeline binding for the shared component below** — `{SKILL}` = `/lazy-batch`,
+`{STATE_SCRIPT}` = `lazy-state.py`, `{ITEM}` = feature, `{ADD_PHASE}` = `/add-phase`,
+`{PUSH_RULE}` = workstation (standard end push). Each ratification interaction is a META cycle
+(increment `meta_cycles`). Then read and apply the shared handler exactly:
+
+`~/.claude/skills/_components/provisional-ratification.md`
+
+After the handler completes (ratified / redirected / deferred), **continue the loop** — return
+to Step 1a. A ratified feature's next probe routes its unblocked completion; a redirected one
+routes the corrective phase; a deferred one re-parks (park mode) or re-halts here (non-park) on
+the next run.
+
+---
+
 ### 1h. Blocked-resolution mode (`terminal_reason == "blocked"`)
 
 **No meta-cap check** — `meta_cycles` is uncapped (operator decision 2026-06-14); the meta loop has no halt. The run's only hard stop remains the `forward_cycles >= max_cycles` cap at Step 1c.
@@ -1103,6 +1136,7 @@ When the loop exits (terminal state or max-cycles), print:
 **Terminal reason:** {terminal_reason or "forward-cycles-cap"}
 **Last notification:** {notify_message or "—"}
 **Park mode:** {on | off}
+**Provisional mode:** {on | off} — {len(provisional_accepted)} provisionally accepted, {N_pending} awaiting ratification
 
 ### Cycle log
 | # | Feature | Action | Summary |
@@ -1131,6 +1165,19 @@ When the loop exits (terminal state or max-cycles), print:
 ```
 
 *(One row per auto-accepted decision across all features. If a single sentinel carried multiple decisions, emit one row per decision with the same feature column repeated. This table is the run-end audit trail for all D2 two-key auto-accepted choices.)*
+
+*(Print the following table ONLY when `park_provisional_mode == true` AND `provisional_accepted[]` is non-empty — OR when any ratification interaction ran this run. Omit entirely otherwise — no change to default or plain-`--park` reports.)*
+
+```
+### Provisionally accepted decisions (`--park-provisional`)
+
+| Feature | Decision | Chosen (recommended) option | Divergence (producer/audit) | decision_commit | Sentinel | Ratification |
+|---------|----------|-----------------------------|-----------------------------|-----------------|----------|--------------|
+| {feature_name} ({feature_id}) | {decision title} | {chosen option label} | {divergence}/{audit_divergence} | `{sha[:8]}` | `{NEEDS_INPUT_PROVISIONAL[_RESOLVED_*].md path}` | {pending \| ratified \| redirected → {option} \| deferred} |
+| ... | ... | ... | ... | ... | ... | ... |
+```
+
+*(One row per provisionally-accepted decision. The Ratification column distinguishes still-pending acceptances — completion-blocked until the operator confirms — from ones the flush/1g-ratify already resolved this run. A parked stub-origin or otherwise INELIGIBLE decision never appears here — it appears in `parked[]` and the flush like any product-class park; this table is the audit trail for auto-taken choices ONLY.)*
 
 *(Print the following table whenever the run applied the completeness-first standing policy at least once — BOTH modes, alongside the park auto-accept digest above when both fired. Omit entirely when no D7 applications occurred.)*
 
@@ -1217,6 +1264,7 @@ Detection happens inside `lazy-state.py::is_stub_spec(spec_text, queue_entry)`. 
 | State | Signal | State-machine route | What the orchestrator does | User action needed |
 |-------|--------|---------------------|-----------------------------|--------------------|
 | Stub spec | `> Draft (pre-Gemini)` OR `queue.json "stub": true` OR legacy marker | Step 4.5 | Dispatch `/spec` as a normal cycle subagent; the subagent calls `AskUserQuestion` during Phase 1 brainstorming | Answer design questions inside the cycle (conversation) |
+| Stub spec — **park mode** (`--park`, with or without `--park-provisional`) | same markers | Step 4.5 | Dispatch `/spec` as a normal cycle subagent — but the emitted cycle prompt (probe run with the park flags) carries the PARK-MODE INTERACTION CONTRACT section (park-provisional-acceptance SPEC D13): the subagent MUST NOT call `AskUserQuestion`; it drafts the baseline first, applies D7 in-cycle, and surfaces ≤4 baseline-gating product forks via a rich `NEEDS_INPUT.md` (Recommendation-first options + `divergence:` self-grade) | Sentinel-mediated: the park/provisional machinery handles the sentinel on the next probe (no operator present) |
 | Structured + research-pending | No stub markers; `RESEARCH.md` / `RESEARCH_SUMMARY.md` missing; `RESEARCH_PROMPT.md` present | Step 5 → terminal `needs-research` | Halt per Step 4 below (or batch per `--allow-research-skip`); the orchestrator does NOT dispatch `/spec` interactively | Upload Gemini research (single-turn action) |
 
 HARD CONSTRAINT 5 scopes the orchestrator's `AskUserQuestion` to the resolution modes (Steps 1g / 1h / 1i) plus the four enumerated exceptions (i)–(iv) listed there (standing-directive echo-back, budget-and-queue guard, Step 0.45 `--adhoc` task-details prompt, Step 5 resume disambiguation) — that constraint does NOT bind subagents the orchestrator dispatches. A `/spec` cycle subagent at Step 4.5 is allowed and expected to call `AskUserQuestion` during Phase 1; that's the legitimate design-conversation channel.

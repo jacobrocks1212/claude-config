@@ -44,36 +44,36 @@ Single-session implementation (autonomous). Phases ordered by load-bearing-ness:
 
 ### Phase 4: Schema + prompt components
 
-**Status:** Pending
+**Status:** Complete
 **Phase kind:** design
 
-- [ ] `sentinel-frontmatter.md`: `divergence` / `audit_divergence` fields, grade vocabulary, `NEEDS_INPUT_PROVISIONAL.md` lifecycle row, `resolved_by: auto-provisional` + `## Ratification` markers, three-tier decision table
-- [ ] `input-audit-prompt.md`: independent `audit_divergence` grading duty (Key 2)
-- [ ] `cycle-base-prompt.md`: `park=park` `skills=spec` sentinel-mediation section (SPEC D13) + producer `divergence:` self-grade guidance
-- [ ] New `provisional-ratification.md` shared component (ratify / redirect / defer affordance)
-- [ ] `parked-flush.md`: Step 2.7 provisional branch (partition `sentinel_kind: provisional`; run the ratification affordance)
-- [ ] `completion-integrity-gate.md`: precondition 2c (unratified provisional refuses)
-- [ ] `dispatch-apply-resolution.md`: `resolution_kind: provisional` (propagate, never neutralize) + `resolution_kind: ratify-redirect` (propagate + corrective phase scoped by `decision_commit` + neutralize) sections
+- [x] `sentinel-frontmatter.md`: `divergence` / `audit_divergence` fields, grade vocabulary, `NEEDS_INPUT_PROVISIONAL.md` lifecycle row, `resolved_by: auto-provisional` + `## Ratification` markers, three-tier decision table
+- [x] `input-audit-prompt.md`: independent `audit_divergence` grading duty (Key 2)
+- [x] `cycle-base-prompt.md`: `park=park` `skills=spec` sentinel-mediation section (SPEC D13) + producer `divergence:` self-grade guidance
+- [x] New `provisional-ratification.md` shared component (ratify / redirect / defer affordance)
+- [x] `parked-flush.md`: Step 2.7 provisional branch (partition `sentinel_kind: provisional`; run the ratification affordance)
+- [x] `completion-integrity-gate.md`: precondition 2c (unratified provisional refuses)
+- [x] `dispatch-apply-resolution.md`: `resolution_kind: provisional` (propagate, never neutralize) + `resolution_kind: ratify-redirect` (propagate + corrective phase scoped by `decision_commit` + neutralize) sections
 
 ### Phase 5: Orchestrator skills
 
-**Status:** Pending
+**Status:** Complete
 **Phase kind:** design
 
-- [ ] `lazy-batch/SKILL.md`: argument-hint + Step 0 parsing, Step 1a probe flag, Step 1c.5 `__provisional_accept__` pseudo-skill, `needs-ratification` terminal routing (Step 1g-ratify), §1c.6 provisional-accept notification, batch-report digest table, stub-spec disambiguation park-mode row
-- [ ] `lazy-bug-batch/SKILL.md` + `lazy-batch-cloud/SKILL.md`: parity mirrors (argument surface + terminal tables)
-- [ ] `lazy-batch-parallel/SKILL.md`: `--park-provisional` pass-through + lane-local acceptance note (SPEC D10)
+- [x] `lazy-batch/SKILL.md`: argument-hint + Step 0 parsing, Step 1a probe flag, Step 1c.5 `__provisional_accept__` pseudo-skill, `needs-ratification` terminal routing (Step 1g-ratify), §1c.6 provisional-accept notification, batch-report digest table, stub-spec disambiguation park-mode row
+- [x] `lazy-bug-batch/SKILL.md` + `lazy-batch-cloud/SKILL.md`: parity mirrors (argument surface + terminal tables)
+- [x] `lazy-batch-parallel/SKILL.md`: `--park-provisional` pass-through + lane-local acceptance note (SPEC D10)
 
 ### Phase 6: Verification
 
-**Status:** Pending
+**Status:** Complete
 **Phase kind:** design
 
 #### Runtime Verification / MCP Integration Test
 
-- [ ] `python3 user/scripts/lazy-state.py --test` green (incl. new fixtures)
-- [ ] `python3 user/scripts/bug-state.py --test` green (incl. new fixtures)
-- [ ] `python3 -m pytest user/scripts/test_lazy_core.py` green
-- [ ] `python3 user/scripts/lazy_parity_audit.py --repo-root .` exit 0
-- [ ] `python3 user/scripts/kpi-scorecard.py --lint --spec docs/features/park-provisional-acceptance/SPEC.md` OK
-- [ ] `python ~/.claude/scripts/project-skills.py` + `lint-skills.py` clean; projected output spot-checked
+- [x] `python3 user/scripts/lazy-state.py --test` green (incl. new fixtures)
+- [x] `python3 user/scripts/bug-state.py --test` green (incl. new fixtures)
+- [x] `python3 -m pytest user/scripts/test_lazy_core.py` green
+- [x] `python3 user/scripts/lazy_parity_audit.py --repo-root .` exit 0
+- [x] `python3 user/scripts/kpi-scorecard.py --lint --spec docs/features/park-provisional-acceptance/SPEC.md` OK
+- [x] `python ~/.claude/scripts/project-skills.py` + `lint-skills.py` clean; projected output spot-checked

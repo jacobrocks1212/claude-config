@@ -173,6 +173,34 @@ Audit algorithm:
    auto-accept (D2 two-key). This audit step is Key 2. Without `audit_concurs: true` from
    THIS step, no auto-accept fires — the decision is always flushed to the operator.
 
+7b. **Record `audit_divergence` in the sentinel's frontmatter** — the provisional-acceptance
+   divergence two-key's Key 2 (park-provisional-acceptance; vocabulary + rules in
+   ~/.claude/skills/_components/sentinel-frontmatter.md). This applies to the NEEDS_INPUT.md
+   currently on disk for this feature (whether you just wrote it, or it pre-existed).
+
+   Independently grade the REWORK BLAST RADIUS of the file's decisions — if the recommended
+   option were taken now and the operator later redirected to a different option, how far
+   would the correction reach? FILE-LEVEL: grade each decision, record the MOST SEVERE:
+     - `isolated`  — the options differ inside one module/doc surface; a redirect is a small
+       local edit.
+     - `contained` — a few files, no architectural fork; a redirect is a bounded corrective
+       phase.
+     - `structural` — the options fork architecture, persistent data, or user-visible
+       workflow; a redirect would be significant rework.
+   Grade CONSERVATIVELY: when uncertain between two grades, record the more severe one —
+   `structural` (or an absent grade) simply parks the decision for the operator, which is
+   always safe. Do NOT consider whether the recommendation is GOOD (that is the operator's
+   judgment or the class audit above) — grade only how expensive a later reversal would be.
+   Edit the frontmatter to add/update `audit_divergence: <grade>` using `Edit`, stage, and
+   commit alongside (or as) the step-7 commit:
+   `git add {spec_path}/NEEDS_INPUT.md && git commit -m "{feature_id}: input-audit records audit_divergence=<grade>"`.
+   Push per the post-cycle push rule.
+
+   **Effect in `--park --park-provisional` mode:** the probe provisionally accepts a
+   product-class sentinel ONLY when the producer's `divergence:` AND your `audit_divergence:`
+   are BOTH `isolated`/`contained` (and every decision carries a `**Recommendation:**`).
+   Without your grade, no provisional acceptance fires — fail-closed to a park.
+
 8. Return a one-paragraph summary (≤ 8 lines) covering:
    - Decisions reviewed (count) and how many you classified as
      product-behavior (and how many you reclassified as scope per D7).
@@ -186,6 +214,8 @@ Audit algorithm:
      wrote none, the skip-disclosure line from step 5 (`needs-input skipped — …`)
      with its justification — the no-sentinel outcome is never silent.
    - Whether you recorded `audit_concurs` and its value (or why you skipped it).
+   - Whether you recorded `audit_divergence` and its grade (step 7b) — or why not
+     (e.g. no sentinel on disk).
 
 Do NOT halt the loop. The NEEDS_INPUT.md sentinel you write is picked up by
 lazy-state.py on the next cycle and resolved via Step 1g (decision-resume

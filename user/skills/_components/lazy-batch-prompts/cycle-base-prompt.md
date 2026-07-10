@@ -14,6 +14,10 @@
        <!-- @section <name> pipelines=<feature|bug|feature,bug> modes=<workstation|cloud|workstation,cloud> skills=<all|csv-of-skill-names> -->
      Optional extra attribute on mcp-test variant sections only:
        variant=runtime-up   |   variant=no-runtime
+     Optional park attribute (park-provisional-acceptance, SPEC D13):
+       park=park  → the section is selected ONLY when the emitting probe ran
+       under --park-needs-input (emit_cycle_prompt park_mode=True). Absent (or
+       park=both) → always selected, byte-identical to the pre-park grammar.
      A section's content runs from the line AFTER its marker to the line
      BEFORE the next marker (or EOF). Skill names in `skills=` are bare (no
      leading slash): execute-plan, retro, retro-feature, mcp-test.
@@ -130,6 +134,45 @@ Completeness-first (D7 — standing policy, pre-authorized, both modes):
   a PushNotification ("spun off <id> — <reason>") and adds the D7 digest entry.
   Cross-references in BOTH directions are the contract — the new doc names its
   origin; the origin names the spin-off.
+
+<!-- @section park-divergence-grade pipelines=feature,bug modes=workstation,cloud skills=all park=park -->
+Park-mode divergence self-grade (park-provisional-acceptance — PRODUCER duty):
+  This is a PARK-MODE run (--park-needs-input active). When you write a
+  NEEDS_INPUT.md for product-class decisions, ALSO record a file-level
+  `divergence:` grade in its frontmatter — the rework blast radius if the
+  operator later redirected away from your recommended option:
+    isolated   — options differ inside one module/doc surface; a redirect is
+                 a small local edit.
+    contained  — a few files, no architectural fork; a redirect is a bounded
+                 corrective phase.
+    structural — options fork architecture, persistent data, or user-visible
+                 workflow; a redirect would be significant rework.
+  Most severe across the file's decisions wins; grade CONSERVATIVELY (unsure →
+  the more severe grade; absent is treated as structural — never provisional).
+  Every decision's Options list stays recommendation-FIRST with a
+  **Recommendation:** line (the provisional machinery extracts the label).
+  Vocabulary + eligibility rules: ~/.claude/skills/_components/sentinel-frontmatter.md.
+
+<!-- @section park-spec-sentinel-mediation pipelines=feature,bug modes=workstation,cloud skills=spec,spec-bug park=park -->
+PARK-MODE INTERACTION CONTRACT (/spec under park mode — SPEC D13, LOAD-BEARING):
+  This is an UNATTENDED park-mode run: no operator is watching, so an
+  AskUserQuestion round would silently hang the lane. You MUST NOT call
+  AskUserQuestion — even where /spec's Phase-1 brainstorming (stub-spec
+  baseline shaping) normally permits it. Instead, run fully sentinel-mediated:
+  1. DRAFT THE BASELINE FIRST (the "Phase 1 under --batch" contract): author
+     the best-supported baseline SPEC from the stub/brief + repo evidence.
+  2. Apply the D7 completeness policy IN-CYCLE for every scope-class decision
+     (disclose with ⚖ policy: lines — see the Completeness-first section).
+  3. Surface the ≤4 genuinely baseline-GATING product forks via NEEDS_INPUT.md
+     (rich `## Decision Context` body per sentinel-frontmatter.md,
+     recommendation-first Options, a **Recommendation:** per decision, and the
+     file-level `divergence:` self-grade above) — the park/provisional
+     machinery picks the sentinel up on the next probe; the input-audit then
+     supplies the independent `audit_divergence` second key.
+  Research-answerable questions still go into RESEARCH_PROMPT.md, never the
+  sentinel. A brief too ambiguous even for a placeholder baseline writes
+  BLOCKED.md (blocker_kind: pre-research-input-required) exactly as the
+  non-park batch contract specifies.
 
 <!-- @section inline-override pipelines=feature,bug modes=workstation skills=all -->
 Sub-subagent dispatch policy (INLINE OVERRIDE — LOAD-BEARING):

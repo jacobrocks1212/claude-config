@@ -94,6 +94,25 @@ identically in cloud and workstation.
    test or runtime artifact reproducing the original symptom gone at its reported
    surface").
 
+2c. **Provisional-ratification check (park-provisional-acceptance — BOTH paths).**
+   Confirm `{spec_path}/NEEDS_INPUT_PROVISIONAL.md` is **NOT present**. That
+   sentinel means one or more product-class decisions were provisionally
+   auto-accepted on their recommendation under `--park-provisional` and the
+   operator has NOT yet ratified (or redirected) them — completion before
+   ratification would finalize a choice the operator never confirmed. If
+   present → **refuse** (Step 4), directing to the provisional-ratification
+   affordance (`~/.claude/skills/_components/provisional-ratification.md`).
+   **2c-refusal nuance:** do NOT write a fresh `NEEDS_INPUT.md` for this
+   refusal (unlike other Step-4 refusals) — the `NEEDS_INPUT_PROVISIONAL.md`
+   already on disk IS the surfaced state (the state scripts halt on it as
+   `needs-ratification`), and a second sentinel would outrank and obscure the
+   pending ratification. Return `refused:<reason>` only.
+   This is the prose layer of the SPEC-D6 triple backstop; the script layer is
+   mechanical — `apply_pseudo __mark_complete__` / `__mark_fixed__` itself
+   refuses (`refused: unratified provisional decision(s) …`, zero writes)
+   while the file exists, so even a gate-prose miss cannot complete an
+   unratified item.
+
 3. **All preconditions pass → delegate the receipt write + status flip + sentinel
    cleanup to the script.** The gate's responsibility here is to VERIFY (steps 1–2a
    above, plus 2b on the bug path) and then, on pass, to call the script as the single author:
@@ -151,7 +170,7 @@ identically in cloud and workstation.
 
    Commit the resulting file changes per project policy after the script exits 0.
 
-4. **Refuse path (any precondition in steps 1–2a fails, or the bug-path 2b symptom-reproduction check fails).** Do NOT flip. Do NOT
+4. **Refuse path (any precondition in steps 1–2a/2c fails, or the bug-path 2b symptom-reproduction check fails).** Do NOT flip. Do NOT
    write `COMPLETED.md`. This means the state script emitted `__mark_complete__`
    for a feature that isn't actually finishable — a genuine inconsistency. Write
    `{spec_path}/NEEDS_INPUT.md` (`written_by: completion-integrity-gate`,
