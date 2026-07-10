@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "ops": {
+    "tauri-build": {
+      "exec": ".claude/scripts/tauri-build-filtered.ps1",
+      "kind": "build",
+      "hygiene": "rust-tauri",
+      "skill": "/tauri-build",
+      "deny": [
+        "tauri build"
+      ],
+      "lane": "heavy"
+    },
+    "cargo-release": {
+      "exec": ".claude/scripts/cargo-release-filtered.ps1",
+      "kind": "build",
+      "hygiene": "rust-tauri",
+      "skill": "/cargo-release",
+      "deny": [
+        "cargo build --release"
+      ],
+      "lane": "heavy"
+    }
+  }
+}

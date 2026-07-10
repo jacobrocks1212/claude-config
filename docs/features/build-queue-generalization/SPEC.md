@@ -12,7 +12,7 @@
 > `LONG-BUILD-OWNERSHIP-TAKEOVER` orchestrator-takeover contract so the two compose instead of
 > ping-ponging a build between owners.
 
-**Status:** Draft
+**Status:** Complete
 **Friction-reduction feature:** yes
 **Priority:** P2
 **Last updated:** 2026-07-04

@@ -32,6 +32,7 @@ fallback; a same-named file here wins (see `_components/CLAUDE.md`).
 | `quality-gates.md` | Repo build/test commands | common |
 | `commit-policy.md` | Commit format + push rules | common |
 | `skill-catalog.md` | Lists repo-scoped skills | common |
+| `build-queue-ops.json` | Build-queue ops manifest (`{version, ops: {<op>: {exec, kind, hygiene, skill, deny}}}`) — registers the repo's heavy-build ops with the machine-global serializer; its presence arms `build-queue-enforce.sh` in that repo (see `build-queue-generalization`) | opt-in (cognito-forms, algobooth) |
 | `mcp-tool-catalog.md`, `phases-runtime-validation.md`, … | Repo-specific audit/validation overrides | bespoke |
 
 AlgoBooth is the most fully-configured repo (~18 skill-config files) and the reference for a

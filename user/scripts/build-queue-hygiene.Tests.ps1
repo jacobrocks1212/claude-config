@@ -1046,3 +1046,607 @@ Describe 'scope-in-caller guard -- buildLogPath assignment is main-scope, not Ge
 		$isNestedInScriptBlock | Should -Be $false -Because 'the $buildLogPath build-log-path assignment in build-queue-runner.ps1 must be a main/script-scope statement, not a scriptblock argument to Get-SafeValue -- otherwise & $Block runs it in a child scope, the main-scope $buildLogPath stays $null, and the downstream build-log classifier force-fails every successful build'
 	}
 }
+
+Describe 'Get-BuildQueueOpsManifest (build-queue-generalization manifest loader)' {
+	BeforeEach {
+		$script:RepoRoot = Join-Path $TestDrive ("repo-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+		$script:ConfigDir = Join-Path (Join-Path $script:RepoRoot '.claude') 'skill-config'
+		$null = New-Item -ItemType Directory -Path $script:ConfigDir -Force
+		$script:ManifestPath = Join-Path $script:ConfigDir 'build-queue-ops.json'
+	}
+
+	It 'parses a valid manifest and returns path/version/ops' {
+		$body = @{
+			version = 1
+			ops = @{
+				msbuild = @{ exec = '.claude/scripts/build-filtered.ps1'; kind = 'build'; hygiene = 'dotnet'; skill = '/msbuild'; deny = @('dotnet build') }
+				mstest  = @{ exec = '.claude/scripts/test-filtered.ps1'; kind = 'test'; hygiene = 'dotnet'; skill = '/mstest'; deny = @('dotnet test') }
+			}
+		} | ConvertTo-Json -Depth 5
+		[System.IO.File]::WriteAllText($script:ManifestPath, $body)
+
+		$manifest = Get-BuildQueueOpsManifest -RepoRoot $script:RepoRoot
+		$manifest | Should -Not -BeNullOrEmpty
+		$manifest.path | Should -Be $script:ManifestPath
+		$manifest.version | Should -Be 1
+		@($manifest.ops.PSObject.Properties).Count | Should -Be 2
+		$manifest.ops.msbuild.hygiene | Should -Be 'dotnet'
+	}
+
+	It 'returns $null silently for a missing manifest file' {
+		$result = Get-BuildQueueOpsManifest -RepoRoot $script:RepoRoot
+		$result | Should -BeNullOrEmpty
+	}
+
+	It 'returns $null (fail-open, no throw) for malformed JSON' {
+		[System.IO.File]::WriteAllText($script:ManifestPath, '{ not json !!!')
+		$result = $null
+		{ $script:mf = Get-BuildQueueOpsManifest -RepoRoot $script:RepoRoot -WarningAction SilentlyContinue } | Should -Not -Throw
+		$script:mf | Should -BeNullOrEmpty
+	}
+
+	It 'returns $null for an unsupported version' {
+		$body = @{ version = 2; ops = @{ x = @{ exec = 'a.ps1'; kind = 'build'; hygiene = 'none' } } } | ConvertTo-Json -Depth 5
+		[System.IO.File]::WriteAllText($script:ManifestPath, $body)
+		Get-BuildQueueOpsManifest -RepoRoot $script:RepoRoot -WarningAction SilentlyContinue | Should -BeNullOrEmpty
+	}
+
+	It 'returns $null when an op is missing required exec' {
+		$body = @{ version = 1; ops = @{ x = @{ kind = 'build'; hygiene = 'none' } } } | ConvertTo-Json -Depth 5
+		[System.IO.File]::WriteAllText($script:ManifestPath, $body)
+		Get-BuildQueueOpsManifest -RepoRoot $script:RepoRoot -WarningAction SilentlyContinue | Should -BeNullOrEmpty
+	}
+
+	It 'returns $null when an op has an invalid kind' {
+		$body = @{ version = 1; ops = @{ x = @{ exec = 'a.ps1'; kind = 'deploy'; hygiene = 'none' } } } | ConvertTo-Json -Depth 5
+		[System.IO.File]::WriteAllText($script:ManifestPath, $body)
+		Get-BuildQueueOpsManifest -RepoRoot $script:RepoRoot -WarningAction SilentlyContinue | Should -BeNullOrEmpty
+	}
+
+	It 'returns $null when an op has an unknown hygiene profile id' {
+		$body = @{ version = 1; ops = @{ x = @{ exec = 'a.ps1'; kind = 'build'; hygiene = 'jvm' } } } | ConvertTo-Json -Depth 5
+		[System.IO.File]::WriteAllText($script:ManifestPath, $body)
+		Get-BuildQueueOpsManifest -RepoRoot $script:RepoRoot -WarningAction SilentlyContinue | Should -BeNullOrEmpty
+	}
+
+	It 'parses the committed Cognito manifest (repo fixture) with four dotnet ops' {
+		$committedCfg = Join-Path (Split-Path -Parent $PSScriptRoot) 'repos\cognito-forms\.claude\skill-config\build-queue-ops.json'
+		if (-not (Test-Path $committedCfg)) {
+			# user/scripts -> repo root is two levels up
+			$committedCfg = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'repos\cognito-forms\.claude\skill-config\build-queue-ops.json'
+		}
+		Test-Path $committedCfg | Should -Be $true
+
+		$fixtureRoot = Join-Path $TestDrive 'cognito-fixture'
+		$fixtureCfg = Join-Path (Join-Path $fixtureRoot '.claude') 'skill-config'
+		$null = New-Item -ItemType Directory -Path $fixtureCfg -Force
+		Copy-Item $committedCfg (Join-Path $fixtureCfg 'build-queue-ops.json')
+
+		$manifest = Get-BuildQueueOpsManifest -RepoRoot $fixtureRoot
+		$manifest | Should -Not -BeNullOrEmpty
+		$opNames = @($manifest.ops.PSObject.Properties | ForEach-Object { $_.Name }) | Sort-Object
+		($opNames -join ',') | Should -Be 'msbuild,mstest,nxbuild,nxtest'
+		foreach ($p in $manifest.ops.PSObject.Properties) {
+			$p.Value.hygiene | Should -Be 'dotnet'
+		}
+	}
+}
+
+Describe 'Get-HygieneProfile (closed profile registry)' {
+	It 'dotnet profile pins exactly todays behavior (recycle + dll sweep + msbuild signatures + locker reap)' {
+		$p = Get-HygieneProfile -Name 'dotnet'
+		$p.name | Should -Be 'dotnet'
+		$p.recycle_compiler_server | Should -Be $true
+		$p.poison_sweep | Should -Be 'dotnet-dll'
+		$p.log_failure_signatures | Should -Be 'msbuild'
+		$p.reap_dll_lockers | Should -Be $true
+	}
+
+	It 'rust-tauri profile never enables the dotnet-only sweeps' {
+		$p = Get-HygieneProfile -Name 'rust-tauri'
+		$p.recycle_compiler_server | Should -Be $false
+		$p.poison_sweep | Should -BeNullOrEmpty
+		$p.log_failure_signatures | Should -Be 'cargo'
+		$p.reap_dll_lockers | Should -Be $false
+	}
+
+	It 'none profile is reap-only (no recycle, no sweep, no signature scan)' {
+		$p = Get-HygieneProfile -Name 'none'
+		$p.recycle_compiler_server | Should -Be $false
+		$p.poison_sweep | Should -BeNullOrEmpty
+		$p.log_failure_signatures | Should -BeNullOrEmpty
+		$p.reap_dll_lockers | Should -Be $false
+	}
+
+	It 'an empty name resolves to the dotnet profile (legacy byte-compat)' {
+		$p = Get-HygieneProfile -Name ''
+		$p.name | Should -Be 'dotnet'
+	}
+
+	It 'an unknown name warns and falls back to none (safe floor), never throws' {
+		$p = $null
+		{ $script:up = Get-HygieneProfile -Name 'jvm' -WarningAction SilentlyContinue } | Should -Not -Throw
+		$script:up.name | Should -Be 'none'
+		$script:up.recycle_compiler_server | Should -Be $false
+	}
+}
+
+Describe 'Test-BuildLogFailure - cargo signature set (rust-tauri profile)' {
+	It 'flags a rustc coded error' {
+		$log = "   Compiling app v0.1.0`nerror[E0308]: mismatched types"
+		$r = Test-BuildLogFailure -Log $log -SignatureSet 'cargo'
+		$r.failed | Should -Be $true
+		$r.signature | Should -Be 'error[E0308]'
+	}
+
+	It 'flags a bare error: line (could not compile)' {
+		$log = "warning: unused variable`nerror: could not compile app"
+		$r = Test-BuildLogFailure -Log $log -SignatureSet 'cargo'
+		$r.failed | Should -Be $true
+		$r.signature | Should -Match 'could not compile'
+	}
+
+	It 'does not flag a clean cargo log with warnings only' {
+		$log = "warning: unused import`n    Finished release [optimized] target(s) in 92.31s"
+		$r = Test-BuildLogFailure -Log $log -SignatureSet 'cargo'
+		$r.failed | Should -Be $false
+	}
+
+	It 'does not flag MSBuild signatures under the cargo set' {
+		$log = "Build FAILED.`n    3 Error(s)"
+		$r = Test-BuildLogFailure -Log $log -SignatureSet 'cargo'
+		$r.failed | Should -Be $false
+	}
+
+	It 'default (no -SignatureSet) stays the msbuild set - byte-compat' {
+		$r = Test-BuildLogFailure -Log 'Build FAILED'
+		$r.failed | Should -Be $true
+		$r.signature | Should -Be 'Build FAILED'
+	}
+
+	It 'an unknown signature set falls back to msbuild (conservative default)' {
+		$r = Test-BuildLogFailure -Log 'Build FAILED' -SignatureSet 'gradle'
+		$r.failed | Should -Be $true
+	}
+}
+
+Describe 'Resolve-BuildQueueOp (wrapper op resolution seam)' {
+	BeforeEach {
+		$script:RepoRoot = Join-Path $TestDrive ("resolve-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+		$script:ConfigDir = Join-Path (Join-Path $script:RepoRoot '.claude') 'skill-config'
+		$null = New-Item -ItemType Directory -Path $script:ConfigDir -Force
+		$script:ManifestPath = Join-Path $script:ConfigDir 'build-queue-ops.json'
+		$body = @{
+			version = 1
+			ops = @{
+				'tauri-build' = @{ exec = '.claude/scripts/tauri-build-filtered.ps1'; kind = 'build'; hygiene = 'rust-tauri'; skill = '/tauri-build'; deny = @('tauri build') }
+			}
+		} | ConvertTo-Json -Depth 5
+		[System.IO.File]::WriteAllText($script:ManifestPath, $body)
+	}
+
+	It 'resolves a manifested op: exec defaulted repo-relative, kind/hygiene threaded' {
+		$r = Resolve-BuildQueueOp -RepoRoot $script:RepoRoot -Op 'tauri-build'
+		$r.ok | Should -Be $true
+		$r.source | Should -Be 'manifest'
+		$r.exec | Should -Be (Join-Path $script:RepoRoot '.claude/scripts/tauri-build-filtered.ps1')
+		$r.kind | Should -Be 'build'
+		$r.hygiene | Should -Be 'rust-tauri'
+	}
+
+	It 'an explicit -Exec overrides the manifest entry (D8 back-compat)' {
+		$explicit = Join-Path $script:RepoRoot 'custom.ps1'
+		$r = Resolve-BuildQueueOp -RepoRoot $script:RepoRoot -Op 'tauri-build' -Exec $explicit
+		$r.ok | Should -Be $true
+		$r.exec | Should -Be $explicit
+		$r.hygiene | Should -Be 'rust-tauri'
+	}
+
+	It 'an unknown op in a manifested repo fails with an error naming the manifest path and registered ops' {
+		$r = Resolve-BuildQueueOp -RepoRoot $script:RepoRoot -Op 'bogus'
+		$r.ok | Should -Be $false
+		$r.error | Should -Match 'bogus'
+		$r.error | Should -Match ([regex]::Escape($script:ManifestPath))
+		$r.error | Should -Match 'tauri-build'
+	}
+
+	It 'legacy fallback: no manifest + legacy op + explicit exec resolves with dotnet hygiene and inferred kind' {
+		$bare = Join-Path $TestDrive ("bare-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+		$null = New-Item -ItemType Directory -Path $bare -Force
+		$exec = Join-Path $bare 'test-filtered.ps1'
+		$r = Resolve-BuildQueueOp -RepoRoot $bare -Op 'mstest' -Exec $exec
+		$r.ok | Should -Be $true
+		$r.source | Should -Be 'legacy'
+		$r.kind | Should -Be 'test'
+		$r.hygiene | Should -Be 'dotnet'
+		$r.exec | Should -Be $exec
+	}
+
+	It 'legacy fallback: no manifest + unknown op fails naming the expected manifest path' {
+		$bare = Join-Path $TestDrive ("bare-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+		$null = New-Item -ItemType Directory -Path $bare -Force
+		$r = Resolve-BuildQueueOp -RepoRoot $bare -Op 'tauri-build'
+		$r.ok | Should -Be $false
+		$r.error | Should -Match 'build-queue-ops.json'
+	}
+
+	It 'legacy fallback: no manifest + legacy op WITHOUT -Exec fails actionably' {
+		$bare = Join-Path $TestDrive ("bare-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+		$null = New-Item -ItemType Directory -Path $bare -Force
+		$r = Resolve-BuildQueueOp -RepoRoot $bare -Op 'msbuild'
+		$r.ok | Should -Be $false
+		$r.error | Should -Match '-Exec is required'
+	}
+}
+
+Describe 'runner/wrapper profile dispatch - rust-tauri/none never reach dotnet-only hygiene (source guards)' {
+	It 'runner gates Reset-CompilerServer behind $profileRecycles' {
+		$runnerPath = Join-Path $PSScriptRoot 'build-queue-runner.ps1'
+		$source = Get-Content -Raw -Path $runnerPath
+		$source | Should -Match '(?s)if\s*\(\$profileRecycles\)\s*\{.*Reset-CompilerServer'
+	}
+
+	It 'runner gates Remove-PoisonedArtifacts behind the dotnet-dll poison_sweep' {
+		$runnerPath = Join-Path $PSScriptRoot 'build-queue-runner.ps1'
+		$source = Get-Content -Raw -Path $runnerPath
+		$source | Should -Match "profilePoisonSweep\s+-eq\s+'dotnet-dll'"
+	}
+
+	It 'runner gates Stop-DllLockers behind $profileReapsLockers' {
+		$runnerPath = Join-Path $PSScriptRoot 'build-queue-runner.ps1'
+		$source = Get-Content -Raw -Path $runnerPath
+		$source | Should -Match '\$isBuildOp\s+-and\s+\$profileReapsLockers'
+	}
+
+	It 'wrapper gates its release recycle behind the profile record' {
+		$wrapperPath = Join-Path $PSScriptRoot 'build-queue.ps1'
+		$source = Get-Content -Raw -Path $wrapperPath
+		$source | Should -Match '(?s)if\s*\(\$wrapperRecycles\)\s*\{.*Reset-CompilerServer'
+	}
+
+	It 'Test-BuildProducedNoOutput stays wired for build ops independent of profile (SPEC: profile-independent)' {
+		$runnerPath = Join-Path $PSScriptRoot 'build-queue-runner.ps1'
+		$source = Get-Content -Raw -Path $runnerPath
+		$source | Should -Match 'Test-BuildProducedNoOutput\s+-LogText'
+		$source | Should -Not -Match 'profileLogSignatures[^\r\n]*Test-BuildProducedNoOutput'
+	}
+}
+
+Describe 'Add-BuildQueueStatsEntry (eta-priority-lanes duration ring)' {
+	It 'creates the per-op stats ring file on first append' {
+		$root = Join-Path $TestDrive 'ring-create'
+		$null = New-Item -ItemType Directory -Path $root -Force
+		Add-BuildQueueStatsEntry -StateRoot $root -Op 'mstest' -Seq 1 -DurationSeconds 12.3 -ExitCode 0 -EndedAt '2026-07-09T10:00:00Z' | Should -BeTrue
+		$path = Join-Path $root 'stats\mstest.json'
+		Test-Path $path | Should -BeTrue
+		$entries = @(([System.IO.File]::ReadAllText($path) | ConvertFrom-Json) | ForEach-Object { $_ })
+		$entries.Count | Should -Be 1
+		[double]$entries[0].duration_seconds | Should -Be 12.3
+	}
+
+	It 'ring-caps at 20 entries keeping the newest' {
+		$root = Join-Path $TestDrive 'ring-cap'
+		$null = New-Item -ItemType Directory -Path $root -Force
+		1..25 | ForEach-Object {
+			$null = Add-BuildQueueStatsEntry -StateRoot $root -Op 'msbuild' -Seq $_ -DurationSeconds $_ -ExitCode 0 -EndedAt ''
+		}
+		$entries = @(([System.IO.File]::ReadAllText((Join-Path $root 'stats\msbuild.json')) | ConvertFrom-Json) | ForEach-Object { $_ })
+		$entries.Count | Should -Be 20
+		[int]$entries[0].seq | Should -Be 6
+		[int]$entries[19].seq | Should -Be 25
+	}
+
+	It 'stores failed runs too (the estimator filters, not the ring)' {
+		$root = Join-Path $TestDrive 'ring-fail'
+		$null = New-Item -ItemType Directory -Path $root -Force
+		$null = Add-BuildQueueStatsEntry -StateRoot $root -Op 'nxtest' -Seq 1 -DurationSeconds 5 -ExitCode 1 -EndedAt ''
+		$entries = @(([System.IO.File]::ReadAllText((Join-Path $root 'stats\nxtest.json')) | ConvertFrom-Json) | ForEach-Object { $_ })
+		$entries.Count | Should -Be 1
+		[int]$entries[0].exit_code | Should -Be 1
+	}
+
+	It 'fails open (returns $false, no throw) for a blank state root' {
+		{ Add-BuildQueueStatsEntry -StateRoot ' ' -Op 'mstest' -Seq 1 -DurationSeconds 1 -ExitCode 0 } | Should -Not -Throw
+		Add-BuildQueueStatsEntry -StateRoot ' ' -Op 'mstest' -Seq 1 -DurationSeconds 1 -ExitCode 0 | Should -BeFalse
+	}
+}
+
+Describe 'Get-BuildQueueEta (median estimator)' {
+	It 'returns $null when no stats file exists' {
+		$root = Join-Path $TestDrive 'eta-none'
+		$null = New-Item -ItemType Directory -Path $root -Force
+		Get-BuildQueueEta -StateRoot $root -Op 'mstest' | Should -BeNullOrEmpty
+	}
+
+	It 'returns $null under 3 successful samples (cold start)' {
+		$root = Join-Path $TestDrive 'eta-cold'
+		$null = New-Item -ItemType Directory -Path $root -Force
+		$null = Add-BuildQueueStatsEntry -StateRoot $root -Op 'mstest' -Seq 1 -DurationSeconds 10 -ExitCode 0
+		$null = Add-BuildQueueStatsEntry -StateRoot $root -Op 'mstest' -Seq 2 -DurationSeconds 20 -ExitCode 0
+		Get-BuildQueueEta -StateRoot $root -Op 'mstest' | Should -BeNullOrEmpty
+	}
+
+	It 'computes the odd-count median of successful runs' {
+		$root = Join-Path $TestDrive 'eta-odd'
+		$null = New-Item -ItemType Directory -Path $root -Force
+		foreach ($d in @(10, 30, 20)) {
+			$null = Add-BuildQueueStatsEntry -StateRoot $root -Op 'msbuild' -Seq $d -DurationSeconds $d -ExitCode 0
+		}
+		Get-BuildQueueEta -StateRoot $root -Op 'msbuild' | Should -Be 20
+	}
+
+	It 'computes the even-count median (mean of the middle pair)' {
+		$root = Join-Path $TestDrive 'eta-even'
+		$null = New-Item -ItemType Directory -Path $root -Force
+		foreach ($d in @(10, 20, 30, 40)) {
+			$null = Add-BuildQueueStatsEntry -StateRoot $root -Op 'msbuild' -Seq $d -DurationSeconds $d -ExitCode 0
+		}
+		Get-BuildQueueEta -StateRoot $root -Op 'msbuild' | Should -Be 25
+	}
+
+	It 'excludes failed runs from the estimate' {
+		$root = Join-Path $TestDrive 'eta-fail'
+		$null = New-Item -ItemType Directory -Path $root -Force
+		foreach ($d in @(10, 20, 30)) {
+			$null = Add-BuildQueueStatsEntry -StateRoot $root -Op 'nxbuild' -Seq $d -DurationSeconds $d -ExitCode 0
+		}
+		foreach ($d in @(500, 600, 700)) {
+			$null = Add-BuildQueueStatsEntry -StateRoot $root -Op 'nxbuild' -Seq $d -DurationSeconds $d -ExitCode 1
+		}
+		Get-BuildQueueEta -StateRoot $root -Op 'nxbuild' | Should -Be 20
+	}
+
+	It 'uses only the LAST 10 successful runs' {
+		$root = Join-Path $TestDrive 'eta-window'
+		$null = New-Item -ItemType Directory -Path $root -Force
+		1..15 | ForEach-Object {
+			$null = Add-BuildQueueStatsEntry -StateRoot $root -Op 'mstest' -Seq $_ -DurationSeconds ($_ * 10) -ExitCode 0
+		}
+		# Last 10 durations: 60..150 -> median = (100 + 110) / 2 = 105
+		Get-BuildQueueEta -StateRoot $root -Op 'mstest' | Should -Be 105
+	}
+}
+
+Describe 'Format-EtaDuration' {
+	It 'formats null as a question mark' {
+		Format-EtaDuration $null | Should -Be '?'
+	}
+	It 'formats seconds' {
+		Format-EtaDuration 42 | Should -Be '42s'
+	}
+	It 'formats minutes + seconds' {
+		Format-EtaDuration 190 | Should -Be '3m 10s'
+	}
+	It 'formats hours + minutes' {
+		Format-EtaDuration 3900 | Should -Be '1h 5m'
+	}
+	It 'floors negatives to 0s' {
+		Format-EtaDuration -5 | Should -Be '0s'
+	}
+}
+
+Describe 'Test-LaneClaimEligible (lane admission truth table, D5)' {
+	It 'fast head jumps ahead of an older heavy waiter when under the cap' {
+		$tickets = @(@{ seq = 3; lane = 'heavy' }, @{ seq = 5; lane = 'fast' })
+		Test-LaneClaimEligible -SelfSeq 5 -Tickets $tickets -FastPasses 0 -MaxFastPasses 3 | Should -BeTrue
+		Test-LaneClaimEligible -SelfSeq 3 -Tickets $tickets -FastPasses 0 -MaxFastPasses 3 | Should -BeFalse
+	}
+
+	It 'K consecutive fast passes hand the slot to the heavy head' {
+		$tickets = @(@{ seq = 3; lane = 'heavy' }, @{ seq = 5; lane = 'fast' })
+		Test-LaneClaimEligible -SelfSeq 3 -Tickets $tickets -FastPasses 3 -MaxFastPasses 3 | Should -BeTrue
+		Test-LaneClaimEligible -SelfSeq 5 -Tickets $tickets -FastPasses 3 -MaxFastPasses 3 | Should -BeFalse
+	}
+
+	It 'is FIFO within the heavy lane' {
+		$tickets = @(@{ seq = 3; lane = 'heavy' }, @{ seq = 7; lane = 'heavy' })
+		Test-LaneClaimEligible -SelfSeq 3 -Tickets $tickets -FastPasses 0 | Should -BeTrue
+		Test-LaneClaimEligible -SelfSeq 7 -Tickets $tickets -FastPasses 0 | Should -BeFalse
+	}
+
+	It 'is FIFO within the fast lane' {
+		$tickets = @(@{ seq = 2; lane = 'fast' }, @{ seq = 9; lane = 'fast' })
+		Test-LaneClaimEligible -SelfSeq 2 -Tickets $tickets -FastPasses 0 | Should -BeTrue
+		Test-LaneClaimEligible -SelfSeq 9 -Tickets $tickets -FastPasses 0 | Should -BeFalse
+	}
+
+	It 'treats a laneless (legacy) ticket as heavy' {
+		$tickets = @(@{ seq = 4 }, @{ seq = 6; lane = 'fast' })
+		Test-LaneClaimEligible -SelfSeq 4 -Tickets $tickets -FastPasses 3 | Should -BeTrue
+	}
+
+	It 'heavy head claims when no fast waiter exists, regardless of the counter' {
+		$tickets = @(@{ seq = 8; lane = 'heavy' })
+		Test-LaneClaimEligible -SelfSeq 8 -Tickets $tickets -FastPasses 0 | Should -BeTrue
+	}
+
+	It 'fast head claims at the cap when NO heavy waiter exists (anti-livelock carve-out)' {
+		$tickets = @(@{ seq = 5; lane = 'fast' })
+		Test-LaneClaimEligible -SelfSeq 5 -Tickets $tickets -FastPasses 3 | Should -BeTrue
+	}
+
+	It 'returns $false for a self seq not present in the ticket set (fail-safe)' {
+		Test-LaneClaimEligible -SelfSeq 99 -Tickets @(@{ seq = 1; lane = 'heavy' }) -FastPasses 0 | Should -BeFalse
+	}
+}
+
+Describe 'Get-FastPassCount / Set-FastPassCount (starvation counter)' {
+	It 'reads a missing counter as MaxFastPasses (fast privilege suspended - old behavior, never livelock)' {
+		$root = Join-Path $TestDrive 'fp-missing'
+		$null = New-Item -ItemType Directory -Path $root -Force
+		Get-FastPassCount -StateRoot $root -MaxFastPasses 3 | Should -Be 3
+	}
+
+	It 'reads a corrupt counter as MaxFastPasses' {
+		$root = Join-Path $TestDrive 'fp-corrupt'
+		$null = New-Item -ItemType Directory -Path $root -Force
+		[System.IO.File]::WriteAllText((Join-Path $root 'fast-passes.count'), 'garbage')
+		Get-FastPassCount -StateRoot $root -MaxFastPasses 3 | Should -Be 3
+	}
+
+	It 'round-trips Set then Get' {
+		$root = Join-Path $TestDrive 'fp-roundtrip'
+		$null = New-Item -ItemType Directory -Path $root -Force
+		Set-FastPassCount -StateRoot $root -Count 2 | Should -BeTrue
+		Get-FastPassCount -StateRoot $root -MaxFastPasses 3 | Should -Be 2
+	}
+
+	It 'reset to 0 reads back 0 (heavy-claim reset)' {
+		$root = Join-Path $TestDrive 'fp-reset'
+		$null = New-Item -ItemType Directory -Path $root -Force
+		$null = Set-FastPassCount -StateRoot $root -Count 3
+		$null = Set-FastPassCount -StateRoot $root -Count 0
+		Get-FastPassCount -StateRoot $root -MaxFastPasses 3 | Should -Be 0
+	}
+}
+
+Describe 'Format-BuildQueueBanner carries no ETA (D3 outcome-only pin)' {
+	It 'PASS banner contains no eta/remaining/approx text' {
+		$b = Format-BuildQueueBanner -Seq 700 -Op mstest -ExitCode 0 -ResultFidelity verified -BuildFidelity verified -Counts @{ passed = 10; failed = 0; total = 10 }
+		$b | Should -Not -Match 'eta'
+		$b | Should -Not -Match 'remaining'
+		$b | Should -Not -Match ([regex]::Escape([string][char]0x2248))
+	}
+
+	It 'FAIL banner contains no eta/remaining/approx text' {
+		$b = Format-BuildQueueBanner -Seq 701 -Op msbuild -ExitCode 1 -ResultFidelity verified -BuildFidelity verified
+		$b | Should -Not -Match 'eta'
+		$b | Should -Not -Match 'remaining'
+		$b | Should -Not -Match ([regex]::Escape([string][char]0x2248))
+	}
+
+	It 'banner formatting function source references no ETA machinery' {
+		$source = Get-Content -Raw -Path $script:ModulePath
+		$bannerBody = [regex]::Match($source, '(?s)function Format-BuildQueueBanner \{.*?\r?\n\}').Value
+		$bannerBody | Should -Not -Match 'Get-BuildQueueEta'
+		$bannerBody | Should -Not -Match 'eta-start'
+	}
+}
+
+Describe 'ops-manifest lane field (D4 - tolerant validation + resolution)' {
+	It 'loads a manifest whose ops carry valid lane values' {
+		$root = Join-Path $TestDrive 'lane-valid'
+		$dir = Join-Path $root '.claude\skill-config'
+		$null = New-Item -ItemType Directory -Path $dir -Force
+		$json = '{"version":1,"ops":{"mstest":{"exec":"t.ps1","kind":"test","hygiene":"dotnet","skill":"/mstest","deny":[],"lane":"fast"}}}'
+		[System.IO.File]::WriteAllText((Join-Path $dir 'build-queue-ops.json'), $json)
+		$m = Get-BuildQueueOpsManifest -RepoRoot $root
+		$m | Should -Not -BeNullOrEmpty
+	}
+
+	It 'tolerates an INVALID lane value (warns, does not reject the manifest)' {
+		$root = Join-Path $TestDrive 'lane-invalid'
+		$dir = Join-Path $root '.claude\skill-config'
+		$null = New-Item -ItemType Directory -Path $dir -Force
+		$json = '{"version":1,"ops":{"mstest":{"exec":"t.ps1","kind":"test","hygiene":"dotnet","skill":"/mstest","deny":[],"lane":"purple"}}}'
+		[System.IO.File]::WriteAllText((Join-Path $dir 'build-queue-ops.json'), $json)
+		$m = Get-BuildQueueOpsManifest -RepoRoot $root 3>$null
+		$m | Should -Not -BeNullOrEmpty
+	}
+
+	It 'Resolve-BuildQueueOp threads a fast lane from the manifest entry' {
+		$root = Join-Path $TestDrive 'lane-resolve-fast'
+		$dir = Join-Path $root '.claude\skill-config'
+		$null = New-Item -ItemType Directory -Path $dir -Force
+		$json = '{"version":1,"ops":{"mstest":{"exec":"t.ps1","kind":"test","hygiene":"dotnet","skill":"/mstest","deny":[],"lane":"fast"}}}'
+		[System.IO.File]::WriteAllText((Join-Path $dir 'build-queue-ops.json'), $json)
+		$r = Resolve-BuildQueueOp -RepoRoot $root -Op 'mstest'
+		$r.ok | Should -BeTrue
+		$r.lane | Should -Be 'fast'
+	}
+
+	It 'Resolve-BuildQueueOp defaults an ABSENT lane to heavy (legacy manifest byte-compat)' {
+		$root = Join-Path $TestDrive 'lane-resolve-absent'
+		$dir = Join-Path $root '.claude\skill-config'
+		$null = New-Item -ItemType Directory -Path $dir -Force
+		$json = '{"version":1,"ops":{"msbuild":{"exec":"b.ps1","kind":"build","hygiene":"dotnet","skill":"/msbuild","deny":[]}}}'
+		[System.IO.File]::WriteAllText((Join-Path $dir 'build-queue-ops.json'), $json)
+		$r = Resolve-BuildQueueOp -RepoRoot $root -Op 'msbuild'
+		$r.ok | Should -BeTrue
+		$r.lane | Should -Be 'heavy'
+	}
+
+	It 'Resolve-BuildQueueOp normalizes an INVALID lane to heavy' {
+		$root = Join-Path $TestDrive 'lane-resolve-invalid'
+		$dir = Join-Path $root '.claude\skill-config'
+		$null = New-Item -ItemType Directory -Path $dir -Force
+		$json = '{"version":1,"ops":{"mstest":{"exec":"t.ps1","kind":"test","hygiene":"dotnet","skill":"/mstest","deny":[],"lane":"purple"}}}'
+		[System.IO.File]::WriteAllText((Join-Path $dir 'build-queue-ops.json'), $json)
+		$r = Resolve-BuildQueueOp -RepoRoot $root -Op 'mstest' 3>$null
+		$r.ok | Should -BeTrue
+		$r.lane | Should -Be 'heavy'
+	}
+
+	It 'legacy (no-manifest) resolution rides the heavy lane' {
+		$root = Join-Path $TestDrive 'lane-resolve-legacy'
+		$null = New-Item -ItemType Directory -Path $root -Force
+		$r = Resolve-BuildQueueOp -RepoRoot $root -Op 'mstest' -Exec 'x.ps1'
+		$r.ok | Should -BeTrue
+		$r.lane | Should -Be 'heavy'
+	}
+
+	It 'the committed Cognito manifest classifies test ops fast and build ops heavy' {
+		$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+		$manifestPath = Join-Path $repoRoot 'repos\cognito-forms\.claude\skill-config\build-queue-ops.json'
+		$m = [System.IO.File]::ReadAllText($manifestPath) | ConvertFrom-Json
+		$m.ops.mstest.lane | Should -Be 'fast'
+		$m.ops.nxtest.lane | Should -Be 'fast'
+		$m.ops.msbuild.lane | Should -Be 'heavy'
+		$m.ops.nxbuild.lane | Should -Be 'heavy'
+	}
+}
+
+Describe 'Get-BuildQueueWaitEta (D3 composition)' {
+	It 'returns 0 eta-start with an idle queue and a null eta-done for an unknown self op' {
+		$root = Join-Path $TestDrive 'weta-idle'
+		$null = New-Item -ItemType Directory -Path (Join-Path $root 'tickets') -Force
+		$eta = Get-BuildQueueWaitEta -StateRoot $root -SelfSeq 5 -SelfOp 'mstest' -SelfLane 'fast'
+		$eta.eta_start_seconds | Should -Be 0
+		$eta.eta_done_seconds | Should -BeNullOrEmpty
+	}
+
+	It 'composes active-remaining + eligible-ahead with warm stats' {
+		$root = Join-Path $TestDrive 'weta-warm'
+		$null = New-Item -ItemType Directory -Path (Join-Path $root 'tickets') -Force
+		foreach ($d in @(100, 100, 100)) {
+			$null = Add-BuildQueueStatsEntry -StateRoot $root -Op 'msbuild' -Seq $d -DurationSeconds $d -ExitCode 0
+		}
+		foreach ($d in @(50, 50, 50)) {
+			$null = Add-BuildQueueStatsEntry -StateRoot $root -Op 'mstest' -Seq $d -DurationSeconds $d -ExitCode 0
+		}
+		# Active msbuild started just now (remaining ~= 100); one heavy msbuild waiter ahead of self.
+		$lock = '{"seq":1,"build_pid":' + $PID + ',"op":"msbuild","started_at":"' + (Get-Date).ToString('o') + '"}'
+		[System.IO.File]::WriteAllText((Join-Path $root 'active.lock'), $lock)
+		$t = '{"seq":2,"pid":' + $PID + ',"op":"msbuild","lane":"heavy","started_wait_at":"' + (Get-Date).ToString('o') + '"}'
+		[System.IO.File]::WriteAllText((Join-Path $root 'tickets\2.json'), $t)
+		$eta = Get-BuildQueueWaitEta -StateRoot $root -SelfSeq 3 -SelfOp 'mstest' -SelfLane 'heavy'
+		$eta.eta_start_seconds | Should -BeGreaterThan 190
+		$eta.eta_start_seconds | Should -BeLessThan 210
+		$eta.eta_done_seconds | Should -BeGreaterThan 240
+		$eta.eta_done_seconds | Should -BeLessThan 260
+	}
+
+	It 'collapses to null when ANY term lacks history (unknown-term honesty)' {
+		$root = Join-Path $TestDrive 'weta-collapse'
+		$null = New-Item -ItemType Directory -Path (Join-Path $root 'tickets') -Force
+		$lock = '{"seq":1,"build_pid":' + $PID + ',"op":"cold-op","started_at":"' + (Get-Date).ToString('o') + '"}'
+		[System.IO.File]::WriteAllText((Join-Path $root 'active.lock'), $lock)
+		$eta = Get-BuildQueueWaitEta -StateRoot $root -SelfSeq 3 -SelfOp 'mstest' -SelfLane 'fast'
+		$eta.eta_start_seconds | Should -BeNullOrEmpty
+		$eta.eta_done_seconds | Should -BeNullOrEmpty
+	}
+
+	It 'a fast self skips heavy waiters ahead (lane-order approximation)' {
+		$root = Join-Path $TestDrive 'weta-fastskip'
+		$null = New-Item -ItemType Directory -Path (Join-Path $root 'tickets') -Force
+		foreach ($d in @(50, 50, 50)) {
+			$null = Add-BuildQueueStatsEntry -StateRoot $root -Op 'mstest' -Seq $d -DurationSeconds $d -ExitCode 0
+		}
+		# No active lock; one heavy waiter with a LOWER seq that fast-self jumps.
+		$t = '{"seq":2,"pid":' + $PID + ',"op":"msbuild","lane":"heavy","started_wait_at":"' + (Get-Date).ToString('o') + '"}'
+		[System.IO.File]::WriteAllText((Join-Path $root 'tickets\2.json'), $t)
+		$eta = Get-BuildQueueWaitEta -StateRoot $root -SelfSeq 3 -SelfOp 'mstest' -SelfLane 'fast'
+		$eta.eta_start_seconds | Should -Be 0
+		$eta.eta_done_seconds | Should -Be 50
+	}
+}

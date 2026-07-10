@@ -5633,6 +5633,392 @@ def test_events_guard_deny_appends_no_event():
         )
 
 
+# ===========================================================================
+# build-queue-generalization — Phase 3 (enforcement generalization) + the D5
+# arbitration seam. Locked 2026-07-09: D4-B (manifest presence primary gate +
+# Cognito remote-match legacy fallback for a missing/unreadable manifest),
+# D5-A (transient builds route THROUGH the queue — the ownership guard's deny
+# gains an additive routing hint in manifested repos, signature unchanged),
+# D7-A (workstation-only; BQE_PLATFORM_OVERRIDE=inert|armed is the test seam).
+# ===========================================================================
+
+_BQ_OPS_MANIFEST_RELPATH = Path(".claude") / "skill-config" / "build-queue-ops.json"
+
+
+def _init_manifested_repo(parent: Path, ops: dict, name: str = "manifested-repo") -> Path:
+    """Create a temp git repo (NO cognito remote) carrying a build-queue ops
+    manifest with the given ops mapping."""
+    repo = parent / name
+    repo.mkdir()
+    _git(["init", "-q"], repo)
+    _git(["config", "user.email", "t@t.t"], repo)
+    _git(["config", "user.name", "t"], repo)
+    manifest_path = repo / _BQ_OPS_MANIFEST_RELPATH
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(
+        json.dumps({"version": 1, "ops": ops}, indent=2) + "\n", encoding="utf-8"
+    )
+    return repo
+
+
+_ALGOBOOTH_STYLE_OPS = {
+    "tauri-build": {
+        "exec": "scripts/tauri-build-filtered.ps1",
+        "kind": "build",
+        "hygiene": "rust-tauri",
+        "skill": "/tauri-build",
+        "deny": ["tauri build", "cargo build --release"],
+    },
+}
+
+
+def test_bqe_manifest_denies_registered_op():
+    """A manifested (non-Cognito) repo denies its registered raw op; the deny
+    reason names the op's skill + the manifest path."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, _ALGOBOOTH_STYLE_OPS)
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("tauri build --verbose", str(repo)),
+            _base_env(state_dir),
+        )
+        assert result.returncode == 0, (
+            f"hook must exit 0 (deny is JSON); stderr={result.stderr!r}"
+        )
+        assert _containment_decision(result) == "deny", (
+            f"manifested raw op must deny; stdout={result.stdout!r}"
+        )
+        reason = json.loads(result.stdout.strip())["hookSpecificOutput"][
+            "permissionDecisionReason"
+        ]
+        assert "/tauri-build" in reason, (
+            f"deny reason must name the op's skill; got {reason!r}"
+        )
+        assert "build-queue-ops.json" in reason, (
+            f"deny reason must name the manifest; got {reason!r}"
+        )
+
+
+def test_bqe_manifest_denies_cd_prefixed_op():
+    """`cd "..." && cargo build --release` in a manifested repo → deny (the
+    manifest patterns ride the same _CMD_START segment anchor)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, _ALGOBOOTH_STYLE_OPS)
+        cmd = f'cd "{repo}" && cargo build --release'
+        result = _run_bash(
+            _BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir)
+        )
+        assert _containment_decision(result) == "deny", (
+            f"cd-prefixed manifested op must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_manifest_allows_bypassed_segment():
+    """Segment-aware BUILD_QUEUE_BYPASS=1 works on the manifest path too."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, _ALGOBOOTH_STYLE_OPS)
+        cmd = f'cd "{repo}" && BUILD_QUEUE_BYPASS=1 tauri build'
+        result = _run_bash(
+            _BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir)
+        )
+        assert _containment_decision(result) != "deny", (
+            f"bypassed segment must allow on the manifest path; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_manifest_allows_reference_only():
+    """A read verb referencing a manifested op token as an ARGUMENT does not
+    begin a command segment → allow (invoke-vs-reference discrimination)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, _ALGOBOOTH_STYLE_OPS)
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload('grep -rn "tauri build" docs/ | head -5', str(repo)),
+            _base_env(state_dir),
+        )
+        assert _containment_decision(result) != "deny", (
+            f"reference-only mention must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_manifest_allows_wrapper_invocation():
+    """The sanctioned build-queue.ps1 wrapper is exempt on the manifest path
+    (the D5 no-ping-pong seam: the takeover re-launch carries the wrapper)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, _ALGOBOOTH_STYLE_OPS)
+        cmd = (
+            'powershell.exe -File "$HOME/.claude/scripts/build-queue.ps1" '
+            '-Op tauri-build'
+        )
+        result = _run_bash(
+            _BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir)
+        )
+        assert _containment_decision(result) != "deny", (
+            f"wrapper invocation must stay exempt; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_manifest_ps1_deny_pattern():
+    """A `*.ps1` manifest deny entry reuses the filtered-script shapes: the
+    direct segment-leading invocation AND the powershell -File form deny; a
+    `cat` reference does not."""
+    ops = {
+        "mybuild": {
+            "exec": "scripts/my-build-filtered.ps1",
+            "kind": "build",
+            "hygiene": "none",
+            "skill": "/mybuild",
+            "deny": ["my-build-filtered.ps1"],
+        },
+    }
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, ops)
+        direct = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("./scripts/my-build-filtered.ps1 -Fast", str(repo)),
+            _base_env(state_dir),
+        )
+        assert _containment_decision(direct) == "deny", (
+            f"direct ps1 invocation must deny; stdout={direct.stdout!r}"
+        )
+        psfile = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload(
+                "powershell.exe -File scripts/my-build-filtered.ps1", str(repo)
+            ),
+            _base_env(state_dir),
+        )
+        assert _containment_decision(psfile) == "deny", (
+            f"powershell -File ps1 invocation must deny; stdout={psfile.stdout!r}"
+        )
+        ref = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("cat scripts/my-build-filtered.ps1 | head", str(repo)),
+            _base_env(state_dir),
+        )
+        assert _containment_decision(ref) != "deny", (
+            f"ps1 read reference must allow; stdout={ref.stdout!r}"
+        )
+
+
+def test_bqe_no_manifest_non_cognito_allows_long_build():
+    """No manifest + no Cognito remote → the hook is a no-op even for a raw
+    long build (the ownership guard owns that command, not this hook)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_repo_on_branch(td, "main")  # plain repo, no remote
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("tauri build", str(repo)),
+            _base_env(state_dir),
+        )
+        assert _containment_decision(result) != "deny", (
+            f"unmanifested non-Cognito repo must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_cognito_broken_manifest_legacy_fallback():
+    """D4: Cognito remote + UNPARSEABLE manifest → the legacy hard-coded deny
+    set still fires (enforcement can never be silently disarmed)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        broken = repo / _BQ_OPS_MANIFEST_RELPATH
+        broken.parent.mkdir(parents=True)
+        broken.write_text("{ this is not json", encoding="utf-8")
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("dotnet build ./Cognito.sln -c Debug", str(repo)),
+            _base_env(state_dir),
+        )
+        assert _containment_decision(result) == "deny", (
+            f"broken manifest in a Cognito worktree must fall back to the "
+            f"legacy deny set; stdout={result.stdout!r}"
+        )
+        reason = json.loads(result.stdout.strip())["hookSpecificOutput"][
+            "permissionDecisionReason"
+        ]
+        assert "/msbuild" in reason, (
+            f"legacy fallback deny must carry the legacy redirect; got {reason!r}"
+        )
+
+
+def test_bqe_cognito_valid_manifest_is_primary():
+    """D4: a VALID manifest in a Cognito-remote repo is the primary deny
+    source — its registered op denies with the manifest message; a legacy
+    token the manifest does NOT register is allowed (manifest wins)."""
+    ops = {
+        "msbuild": {
+            "exec": ".claude/scripts/build-filtered.ps1",
+            "kind": "build",
+            "hygiene": "dotnet",
+            "skill": "/msbuild",
+            "deny": ["dotnet build"],
+        },
+    }
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        manifest_path = repo / _BQ_OPS_MANIFEST_RELPATH
+        manifest_path.parent.mkdir(parents=True)
+        manifest_path.write_text(
+            json.dumps({"version": 1, "ops": ops}) + "\n", encoding="utf-8"
+        )
+        denied = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("dotnet build ./Cognito.sln", str(repo)),
+            _base_env(state_dir),
+        )
+        assert _containment_decision(denied) == "deny", (
+            f"manifested op must deny; stdout={denied.stdout!r}"
+        )
+        reason = json.loads(denied.stdout.strip())["hookSpecificOutput"][
+            "permissionDecisionReason"
+        ]
+        assert "build-queue-ops.json" in reason, (
+            f"a valid manifest must be the deny source (manifest message), "
+            f"not the legacy set; got {reason!r}"
+        )
+        unregistered = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("npx nx build client", str(repo)),
+            _base_env(state_dir),
+        )
+        assert _containment_decision(unregistered) != "deny", (
+            f"an op the valid manifest does not register must allow "
+            f"(manifest is primary, legacy set not additive); "
+            f"stdout={unregistered.stdout!r}"
+        )
+
+
+def test_bqe_platform_override_inert_allows():
+    """D7: BQE_PLATFORM_OVERRIDE=inert simulates an off-workstation host —
+    even a legacy Cognito deny is silently allowed."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        env = _base_env(state_dir)
+        env["BQE_PLATFORM_OVERRIDE"] = "inert"
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("dotnet build ./Cognito.sln", str(repo)),
+            env,
+        )
+        assert _containment_decision(result) != "deny", (
+            f"an inert (off-workstation) host must allow everything; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_manifest_routing_hint():
+    """D5: in a manifested repo, the takeover deny ADDITIONALLY names the op +
+    the queue-wrapper routing; the signature is still present."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, _ALGOBOOTH_STYLE_OPS)
+        result = _run_bash(
+            _LONGBUILD_GUARD_SH,
+            _bqe_payload("tauri build", str(repo)),
+            _base_env(state_dir),
+        )
+        assert _containment_decision(result) == "deny", (
+            f"long build must still deny; stdout={result.stdout!r}"
+        )
+        reason = json.loads(result.stdout.strip())["hookSpecificOutput"][
+            "permissionDecisionReason"
+        ]
+        assert _LONGBUILD_TAKEOVER_SIGNATURE in reason, (
+            f"takeover signature must survive the routing hint; got {reason!r}"
+        )
+        assert "tauri-build" in reason and "-Op tauri-build" in reason, (
+            f"routing hint must name the manifested op + wrapper invocation; "
+            f"got {reason!r}"
+        )
+
+
+def test_longbuild_guard_no_manifest_message_unchanged():
+    """D5: without a manifest the takeover deny message is byte-identical to
+    the legacy form — no routing hint, signature present."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_repo_on_branch(td, "main")
+        result = _run_bash(
+            _LONGBUILD_GUARD_SH,
+            _bqe_payload("tauri build", str(repo)),
+            _base_env(state_dir),
+        )
+        assert _containment_decision(result) == "deny"
+        reason = json.loads(result.stdout.strip())["hookSpecificOutput"][
+            "permissionDecisionReason"
+        ]
+        assert _LONGBUILD_TAKEOVER_SIGNATURE in reason
+        assert "QUEUE ROUTING" not in reason and "build-queue-ops.json" not in reason, (
+            f"no-manifest repo must get the legacy message with no routing "
+            f"hint; got {reason!r}"
+        )
+
+
+def test_bq_hook_order_guard_before_enforce():
+    """D5 ordering invariant: long-build-ownership-guard.sh is registered
+    BEFORE build-queue-enforce.sh in the PreToolUse matcher:Bash chain, so a
+    subagent's raw long build surfaces the takeover signature first."""
+    settings_path = _REPO_ROOT / "user" / "settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    pretooluse = settings.get("hooks", {}).get("PreToolUse", [])
+    commands = [
+        h.get("command", "")
+        for block in pretooluse
+        if block.get("matcher") == "Bash"
+        for h in block.get("hooks", [])
+    ]
+    guard_idx = next(
+        (i for i, c in enumerate(commands) if "long-build-ownership-guard.sh" in c),
+        None,
+    )
+    enforce_idx = next(
+        (i for i, c in enumerate(commands) if "build-queue-enforce.sh" in c),
+        None,
+    )
+    assert guard_idx is not None and enforce_idx is not None, (
+        f"both hooks must be registered in matcher:Bash; got {commands!r}"
+    )
+    assert guard_idx < enforce_idx, (
+        f"long-build-ownership-guard.sh (idx {guard_idx}) must precede "
+        f"build-queue-enforce.sh (idx {enforce_idx}) — D5 ordering invariant"
+    )
+
+
 _TESTS = [
     ("test_guard_files_exist",                    test_guard_files_exist),
     ("test_guard_fast_path_no_marker",            test_guard_fast_path_no_marker),
@@ -5920,6 +6306,35 @@ _TESTS = [
      test_events_guard_breadcrumb_appends_error_event),
     ("test_events_guard_deny_appends_no_event",
      test_events_guard_deny_appends_no_event),
+    # build-queue-generalization Phase 3 + D5 seam — manifest-driven deny set
+    # (locked D4-B), guard routing hint (locked D5-A), platform gate (locked
+    # D7-A), hook-order invariant.
+    ("test_bqe_manifest_denies_registered_op",
+     test_bqe_manifest_denies_registered_op),
+    ("test_bqe_manifest_denies_cd_prefixed_op",
+     test_bqe_manifest_denies_cd_prefixed_op),
+    ("test_bqe_manifest_allows_bypassed_segment",
+     test_bqe_manifest_allows_bypassed_segment),
+    ("test_bqe_manifest_allows_reference_only",
+     test_bqe_manifest_allows_reference_only),
+    ("test_bqe_manifest_allows_wrapper_invocation",
+     test_bqe_manifest_allows_wrapper_invocation),
+    ("test_bqe_manifest_ps1_deny_pattern",
+     test_bqe_manifest_ps1_deny_pattern),
+    ("test_bqe_no_manifest_non_cognito_allows_long_build",
+     test_bqe_no_manifest_non_cognito_allows_long_build),
+    ("test_bqe_cognito_broken_manifest_legacy_fallback",
+     test_bqe_cognito_broken_manifest_legacy_fallback),
+    ("test_bqe_cognito_valid_manifest_is_primary",
+     test_bqe_cognito_valid_manifest_is_primary),
+    ("test_bqe_platform_override_inert_allows",
+     test_bqe_platform_override_inert_allows),
+    ("test_longbuild_guard_manifest_routing_hint",
+     test_longbuild_guard_manifest_routing_hint),
+    ("test_longbuild_guard_no_manifest_message_unchanged",
+     test_longbuild_guard_no_manifest_message_unchanged),
+    ("test_bq_hook_order_guard_before_enforce",
+     test_bq_hook_order_guard_before_enforce),
 ]
 
 

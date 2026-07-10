@@ -2,7 +2,7 @@
 
 Map failure categories to relevant project skills:
 - **ui-ux-polish** → `algobooth-ui`, `frontend-design`, `vue`, `tailwind-design-system`
-- **environment-platform** → `tauri-patterns`, `rust-best-practices`, `rust-errors`
+- **environment-platform** → `tauri-patterns`, `rust-best-practices`, `rust-errors`, `tauri-build`, `cargo-release` (workstation-only queue-routed builds)
 - **inadequate-test-coverage** → `test-driven-development`, `rust-best-practices`, `vue`
 - **tooling-config** → `nx-monorepo`, `tauri-patterns`, `ts-library`
 - **inadequate-research** → `implement-phase`, `spec`, `spec-phases`

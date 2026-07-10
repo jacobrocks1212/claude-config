@@ -102,11 +102,23 @@ if (Test-Path $activeLock) {
 	if ($null -ne $lockData) {
 		$hasActive = $true
 		$elapsed = Format-Elapsed $lockData.started_at
+		# eta-priority-lanes D3: remaining~ beside elapsed (per-op estimate minus
+		# elapsed, floored at 0; '?' with no history). Prediction, never outcome.
+		$etaApprox = [char]0x2248
+		$remainingStr = Get-SafeValue {
+			if (-not (Get-Command Get-BuildQueueEta -ErrorAction SilentlyContinue)) { return '?' }
+			$est = Get-BuildQueueEta -StateRoot $StateRoot -Op ([string]$lockData.op)
+			if ($null -eq $est) { return '?' }
+			$start = [datetime]::Parse([string]$lockData.started_at, $null, [System.Globalization.DateTimeStyles]::RoundtripKind)
+			$remaining = $est - ((Get-Date) - $start).TotalSeconds
+			if ($remaining -lt 0) { $remaining = 0 }
+			Format-EtaDuration $remaining
+		} '?'
 		Write-Output '=== Active Build ==='
 		Write-Output ("  op:      {0}" -f $lockData.op)
 		Write-Output ("  worktree:{0}" -f $lockData.worktree)
 		Write-Output ("  pid:     {0}" -f $lockData.build_pid)
-		Write-Output ("  elapsed: {0}" -f $elapsed)
+		Write-Output ("  elapsed: {0}   remaining{1} {2}" -f $elapsed, $etaApprox, $remainingStr)
 		Write-Output ("  log:     {0}" -f $lockData.log_path)
 		$snapLine = Get-SafeValue { Get-PerfSnapshotLine $lockData.machine_perf }
 		if ($null -ne $snapLine -and $snapLine -ne '') {
@@ -134,10 +146,24 @@ if (@($tickets).Count -gt 0) {
 	$hasWaiters = $true
 	Write-Output ''
 	Write-Output '=== Waiters ==='
+	$etaApproxW = [char]0x2248
 	$pos = 1
 	foreach ($t in $tickets) {
 		$waited = Format-Elapsed $t.started_wait_at
-		Write-Output ("  [{0}] seq={1} op={2} worktree={3} waiting={4}" -f $pos, $t.seq, $t.op, $t.worktree, $waited)
+		# eta-priority-lanes D3: lane + eta-start/eta-done per waiter row
+		# (predictions with the approx/? markers; legacy laneless tickets
+		# render lane=heavy). Fail-open: hygiene absent -> '?'.
+		$laneRaw = Get-SafeValue { [string]$t.lane } ''
+		$lane = if ($laneRaw -eq 'fast') { 'fast' } else { 'heavy' }
+		$etaStartStr = Get-SafeValue {
+			$eta = Get-BuildQueueWaitEta -StateRoot $StateRoot -SelfSeq ([int]$t.seq) -SelfOp ([string]$t.op) -SelfLane $lane
+			Format-EtaDuration $eta.eta_start_seconds
+		} '?'
+		$etaDoneStr = Get-SafeValue {
+			$eta = Get-BuildQueueWaitEta -StateRoot $StateRoot -SelfSeq ([int]$t.seq) -SelfOp ([string]$t.op) -SelfLane $lane
+			Format-EtaDuration $eta.eta_done_seconds
+		} '?'
+		Write-Output ("  [{0}] seq={1} op={2} lane={3} worktree={4} waiting={5} eta-start{6}{7} eta-done{6}{8}" -f $pos, $t.seq, $t.op, $lane, $t.worktree, $waited, $etaApproxW, $etaStartStr, $etaDoneStr)
 		$pos++
 	}
 }

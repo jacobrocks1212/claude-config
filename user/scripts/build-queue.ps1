@@ -8,29 +8,39 @@
   State lives under $HOME/.claude/state/build-queue/ (machine-global by construction).
 
   Usage:
-	build-queue.ps1 -Op msbuild -Exec <path-to-filtered-script> [<pass-through-args>...]
+	build-queue.ps1 -Op msbuild [-Exec <path-to-filtered-script>] [<pass-through-args>...]
 
-  -Op     One of: msbuild, mstest, nxbuild, nxtest
-  -Exec   Absolute path to the underlying filtered script (e.g. build-filtered.ps1)
+  -Op     An op registered in the current repo's ops manifest
+		  (.claude/skill-config/build-queue-ops.json — feature
+		  build-queue-generalization). With no manifest, the legacy four
+		  (msbuild, mstest, nxbuild, nxtest) are accepted for back-compat
+		  and -Exec is required.
+  -Exec   Path to the underlying filtered script (e.g. build-filtered.ps1).
+		  Optional when the manifest registers the op (resolved from the
+		  entry's repo-root-relative 'exec'); an explicit -Exec overrides.
 		  That script is invoked UNCHANGED inside a detached PowerShell process.
   Remaining arguments are forwarded verbatim to the filtered script.
+
+  The manifest entry's kind/hygiene are threaded to the runner as
+  -OpKind/-Hygiene so hygiene dispatches on a profile record
+  (Get-HygieneProfile), never on repo identity or exec filename.
 
   Queue state layout ($HOME/.claude/state/build-queue/):
 	seq.counter           - monotonic sequence allocator (integer text)
 	seq.counter.lock      - transient exclusive-open lock guarding seq allocation
-	tickets/<seq>.json    - one per waiter: {seq, pid, worktree, op, started_wait_at}
+	tickets/<seq>.json    - one per waiter: {seq, pid, worktree, op, lane, started_wait_at}
 	active.lock           - current holder: {seq, build_pid, op, worktree, started_at, log_path, machine_perf}
 	logs/<seq>.log        - build stdout/stderr
-	results/<seq>.json    - {seq, exit_code, ended_at} written on completion
+	results/<seq>.json    - {seq, exit_code, ended_at, +op/started_at/duration_seconds} written on completion
+	stats/<op>.json       - rolling per-op duration ring (20 entries; ETA input; advisory)
+	fast-passes.count     - consecutive fast-lane claims counter (lane starvation bound K=3; advisory)
 #>
 [CmdletBinding()]
 param(
 	[Parameter(Mandatory=$true)]
-	[ValidateSet('msbuild','mstest','nxbuild','nxtest')]
 	[string]$Op,
 
-	[Parameter(Mandatory=$true)]
-	[string]$Exec,
+	[string]$Exec = '',
 
 	[Parameter(ValueFromRemainingArguments=$true)]
 	$ExecArgs
@@ -69,14 +79,44 @@ $counterFile = Join-Path $stateRoot 'seq.counter'
 $counterLock = Join-Path $stateRoot 'seq.counter.lock'
 $activeLock  = Join-Path $stateRoot 'active.lock'
 
-foreach ($dir in @($stateRoot, $ticketsDir, $logsDir, $resultsDir)) {
-	if (-not (Test-Path $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
-}
-
 $worktree = Get-SafeValue {
 	$wt = git rev-parse --show-toplevel 2>$null
 	if ($LASTEXITCODE -eq 0 -and $wt) { $wt.Trim() } else { $PWD.Path }
 } $PWD.Path
+
+# ---------------------------------------------------------------------------
+# Step 0: Resolve -Op against the repo's ops manifest (build-queue-generalization)
+# BEFORE any state write, so an unknown op / missing exec exits side-effect-free.
+# ---------------------------------------------------------------------------
+$opKind = ''
+$opHygiene = ''
+$opLane = 'heavy'
+if (Get-Command Resolve-BuildQueueOp -ErrorAction SilentlyContinue) {
+	$opResolution = Resolve-BuildQueueOp -RepoRoot $worktree -Op $Op -Exec $Exec
+	if (-not $opResolution.ok) {
+		Write-Error $opResolution.error
+		exit 1
+	}
+	$Exec      = [string]$opResolution.exec
+	$opKind    = [string]$opResolution.kind
+	$opHygiene = [string]$opResolution.hygiene
+	$opLane    = Get-SafeValue { if (@('fast','heavy') -contains [string]$opResolution.lane) { [string]$opResolution.lane } else { 'heavy' } } 'heavy'
+} else {
+	# Hygiene module absent: legacy inline fallback (pre-manifest behavior —
+	# the four legacy ops with an explicit -Exec).
+	if (@('msbuild','mstest','nxbuild','nxtest') -notcontains $Op) {
+		Write-Error "build-queue: unknown op '$Op' (hygiene module unavailable; legacy ops: msbuild, mstest, nxbuild, nxtest)"
+		exit 1
+	}
+	if ([string]::IsNullOrWhiteSpace($Exec)) {
+		Write-Error "build-queue: -Exec is required for op '$Op' (hygiene module unavailable; manifest resolution not possible)"
+		exit 1
+	}
+}
+
+foreach ($dir in @($stateRoot, $ticketsDir, $logsDir, $resultsDir)) {
+	if (-not (Test-Path $dir)) { $null = New-Item -ItemType Directory -Path $dir -Force }
+}
 
 # ---------------------------------------------------------------------------
 # Step 1: Allocate seq - bounded retry around exclusive-open lock
@@ -126,19 +166,50 @@ $ticketBody = [ordered]@{
 	pid            = $PID
 	worktree       = $worktree
 	op             = $Op
+	lane           = $opLane
 	started_wait_at = (Get-Date).ToString('o')
 } | ConvertTo-Json -Compress
 [System.IO.File]::WriteAllText($ticketPath, $ticketBody)
 
-Write-Output "build-queue: enqueued as seq=$seq (op=$Op)"
+# eta-priority-lanes D3: predictions ride the PRE-outcome surfaces only (this
+# echo + the position lines + the status view) with the approx/? markers —
+# NEVER the authoritative Format-BuildQueueBanner last line.
+$script:etaApprox = [char]0x2248
+function Format-EtaSuffix {
+	param([int]$SelfSeq, [string]$SelfOp, [string]$SelfLane, [switch]$IncludeDone)
+	return Get-SafeValue {
+		if (-not (Get-Command Get-BuildQueueWaitEta -ErrorAction SilentlyContinue)) { return '' }
+		$eta = Get-BuildQueueWaitEta -StateRoot $stateRoot -SelfSeq $SelfSeq -SelfOp $SelfOp -SelfLane $SelfLane
+		$startStr = Format-EtaDuration $eta.eta_start_seconds
+		$suffix = " eta-start$($script:etaApprox)$startStr"
+		if ($IncludeDone) {
+			$doneStr = Format-EtaDuration $eta.eta_done_seconds
+			$suffix += " eta-done$($script:etaApprox)$doneStr"
+		}
+		return $suffix
+	} ''
+}
+
+$enqueueEcho = "build-queue: enqueued as seq=$seq (op=$Op, lane=$opLane)"
+$enqueueEcho += Get-SafeValue {
+	$queuedTickets = @(Get-ChildItem -Path $ticketsDir -Filter '*.json' -ErrorAction SilentlyContinue)
+	$activePresent = Test-Path $activeLock
+	$aheadGuess = [math]::Max(0, $queuedTickets.Count - 1) + $(if ($activePresent) { 1 } else { 0 })
+	" position=$($aheadGuess + 1)"
+} ''
+$enqueueEcho += Format-EtaSuffix -SelfSeq $seq -SelfOp $Op -SelfLane $opLane -IncludeDone
+Write-Output $enqueueEcho
 
 # ---------------------------------------------------------------------------
 # Step 3: Poll loop - reclaim stale, check head, heartbeat
 # ---------------------------------------------------------------------------
 $lastEmittedPosition = -1
 
-function Get-LiveTicketSeqs {
-	$seqs = @()
+function Get-LiveTickets {
+	# Live tickets as @{seq; lane} records (lane absent/invalid -> 'heavy' —
+	# legacy tickets ride the heavy lane, eta-priority-lanes D5). Dead-pid
+	# tickets are pruned exactly as before.
+	$live = @()
 	$files = Get-SafeValue { Get-ChildItem -Path $ticketsDir -Filter '*.json' -ErrorAction SilentlyContinue } @()
 	foreach ($f in $files) {
 		$data = Get-SafeValue {
@@ -154,9 +225,15 @@ function Get-LiveTicketSeqs {
 			Get-SafeValue { Remove-Item $f.FullName -Force -ErrorAction SilentlyContinue }
 			continue
 		}
-		$seqs += $ticketSeq
+		$ticketLaneRaw = Get-SafeValue { [string]$data.lane } ''
+		$ticketLane = if ($ticketLaneRaw -eq 'fast') { 'fast' } else { 'heavy' }
+		$live += [pscustomobject]@{ seq = $ticketSeq; lane = $ticketLane }
 	}
-	return $seqs
+	return $live
+}
+
+function Get-LiveTicketSeqs {
+	return @(Get-LiveTickets | ForEach-Object { $_.seq })
 }
 
 function Get-ActiveLockStatusOnce {
@@ -200,12 +277,21 @@ $errPath = Join-Path $logsDir "$seq.err.log"
 
 $won = $false
 $staleThreshold = 3
+# eta-priority-lanes D5: starvation bound — after K consecutive fast-lane
+# claims the oldest heavy waiter is admitted (counter in fast-passes.count).
+$maxFastPasses = 3
 $recentStatuses = New-Object System.Collections.Generic.List[string]
 # Legacy fallback counter (used only when Test-ShouldReclaimLock is unavailable):
 # increments ONLY on a confirmed 'dead' observation, resets on anything else.
 $consecutiveDeadFallback = 0
 while (-not $won) {
-	$liveSeqs    = @(Get-LiveTicketSeqs)
+	$liveTickets = @(Get-LiveTickets)
+	if (-not (@($liveTickets | ForEach-Object { $_.seq }) -contains $seq)) {
+		# Self ticket unreadable/pruned mid-poll: keep self in the admission
+		# set (synthetic record) so the lane predicate can still elect us.
+		$liveTickets += [pscustomobject]@{ seq = $seq; lane = $opLane }
+	}
+	$liveSeqs    = @($liveTickets | ForEach-Object { $_.seq })
 	$lowestSeq   = if ($liveSeqs.Count -gt 0) { (@($liveSeqs | Sort-Object))[0] } else { $seq }
 	$status      = Get-ActiveLockStatus
 
@@ -234,7 +320,21 @@ while (-not $won) {
 		$consecutiveDeadFallback = 0
 	}
 
-	if ($status -eq 'absent' -and $lowestSeq -eq $seq) {
+	# eta-priority-lanes D5: lane-aware claim eligibility (admission-order only —
+	# the slot-free check, the CreateNew race arbiter, reclaim, and everything
+	# below the claim are byte-identical; D7 structural containment). Fallback
+	# to the legacy global-lowest-seq rule when the hygiene module is absent.
+	$claimEligible = $false
+	if ($status -eq 'absent') {
+		if (Get-Command Test-LaneClaimEligible -ErrorAction SilentlyContinue) {
+			$fastPasses = Get-SafeValue { Get-FastPassCount -StateRoot $stateRoot -MaxFastPasses $maxFastPasses } $maxFastPasses
+			$claimEligible = Test-LaneClaimEligible -SelfSeq $seq -Tickets $liveTickets -FastPasses $fastPasses -MaxFastPasses $maxFastPasses
+		} else {
+			$claimEligible = ($lowestSeq -eq $seq)
+		}
+	}
+
+	if ($claimEligible) {
 		$lockFileStream = $null
 		try {
 			$lockFileStream = [System.IO.File]::Open(
@@ -273,6 +373,21 @@ while (-not $won) {
 			}
 
 			Get-SafeValue { Remove-Item $ticketPath -Force -ErrorAction SilentlyContinue }
+
+			# eta-priority-lanes D5: ONLY the claim winner writes the counter
+			# (single-writer by construction — the CreateNew open above already
+			# arbitrated exactly one winner). Increment on a fast claim, reset
+			# on a heavy claim. Advisory scheduling state: fail-open.
+			Get-SafeValue {
+				if (Get-Command Set-FastPassCount -ErrorAction SilentlyContinue) {
+					if ($opLane -eq 'fast') {
+						$prior = Get-SafeValue { Get-FastPassCount -StateRoot $stateRoot -MaxFastPasses $maxFastPasses } $maxFastPasses
+						$null = Set-FastPassCount -StateRoot $stateRoot -Count ([math]::Min($prior + 1, $maxFastPasses))
+					} else {
+						$null = Set-FastPassCount -StateRoot $stateRoot -Count 0
+					}
+				}
+			}
 		} catch {
 			if ($null -ne $lockFileStream) {
 				try { $lockFileStream.Dispose() } catch {}
@@ -292,7 +407,13 @@ while (-not $won) {
 			if ($aheadCount -eq 0) {
 				Write-Output "build-queue: waiting to claim slot..."
 			} else {
-				Write-Output "build-queue: queued at position $position ($aheadCount build(s) ahead). Waiting..."
+				# eta-priority-lanes D3: eta-start rides the position line (a
+				# pre-outcome surface); '?' whenever any term lacks history.
+				$etaSuffix = Get-SafeValue {
+					$s = Format-EtaSuffix -SelfSeq $seq -SelfOp $Op -SelfLane $opLane
+					if ($s) { ($s -replace '^ ', ', ') } else { '' }
+				} ''
+				Write-Output "build-queue: queued at position $position ($aheadCount build(s) ahead$etaSuffix). Waiting..."
 			}
 		}
 
@@ -336,7 +457,14 @@ $procArgList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Format-Pr
 	'-Exec', (Format-ProcArg $Exec),
 	'-Seq', "$seq",
 	'-StateRoot', (Format-ProcArg $stateRoot),
-	'-Worktree', (Format-ProcArg $worktree))
+	'-Worktree', (Format-ProcArg $worktree),
+	'-Op', (Format-ProcArg $Op))
+if (-not [string]::IsNullOrWhiteSpace($opKind)) {
+	$procArgList += @('-OpKind', (Format-ProcArg $opKind))
+}
+if (-not [string]::IsNullOrWhiteSpace($opHygiene)) {
+	$procArgList += @('-Hygiene', (Format-ProcArg $opHygiene))
+}
 foreach ($a in $execArgsArr) { $procArgList += (Format-ProcArg ([string]$a)) }
 $procArgString = $procArgList -join ' '
 
@@ -472,8 +600,16 @@ Get-SafeValue {
 }
 
 Get-SafeValue {
-	$occupancy = Get-SafeValue { Get-BuildQueueOccupancy -StateRoot $stateRoot -SelfSeq $seq } 0
-	Reset-CompilerServer -OtherBuildActive ($occupancy -gt 0)
+	# Profile-gated release recycle (build-queue-generalization): only a
+	# profile that recycles the compiler server (dotnet — today's behavior,
+	# also the default when no profile is threaded) reaches Reset-CompilerServer.
+	# A rust-tauri/none op must never name-kill VBCSCompiler from the wrapper.
+	$wrapperProfile = Get-SafeValue { Get-HygieneProfile -Name $opHygiene } $null
+	$wrapperRecycles = if ($null -ne $wrapperProfile) { [bool]$wrapperProfile.recycle_compiler_server } else { $true }
+	if ($wrapperRecycles) {
+		$occupancy = Get-SafeValue { Get-BuildQueueOccupancy -StateRoot $stateRoot -SelfSeq $seq } 0
+		Reset-CompilerServer -OtherBuildActive ($occupancy -gt 0)
+	}
 }
 
 Get-SafeValue {

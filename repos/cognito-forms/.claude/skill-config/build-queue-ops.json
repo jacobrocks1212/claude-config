@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "ops": {
+    "msbuild": {
+      "exec": ".claude/scripts/build-filtered.ps1",
+      "kind": "build",
+      "hygiene": "dotnet",
+      "skill": "/msbuild",
+      "deny": [
+        "dotnet build"
+      ],
+      "lane": "heavy"
+    },
+    "mstest": {
+      "exec": ".claude/scripts/test-filtered.ps1",
+      "kind": "test",
+      "hygiene": "dotnet",
+      "skill": "/mstest",
+      "deny": [
+        "dotnet test"
+      ],
+      "lane": "fast"
+    },
+    "nxbuild": {
+      "exec": ".claude/scripts/client-build-filtered.ps1",
+      "kind": "build",
+      "hygiene": "dotnet",
+      "skill": "/nxbuild",
+      "deny": [
+        "nx build",
+        "nx run-many"
+      ],
+      "lane": "heavy"
+    },
+    "nxtest": {
+      "exec": ".claude/scripts/client-test-filtered.ps1",
+      "kind": "test",
+      "hygiene": "dotnet",
+      "skill": "/nxtest",
+      "deny": [
+        "nx test"
+      ],
+      "lane": "fast"
+    }
+  }
+}

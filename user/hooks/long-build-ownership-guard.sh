@@ -28,6 +28,17 @@
 # a word boundary so a long-build token glued onto a longer word does not match,
 # but it WILL match a real invocation that follows a `cd ... &&`.
 #
+# QUEUE ROUTING HINT (build-queue-generalization D5, locked 2026-07-09): when
+# the repo the command runs in carries a build-queue ops manifest
+# (.claude/skill-config/build-queue-ops.json) registering the matched build as
+# an op, the deny reason ADDITIONALLY names the op + the queue-wrapper
+# invocation the orchestrator's takeover re-launch must use (transient builds
+# route THROUGH the queue). Purely additive: the takeover signature and deny
+# semantics are unchanged, and a repo without a manifest gets the
+# byte-identical legacy message. The hook stays ordered BEFORE
+# build-queue-enforce.sh in settings.json (ownership is the more fundamental
+# correction; queue routing is the orchestrator's job after takeover).
+#
 # NOTE on "fail-open block": SPEC §M5 prose says the guard "fail-open blocks
 # (exit 2)". In Claude Code a PreToolUse blocks via the JSON
 # `permissionDecision: deny` — a non-zero exit is a HARD error, not a soft block.
@@ -110,6 +121,67 @@ _LONG_BUILD_RE = re.compile(
     r"|npm\s+run\s+build(?:\s|$)"
     r")"
 )
+
+
+def _queue_routing_hint(command, cwd):
+    """build-queue-generalization D5 (locked 2026-07-09): transient builds
+    route THROUGH the queue. When the repo the command runs in carries a
+    build-queue ops manifest registering this build as an op, append a hint
+    naming the op + the wrapper invocation the orchestrator's takeover
+    re-launch must use. PURELY ADDITIVE to the takeover deny — the
+    LONG-BUILD-OWNERSHIP-TAKEOVER signature and deny semantics are unchanged,
+    and a repo with no manifest gets the byte-identical legacy message.
+    FAIL-OPEN: any error → empty hint."""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["git", "-C", cwd or ".", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode != 0:
+            return ""
+        toplevel = result.stdout.strip()
+        if not toplevel:
+            return ""
+        path = os.path.join(
+            toplevel, ".claude", "skill-config", "build-queue-ops.json"
+        )
+        if not os.path.isfile(path):
+            return ""
+        with open(path, encoding="utf-8") as fh:
+            manifest = json.load(fh)
+        ops = manifest.get("ops") if isinstance(manifest, dict) else None
+        if not isinstance(ops, dict):
+            return ""
+        for op_name, entry in ops.items():
+            if not isinstance(entry, dict):
+                continue
+            patterns = entry.get("deny") or []
+            if not isinstance(patterns, list):
+                continue
+            for pat in patterns:
+                if not isinstance(pat, str) or not pat.strip():
+                    continue
+                body = r"\s+".join(re.escape(t) for t in pat.split())
+                if re.search(
+                    _CMD_START + body + r"(?:\s|$)", command, re.IGNORECASE
+                ):
+                    skill = entry.get("skill") or ""
+                    skill_txt = f" (skill: {skill})" if skill else ""
+                    return (
+                        " QUEUE ROUTING (build-queue-generalization D5): this "
+                        f"repo's build-queue ops manifest registers this build "
+                        f"as op '{op_name}'{skill_txt} — the orchestrator's "
+                        "re-launch must route THROUGH the machine-global "
+                        "serializer, i.e. run the queue wrapper "
+                        f"(build-queue.ps1 -Op {op_name}) via "
+                        "run_transient_build's detached spawn instead of the "
+                        "bare build command, gaining serialization + hygiene "
+                        "+ the authoritative outcome banner."
+                    )
+        return ""
+    except Exception:
+        return ""
 
 
 def _append_hook_event(kind, signature, detail, cwd=""):
@@ -215,6 +287,7 @@ def main():
             "true` and drive it through harness task-tracking so it survives "
             "subagent turn boundaries. Run `cargo check --release` first to surface "
             "compile errors fast before committing to the long build."
+            + _queue_routing_hint(command, payload.get("cwd") or "")
         )
     _allow()
 

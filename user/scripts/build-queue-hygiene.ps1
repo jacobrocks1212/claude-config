@@ -1349,12 +1349,27 @@ function Test-BuildLogFailure {
 	  This function scans the log text for that failure shape so a caller can
 	  override a bogus success exit code with the real verdict.
 
-	  Signature set (checked in this order; the FIRST match wins and is
+	  Signature sets are selected by -SignatureSet (default 'msbuild' — the
+	  pre-generalization behavior, byte-compatible for legacy callers).
+
+	  'msbuild' set (checked in this order; the FIRST match wins and is
 	  reported as $result.signature):
 	    - literal 'Build FAILED'
 	    - literal 'error MSB3027'
 	    - literal 'error MSB3021'
 	    - a '<N> Error(s)' line where N > 0
+
+	  'cargo' set (rust-tauri hygiene profile; failure-only signatures):
+	    - a rustc coded error 'error[E<NNNN>]'
+	    - a line starting with 'error:' (e.g. 'error: could not compile',
+	      'error: linking with `link.exe` failed')
+	  <!-- unverified-against-real-failure --> The cargo signature set has NOT
+	  yet been confirmed against a real failing `cargo build --release` log
+	  (SPEC build-queue-generalization, deferred empirical check) — validate
+	  and adjust before trusting it for exit-0-override in production.
+
+	  An unknown/empty -SignatureSet falls back to 'msbuild' (today's
+	  behavior — conservative default).
 
 	  Pure function: no file I/O, no process calls, no side effects. The
 	  entire body is wrapped in Get-SafeValue so a malformed/unexpected input
@@ -1365,13 +1380,20 @@ function Test-BuildLogFailure {
 	  embedded newlines) or a [string[]] of lines. $null / empty / a
 	  non-string value are all tolerated and fail open to non-failure.
 
+	.PARAMETER SignatureSet
+	  Which failure-signature set to scan with: 'msbuild' (default) or
+	  'cargo'. Selected by the op's hygiene profile (Get-HygieneProfile
+	  log_failure_signatures).
+
 	.OUTPUTS
 	  A hashtable @{ failed = [bool]; signature = [string] or $null }.
 	#>
 	[CmdletBinding()]
 	[OutputType([hashtable])]
 	param(
-		$Log
+		$Log,
+
+		[string]$SignatureSet = 'msbuild'
 	)
 
 	$benignResult = [ordered]@{ failed = $false; signature = $null }
@@ -1390,6 +1412,22 @@ function Test-BuildLogFailure {
 			return [ordered]@{ failed = $false; signature = $null }
 		}
 
+		if ($SignatureSet -eq 'cargo') {
+			foreach ($line in $lines) {
+				if ($null -eq $line) { continue }
+
+				if ($line -match 'error\[E\d+\]') {
+					return [ordered]@{ failed = $true; signature = $Matches[0] }
+				}
+				if ($line -match '^\s*error:') {
+					return [ordered]@{ failed = $true; signature = ($line.Trim()) }
+				}
+			}
+			return [ordered]@{ failed = $false; signature = $null }
+		}
+
+		# 'msbuild' (default) — also the conservative fallback for an
+		# unknown/empty -SignatureSet (byte-identical to pre-generalization).
 		$errorCountPattern = '(\d+)\s+Error\(s\)'
 
 		foreach ($line in $lines) {
@@ -1414,6 +1452,708 @@ function Test-BuildLogFailure {
 
 		return [ordered]@{ failed = $false; signature = $null }
 	} $benignResult
+}
+
+function Get-BuildQueueOpsManifest {
+	<#
+	.SYNOPSIS
+	  Load and validate a repo's build-queue ops manifest
+	  (.claude/skill-config/build-queue-ops.json). Fail-open to $null.
+
+	.DESCRIPTION
+	  The per-repo ops manifest (feature build-queue-generalization, Locked
+	  Decision D1: JSON) declares the repo's queue ops:
+
+	    { "version": 1,
+	      "ops": { "<op>": { "exec":    "<repo-root-relative script>",
+	                         "kind":    "build" | "test",
+	                         "hygiene": "dotnet" | "rust-tauri" | "none",
+	                         "skill":   "/<skill-name>",
+	                         "deny":    ["<raw command pattern>", ...] } } }
+
+	  Validation is strict-but-fail-open: a missing file returns $null
+	  silently (the caller decides — the wrapper falls back to the legacy
+	  four ops; the enforce hook allows). A PRESENT but malformed manifest
+	  (bad JSON, wrong version, missing required per-op fields, unknown
+	  kind/hygiene value) logs an actionable Write-Warning naming the file
+	  and the offending op/field, then returns $null — it never throws into
+	  the caller's build.
+
+	  The manifest is read-only input; nothing ever writes it at runtime.
+
+	.PARAMETER RepoRoot
+	  The repo/worktree root whose manifest to load (alias: -Worktree).
+
+	.OUTPUTS
+	  On success: an ordered hashtable @{ path = <manifest path>;
+	  version = 1; ops = <PSCustomObject of op entries> }. On any
+	  missing/invalid input: $null.
+	#>
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory = $true)]
+		[Alias('Worktree')]
+		[string]$RepoRoot
+	)
+
+	return Get-SafeValue {
+		if ([string]::IsNullOrWhiteSpace($RepoRoot)) { return $null }
+		$manifestPath = Join-Path (Join-Path (Join-Path $RepoRoot '.claude') 'skill-config') 'build-queue-ops.json'
+		if (-not (Test-Path $manifestPath)) { return $null }
+
+		$raw = Get-SafeValue { [System.IO.File]::ReadAllText($manifestPath) } $null
+		if ([string]::IsNullOrWhiteSpace($raw)) {
+			Write-Warning "Get-BuildQueueOpsManifest: $manifestPath is empty/unreadable - ignoring manifest."
+			return $null
+		}
+
+		$parsed = Get-SafeValue { $raw | ConvertFrom-Json } $null
+		if ($null -eq $parsed) {
+			Write-Warning "Get-BuildQueueOpsManifest: $manifestPath is not valid JSON - ignoring manifest."
+			return $null
+		}
+
+		$version = Get-SafeValue { [int]$parsed.version } $null
+		if ($version -ne 1) {
+			Write-Warning "Get-BuildQueueOpsManifest: $manifestPath has unsupported/missing 'version' (expected 1) - ignoring manifest."
+			return $null
+		}
+
+		$opsObj = Get-SafeValue { $parsed.ops } $null
+		# Outer @(...) re-wraps: & $Block pipelines its output, so a SINGLE-op
+		# manifest would otherwise unroll to a scalar PSPropertyInfo whose
+		# .Count read throws under StrictMode (fail-opening the whole loader).
+		$opProps = @(Get-SafeValue { $opsObj.PSObject.Properties } @())
+		if ($null -eq $opsObj -or $opProps.Count -eq 0) {
+			Write-Warning "Get-BuildQueueOpsManifest: $manifestPath has no 'ops' entries - ignoring manifest."
+			return $null
+		}
+
+		$validKinds    = @('build', 'test')
+		$validHygiene  = @('dotnet', 'rust-tauri', 'none')
+		$validLanes    = @('fast', 'heavy')
+		foreach ($p in $opProps) {
+			$entry = $p.Value
+			$exec = Get-SafeValue { [string]$entry.exec } ''
+			$kind = Get-SafeValue { [string]$entry.kind } ''
+			$hyg  = Get-SafeValue { [string]$entry.hygiene } ''
+			if ([string]::IsNullOrWhiteSpace($exec)) {
+				Write-Warning "Get-BuildQueueOpsManifest: op '$($p.Name)' in $manifestPath is missing required 'exec' - ignoring manifest."
+				return $null
+			}
+			if ($validKinds -notcontains $kind) {
+				Write-Warning "Get-BuildQueueOpsManifest: op '$($p.Name)' in $manifestPath has invalid 'kind' '$kind' (expected build|test) - ignoring manifest."
+				return $null
+			}
+			if ($validHygiene -notcontains $hyg) {
+				Write-Warning "Get-BuildQueueOpsManifest: op '$($p.Name)' in $manifestPath has invalid 'hygiene' '$hyg' (expected dotnet|rust-tauri|none) - ignoring manifest."
+				return $null
+			}
+			# Optional 'lane' (build-queue-eta-priority-lanes, Locked Decision D4):
+			# TOLERANT validation — absent defaults to 'heavy' at resolution time
+			# (legacy manifests byte-compat) and an invalid value warns but never
+			# rejects the manifest (lane is advisory scheduling class, not safety).
+			$laneRaw = Get-SafeValue { [string]$entry.lane } ''
+			if (-not [string]::IsNullOrWhiteSpace($laneRaw) -and $validLanes -notcontains $laneRaw) {
+				Write-Warning "Get-BuildQueueOpsManifest: op '$($p.Name)' in $manifestPath has invalid 'lane' '$laneRaw' (expected fast|heavy) - treating as 'heavy'."
+			}
+		}
+
+		return [ordered]@{
+			path    = $manifestPath
+			version = $version
+			ops     = $opsObj
+		}
+	} $null
+}
+
+function Get-HygieneProfile {
+	<#
+	.SYNOPSIS
+	  Closed registry of build-queue hygiene profiles (feature
+	  build-queue-generalization, D3). The runner/wrapper dispatch on the
+	  returned capability record — never on repo identity or exec filename.
+
+	.DESCRIPTION
+	  Profiles shipped in v1 (a CLOSED set — the manifest selects a profile
+	  id, it never composes hygiene primitives, so the safety analysis done
+	  in the recycle/hygiene bugs applies to whole profiles):
+
+	    dotnet      - exactly today's Cognito behavior: occupancy-gated
+	                  VBCSCompiler recycle (the ONE sanctioned name-targeted
+	                  kill, Locked Decision 1), dotnet-dll poison sweep
+	                  (Remove-PoisonedArtifacts), msbuild log-failure
+	                  signatures, pre-build DLL-locker reap.
+	    rust-tauri  - Job-Object reap only + cargo log-failure signatures.
+	                  NO compiler-server recycle, NO dll sweep, NO locker
+	                  reap (no new name-targeted kills — Locked Decision 2).
+	    none        - Job-Object reap + banner only.
+
+	  Defaults: an EMPTY/absent name returns 'dotnet' (legacy calls predate
+	  profiles and today's behavior IS the dotnet profile — byte-compat). An
+	  UNKNOWN non-empty name warns and returns 'none' (reap-only — the safe
+	  floor for a repo the dotnet sweeps were never analyzed against).
+
+	  Job-Object reap is NOT a profile field: it is unconditional for every
+	  op (the runner always reaps its own build's descendants).
+
+	.PARAMETER Name
+	  Profile id from the ops manifest ('dotnet' | 'rust-tauri' | 'none').
+
+	.OUTPUTS
+	  An ordered hashtable capability record:
+	  @{ name; recycle_compiler_server = [bool]; poison_sweep = 'dotnet-dll'
+	  or $null; log_failure_signatures = 'msbuild' | 'cargo' | $null;
+	  reap_dll_lockers = [bool] }.
+	#>
+	[CmdletBinding()]
+	[OutputType([hashtable])]
+	param(
+		[string]$Name = ''
+	)
+
+	$registry = @{
+		'dotnet' = [ordered]@{
+			name                    = 'dotnet'
+			recycle_compiler_server = $true
+			poison_sweep            = 'dotnet-dll'
+			log_failure_signatures  = 'msbuild'
+			reap_dll_lockers        = $true
+		}
+		'rust-tauri' = [ordered]@{
+			name                    = 'rust-tauri'
+			recycle_compiler_server = $false
+			poison_sweep            = $null
+			log_failure_signatures  = 'cargo'
+			reap_dll_lockers        = $false
+		}
+		'none' = [ordered]@{
+			name                    = 'none'
+			recycle_compiler_server = $false
+			poison_sweep            = $null
+			log_failure_signatures  = $null
+			reap_dll_lockers        = $false
+		}
+	}
+
+	if ([string]::IsNullOrWhiteSpace($Name)) {
+		# Legacy caller (no profile threaded) - today's behavior is the
+		# dotnet profile; returning it keeps pre-manifest invocations
+		# byte-identical.
+		return $registry['dotnet']
+	}
+	if ($registry.ContainsKey($Name)) {
+		return $registry[$Name]
+	}
+	Write-Warning "Get-HygieneProfile: unknown profile '$Name' - falling back to 'none' (Job-Object reap only)."
+	return $registry['none']
+}
+
+function Resolve-BuildQueueOp {
+	<#
+	.SYNOPSIS
+	  Resolve a wrapper -Op (+ optional explicit -Exec) against the repo's
+	  ops manifest, with the legacy-four fallback when no manifest exists.
+
+	.DESCRIPTION
+	  The single op-resolution seam for build-queue.ps1 (extracted here so
+	  it is Pester-testable without spawning the wrapper):
+
+	    manifest present:
+	      op registered  -> ok; exec = explicit -Exec if given, else the
+	                        entry's repo-root-relative 'exec' joined to
+	                        -RepoRoot; kind/hygiene from the entry.
+	      op unknown     -> not ok; error names the manifest path and the
+	                        registered ops.
+	    manifest absent (or invalid -> fail-open $null):
+	      legacy four (msbuild/mstest/nxbuild/nxtest) with an explicit
+	      -Exec  -> ok with kind inferred (msbuild/nxbuild=build,
+	                mstest/nxtest=test) and hygiene 'dotnet' — byte-compat
+	                with pre-manifest behavior.
+	      anything else -> not ok with an actionable error.
+
+	  Pure resolution — no state writes, no process spawns.
+
+	.OUTPUTS
+	  Ordered hashtable @{ ok = [bool]; exec; kind; hygiene; source =
+	  'manifest' | 'legacy'; error = [string] or $null } (all keys always
+	  present).
+	#>
+	[CmdletBinding()]
+	[OutputType([hashtable])]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$RepoRoot,
+
+		[Parameter(Mandatory = $true)]
+		[string]$Op,
+
+		[string]$Exec = ''
+	)
+
+	$fail = {
+		param([string]$Message)
+		[ordered]@{ ok = $false; exec = $null; kind = $null; hygiene = $null; lane = $null; source = $null; error = $Message }
+	}
+
+	$manifest = Get-SafeValue { Get-BuildQueueOpsManifest -RepoRoot $RepoRoot } $null
+	if ($null -ne $manifest) {
+		$entry = Get-SafeValue { ($manifest.ops.PSObject.Properties | Where-Object { $_.Name -eq $Op } | Select-Object -First 1).Value } $null
+		if ($null -eq $entry) {
+			$registered = (Get-SafeValue { @($manifest.ops.PSObject.Properties | ForEach-Object { $_.Name }) } @()) -join ', '
+			return (& $fail "build-queue: unknown op '$Op' for this repo. Registered ops in $($manifest.path): $registered")
+		}
+		$resolvedExec = if (-not [string]::IsNullOrWhiteSpace($Exec)) {
+			$Exec
+		} else {
+			$rel = Get-SafeValue { [string]$entry.exec } ''
+			if ([System.IO.Path]::IsPathRooted($rel)) { $rel } else { Join-Path $RepoRoot $rel }
+		}
+		# Lane class (eta-priority-lanes D4): explicit manifest field; absent or
+		# invalid normalizes to 'heavy' so legacy manifests are byte-compat.
+		$laneRaw = Get-SafeValue { [string]$entry.lane } ''
+		$resolvedLane = if (@('fast', 'heavy') -contains $laneRaw) { $laneRaw } else { 'heavy' }
+		return [ordered]@{
+			ok      = $true
+			exec    = $resolvedExec
+			kind    = (Get-SafeValue { [string]$entry.kind } '')
+			hygiene = (Get-SafeValue { [string]$entry.hygiene } '')
+			lane    = $resolvedLane
+			source  = 'manifest'
+			error   = $null
+		}
+	}
+
+	# No (valid) manifest: legacy fallback — byte-compat with the
+	# pre-manifest ValidateSet('msbuild','mstest','nxbuild','nxtest').
+	$legacyKinds = @{
+		msbuild = 'build'
+		mstest  = 'test'
+		nxbuild = 'build'
+		nxtest  = 'test'
+	}
+	$expectedManifestPath = Join-Path (Join-Path (Join-Path $RepoRoot '.claude') 'skill-config') 'build-queue-ops.json'
+	if (-not $legacyKinds.ContainsKey($Op)) {
+		return (& $fail "build-queue: unknown op '$Op' and no ops manifest found at $expectedManifestPath. Legacy ops (no manifest): msbuild, mstest, nxbuild, nxtest.")
+	}
+	if ([string]::IsNullOrWhiteSpace($Exec)) {
+		return (& $fail "build-queue: -Exec is required for op '$Op' when no ops manifest exists at $expectedManifestPath.")
+	}
+	return [ordered]@{
+		ok      = $true
+		exec    = $Exec
+		kind    = $legacyKinds[$Op]
+		hygiene = 'dotnet'
+		lane    = 'heavy'
+		source  = 'legacy'
+		error   = $null
+	}
+}
+
+function Add-BuildQueueStatsEntry {
+	<#
+	.SYNOPSIS
+	  Append one completed run to the per-op rolling duration ring
+	  stats/<op>.json (build-queue-eta-priority-lanes, D2). Fail-open.
+
+	.DESCRIPTION
+	  Ring semantics: keep the LAST 20 entries (newest appended at the end).
+	  Entries are {seq, duration_seconds, exit_code, ended_at} — failures are
+	  stored too (the estimator filters exit_code == 0). Writes are atomic
+	  temp-then-Replace like every other queue write; ANY failure is swallowed
+	  (a stats failure must never affect the build result — the caller runs it
+	  under Get-SafeValue as well, belt-and-suspenders).
+
+	.OUTPUTS
+	  [bool] $true when the entry was recorded; $false on any failure.
+	#>
+	[CmdletBinding()]
+	[OutputType([bool])]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$StateRoot,
+
+		[Parameter(Mandatory = $true)]
+		[string]$Op,
+
+		[int]$Seq,
+
+		[double]$DurationSeconds,
+
+		[int]$ExitCode,
+
+		[string]$EndedAt = ''
+	)
+
+	$ringCap = 20
+	return Get-SafeValue {
+		if ([string]::IsNullOrWhiteSpace($StateRoot) -or [string]::IsNullOrWhiteSpace($Op)) { return $false }
+		$statsDir = Join-Path $StateRoot 'stats'
+		if (-not (Test-Path $statsDir)) {
+			$null = New-Item -ItemType Directory -Path $statsDir -Force
+		}
+		# Op names come from the manifest / legacy set (word chars + dashes);
+		# sanitize defensively so a hostile op name cannot escape stats/.
+		$safeOp = ($Op -replace '[^\w\-\.]', '_')
+		$statsPath = Join-Path $statsDir "$safeOp.json"
+
+		$entries = @()
+		if (Test-Path $statsPath) {
+			# Flush-safe read: a just-Replaced ring file can hit a transient
+			# sharing violation (AV/indexer scanning the fresh file), and a
+			# swallowed failed read here would silently RESTART the ring at one
+			# entry. Route through the shared Read-WithRetry (3x/50ms) so the
+			# read settles; on exhaustion the ring restarts (advisory data,
+			# fail-open by design).
+			# The payload rides a hashtable so the entry ARRAY survives the
+			# Read-WithRetry/function pipeline boundaries without PS 5.1
+			# enumeration mangling (ConvertFrom-Json emits a JSON array as ONE
+			# pipeline object).
+			$existing = Read-WithRetry -Parse {
+				$raw = Get-SafeValue { [System.IO.File]::ReadAllText($statsPath) } $null
+				if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+				$parsedRaw = Get-SafeValue { $raw | ConvertFrom-Json } $null
+				if ($null -eq $parsedRaw) { return $null }
+				return @{ entries = @($parsedRaw) }
+			} -Fallback $null
+			if ($null -ne $existing) { $entries = @($existing.entries) }
+		}
+
+		$entries += [pscustomobject][ordered]@{
+			seq              = $Seq
+			duration_seconds = [math]::Round($DurationSeconds, 1)
+			exit_code        = $ExitCode
+			ended_at         = $EndedAt
+		}
+		if ($entries.Count -gt $ringCap) {
+			$entries = @($entries | Select-Object -Last $ringCap)
+		}
+
+		$body = ConvertTo-Json -InputObject @($entries) -Compress -Depth 4
+		$tmpPath = "$statsPath.tmp"
+		[System.IO.File]::WriteAllText($tmpPath, $body)
+		try {
+			[System.IO.File]::Replace($tmpPath, $statsPath, [NullString]::Value)
+		} catch {
+			[System.IO.File]::WriteAllText($statsPath, $body)
+			Get-SafeValue { Remove-Item $tmpPath -Force -ErrorAction SilentlyContinue }
+		}
+		return $true
+	} $false
+}
+
+function Get-BuildQueueEta {
+	<#
+	.SYNOPSIS
+	  Deterministic per-op duration estimate from the stats ring
+	  (build-queue-eta-priority-lanes, D2): median of the last 10 successful
+	  runs; $null under 3 samples (cold start) or on any read failure.
+
+	.DESCRIPTION
+	  Reads stats/<op>.json (written by Add-BuildQueueStatsEntry), filters to
+	  exit_code == 0 entries, takes the LAST 10, and returns the median
+	  duration in seconds. Consumers format $null as '?'. Pure read —
+	  fail-open, never throws, never writes.
+
+	.OUTPUTS
+	  [double] median duration seconds, or $null (no estimate).
+	#>
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$StateRoot,
+
+		[Parameter(Mandatory = $true)]
+		[string]$Op
+	)
+
+	return Get-SafeValue {
+		if ([string]::IsNullOrWhiteSpace($StateRoot) -or [string]::IsNullOrWhiteSpace($Op)) { return $null }
+		$safeOp = ($Op -replace '[^\w\-\.]', '_')
+		$statsPath = Join-Path (Join-Path $StateRoot 'stats') "$safeOp.json"
+		if (-not (Test-Path $statsPath)) { return $null }
+		$raw = Get-SafeValue { [System.IO.File]::ReadAllText($statsPath) } $null
+		if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+		$entries = Get-SafeValue { @($raw | ConvertFrom-Json) } $null
+		if ($null -eq $entries) { return $null }
+
+		$durations = @()
+		foreach ($e in @($entries)) {
+			$ec = Get-SafeValue { [int]$e.exit_code } $null
+			$d  = Get-SafeValue { [double]$e.duration_seconds } $null
+			if ($ec -eq 0 -and $null -ne $d -and $d -ge 0) { $durations += $d }
+		}
+		if ($durations.Count -gt 10) {
+			$durations = @($durations | Select-Object -Last 10)
+		}
+		if ($durations.Count -lt 3) { return $null }
+
+		$sorted = @($durations | Sort-Object)
+		$n = $sorted.Count
+		if ($n % 2 -eq 1) {
+			return [double]$sorted[[int][math]::Floor($n / 2)]
+		}
+		return ([double]$sorted[($n / 2) - 1] + [double]$sorted[$n / 2]) / 2.0
+	} $null
+}
+
+function Format-EtaDuration {
+	<#
+	.SYNOPSIS
+	  Human formatting for an ETA seconds value: $null -> '?', else
+	  '42s' / '3m 10s' / '1h 4m'. Predictions render with the caller's
+	  approx marker; this helper formats the magnitude only.
+	#>
+	[CmdletBinding()]
+	[OutputType([string])]
+	param(
+		$Seconds
+	)
+
+	return Get-SafeValue {
+		if ($null -eq $Seconds) { return '?' }
+		$s = [double]$Seconds
+		if ($s -lt 0) { $s = 0 }
+		$span = [TimeSpan]::FromSeconds($s)
+		if ($span.TotalHours -ge 1) {
+			return ('{0}h {1}m' -f [math]::Floor($span.TotalHours), $span.Minutes)
+		}
+		if ($span.TotalMinutes -ge 1) {
+			return ('{0}m {1}s' -f [math]::Floor($span.TotalMinutes), $span.Seconds)
+		}
+		return ('{0}s' -f [math]::Floor($span.TotalSeconds))
+	} '?'
+}
+
+function Get-BuildQueueWaitEta {
+	<#
+	.SYNOPSIS
+	  Compose a waiter's eta-start / eta-done (build-queue-eta-priority-lanes,
+	  D3): active build's estimated remaining + estimates of the waiters ahead
+	  in lane order; ANY unknown term collapses the total to $null ('?').
+
+	.DESCRIPTION
+	  Advisory prediction, read-only, fail-open. "Ahead in lane order" is the
+	  lane approximation of admission order: for a fast self, fast tickets
+	  with a lower seq; for a heavy self, ALL fast tickets plus heavy tickets
+	  with a lower seq (fast privilege bounded by K is deliberately ignored
+	  here — predictions never gate anything, D7).
+
+	  Active-slot term: no active.lock -> 0; a parseable lock -> per-op
+	  estimate minus elapsed (floored at 0), unknown estimate -> collapse; an
+	  unreadable lock -> collapse.
+
+	.OUTPUTS
+	  Ordered hashtable @{ eta_start_seconds = [double] or $null;
+	  eta_done_seconds = [double] or $null }.
+	#>
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$StateRoot,
+
+		[Parameter(Mandatory = $true)]
+		[int]$SelfSeq,
+
+		[Parameter(Mandatory = $true)]
+		[string]$SelfOp,
+
+		[string]$SelfLane = 'heavy'
+	)
+
+	$unknown = [ordered]@{ eta_start_seconds = $null; eta_done_seconds = $null }
+	return Get-SafeValue {
+		$startSeconds = [double]0
+		$collapsed = $false
+
+		# Term 1: active build's estimated remaining.
+		$activeLock = Join-Path $StateRoot 'active.lock'
+		if (Test-Path $activeLock) {
+			$lockData = Get-SafeValue { [System.IO.File]::ReadAllText($activeLock) | ConvertFrom-Json } $null
+			if ($null -eq $lockData) {
+				$collapsed = $true
+			} else {
+				$activeOp = Get-SafeValue { [string]$lockData.op } ''
+				$activeEst = Get-BuildQueueEta -StateRoot $StateRoot -Op $activeOp
+				if ($null -eq $activeEst) {
+					$collapsed = $true
+				} else {
+					$elapsed = Get-SafeValue {
+						$startedAt = [datetime]::Parse([string]$lockData.started_at, $null, [System.Globalization.DateTimeStyles]::RoundtripKind)
+						((Get-Date) - $startedAt).TotalSeconds
+					} $null
+					if ($null -eq $elapsed) {
+						$collapsed = $true
+					} else {
+						$remaining = $activeEst - $elapsed
+						if ($remaining -lt 0) { $remaining = 0 }
+						$startSeconds += $remaining
+					}
+				}
+			}
+		}
+
+		# Term 2: eligible waiters ahead in lane order.
+		if (-not $collapsed) {
+			$ticketsDir = Join-Path $StateRoot 'tickets'
+			$aheadOps = @()
+			$files = Get-SafeValue { Get-ChildItem -Path $ticketsDir -Filter '*.json' -ErrorAction SilentlyContinue } @()
+			foreach ($f in @($files)) {
+				$t = Get-SafeValue { [System.IO.File]::ReadAllText($f.FullName) | ConvertFrom-Json } $null
+				if ($null -eq $t) { continue }
+				$tSeq = Get-SafeValue { [int]$t.seq } $null
+				if ($null -eq $tSeq -or $tSeq -eq $SelfSeq) { continue }
+				$tLaneRaw = Get-SafeValue { [string]$t.lane } ''
+				$tLane = if ($tLaneRaw -eq 'fast') { 'fast' } else { 'heavy' }
+				$tOp = Get-SafeValue { [string]$t.op } ''
+				$isAhead = if ($SelfLane -eq 'fast') {
+					($tLane -eq 'fast' -and $tSeq -lt $SelfSeq)
+				} else {
+					($tLane -eq 'fast') -or ($tSeq -lt $SelfSeq)
+				}
+				if ($isAhead) { $aheadOps += $tOp }
+			}
+			foreach ($aheadOp in $aheadOps) {
+				$est = Get-BuildQueueEta -StateRoot $StateRoot -Op $aheadOp
+				if ($null -eq $est) { $collapsed = $true; break }
+				$startSeconds += $est
+			}
+		}
+
+		if ($collapsed) { return $unknown }
+
+		$selfEst = Get-BuildQueueEta -StateRoot $StateRoot -Op $SelfOp
+		$doneSeconds = if ($null -eq $selfEst) { $null } else { $startSeconds + $selfEst }
+		return [ordered]@{
+			eta_start_seconds = $startSeconds
+			eta_done_seconds  = $doneSeconds
+		}
+	} $unknown
+}
+
+function Get-FastPassCount {
+	<#
+	.SYNOPSIS
+	  Read the consecutive-fast-passes counter (fast-passes.count in the
+	  state root). Missing or corrupt reads as $MaxFastPasses — fast-lane
+	  privilege suspended, degrading to the pre-lane behavior (D5-A: the
+	  failure mode is the old behavior, never a livelock).
+	#>
+	[CmdletBinding()]
+	[OutputType([int])]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$StateRoot,
+
+		[int]$MaxFastPasses = 3
+	)
+
+	return Get-SafeValue {
+		$counterPath = Join-Path $StateRoot 'fast-passes.count'
+		if (-not (Test-Path $counterPath)) { return $MaxFastPasses }
+		$raw = Get-SafeValue { [System.IO.File]::ReadAllText($counterPath).Trim() } $null
+		if ($null -eq $raw -or $raw -notmatch '^\d+$') { return $MaxFastPasses }
+		return [int]$raw
+	} $MaxFastPasses
+}
+
+function Set-FastPassCount {
+	<#
+	.SYNOPSIS
+	  Write the consecutive-fast-passes counter atomically. ONLY the claim
+	  winner calls this (single-writer by construction — the CreateNew open
+	  of active.lock already arbitrated exactly one winner). Fail-open.
+	#>
+	[CmdletBinding()]
+	[OutputType([bool])]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$StateRoot,
+
+		[Parameter(Mandatory = $true)]
+		[int]$Count
+	)
+
+	return Get-SafeValue {
+		$counterPath = Join-Path $StateRoot 'fast-passes.count'
+		$tmpPath = "$counterPath.tmp"
+		[System.IO.File]::WriteAllText($tmpPath, "$Count")
+		try {
+			[System.IO.File]::Replace($tmpPath, $counterPath, [NullString]::Value)
+		} catch {
+			[System.IO.File]::WriteAllText($counterPath, "$Count")
+			Get-SafeValue { Remove-Item $tmpPath -Force -ErrorAction SilentlyContinue }
+		}
+		return $true
+	} $false
+}
+
+function Test-LaneClaimEligible {
+	<#
+	.SYNOPSIS
+	  Pure lane-admission predicate (build-queue-eta-priority-lanes, D5-A) —
+	  decides whether SelfSeq may claim the free slot given the live tickets,
+	  the consecutive-fast-passes counter, and the starvation bound K.
+	  Extracted pure (a la Test-ShouldReclaimLock) so it is table-testable.
+
+	.DESCRIPTION
+	  Lane rule over ONE slot (the caller has already established the slot is
+	  free — this predicate only shapes WHO claims next):
+
+	    fast self:  I am the lowest fast seq AND (fast_passes < K OR no
+	                heavy waiter exists — the anti-livelock carve-out: with
+	                no heavy waiter to protect, the cap must not idle the
+	                queue).
+	    heavy self: I am the lowest heavy seq AND (no fast waiter exists OR
+	                fast_passes >= K).
+
+	  Tickets without a lane are 'heavy' (legacy tickets unaffected). Reclaim
+	  is NOT lane-aware — Test-ShouldReclaimLock keeps its global lowest-seq
+	  arbiter (D5-A: lanes only shape who claims after the slot is free).
+
+	.PARAMETER Tickets
+	  Live tickets INCLUDING self: array of objects/hashtables with .seq and
+	  optional .lane.
+
+	.OUTPUTS
+	  [bool] $true when SelfSeq is the eligible claimant.
+	#>
+	[CmdletBinding()]
+	[OutputType([bool])]
+	param(
+		[Parameter(Mandatory = $true)]
+		[int]$SelfSeq,
+
+		[array]$Tickets = @(),
+
+		[int]$FastPasses = 0,
+
+		[int]$MaxFastPasses = 3
+	)
+
+	return Get-SafeValue {
+		$fastSeqs = @()
+		$heavySeqs = @()
+		foreach ($t in @($Tickets)) {
+			$tSeq = Get-SafeValue { [int]$t.seq } $null
+			if ($null -eq $tSeq) { continue }
+			$tLaneRaw = Get-SafeValue { [string]$t.lane } ''
+			if ($tLaneRaw -eq 'fast') { $fastSeqs += $tSeq } else { $heavySeqs += $tSeq }
+		}
+
+		$selfLane = if ($fastSeqs -contains $SelfSeq) { 'fast' } elseif ($heavySeqs -contains $SelfSeq) { 'heavy' } else { $null }
+		if ($null -eq $selfLane) { return $false }
+
+		if ($selfLane -eq 'fast') {
+			$lowestFast = (@($fastSeqs | Sort-Object))[0]
+			if ($SelfSeq -ne $lowestFast) { return $false }
+			return (($FastPasses -lt $MaxFastPasses) -or ($heavySeqs.Count -eq 0))
+		}
+
+		$lowestHeavy = (@($heavySeqs | Sort-Object))[0]
+		if ($SelfSeq -ne $lowestHeavy) { return $false }
+		return (($fastSeqs.Count -eq 0) -or ($FastPasses -ge $MaxFastPasses))
+	} $false
 }
 
 function Format-BuildQueueBanner {

@@ -28,6 +28,8 @@ Run frontend tests in the Nx monorepo showing only PASS/FAIL results, error deta
    REPO_ROOT=$(git rev-parse --show-toplevel) && powershell.exe -ExecutionPolicy Bypass -File "$HOME/.claude/scripts/build-queue.ps1" -Op nxtest -Exec "$REPO_ROOT/.claude/scripts/client-test-filtered.ps1"
    ```
 
+   The `nxtest` op is registered in this repo's ops manifest (`.claude/skill-config/build-queue-ops.json` — the queue's per-repo op registry); the explicit `-Exec` above matches the manifest's `exec` entry and overrides it if they ever diverge. The invocation is unchanged.
+
 2. If `$ARGUMENTS` is provided, append it verbatim to the command. The script accepts:
    - `-Project "..."` — Nx project name (default: `cognito-spa`)
    - `-Pattern "..."` — testPathPattern (filter by file path)
@@ -35,6 +37,8 @@ Run frontend tests in the Nx monorepo showing only PASS/FAIL results, error deta
    - `-NoCoverage` — skip coverage collection
 
 3. Run the command using Bash with `timeout: 600000` (10 min). A test run can legitimately exceed the default 2-min Bash timeout; the higher ceiling costs nothing for fast runs because Bash returns as soon as the command exits. Do not interpret or reformat the output. The invocation prints an authoritative one-line `build-queue: seq=<N> op=nxtest RESULT=<PASS|FAIL|NO-TESTS-MATCHED> tests=<T> failed=<F> (result_fidelity=...)` banner as its LAST stdout line — trust that line for the outcome. Do NOT `cat`/`grep` the runner script (`build-queue-runner.ps1`) or `results/<seq>.json` to disambiguate an `exit_code=0`. On `RESULT=NO-TESTS-MATCHED` widen the filter and retry; on `RESULT=FAIL` read `logs/<seq>.build.err.log`.
+ETA note: the enqueue echo and waiting-position lines may carry advisory predictions (`eta-start≈` / `eta-done≈`, `?` when history is cold) computed from recent run durations. They are predictions, never outcomes — the authoritative outcome remains the final `build-queue: ... RESULT=` banner line.
+
 
 4. If the run is expected to exceed 10 minutes, run the same command with `run_in_background: true` instead. The `build-queue: enqueued as seq=N` line it returns is NOT an outcome — never end your turn or report a result on it. Follow the run to its authoritative result with the await helper (foreground Bash, `timeout: 600000`):
    ```

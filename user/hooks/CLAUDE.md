@@ -37,6 +37,13 @@ Two distinct activation models — don't conflate them:
 - **Request-time** (`long-build-ownership-guard.sh`) — always active; matches the command itself
   (an exact long-build invocation) regardless of any marker.
 
+A third scoping model rides request-time: `build-queue-enforce.sh` scopes by **ops-manifest
+presence** (`.claude/skill-config/build-queue-ops.json` at the payload cwd's git toplevel), with a
+Cognito remote-match legacy fallback for a missing/unreadable manifest (`build-queue-generalization`
+locked D4). Ordering is load-bearing: the ownership guard is registered BEFORE the enforce hook so
+a subagent's raw long build surfaces the takeover signature first; the takeover re-launch then
+routes through the queue wrapper, which the enforce hook exempts (locked D5 — no ping-pong).
+
 ## Countable deny/error events (`hook-events.jsonl`)
 
 Every deny site in the five enforcement hooks (`lazy-cycle-containment.sh`,

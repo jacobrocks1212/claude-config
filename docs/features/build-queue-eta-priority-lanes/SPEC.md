@@ -11,7 +11,7 @@
 > ahead of heavy ops, with a deterministic consecutive-passes starvation bound), leaving the
 > lock/reclaim/hygiene/occupancy machinery untouched.
 
-**Status:** Draft
+**Status:** Complete
 **Friction-reduction feature:** yes
 **Priority:** P2
 **Last updated:** 2026-07-04

@@ -1,19 +1,34 @@
 #!/bin/bash
 # build-queue-enforce.sh — PreToolUse(Bash) hook
 #
-# COGNITO FORMS BUILD-QUEUE SERIALIZER GATE. A machine-global FIFO build queue
-# (build-queue.ps1) serializes the four expensive Cognito builds so only one runs
-# at a time across worktrees. The four skills /msbuild, /mstest, /nxbuild, /nxtest
-# route through that wrapper. This hook makes the queue un-bypassable: it DENIES
-# raw heavy-build Bash invocations in Cognito Forms worktrees and redirects the
-# agent to the correct skill.
+# MACHINE-GLOBAL BUILD-QUEUE SERIALIZER GATE (generalized per
+# build-queue-generalization). A machine-global FIFO build queue
+# (build-queue.ps1) serializes heavy builds so only one runs at a time across
+# repos/worktrees. Thin per-repo skills route through that wrapper. This hook
+# makes the queue un-bypassable: it DENIES raw heavy-build Bash invocations in
+# queue-governed repos and redirects the agent to the correct skill.
 #
-# SCOPE GATE: fires only in Cognito Forms worktrees (remote matches
-# cognitoforms/cognito). All other repos are fail-open. Remote is resolved via
-# `git -C <cwd> config --get remote.origin.url`; any subprocess failure → allow.
-# This deliberately differs from block-work-repo-git-push.sh (which gates on
-# user.email) — Overwatch and mcp/ share the same work email but have DIFFERENT
-# remotes and MUST NOT be gated.
+# SCOPE GATE (D4, locked 2026-07-09): MANIFEST PRESENCE IS THE PRIMARY GATE.
+# The payload cwd's git toplevel is resolved and
+# `<toplevel>/.claude/skill-config/build-queue-ops.json` is read:
+#   * valid manifest present → the deny set is compiled from the manifest's
+#     per-op `deny` patterns (schema: {"version":1,"ops":{"<op>":{"exec":...,
+#     "kind":"build"|"test","hygiene":...,"skill":"/<name>","deny":[...]}}});
+#     the deny message names the op's `skill`.
+#   * manifest MISSING or UNPARSEABLE in a repo whose remote matches
+#     cognitoforms/cognito → LEGACY FALLBACK: today's hard-coded Cognito deny
+#     set fires (a broken symlink must never silently disarm the only
+#     enforcement protecting the copy-lock/recycle invariants). Remote is
+#     resolved via `git -C <cwd> config --get remote.origin.url`; this
+#     deliberately differs from block-work-repo-git-push.sh (which gates on
+#     user.email) — Overwatch and mcp/ share the same work email but have
+#     DIFFERENT remotes and MUST NOT be gated.
+#   * neither manifest nor Cognito remote → allow everything (fail-open).
+#
+# PLATFORM GATE (D7, locked 2026-07-09): workstation-only v1 — the deny set is
+# never armed off-Windows (no queue consumer exists there): non-nt python with
+# no powershell.exe/pwsh on PATH → allow everything, silently.
+# BQE_PLATFORM_OVERRIDE=inert|armed force-sets the check (tests only).
 #
 # DENY SURFACE: a heavy build appears ANYWHERE in the command (not only at the
 # start), so a build chained behind a leading command — `cd "..." && dotnet
@@ -284,6 +299,134 @@ def _is_cognito_worktree(cwd):
         return False
 
 
+def _workstation_armed():
+    """D7 (locked 2026-07-09): workstation-only v1 — the deny set is silently
+    inert off-Windows (cloud/WSL-without-interop hosts run no queue builds).
+    BQE_PLATFORM_OVERRIDE=inert|armed force-sets the verdict (tests only)."""
+    override = os.environ.get("BQE_PLATFORM_OVERRIDE", "")
+    if override == "inert":
+        return False
+    if override == "armed":
+        return True
+    if os.name == "nt":
+        return True
+    import shutil
+    return bool(shutil.which("powershell.exe") or shutil.which("pwsh"))
+
+
+def _git_toplevel(cwd):
+    """Resolve the payload cwd's git toplevel (one subprocess, mirroring the
+    remote check). None on any failure — fail-open family behavior."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", cwd, "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        if result.returncode != 0:
+            return None
+        top = result.stdout.strip()
+        return top or None
+    except Exception:
+        return None
+
+
+def _load_manifest(toplevel):
+    """Read <toplevel>/.claude/skill-config/build-queue-ops.json.
+
+    Returns (manifest_dict, None) on a valid manifest, (None, None) when the
+    file is absent, and (None, error) when present but unreadable/malformed —
+    callers branch on the distinction (D4: broken-in-Cognito → legacy
+    fallback; broken elsewhere → allow + breadcrumb)."""
+    path = os.path.join(toplevel, ".claude", "skill-config", "build-queue-ops.json")
+    try:
+        if not os.path.isfile(path):
+            return None, None
+    except Exception:
+        return None, None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        ops = data.get("ops") if isinstance(data, dict) else None
+        if not isinstance(ops, dict) or not ops:
+            raise ValueError("manifest carries no 'ops' mapping")
+        return data, None
+    except Exception as exc:
+        return None, exc
+
+
+def _compile_manifest_deny(pattern):
+    """Compile one manifest `deny` entry onto the existing segment-start
+    discipline. A `*.ps1` entry reuses the filtered-script shapes (direct
+    segment-leading invocation with optional path prefix + the
+    powershell -File form); any other entry is tokenized and joined with \\s+,
+    anchored at _CMD_START — the invoke-vs-reference discrimination the
+    Cognito denies already carry. Returns a list of compiled regexes
+    (empty for a blank/unusable pattern)."""
+    p = (pattern or "").strip()
+    if not p:
+        return []
+    if p.lower().endswith(".ps1"):
+        name = re.escape(os.path.basename(p.replace("\\", "/")))
+        direct = re.compile(
+            _CMD_START
+            + r"(?:\.?[\\/])?(?:[^\s;&|]*[\\/])?" + name + r"(?:\s|$|\")",
+            re.IGNORECASE,
+        )
+        psfile = re.compile(
+            r"(?:powershell(?:\.exe)?|pwsh)\b[^\n;&|]*-File\s+\S*" + name,
+            re.IGNORECASE,
+        )
+        return [direct, psfile]
+    body = r"\s+".join(re.escape(tok) for tok in p.split())
+    return [re.compile(_CMD_START + body + r"(?:\s|$)", re.IGNORECASE)]
+
+
+def _manifest_redirect_reason(op_name, skill, pattern):
+    skill_txt = skill.strip() if isinstance(skill, str) and skill.strip() else (
+        "the repo's registered build-queue skill"
+    )
+    return (
+        f"BUILD QUEUE ENFORCED — use `{skill_txt}` instead of running "
+        f"`{pattern}` directly.\n"
+        f"This repo's build-queue ops manifest "
+        f"(.claude/skill-config/build-queue-ops.json) registers this command "
+        f"as op '{op_name}'. The machine-global build queue serializes heavy "
+        f"builds across repos/worktrees so they do not thrash the machine; "
+        f"{skill_txt} routes through the queue automatically.\n"
+        f"  Correct: {skill_txt}\n"
+        "  Emergency one-off: BUILD_QUEUE_BYPASS=1 ... — the token must lead "
+        "the build's own command segment (a `cd \"...\" && "
+        "BUILD_QUEUE_BYPASS=1 ...` prefix is recognized)."
+    )
+
+
+def _scan_manifest_ops(manifest, scan, command):
+    """Run the manifest-compiled deny surface over the suppressed scan copy.
+    Denies (and exits) on the first match; returns silently when nothing
+    matches. Malformed per-op entries are skipped — one bad entry must not
+    disarm the rest (fail-open stays per-error-path, not per-file)."""
+    ops = manifest.get("ops") or {}
+    for op_name, entry in ops.items():
+        if not isinstance(entry, dict):
+            continue
+        patterns = entry.get("deny") or []
+        if not isinstance(patterns, list):
+            continue
+        for pat in patterns:
+            if not isinstance(pat, str):
+                continue
+            for rx in _compile_manifest_deny(pat):
+                if rx.search(scan):
+                    _deny(
+                        _manifest_redirect_reason(
+                            op_name, entry.get("skill"), pat
+                        ),
+                        "manifest:" + str(op_name),
+                    )
+
+
 def _redirect_reason(op, command):
     if op == "dotnet-build":
         return (
@@ -402,16 +545,49 @@ def main():
     if _BYPASS_RE.match(command):
         _allow()
 
-    # Scope gate — only Cognito Forms worktrees.
-    cwd = payload.get("cwd") or os.getcwd()
-    if not _is_cognito_worktree(cwd):
+    # D7 platform gate — workstation-only v1; silently inert off-Windows.
+    if not _workstation_armed():
         _allow()
 
-    # Allow the sanctioned wrapper before the deny surface — it carries a
-    # *-filtered.ps1 path as its -Exec arg, which would otherwise trip the
-    # filtered-script deny.
+    cwd = payload.get("cwd") or os.getcwd()
+
+    # D4 scope gate — manifest presence is the PRIMARY gate.
+    toplevel = _git_toplevel(cwd)
+    manifest, manifest_err = (None, None)
+    if toplevel:
+        manifest, manifest_err = _load_manifest(toplevel)
+
+    # Allow the sanctioned wrapper before either deny surface — it carries a
+    # filtered-script path as its -Exec arg, which would otherwise trip the
+    # script-invocation denies.
     if _WRAPPER_RE.search(command):
         _allow()
+
+    if manifest is not None:
+        # Manifest-driven deny surface (segment-aware bypass + safe-variant
+        # suppression apply exactly as on the legacy path).
+        scan = _suppress_safe(_suppress_bypassed_segments(command))
+        _scan_manifest_ops(manifest, scan, command)
+        _allow()
+
+    # No valid manifest. D4-B legacy fallback: only Cognito Forms worktrees
+    # keep the hard-coded deny set; everywhere else is fail-open.
+    if not _is_cognito_worktree(cwd):
+        if manifest_err is not None:
+            # Unreadable manifest in a non-Cognito repo: allow + breadcrumb.
+            _breadcrumb(
+                "build-queue-ops.json unreadable (allowing, repo not "
+                f"legacy-gated): {manifest_err}"
+            )
+        _allow()
+
+    if manifest_err is not None:
+        # Broken manifest in a Cognito worktree — enforcement degrades to the
+        # legacy deny set (never silently disarms); leave a diagnosable trail.
+        _breadcrumb(
+            "build-queue-ops.json unreadable in a Cognito worktree — using "
+            f"the legacy fallback deny set (D4): {manifest_err}"
+        )
 
     # Suppress bypassed segments (BUILD_QUEUE_BYPASS=1 leading a segment) and
     # the safe dotnet/nx variants per-occurrence, then scan the scratch copy

@@ -36,6 +36,11 @@
         # 47b4fa4 over-deleted all three; all restored from 47b4fa4^ — settings.local.json cleaned
         # of 33 dead JacobMadsen/strudel-dj one-shot commit allows (kept env + 42 generic entries).
         # Do NOT re-add a Repos entry while the work laptop lacks the live repo.
+        # build-queue-generalization (2026-07-09) follows the same pattern: the new tracked
+        # content under repos/algobooth/.claude/ — skill-config/build-queue-ops.json (the ops
+        # manifest) + skills/{tauri-build,cargo-release} (queue-routed build ops) — ships with
+        # NO Repos entry. It resolves via the existing symlinks where the repo is live, or via
+        # setup.py bootstrap --target Repos --repos-root on a fresh checkout; inert elsewhere.
         'cognito-forms' = @{
             Path           = 'C:\Users\JacobMadsen\source\repos\Cognito Forms'
             RootFiles      = @(

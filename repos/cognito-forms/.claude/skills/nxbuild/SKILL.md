@@ -28,12 +28,16 @@ Build frontend projects in the Nx monorepo showing only errors and build summary
    REPO_ROOT=$(git rev-parse --show-toplevel) && powershell.exe -ExecutionPolicy Bypass -File "$HOME/.claude/scripts/build-queue.ps1" -Op nxbuild -Exec "$REPO_ROOT/.claude/scripts/client-build-filtered.ps1"
    ```
 
+   The `nxbuild` op is registered in this repo's ops manifest (`.claude/skill-config/build-queue-ops.json` — the queue's per-repo op registry); the explicit `-Exec` above matches the manifest's `exec` entry and overrides it if they ever diverge. The invocation is unchanged.
+
 2. If `$ARGUMENTS` is provided, append it verbatim to the command. The script accepts:
    - `-Project "..."` — specific Nx project name
    - `-All` — build all projects
    - `-Targets "build","lint"` — custom target list (default: `build`)
 
 3. Run the command using Bash with `timeout: 600000` (10 min). A build can legitimately exceed the default 2-min Bash timeout; the higher ceiling costs nothing for fast builds because Bash returns as soon as the command exits. Do not interpret or reformat the output. The invocation prints an authoritative one-line `build-queue: seq=<N> op=nxbuild RESULT=<PASS|FAIL> (result_fidelity=...)` banner as its LAST stdout line — trust that line for the outcome. Do NOT `cat`/`grep` the runner script (`build-queue-runner.ps1`) or `results/<seq>.json` to disambiguate an `exit_code=0`. On `RESULT=FAIL` the banner names the next action inline — read `logs/<seq>.build.err.log`, or `build produced no output; delete obj/bin and rebuild` on a `build_fidelity: no-output` false-green (see below).
+ETA note: the enqueue echo and waiting-position lines may carry advisory predictions (`eta-start≈` / `eta-done≈`, `?` when history is cold) computed from recent run durations. They are predictions, never outcomes — the authoritative outcome remains the final `build-queue: ... RESULT=` banner line.
+
 
 4. If the build is expected to exceed 10 minutes, run the same command with `run_in_background: true` instead. The `build-queue: enqueued as seq=N` line it returns is NOT an outcome — never end your turn or report a result on it. Follow the run to its authoritative result with the await helper (foreground Bash, `timeout: 600000`):
    ```

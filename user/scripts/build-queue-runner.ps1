@@ -12,11 +12,27 @@
     -Exec       Absolute path to the filtered script to run.
     -Seq        Queue sequence number allocated by the wrapper.
     -StateRoot  State directory (defaults to the same root as build-queue.ps1).
+    -Op         Queue op name (build-queue-eta-priority-lanes D1). When
+                present, the result gains op/started_at/duration_seconds and
+                a stats/<op>.json ring entry is appended (fail-open). Absent
+                (legacy invocation) -> those fields are omitted, everything
+                else byte-identical.
+    -OpKind     'build' | 'test' from the repo's ops manifest
+                (build-queue-generalization). Empty/absent falls back to the
+                legacy exec-leaf-name inference — byte-identical for legacy
+                invocations.
+    -Hygiene    Hygiene profile id ('dotnet' | 'rust-tauri' | 'none') from
+                the manifest. Empty/absent resolves to the 'dotnet' profile
+                (today's behavior). Dispatch happens on the profile record
+                from Get-HygieneProfile, never on repo identity or filename.
     Remaining   Verbatim args forwarded to the filtered script.
 
   results/<seq>.json schema
     {
       seq: <int>, exit_code: <int>, ended_at: "<ISO-8601>",
+      op: "<op>", started_at: "<ISO-8601>", duration_seconds: <double>,
+        # Present only when the wrapper threaded -Op (eta-priority-lanes D1).
+        # duration_seconds = exec-run time (runner start -> exit), not queue wait.
       counts: { passed: <int>, failed: <int>, total: <int> } | null,
         # Parsed from the LAST "Results: Passed=<P> Failed=<F> Total=<T>" line found
         # in logs/<seq>.log (the test grandchild's inherited stdout, which the
@@ -51,6 +67,12 @@ param(
 
 	[string]$Worktree,
 
+	[string]$Op = '',
+
+	[string]$OpKind = '',
+
+	[string]$Hygiene = '',
+
 	[Parameter(ValueFromRemainingArguments=$true)]
 	$ExecArgs
 )
@@ -81,8 +103,24 @@ $recycleSkippedReason = $null
 $quarantinedArtifacts = @()
 $lockersReaped = @()
 $execLeaf = Get-SafeValue { Split-Path -Leaf $Exec } ''
-$isBuildOp = $execLeaf -match 'build-filtered\.ps1$'
-$isTestOp = $execLeaf -match 'test-filtered\.ps1$'
+# Manifest-threaded -OpKind wins; empty falls back to the legacy leaf-name
+# inference so a pre-manifest invocation is byte-identical.
+if (-not [string]::IsNullOrWhiteSpace($OpKind)) {
+	$isBuildOp = ($OpKind -eq 'build')
+	$isTestOp  = ($OpKind -eq 'test')
+} else {
+	$isBuildOp = $execLeaf -match 'build-filtered\.ps1$'
+	$isTestOp = $execLeaf -match 'test-filtered\.ps1$'
+}
+# Hygiene profile record (build-queue-generalization D3): empty -Hygiene
+# resolves to 'dotnet' inside Get-HygieneProfile (today's behavior); a
+# missing hygiene module (dot-source failed) leaves $null and the dotnet
+# defaults below — where every dotnet-only call site is already fail-open.
+$hygieneProfile = Get-SafeValue { Get-HygieneProfile -Name $Hygiene } $null
+$profileReapsLockers  = if ($null -ne $hygieneProfile) { [bool]$hygieneProfile.reap_dll_lockers } else { $true }
+$profileRecycles      = if ($null -ne $hygieneProfile) { [bool]$hygieneProfile.recycle_compiler_server } else { $true }
+$profilePoisonSweep   = if ($null -ne $hygieneProfile) { $hygieneProfile.poison_sweep } else { 'dotnet-dll' }
+$profileLogSignatures = if ($null -ne $hygieneProfile) { $hygieneProfile.log_failure_signatures } else { 'msbuild' }
 $buildLogPath = $null
 $buildFidelity = 'n/a'
 trap {
@@ -118,9 +156,14 @@ try {
 	# Reap any lingering in-worktree DLL lockers BEFORE the build starts, so a leftover
 	# locker from a prior run is gone by the time MSBuild reaches the copy step. Build
 	# ops only (never test ops); no-op when there is no worktree to scope the reap to.
-	if ($isBuildOp -and -not [string]::IsNullOrWhiteSpace($Worktree)) {
+	# Profile-gated (dotnet only): a rust-tauri/none op never reaps by DLL lock.
+	if ($isBuildOp -and $profileReapsLockers -and -not [string]::IsNullOrWhiteSpace($Worktree)) {
 		$lockersReaped = Get-SafeValue { @(Stop-DllLockers -WorktreeRoot $Worktree) } @()
 	}
+
+	# eta-priority-lanes D1: capture the run start instant immediately before
+	# the exec spawn — duration_seconds measures exec-run time, not queue wait.
+	$script:runStartedAt = Get-Date
 
 	$proc = Start-Process @startProcParams
 	$null = $proc.Handle
@@ -157,7 +200,13 @@ try {
 				return $null
 			}
 			$script:buildLogTextForClassify = $logText
-			Get-SafeValue { Test-BuildLogFailure -Log $logText } @{ failed = $false; signature = $null }
+			if ($null -eq $profileLogSignatures) {
+				# Profile has no log-failure signature set ('none') — the log
+				# is still captured above for the no-output classifier, but no
+				# signature scan runs.
+				return @{ failed = $false; signature = $null }
+			}
+			Get-SafeValue { Test-BuildLogFailure -Log $logText -SignatureSet $profileLogSignatures } @{ failed = $false; signature = $null }
 		} -Fallback @{ failed = $false; signature = $null }
 
 		if ($logFailure.failed -and $exitCode -eq 0) {
@@ -184,13 +233,17 @@ try {
 	}
 } finally {
 	Get-SafeValue { Stop-BuildJobTree -JobHandle $job }
-	$occupancy = Get-SafeValue { Get-BuildQueueOccupancy -StateRoot $StateRoot -SelfSeq $Seq } 0
-	$otherBuildActive = ($occupancy -gt 0)
-	$vbcscompilerRecycled = Get-SafeValue { Reset-CompilerServer -OtherBuildActive $otherBuildActive } $false
-	$recycleSkippedReason = if ($otherBuildActive) { 'concurrent-build-active' } else { $null }
+	if ($profileRecycles) {
+		# dotnet profile only: the occupancy-gated VBCSCompiler recycle (the
+		# ONE sanctioned name-targeted kill). Other profiles never reach it.
+		$occupancy = Get-SafeValue { Get-BuildQueueOccupancy -StateRoot $StateRoot -SelfSeq $Seq } 0
+		$otherBuildActive = ($occupancy -gt 0)
+		$vbcscompilerRecycled = Get-SafeValue { Reset-CompilerServer -OtherBuildActive $otherBuildActive } $false
+		$recycleSkippedReason = if ($otherBuildActive) { 'concurrent-build-active' } else { $null }
+	}
 
 	$buildFailed = Get-SafeValue { ($null -eq $exitCode) -or ($exitCode -ne 0) } $true
-	if ($buildFailed -and -not [string]::IsNullOrWhiteSpace($Worktree)) {
+	if ($buildFailed -and $profilePoisonSweep -eq 'dotnet-dll' -and -not [string]::IsNullOrWhiteSpace($Worktree)) {
 		$quarantinedArtifacts = Get-SafeValue { @(Remove-PoisonedArtifacts -WorktreeRoot $Worktree) } @()
 	}
 }
@@ -241,10 +294,23 @@ Get-SafeValue {
 
 $resultPath = Join-Path $resultsDir "$Seq.json"
 $resultTmp  = Join-Path $resultsDir "$Seq.tmp"
+$endedAtStamp = (Get-Date).ToString('o')
+
+# eta-priority-lanes D1: duration fields, present only when -Op was threaded
+# (legacy invocations omit all three — byte-identical result schema).
+$durationSeconds = $null
+$startedAtStamp  = $null
+if (-not [string]::IsNullOrWhiteSpace($Op)) {
+	$startedAtStamp = Get-SafeValue { $script:runStartedAt.ToString('o') } $null
+	$durationSeconds = Get-SafeValue {
+		[math]::Round(((Get-Date) - $script:runStartedAt).TotalSeconds, 1)
+	} $null
+}
+
 $resultBody = [ordered]@{
 	seq       = $Seq
 	exit_code = $exitCode
-	ended_at  = (Get-Date).ToString('o')
+	ended_at  = $endedAtStamp
 	counts    = $counts
 	hygiene   = [ordered]@{
 		vbcscompiler_recycled  = $vbcscompilerRecycled
@@ -254,7 +320,13 @@ $resultBody = [ordered]@{
 		build_fidelity         = $buildFidelity
 		lockers_reaped         = $lockersReaped
 	}
-} | ConvertTo-Json -Compress -Depth 5
+}
+if (-not [string]::IsNullOrWhiteSpace($Op)) {
+	$resultBody['op']               = $Op
+	$resultBody['started_at']       = $startedAtStamp
+	$resultBody['duration_seconds'] = $durationSeconds
+}
+$resultBody = $resultBody | ConvertTo-Json -Compress -Depth 5
 
 [System.IO.File]::WriteAllText($resultTmp, $resultBody)
 try {
@@ -262,6 +334,15 @@ try {
 } catch {
 	Get-SafeValue { [System.IO.File]::WriteAllText($resultPath, $resultBody) }
 	Get-SafeValue { Remove-Item $resultTmp -Force -ErrorAction SilentlyContinue }
+}
+
+# eta-priority-lanes D2: append this run to the per-op duration ring
+# (stats/<op>.json, cap 20, atomic, fail-open — never affects the result).
+if (-not [string]::IsNullOrWhiteSpace($Op) -and $null -ne $durationSeconds) {
+	$null = Get-SafeValue {
+		Add-BuildQueueStatsEntry -StateRoot $StateRoot -Op $Op -Seq $Seq `
+			-DurationSeconds $durationSeconds -ExitCode $exitCode -EndedAt $endedAtStamp
+	} $false
 }
 
 $activeLock = Join-Path $StateRoot 'active.lock'
