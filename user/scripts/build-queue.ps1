@@ -174,7 +174,10 @@ $ticketBody = [ordered]@{
 # eta-priority-lanes D3: predictions ride the PRE-outcome surfaces only (this
 # echo + the position lines + the status view) with the approx/? markers —
 # NEVER the authoritative Format-BuildQueueBanner last line.
-$script:etaApprox = [char]0x2248
+# ASCII '~', not U+2248: powershell.exe encodes redirected stdout in the OEM
+# codepage, where non-ASCII glyphs mojibake for UTF-8 consumers (docs/bugs/
+# build-queue-eta-marker-mojibake-on-redirected-stdout).
+$script:etaApprox = '~'
 function Format-EtaSuffix {
 	param([int]$SelfSeq, [string]$SelfOp, [string]$SelfLane, [switch]$IncludeDone)
 	return Get-SafeValue {

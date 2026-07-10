@@ -104,7 +104,9 @@ if (Test-Path $activeLock) {
 		$elapsed = Format-Elapsed $lockData.started_at
 		# eta-priority-lanes D3: remaining~ beside elapsed (per-op estimate minus
 		# elapsed, floored at 0; '?' with no history). Prediction, never outcome.
-		$etaApprox = [char]0x2248
+		# ASCII '~', not U+2248 — OEM-codepage stdout mojibakes non-ASCII for
+		# UTF-8 consumers (docs/bugs/build-queue-eta-marker-mojibake-on-redirected-stdout).
+		$etaApprox = '~'
 		$remainingStr = Get-SafeValue {
 			if (-not (Get-Command Get-BuildQueueEta -ErrorAction SilentlyContinue)) { return '?' }
 			$est = Get-BuildQueueEta -StateRoot $StateRoot -Op ([string]$lockData.op)
@@ -146,7 +148,7 @@ if (@($tickets).Count -gt 0) {
 	$hasWaiters = $true
 	Write-Output ''
 	Write-Output '=== Waiters ==='
-	$etaApproxW = [char]0x2248
+	$etaApproxW = '~'   # ASCII, not U+2248 — see the mojibake note above
 	$pos = 1
 	foreach ($t in $tickets) {
 		$waited = Format-Elapsed $t.started_wait_at
