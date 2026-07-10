@@ -5331,6 +5331,9 @@ def provisional_eligibility(sentinel_path: Path) -> tuple[bool, str]:
         stronger path for those (full resolution, no ratification debt);
       - ``written_by`` is not ``completion-integrity-gate`` (integrity gaps
         are never recommendations);
+      - ``stub_origin`` is absent or explicitly false (stub-origin-provisional-
+        exclusion: baseline-shaping decisions from a stub-spec /spec Phase-1
+        round or a /spec-bug pre-conclusion halt are never provisional);
       - the divergence two-key holds: ``divergence`` (producer, Key 1) AND
         ``audit_divergence`` (input-audit, Key 2) are BOTH in
         {isolated, contained} — absence, ``structural``, or any unknown value
@@ -5357,6 +5360,17 @@ def provisional_eligibility(sentinel_path: Path) -> tuple[bool, str]:
         return (False, f"{len(decisions)} decisions exceeds the 4-decision cap")
     if str(meta.get("written_by", "")).strip() == "completion-integrity-gate":
         return (False, "written_by completion-integrity-gate — never provisional")
+    # stub-origin-provisional-exclusion: decisions that shaped a baseline the
+    # operator never saw (park-mode stub-spec /spec Phase-1 round, /spec-bug
+    # pre-conclusion halt) are NEVER provisionally accepted, regardless of
+    # divergence grades — jointly they define the item's foundation.
+    # FAIL-CLOSED on malformed values: any present value that is not an
+    # explicit false excludes.
+    if "stub_origin" in meta:
+        _so = meta.get("stub_origin")
+        if not (_so is False or str(_so).strip().lower() in ("false", "no")):
+            return (False, "stub_origin baseline decision — never provisional "
+                           "(fail-closed)")
     if meta.get("class") == "mechanical" and meta.get("audit_concurs") is True:
         return (False, "two-key mechanical — flush auto-accept path wins (D4)")
     divergence = str(meta.get("divergence", "")).strip().lower()

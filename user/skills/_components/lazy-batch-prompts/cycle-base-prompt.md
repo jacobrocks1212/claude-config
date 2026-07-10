@@ -165,10 +165,14 @@ PARK-MODE INTERACTION CONTRACT (/spec under park mode — SPEC D13, LOAD-BEARING
      (disclose with ⚖ policy: lines — see the Completeness-first section).
   3. Surface the ≤4 genuinely baseline-GATING product forks via NEEDS_INPUT.md
      (rich `## Decision Context` body per sentinel-frontmatter.md,
-     recommendation-first Options, a **Recommendation:** per decision, and the
-     file-level `divergence:` self-grade above) — the park/provisional
-     machinery picks the sentinel up on the next probe; the input-audit then
-     supplies the independent `audit_divergence` second key.
+     recommendation-first Options, a **Recommendation:** per decision, the
+     file-level `divergence:` self-grade above, AND `stub_origin: true` —
+     MANDATORY on a stub-spec baseline round: these decisions shape a baseline
+     the operator has never seen, so they are excluded from provisional
+     acceptance and always park for the operator
+     (stub-origin-provisional-exclusion)) — the park machinery picks the
+     sentinel up on the next probe; the input-audit supplies the independent
+     `audit_divergence` second key and backstops the stub-origin marker.
   Research-answerable questions still go into RESEARCH_PROMPT.md, never the
   sentinel. A brief too ambiguous even for a placeholder baseline writes
   BLOCKED.md (blocker_kind: pre-research-input-required) exactly as the

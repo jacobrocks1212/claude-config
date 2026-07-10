@@ -9597,6 +9597,11 @@ def run_smoke_tests() -> int:
             ("park-provisional-single-key-parks", "contained", None, ""),
             ("park-provisional-two-key-mech-parks", "isolated", "isolated",
              "class: mechanical\naudit_concurs: true"),
+            # stub-origin-provisional-exclusion: an otherwise-eligible sentinel
+            # (low divergence two-key + recommendation) whose decisions shaped a
+            # stub-origin baseline is NEVER provisionally accepted.
+            ("park-provisional-stub-origin-parks", "isolated", "isolated",
+             "stub_origin: true"),
         ):
             try:
                 pp_sentinel.write_text(

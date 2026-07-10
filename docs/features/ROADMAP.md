@@ -69,6 +69,8 @@ the historical / manually-authored spec archive (not under pipeline management).
 
 ~~- Workstation Recursive Sub-Subagent Dispatch (`workstation-recursive-subagent-dispatch`) — lift the cycle-subagent inline-override on workstation so the dispatched skill's own sub-subagent orchestration (test-agent/impl-agent split, research fan-outs) is authoritative again, restoring the structural TDD guarantee; cloud keeps the inline override; retro grading self-heals by prompt marker. *(Added 2026-07-09, implemented same-session.)*~~  ✅ COMPLETE
 
+- Stub-Origin Provisional Exclusion (`stub-origin-provisional-exclusion`) — special-case stub-origin decisions in the provisional tier: baseline-gating forks from a park-mode stub-spec `/spec` round (or a `/spec-bug` pre-conclusion halt) carry `stub_origin: true` and are never provisionally accepted — the operator always confirms a baseline before anything is built on it. *(Added 2026-07-09, implemented same-session.)*
+
 ## Tier 3 — proposed (repo-exploration stubs 2026-07-04, high-ambition)
 
 - Sanctioned Parallel-Worktree Batch Execution (`parallel-worktree-batch-execution`) — a coordinator that shards dependency-independent queue items across worktrees (per-item branch + marker arbitration extending the ownership model, containment unchanged); the biggest throughput multiplier available.

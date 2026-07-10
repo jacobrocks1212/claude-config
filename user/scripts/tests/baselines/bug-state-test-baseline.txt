@@ -60,6 +60,7 @@
   PASS [bug-park-blocked-reenter-under-flag] blocked-bug parked under flag=True, dispatched='workable-bug'
   PASS [bug-park-provisional-eligible-route]
   PASS [bug-park-provisional-structural-parks]
+  PASS [bug-park-provisional-stub-origin-parks]
   PASS [bug-park-provisional-workable-and-ratification]
 {
   "error": "--park-provisional requires --park-needs-input (SPEC D1)",

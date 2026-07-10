@@ -139,6 +139,7 @@
   PASS [park-provisional-structural-parks] parked
   PASS [park-provisional-single-key-parks] parked
   PASS [park-provisional-two-key-mech-parks] parked
+  PASS [park-provisional-stub-origin-parks] parked
   PASS [provisionalize-sentinel-action]
   PASS [park-provisional-workable-under-park]
   PASS [needs-ratification-non-park-halt] terminal_reason='needs-ratification'

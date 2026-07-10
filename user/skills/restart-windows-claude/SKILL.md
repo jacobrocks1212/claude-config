@@ -28,7 +28,7 @@ Run exactly this from the Bash tool. It returns immediately; the new session tak
 backslash path gets mangled passing through the WSL→Windows interop layer.
 
 ```bash
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:/Users/Jacob/restart-windows-claude.ps1
+powershell.exe -NoProfile -File C:/Users/Jacob/restart-windows-claude.ps1
 ```
 
 Optional args (append after the path): `-Name <name>` for a different RC session

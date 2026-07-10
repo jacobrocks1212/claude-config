@@ -201,6 +201,22 @@ Audit algorithm:
    are BOTH `isolated`/`contained` (and every decision carries a `**Recommendation:**`).
    Without your grade, no provisional acceptance fires — fail-closed to a park.
 
+7c. **Backstop the `stub_origin` marker** (stub-origin-provisional-exclusion).
+   Determine whether THIS audited cycle was a stub-origin baseline round: the
+   cycle's /spec ran Phase 1 on a stub / pre-baseline SPEC (SPEC.md did not
+   exist before the cycle, or the pre-cycle text carried the stub markers /
+   `queue.json "stub": true`), or a /spec-bug cycle wrote the sentinel while
+   the investigation had NOT concluded (`**Status:** Investigating`). If so
+   and a NEEDS_INPUT.md is on disk for this {feature_id}:
+     - Verify its frontmatter carries `stub_origin: true`; ADD it with `Edit`
+       if the producer omitted it (commit alongside the step-7/7b commit).
+     - Apply EXTRA scrutiny in steps 3-4: on a baseline the operator never
+       saw, ANY baked-in scope / ownership / core-UX / default choice is a
+       product-behavior miss — surface it.
+   Never REMOVE an existing `stub_origin: true`. On a non-stub-origin cycle
+   this step is a no-op (do not add the marker to post-research sentinels —
+   the operator locked that baseline).
+
 8. Return a one-paragraph summary (≤ 8 lines) covering:
    - Decisions reviewed (count) and how many you classified as
      product-behavior (and how many you reclassified as scope per D7).
@@ -216,6 +232,8 @@ Audit algorithm:
    - Whether you recorded `audit_concurs` and its value (or why you skipped it).
    - Whether you recorded `audit_divergence` and its grade (step 7b) — or why not
      (e.g. no sentinel on disk).
+   - Whether the cycle was stub-origin and the `stub_origin: true` marker was
+     verified/added (step 7c), or n/a.
 
 Do NOT halt the loop. The NEEDS_INPUT.md sentinel you write is picked up by
 lazy-state.py on the next cycle and resolved via Step 1g (decision-resume

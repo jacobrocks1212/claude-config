@@ -5113,6 +5113,38 @@ def run_smoke_tests() -> int:
             failures.append(f"[{fix_bpp_struct}] SystemExit: {exc.code}")
             print(f"  FAIL [{fix_bpp_struct}] SystemExit: {exc.code}")
 
+        # 2b (stub-origin-provisional-exclusion): an otherwise-eligible
+        # sentinel marked stub_origin: true parks instead of routing.
+        fix_bpp_stub = "bug-park-provisional-stub-origin-parks"
+        try:
+            bpp_sentinel.write_text(
+                _bpp_needs_input("contained").replace(
+                    "audit_divergence: contained",
+                    "audit_divergence: contained" + chr(10) + "stub_origin: true"),
+                encoding="utf-8",
+            )
+            got_bpp_so = compute_state(
+                bpp_root, cloud=False, real_device=True,
+                park_needs_input=True, park_provisional=True,
+            )
+            bppso_ok = True
+            if got_bpp_so.get("sub_skill") == "__provisional_accept__":
+                failures.append(
+                    f"[{fix_bpp_stub}] stub_origin sentinel must NOT route acceptance"
+                )
+                bppso_ok = False
+            if not any(e.get("id") == "prov-bug"
+                       for e in got_bpp_so.get("parked", [])):
+                failures.append(
+                    f"[{fix_bpp_stub}] prov-bug must be parked "
+                    f"(parked={got_bpp_so.get('parked')!r})"
+                )
+                bppso_ok = False
+            print(f"  {'PASS' if bppso_ok else 'FAIL'} [{fix_bpp_stub}]")
+        except SystemExit as exc:
+            failures.append(f"[{fix_bpp_stub}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_bpp_stub}] SystemExit: {exc.code}")
+
         # 3+4: rename to _PROVISIONAL → workable under park (provisional[]
         # lists it), needs-ratification halt non-park.
         fix_bpp_work = "bug-park-provisional-workable-and-ratification"
