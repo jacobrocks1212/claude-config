@@ -2,7 +2,7 @@
 
 > Lift the no-recursive-subagent constraint for WORKSTATION cycle subagents: the dispatched skill's own sub-subagent orchestration model (e.g. `/execute-plan`'s Sonnet test-agent + impl-agent split) is authoritative again, restoring the structural TDD guarantee the inline override traded away. Cloud cycles keep the inline override verbatim.
 
-**Status:** In-progress
+**Status:** Complete
 **Priority:** P1
 **Last updated:** 2026-07-09
 **Friction-reduction feature:** no

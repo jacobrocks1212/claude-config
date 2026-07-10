@@ -4030,6 +4030,11 @@
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "workstation-recursive-subagent-dispatch",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/anti-overfit-design-gate/SPEC.md": [
@@ -5971,6 +5976,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/workstation-recursive-subagent-dispatch/PHASES.md": [
+    {
+      "id": "workstation-recursive-subagent-dispatch",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/workstation-recursive-subagent-dispatch/SPEC.md": [
+    {
+      "id": "workstation-recursive-subagent-dispatch",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/interventions/CLAUDE.md": [
     {
       "id": "intervention-efficacy-tracking",
@@ -6137,6 +6156,11 @@
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "workstation-recursive-subagent-dispatch",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "repos/algobooth/.claude/skills/lazy-cloud/SKILL.md": [
@@ -7260,6 +7284,11 @@
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "workstation-recursive-subagent-dispatch",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/test_lazy_parity.py": [
@@ -7605,6 +7634,11 @@
       "id": "park-provisional-acceptance",
       "type": "feature",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "workstation-recursive-subagent-dispatch",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/_components/lazy-batch-prompts/dispatch-apply-resolution.md": [
@@ -7714,6 +7748,11 @@
       "id": "park-provisional-acceptance",
       "type": "feature",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "workstation-recursive-subagent-dispatch",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/lazy-batch-retro/SKILL.md": [
@@ -7736,6 +7775,11 @@
       "id": "toolify-auto-promotion",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "workstation-recursive-subagent-dispatch",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/lazy-batch/SKILL.md": [
@@ -7823,6 +7867,11 @@
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "workstation-recursive-subagent-dispatch",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/lazy-bug-batch/SKILL.md": [
@@ -7860,6 +7909,11 @@
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "workstation-recursive-subagent-dispatch",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/lazy-bug/SKILL.md": [
@@ -7898,6 +7952,13 @@
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/skills/restart-windows-claude/SKILL.md": [
+    {
+      "id": "workstation-recursive-subagent-dispatch",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/spec-phases/SKILL.md": [
