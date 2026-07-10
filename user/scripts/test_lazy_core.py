@@ -29611,8 +29611,11 @@ def _run_cycle_end_records_bracket_cli(script_name: str, id_flag: str):
                 capture_output=True, text=True, env=env,
             )
 
+        # --cycle-begin --kind real (the default) now REQUIRES --sub-skill
+        # (cycle-begin-real-requires-sub-skill) — pass one like a real
+        # orchestrator dispatch does.
         r = run(["--cycle-begin", id_flag, "feat-cli-br", "--nonce", "cafe",
-                 "--repo-root", str(repo)])
+                 "--sub-skill", "execute-plan", "--repo-root", str(repo)])
         assert r.returncode == 0, f"--cycle-begin failed: {r.stderr[:300]}"
         end = _prov_git_commit_file(repo, "src/b.py", "cycle work")
         r = run(["--cycle-end", "--repo-root", str(repo)])
