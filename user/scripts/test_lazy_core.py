@@ -29241,6 +29241,52 @@ def test_dep_completion_status_bug_pipeline_archive_aware(tmp_path):
     assert f("bug-nowhere") == "missing"
 
 
+def _dep_write_feature_nested(root, fid, status, rel_parent, *, receipt=False):
+    """Write a feature spec at a domain-nested path
+    docs/features/<rel_parent>/<fid>/ (a Complete feature stays in place — no
+    _archive — so it must be found by the recursive-by-id fallback)."""
+    d = root / "docs" / "features" / Path(rel_parent) / fid
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "SPEC.md").write_text(
+        f"# {fid}\n\n**Status:** {status}\n", encoding="utf-8"
+    )
+    if receipt:
+        (d / "COMPLETED.md").write_text(
+            "---\nkind: completed\nfeature_id: " + fid +
+            "\nprovenance: mark-complete\n---\n\n# Completed\n",
+            encoding="utf-8",
+        )
+    return d
+
+
+def test_dep_completion_status_feature_nested_complete_resolves(tmp_path):
+    """Regression: a Complete feature dep at a domain-nested path (leaves
+    queue.json ⇒ absent from id_dir_map; no _archive/) must resolve via the
+    recursive-by-id fallback and classify 'complete', NOT 'missing' (which
+    would write a spurious unknown-dependency BLOCKED.md on the dependent on
+    every probe). A genuinely absent id still → 'missing'; a nested working
+    (receiptless) feature → 'incomplete'. pytest-only (tmp_path)."""
+    _guard()
+    root = tmp_path
+    _dep_write_feature_nested(
+        root, "f1-global-scale", "Complete",
+        "mixer/dj-capabilities/domains", receipt=True)
+    _dep_write_feature_nested(
+        root, "f2-nested-wip", "Draft", "mixer/dj-capabilities/domains")
+    f = lambda i: lazy_core.dep_completion_status(
+        i, root, pipeline="feature")
+    # Nested Complete feature is FOUND and classified complete (not missing).
+    assert f("f1-global-scale") == "complete"
+    # No regression: a genuinely dangling id still classifies missing.
+    assert f("f-does-not-exist") == "missing"
+    # Nested working feature (no receipt) classifies incomplete.
+    assert f("f2-nested-wip") == "incomplete"
+    # Fallback must NOT match a bare nested dir named <id> with no SPEC.md.
+    bare = root / "docs" / "features" / "group" / "f3-bare"
+    bare.mkdir(parents=True, exist_ok=True)
+    assert f("f3-bare") == "missing"
+
+
 def test_format_unknown_dependency_blocker_names_everything():
     """D4: the BLOCKED.md body names the dependent, the offending dep id, WHY
     it is unsatisfiable (missing vs superseded vs wont-fix), and the known

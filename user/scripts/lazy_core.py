@@ -688,7 +688,18 @@ def dep_completion_status(
     custom ``spec_dir``) wins; then the canonical ``docs/features/<id>/`` —
     or, for the bug pipeline, ``docs/bugs/<id>/`` THEN
     ``docs/bugs/_archive/<id>/`` (``__mark_fixed__`` archives on fix — the D9
-    justified divergence). Pure on-disk reads; no LLM judgment, no new state.
+    justified divergence). For the FEATURE pipeline ONLY, if the flat
+    canonical path does not resolve, a recursive-by-id fallback searches under
+    ``docs/features`` for a directory named exactly ``<dep_id>`` that contains
+    a ``SPEC.md`` (deterministic first-in-sorted-order on the improbable
+    multi-match). This mirrors the ``dep-block-ids-exist`` contract
+    (``<feature-id>`` may resolve to a queue.json entry id OR an existing
+    ``docs/features/.../<id>/SPEC.md``) and how a queue ``spec_dir`` permits an
+    arbitrary nested path — a Complete feature stays in place (no ``_archive``)
+    at a domain-nested path (e.g.
+    ``docs/features/mixer/dj-capabilities/domains/f1-global-scale/``) and would
+    otherwise be misclassified ``missing``. Pure on-disk reads; no LLM
+    judgment, no new state.
     """
     candidates: list = []
     if id_dir_map and dep_id in id_dir_map:
@@ -701,6 +712,20 @@ def dep_completion_status(
         )
     else:
         candidates.append(repo_root / "docs" / "features" / dep_id)
+        # Recursive-by-id fallback (feature pipeline only): a Complete feature
+        # leaves queue.json (absent from id_dir_map) and has NO _archive/, so a
+        # domain-nested Complete spec falls through both prior candidates.
+        # Search docs/features for a dir named exactly <dep_id> holding a
+        # SPEC.md; the existing loop then classifies it. Sorted for
+        # determinism; guard against docs/features not existing.
+        features_root = repo_root / "docs" / "features"
+        if features_root.is_dir():
+            nested = sorted(
+                m.parent
+                for m in features_root.rglob(f"{dep_id}/SPEC.md")
+                if m.parent.name == dep_id
+            )
+            candidates.extend(nested)
         terminal_status, receipt_name, retired, retired_tag = (
             "Complete", "COMPLETED.md", "Superseded",
             "unsatisfiable-superseded",
