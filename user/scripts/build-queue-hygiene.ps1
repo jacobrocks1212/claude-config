@@ -2156,6 +2156,122 @@ function Test-LaneClaimEligible {
 	} $false
 }
 
+function Write-BuildQueueResult {
+	<#
+	.SYNOPSIS
+	  Atomically write results/<seq>.json for a queued build — the crash-safe
+	  result writer for the runner's two-phase write
+	  (docs/bugs/build-queue-timeout-kill-reaps-detached-runner).
+
+	.DESCRIPTION
+	  Composes the canonical result body (schema documented at the top of
+	  build-queue-runner.ps1) and writes it atomically (temp + Replace, with
+	  the direct-write fallback when the destination does not exist yet).
+	  The runner calls the result write TWICE per build:
+
+	    1. EARLY — immediately after the exit code and the fidelity
+	       classification are known, BEFORE any hygiene work, with a hygiene
+	       sub-object whose `status` is 'pending' (real hygiene fields
+	       defaulted). An untrappable TerminateProcess kill mid-hygiene (the
+	       Bash-tool timeout tree-kill that reaps the "detached" runner)
+	       then leaves a truthful result instead of nothing.
+	    2. FINAL — after hygiene completes, with the real hygiene fields and
+	       `status` 'complete', overwriting the early write in full. (The
+	       runner keeps the final write INLINE so the result contract
+	       survives a failed hygiene-module dot-source; this helper is the
+	       early write's implementation and the Pester-testable reference.)
+
+	  The eta-priority-lanes op fields (op/started_at/duration_seconds) are
+	  emitted only when -Op is non-empty (legacy invocations omit all three).
+
+	  Fail-open: never throws; any failure returns $null and writes nothing
+	  partial to the final path (the temp file carries the partial state).
+
+	.PARAMETER StateRoot
+	  Build-queue state root (results/ is created beneath it if absent).
+
+	.PARAMETER Seq
+	  The build-queue sequence number this result belongs to.
+
+	.PARAMETER ExitCode
+	  The build's exit code (untyped: $null is written as JSON null on the
+	  degraded spawn-exception path).
+
+	.PARAMETER Counts
+	  Test-op counts ordered hashtable (passed/failed/total) or $null.
+
+	.PARAMETER Hygiene
+	  The full hygiene sub-object (ordered hashtable), including `status`.
+
+	.PARAMETER Op
+	  Queue op name; empty/absent omits op/started_at/duration_seconds.
+
+	.PARAMETER StartedAt
+	  ISO-8601 run-start stamp (untyped so $null survives as JSON null).
+
+	.PARAMETER DurationSeconds
+	  Exec-run duration in seconds (untyped so $null survives as JSON null).
+
+	.OUTPUTS
+	  [string] the ended_at ISO-8601 stamp recorded in the written result,
+	  or $null when the write failed.
+	#>
+	[CmdletBinding()]
+	[OutputType([string])]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$StateRoot,
+
+		[Parameter(Mandatory = $true)]
+		[int]$Seq,
+
+		$ExitCode = $null,
+
+		$Counts = $null,
+
+		$Hygiene = $null,
+
+		[string]$Op = '',
+
+		$StartedAt = $null,
+
+		$DurationSeconds = $null
+	)
+
+	return Get-SafeValue {
+		$resultsDir = Join-Path $StateRoot 'results'
+		if (-not (Test-Path $resultsDir)) {
+			$null = New-Item -ItemType Directory -Path $resultsDir -Force
+		}
+		$resultPath = Join-Path $resultsDir "$Seq.json"
+		$resultTmp  = Join-Path $resultsDir "$Seq.tmp"
+		$endedAtStamp = (Get-Date).ToString('o')
+
+		$body = [ordered]@{
+			seq       = $Seq
+			exit_code = $ExitCode
+			ended_at  = $endedAtStamp
+			counts    = $Counts
+			hygiene   = $Hygiene
+		}
+		if (-not [string]::IsNullOrWhiteSpace($Op)) {
+			$body['op']               = $Op
+			$body['started_at']       = $StartedAt
+			$body['duration_seconds'] = $DurationSeconds
+		}
+		$json = $body | ConvertTo-Json -Compress -Depth 5
+
+		[System.IO.File]::WriteAllText($resultTmp, $json)
+		try {
+			[System.IO.File]::Replace($resultTmp, $resultPath, [NullString]::Value)
+		} catch {
+			Get-SafeValue { [System.IO.File]::WriteAllText($resultPath, $json) }
+			Get-SafeValue { Remove-Item $resultTmp -Force -ErrorAction SilentlyContinue }
+		}
+		$endedAtStamp
+	} $null
+}
+
 function Format-BuildQueueBanner {
 	<#
 	.SYNOPSIS

@@ -39,6 +39,15 @@
         # wrapper already tails live — no separate redirect is added for this).
         # null for a non-test op, a missing log, or an unparseable/absent line.
       hygiene: {
+        status: "pending" | "complete",  # two-phase crash-safe write (docs/bugs/
+        # build-queue-timeout-kill-reaps-detached-runner): the result is written
+        # EARLY — immediately after the exit code + fidelity classification are
+        # known, BEFORE any hygiene work — with status "pending" and the hygiene
+        # fields below defaulted, then written a SECOND time after hygiene with
+        # the real hygiene fields and status "complete". An untrappable kill
+        # mid-hygiene (Bash-tool timeout tree-kill) leaves the truthful pending
+        # result instead of nothing, so build-queue-await returns the build's
+        # real outcome instead of a misleading 124.
         vbcscompiler_recycled: <bool>,   # whether VBCSCompiler was recycled after the build
         recycle_skipped_reason: "concurrent-build-active" | null, # non-null iff the recycle was skipped because another queue build was live (occupancy > 0); null when the recycle ran (sole build) or otherwise
         quarantined_artifacts: [<path>], # absolute paths of 0-byte/truncated-PE *.dll swept from bin/+obj/ (empty on a clean build)
@@ -123,8 +132,15 @@ $profilePoisonSweep   = if ($null -ne $hygieneProfile) { $hygieneProfile.poison_
 $profileLogSignatures = if ($null -ne $hygieneProfile) { $hygieneProfile.log_failure_signatures } else { 'msbuild' }
 $buildLogPath = $null
 $buildFidelity = 'n/a'
+# Pre-initialized so the finally block's early-write guard can distinguish a
+# known exit code from a build-spawn exception (where it stays $null) without
+# tripping Set-StrictMode.
+$exitCode = $null
 trap {
-	Get-SafeValue { Stop-BuildJobTree -JobHandle $job }
+	# $null = : the unassigned Stop-BuildJobTree return leaked a bare 'True'
+	# into the runner's stdout (logs/<seq>.log, which the test-counts regex
+	# parses) — assign it away.
+	$null = Get-SafeValue { Stop-BuildJobTree -JobHandle $job }
 	continue
 }
 
@@ -242,7 +258,122 @@ try {
 		}
 	}
 } finally {
-	Get-SafeValue { Stop-BuildJobTree -JobHandle $job }
+	# ------------------------------------------------------------------
+	# CRASH-SAFE EARLY RESULT WRITE
+	# (docs/bugs/build-queue-timeout-kill-reaps-detached-runner)
+	#
+	# A foreground wrapper call that hits its Bash-tool timeout is
+	# tree-killed (exit 143), and that TerminateProcess reaps this
+	# "detached" runner with it — untrappable, so no exit handler can save
+	# the result. On RED builds the runner used to spend minutes in the
+	# failed-build quarantine sweep BEFORE the single result write, losing
+	# the build's true outcome forever and stranding active.lock on a dead
+	# pid. The fix shrinks the unprotected window: persist the truthful
+	# result (exit code + fidelity + counts, hygiene marked status=pending)
+	# the moment the outcome is known — BEFORE any hygiene work — then
+	# merge the real hygiene fields in the second (final) write below,
+	# after hygiene. Lock release stays AFTER hygiene (the lock serializes
+	# hygiene against the next build); a kill after this write still
+	# strands the lock, but the next enqueue's 3-dead-tick reclaim
+	# self-heals that — and build-queue-await now returns the build's real
+	# outcome instead of a misleading 124.
+	# ------------------------------------------------------------------
+
+	# Result fidelity + test counts depend only on the exit code and the
+	# already-complete logs, so they are computed here (before hygiene) and
+	# carried by the early write; the final write reuses the same values.
+	$resultFidelity = Get-SafeValue {
+		if (-not $isTestOp) { 'n/a' }
+		elseif ($exitCode -eq 3) { 'no-output' }
+		elseif ($exitCode -eq 5) { 'no-tests-matched' }
+		else { 'verified' }
+	} 'n/a'
+
+	# Test-op Passed/Failed/Total counts, parsed from the grandchild's inherited stdout
+	# (already captured in logs/<seq>.log by the wrapper's live-tail redirect — no
+	# additional RedirectStandardOutput is added here for test ops, which would break
+	# that live tail). Fail-open: any read/parse error, a non-test op, a missing log,
+	# or an absent "Results:" line all yield $null (never throws).
+	# Flush-safe counts read (Root Cause C): the "Results:" summary line is the LAST
+	# thing written to the test log, so a single-shot read here most acutely races the
+	# wrapper-owned flush/close — a dropped trailing line reads as counts=$null and the
+	# agent bypasses the capture. Route through Read-WithRetry so a not-yet-flushed
+	# Results line settles (3x/50ms) before we commit an empty parse. The $isTestOp
+	# guard stays OUTSIDE the retry (a non-test op is $null immediately, not a race);
+	# a genuinely-absent Results line still falls back to $null after exhaustion.
+	$counts = $null
+	if ($isTestOp) {
+		$counts = Read-WithRetry -Parse {
+			$testLogPath = Join-Path (Join-Path $StateRoot 'logs') "$Seq.log"
+			if (-not (Test-Path $testLogPath)) { return $null }
+			# Share-tolerant read (NOT ReadAllText): logs/<seq>.log IS this
+			# runner's own redirected stdout, so its write handle stays open for
+			# the runner's whole lifetime — ReadAllText (FileShare.Read) hits a
+			# deterministic sharing violation against that live write handle and
+			# silently nulled the counts. Open FileShare.ReadWrite instead, the
+			# same pattern as the wrapper's live tail.
+			$logText = Get-SafeValue {
+				$fs = [System.IO.File]::Open($testLogPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+				try {
+					$sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+					try { $sr.ReadToEnd() } finally { $sr.Dispose() }
+				} finally {
+					$fs.Dispose()
+				}
+			} $null
+			if ([string]::IsNullOrEmpty($logText)) { return $null }
+			$resultMatches = [regex]::Matches($logText, '^Results:\s*Passed=(\d+)\s+Failed=(\d+)\s+Total=(\d+)', [System.Text.RegularExpressions.RegexOptions]::Multiline)
+			if ($resultMatches.Count -eq 0) { return $null }
+			$m = $resultMatches[$resultMatches.Count - 1]
+			[ordered]@{
+				passed = [int]$m.Groups[1].Value
+				failed = [int]$m.Groups[2].Value
+				total  = [int]$m.Groups[3].Value
+			}
+		} -Fallback $null
+	}
+
+	# eta-priority-lanes D1: duration fields, present only when -Op was threaded
+	# (legacy invocations omit all three — byte-identical result schema).
+	# Captured HERE, at build exit — duration_seconds is exec-run time per the
+	# documented schema (hygiene time excluded); the final write and the stats
+	# ring reuse these exact values so both writes agree.
+	$durationSeconds = $null
+	$startedAtStamp  = $null
+	if (-not [string]::IsNullOrWhiteSpace($Op)) {
+		$startedAtStamp = Get-SafeValue { $script:runStartedAt.ToString('o') } $null
+		$durationSeconds = Get-SafeValue {
+			[math]::Round(((Get-Date) - $script:runStartedAt).TotalSeconds, 1)
+		} $null
+	}
+
+	# EARLY WRITE — only when the exit code is actually known (a build-spawn
+	# exception leaves $exitCode $null: hygiene still runs below and the final
+	# write handles the degraded case, preserving the legacy exception path).
+	# Fail-open: a failed/unavailable Write-BuildQueueResult (e.g. the hygiene
+	# module never dot-sourced) degrades to today's single post-hygiene write.
+	if ($null -ne $exitCode) {
+		$null = Get-SafeValue {
+			Write-BuildQueueResult -StateRoot $StateRoot -Seq $Seq -ExitCode $exitCode `
+				-Counts $counts -Op $Op -StartedAt $startedAtStamp -DurationSeconds $durationSeconds `
+				-Hygiene ([ordered]@{
+					status                 = 'pending'
+					vbcscompiler_recycled  = $false
+					recycle_skipped_reason = $null
+					quarantined_artifacts  = @()
+					result_fidelity        = $resultFidelity
+					build_fidelity         = $buildFidelity
+					lockers_reaped         = $lockersReaped
+				})
+		}
+	}
+
+	# Hygiene — behavior, gating, and internal order UNCHANGED; only its
+	# position relative to the (now-early) result write moved. A kill
+	# anywhere from here down leaves the truthful early result above.
+	# ($null = : the unassigned Stop-BuildJobTree return used to leak a bare
+	# 'True' into logs/<seq>.log, which the test-counts regex parses.)
+	$null = Get-SafeValue { Stop-BuildJobTree -JobHandle $job }
 	if ($profileRecycles) {
 		# dotnet profile only: the occupancy-gated VBCSCompiler recycle (the
 		# ONE sanctioned name-targeted kill). Other profiles never reach it.
@@ -258,43 +389,10 @@ try {
 	}
 }
 
-$resultFidelity = Get-SafeValue {
-	if (-not $isTestOp) { 'n/a' }
-	elseif ($exitCode -eq 3) { 'no-output' }
-	elseif ($exitCode -eq 5) { 'no-tests-matched' }
-	else { 'verified' }
-} 'n/a'
-
-# Test-op Passed/Failed/Total counts, parsed from the grandchild's inherited stdout
-# (already captured in logs/<seq>.log by the wrapper's live-tail redirect — no
-# additional RedirectStandardOutput is added here for test ops, which would break
-# that live tail). Fail-open: any read/parse error, a non-test op, a missing log,
-# or an absent "Results:" line all yield $null (never throws).
-# Flush-safe counts read (Root Cause C): the "Results:" summary line is the LAST
-# thing written to the test log, so a single-shot read here most acutely races the
-# wrapper-owned flush/close — a dropped trailing line reads as counts=$null and the
-# agent bypasses the capture. Route through Read-WithRetry so a not-yet-flushed
-# Results line settles (3x/50ms) before we commit an empty parse. The $isTestOp
-# guard stays OUTSIDE the retry (a non-test op is $null immediately, not a race);
-# a genuinely-absent Results line still falls back to $null after exhaustion.
-$counts = $null
-if ($isTestOp) {
-	$counts = Read-WithRetry -Parse {
-		$testLogPath = Join-Path (Join-Path $StateRoot 'logs') "$Seq.log"
-		if (-not (Test-Path $testLogPath)) { return $null }
-		$logText = Get-SafeValue { [System.IO.File]::ReadAllText($testLogPath) } $null
-		if ([string]::IsNullOrEmpty($logText)) { return $null }
-		$resultMatches = [regex]::Matches($logText, '^Results:\s*Passed=(\d+)\s+Failed=(\d+)\s+Total=(\d+)', [System.Text.RegularExpressions.RegexOptions]::Multiline)
-		if ($resultMatches.Count -eq 0) { return $null }
-		$m = $resultMatches[$resultMatches.Count - 1]
-		[ordered]@{
-			passed = [int]$m.Groups[1].Value
-			failed = [int]$m.Groups[2].Value
-			total  = [int]$m.Groups[3].Value
-		}
-	} -Fallback $null
-}
-
+# FINAL WRITE — merge the real hygiene fields over the early write (status
+# flips pending -> complete). Kept INLINE (not via Write-BuildQueueResult) so
+# the result contract survives a failed hygiene-module dot-source, exactly as
+# the single write always has.
 $resultsDir = Join-Path $StateRoot 'results'
 Get-SafeValue {
 	if (-not (Test-Path $resultsDir)) {
@@ -306,23 +404,13 @@ $resultPath = Join-Path $resultsDir "$Seq.json"
 $resultTmp  = Join-Path $resultsDir "$Seq.tmp"
 $endedAtStamp = (Get-Date).ToString('o')
 
-# eta-priority-lanes D1: duration fields, present only when -Op was threaded
-# (legacy invocations omit all three — byte-identical result schema).
-$durationSeconds = $null
-$startedAtStamp  = $null
-if (-not [string]::IsNullOrWhiteSpace($Op)) {
-	$startedAtStamp = Get-SafeValue { $script:runStartedAt.ToString('o') } $null
-	$durationSeconds = Get-SafeValue {
-		[math]::Round(((Get-Date) - $script:runStartedAt).TotalSeconds, 1)
-	} $null
-}
-
 $resultBody = [ordered]@{
 	seq       = $Seq
 	exit_code = $exitCode
 	ended_at  = $endedAtStamp
 	counts    = $counts
 	hygiene   = [ordered]@{
+		status                 = 'complete'
 		vbcscompiler_recycled  = $vbcscompilerRecycled
 		recycle_skipped_reason = $recycleSkippedReason
 		quarantined_artifacts  = $quarantinedArtifacts
@@ -375,4 +463,8 @@ Get-SafeValue {
 	}
 }
 
+# $exitCode is $null only on the degraded build-spawn-exception path (never
+# after a real WaitForExit, which coerces null to 0) — exit 1 there instead of
+# letting `exit $null` report a false green.
+if ($null -eq $exitCode) { exit 1 }
 exit $exitCode
