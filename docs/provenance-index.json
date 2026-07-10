@@ -216,6 +216,11 @@
       "id": "mobile-queue-control",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/CLAUDE.md": [
@@ -3997,6 +4002,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
@@ -5419,6 +5429,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/park-provisional-acceptance/PHASES.md": [
+    {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/park-provisional-acceptance/SPEC.md": [
+    {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/queue-dependency-dag/COMPLETED.md": [
     {
       "id": "queue-dependency-dag",
@@ -6105,6 +6129,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
@@ -6456,6 +6485,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
@@ -6492,6 +6526,11 @@
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "unified-pipeline-orchestrator",
@@ -6604,6 +6643,11 @@
     },
     {
       "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "park-provisional-acceptance",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -6751,6 +6795,11 @@
     },
     {
       "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "park-provisional-acceptance",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -7375,6 +7424,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
@@ -7428,6 +7482,11 @@
     },
     {
       "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "park-provisional-acceptance",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -7507,6 +7566,13 @@
       "provenance": "backfilled"
     }
   ],
+  "user/skills/_components/completion-integrity-gate.md": [
+    {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/skills/_components/dep-block-schema.md": [
     {
       "id": "queue-dependency-dag",
@@ -7534,6 +7600,18 @@
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/_components/lazy-batch-prompts/dispatch-apply-resolution.md": [
+    {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/_components/lazy-batch-prompts/dispatch-recovery.md": [
@@ -7541,6 +7619,13 @@
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/skills/_components/lazy-batch-prompts/input-audit-prompt.md": [
+    {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/_components/lazy-dispatch-template.md": [
@@ -7569,6 +7654,18 @@
       "id": "park-mode-halts-on-blocked",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/_components/provisional-ratification.md": [
+    {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/_components/sentinel-frontmatter.md": [
@@ -7584,6 +7681,11 @@
     },
     {
       "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "park-provisional-acceptance",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -7605,6 +7707,13 @@
       "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/skills/lazy-batch-parallel/SKILL.md": [
+    {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/lazy-batch-retro/SKILL.md": [
@@ -7706,6 +7815,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
@@ -7736,6 +7850,11 @@
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "unified-pipeline-orchestrator",

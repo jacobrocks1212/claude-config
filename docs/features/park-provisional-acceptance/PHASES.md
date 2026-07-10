@@ -1,8 +1,9 @@
 # Park-Provisional Acceptance — Implementation Phases
 
-**Status:** In-progress
+**Status:** Complete
 **Spec:** [SPEC.md](SPEC.md)
 **Last updated:** 2026-07-09
+**MCP runtime:** not-required — pure claude-config harness mechanics (Python state scripts + `_components/` prose + SKILL.md wiring); no Tauri/MCP-reachable app surface. Per `docs/features/mcp-testing/SPEC.md` this is the "build tooling / no app integration" untestable class; validation is the hermetic `lazy-state.py --test` / `bug-state.py --test` harnesses (new provisional fixtures), the byte-pinned baselines, `pytest test_lazy_core.py`, and `lazy_parity_audit.py` — the Step-9 gate is expected to grant the structural MCP-skip (`__grant_skip_no_mcp_surface__`).
 
 Single-session implementation (autonomous). Phases ordered by load-bearing-ness: shared core → feature state machine → bug parity → schema/prompt components → orchestrator skills → verification.
 

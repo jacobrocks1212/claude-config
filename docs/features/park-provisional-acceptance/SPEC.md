@@ -2,7 +2,7 @@
 
 > A third decision tier between the D2 two-key mechanical auto-accept and the plain product-class park: in `--park --park-provisional` mode, a low-divergence product-class `NEEDS_INPUT.md` whose every decision carries a recommendation is PROVISIONALLY accepted (recommended option taken, pipeline continues implementing), durably marked `NEEDS_INPUT_PROVISIONAL.md`, and re-surfaced to the operator for ratify-or-redirect before the feature can ever complete.
 
-**Status:** In-progress
+**Status:** Complete
 **Priority:** P1
 **Last updated:** 2026-07-09
 **Friction-reduction feature:** yes
