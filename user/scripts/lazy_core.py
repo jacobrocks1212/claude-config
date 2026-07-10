@@ -1227,6 +1227,22 @@ def has_completion_receipt(spec_path: Path | None, filename: str = "COMPLETED.md
     return True
 
 
+# park-provisional-acceptance: the filename state a provisionally-accepted
+# NEEDS_INPUT.md is renamed to by provisionalize_sentinel(). It stays
+# `kind: needs-input` in frontmatter — the FILENAME is the state carrier
+# (same convention as the `_RESOLVED_` rename; kind-flips are the documented
+# anti-pattern). Park-mode probes treat the file as workable; non-park probes
+# halt on `needs-ratification`; the completion pseudo-skills refuse while it
+# exists (the triple-layer backstop, SPEC D6).
+PROVISIONAL_SENTINEL = "NEEDS_INPUT_PROVISIONAL.md"
+
+# The closed divergence-grade vocabulary (SPEC D3). File-level = the MOST
+# SEVERE grade across the file's decisions. Only these two low grades are
+# provisional-eligible; `structural`, unknown values, and ABSENT grades all
+# fail closed (park for the operator).
+_PROVISIONAL_ELIGIBLE_GRADES = frozenset({"isolated", "contained"})
+
+
 def build_parked_entry(item_id: str, sentinel_path: Path) -> dict[str, Any]:
     """Build a parked-entry record for use in the ``parked[]`` output array.
 
@@ -1277,6 +1293,11 @@ def build_parked_entry(item_id: str, sentinel_path: Path) -> dict[str, Any]:
         sentinel_kind = "blocked"
     elif name == "NEEDS_INPUT.md":
         sentinel_kind = "needs-input"
+    elif name == PROVISIONAL_SENTINEL:
+        # park-provisional-acceptance: an auto-accepted-on-recommendation
+        # sentinel awaiting operator ratification (Step-10 park + flush
+        # ratification branch key on this kind).
+        sentinel_kind = "provisional"
     else:
         sentinel_kind = "unknown"
     return {
@@ -4627,6 +4648,23 @@ def apply_pseudo(
                 "completion"
             )
 
+        # --- Provisional-ratification backstop (park-provisional-acceptance,
+        # SPEC D6 layer c — the load-bearing one). A feature/bug carrying an
+        # unratified NEEDS_INPUT_PROVISIONAL.md was auto-accepted on a
+        # recommendation under --park-provisional and the operator has not yet
+        # ratified (or redirected) that choice. Completion MUST refuse with
+        # ZERO writes until the sentinel is neutralized by the ratification
+        # affordance — a provisionally-decided item can never silently
+        # complete. Sits AFTER the receipt-noop (re-completing an
+        # already-receipted dir never re-refuses) and BEFORE any auto-tick
+        # write, matching the retro-staleness ordering rule above.
+        if (spec_path / PROVISIONAL_SENTINEL).exists():
+            return _refused(
+                f"unratified provisional decision(s) — {PROVISIONAL_SENTINEL} "
+                "present; ratify or redirect via the provisional-ratification "
+                "affordance before completion"
+            )
+
         # --- Evidence-gated auto-tick of certified verification rows ---
         # (completion-coherence-gate-reconciliation Phase 3). BEFORE the
         # coherence gate's residual-incoherence check, consult the on-disk
@@ -5226,6 +5264,227 @@ def neutralize_sentinel(path: Path, date: str | None = None) -> dict:
         "renamed_to": target.name,
         "refused": None,
         "collision_suffix": collision_suffix,
+    }
+
+
+# ---------------------------------------------------------------------------
+# park-provisional-acceptance — provisional acceptance of low-divergence
+# product-class NEEDS_INPUT.md decisions (`--park-provisional`).
+# ---------------------------------------------------------------------------
+
+def _split_decision_context_h3s(body: str) -> list[str]:
+    """Return the H3 subsection texts under the ``## Decision Context`` H2.
+
+    Empty list when the H2 is absent. Each returned string starts at its
+    ``### `` heading line and runs to the next H3/H2 boundary. Pure text
+    helper shared by provisional_eligibility / provisionalize_sentinel.
+    """
+    m = re.search(r"^## Decision Context\s*$", body, re.MULTILINE)
+    if not m:
+        return []
+    # Section runs to the next H2 (or EOF).
+    tail = body[m.end():]
+    next_h2 = re.search(r"^## \S", tail, re.MULTILINE)
+    section = tail[: next_h2.start()] if next_h2 else tail
+    parts = re.split(r"(?=^### )", section, flags=re.MULTILINE)
+    return [p for p in parts if p.startswith("### ")]
+
+
+def _extract_recommended_label(h3_text: str) -> str | None:
+    """Extract the recommended option label from one Decision-Context H3.
+
+    Primary source: the first ``- **<label> (Recommended)**`` options bullet
+    (the schema mandates recommendation-first with the ``(Recommended)``
+    suffix inside or right after the bold label). Fallback: the
+    ``**Recommendation:** <label> — justification`` line's leading label.
+    Returns None when neither yields a non-empty label (caller refuses).
+    """
+    # Options bullet carrying the (Recommended) marker — bold label with the
+    # marker either inside the bold (`**X (Recommended)**`) or right after.
+    for bm in re.finditer(r"^\s*-\s*\*\*(.+?)\*\*", h3_text, re.MULTILINE):
+        label = bm.group(1).strip()
+        rest = h3_text[bm.end(): bm.end() + 40]
+        if "(Recommended)" in label or rest.lstrip().startswith("(Recommended)"):
+            return label.replace("(Recommended)", "").strip() or None
+    # Fallback: the Recommendation line — label runs to the em/double dash.
+    rm = re.search(r"\*\*Recommendation:\*\*\s*(.+)", h3_text)
+    if rm:
+        line = rm.group(1).strip()
+        label = re.split(r"\s+—\s+|\s+--\s+|\s+-\s+", line, maxsplit=1)[0]
+        label = label.strip().strip("*").strip()
+        if label:
+            return label
+    return None
+
+
+def provisional_eligibility(sentinel_path: Path) -> tuple[bool, str]:
+    """Deterministic, FAIL-CLOSED provisional-acceptance predicate (SPEC D3/D4/D8).
+
+    Returns ``(eligible, reason)`` — ``reason`` names the first failed check
+    (for the probe's ``_diag`` breadcrumb) or ``"eligible"``.
+
+    A ``NEEDS_INPUT.md`` is provisional-eligible iff ALL of:
+      - the frontmatter parses with ``kind: needs-input`` and a non-empty
+        ``decisions:`` list of ≤4 entries;
+      - it is NOT two-key mechanical (``class: mechanical`` AND
+        ``audit_concurs: true``) — the existing flush auto-accept is the
+        stronger path for those (full resolution, no ratification debt);
+      - ``written_by`` is not ``completion-integrity-gate`` (integrity gaps
+        are never recommendations);
+      - the divergence two-key holds: ``divergence`` (producer, Key 1) AND
+        ``audit_divergence`` (input-audit, Key 2) are BOTH in
+        {isolated, contained} — absence, ``structural``, or any unknown value
+        fails closed;
+      - the body carries ``## Decision Context`` with one H3 per decision
+        (1:1) and every H3 carries a ``**Recommendation:**`` block;
+      - no ``## Resolution`` section exists yet (a mid-resolution file is
+        owned by another path).
+
+    Structurally corrupt frontmatter routes through ``parse_sentinel``'s
+    ``_die`` like every other sentinel read.
+    """
+    if sentinel_path.name != "NEEDS_INPUT.md":
+        return (False, f"not a NEEDS_INPUT.md ({sentinel_path.name})")
+    meta = parse_sentinel(sentinel_path)
+    if meta is None:
+        return (False, "sentinel missing or without frontmatter")
+    if meta.get("kind") != "needs-input":
+        return (False, f"kind is {meta.get('kind')!r}, not needs-input")
+    decisions = meta.get("decisions")
+    if not isinstance(decisions, list) or not decisions:
+        return (False, "decisions: absent or empty")
+    if len(decisions) > 4:
+        return (False, f"{len(decisions)} decisions exceeds the 4-decision cap")
+    if str(meta.get("written_by", "")).strip() == "completion-integrity-gate":
+        return (False, "written_by completion-integrity-gate — never provisional")
+    if meta.get("class") == "mechanical" and meta.get("audit_concurs") is True:
+        return (False, "two-key mechanical — flush auto-accept path wins (D4)")
+    divergence = str(meta.get("divergence", "")).strip().lower()
+    audit_divergence = str(meta.get("audit_divergence", "")).strip().lower()
+    if divergence not in _PROVISIONAL_ELIGIBLE_GRADES:
+        return (False, f"divergence {divergence or 'absent'!s} not in "
+                       "{isolated, contained} (fail-closed)")
+    if audit_divergence not in _PROVISIONAL_ELIGIBLE_GRADES:
+        return (False, f"audit_divergence {audit_divergence or 'absent'!s} not in "
+                       "{isolated, contained} (fail-closed)")
+    try:
+        text = sentinel_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return (False, f"unreadable sentinel: {exc}")
+    if re.search(r"^## Resolution\s*$", text, re.MULTILINE):
+        return (False, "already carries a ## Resolution section")
+    h3s = _split_decision_context_h3s(text)
+    if not h3s:
+        return (False, "body missing ## Decision Context")
+    if len(h3s) != len(decisions):
+        return (False, f"{len(h3s)} H3 subsection(s) != {len(decisions)} "
+                       "decisions (1:1 schema violation)")
+    for i, h3 in enumerate(h3s):
+        if "**Recommendation:**" not in h3:
+            return (False, f"decision {i + 1} lacks a **Recommendation:** block")
+    return (True, "eligible")
+
+
+def provisionalize_sentinel(path: Path, repo_root: Path,
+                            date: str | None = None) -> dict:
+    """Provisionally accept a NEEDS_INPUT.md on its recommendations (SPEC D2).
+
+    Re-validates the FULL eligibility predicate (fail-closed — the CLI action
+    must never trust a stale probe), extracts each decision's recommended
+    option label, appends a ``## Resolution`` block carrying
+    ``resolved_by: auto-provisional`` + the HEAD ``decision_commit``, and
+    renames the file to ``NEEDS_INPUT_PROVISIONAL.md`` (git-mv-aware,
+    refusing — zero writes — when the target already exists).
+
+    Returns::
+
+        {ok, refused, choices: [{title, choice}], divergence,
+         audit_divergence, decision_commit, renamed_to}
+    """
+    def _refuse(reason: str) -> dict:
+        return {
+            "ok": False, "refused": reason, "choices": [],
+            "divergence": None, "audit_divergence": None,
+            "decision_commit": None, "renamed_to": None,
+        }
+
+    eligible, reason = provisional_eligibility(path)
+    if not eligible:
+        return _refuse(reason)
+    target = path.parent / PROVISIONAL_SENTINEL
+    if target.exists():
+        return _refuse(f"{PROVISIONAL_SENTINEL} already exists — refusing to clobber")
+
+    meta = parse_sentinel(path) or {}
+    decisions = [str(d) for d in meta.get("decisions", [])]
+    text = path.read_text(encoding="utf-8")
+    h3s = _split_decision_context_h3s(text)
+    choices: list[dict] = []
+    for i, h3 in enumerate(h3s):
+        label = _extract_recommended_label(h3)
+        if not label:
+            return _refuse(
+                f"decision {i + 1}: could not extract a recommended option "
+                "label (no (Recommended) bullet and no parsable "
+                "**Recommendation:** line)"
+            )
+        title = h3.splitlines()[0].lstrip("#").strip()
+        choices.append({"title": title, "choice": label})
+
+    # decision_commit anchors any later redirect's blast-radius diff
+    # (`git diff <decision_commit>..HEAD`). Best-effort: a non-git dir (test
+    # fixtures) records "unknown" rather than blocking the acceptance — the
+    # sha is audit metadata, not a gate.
+    decision_commit = _current_head(repo_root) or "unknown"
+    if date is None:
+        date = datetime.date.today().isoformat()
+    divergence = str(meta.get("divergence")).strip().lower()
+    audit_divergence = str(meta.get("audit_divergence")).strip().lower()
+
+    lines = [
+        "",
+        "## Resolution",
+        "",
+        f"*Recorded on {date}. Provisionally auto-accepted on recommendation "
+        "(`--park-provisional` divergence two-key). Ratify or redirect via "
+        "the provisional-ratification affordance before completion.*",
+        "",
+        "resolved_by: auto-provisional",
+        f"decision_commit: {decision_commit}",
+        "",
+    ]
+    for i, ch in enumerate(choices, start=1):
+        lines += [
+            f"### {i}. {ch['title']}",
+            "",
+            f"**Choice:** {ch['choice']}",
+            f"**Notes:** Provisionally accepted — divergence graded "
+            f"{divergence} (producer) / {audit_divergence} (input-audit); "
+            "pending operator ratification.",
+            "",
+        ]
+    new_text = text.rstrip("\n") + "\n" + "\n".join(lines)
+    _atomic_write(path, new_text)
+
+    # Rename via git mv (history-preserving) with plain-rename fallback —
+    # same pattern as neutralize_sentinel.
+    renamed = False
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(path.parent), "mv", path.name, target.name],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            renamed = True
+    except (OSError, subprocess.SubprocessError):
+        pass
+    if not renamed:
+        path.rename(target)
+
+    return {
+        "ok": True, "refused": None, "choices": choices,
+        "divergence": divergence, "audit_divergence": audit_divergence,
+        "decision_commit": decision_commit, "renamed_to": target.name,
     }
 
 
@@ -6536,6 +6795,7 @@ def emit_cycle_prompt(
     cloud: bool = False,
     repeat_count: int | None = None,
     template_dir: Path | None = None,
+    park_mode: bool = False,
 ) -> dict | None:
     """Assemble the cycle dispatch prompt for one orchestrator cycle.
 
@@ -6559,6 +6819,12 @@ def emit_cycle_prompt(
             loop block is appended and the dispatch model flips to ``"sonnet"``.
         template_dir: override the template directory (for tests). Defaults to
             the resolved ``skills/_components/lazy-batch-prompts/`` dir.
+        park_mode: True when the emitting probe ran under ``--park-needs-input``
+            (park-provisional-acceptance, SPEC D13). Selects sections whose
+            ``park=park`` attribute marks them park-only (e.g. the stub-spec
+            sentinel-mediation contract). Sections without a ``park=``
+            attribute — every pre-existing section — are selected exactly as
+            before, so non-park emission is byte-identical.
 
     Returns:
         ``None`` when the probe is not a dispatchable real-skill cycle —
@@ -6620,6 +6886,11 @@ def emit_cycle_prompt(
         if variant is not None:
             if norm_skill != "mcp-test" or variant != runtime_variant:
                 continue
+        # park= filter (park-provisional-acceptance, SPEC D13): `park=park`
+        # sections are selected ONLY under a park-mode probe; absent attribute
+        # (or `park=both`) keeps the pre-existing always-selected behavior.
+        if attrs.get("park") == "park" and not park_mode:
+            continue
         if sec["content"]:
             selected.append(sec["content"])
 
@@ -6661,6 +6932,9 @@ def emit_cycle_prompt(
             if variant is not None:
                 if norm_skill != "mcp-test" or variant != runtime_variant:
                     continue
+            # park= filter — same rule as the base selection (SPEC D13).
+            if attrs.get("park") == "park" and not park_mode:
+                continue
             if sec["content"]:
                 addenda_selected.append(sec["content"])
     # Appended AFTER base sections — order: base → addenda → (loop block below).

@@ -157,6 +157,10 @@ TR_CLOUD_DEFERRED_SCOPED = "cloud-queue-exhausted-scoped"
 TR_DEVICE_DEFERRED_SCOPED = "device-queue-exhausted-scoped"
 TR_BLOCKED_SCOPED = "blocked-scoped"
 TR_NEEDS_INPUT_SCOPED = "needs-input-scoped"
+# park-provisional-acceptance (coupled-pair mirror of lazy-state.py): the
+# non-park halt on an unratified NEEDS_INPUT_PROVISIONAL.md + its scoped twin.
+TR_NEEDS_RATIFICATION = "needs-ratification"
+TR_NEEDS_RATIFICATION_SCOPED = "needs-ratification-scoped"
 
 # sub_skill tokens for bug-specific actions
 SKILL_INVESTIGATE = "spec-bug"             # root-cause investigation / spec-bug skill
@@ -202,6 +206,9 @@ STEP_CLOUD_DEFERRED_SCOPED = "Cloud-deferred (scoped)"
 STEP_DEVICE_DEFERRED_SCOPED = "Device-deferred (scoped)"
 STEP_BLOCKED_PARKED_SCOPED = "Blocked, parked (scoped)"
 STEP_NEEDS_INPUT_PARKED_SCOPED = "Needs-input, parked (scoped)"
+# park-provisional-acceptance (coupled-pair mirror of lazy-state.py).
+STEP_NEEDS_RATIFICATION = "Step 3.6: needs-ratification"
+STEP_PROVISIONAL_PARKED_SCOPED = "Provisional, parked (scoped)"
 
 # Severity rank for on-disk ordering (lower number = higher priority)
 _SEVERITY_RANK = {"P0": 0, "P1": 1, "P2": 2, "Low": 3}
@@ -235,6 +242,12 @@ _OPERATOR_DEFERRED: list[str] = []
 # Reset at the start of each compute_state() call, mirroring _DEVICE_DEFERRED.
 _PARKED: list = []
 _PARK_MODE: bool = False
+
+# park-provisional-acceptance (coupled-pair mirror of lazy-state.py): every
+# NEEDS_INPUT_PROVISIONAL.md-bearing bug observed during this walk. Surfaced in
+# the park-mode-only `provisional[]` probe key when non-empty (byte-identity
+# discipline). Reset at each compute_state().
+_PROVISIONAL: list = []
 
 # queue-dependency-dag Phase 2 (coupled-pair mirror of lazy-state.py): the
 # bugs the dep-gate held this invocation — [{id, missing: [<incomplete dep
@@ -299,6 +312,11 @@ def _bug_state(
     # byte-identical to the pre-WU-1 Phase-4 baseline.
     if _PARK_MODE:
         out["parked"] = list(_PARKED)
+    # park-provisional-acceptance (coupled-pair mirror of lazy-state.py, SPEC
+    # D11): pending ratifications — park mode only AND only when non-empty, so
+    # default and plain non-park output stays byte-identical.
+    if _PARK_MODE and _PROVISIONAL:
+        out["provisional"] = list(_PROVISIONAL)
     # queue-dependency-dag Phase 2 (D10, coupled-pair mirror of lazy-state.py):
     # the bugs the dep-gate HELD this probe. ONLY surfaced when non-empty so
     # default output (no `deps` fields anywhere) stays byte-identical.
@@ -607,6 +625,7 @@ def compute_state(
     scope_bug_id: str | None = None,
     park_needs_input: bool = False,
     park_blocked: bool = False,
+    park_provisional: bool = False,
     per_feature_cycle_cap: int | None = None,
     strict_research_halt: bool = False,
 ) -> dict[str, Any]:
@@ -665,9 +684,15 @@ def compute_state(
     _OPERATOR_DEFERRED.clear()
     # Park mode: set the module global from the param so _bug_state() can gate
     # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
-    global _PARK_MODE, _PARKED, _DEP_GATED
+    global _PARK_MODE, _PARKED, _DEP_GATED, _PROVISIONAL
     _PARK_MODE = park_needs_input or park_blocked
     _PARKED.clear()
+    # park-provisional-acceptance (SPEC D1, coupled-pair mirror): the flag is a
+    # strict modifier of park_needs_input; the CLI enforces the pairing and this
+    # guard backstops direct compute_state callers/tests.
+    if park_provisional and not park_needs_input:
+        _die("--park-provisional requires --park-needs-input (SPEC D1)")
+    _PROVISIONAL.clear()
     # queue-dependency-dag Phase 2: reset the dep-gate hold list; the lazily-
     # built queued id → dir map resolves deps through normalized spec_paths
     # (built only when an entry actually carries `deps` — zero cost otherwise).
@@ -995,6 +1020,28 @@ def compute_state(
             and (spec_dir / "NEEDS_INPUT.md").exists()
             and not (spec_dir / "BLOCKED.md").exists()
         ):
+            # park-provisional-acceptance (SPEC D2, coupled-pair mirror of
+            # lazy-state.py): under --park-provisional a provisional-ELIGIBLE
+            # sentinel routes __provisional_accept__ instead of parking.
+            # Checked BEFORE the scoped-identity return; ineligible → parked
+            # exactly as before with the reason breadcrumbed.
+            if park_provisional:
+                _pp_eligible, _pp_reason = lazy_core.provisional_eligibility(
+                    spec_dir / "NEEDS_INPUT.md"
+                )
+                if _pp_eligible:
+                    return _bug_state(
+                        feature_id=bug_id,
+                        feature_name=bug_name,
+                        spec_path=str(spec_dir),
+                        current_step="Step 3.5: needs-input (provisional accept)",
+                        sub_skill="__provisional_accept__",
+                        sub_skill_args=str(spec_dir),
+                    )
+                _diag(
+                    f"provisional-ineligible: {bug_name} — {_pp_reason}; "
+                    "parking instead (fail-closed)."
+                )
             # Scoped-match identity preservation (Phase 1): a scoped --bug-id on
             # a parked-needs-input bug returns a scoped NEEDS-INPUT-family state.
             if scope_bug_id is not None and str(bug_id) == str(scope_bug_id):
@@ -1016,6 +1063,41 @@ def compute_state(
                 "Re-enters when resolved."
             )
             continue
+
+        # park-provisional-acceptance (SPEC D5/D6 layer a, coupled-pair mirror
+        # of lazy-state.py): a bug carrying an unratified
+        # NEEDS_INPUT_PROVISIONAL.md in PARK MODE. Record it in the park-mode-
+        # only provisional[] surface; once VALIDATED.md lands (the only
+        # remaining route would be __mark_fixed__, which must not fire on an
+        # unratified provisional), PARK it (sentinel_kind: provisional) so the
+        # flush surfaces ratification; otherwise fall through (workable).
+        if park_needs_input and (spec_dir / lazy_core.PROVISIONAL_SENTINEL).exists():
+            _prov_entry = lazy_core.build_parked_entry(
+                bug_id, spec_dir / lazy_core.PROVISIONAL_SENTINEL
+            )
+            if not any(p.get("id") == bug_id for p in _PROVISIONAL):
+                _PROVISIONAL.append(_prov_entry)
+            if (spec_dir / "VALIDATED.md").exists():
+                if scope_bug_id is not None and str(bug_id) == str(scope_bug_id):
+                    return _scoped_skip_state(
+                        bug_id=bug_id,
+                        bug_name=bug_name,
+                        spec_dir=spec_dir,
+                        current_step=STEP_PROVISIONAL_PARKED_SCOPED,
+                        terminal_reason=TR_NEEDS_RATIFICATION_SCOPED,
+                        notify_message=(
+                            f"{bug_name}: implementation + validation done; "
+                            f"unratified {lazy_core.PROVISIONAL_SENTINEL} parks "
+                            "the fix (park mode). Ratify or redirect at the flush."
+                        ),
+                    )
+                _PARKED.append(_prov_entry)
+                _diag(
+                    f"parked: {bug_name} — validated but awaiting ratification "
+                    f"of {lazy_core.PROVISIONAL_SENTINEL}; __mark_fixed__ "
+                    "deferred to the flush (park mode)."
+                )
+                continue
 
         # queue-dependency-dag Phase 2: the dep-gate (D2-A; coupled-pair
         # mirror of lazy-state.py's). A bug whose queue `deps` contain an id
@@ -1313,6 +1395,28 @@ def compute_state(
             ),
         )
 
+    # Step 3.6: NEEDS_INPUT_PROVISIONAL.md (park-provisional-acceptance, SPEC
+    # D5 — coupled-pair mirror of lazy-state.py). A non-park probe halts on the
+    # unratified provisional so the operator ratifies or redirects before any
+    # completion; park-mode probes treat the file as workable (the walk-loop
+    # branch recorded/parked it). Ordering: AFTER the NEEDS_INPUT.md check — a
+    # NEW decision outranks a pending ratification.
+    provisional_file = spec_dir / lazy_core.PROVISIONAL_SENTINEL
+    if provisional_file.exists() and not park_needs_input:
+        prov_meta = parse_sentinel(provisional_file) or {}
+        prov_writer = prov_meta.get("written_by", "<unknown>")
+        return _bug_state(
+            **common,
+            current_step=STEP_NEEDS_RATIFICATION,
+            terminal_reason=TR_NEEDS_RATIFICATION,
+            notify_message=(
+                f"NEEDS RATIFICATION: {bug_name} — decision(s) originally "
+                f"surfaced by {prov_writer} were provisionally auto-accepted on "
+                "recommendation (--park-provisional). Ratify or redirect before "
+                "this bug can be marked fixed."
+            ),
+        )
+
     # Step 4: SPEC.md present but no PHASES.md → investigation or planning dispatch.
     # (SPEC.md is guaranteed to exist at this point: load_bug_queue only returns
     # dirs that have one.)
@@ -1587,6 +1691,22 @@ def compute_state(
             notify_message=(
                 f"{bug_name}: cloud work complete (phases). "
                 "Awaiting workstation /lazy-bug for deferred MCP validation."
+            ),
+        )
+    # park-provisional-acceptance (SPEC D6, coupled-pair mirror of
+    # lazy-state.py): NEVER emit __mark_fixed__ over an unratified
+    # NEEDS_INPUT_PROVISIONAL.md. Normally unreachable (Step 3.6 halts
+    # non-park; the park-mode walk branch parks) — defensive honesty so the
+    # route is never a guaranteed apply_pseudo refusal.
+    if (spec_dir / lazy_core.PROVISIONAL_SENTINEL).exists():
+        return _bug_state(
+            **common,
+            current_step=STEP_NEEDS_RATIFICATION,
+            terminal_reason=TR_NEEDS_RATIFICATION,
+            notify_message=(
+                f"{bug_name}: ready to mark fixed but "
+                f"{lazy_core.PROVISIONAL_SENTINEL} is unratified — ratify or "
+                "redirect the provisional decision(s) first."
             ),
         )
     return _bug_state(
@@ -4880,6 +5000,178 @@ def run_smoke_tests() -> int:
             print(f"  FAIL [{fix_bpb_E}] SystemExit: {exc.code}")
 
         # -------------------------------------------------------------------
+        # Fixture park-provisional (bug — park-provisional-acceptance,
+        # coupled-pair mirror of lazy-state.py's fixture; the shared
+        # lazy_core predicate/action mechanics are exhaustively covered
+        # there, so this block asserts the bug-side WIRING):
+        #   1 eligible-route      — divergence two-key low → __provisional_accept__
+        #   2 structural-parks    — audit_divergence: structural → parked
+        #   3 workable-under-park — _PROVISIONAL file: bug itself dispatched,
+        #                           provisional[] lists it
+        #   4 needs-ratification  — non-park probe halts on the new terminal
+        #   5 flag-pairing        — park_provisional alone dies (SPEC D1)
+        # -------------------------------------------------------------------
+        bpp_root = td_path / "bug-park-provisional"
+        bpp_bugs = bpp_root / "docs" / "bugs"
+        bpp_bugs.mkdir(parents=True, exist_ok=True)
+        (bpp_bugs / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "prov-bug", "name": "Provisional Bug",
+                 "spec_dir": "prov-bug"},
+                {"id": "after-bug", "name": "After Bug",
+                 "spec_dir": "after-bug"},
+            ]
+        }), encoding="utf-8")
+        bpp_prov_dir = bpp_bugs / "prov-bug"
+        bpp_prov_dir.mkdir()
+        (bpp_prov_dir / "SPEC.md").write_text(
+            "# Provisional Bug\n\n**Status:** Open\n\n**Severity:** P1\n\n"
+            "**Discovered:** 2026-07-09\n",
+            encoding="utf-8",
+        )
+        bpp_after_dir = bpp_bugs / "after-bug"
+        bpp_after_dir.mkdir()
+        (bpp_after_dir / "SPEC.md").write_text(
+            "# After Bug\n\n**Status:** Open\n\n**Severity:** P2\n\n"
+            "**Discovered:** 2026-07-09\n",
+            encoding="utf-8",
+        )
+
+        def _bpp_needs_input(audit_divergence: str) -> str:
+            return (
+                "---\n"
+                "kind: needs-input\n"
+                "feature_id: prov-bug\n"
+                "written_by: spec-bug\n"
+                "decisions:\n"
+                "  - Choose regression-test tier\n"
+                "date: 2026-07-09\n"
+                "divergence: isolated\n"
+                f"audit_divergence: {audit_divergence}\n"
+                "---\n\n"
+                "# Needs Input\n\n"
+                "## Decision Context\n\n"
+                "### 1. Choose regression-test tier\n\n"
+                "**Problem:** The fix needs a serving-path regression test tier.\n\n"
+                "**Options:**\n"
+                "- **Unit (Recommended)** — fast, serving-path covered.\n"
+                "- **E2E** — slower, broader.\n\n"
+                "**Recommendation:** Unit — serving-path covered and fast.\n"
+            )
+
+        bpp_sentinel = bpp_prov_dir / "NEEDS_INPUT.md"
+
+        # 1: eligible route.
+        fix_bpp_route = "bug-park-provisional-eligible-route"
+        try:
+            bpp_sentinel.write_text(_bpp_needs_input("contained"), encoding="utf-8")
+            got_bpp = compute_state(
+                bpp_root, cloud=False, real_device=True,
+                park_needs_input=True, park_provisional=True,
+            )
+            bppr_ok = True
+            if got_bpp.get("sub_skill") != "__provisional_accept__":
+                failures.append(
+                    f"[{fix_bpp_route}] expected sub_skill='__provisional_accept__', "
+                    f"got {got_bpp.get('sub_skill')!r}"
+                )
+                bppr_ok = False
+            if got_bpp.get("feature_id") != "prov-bug":
+                failures.append(
+                    f"[{fix_bpp_route}] expected feature_id='prov-bug', "
+                    f"got {got_bpp.get('feature_id')!r}"
+                )
+                bppr_ok = False
+            print(f"  {'PASS' if bppr_ok else 'FAIL'} [{fix_bpp_route}]")
+        except SystemExit as exc:
+            failures.append(f"[{fix_bpp_route}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_bpp_route}] SystemExit: {exc.code}")
+
+        # 2: structural audit grade parks instead of routing.
+        fix_bpp_struct = "bug-park-provisional-structural-parks"
+        try:
+            bpp_sentinel.write_text(_bpp_needs_input("structural"), encoding="utf-8")
+            got_bpp_s = compute_state(
+                bpp_root, cloud=False, real_device=True,
+                park_needs_input=True, park_provisional=True,
+            )
+            bpps_ok = True
+            if got_bpp_s.get("sub_skill") == "__provisional_accept__":
+                failures.append(
+                    f"[{fix_bpp_struct}] structural grade must NOT route acceptance"
+                )
+                bpps_ok = False
+            if not any(e.get("id") == "prov-bug"
+                       for e in got_bpp_s.get("parked", [])):
+                failures.append(
+                    f"[{fix_bpp_struct}] prov-bug must be parked "
+                    f"(parked={got_bpp_s.get('parked')!r})"
+                )
+                bpps_ok = False
+            print(f"  {'PASS' if bpps_ok else 'FAIL'} [{fix_bpp_struct}]")
+        except SystemExit as exc:
+            failures.append(f"[{fix_bpp_struct}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_bpp_struct}] SystemExit: {exc.code}")
+
+        # 3+4: rename to _PROVISIONAL → workable under park (provisional[]
+        # lists it), needs-ratification halt non-park.
+        fix_bpp_work = "bug-park-provisional-workable-and-ratification"
+        try:
+            bpp_sentinel.write_text(_bpp_needs_input("contained"), encoding="utf-8")
+            act_bpp = lazy_core.provisionalize_sentinel(bpp_sentinel, bpp_root)
+            bppw_ok = True
+            if not act_bpp.get("ok"):
+                failures.append(
+                    f"[{fix_bpp_work}] provisionalize refused: {act_bpp.get('refused')!r}"
+                )
+                bppw_ok = False
+            got_bpp_w = compute_state(
+                bpp_root, cloud=False, real_device=True, park_needs_input=True,
+            )
+            if got_bpp_w.get("feature_id") != "prov-bug" or got_bpp_w.get("terminal_reason"):
+                failures.append(
+                    f"[{fix_bpp_work}] park probe must dispatch prov-bug; got "
+                    f"feature_id={got_bpp_w.get('feature_id')!r}, "
+                    f"terminal={got_bpp_w.get('terminal_reason')!r}"
+                )
+                bppw_ok = False
+            if not any(e.get("id") == "prov-bug" and
+                       e.get("sentinel_kind") == "provisional"
+                       for e in got_bpp_w.get("provisional", [])):
+                failures.append(
+                    f"[{fix_bpp_work}] provisional[] must list prov-bug "
+                    f"(got {got_bpp_w.get('provisional')!r})"
+                )
+                bppw_ok = False
+            got_bpp_r = compute_state(bpp_root, cloud=False, real_device=True)
+            if got_bpp_r.get("terminal_reason") != TR_NEEDS_RATIFICATION:
+                failures.append(
+                    f"[{fix_bpp_work}] non-park probe must halt "
+                    f"'{TR_NEEDS_RATIFICATION}'; got "
+                    f"{got_bpp_r.get('terminal_reason')!r}"
+                )
+                bppw_ok = False
+            print(f"  {'PASS' if bppw_ok else 'FAIL'} [{fix_bpp_work}]")
+        except SystemExit as exc:
+            failures.append(f"[{fix_bpp_work}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_bpp_work}] SystemExit: {exc.code}")
+
+        # 5: flag pairing (SPEC D1).
+        fix_bpp_flag = "bug-park-provisional-flag-pairing"
+        bppf_ok = True
+        try:
+            compute_state(
+                bpp_root, cloud=False, real_device=True, park_provisional=True
+            )
+            failures.append(f"[{fix_bpp_flag}] bare park_provisional must die")
+            bppf_ok = False
+        except SystemExit as exc:
+            if exc.code != 2:
+                failures.append(f"[{fix_bpp_flag}] expected exit 2, got {exc.code!r}")
+                bppf_ok = False
+        print(f"  {'PASS' if bppf_ok else 'FAIL'} [{fix_bpp_flag}]")
+
+        # -------------------------------------------------------------------
         # Fixture: cycle-marker-mutation guard (cycle-subagent-runs-orchestrator-
         # work Phase 2, KEYSTONE — coupled-pair mirror of lazy-state.py). A
         # SUBAGENT --cycle-end (no LAZY_ORCHESTRATOR, marker on disk) is REFUSED
@@ -6349,6 +6641,31 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--park-provisional", action="store_true",
+        help=(
+            "OPT-IN modifier of --park-needs-input (park-provisional-acceptance, "
+            "SPEC D1 — supplying it alone is a hard error): a parked-eligible "
+            "NEEDS_INPUT.md passing the fail-closed provisional predicate "
+            "(divergence two-key both in {isolated, contained}; every decision "
+            "carrying a **Recommendation:**; never two-key-mechanical or "
+            "completion-integrity-gate sentinels) routes __provisional_accept__ "
+            "instead of parking. An unratified NEEDS_INPUT_PROVISIONAL.md blocks "
+            "__mark_fixed__ mechanically and halts non-park probes on "
+            "'needs-ratification'. Coupled-pair mirror of lazy-state.py."
+        ),
+    )
+    parser.add_argument(
+        "--provisionalize-sentinel", default=None, metavar="PATH",
+        help=(
+            "Provisionally accept the NEEDS_INPUT.md at PATH on its "
+            "recommendations (park-provisional-acceptance SPEC D2): re-validate "
+            "the fail-closed eligibility predicate, append a ## Resolution block "
+            "(resolved_by: auto-provisional, decision_commit: HEAD), and rename "
+            "to NEEDS_INPUT_PROVISIONAL.md (git-mv-aware). Refusals exit 1 with "
+            "ZERO writes. Coupled-pair mirror of lazy-state.py."
+        ),
+    )
+    parser.add_argument(
         "--per-feature-cycle-cap", type=int, default=None, metavar="N",
         help=(
             "PARITY-ONLY (feature-budget-guard-and-skip-ahead Phase 2): mirrors "
@@ -6666,6 +6983,11 @@ def main() -> int:
     # advance and peek the persisted streak.
     if args.repeat_count and args.repeat_count_peek:
         _die("--repeat-count and --repeat-count-peek are mutually exclusive")
+
+    # park-provisional-acceptance (SPEC D1, parity with lazy-state.py):
+    # --park-provisional is a strict modifier of --park-needs-input.
+    if args.park_provisional and not args.park_needs_input:
+        _die("--park-provisional requires --park-needs-input")
 
     # cycle-subagent-fabricates-policy-or-stray-branch Phase 2 (parity with
     # lazy-state.py): --marker-work-branch — a read-only query that prints the
@@ -7098,6 +7420,29 @@ def main() -> int:
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result["ok"] else 1
 
+    if args.provisionalize_sentinel is not None:
+        # park-provisional-acceptance (SPEC D2) — coupled-pair mirror of
+        # lazy-state.py: the script-owned acceptance action. Refusals exit 1
+        # with zero writes. Cycle-guarded like every other lifecycle write path.
+        lazy_core.refuse_if_cycle_active("--provisionalize-sentinel")
+        result = lazy_core.provisionalize_sentinel(
+            Path(args.provisionalize_sentinel), Path(args.repo_root),
+            date=args.apply_date,
+        )
+        if result.get("ok"):
+            _tl_prov = Path(args.provisionalize_sentinel)
+            lazy_core.append_telemetry_event(
+                "sentinel-provisionalized",
+                item_id=_tl_prov.resolve().parent.name,
+                data={
+                    "decision_commit": result.get("decision_commit"),
+                    "divergence": result.get("divergence"),
+                    "audit_divergence": result.get("audit_divergence"),
+                },
+            )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result["ok"] else 1
+
     if args.apply_pseudo is not None:
         # lazy-cycle-containment C3 (Phase 3): refuse if a cycle subagent is
         # mid-dispatch (coupled-pair mirror). Fires before any SPEC/PHASES write.
@@ -7329,6 +7674,7 @@ def main() -> int:
         scope_bug_id=args.bug_id,
         park_needs_input=args.park_needs_input,
         park_blocked=args.park_blocked,
+        park_provisional=args.park_provisional,
         per_feature_cycle_cap=args.per_feature_cycle_cap,
         strict_research_halt=args.strict_research_halt,
     )
@@ -7410,6 +7756,9 @@ def main() -> int:
             emitted = lazy_core.emit_cycle_prompt(
                 Path(args.repo_root), state,
                 pipeline="bug", cloud=args.cloud, repeat_count=rc,
+                # park-provisional-acceptance (SPEC D13, coupled-pair mirror):
+                # park-mode probes select the park=park template sections.
+                park_mode=args.park_needs_input,
             )
             if emitted is None:
                 state["cycle_prompt"] = None

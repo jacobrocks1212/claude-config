@@ -58,7 +58,16 @@
   PASS [bug-park-blocked-all-parked-terminal] terminal_reason='queue-exhausted-all-parked', parked count=2
   PASS [bug-park-blocked-and-needs-input-single-park] dispatched='workable-bug', blocked-bug park count=1
   PASS [bug-park-blocked-reenter-under-flag] blocked-bug parked under flag=True, dispatched='workable-bug'
+  PASS [bug-park-provisional-eligible-route]
+  PASS [bug-park-provisional-structural-parks]
+  PASS [bug-park-provisional-workable-and-ratification]
+{
+  "error": "--park-provisional requires --park-needs-input (SPEC D1)",
+  "path": null
+}
+  PASS [bug-park-provisional-flag-pairing]
   PASS [cycle-marker-mutation-guard] subagent cycle-end/begin refused, orchestrator allowed
+  PASS [cycle-begin-real-requires-sub-skill] real requires --sub-skill, meta exempt, regression green
   PASS [reorder-queue] reorder tail/head/index/remove/missing/cycle-active/no-op
   PASS [cycle-prompt-ref-surfacing] cycle_prompt_ref surfaced with marker / None without
   PASS [telemetry-ledger-chokepoints] bracket/dispatch/purity/refusal/cloud-flush emission

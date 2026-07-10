@@ -158,6 +158,12 @@ def _state(
     # byte-identical to the pre-WU-1 Phase-4 baseline.
     if _PARK_MODE:
         out["parked"] = list(_PARKED)
+    # park-provisional-acceptance (SPEC D11): the pending-ratification list is
+    # ONLY included in park mode AND only when non-empty — default and plain
+    # non-park output stays byte-identical (non-park probes surface provisional
+    # state solely via the needs-ratification terminal).
+    if _PARK_MODE and _PROVISIONAL:
+        out["provisional"] = list(_PROVISIONAL)
     # feature-budget-guard-and-skip-ahead Phase 2: the budget_guard trip action is
     # ONLY surfaced when a trip actually fired this probe (_BUDGET_GUARD set). When
     # None the key is entirely absent so default output (no marker / no trip) stays
@@ -245,6 +251,14 @@ _HOST_SATURATED: list[dict] = []
 _PARKED: list = []
 _PARK_MODE: bool = False
 
+# park-provisional-acceptance: every NEEDS_INPUT_PROVISIONAL.md-bearing feature
+# observed during this walk (entries via lazy_core.build_parked_entry,
+# sentinel_kind == "provisional"). Surfaced in the park-mode-only
+# `provisional[]` probe key (mirrors _PARKED's _PARK_MODE gating — SPEC D11)
+# so status surfaces and the flush see pending ratifications without a
+# filesystem re-scan. Reset at the start of each compute_state().
+_PROVISIONAL: list = []
+
 # feature-budget-guard-and-skip-ahead Phase 2: per-feature budget guard state for
 # this compute_state() invocation. _DEFERRED_BUDGET accumulates the feature ids the
 # guard deferred/evicted this probe (run-scoped skip-list, NOT written to
@@ -328,6 +342,10 @@ TR_DEVICE_DEFERRED_SCOPED = "device-queue-exhausted-scoped"
 TR_HOST_DEFERRED_SCOPED = "host-capability-saturated-scoped"
 TR_BLOCKED_SCOPED = "blocked-scoped"
 TR_NEEDS_INPUT_SCOPED = "needs-input-scoped"
+# park-provisional-acceptance: the non-park halt on an unratified
+# NEEDS_INPUT_PROVISIONAL.md (Step 3.6) + its scoped park-mode twin.
+TR_NEEDS_RATIFICATION = "needs-ratification"
+TR_NEEDS_RATIFICATION_SCOPED = "needs-ratification-scoped"
 
 # Scoped per-feature deferred current_step strings (kept GENERIC so the curated
 # stage resolves from the terminal_reason, which dominates — NOT the step).
@@ -336,6 +354,8 @@ STEP_DEVICE_DEFERRED_SCOPED = "Device-deferred (scoped)"
 STEP_HOST_DEFERRED_SCOPED = "Host-capability-deferred (scoped)"
 STEP_BLOCKED_PARKED_SCOPED = "Blocked, parked (scoped)"
 STEP_NEEDS_INPUT_PARKED_SCOPED = "Needs-input, parked (scoped)"
+STEP_NEEDS_RATIFICATION = "Step 3.6: needs-ratification"
+STEP_PROVISIONAL_PARKED_SCOPED = "Provisional, parked (scoped)"
 
 
 def resolve_real_device(flag_value: str) -> bool:
@@ -1602,6 +1622,7 @@ def compute_state(
     scope_feature_id: str | None = None,
     park_needs_input: bool = False,
     park_blocked: bool = False,
+    park_provisional: bool = False,
     per_feature_cycle_cap: int | None = None,
     strict_research_halt: bool = False,
     host_present: set[str] | None = None,
@@ -1629,9 +1650,17 @@ def compute_state(
     # Park mode: set the module global from the param so _state() can gate
     # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
     global _PARK_MODE, _PARKED, _DEFERRED_BUDGET, _BUDGET_GUARD, _GATED_HEADS
-    global _BUDGET_RESUMED, _DEP_GATED
+    global _BUDGET_RESUMED, _DEP_GATED, _PROVISIONAL
     _PARK_MODE = park_needs_input or park_blocked
     _PARKED.clear()
+    # park-provisional-acceptance: park_provisional is a strict modifier of
+    # park_needs_input (SPEC D1 — the CLI enforces the pairing; this guard is
+    # the in-process backstop for direct compute_state callers/tests).
+    if park_provisional and not park_needs_input:
+        _die("--park-provisional requires --park-needs-input (SPEC D1)")
+    # _PROVISIONAL accumulates every NEEDS_INPUT_PROVISIONAL.md-bearing feature
+    # observed during this walk (park mode only — mirrors _PARKED's gating).
+    _PROVISIONAL.clear()
     # queue-dependency-dag Phase 2: reset the dep-gate hold list for this
     # invocation. _dep_dir_map is the lazily-built queued id → dir map the
     # dep-completion classifier resolves custom spec_dirs through — built only
@@ -2145,6 +2174,33 @@ def compute_state(
             and (spec_path / "NEEDS_INPUT.md").exists()
             and not (spec_path / "BLOCKED.md").exists()
         ):
+            # park-provisional-acceptance (SPEC D2): under --park-provisional a
+            # provisional-ELIGIBLE sentinel routes the __provisional_accept__
+            # pseudo-skill instead of parking — the orchestrator runs the
+            # script-owned --provisionalize-sentinel action and the feature
+            # keeps moving this run. Eligibility is the fail-closed
+            # lazy_core.provisional_eligibility predicate (divergence two-key
+            # + recommendations + never two-key-mechanical / gate-written).
+            # Checked BEFORE the scoped-identity return: a scoped probe on an
+            # eligible feature routes the same acceptance. Ineligible →
+            # parked exactly as before, with the reason breadcrumbed.
+            if park_provisional:
+                _pp_eligible, _pp_reason = lazy_core.provisional_eligibility(
+                    spec_path / "NEEDS_INPUT.md"
+                )
+                if _pp_eligible:
+                    return _state(
+                        feature_id=feature_id,
+                        feature_name=name,
+                        spec_path=str(spec_path),
+                        current_step="Step 3.5: needs-input (provisional accept)",
+                        sub_skill="__provisional_accept__",
+                        sub_skill_args=str(spec_path),
+                    )
+                _diag(
+                    f"provisional-ineligible: {name} — {_pp_reason}; "
+                    "parking instead (fail-closed)."
+                )
             # Scoped-match identity preservation (Phase 2 — feature-side parity twin
             # of bug-state.py's Phase-1 parked-needs-input scoped return): a scoped
             # --feature-id on a parked-needs-input feature returns a scoped
@@ -2167,6 +2223,44 @@ def compute_state(
                 "Re-enters when resolved."
             )
             continue
+        # park-provisional-acceptance (SPEC D5/D6 layer a): a feature carrying an
+        # unratified NEEDS_INPUT_PROVISIONAL.md in PARK MODE. Record it in the
+        # park-mode-only provisional[] surface. When its pipeline work is
+        # otherwise done (VALIDATED.md present — the only remaining route would
+        # be __mark_complete__, which MUST NOT fire on an unratified
+        # provisional), PARK it (sentinel_kind: provisional) so the run-end
+        # flush surfaces ratification; otherwise fall through — the feature is
+        # workable and keeps implementing. Non-park probes never reach this
+        # branch (park_needs_input gate) — they halt at Step 3.6 instead.
+        # Ordering: AFTER the NEEDS_INPUT.md park branch (a NEW decision
+        # outranks a pending ratification, SPEC D5).
+        if park_needs_input and (spec_path / lazy_core.PROVISIONAL_SENTINEL).exists():
+            _prov_entry = lazy_core.build_parked_entry(
+                feature_id, spec_path / lazy_core.PROVISIONAL_SENTINEL
+            )
+            if not any(p.get("id") == feature_id for p in _PROVISIONAL):
+                _PROVISIONAL.append(_prov_entry)
+            if (spec_path / "VALIDATED.md").exists():
+                if scope_feature_id is not None and feature_id == scope_feature_id:
+                    return _scoped_skip_state(
+                        feature_id=feature_id,
+                        feature_name=name,
+                        spec_path=spec_path,
+                        current_step=STEP_PROVISIONAL_PARKED_SCOPED,
+                        terminal_reason=TR_NEEDS_RATIFICATION_SCOPED,
+                        notify_message=(
+                            f"{name}: implementation + validation done; unratified "
+                            f"{lazy_core.PROVISIONAL_SENTINEL} parks completion "
+                            "(park mode). Ratify or redirect at the flush."
+                        ),
+                    )
+                _PARKED.append(_prov_entry)
+                _diag(
+                    f"parked: {name} — validated but awaiting ratification of "
+                    f"{lazy_core.PROVISIONAL_SENTINEL}; completion deferred to "
+                    "the flush (park mode)."
+                )
+                continue
         # feature-budget-guard-and-skip-ahead Phase 2: per-feature budget guard.
         # MARKER-GATED — only evaluates when a live run marker is present. This is
         # the FINAL skip branch (after completion / cloud / device / research /
@@ -2835,6 +2929,30 @@ def compute_state(
             terminal_reason="needs-input",
             notify_message=(
                 f"NEEDS INPUT: {feature_name} — {writer} halted on an ambiguous decision."
+            ),
+        )
+
+    # Step 3.6: NEEDS_INPUT_PROVISIONAL.md (park-provisional-acceptance, SPEC D5).
+    # An unratified provisionally-accepted decision. In PARK MODE the file is
+    # workable — the walk-loop branch recorded it in provisional[] (and parks
+    # it once VALIDATED.md lands), so this halt is gated on NOT park mode: a
+    # plain (non-park) probe halts here so the operator ratifies or redirects
+    # via the provisional-ratification affordance before any completion.
+    # Ordering: AFTER the NEEDS_INPUT.md check — a NEW decision outranks a
+    # pending ratification when both sentinels exist.
+    provisional_file = spec_path / lazy_core.PROVISIONAL_SENTINEL
+    if provisional_file.exists() and not park_needs_input:
+        prov_meta = parse_sentinel(provisional_file) or {}
+        prov_writer = prov_meta.get("written_by", "<unknown>")
+        return _state(
+            **common,
+            current_step=STEP_NEEDS_RATIFICATION,
+            terminal_reason=TR_NEEDS_RATIFICATION,
+            notify_message=(
+                f"NEEDS RATIFICATION: {feature_name} — decision(s) originally "
+                f"surfaced by {prov_writer} were provisionally auto-accepted on "
+                "recommendation (--park-provisional). Ratify or redirect before "
+                "this feature can complete."
             ),
         )
 
@@ -3508,6 +3626,24 @@ def compute_state(
             notify_message=(
                 f"{feature_name}: cloud work complete (phases). "
                 "Awaiting workstation /lazy for deferred MCP test."
+            ),
+        )
+
+    # park-provisional-acceptance (SPEC D6): NEVER emit __mark_complete__ over
+    # an unratified NEEDS_INPUT_PROVISIONAL.md. Normally unreachable — the
+    # non-park Step 3.6 halt and the park-mode walk-loop park both fire
+    # earlier — but a scoped probe or an out-of-band caller could land here,
+    # and apply_pseudo would refuse anyway (layer c); halting here keeps the
+    # loop honest instead of emitting a route that is guaranteed to refuse.
+    if (spec_path / lazy_core.PROVISIONAL_SENTINEL).exists():
+        return _state(
+            **common,
+            current_step=STEP_NEEDS_RATIFICATION,
+            terminal_reason=TR_NEEDS_RATIFICATION,
+            notify_message=(
+                f"{feature_name}: ready to complete but "
+                f"{lazy_core.PROVISIONAL_SENTINEL} is unratified — ratify or "
+                "redirect the provisional decision(s) first."
             ),
         )
 
@@ -9336,6 +9472,383 @@ def run_smoke_tests() -> int:
             print(f"  FAIL [{fix_pb_dual}] SystemExit: {exc.code}")
 
         # -------------------------------------------------------------------
+        # Fixture park-provisional (park-provisional-acceptance).
+        #
+        # Fresh root; queue:
+        #   prov-feat     — carries NEEDS_INPUT.md (rich, recommendation-first)
+        #   after-feat    — actionable (Draft, SPEC+RESEARCH present)
+        #
+        # Sub-fixtures:
+        #   1 eligible-route        — divergence two-key low → __provisional_accept__
+        #   2 structural-parks      — audit_divergence: structural → parked
+        #   3 single-key-parks      — audit_divergence absent → parked
+        #   4 two-key-mech-parks    — class:mechanical+audit_concurs → parked (D4)
+        #   5 action-happy          — provisionalize_sentinel renames + Resolution
+        #   6 workable-under-park   — _PROVISIONAL file: park probe dispatches the
+        #                             feature itself; provisional[] lists it
+        #   7 needs-ratification    — non-park probe halts on the new terminal
+        #   8 needs-input-precedence— BOTH sentinels, non-park → needs-input
+        #   9 validated-parks       — _PROVISIONAL + VALIDATED.md + park → parked
+        #                             (sentinel_kind provisional), queue advances
+        #  10 apply-pseudo-refusal  — __mark_complete__ refuses, zero writes
+        #  11 flag-pairing          — park_provisional without park_needs_input
+        #                             dies (SPEC D1), in-process and via CLI
+        # -------------------------------------------------------------------
+        pp_root = td_path / "park-provisional"
+        pp_features = pp_root / "docs" / "features"
+        pp_features.mkdir(parents=True, exist_ok=True)
+        (pp_features / "ROADMAP.md").write_text("# Roadmap\n")
+        (pp_features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "prov-feat", "name": "Provisional Feature",
+                 "spec_dir": "prov-feat", "tier": 1},
+                {"id": "after-feat", "name": "After Feature",
+                 "spec_dir": "after-feat", "tier": 1},
+            ]
+        }))
+        pp_prov_dir = pp_features / "prov-feat"
+        pp_prov_dir.mkdir()
+        (pp_prov_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        (pp_prov_dir / "RESEARCH.md").write_text("# R\n", encoding="utf-8")
+        (pp_prov_dir / "RESEARCH_SUMMARY.md").write_text("# S\n", encoding="utf-8")
+        pp_after_dir = pp_features / "after-feat"
+        pp_after_dir.mkdir()
+        (pp_after_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        (pp_after_dir / "RESEARCH.md").write_text("# R\n", encoding="utf-8")
+        (pp_after_dir / "RESEARCH_SUMMARY.md").write_text("# S\n", encoding="utf-8")
+
+        def _pp_needs_input(divergence: str | None, audit_divergence: str | None,
+                            extra_fm: str = "") -> str:
+            fm = [
+                "---",
+                "kind: needs-input",
+                "feature_id: prov-feat",
+                "written_by: spec",
+                "decisions:",
+                "  - Choose default export format",
+                "date: 2026-07-09",
+            ]
+            if divergence is not None:
+                fm.append(f"divergence: {divergence}")
+            if audit_divergence is not None:
+                fm.append(f"audit_divergence: {audit_divergence}")
+            if extra_fm:
+                fm.append(extra_fm.rstrip("\n"))
+            fm.append("---")
+            body = (
+                "\n\n# Needs Input\n\n"
+                "## Decision Context\n\n"
+                "### 1. Choose default export format\n\n"
+                "**Problem:** The spec must pick a v1 default export format.\n\n"
+                "**Options:**\n"
+                "- **WAV (Recommended)** — lossless, simple decode path.\n"
+                "- **MP3** — smaller files, lossy.\n\n"
+                "**Recommendation:** WAV — lossless and simple.\n"
+            )
+            return "\n".join(fm) + body
+
+        pp_sentinel = pp_prov_dir / "NEEDS_INPUT.md"
+
+        # Sub-fixture 1: eligible → __provisional_accept__ route.
+        fix_pp_route = "park-provisional-eligible-route"
+        try:
+            pp_sentinel.write_text(
+                _pp_needs_input("contained", "isolated"), encoding="utf-8"
+            )
+            got_pp = compute_state(
+                pp_root, cloud=False, real_device=True,
+                park_needs_input=True, park_provisional=True,
+            )
+            ppr_ok = True
+            if got_pp.get("sub_skill") != "__provisional_accept__":
+                failures.append(
+                    f"[{fix_pp_route}] expected sub_skill='__provisional_accept__', "
+                    f"got {got_pp.get('sub_skill')!r}"
+                )
+                ppr_ok = False
+            if got_pp.get("feature_id") != "prov-feat":
+                failures.append(
+                    f"[{fix_pp_route}] expected feature_id='prov-feat', "
+                    f"got {got_pp.get('feature_id')!r}"
+                )
+                ppr_ok = False
+            if any(e.get("id") == "prov-feat" for e in got_pp.get("parked", [])):
+                failures.append(
+                    f"[{fix_pp_route}] prov-feat must NOT be parked when routed"
+                )
+                ppr_ok = False
+            print(
+                f"  {'PASS' if ppr_ok else 'FAIL'} [{fix_pp_route}] "
+                f"sub_skill={got_pp.get('sub_skill')!r}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_pp_route}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_pp_route}] SystemExit: {exc.code}")
+
+        # Sub-fixtures 2-4: ineligible variants each PARK instead of routing.
+        for fix_pp_name, div, adiv, extra in (
+            ("park-provisional-structural-parks", "contained", "structural", ""),
+            ("park-provisional-single-key-parks", "contained", None, ""),
+            ("park-provisional-two-key-mech-parks", "isolated", "isolated",
+             "class: mechanical\naudit_concurs: true"),
+        ):
+            try:
+                pp_sentinel.write_text(
+                    _pp_needs_input(div, adiv, extra), encoding="utf-8"
+                )
+                got_pp_i = compute_state(
+                    pp_root, cloud=False, real_device=True,
+                    park_needs_input=True, park_provisional=True,
+                )
+                ppi_ok = True
+                if got_pp_i.get("sub_skill") == "__provisional_accept__":
+                    failures.append(
+                        f"[{fix_pp_name}] ineligible sentinel must NOT route "
+                        "__provisional_accept__"
+                    )
+                    ppi_ok = False
+                if not any(e.get("id") == "prov-feat"
+                           for e in got_pp_i.get("parked", [])):
+                    failures.append(
+                        f"[{fix_pp_name}] prov-feat must be parked "
+                        f"(parked={got_pp_i.get('parked')!r})"
+                    )
+                    ppi_ok = False
+                if got_pp_i.get("feature_id") != "after-feat":
+                    failures.append(
+                        f"[{fix_pp_name}] expected after-feat dispatched, "
+                        f"got {got_pp_i.get('feature_id')!r}"
+                    )
+                    ppi_ok = False
+                print(f"  {'PASS' if ppi_ok else 'FAIL'} [{fix_pp_name}] parked")
+            except SystemExit as exc:
+                failures.append(f"[{fix_pp_name}] SystemExit: {exc.code}")
+                print(f"  FAIL [{fix_pp_name}] SystemExit: {exc.code}")
+
+        # Sub-fixture 5: provisionalize_sentinel happy path (rename + Resolution).
+        fix_pp_action = "provisionalize-sentinel-action"
+        try:
+            pp_sentinel.write_text(
+                _pp_needs_input("contained", "isolated"), encoding="utf-8"
+            )
+            act = lazy_core.provisionalize_sentinel(pp_sentinel, pp_root)
+            ppa_ok = True
+            pp_prov_file = pp_prov_dir / lazy_core.PROVISIONAL_SENTINEL
+            if not act.get("ok"):
+                failures.append(f"[{fix_pp_action}] refused: {act.get('refused')!r}")
+                ppa_ok = False
+            elif not pp_prov_file.exists() or pp_sentinel.exists():
+                failures.append(
+                    f"[{fix_pp_action}] rename missing: provisional exists="
+                    f"{pp_prov_file.exists()}, original exists={pp_sentinel.exists()}"
+                )
+                ppa_ok = False
+            else:
+                pp_text = pp_prov_file.read_text(encoding="utf-8")
+                if ("resolved_by: auto-provisional" not in pp_text
+                        or "decision_commit:" not in pp_text
+                        or "**Choice:** WAV" not in pp_text):
+                    failures.append(
+                        f"[{fix_pp_action}] Resolution block malformed"
+                    )
+                    ppa_ok = False
+                if act.get("choices") != [{"title": "1. Choose default export format",
+                                           "choice": "WAV"}]:
+                    failures.append(
+                        f"[{fix_pp_action}] choices={act.get('choices')!r}"
+                    )
+                    ppa_ok = False
+            # Refusal path: a structural file refuses with zero writes.
+            (pp_after_dir / "NEEDS_INPUT.md").write_text(
+                _pp_needs_input("structural", "isolated").replace(
+                    "feature_id: prov-feat", "feature_id: after-feat"),
+                encoding="utf-8",
+            )
+            act2 = lazy_core.provisionalize_sentinel(
+                pp_after_dir / "NEEDS_INPUT.md", pp_root
+            )
+            if act2.get("ok") or not act2.get("refused"):
+                failures.append(
+                    f"[{fix_pp_action}] structural file must refuse; got {act2!r}"
+                )
+                ppa_ok = False
+            if (pp_after_dir / lazy_core.PROVISIONAL_SENTINEL).exists():
+                failures.append(
+                    f"[{fix_pp_action}] refusal must be zero-write"
+                )
+                ppa_ok = False
+            (pp_after_dir / "NEEDS_INPUT.md").unlink()
+            print(f"  {'PASS' if ppa_ok else 'FAIL'} [{fix_pp_action}]")
+        except SystemExit as exc:
+            failures.append(f"[{fix_pp_action}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_pp_action}] SystemExit: {exc.code}")
+
+        # Sub-fixture 6: _PROVISIONAL file is workable under park mode; the
+        # feature itself is dispatched and provisional[] lists it.
+        fix_pp_work = "park-provisional-workable-under-park"
+        try:
+            got_pp_w = compute_state(
+                pp_root, cloud=False, real_device=True,
+                park_needs_input=True,
+            )
+            ppw_ok = True
+            if got_pp_w.get("feature_id") != "prov-feat" or got_pp_w.get("terminal_reason"):
+                failures.append(
+                    f"[{fix_pp_work}] expected prov-feat dispatched with no "
+                    f"terminal; got feature_id={got_pp_w.get('feature_id')!r}, "
+                    f"terminal={got_pp_w.get('terminal_reason')!r}"
+                )
+                ppw_ok = False
+            pp_prov_list = got_pp_w.get("provisional", [])
+            if not any(e.get("id") == "prov-feat" and
+                       e.get("sentinel_kind") == "provisional"
+                       for e in pp_prov_list):
+                failures.append(
+                    f"[{fix_pp_work}] provisional[] must list prov-feat "
+                    f"(got {pp_prov_list!r})"
+                )
+                ppw_ok = False
+            print(f"  {'PASS' if ppw_ok else 'FAIL'} [{fix_pp_work}]")
+        except SystemExit as exc:
+            failures.append(f"[{fix_pp_work}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_pp_work}] SystemExit: {exc.code}")
+
+        # Sub-fixture 7: non-park probe halts needs-ratification; no
+        # provisional key leaks into non-park output.
+        fix_pp_rat = "needs-ratification-non-park-halt"
+        try:
+            got_pp_r = compute_state(pp_root, cloud=False, real_device=True)
+            pprat_ok = True
+            if got_pp_r.get("terminal_reason") != "needs-ratification":
+                failures.append(
+                    f"[{fix_pp_rat}] expected terminal_reason='needs-ratification', "
+                    f"got {got_pp_r.get('terminal_reason')!r}"
+                )
+                pprat_ok = False
+            if "provisional" in got_pp_r or "parked" in got_pp_r:
+                failures.append(
+                    f"[{fix_pp_rat}] provisional/parked keys must be absent "
+                    "from non-park output"
+                )
+                pprat_ok = False
+            print(
+                f"  {'PASS' if pprat_ok else 'FAIL'} [{fix_pp_rat}] "
+                f"terminal_reason={got_pp_r.get('terminal_reason')!r}"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_pp_rat}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_pp_rat}] SystemExit: {exc.code}")
+
+        # Sub-fixture 8: BOTH NEEDS_INPUT.md and _PROVISIONAL, non-park →
+        # needs-input outranks needs-ratification (SPEC D5).
+        fix_pp_prec = "needs-input-outranks-ratification"
+        try:
+            pp_sentinel.write_text(
+                _pp_needs_input("contained", "isolated"), encoding="utf-8"
+            )
+            got_pp_p = compute_state(pp_root, cloud=False, real_device=True)
+            pprec_ok = got_pp_p.get("terminal_reason") == "needs-input"
+            if not pprec_ok:
+                failures.append(
+                    f"[{fix_pp_prec}] expected 'needs-input', "
+                    f"got {got_pp_p.get('terminal_reason')!r}"
+                )
+            pp_sentinel.unlink()
+            print(f"  {'PASS' if pprec_ok else 'FAIL'} [{fix_pp_prec}]")
+        except SystemExit as exc:
+            failures.append(f"[{fix_pp_prec}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_pp_prec}] SystemExit: {exc.code}")
+
+        # Sub-fixture 9: _PROVISIONAL + VALIDATED.md under park → parked for
+        # ratification (sentinel_kind provisional), queue advances.
+        fix_pp_val = "park-provisional-validated-parks"
+        try:
+            _write_yaml_sentinel(
+                pp_prov_dir / "VALIDATED.md", "validated",
+                feature_id="prov-feat", date="2026-07-09",
+                mcp_scenarios=["s1"], result="all-passing",
+            )
+            got_pp_v = compute_state(
+                pp_root, cloud=False, real_device=True,
+                park_needs_input=True,
+            )
+            ppv_ok = True
+            if got_pp_v.get("feature_id") != "after-feat":
+                failures.append(
+                    f"[{fix_pp_val}] expected after-feat dispatched, "
+                    f"got {got_pp_v.get('feature_id')!r}"
+                )
+                ppv_ok = False
+            if not any(e.get("id") == "prov-feat" and
+                       e.get("sentinel_kind") == "provisional"
+                       for e in got_pp_v.get("parked", [])):
+                failures.append(
+                    f"[{fix_pp_val}] prov-feat must be parked with "
+                    f"sentinel_kind='provisional' (parked={got_pp_v.get('parked')!r})"
+                )
+                ppv_ok = False
+            print(f"  {'PASS' if ppv_ok else 'FAIL'} [{fix_pp_val}]")
+        except SystemExit as exc:
+            failures.append(f"[{fix_pp_val}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_pp_val}] SystemExit: {exc.code}")
+
+        # Sub-fixture 10: apply_pseudo __mark_complete__ refuses on an
+        # unratified provisional sentinel, zero writes.
+        fix_pp_gate = "apply-pseudo-provisional-refusal"
+        try:
+            res_gate = lazy_core.apply_pseudo(
+                pp_root, "__mark_complete__", pp_prov_dir
+            )
+            ppg_ok = True
+            if res_gate.get("ok") or "provisional" not in str(res_gate.get("refused", "")):
+                failures.append(
+                    f"[{fix_pp_gate}] expected provisional refusal, got {res_gate!r}"
+                )
+                ppg_ok = False
+            if (pp_prov_dir / "COMPLETED.md").exists():
+                failures.append(f"[{fix_pp_gate}] refusal must write nothing")
+                ppg_ok = False
+            print(f"  {'PASS' if ppg_ok else 'FAIL'} [{fix_pp_gate}]")
+        except SystemExit as exc:
+            failures.append(f"[{fix_pp_gate}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_pp_gate}] SystemExit: {exc.code}")
+
+        # Sub-fixture 11: flag pairing (SPEC D1) — in-process _die (SystemExit 2)
+        # and CLI exit 2.
+        fix_pp_flag = "park-provisional-flag-pairing"
+        ppf_ok = True
+        try:
+            compute_state(
+                pp_root, cloud=False, real_device=True, park_provisional=True
+            )
+            failures.append(f"[{fix_pp_flag}] bare park_provisional must die")
+            ppf_ok = False
+        except SystemExit as exc:
+            if exc.code != 2:
+                failures.append(
+                    f"[{fix_pp_flag}] expected exit 2, got {exc.code!r}"
+                )
+                ppf_ok = False
+        r_flag = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()),
+             "--park-provisional", "--repo-root", str(pp_root)],
+            capture_output=True, text=True,
+        )
+        if r_flag.returncode != 2:
+            failures.append(
+                f"[{fix_pp_flag}] CLI bare --park-provisional must exit 2; "
+                f"got {r_flag.returncode}"
+            )
+            ppf_ok = False
+        print(f"  {'PASS' if ppf_ok else 'FAIL'} [{fix_pp_flag}]")
+
+        # -------------------------------------------------------------------
         # Fixture: cycle-marker-mutation guard (cycle-subagent-runs-orchestrator-
         # work Phase 2, KEYSTONE). A SUBAGENT-context --cycle-end (no
         # LAZY_ORCHESTRATOR, marker on disk) is REFUSED (exit 3) and the marker
@@ -10530,6 +11043,32 @@ def main() -> int:
                             "fires instead of 'all-features-complete'. Without this flag, output is "
                             "byte-identical to the default behavior (BLOCKED still halts)."
                         ))
+    parser.add_argument("--park-provisional", action="store_true",
+                        help=(
+                            "OPT-IN modifier of --park-needs-input (park-provisional-acceptance, "
+                            "SPEC D1 — supplying it alone is a hard error): a parked-eligible "
+                            "NEEDS_INPUT.md that passes the fail-closed provisional predicate "
+                            "(divergence two-key: producer `divergence:` AND input-audit "
+                            "`audit_divergence:` both in {isolated, contained}; every decision "
+                            "carrying a **Recommendation:**; never two-key-mechanical or "
+                            "completion-integrity-gate sentinels) routes the "
+                            "__provisional_accept__ pseudo-skill instead of parking. The "
+                            "orchestrator then runs --provisionalize-sentinel (Resolution "
+                            "appended `resolved_by: auto-provisional`, file renamed "
+                            "NEEDS_INPUT_PROVISIONAL.md) and the feature keeps implementing. "
+                            "An unratified provisional file blocks completion mechanically and "
+                            "halts non-park probes on `needs-ratification`."
+                        ))
+    parser.add_argument("--provisionalize-sentinel", default=None, metavar="PATH",
+                        help=(
+                            "Provisionally accept the NEEDS_INPUT.md at PATH on its "
+                            "recommendations (park-provisional-acceptance SPEC D2): re-validate "
+                            "the fail-closed eligibility predicate, append a ## Resolution "
+                            "block (resolved_by: auto-provisional, decision_commit: HEAD), and "
+                            "rename to NEEDS_INPUT_PROVISIONAL.md (git-mv-aware). Refusals "
+                            "exit 1 with ZERO writes. Ratification later neutralizes the "
+                            "renamed file via --neutralize-sentinel."
+                        ))
     parser.add_argument("--per-feature-cycle-cap", type=int, default=None,
                         metavar="N",
                         help=(
@@ -10917,6 +11456,12 @@ def main() -> int:
     # advance and peek the persisted streak.
     if args.repeat_count and args.repeat_count_peek:
         _die("--repeat-count and --repeat-count-peek are mutually exclusive")
+
+    # park-provisional-acceptance (SPEC D1): --park-provisional is a strict
+    # modifier of --park-needs-input — alone it is a hard CLI error, never a
+    # silently-ignored token.
+    if args.park_provisional and not args.park_needs_input:
+        _die("--park-provisional requires --park-needs-input")
 
     # --count-phases: canonical phase-section count for the retro staleness
     # anchor. Exits immediately like the other action flags. Goes through the
@@ -11594,6 +12139,32 @@ def main() -> int:
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result["ok"] else 1
 
+    if args.provisionalize_sentinel is not None:
+        # park-provisional-acceptance (SPEC D2): the script-owned acceptance
+        # action. Re-validates the fail-closed eligibility predicate, appends
+        # the ## Resolution (resolved_by: auto-provisional + decision_commit),
+        # and renames NEEDS_INPUT.md → NEEDS_INPUT_PROVISIONAL.md. Refusals
+        # exit 1 with zero writes. Cycle-guarded like every other lifecycle
+        # write path.
+        lazy_core.refuse_if_cycle_active("--provisionalize-sentinel")
+        result = lazy_core.provisionalize_sentinel(
+            Path(args.provisionalize_sentinel), Path(args.repo_root),
+            date=args.apply_date,
+        )
+        if result.get("ok"):
+            _tl_prov = Path(args.provisionalize_sentinel)
+            lazy_core.append_telemetry_event(
+                "sentinel-provisionalized",
+                item_id=_tl_prov.resolve().parent.name,
+                data={
+                    "decision_commit": result.get("decision_commit"),
+                    "divergence": result.get("divergence"),
+                    "audit_divergence": result.get("audit_divergence"),
+                },
+            )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result["ok"] else 1
+
     if args.apply_pseudo is not None:
         # lazy-cycle-containment C3 (Phase 3): refuse if a cycle subagent is
         # mid-dispatch.  Guard fires before any SPEC/PHASES/sentinel mutation.
@@ -11877,6 +12448,7 @@ def main() -> int:
         scope_feature_id=args.feature_id,
         park_needs_input=args.park_needs_input,
         park_blocked=args.park_blocked,
+        park_provisional=args.park_provisional,
         per_feature_cycle_cap=args.per_feature_cycle_cap,
         strict_research_halt=args.strict_research_halt,
     )
@@ -11961,6 +12533,12 @@ def main() -> int:
             emitted = lazy_core.emit_cycle_prompt(
                 Path(args.repo_root), state,
                 pipeline="feature", cloud=args.cloud, repeat_count=rc,
+                # park-provisional-acceptance (SPEC D13): a park-mode probe
+                # selects the park=park template sections (the stub-spec
+                # sentinel-mediation contract). Non-park emission is
+                # byte-identical (the attribute is absent on every
+                # pre-existing section).
+                park_mode=args.park_needs_input,
             )
             if emitted is None:
                 state["cycle_prompt"] = None

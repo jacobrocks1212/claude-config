@@ -135,8 +135,24 @@
   PASS [park-blocked-default-halt] default: terminal_reason='blocked', parked key absent=True
   PASS [park-blocked-all-parked-terminal] terminal_reason='queue-exhausted-all-parked', parked count=2
   PASS [park-blocked-and-needs-input-single-park] dispatched='workable-feat', blocked-feat park count=1
+  PASS [park-provisional-eligible-route] sub_skill='__provisional_accept__'
+  PASS [park-provisional-structural-parks] parked
+  PASS [park-provisional-single-key-parks] parked
+  PASS [park-provisional-two-key-mech-parks] parked
+  PASS [provisionalize-sentinel-action]
+  PASS [park-provisional-workable-under-park]
+  PASS [needs-ratification-non-park-halt] terminal_reason='needs-ratification'
+  PASS [needs-input-outranks-ratification]
+  PASS [park-provisional-validated-parks]
+  PASS [apply-pseudo-provisional-refusal]
+{
+  "error": "--park-provisional requires --park-needs-input (SPEC D1)",
+  "path": null
+}
+  PASS [park-provisional-flag-pairing]
   PASS [cycle-marker-mutation-guard] subagent cycle-end/begin refused, orchestrator allowed
   PASS [cycle-begin-git-consistency-reconciliation] stale pre-boot index.lock reconciled at --cycle-begin
+  PASS [cycle-begin-real-requires-sub-skill] real requires --sub-skill, meta exempt, regression green
   PASS [reorder-queue] reorder tail/head/index/remove/missing/cycle-active/no-op
   PASS [telemetry-ledger-chokepoints] bracket/dispatch/purity/refusal/cloud-flush emission
   PASS [cycle-end-bracket-fail-open] unwritable bracket ledger never blocks the --cycle-end clear

@@ -65,6 +65,7 @@ the historical / manually-authored spec archive (not under pipeline management).
 ~~- Skill Usage Miner + Dead-Weight Audit (`skill-usage-miner`) — mine session logs for per-skill invocation frequency; flag never-invoked skills for `archived/` and high-frequency prose skills for toolification; sweep stray non-skill files (e.g. `sh.exe.stackdump`).~~  ✅ COMPLETE
 ~~- Incident Auto-Capture → Bug Stubs (`incident-auto-capture`) — cluster hook `hook-error.json` breadcrumbs + repeated deny signatures and auto-enqueue `--type bug` stubs, closing the observe→harden loop between retros.~~  ✅ COMPLETE
 ~~- Cross-Platform Setup (`cross-platform-setup`) — stdlib-Python `setup.py bootstrap|check|repair` over a portable manifest so Linux/cloud containers can materialize the symlink layout; ends the recurring windows-portability rediscovery.~~  ✅ COMPLETE
+- Park-Provisional Acceptance (`park-provisional-acceptance`) — a third decision tier between the D2 two-key mechanical auto-accept and the product-class park: under `--park --park-provisional`, low-divergence (divergence two-key graded) recommended options are provisionally accepted at park time so the feature keeps implementing overnight; `NEEDS_INPUT_PROVISIONAL.md` + a triple-layer completion backstop guarantee operator ratify-or-redirect before completion, with redirects scoped by the recorded `decision_commit`. *(Added 2026-07-09, implemented same-session.)*
 
 ## Tier 3 — proposed (repo-exploration stubs 2026-07-04, high-ambition)
 
