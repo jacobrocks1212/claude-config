@@ -24,6 +24,12 @@
       "name": "Build Queue Certifies Success on a Copy-Lock Failure \u2192 Stale-DLL False Pass \u2014 Investigation Spec",
       "spec_dir": "build-queue-copy-lock-stale-dll-false-success",
       "severity": null
+    },
+    {
+      "id": "build-queue-timeout-kill-reaps-detached-runner",
+      "name": "Bash-Tool Timeout Tree-Kill Reaps the \"Detached\" Build-Queue Runner Mid-RED-Build Sweep \u2014 Investigation Spec",
+      "spec_dir": "build-queue-timeout-kill-reaps-detached-runner",
+      "severity": null
     }
   ]
 }
