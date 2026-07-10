@@ -68,7 +68,7 @@ If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically 
 
 ## Step 2.5: Phase-Count Circuit Breaker (BEFORE ANY DRAFTING)
 
-**Motivation:** Retro evidence shows two features expanding 9→19 and 18→30 phases via repeated `/add-phase` corrective tails (`analysis-informed-dsp-updates`, `audio-quality-analysis`; `hardware-override-protocol` scored 24/F under the same dynamic). A >+50% expansion is not "a few follow-ups" — it is a signal the original decomposition is invalid and must be rebuilt, not patched.
+**Motivation:** Retro evidence shows two features expanding 9→19 and 18→30 phases via repeated `/add-phase` corrective tails (`analysis-informed-dsp-updates`, `audio-quality-analysis`; `hardware-override-protocol` scored 24/F under the same dynamic). A >+50% expansion is not "a few follow-ups" — it is a signal the original decomposition is invalid and must be rebuilt, not patched. Counter-calibration (57077): the breaker fired 4× and was overridden 4× — all review-round-sourced from fire 2 on, with `/realign-spec` never taken — and a 100%-override signal protects nothing, which is why review-round correctives are half-weighted and a middle remedy exists below.
 
 ### Compute the added-phase ratio
 
@@ -79,9 +79,17 @@ If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically 
    - Failing that, count all phases currently in the file and treat that as the original count (conservative — prevents a false-positive block when the file has no history).
    - Call this value **O**.
 
+   > **Known undercount mode (denominator honesty):** when corrective phases interleave with legitimate design phases, the heuristic that estimates the original count as the pre-first-corrective prefix undercounts here — later design additions get counted as expansion against a stale denominator, inflating the ratio (57077 Phase 12's documented case). When this interleaving is present in the file, every fire message below MUST state this caveat alongside the numbers.
+
 2. **Count phases that would exist after this append.** Let **T** = (current total phases in the file) + 1.
 
-3. **Compute the added-phase ratio:** `(T − O) / O`.
+3. **Weight each added phase by its source.** For each of the `T − O` added phases (every phase beyond the original **O**, INCLUDING the phase being appended now), assign a weight:
+   - **0.5 (half weight) — review-round-sourced:** the phase was created via `/resolve-review`, or its description / **Context from prior phases** block cites open-PR review comments (a `CHANGES_REQUESTED` round). A bounded review round on a nearly-complete feature is normal delivery, not decomposition failure.
+   - **1.0 (full weight) — everything else:** correctives sourced from runtime defects, premise reversals, or internal discoveries, and all `design` additions. These ARE the decomposition-failure signal the breaker exists for.
+
+   Let **W** = the sum of these weights. (`W = T − O` when no added phase is review-round-sourced — identical to the unweighted behavior.)
+
+4. **Compute the added-phase ratio:** `W / O`.
 
 ### Decision
 
@@ -97,13 +105,14 @@ If `$ARGUMENTS` contains `--batch`, this is an autonomous invocation (typically 
 Surface the violation to the operator:
 
 > **Phase-count circuit breaker triggered.**
-> Original phase count: **O**. Current total: **T−1**. Adding this phase would bring the expansion to **{(T−O)/O * 100:.0f}%** over original — exceeding the +50% threshold.
+> Original phase count: **O**. Current total: **T−1**. Adding this phase would bring the weighted expansion to **{W/O * 100:.0f}%** over original (weighted added-phase count W = {W}) — exceeding the +50% threshold.
 >
-> This expansion signal means the original decomposition is likely invalid and should be **rebuilt**, not patched with more corrective phases. Recommended path:
-> 1. Run `/realign-spec` on the SPEC.md to reconcile the spec with what was actually built.
-> 2. Re-run `/spec-phases` to produce a fresh phase breakdown from the aligned spec.
->
-> If you have a compelling reason to override the breaker, re-invoke `/add-phase` with `--override-circuit-breaker` in the arguments.
+> This expansion signal means the original decomposition may be invalid. Three paths:
+> 1. **Full rebuild** (for genuine decomposition failure): run `/realign-spec` on the SPEC.md to reconcile the spec with what was actually built, then re-run `/spec-phases` to produce a fresh phase breakdown from the aligned spec.
+> 2. **Premise re-audit** (proportionate middle remedy): re-check the SPEC's Locked Decisions / premises against the accumulated corrective evidence — per the premise-grade contradiction ladder in `~/.claude/skills/_components/touchpoint-audit-gate.md` — WITHOUT rebuilding phases. If a premise is contradicted, that's the real defect; if all premises hold, the expansion is likely benign accumulation.
+> 3. **Override**: re-invoke `/add-phase` with `--override-circuit-breaker` in the arguments (still logged in the drafted phase's context block).
+
+If the interleaving undercount mode applies (see the denominator-honesty note above), state the caveat in this message alongside the numbers.
 
 Do NOT proceed to Step 3. Stop here.
 
@@ -117,20 +126,23 @@ kind: needs-input
 feature_id: {feature-slug derived from phases-md-dir}
 written_by: add-phase
 decisions:
-  - "Phase-count circuit breaker: adding this phase would push expansion to {ratio*100:.0f}% over the original O-phase count (threshold: +50%). Original: O, current: T-1, proposed: T."
-  - "Recommended path: /realign-spec then /spec-phases. Override with --override-circuit-breaker if intentional."
+  - "Phase-count circuit breaker: adding this phase would push weighted expansion to {ratio*100:.0f}% over the original O-phase count (threshold: +50%). Original: O, current: T-1, proposed: T, weighted added count: W."
+  - "Path (a) full rebuild: /realign-spec then /spec-phases (genuine decomposition failure). Path (b) premise re-audit: re-check the SPEC's Locked Decisions / premises against the accumulated corrective evidence (touchpoint-audit-gate.md ladder) without rebuilding phases. Path (c) override with --override-circuit-breaker if intentional."
 date: {today}
 next_skill: add-phase
 ---
 
 # /add-phase --batch — Circuit Breaker Fired
 
-Adding this phase would bring total added phases to **{T−O}** above the original **O**-phase plan ({ratio*100:.0f}% expansion; threshold +50%).
+Adding this phase would bring the weighted added-phase count to **{W}** above the original **O**-phase plan ({ratio*100:.0f}% weighted expansion; threshold +50%; review-round-sourced correctives count at half weight).
 
-A >+50% corrective tail is a signal the original decomposition is invalid.
-Re-run `/realign-spec` + `/spec-phases` to rebuild from the current SPEC.md,
-or re-invoke `/add-phase --batch --override-circuit-breaker` to override.
+A >+50% weighted corrective tail is a signal the original decomposition may be invalid. Three paths:
+(a) **Full rebuild** — re-run `/realign-spec` + `/spec-phases` to rebuild from the current SPEC.md (genuine decomposition failure);
+(b) **Premise re-audit** — re-check the SPEC's Locked Decisions / premises against the accumulated corrective evidence (per the premise-grade contradiction ladder in `~/.claude/skills/_components/touchpoint-audit-gate.md`) without rebuilding phases;
+(c) **Override** — re-invoke `/add-phase --batch --override-circuit-breaker`.
 ```
+
+If the interleaving undercount mode applies (see the denominator-honesty note above), append the caveat to the sentinel body alongside the numbers.
 
 STOP without writing PHASES.md.
 

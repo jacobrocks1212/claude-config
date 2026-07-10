@@ -212,6 +212,14 @@ Update each task to `in_progress` when starting it, `completed` when done. After
 
 After the evidence-gathering fleet returns, synthesize its findings alongside the steps below.
 
+**Subagent-contradiction reconciliation (MANDATORY — applies wherever parallel evidence reports are integrated, in any phase).** When two evidence reports contradict each other on a factual claim (e.g. "store X exists" vs. "store X does not exist"), adopting either report — the later one, the more confident one, the more detailed one — is **BANNED**. Instead:
+
+1. **Dispatch a targeted reconciler agent against BOTH reports' specific citations.** Its brief: open every file/symbol each report cited, verify each citation in place, and rule on the claim with the citations in hand — not by re-running either report's search from scratch.
+2. **Only a reconciled claim may enter the SPEC**, and the SPEC must record the reconciliation where the claim lands — e.g. `premise verified against both: <report 1's citations> vs <report 2's citations> — <ruling>`.
+3. **A claim that cannot be reconciled** (the citations genuinely conflict, or the reconciler cannot rule) is an open question / product-decision surface (`## Open Questions`, `AskUserQuestion`, or `NEEDS_INPUT.md` under `--batch`) — NEVER a "code-verified" premise.
+
+> **Burned on 57077.** Evidence subagent 1 cited `CognitoPayCosmosOptions` and `CosmosClientFactory.CreateCognitoPayClient`, proving a separate CognitoPay Cosmos exists; subagent 2 denied it existed. The later report was adopted wholesale as a "code-verified premise correction" — subagent 1's citations were never re-examined — and it was wrong. The falsified premise survived three more in-pipeline contradictions and was finally refuted by a human PR reviewer in one review round.
+
 Before starting, understand the project:
 
 1. Read `CLAUDE.md` (if exists) to understand current architecture and constraints.
@@ -389,6 +397,17 @@ After the decomposition, proceed with iterative brainstorming below.
 - Flag any conflicts with current architecture early.
 - **For UI proposals:** Use `AskUserQuestion` with `markdown` previews to show ASCII wireframe mockups where helpful.
 - **Late requirement impact check:** When a new requirement or decision contradicts or significantly changes a previously written spec section, explicitly enumerate which existing sections are affected before rewriting. State: "This changes sections: [list]. Updating all affected sections now." This prevents partial updates where some sections reflect a stale architecture.
+
+**External-owner surface rule (MANDATORY — applies wherever a decision is locked, in any phase, interactive or `--batch`):**
+
+When a candidate decision creates or changes a contract consumed OUTSIDE this repo — events, sync schemas, queue messages, exported columns/APIs — tag it `external-owner: <team/repo>` in the decision text. Such a decision is **NOT lockable on in-repo evidence alone.** Before it enters `## Locked Decisions`, exactly one of:
+
+- **(a) Owner conventions confirmed** — the owning team's *current* conventions for that surface are confirmed (Slack / ADO / their docs) and cited in the SPEC alongside the decision; or
+- **(b) Explicit risk acceptance** — the operator picks a "lock WITHOUT owner confirmation — risk accepted" option (offer it explicitly in the picker / `NEEDS_INPUT.md`), recorded **verbatim** in the Locked Decision.
+
+The trigger is your own recognition — no new detection machinery: if an option's honest description contains "external contract change", "other-team work", "downstream consumer", or equivalent, the rule fires. "External consumption is a follow-up, out of this repo's scope" is exactly the degradation this rule bans — scoping the *work* out of the repo never scopes out the consultation.
+
+> **Anti-pattern (57077, Locked Decision 4):** a new classic `organization.archived` CognitoEvent was locked with the winning option's own text flagging "an external contract change and Overwatch-side work" — no consult happened. The OW team's actual convention (columns arrive via OW sync; classic events are being phased out) reversed the decision 2 days later, deleting the Phase 1+6 event work and invalidating an entire sibling Overwatch SPEC authored ~24h earlier.
 
 ---
 
@@ -622,6 +641,8 @@ If the feature's validation calls no MCP tools, omit this — no Locked Decision
    - **Surface counts** (e.g., "~50 API endpoints"): Run a subagent to grep/count the actual surfaces in the codebase; report the real number
    - **Cross-boundary propagation** (e.g., "auth token flows through middleware"): Verify the boundary contract supports it — check the protocol schema, third-party docs, or IPC layer
    - Mark any unverified quantities with `(estimated — verify during Phase N)` in the spec; never commit to a specific number without evidence
+   - **Decision-evidence reconciliation pass (MANDATORY — before marking Final):** re-audit each Locked/recommended decision's load-bearing OPERATIONAL claims (e.g. "support views this data via tool X", "ops can replay this via Y") against **ALL evidence gathered in this session** — the Phase 0 evidence fleet's reports, research findings, and any Phase 3 subagent output, not just the evidence that existed when the decision was made. For each decision, name the session evidence that verifies its operational claim. A decision whose claim is **refuted or unverified** by session evidence is re-surfaced to the user (interactive: chat block + `AskUserQuestion`; `--batch`: `NEEDS_INPUT.md`) — it may NOT silently survive to Final.
+     > **Burned on 57077.** "Support views via Overwatch" was locked in the first picker round; evidence gathered later in the SAME session proved the retained data was Cosmos-only with no Overwatch surface, and nobody reconnected the dots — the entire v1 (2 shipped phases) was re-baselined a day later on exactly this gap.
 
 10. Confirm with the user that the spec is complete.
 

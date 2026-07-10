@@ -48,6 +48,27 @@ Verdicts:
 - **wrap** — compose existing pieces behind a thin new seam.
 - **acceptable-new** — nothing suitable exists, and that has been proven via a recorded negative-search trail.
 
+### Field-shape idiom rule — new persisted fields (checked at R4)
+
+When the change introduces a **new persisted field or marker** — especially lifecycle state
+(archived / disabled / retired / verified) — the field's *shape* is itself a reuse decision, and the
+ledger MUST carry a **shape row** for it:
+
+1. **Enumerate the shape options explicitly** — bool flag vs nullable timestamp vs status enum vs
+   reuse of an existing state field. Shape may not default to whatever phrasing entered the
+   conversation first.
+2. **Grep for existing analogues** on core entities — `Date*`, `Is*`, and status-enum lifecycle
+   fields — and cite the precedent found in the row's Evidence column. If nothing is found, record
+   the negative-search trail, same as any `acceptable-new` verdict.
+3. **Default preference: nullable timestamp over bool** — a timestamp is a bool plus provenance
+   ("is it archived?" *and* "when?"). Deviating (a bare bool, or any other shape) requires a stated
+   reason in the SPEC.
+
+**Anti-pattern (57077):** `Organization.IsArchived` (bool) was locked while the codebase's own idiom —
+`EntityMeta.DateDisabled`, a nullable `[Overwatch]` DateTime — sat one grep away. Reporting then
+needed "when was it archived", forcing a 9-call-site rewrite plus snapshot/typegen churn
+(corrective Phase 7).
+
 ### Step R4 — 100%-confidence gate (BLOCKING)
 
 You cannot leave discovery until BOTH hold:

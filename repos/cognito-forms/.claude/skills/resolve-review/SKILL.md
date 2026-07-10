@@ -10,7 +10,7 @@ Turn a completed Cognito PR review into actionable remediation work. This skill 
 
 **Scope:** Cognito Forms repo. Reviews live in `.claude.local/reviews/`; feature docs live in the sibling `../cog-docs/docs/features/` repo.
 
-**Flow:** Resolve review → classify findings → validate flagged findings (Sonnet) → present actionable items + gather resolution choices → infer+confirm feature dir → `/add-phase --batch` → `/write-plan-cognito` → report.
+**Flow:** Resolve review → classify findings → validate flagged findings (Sonnet) → present actionable items + gather resolution choices → validate decline rationales (Sonnet) → infer+confirm feature dir → `/add-phase --batch` → `/write-plan-cognito` → report.
 
 This skill is interactive and read-only with respect to source code — it never edits `.cs`/`.ts`/`.vue` files. Its only writes are delegated to `/add-phase` (PHASES.md) and `/write-plan-cognito` (plan file).
 
@@ -78,10 +78,14 @@ After all subagents return:
 3. **Ask resolution per cluster via `AskUserQuestion`** (≤ 4 questions per call — run multiple calls if there are more clusters). For each cluster, offer:
    - **Fix now (Recommended)** — include in the remediation phase.
    - **Defer to follow-up** — out of scope for this remediation; note it.
-   - **Won't fix** — record the rationale (capture the user's note).
+   - **Won't fix** — record the rationale (capture the user's note; factual code claims in it are validated in step 4 below before being recorded).
    - **Needs discussion** — flag for the user to resolve before planning; do not bake into the phase.
 
    Capture any free-text notes the user attaches — they refine the deliverable wording.
+
+4. **Validate decline rationales (Sonnet) — BEFORE recording them.** Any resolution other than **Fix now** (Won't fix, Defer, or leave-as-is with a documented rationale) whose rationale makes a **factual code claim** — "no async overload exists", "X is unreachable", "already handled by Y" — gets the same Sonnet subagent validation as Step 3 findings. Spawn the subagent (same self-contained prompt shape and verdict contract as Step 3) with this task: *verify the claim against the live code, including attribute-level facts — `[Obsolete]` messages, `sealed`/`internal` modifiers, existing overloads. A claim can be literally true yet refuted by an adjacent fact the decline ignores.* This runs BEFORE the rationale is recorded for the report and BEFORE any PR reply is drafted from it. A **refuted** rationale re-opens the resolution question: present the refuting evidence to the user via `AskUserQuestion` and gather a fresh choice — never carry a refuted rationale forward.
+
+   *Anti-pattern (57077 Phase 9):* Taylor's "Can this be async?" was declined with "no async non-generic `Query(Type)` overload exists" — true but irrelevant: `IStorageContext.Query<T>()` is `[Obsolete("Consider using GetAll or GetRange.")]` and the obsoletion message names the async fix. The unvalidated decline shipped to the PR thread and had to be reversed by corrective Phase 12.
 
 Only items resolved **Fix now** flow into the remediation phase. Hold the rest for the final report.
 

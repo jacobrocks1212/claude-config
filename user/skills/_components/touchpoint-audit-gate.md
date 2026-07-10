@@ -42,7 +42,9 @@ Brief each `Explore` agent (read-only — it must NOT edit anything):
 >   accommodate the planned change.
 > - **Contradiction:** anything that conflicts with the stated plan assumption — the abstraction
 >   already exists, the logic lives in a different layer/file, the API differs, the file is
->   generated/dead. Quote the evidence (file:line or symbol).
+>   generated/dead. Quote the evidence (file:line or symbol), and say whether the conflict is with
+>   a plan *anchor* (path / symbol / layer) or with a stated SPEC *premise* (an Executive-Summary
+>   claim, Premise-correction paragraph, Locked Decision, or Validated Assumption).
 >
 > Files / assumptions to verify:
 > [list each candidate file + the one-line assumption the plan makes about it]
@@ -80,7 +82,43 @@ Rules:
 
 ### Step D — Drift correction (BEFORE the artifact is written)
 
-For every `Contradiction` finding from Step B:
+**Contradiction severity ladder (MANDATORY — classify FIRST, before any correction).** For every
+`Contradiction` finding from Step B, classify it on this ladder before touching the plan:
+
+- **Anchor-grade** — the finding changes **WHERE we edit**: file/line drift, a renamed symbol, a
+  moved method, an abstraction living in a different layer. Reality disagrees with the plan's
+  *anchors*, not with what the feature is supposed to do. Handle per the mechanical-drift /
+  design-fork rules below; current behavior is unchanged.
+- **Premise-grade** — the finding contradicts a **SPEC premise**: an Executive-Summary claim, a
+  "Premise correction" paragraph, a Locked Decision, or a Validated Assumption. If the finding is
+  true, it changes **WHAT we build** — correcting it "in the plan" would mean faithfully
+  implementing a falsified spec.
+
+**Litmus:** does this finding, if true, change **WHAT** we build (premise-grade) or **WHERE** we
+edit (anchor-grade)? Apply it to every contradiction; when in doubt, classify UP — a false halt
+costs one question, a demoted premise ships wrong code.
+
+**Premise-grade = HALT.** Never correct a premise-grade contradiction in the plan, and never carry
+it forward as a plan-local mitigation:
+
+- **Interactive host skill:** surface the contradiction — quote the Step B evidence (file:line)
+  against the exact SPEC text it falsifies — and re-open the premise via `AskUserQuestion`
+  BEFORE any drafting continues. The artifact is not written until the premise is confirmed
+  or corrected.
+- **`--batch`:** write `NEEDS_INPUT.md` per the host skill's existing sentinel conventions,
+  quoting both sides (the SPEC premise vs. the audit evidence) in the decision context.
+
+**BANNED — demoting a premise-grade contradiction to a phase-time "trace deliverable".** Turning
+"this premise may be false" into "Phase N will trace/verify it" keeps a falsified premise
+load-bearing while the plan builds — and hardens — code on top of it.
+> **Burned on 57077.** The write-plan audit found "`CognitoOrder`/`CognitoPayment`/`CognitoDispute`
+> are `ICosmosEntity` (not `IEntity`) → not swept by `DeleteAllProjectEntities` → the carve-out may
+> be a no-op" — a direct falsification of the SPEC's deletion premise — and classified it
+> "mechanical drift", downgrading it to a phase-time trace deliverable. The wrong premise shipped,
+> got hardened with round-trip tests against a fiction, and stood until a human PR reviewer refuted
+> it in one review round ("the cosmos entities are not automatically deleted by anything").
+
+For every **anchor-grade** contradiction, apply the existing two-way split:
 
 - **Mechanical drift** (file moved/renamed, symbol differs, abstraction already exists, target lives
   in a different layer): **correct the plan now.** Rewrite the affected phase boundary / work-unit
@@ -108,7 +146,9 @@ The drafting step that follows this gate MUST consume the Step C table:
       or inline per the Step B fallback when dispatch is unavailable (never from memory).
 - [ ] The Step C audit table exists and every planned path is `exists: yes` or `net-new`.
 - [ ] Every reuse directive names a concrete `file:symbol`.
-- [ ] Every contradiction was either corrected in-plan (mechanical) or escalated via `NEEDS_INPUT.md`
-      (genuine fork).
+- [ ] Every contradiction was classified on the severity ladder (anchor-grade vs premise-grade).
+      Every anchor-grade one was either corrected in-plan (mechanical) or escalated via
+      `NEEDS_INPUT.md` (genuine fork). Every premise-grade one HALTED (`AskUserQuestion` /
+      `NEEDS_INPUT.md`) — none was demoted to a phase-time trace deliverable.
 
 If any box is unchecked, do not write the artifact yet.

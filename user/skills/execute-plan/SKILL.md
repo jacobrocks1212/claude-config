@@ -209,6 +209,10 @@ When all work units are complete (all tasks `completed`):
 
 > **A runtime/MCP-validation gate is NOT unfinished plan work — flip to `Complete` anyway.** "All work units complete" means every WU this skill can ACT ON (code, tests, gates, commits). A live-runtime gate ("re-run `/mcp-test`", "validate on device", a `**Runtime Verification**` row) is owned by the pipeline's Step 9 — it cannot be closed without booting the runtime, which this skill does not do. Leaving the plan `In-progress` solely for such a gate routes `lazy-state.py` BACKWARD into re-dispatching this same plan, looping. Leave the verification row itself UNCHECKED in PHASES.md (`/mcp-test` ticks it); `remaining_unchecked_are_verification_only()` recognizes the remainder and advances. `In-progress` stays correct ONLY for a genuine BLOCKED/NEEDS_INPUT halt with implementation work pending. (State-machine backstop: a plan left `Ready`/`In-progress` with only verification rows open is routed to `__flip_plan_complete_stale__`, not a re-dispatch — still do the flip here so the backstop never fires.)
 
+> **But the flip does NOT make the pending rows silent (MANDATORY — additive to the above).** Flipping `Complete` past unchecked runtime rows is correct ONLY when their pending state is ledgered and led with — the completion OUTPUT contract below is what keeps the flip honest in manual runs and no-MCP repos where `/mcp-test`/`__mark_complete__` never fire (the 57077 seam):
+
+!`cat ~/.claude/skills/_components/pending-runtime-gates.md`
+
 The plan file STAYS in `plans/` after Complete — frontmatter is the audit trail. Never delete it.
 
 #### Atomic gate+commit — close the dual-ledger/commit gap (HARD REQUIREMENT)
