@@ -681,6 +681,11 @@ bindings:
   # /mcp-test cycle (feature-level):
   python3 ~/.claude/scripts/bug-state.py --repo-root <repo_root> --verify-ledger {spec_path}
   ```
+  Recovery dispatch — **NEVER hand-composed.** The reconcile+commit job the recovery agent
+  performs is the emitted dispatch's *contract* (owned by `dispatch-recovery.md`), NOT a prompt
+  for the orchestrator to author; the ONLY sanctioned dispatch is the `--emit-dispatch recovery`
+  emission below, dispatched VERBATIM by-reference (a hand-composed "reconcile-and-commit
+  recovery agent" prompt is denied by the validate-deny guard — see `/lazy-batch` Step 1e/4a).
   Recovery dispatch (emit-dispatch — registry-registered, guard allows it):
   ```bash
   python3 ~/.claude/scripts/bug-state.py \
