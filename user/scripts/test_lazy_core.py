@@ -26260,6 +26260,69 @@ def test_commit_drift_verdict_non_docs_drift():
         assert any(p.endswith("mod.py") for p in v["non_docs"]), v
 
 
+def test_is_noninvalidating_drift_path_classes():
+    """Unit-pin the structural predicate: *.md and mcp-test SCENARIO
+    *.yaml/*.yml (under an mcp-test(s) segment) are non-invalidating; a
+    product .yaml with no mcp-test segment, and a .py, are invalidating."""
+    _guard()
+    f = lazy_core._is_noninvalidating_drift_path
+    # docs
+    assert f("docs/features/x/MCP_TEST_RESULTS.md") is True
+    assert f("docs/features/x/PHASES.md") is True
+    # mcp-test scenario corpus (the harden-2026-07 addition)
+    assert f("docs/testing/mcp-tests/corpus/live/managed-credits-client.yaml") is True
+    assert f("docs/features/x/mcp-tests/scenario.yml") is True
+    assert f("DOCS/TESTING/MCP-TESTS/S.YAML") is True          # case-insensitive
+    assert f("docs\\testing\\mcp-tests\\s.yaml") is True        # backslash-normalized
+    # NOT carved out — product yaml with no mcp-test segment
+    assert f("config.yaml") is False
+    assert f(".github/workflows/ci.yml") is False
+    assert f("docs/testing/other/plain.yaml") is False
+    # code-under-test always invalidating
+    assert f("src/mod.py") is False
+
+
+def test_commit_drift_verdict_mcp_scenario_yaml_is_docs_only():
+    """harden 2026-07: a first-run results-commit that adds an mcp-test SCENARIO
+    *.yaml under the mcp-tests corpus ALONGSIDE the *.md results is
+    NON-INVALIDATING drift → 'docs-only'. RED against the pre-fix .md-only
+    carve-out (the scenario .yaml made non_docs non-empty → 'non-docs-drift' →
+    a wasted Step-9 re-verify cycle)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        first = _cc_seed_and_commit(repo_root)
+        # Mirror the observed first-run commit: an .md results file + a scenario
+        # .yaml under docs/testing/mcp-tests/corpus/live/.
+        (repo_root / "MCP_TEST_RESULTS.md").write_text("results\n", encoding="utf-8")
+        scen = repo_root / "docs" / "testing" / "mcp-tests" / "corpus" / "live"
+        scen.mkdir(parents=True, exist_ok=True)
+        (scen / "managed-credits-client.yaml").write_text(
+            "name: scenario\n", encoding="utf-8"
+        )
+        second = _git_fixture_commit(repo_root)
+        assert first != second
+        v = lazy_core.commit_drift_verdict(repo_root, first, second)
+        assert v["verdict"] == "docs-only", v
+        assert v["non_docs"] == [], v
+
+
+def test_commit_drift_verdict_non_mcp_yaml_still_non_docs():
+    """A .yaml WITHOUT an mcp-test(s) path segment (a product config) still
+    classifies as 'non-docs-drift' — the carve-out is scoped to the scenario
+    corpus, so a genuine config change cannot launder a stale validation."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        first = _cc_seed_and_commit(repo_root)
+        (repo_root / "app.config.yaml").write_text("k: v\n", encoding="utf-8")
+        second = _git_fixture_commit(repo_root)
+        assert first != second
+        v = lazy_core.commit_drift_verdict(repo_root, first, second)
+        assert v["verdict"] == "non-docs-drift", v
+        assert any(p.endswith("app.config.yaml") for p in v["non_docs"]), v
+
+
 def test_commit_drift_verdict_unresolvable():
     """An unknown validated_commit (not in the repo) → 'unresolvable' (the
     caller refuses conservatively — cannot prove docs-only)."""
@@ -26722,6 +26785,12 @@ _TESTS = _TESTS + [
      test_commit_drift_verdict_docs_only),
     ("test_commit_drift_verdict_non_docs_drift",
      test_commit_drift_verdict_non_docs_drift),
+    ("test_is_noninvalidating_drift_path_classes",
+     test_is_noninvalidating_drift_path_classes),
+    ("test_commit_drift_verdict_mcp_scenario_yaml_is_docs_only",
+     test_commit_drift_verdict_mcp_scenario_yaml_is_docs_only),
+    ("test_commit_drift_verdict_non_mcp_yaml_still_non_docs",
+     test_commit_drift_verdict_non_mcp_yaml_still_non_docs),
     ("test_commit_drift_verdict_unresolvable",
      test_commit_drift_verdict_unresolvable),
     ("test_apply_pseudo_validated_from_results_accepts_docs_only_drift",

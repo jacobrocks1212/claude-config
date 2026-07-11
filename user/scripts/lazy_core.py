@@ -3140,6 +3140,40 @@ def observation_gap_promotable(meta: dict) -> bool:
     )
 
 
+def _is_noninvalidating_drift_path(path: str) -> bool:
+    """Can this changed path NOT invalidate an MCP validation? (drift carve-out)
+
+    Two STRUCTURAL classes of changed file cannot make a recorded
+    ``validated_commit`` stale relative to HEAD for the Step-9 staleness gate,
+    because neither is the code-under-test:
+
+      * any Markdown file (``*.md``) — MCP_TEST_RESULTS.md, PHASES.md
+        reconciliation, spec docs. The original Round-36 (2026-06-23) carve-out.
+      * an MCP test-SCENARIO definition (``*.yaml`` / ``*.yml``) that lives under
+        an ``mcp-test`` / ``mcp-tests`` path segment — the scenario CORPUS
+        (e.g. ``docs/testing/mcp-tests/corpus/live/<name>.yaml``). An /mcp-test
+        FIRST-RUN authors these scenario files and commits them alongside
+        MCP_TEST_RESULTS.md, so the structurally-unavoidable one-commit results
+        lag includes them. A scenario definition IS the test, never the
+        product code it exercises, so it cannot invalidate the validation
+        (harden 2026-07: the ``.md``-only carve-out forced a wasted re-verify
+        cycle on every first-run validation — the scenario ``.yaml`` in the same
+        commit tripped ``non-docs-drift``).
+
+    The mcp-test path-segment scope is what keeps a product ``config.yaml`` /
+    ``.github/workflows/*.yml`` OUT of the carve-out — those carry no
+    ``mcp-test(s)`` segment, so they still (correctly) classify as invalidating
+    (TOCTOU) drift. Suffix + segment checks are case-insensitive and
+    separator-normalized.
+    """
+    p = path.lower().replace("\\", "/")
+    if p.endswith(".md"):
+        return True
+    if p.endswith((".yaml", ".yml")):
+        return any(seg in ("mcp-test", "mcp-tests") for seg in p.split("/"))
+    return False
+
+
 def commit_drift_verdict(
     repo_root: Path, validated_commit, head
 ) -> dict:
@@ -3155,22 +3189,32 @@ def commit_drift_verdict(
     WHY a docs-only carve-out is correct (and not a gate-weakening): an
     ``/mcp-test`` cycle that obeys its turn-end clean-tree contract MUST commit
     ``MCP_TEST_RESULTS.md`` — and that commit advances HEAD exactly one past the
-    ``validated_commit`` it just recorded. The results file is therefore
-    PERPETUALLY one commit stale, and that one-commit drift is a PURE DOCS-ONLY
-    ``*.md`` delta. Strict ``validated_commit == HEAD`` is structurally
-    unsatisfiable in that bracket → an infinite re-verify loop on EVERY feature/
-    bug. Accepting docs-only drift restores liveness WITHOUT weakening the
-    TOCTOU guard: any non-``.md`` (source / script / config) drift still
-    refuses, because that is genuine "the validated code is not the code being
-    promoted" risk.
+    ``validated_commit`` it just recorded. On a FIRST-RUN validation the same
+    commit ALSO carries the newly-authored mcp-test SCENARIO files
+    (``*.yaml``/``*.yml`` under the ``mcp-test(s)`` corpus). The results file is
+    therefore PERPETUALLY one commit stale, and that one-commit drift is a
+    PURE NON-INVALIDATING delta (docs + scenario definitions — see
+    ``_is_noninvalidating_drift_path``). Strict ``validated_commit == HEAD`` is
+    structurally unsatisfiable in that bracket → an infinite re-verify loop on
+    EVERY feature/bug (and the ``.md``-only carve-out forced a wasted re-verify
+    on every first-run whose commit included scenario ``.yaml`` — harden
+    2026-07). Accepting non-invalidating drift restores liveness WITHOUT
+    weakening the TOCTOU guard: any real source / script / product-config drift
+    still refuses, because that is genuine "the validated code is not the code
+    being promoted" risk.
 
     Returns ``{verdict, non_docs, changed}`` where ``verdict`` ∈:
       - ``"fresh"``         — ``validated_commit`` / ``head`` unresolved (None /
                               blank) OR equal. The caller's existing
                               legacy-permissive / equality path applies; this
                               helper does NOT run ``git diff`` in that case.
-      - ``"docs-only"``     — drift is exclusively ``*.md`` files → safe to
-                              accept-and-validate.
+      - ``"docs-only"``     — drift is exclusively NON-INVALIDATING validation
+                              artifacts (``*.md`` docs, or mcp-test SCENARIO
+                              ``*.yaml``/``*.yml`` under an ``mcp-test(s)`` path
+                              segment — see ``_is_noninvalidating_drift_path``)
+                              → safe to accept-and-validate. (Verdict string kept
+                              as ``"docs-only"`` for call-site compatibility even
+                              though scenario files are not ``.md``.)
       - ``"non-docs-drift"``— ≥1 non-``.md`` path changed → refuse-and-revalidate
                               (TOCTOU). ``non_docs`` lists the offending paths.
       - ``"unresolvable"``  — the diff could not be computed (non-git root,
@@ -3189,7 +3233,7 @@ def commit_drift_verdict(
     changed = _git_diff_name_only(repo_root, vc, hd)
     if changed is None:
         return {"verdict": "unresolvable", "non_docs": [], "changed": []}
-    non_docs = [p for p in changed if not p.lower().endswith(".md")]
+    non_docs = [p for p in changed if not _is_noninvalidating_drift_path(p)]
     if non_docs:
         return {
             "verdict": "non-docs-drift",
