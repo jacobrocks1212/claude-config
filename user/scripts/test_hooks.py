@@ -6511,9 +6511,61 @@ def test_guard_worker_subdispatch_denied_unbound_marker():
         )
 
 
+def test_guard_worker_subdispatch_exemption_allows_fresh_cycle_nonce():
+    """Production-wiring regression (consumed-fence wiring fix, 2026-07-11): the
+    orchestrator passed a FRESH unrelated hex for --cycle-begin --nonce (SKILL
+    §1d 'else any fresh hex') instead of the registry/ref nonce. write_cycle_marker
+    now rebinds the subagent-model marker to this cycle's worker emission, so the
+    exemption's nonce-exact consumed fence still fires once the worker dispatch
+    consumes the emission. Before the fix this exact configuration was DENIED
+    (the exemption was dead on arrival — hardening-log Round 16)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        session = str(uuid.uuid4())
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(state_dir / "fixture-repo"), max_cycles=10,
+                now=time.time(), session_id=session,
+            )
+            # Production order: register the (unconsumed) cycle emission, THEN
+            # write the cycle marker with a FRESH unrelated hex (the rebind fires
+            # here), THEN the worker dispatch consumes the emission.
+            entry = lazy_core.register_emission("the emitted cycle prompt", "cycle")
+            marker = lazy_core.write_cycle_marker(
+                feature_id="feat-x", nonce="totallyfreshhex",
+                sub_skill="execute-plan",
+            )
+            assert marker["nonce"] == entry["nonce"], (
+                f"marker must rebind the fresh nonce to the worker emission; "
+                f"got {marker['nonce']!r}"
+            )
+            lazy_core.consume_nonce(entry["nonce"], consumer="toolu_worker_dispatch")
+        finally:
+            _clear_state_dir()
+
+        result = _run_guard_py(
+            _e1_preToolUse_json(_WORKER_PROMPT, session_id=session), env
+        )
+        assert result.returncode == 0, result.stderr
+        payload = json.loads(result.stdout.strip())
+        hso = payload.get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "allow", (
+            f"fresh-nonce worker sub-subagent dispatch must be ALLOWED after the "
+            f"wiring fix; got: {payload}"
+        )
+        assert "sub-subagent" in hso.get("permissionDecisionReason", ""), hso
+
+
 _TESTS = _TESTS + [
     ("test_guard_worker_subdispatch_exemption_allows",
      test_guard_worker_subdispatch_exemption_allows),
+    ("test_guard_worker_subdispatch_exemption_allows_fresh_cycle_nonce",
+     test_guard_worker_subdispatch_exemption_allows_fresh_cycle_nonce),
     ("test_guard_worker_subdispatch_denied_before_consume",
      test_guard_worker_subdispatch_denied_before_consume),
     ("test_guard_worker_subdispatch_denied_without_capability",

@@ -32055,6 +32055,68 @@ def test_write_cycle_marker_stamps_subagent_model():
             _clear_state_dir()
 
 
+def test_resolve_cycle_worker_nonce_rebinds_fresh_hex():
+    """resolve_cycle_worker_nonce rebinds a fresh (unregistered) --cycle-begin
+    nonce to this cycle's worker emission (the newest UNCONSUMED cycle entry),
+    preserves a nonce the orchestrator already reused from the registry, and
+    degrades to the passed value when no unconsumed cycle emission exists.
+
+    This is the consumed-fence wiring fix (dispatch-guard-denies-workstation-
+    subsubagent-split, 2026-07-11): the guard exemption keys on the marker nonce,
+    which was dead-on-arrival whenever the orchestrator passed a fresh hex."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # No registry yet → passed nonce preserved (safe degradation).
+            assert lazy_core.resolve_cycle_worker_nonce("freshhex01") == "freshhex01"
+            # Register this cycle's (unconsumed) worker emission.
+            entry = lazy_core.register_emission("the cycle prompt", "cycle")
+            emission_nonce = entry["nonce"]
+            # A fresh, unregistered --nonce rebinds to the emission nonce.
+            assert lazy_core.resolve_cycle_worker_nonce("freshhex01") == emission_nonce
+            # A reused (already-registered) nonce is preserved unchanged.
+            assert lazy_core.resolve_cycle_worker_nonce(emission_nonce) == emission_nonce
+            # Once consumed there is no UNCONSUMED cycle emission to bind to →
+            # a fresh hex degrades to itself (fence stays closed — the safe
+            # pre-fix behavior; in production the rebind happens BEFORE consume).
+            lazy_core.consume_nonce(emission_nonce, consumer="toolu_w")
+            assert lazy_core.resolve_cycle_worker_nonce("freshhex01") == "freshhex01"
+        finally:
+            _clear_state_dir()
+
+
+def test_write_cycle_marker_rebinds_nonce_for_subagent_model():
+    """The consumed-fence wiring fix at the write site: a subagent-model cycle
+    written with a FRESH (unregistered) --nonce has its marker nonce rebound to
+    this cycle's worker emission so the guard exemption's nonce-exact fence can
+    match it; a non-subagent-model cycle keeps the passed nonce byte-identically."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            entry = lazy_core.register_emission("cycle prompt body", "cycle")
+            emission_nonce = entry["nonce"]
+            # Production order: emission registered + UNCONSUMED at --cycle-begin.
+            m = lazy_core.write_cycle_marker(
+                feature_id="f", nonce="deadfreshbeef", sub_skill="execute-plan",
+            )
+            assert m["subagent_model"] is True, m
+            assert m["nonce"] == emission_nonce, (
+                "subagent-model marker must rebind a fresh nonce to the cycle "
+                f"worker emission; got {m['nonce']!r}"
+            )
+            # A non-subagent-model cycle keeps the passed nonce untouched (zero
+            # behavior change off the exemption path).
+            m2 = lazy_core.write_cycle_marker(
+                feature_id="f", nonce="keepme123", sub_skill="realign-spec",
+            )
+            assert m2["subagent_model"] is False, m2
+            assert m2["nonce"] == "keepme123", m2
+        finally:
+            _clear_state_dir()
+
+
 _TESTS = _TESTS + [
     ("test_skill_declares_subagent_model_user_level",
      test_skill_declares_subagent_model_user_level),
@@ -32064,6 +32126,10 @@ _TESTS = _TESTS + [
      test_emission_consumed_by_nonce_fence),
     ("test_write_cycle_marker_stamps_subagent_model",
      test_write_cycle_marker_stamps_subagent_model),
+    ("test_resolve_cycle_worker_nonce_rebinds_fresh_hex",
+     test_resolve_cycle_worker_nonce_rebinds_fresh_hex),
+    ("test_write_cycle_marker_rebinds_nonce_for_subagent_model",
+     test_write_cycle_marker_rebinds_nonce_for_subagent_model),
 ]
 
 

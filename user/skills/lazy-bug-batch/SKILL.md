@@ -565,6 +565,13 @@ Dispatch:
 #    path on execute-plan cycles — so --cycle-end can WU-scale the commit budget):
 python3 ~/.claude/scripts/bug-state.py --cycle-begin --bug-id {bug_id} --nonce {dispatch_nonce} --kind {real|meta} --sub-skill {sub_skill} --sub-skill-args {sub_skill_args}
 
+# `{dispatch_nonce}`: PREFER the probe's `cycle_prompt_ref`/registry nonce when present, else any fresh hex.
+# For a sub-subagent-model real cycle (`/execute-plan`, `/spec-phases`, …) `--cycle-begin` AUTO-BINDS the marker's
+# stored nonce to this cycle's registered worker emission regardless of what you pass (shared `lazy_core.write_cycle_marker`,
+# mirrors `/lazy-batch` §1d), so the dispatch guard's workstation sub-subagent exemption fires even if a fresh hex was
+# used — a fresh, unregistered nonce previously left that exemption dead-on-arrival and denied every worker sub-subagent
+# dispatch as false hardening debt.
+
 # 2. Dispatch:
 Agent({
   description: "lazy-bug-batch cycle {forward_cycles + meta_cycles + 1}: {sub_skill} for {bug_name}",

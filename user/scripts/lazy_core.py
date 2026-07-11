@@ -10831,6 +10831,69 @@ def skill_declares_subagent_model(
         return False
 
 
+def resolve_cycle_worker_nonce(passed_nonce: str | None) -> str | None:
+    """Resolve the nonce stamped onto a subagent-model cycle marker so the
+    dispatch guard's workstation sub-subagent exemption can find it.
+
+    dispatch-guard-denies-workstation-subsubagent-split (consumed-fence wiring
+    fix, 2026-07-11): the guard's exemption keys its CONSUMED FENCE on the cycle
+    marker's ``nonce`` (``emission_consumed_by_nonce(cycle["nonce"])`` at
+    ``lazy_guard.py``). That precise nonce-exact fence only matches when the
+    marker's nonce equals the cycle's REGISTERED emission nonce (a ``uuid4().hex``
+    from ``register_emission``). The orchestrator, however, is permitted by the
+    ``/lazy-batch`` SKILL (Step §1d "reuse the probe's ``cycle_prompt_ref``/
+    registry nonce when present, **else any fresh hex**") to pass an arbitrary
+    fresh hex for ``--cycle-begin --nonce``. A fresh hex is NOT a registered
+    emission nonce, so the fence can never match it → the exemption is DEAD in
+    production and every worker-composed sub-subagent dispatch (``/execute-plan``
+    test-agent/impl-agent split, ``/spec-phases`` phase-author, …) is denied and
+    booked as false hardening debt (hardening-log Rounds 9→13 were the pre-fix
+    no-exemption era; this is the post-ship mis-wiring). The unit test masked it
+    by hard-coding ``cycle.nonce == emission.nonce`` (``test_hooks.py``
+    ``_arm_worker_in_flight``).
+
+    Resolution rule (only the CALLER for a subagent-model cycle invokes this):
+      - If ``passed_nonce`` is ALREADY a registered emission nonce, keep it — the
+        orchestrator reused the registry/ref nonce (the design-intended path).
+      - Otherwise (fresh hex) rebind to THIS cycle's worker emission: the NEWEST
+        UNCONSUMED ``class == "cycle"`` registry entry. ``--emit-prompt``
+        registers the cycle emission IMMEDIATELY before ``--cycle-begin`` and the
+        worker dispatch (which consumes it) has not happened yet, so at write
+        time the newest unconsumed cycle emission is unambiguously this cycle's.
+        Binding the marker to it makes the precise fence fire when the worker
+        dispatch later consumes that same emission — regardless of what
+        ``--nonce`` the orchestrator chose.
+      - If neither applies (no unconsumed cycle emission — a degraded / no-emit
+        cycle), preserve ``passed_nonce`` unchanged (the fence simply will not
+        fire — the safe pre-fix degradation).
+
+    Security window is UNCHANGED: the marker is bound to an UNCONSUMED emission,
+    so in the pre-dispatch window the fence still reads consumed=False (deny); it
+    opens only after the guard-ALLOWed worker dispatch consumes the emission.
+    The cycle marker ``nonce`` is read by EXACTLY ONE consumer (the guard fence),
+    so this rebind has no other blast radius.
+
+    FAIL-SAFE: any error returns ``passed_nonce`` unchanged (never rebinds to a
+    wrong value on a registry read failure).
+    """
+    try:
+        entries = _load_registry().get("entries", [])
+        # Reused-nonce path: the orchestrator already passed a registered emission
+        # nonce (consumed or not) — keep it (this is the design-intended wiring).
+        for entry in entries:
+            if entry.get("nonce") == passed_nonce:
+                return passed_nonce
+        # Fresh-hex path: rebind to this cycle's worker emission — the newest
+        # UNCONSUMED cycle-class emission (iterate newest-first / reverse
+        # insertion order, mirroring _find_entry_by_sha's newest-wins rule).
+        for entry in reversed(entries):
+            if entry.get("class") == "cycle" and not entry.get("consumed", False):
+                return entry.get("nonce") or passed_nonce
+        return passed_nonce
+    except Exception:  # noqa: BLE001
+        return passed_nonce
+
+
 def write_cycle_marker(
     feature_id: str,
     nonce: str,
@@ -10930,6 +10993,18 @@ def write_cycle_marker(
         subagent_model = skill_declares_subagent_model(
             sub_skill, repo_root=_sm_repo_root
         )
+    # Normalize to a bool once (an explicit caller may pass any truthy/falsy).
+    subagent_model = bool(subagent_model)
+    # consumed-fence wiring fix (dispatch-guard-denies-workstation-subsubagent-
+    # split, 2026-07-11): for a subagent-model cycle, rebind the marker's nonce
+    # to this cycle's registered worker emission so the guard's exemption fence
+    # (emission_consumed_by_nonce(cycle["nonce"])) can find it even when the
+    # orchestrator passed a fresh, unregistered hex for --cycle-begin --nonce.
+    # See resolve_cycle_worker_nonce for the full rationale + security argument.
+    # Scoped to subagent_model cycles so meta/non-exempt cycles keep their passed
+    # nonce byte-identically (zero behavior change off the exemption path).
+    if subagent_model:
+        nonce = resolve_cycle_worker_nonce(nonce)
     state_dir = claude_state_dir()
     marker_path = state_dir / _CYCLE_MARKER_FILENAME
 
@@ -10979,8 +11054,8 @@ def write_cycle_marker(
         "sub_skill_args": sub_skill_args,
         # decision 4 (dispatch-guard-denies-workstation-subsubagent-split): the
         # sub_skill's declared sub-subagent capability, read by the guard's
-        # workstation exemption. bool — never None (fail-closed compute above).
-        "subagent_model": bool(subagent_model),
+        # workstation exemption. bool — never None (normalized above).
+        "subagent_model": subagent_model,
     }
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
     return marker
