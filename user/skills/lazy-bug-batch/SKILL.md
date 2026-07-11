@@ -508,6 +508,10 @@ Bug cycles dispatch `spec-bug` / `plan-bug` / `execute-plan` / `mcp-test`; the
 sectioned template covers all of them via its `skills=` section selection (`/spec-bug` replaces
 `/spec`, `plan-bug` replaces `plan-feature` — both orchestrator-only docs passes, no sub-subagents). (`retro-feature` is unwired — 2026-06.)
 
+#### 1d.0a. Tear down a kept-alive runtime before a Rust-building cycle (WORKSTATION ONLY)
+
+**Mirrors `~/.claude/skills/lazy-batch/SKILL.md` Step 1d.0a (2026-07-11 build-lock).** When `sub_skill ∈ {execute-plan, spec-phases}` may compile `src-tauri/`/`crates/` AND an orchestrator-owned dev runtime is up (booted by a prior bug `mcp-test` cycle's Step 1d.0), the live `algobooth.exe` + sidecar hold an OS lock on the tauri `externalBin` sidecar binary, so the cycle's `cargo check`/`tauri build` fails with `Os { code: 5, kind: PermissionDenied }`. At the CYCLE BOUNDARY, before dispatch, run `npm run dev:kill` (no-op-safe when nothing is running) to release the lock; a later mcp-test cycle re-boots via Step 1d.0, and a `src-tauri`/`crates` commit staleness-invalidates the old runtime anyway. **NEVER `dev:kill` mid-build** (a killed-mid-link build → 117 LNK unresolved-externals, fixed only by `cargo clean -p algobooth` + rebuild) — this is a boundary op only, identical to the run-end teardown above. See lazy-batch Step 1d.0a for the full rationale and safety rule.
+
 #### 1d.0. Pre-boot the dev runtime for `/mcp-test` cycles (WORKSTATION ONLY)
 
 **Applies ONLY when `sub_skill == "mcp-test"`.** Skip for every other `sub_skill`.

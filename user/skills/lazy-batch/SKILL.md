@@ -591,6 +591,22 @@ For ANY hit, re-`Read` that file via its `~/.claude/...` path BEFORE composing t
 
 If Step 1c.5 did not handle this cycle (i.e. `sub_skill` is a real skill name, not `__*__`), build a minimal subagent prompt. The prompt instructs the subagent to invoke ONE skill in batch mode, commit, and report — nothing else.
 
+#### 1d.0a. Tear down a kept-alive runtime before a Rust-building cycle (WORKSTATION ONLY — runs BEFORE dispatch)
+
+**Applies when `sub_skill ∈ {execute-plan, spec-phases}` (any cycle that may compile `src-tauri/`/`crates/`) AND an orchestrator-owned dev runtime is currently up** — i.e. a prior Step 1d.0 booted it for an earlier `mcp-test` cycle and it was kept alive for reuse. It is a no-op on the common case where no mcp-test cycle has booted a runtime yet (nothing to tear down).
+
+**Why this exists (2026-07-11 build-lock).** The kept-alive runtime's live `algobooth.exe` + sidecar hold an OS lock on the tauri `externalBin` sidecar binary (`binaries\node-x86_64-pc-windows-msvc.exe`). A later `/execute-plan` cycle that runs `cargo check`/`tauri build` over `src-tauri`/`crates` then fails to copy that binary with `Os { code: 5, kind: PermissionDenied }` — Rust cannot compile at all. The runtime booted to validate feature A silently blocks the build of feature B (or a later part of the same feature).
+
+**Do this (orchestrator session, `Bash` only — NOT a file edit):** at the CYCLE BOUNDARY, BEFORE you dispatch the cycle, tear the runtime down with the same full teardown used at run-end. `dev:kill` is no-op-safe when nothing is running, so running it unconditionally before a Rust-capable cycle is the simplest correct implementation — it only actually tears down in the exact kept-alive-runtime-vs-build case:
+
+```bash
+npm run dev:kill   # workstation only; no-op-safe if nothing is running
+```
+
+Then dispatch the cycle. Nothing is lost: a subsequent `mcp-test` cycle re-boots via Step 1d.0's `--ensure-runtime`, and a `src-tauri`/`crates` commit staleness-invalidates the old runtime anyway (the `stale_binary` predicate would force a `dev:restart` at the next mcp-test). You MAY skip the teardown only if you can cheaply confirm the dispatched plan part touches neither `src-tauri/` nor `crates/` (a TS/docs-only part cannot hold or need the sidecar-binary lock); when in doubt, tear down.
+
+**CRITICAL SAFETY — boundary only, NEVER mid-build.** Run `dev:kill` ONLY here, at the cycle boundary, when NO build is in flight (the prior cycle has already returned; the orchestrator's own long builds are synchronously awaited, so none is live at a boundary). NEVER `dev:kill` — or otherwise interrupt — a Rust link in progress: a killed-mid-link `tauri dev`/`cargo` build corrupts the incremental artifacts (117 `LNK` unresolved-externals), whose only fix is `cargo clean -p algobooth` + rebuild. The teardown is a boundary op the orchestrator already owns (identical to the run-end `dev:kill` at §1c.6); it does not expand the sentinel-only edit scope (HARD CONSTRAINT 1 holds, same rationale as 1d.0).
+
 #### 1d.0. Pre-boot the dev runtime for `/mcp-test` cycles (WORKSTATION ONLY — runs BEFORE prompt composition)
 
 **Applies ONLY when `sub_skill == "mcp-test"`.** Skip this sub-step entirely for every other `sub_skill`. (This sub-step does not exist in `/lazy-batch-cloud` — cloud's Step 9 returns `__write_deferred_non_cloud__`, never `mcp-test`, so the cloud orchestrator never reaches it.)
