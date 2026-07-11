@@ -203,6 +203,28 @@ Sub-subagent dispatch policy (WORKSTATION DISPATCH — LOAD-BEARING):
   - Scope containment: sub-subagents work ONLY inside this {item_label}'s
     scope. Delegating the entire cycle wholesale to one sub-subagent is
     re-dispatching, not orchestrating — forbidden.
+  - SYNCHRONOUS AWAIT — never block on a child→parent message channel
+    (2026-07-11 sub-subagent deadlock). When you dispatch a sub-subagent with
+    the `Agent` tool, you AWAIT that dispatch and CONSUME the child's returned
+    final result DIRECTLY — the child's result comes back to you as the tool
+    result of the `Agent` call. No SendMessage is needed, EVER, to collect a
+    child's work. A dispatched child CANNOT reach its spawning parent by name
+    (only the top-level orchestrator / `main` is reachable by name from a
+    child — a child's `SendMessage` to its parent FAILS with "the
+    general-purpose agent isn't reachable by that name"). Therefore: NEVER
+    dispatch children "in the background" / asynchronously and then wait for
+    them to SendMessage their results back to you — that is a DEADLOCK: the
+    child's reply never arrives and you return RESULTLESS mid-cycle ("waiting
+    on the resumed test agents before dispatching impl agents"), which then
+    needs a manual orchestrator resume. Sequence dependent children
+    SYNCHRONOUSLY: for /execute-plan's test-first split, AWAIT the test-agent
+    dispatch and consume the failing tests it returns, THEN dispatch and AWAIT
+    the impl-agent — do NOT launch both and block on inter-agent messages.
+    Independent children may be dispatched in one batch (parallel), but you
+    still AWAIT their returned results — you never wait on a message FROM them.
+    "Waiting for a sub-subagent's message" is NEVER a valid cycle state: if you
+    catch yourself in it you have already diverged — dispatch-and-await each
+    child, or do the batch inline with Read/Edit/Write.
 
 <!-- @section cloud-override pipelines=feature,bug modes=cloud skills=all -->
 Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
