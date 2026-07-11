@@ -275,12 +275,33 @@ def inject(stdin_text: str) -> str | None:
     else:
         parts.append("[probe failed — re-run manually: --repeat-count --probe --emit-prompt]")
 
-    # Include the nonce for the guard to validate the next dispatch.
-    # F2a: also surface the @@lazy-ref token so the orchestrator can dispatch
-    # subagents by reference (shorter, transcription-slip-free form).
+    # Surface the registered nonce as EVIDENCE that this turn's inject probe
+    # registered a cycle emission. We deliberately do NOT emit a copyable
+    # `by-ref: @@lazy-ref nonce=<hex>` dispatch line anymore.
+    #
+    # 2026-07-11 banner-ref divergence: the by-ref line invited the
+    # orchestrator to dispatch by-reference straight from the banner. That is
+    # only ever valid on the SAME turn the banner is injected (the emission was
+    # registered on this turn's UserPromptSubmit). But a banner persists in
+    # context across turn boundaries, so a copy-paste-ready by-ref line is a
+    # carryover hazard: dispatched a turn later it violates the emit→dispatch
+    # Freshness rule (lazy-batch SKILL "never dispatch an emission from an
+    # earlier turn") — by then the nonce is stale/consumed/superseded, the
+    # guard's F2a cannot resolve it, and a near-miss copy (the token WITH the
+    # surrounding banner text) is not a bare-ref match, so under a
+    # session-diverged marker the literal token can slip through to the
+    # subagent (0 tool uses, "no task attached"). The banner already carries
+    # the full `cycle_prompt` for same-turn verbatim dispatch, so the by-ref
+    # line was pure convenience with no essential role — dropping it removes
+    # the hazard while the same-turn path keeps working via `cycle_prompt`.
     if nonce is not None:
-        parts.append(f"nonce={nonce}")
-        parts.append(f"by-ref: @@lazy-ref nonce={nonce}")
+        parts.append(
+            f"nonce={nonce} (evidence: this turn's probe registered an emission; "
+            f"NOT a carry-over dispatch token — by-ref is valid only the SAME turn "
+            f"it is injected. If a turn boundary intervened, this banner is STALE: "
+            f"dispatch the banner's `cycle_prompt` verbatim this turn, or re-probe "
+            f"with `--emit-prompt` and dispatch that fresh ref.)"
+        )
 
     # For SessionStart(compact) and PostCompact: inject the post-compaction
     # re-entry protocol and marker counters (SPEC inject item 3).
