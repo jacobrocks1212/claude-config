@@ -7,7 +7,7 @@
 **Status:** Concluded
 **Priority:** P2
 **Last updated:** 2026-07-11
-**Related:** `docs/specs/turn-routing-enforcement/` (owns the dispatch guard + `--emit-dispatch`); `docs/specs/turn-routing-enforcement/NEEDS_INPUT.md` #5/#6 (surfaced from the same run); the `auto-invoke-harden-harness` operator rule (CLAUDE.md `<auto-invoke>`).
+**Related:** `docs/specs/turn-routing-enforcement/` (owns the dispatch guard + `--emit-dispatch`); `docs/specs/turn-routing-enforcement/NEEDS_INPUT.md` #5/#6 (surfaced from the same run); the `auto-invoke-harden-harness` operator rule (CLAUDE.md `<auto-invoke>`); `docs/bugs/efficacy-future-check-unenforced-orchestrator-prose/` (the loop-closer — the other half of fix-scope §6).
 
 ## Verified Symptom
 
@@ -40,6 +40,8 @@ A required, guard-allowed, mid-run observed-friction harden dispatch with a bloc
 4. **Concurrency safety (background case):** a backgrounded harden edits **claude-config** only; cycle subagents edit the **target repo** → different trees, no one-writer conflict. EXCEPTION: `self_edit_mode` (the run is editing its own governing files) — force **foreground/await** when the observed friction overlaps self-edited files. The orchestrator re-reads governing files only at a cycle boundary AFTER the bg harden completes (never mid-edit), so no half-written-script probe race.
 
 5. **Coupled-pair mirroring** (cloud keeps its `--cloud` / inline-override deltas) + `test_lazy_core.py` coverage for the new emit path + full gates.
+
+6. **Efficacy-loop feed (self-improving-harness observability — operator-directed 2026-07-11):** an auto-invoked observed-friction harden MUST close the measurement loop — its dispatched harden records an intervention (harden-harness Step 4) with a **MEASURABLE** `target_signal` wherever the fix targets a countable ledger signal (e.g. the observed friction's own recurrence event), `expected_direction: decrease`, so the fix's effect on FUTURE runs is asserted (CONFIRMED / REFUTED / INCONCLUSIVE) rather than assumed. The observed-friction `--emit-dispatch hardening` prompt must PROMPT the harden to declare a measurable signal first (fall back to `undeclared` only for a genuinely-immeasurable diagnostic). This is HALF the loop; the other half — GUARANTEEING the efficacy/canary check actually fires at the future condition (run-end) — is `docs/bugs/efficacy-future-check-unenforced-orchestrator-prose/` (the check is currently skippable orchestrator prose). Both must land for the loop to be sound: a recorded intervention that is never evaluated, or an evaluated fix that declared no measurable signal, each leaves the loop open.
 
 ## Decisions
 
