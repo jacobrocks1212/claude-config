@@ -160,6 +160,21 @@ CORRECTIVE = (
     "DENIED in-flight while a cycle dispatch is active."
 )
 
+# cycle-containment-allows-background-subagent-dispatch-deadlock: a cycle
+# subagent must dispatch sub-agents SYNCHRONOUSLY (foreground) and await their
+# return. A background (run_in_background: true) Agent/Task dispatch then blocks
+# on a child->parent SendMessage that can NEVER arrive (backgrounded children
+# reach only the MAIN thread, not their dispatching parent subagent), deadlocking
+# the cycle. Synchronous/foreground Agent/Task dispatch stays ALLOWED (the
+# 2026-07-09 decision preserving mandated read-only Explore fan-outs).
+BACKGROUND_CORRECTIVE = (
+    "a cycle subagent must dispatch sub-agents SYNCHRONOUSLY (foreground) and "
+    "await their return. A background (run_in_background: true) Agent/Task "
+    "dispatch blocks on a child->parent message that can never arrive "
+    "(backgrounded children reach only the main thread), deadlocking the cycle. "
+    "Re-dispatch WITHOUT run_in_background."
+)
+
 # Commit-count backstop ceiling (SPEC §C2 Open Question — generous; tunable).
 COMMIT_CEILING = 25
 
@@ -305,6 +320,21 @@ def _deny(reason, signature="containment-deny"):
     sys.exit(0)
 
 
+def _is_truthy_background(val):
+    """Return True iff *val* is a truthy background-dispatch flag.
+
+    Accepts the JSON boolean True (the real Agent/Task tool_input shape) and the
+    common string encodings ('true'/'1'/'yes'/'on'). Anything else (absent,
+    False, '', 'false', 0) is falsy → a synchronous/foreground dispatch."""
+    if val is True:
+        return True
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "1", "yes", "on")
+    if isinstance(val, (int, float)) and not isinstance(val, bool):
+        return val != 0
+    return False
+
+
 def _read_marker():
     """Return the cycle marker dict, or None if absent/unreadable.
 
@@ -407,6 +437,20 @@ def main():
             if isinstance(skill_name, str) and _LAZY_SKILL_RE.match(skill_name.strip()):
                 _deny(CORRECTIVE, "skill-lazy-family")
         # Main-thread or non-lazy skill → allow.
+        _allow()
+
+    # --- Background Agent/Task dispatch from a subagent: DENY (deadlock).
+    #     cycle-containment-allows-background-subagent-dispatch-deadlock: a cycle
+    #     subagent that backgrounds a sub-subagent then blocks on a child->parent
+    #     message that can never arrive. Synchronous (foreground) Agent/Task
+    #     dispatch stays ALLOWED (the 2026-07-09 Explore-fan-out decision).
+    #     Main-thread (agent_id absent) background dispatch is ALLOWED (the main
+    #     thread receives child messages; the deadlock is subagent-parent-only). ---
+    if is_subagent and tool_name in ("Agent", "Task"):
+        ti = payload.get("tool_input") or {}
+        if _is_truthy_background(ti.get("run_in_background")):
+            _deny(BACKGROUND_CORRECTIVE, "background-dispatch")
+        # Foreground Agent/Task from a subagent → allow (fall through).
         _allow()
 
     if tool_name != "Bash":

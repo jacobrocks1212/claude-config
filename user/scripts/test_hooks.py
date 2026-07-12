@@ -3036,15 +3036,27 @@ def _bash_preToolUse_json(
 def _agent_preToolUse_json(
     session_id: str | None = None,
     agent_id: str | None = None,
+    run_in_background: bool | None = None,
 ) -> str:
     """Return a PreToolUse JSON payload for an Agent tool call.
 
     agent_id: when provided, marks the payload as a SUBAGENT call (recursive
     dispatch from within an already-dispatched cycle subagent). Absent ⇒ the
     main-thread orchestrator's own legitimate Agent dispatch.
+
+    run_in_background: when provided, sets the tool_input background flag
+    (cycle-containment-allows-background-subagent-dispatch-deadlock). Absent ⇒
+    the flag is omitted (a synchronous / foreground dispatch).
     """
     if session_id is None:
         session_id = str(uuid.uuid4())
+    tool_input = {
+        "description": "recursive dispatch",
+        "prompt": "do a thing",
+        "subagent_type": "general-purpose",
+    }
+    if run_in_background is not None:
+        tool_input["run_in_background"] = run_in_background
     payload = {
         "session_id": session_id,
         "transcript_path": f"C:\\\\Users\\\\Jacob\\\\.claude\\\\projects\\\\test\\\\{session_id}.jsonl",
@@ -3052,11 +3064,7 @@ def _agent_preToolUse_json(
         "permission_mode": "default",
         "hook_event_name": "PreToolUse",
         "tool_name": "Agent",
-        "tool_input": {
-            "description": "recursive dispatch",
-            "prompt": "do a thing",
-            "subagent_type": "general-purpose",
-        },
+        "tool_input": tool_input,
         "tool_use_id": "toolu_" + uuid.uuid4().hex[:24],
     }
     if agent_id is not None:
@@ -3255,6 +3263,69 @@ def test_containment_allows_recursive_agent_dispatch():
         )
         assert _containment_decision(result) != "deny", (
             f"subagent Agent dispatch must NOT deny (removed 2026-07-09); "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_background_subagent_dispatch():
+    """A background (run_in_background: true) Agent dispatch from a subagent
+    (agent_id) while the marker is present → DENY.
+    (cycle-containment-allows-background-subagent-dispatch-deadlock: the
+    background dispatch deadlocks the cycle on a child->parent message that can
+    never arrive.)"""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_containment(
+            _agent_preToolUse_json(
+                agent_id=_SUBAGENT_AGENT_ID, run_in_background=True
+            ),
+            state_dir,
+        )
+        assert _containment_decision(result) == "deny", (
+            f"background subagent Agent dispatch must deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_allows_foreground_subagent_dispatch():
+    """A synchronous (foreground) Agent dispatch from a subagent (agent_id) →
+    ALLOW — the 2026-07-09 Explore-fan-out allowance is preserved; only the
+    background flag is denied."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_containment(
+            _agent_preToolUse_json(
+                agent_id=_SUBAGENT_AGENT_ID, run_in_background=False
+            ),
+            state_dir,
+        )
+        assert _containment_decision(result) != "deny", (
+            f"foreground subagent Agent dispatch must NOT deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_allows_main_thread_background_dispatch():
+    """A background Agent dispatch from the MAIN thread (no agent_id) → ALLOW —
+    the main thread receives child messages, so the deadlock is
+    subagent-parent-specific; the deny keys on agent_id."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_containment(
+            _agent_preToolUse_json(run_in_background=True),
+            state_dir,
+        )
+        assert _containment_decision(result) != "deny", (
+            f"main-thread background Agent dispatch must NOT deny; "
             f"stdout: {result.stdout!r}"
         )
 
@@ -6168,6 +6239,12 @@ _TESTS = [
     ("test_containment_allows_unrelated_bash",    test_containment_allows_unrelated_bash),
     ("test_containment_allows_recursive_agent_dispatch",
      test_containment_allows_recursive_agent_dispatch),
+    ("test_containment_denies_background_subagent_dispatch",
+     test_containment_denies_background_subagent_dispatch),
+    ("test_containment_allows_foreground_subagent_dispatch",
+     test_containment_allows_foreground_subagent_dispatch),
+    ("test_containment_allows_main_thread_background_dispatch",
+     test_containment_allows_main_thread_background_dispatch),
     ("test_containment_denies_second_feature_commit",
      test_containment_denies_second_feature_commit),
     ("test_containment_allows_same_feature_commit",
