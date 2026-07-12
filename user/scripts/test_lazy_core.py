@@ -33844,5 +33844,223 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# WU-1 (harden-degrade-test / intervention-target-signal-validation) — RED
+# tests for symbols that do not exist yet:
+#   - lazy_core._INTERVENTION_EVENT_VOCABULARY (frozenset)
+#   - lazy_core.validate_intervention_target_signal(target_signal) -> str|None
+#   - a degrade-to-"undeclared" branch inside record_intervention() for an
+#     unknown event:<type> target (Verified Symptom (a): currently the
+#     literal target_signal is kept and a bogus baseline is frozen/unavailable
+#     against a nonexistent event type instead of degrading honestly).
+# ---------------------------------------------------------------------------
+
+# The 10 documented KNOWN event types (the live emit set minus
+# "containment-refusal"/"gate-refusal" duplication concerns — this list is
+# checked for membership only; Group C separately proves this list truly
+# matches every append_telemetry_event(...) call site across the three
+# source files via AST, so it can never silently drift from the emitters).
+_KNOWN_INTERVENTION_EVENTS = [
+    "run-start",
+    "run-end",
+    "cycle-begin",
+    "cycle-end",
+    "pseudo-applied",
+    "dispatch",
+    "halt",
+    "sentinel-resolved",
+    "gate-refusal",
+    "containment-refusal",
+]
+
+
+def test_validate_intervention_target_signal_accepts_known_events():
+    """Group A: every documented event:<type> target with a KNOWN type
+    validates as None (no error)."""
+    _guard()
+    for ev in _KNOWN_INTERVENTION_EVENTS:
+        target = f"event:{ev}"
+        result = lazy_core.validate_intervention_target_signal(target)
+        assert result is None, (
+            f"{target!r} is a known event and should validate as None; "
+            f"got {result!r}"
+        )
+
+
+def test_validate_intervention_target_signal_accepts_kpi_and_undeclared():
+    """Group A: a kpi:<sys>.<id> target and the literal 'undeclared' both
+    validate as None (they are not event: types and are valid regardless)."""
+    _guard()
+    assert lazy_core.validate_intervention_target_signal("kpi:foo.bar") is None
+    assert lazy_core.validate_intervention_target_signal("undeclared") is None
+
+
+def test_validate_intervention_target_signal_rejects_event_no_route():
+    """Group A: 'event:no-route' is NOT in the known vocabulary — must
+    return a non-None error string that NAMES the valid set (proven here by
+    asserting a real known event name appears as a substring)."""
+    _guard()
+    result = lazy_core.validate_intervention_target_signal("event:no-route")
+    assert result is not None, "event:no-route must be rejected, not accepted"
+    assert isinstance(result, str), f"error must be a string; got {result!r}"
+    assert any(name in result for name in ("gate-refusal", "containment-refusal")), (
+        f"error message must NAME the valid event set; got: {result!r}"
+    )
+
+
+def test_validate_intervention_target_signal_rejects_event_route_loop():
+    """Group A: 'event:route-loop' is likewise NOT in the known vocabulary —
+    must return a non-None error string naming the valid set."""
+    _guard()
+    result = lazy_core.validate_intervention_target_signal("event:route-loop")
+    assert result is not None, "event:route-loop must be rejected, not accepted"
+    assert isinstance(result, str), f"error must be a string; got {result!r}"
+    assert any(name in result for name in ("gate-refusal", "containment-refusal")), (
+        f"error message must NAME the valid event set; got: {result!r}"
+    )
+
+
+_TESTS = _TESTS + [
+    ("test_validate_intervention_target_signal_accepts_known_events",
+     test_validate_intervention_target_signal_accepts_known_events),
+    ("test_validate_intervention_target_signal_accepts_kpi_and_undeclared",
+     test_validate_intervention_target_signal_accepts_kpi_and_undeclared),
+    ("test_validate_intervention_target_signal_rejects_event_no_route",
+     test_validate_intervention_target_signal_rejects_event_no_route),
+    ("test_validate_intervention_target_signal_rejects_event_route_loop",
+     test_validate_intervention_target_signal_rejects_event_route_loop),
+]
+
+
+def test_record_intervention_degrades_unknown_event_target(tmp_path):
+    """Group B (pytest-only, tmp_path — NOT in the manual _TESTS runner):
+    serving-path regression for the bug's Verified Symptom (a). An unknown
+    event:<type> hypothesis target must DEGRADE to target_signal:
+    "undeclared" with baseline_status "not-computable" (never a frozen bogus
+    zero-count / unavailable baseline against a type that was never a real
+    telemetry event), and the degrade must emit a diagnostic naming the
+    rejected type.
+
+    RED today: the current record_intervention keeps the literal
+    "event:no-route" as target_signal and computes/`unavailable`s a baseline
+    against that nonexistent event type instead of degrading — so
+    target_signal/baseline_status assertions below fail, and no diagnostic
+    naming "no-route" is ever appended (record_intervention has no degrade
+    branch at all yet).
+    """
+    _guard()
+    state_dir = tmp_path / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    _set_state_dir(state_dir)
+    lazy_core._DIAGNOSTICS.clear()
+    try:
+        res = lazy_core.record_intervention(
+            tmp_path,
+            "harden-degrade-test",
+            pipeline="hardening",
+            hypothesis_overrides={"target_signal": "event:no-route"},
+        )
+        assert res["recorded"] is True, res
+        assert res["target_signal"] == "undeclared", (
+            f"unknown event type must degrade target_signal to 'undeclared'; "
+            f"got {res.get('target_signal')!r}"
+        )
+        assert res["baseline_status"] == "not-computable", (
+            f"a degraded target must record baseline_status 'not-computable', "
+            f"never a frozen/unavailable count against a bogus event type; "
+            f"got {res.get('baseline_status')!r}"
+        )
+
+        record_path = tmp_path / "docs" / "interventions" / "harden-degrade-test.md"
+        assert record_path.exists(), f"record file missing at {record_path}"
+        text = record_path.read_text(encoding="utf-8")
+        assert "target_signal: undeclared" in text, (
+            f"on-disk record must carry target_signal: undeclared; got:\n{text}"
+        )
+        assert "not-computable" in text, (
+            f"on-disk record must carry a not-computable baseline status; got:\n{text}"
+        )
+
+        assert any("no-route" in entry for entry in lazy_core._DIAGNOSTICS), (
+            "the degrade must emit a _diag() entry naming the rejected "
+            f"'no-route' type; got _DIAGNOSTICS={lazy_core._DIAGNOSTICS}"
+        )
+    finally:
+        _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# Group C — vocabulary drift guard: _INTERVENTION_EVENT_VOCABULARY must equal
+# the LIVE emit set (every string literal passed as the first positional arg
+# to append_telemetry_event(...) across lazy_core.py, lazy-state.py, and
+# bug-state.py). Mirrors the `_collect_orphaned_test_names` AST-collector
+# idiom (pure collector + a self-checking test), pinned to THIS module's
+# directory so the test is CWD-independent.
+# ---------------------------------------------------------------------------
+
+def _collect_telemetry_event_literals(source: str) -> "set[str]":
+    """Pure AST collector: return the set of string literals passed as the
+    FIRST POSITIONAL argument to every ``append_telemetry_event(...)`` call
+    in ``source`` (bare ``Name`` calls and ``obj.append_telemetry_event(...)``
+    ``Attribute`` calls alike). Only ``args[0]`` is inspected — keyword
+    arguments (e.g. ``data={...}``) are NEVER inspected, so incidental string
+    literals inside a call's ``data=`` dict (e.g. ``"pseudo"``) can never be
+    wrongly folded into the collected event-type set.
+    """
+    tree = ast.parse(source)
+    literals: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        is_target = (
+            (isinstance(func, ast.Name) and func.id == "append_telemetry_event")
+            or (isinstance(func, ast.Attribute)
+                and func.attr == "append_telemetry_event")
+        )
+        if not is_target:
+            continue
+        if not node.args:
+            continue
+        first = node.args[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            literals.add(first.value)
+    return literals
+
+
+def test_intervention_event_vocabulary_matches_live_emit_set():
+    """Group C: `lazy_core._INTERVENTION_EVENT_VOCABULARY` must SET-EQUAL the
+    live emit set collected via AST from lazy_core.py + lazy-state.py +
+    bug-state.py — the constant can never silently drift from the actual
+    emitters. RED today: `_INTERVENTION_EVENT_VOCABULARY` does not exist yet.
+    """
+    _guard()
+    scripts_dir = Path(__file__).parent
+    sources = [
+        scripts_dir / "lazy_core.py",
+        scripts_dir / "lazy-state.py",
+        scripts_dir / "bug-state.py",
+    ]
+    collected: "set[str]" = set()
+    for path in sources:
+        collected |= _collect_telemetry_event_literals(
+            path.read_text(encoding="utf-8")
+        )
+    assert collected, "collector found zero append_telemetry_event(...) literals"
+    vocabulary = lazy_core._INTERVENTION_EVENT_VOCABULARY
+    assert collected == vocabulary, (
+        f"live emit set {sorted(collected)} != "
+        f"_INTERVENTION_EVENT_VOCABULARY {sorted(vocabulary)} "
+        f"(missing from constant: {sorted(collected - vocabulary)}; "
+        f"extra in constant: {sorted(vocabulary - collected)})"
+    )
+
+
+_TESTS = _TESTS + [
+    ("test_intervention_event_vocabulary_matches_live_emit_set",
+     test_intervention_event_vocabulary_matches_live_emit_set),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

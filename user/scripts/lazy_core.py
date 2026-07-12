@@ -16479,6 +16479,53 @@ def _intervention_signal_event(target_signal: str) -> str | None:
     return None
 
 
+# The CLOSED vocabulary of telemetry event types (intervention-target-signal-
+# validation). These are the exact string literals passed as the FIRST
+# POSITIONAL argument to every ``append_telemetry_event(...)`` call site
+# across lazy_core.py / lazy-state.py / bug-state.py — the D4-B ledger
+# vocabulary plus ``sentinel-provisionalized``. Kept in lockstep with the
+# real emitters by the AST-driven lock test
+# ``test_intervention_event_vocabulary_matches_live_emit_set`` (never edit
+# this set without re-running that test — a silent drift here would let
+# ``validate_intervention_target_signal`` accept/reject the wrong things).
+_INTERVENTION_EVENT_VOCABULARY: frozenset[str] = frozenset({
+    "run-start",
+    "run-end",
+    "cycle-begin",
+    "cycle-end",
+    "pseudo-applied",
+    "dispatch",
+    "halt",
+    "sentinel-resolved",
+    "gate-refusal",
+    "containment-refusal",
+    "sentinel-provisionalized",
+})
+
+
+def validate_intervention_target_signal(target_signal: str) -> str | None:
+    """Validate an intervention hypothesis ``target_signal`` string. PURE.
+
+    Only ``event:<type>`` targets are checked against the closed
+    ``_INTERVENTION_EVENT_VOCABULARY``: an unknown type returns a
+    human-readable error string naming the valid set. A ``kpi:<sys>.<id>``
+    target, the literal ``"undeclared"``, or any other non-``event:`` string
+    is always valid (returns ``None``) — kpi targets resolve later through
+    the friction-kpi-registry, and ``undeclared`` is the honest no-hypothesis
+    default.
+    """
+    if isinstance(target_signal, str) and target_signal.startswith("event:"):
+        ev_type = target_signal[len("event:"):]
+        if ev_type in _INTERVENTION_EVENT_VOCABULARY:
+            return None
+        valid = ", ".join(sorted(_INTERVENTION_EVENT_VOCABULARY))
+        return (
+            f"unknown intervention event type {ev_type!r}; "
+            f"valid event types: {valid}"
+        )
+    return None
+
+
 def _originating_telemetry_paths(current_repo_root, *, now: float | None = None) -> "list[Path]":
     """Resolve the telemetry-ledger paths of the run's ORIGINATING TARGET repo
     (interventions-telemetry-repo-scope-split-brain D1 v1).
@@ -16950,6 +16997,14 @@ def record_intervention(
             {k: v for k, v in hypothesis_overrides.items() if v is not None}
         )
     target_signal = hyp.get("target_signal") or "undeclared"
+    _rejected_target = target_signal
+    _target_err = validate_intervention_target_signal(target_signal)
+    if _target_err is not None:
+        target_signal = "undeclared"
+        _diag(
+            f"record_intervention: unknown event target "
+            f"'{_rejected_target}' degraded to undeclared ({_target_err})"
+        )
     expected_direction = hyp.get("expected_direction") or "undeclared"
     signal_independence = hyp.get("signal_independence") or "undeclared"
 
