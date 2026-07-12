@@ -3703,6 +3703,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/run-end-gate-refusals-no-telemetry-event/PHASES.md": [
+    {
+      "id": "run-end-gate-refusals-no-telemetry-event",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/run-end-gate-refusals-no-telemetry-event/plans/fix-run-end-gate-refusal-telemetry.md": [
+    {
+      "id": "run-end-gate-refusals-no-telemetry-event",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/single-slot-marker-ownership-race-disarms-owning-run/PHASES.md": [
     {
       "id": "single-slot-marker-ownership-race-disarms-owning-run",
@@ -6488,6 +6502,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "run-end-gate-refusals-no-telemetry-event",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "code-doc-provenance-linkage",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -6648,6 +6667,11 @@
       "id": "per-feature-cycle-cap-defers-incomplete-work",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "run-end-gate-refusals-no-telemetry-event",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "stub-spec-route-loops-until-queue-stub-cleared",
@@ -7243,6 +7267,11 @@
       "id": "per-feature-cycle-cap-defers-incomplete-work",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "run-end-gate-refusals-no-telemetry-event",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "skip-mcp-test-frontmatter-unquoted-colon",
