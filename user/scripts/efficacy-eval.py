@@ -1111,7 +1111,7 @@ def main(argv: "list[str] | None" = None) -> int:
     # satisfy the gate (a /lazy-batch-retro citation pass is not a flush).
     # Marker-gated + fail-open inside the helper (no run marker → no-op).
     if not args.dry_run:
-        lazy_core.drop_efficacy_breadcrumb()
+        lazy_core.drop_efficacy_breadcrumb(str(repo_root))
 
     today = datetime.date.today().isoformat()
 

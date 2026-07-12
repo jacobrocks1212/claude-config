@@ -79,7 +79,7 @@ All three WUs share `lazy_core.py` and/or `test_lazy_core.py`, so they run in **
 ## Work Units
 
 - [x] WU-1 — Merged cross-repo intervention-telemetry read
-- [ ] WU-2 — Coverage-bearing efficacy breadcrumb + evaluator caller
+- [x] WU-2 — Coverage-bearing efficacy breadcrumb + evaluator caller
 - [ ] WU-3 — Scope-checking `--run-end` gate (coupled pair)
 
 ---

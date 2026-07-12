@@ -15829,18 +15829,135 @@ def _raw_marker_started_at() -> str | None:
         return None
 
 
-def drop_efficacy_breadcrumb(now: float | None = None) -> bool:
+def _run_marker_state_dir(*, now: float | None = None) -> "tuple[Path, str] | None":
+    """Resolve the LIVE run marker's state dir: the active repo's dir when it
+    holds a live marker, else the most-recent live marker found in a keyed
+    sibling subdir of the state base (interventions-telemetry-repo-scope-split-brain
+    WU-2).
+
+    The active (flat) state dir can hold NO marker at all when the run
+    originated for a DIFFERENT repo than the one currently bound as active —
+    the same split-brain ``_originating_telemetry_paths`` was built to close,
+    whose scan approach this helper reuses (state base = ``LAZY_STATE_DIR`` if
+    set else ``~/.claude/state``; enumerate subdirs; RAW-read each marker;
+    age-filter via ``_MARKER_STALE_SECONDS``).
+
+    RAW, NON-destructive reads only (never ``read_run_marker``, which deletes
+    stale markers); no state-dir creation on this read path. Fully fail-open —
+    any error yields None.
+
+    Returns:
+        ``(state_dir, started_at)`` for the most-recent live marker found, or
+        None when no live marker exists anywhere.
+    """
+    if now is None:
+        now = time.time()
+    try:
+        active = claude_state_dir(create=False)
+        try:
+            marker_path = active / _MARKER_FILENAME
+            marker = json.loads(marker_path.read_text(encoding="utf-8"))
+            if isinstance(marker, dict):
+                started_at_str = marker.get("started_at", "")
+                started_dt = datetime.datetime.strptime(
+                    started_at_str, "%Y-%m-%dT%H:%M:%SZ"
+                )
+                started_epoch = (
+                    started_dt - datetime.datetime(1970, 1, 1)
+                ).total_seconds()
+                if now - started_epoch <= _MARKER_STALE_SECONDS:
+                    return (active, started_at_str)
+        except Exception:  # noqa: BLE001 — fall through to the sibling scan
+            pass
+
+        override = os.environ.get("LAZY_STATE_DIR")
+        base = Path(override) if override else (Path.home() / ".claude" / "state")
+        if not base.is_dir():
+            return None
+        best_dir: Path | None = None
+        best_started: float | None = None
+        best_started_str: str | None = None
+        for d in sorted(base.iterdir(), key=lambda p: p.name):
+            if not d.is_dir():
+                continue
+            try:
+                marker_path = d / _MARKER_FILENAME
+                marker = json.loads(marker_path.read_text(encoding="utf-8"))
+                if not isinstance(marker, dict):
+                    continue
+                started_at_str = marker.get("started_at", "")
+                started_dt = datetime.datetime.strptime(
+                    started_at_str, "%Y-%m-%dT%H:%M:%SZ"
+                )
+                started_epoch = (
+                    started_dt - datetime.datetime(1970, 1, 1)
+                ).total_seconds()
+                if now - started_epoch > _MARKER_STALE_SECONDS:
+                    continue  # stale
+            except Exception:  # noqa: BLE001
+                continue  # unparseable marker in this subdir — skip it
+            if best_started is None or started_epoch > best_started:
+                best_started = started_epoch
+                best_dir = d
+                best_started_str = started_at_str
+        if best_dir is None or best_started_str is None:
+            return None
+        return (best_dir, best_started_str)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _repo_is_interventions_bearing(repo_root) -> bool:
+    """True iff ``repo_root`` opts into interventions capture: the
+    ``docs/features/queue.json`` ``interventions: true`` flag, OR a
+    ``docs/interventions/*.md`` hypothesis-ledger file other than
+    ``CLAUDE.md``/``README.md``.
+
+    Read-only, defensive: any error (missing dir, malformed queue.json, a
+    permission error) yields False rather than raising — a scope-coverage
+    breadcrumb must never wedge on a bad repo path.
+    """
+    try:
+        root = Path(repo_root)
+        if _interventions_queue_flag(root):
+            return True
+        interventions_dir = root / "docs" / "interventions"
+        if interventions_dir.is_dir():
+            for p in interventions_dir.glob("*.md"):
+                if p.name not in ("CLAUDE.md", "README.md"):
+                    return True
+        return False
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def drop_efficacy_breadcrumb(
+    covered_repo_root: str | None = None, *, now: float | None = None
+) -> bool:
     """Drop the run-scoped "efficacy flush ran this run" breadcrumb that the
     --run-end gate checks (efficacy-future-check-unenforced-orchestrator-prose).
 
     Called by EACH trio member (efficacy-eval.py review + --canary, incident-scan)
     on a real (non-dry-run) invocation, EVEN on a clean no-op — running the flush
-    is what discharges the gate.  MARKER-GATED (no live run marker → no write,
-    return False — an on-demand invocation outside a run leaves no residue) and
-    FAIL-OPEN (any write error → False; the flush must never wedge on a breadcrumb
-    write).
+    is what discharges the gate.  MARKER-GATED (no live run marker anywhere —
+    neither the active repo's state dir nor any keyed sibling — → no write,
+    return False) and FAIL-OPEN (any error → False; the flush must never wedge
+    on a breadcrumb write).
+
+    interventions-telemetry-repo-scope-split-brain WU-2: the breadcrumb now
+    ALSO records covered repo-scope(s) — which repo(s) this run's flush(es)
+    actually covered (``covered_scopes``, a sorted list of ``repo_key``s) and
+    whether ANY covered scope opts into interventions capture
+    (``interventions_covered``) — so a flush that never covers the
+    interventions-bearing repo can be told apart from one that genuinely did.
+    The breadcrumb is written into the LIVE run marker's OWN state dir (see
+    ``_run_marker_state_dir`` — this may differ from the active repo's dir),
+    read-merged (accumulated) across calls sharing the SAME ``run_started_at``.
 
     Args:
+        covered_repo_root: the repo whose scope this call covers. Defaults to
+            the active repo (back-compat for the legacy no-arg call — e.g.
+            incident-scan.py, which binds the active repo before calling).
         now: epoch float for the ``ts`` field (injectable for hermetic tests).
 
     Returns:
@@ -15849,12 +15966,36 @@ def drop_efficacy_breadcrumb(now: float | None = None) -> bool:
     """
     if now is None:
         now = time.time()
-    started_at = _raw_marker_started_at()
-    if started_at is None:
+    loc = _run_marker_state_dir(now=now)
+    if loc is None:
         return False
     try:
-        crumb_path = claude_state_dir() / _EFFICACY_BREADCRUMB_FILENAME
-        body = json.dumps({"run_started_at": started_at, "ts": now}) + "\n"
+        run_dir, started_at = loc
+        covered_root = covered_repo_root or active_repo_root()
+        covered_key = repo_key(str(covered_root))
+        interventions_bearing = _repo_is_interventions_bearing(covered_root)
+
+        crumb_path = run_dir / _EFFICACY_BREADCRUMB_FILENAME
+        covered: set = set()
+        interv = False
+        try:
+            if crumb_path.exists():
+                prev = json.loads(crumb_path.read_text(encoding="utf-8"))
+                if isinstance(prev, dict) and prev.get("run_started_at") == started_at:
+                    covered = set(prev.get("covered_scopes") or [])
+                    interv = bool(prev.get("interventions_covered"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            pass
+
+        covered.add(covered_key)
+        interv = interv or interventions_bearing
+
+        body = json.dumps({
+            "run_started_at": started_at,
+            "ts": now,
+            "covered_scopes": sorted(covered),
+            "interventions_covered": interv,
+        }) + "\n"
         _atomic_write(crumb_path, body)
         return True
     except Exception:  # noqa: BLE001 — fail-open: a breadcrumb write never wedges

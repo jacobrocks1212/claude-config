@@ -33594,5 +33594,202 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# drop_efficacy_breadcrumb — COVERAGE-BEARING breadcrumb (WU-2).
+#
+# The breadcrumb today records only that the efficacy trio was INVOKED
+# ({run_started_at, ts}) — not WHICH repo-scope it covered. A flush that never
+# covers the interventions-bearing repo (claude-config) still discharges the
+# --run-end gate. The new contract:
+#   drop_efficacy_breadcrumb(covered_repo_root=None, *, now=None) -> bool
+# resolves the LIVE run marker's keyed dir (active dir first, else the
+# most-recent live marker in a keyed sibling subdir of the state base), then
+# READ-MERGE-WRITEs ONE breadcrumb carrying {run_started_at, ts,
+# covered_scopes: sorted([...]), interventions_covered: bool}, ACCUMULATING
+# across calls for the SAME run_started_at.
+# ---------------------------------------------------------------------------
+
+def _make_interventions_bearing_repo(root: "Path") -> None:
+    """Mark `root` interventions-bearing via the queue.json opt-in flag."""
+    features_dir = root / "docs" / "features"
+    features_dir.mkdir(parents=True, exist_ok=True)
+    (features_dir / "queue.json").write_text(
+        json.dumps({"interventions": True, "queue": []}), encoding="utf-8"
+    )
+
+
+def test_drop_efficacy_breadcrumb_records_covered_scope_and_interventions_flag():
+    """drop_efficacy_breadcrumb(covered_repo_root) records the covered repo's
+    key in covered_scopes and sets interventions_covered True when that repo
+    opts in. RED today: the current payload has neither key."""
+    _guard()
+    with tempfile.TemporaryDirectory() as base_td, \
+         tempfile.TemporaryDirectory() as covered_td:
+        base = Path(base_td)
+        covered_root = Path(covered_td)
+        _set_state_dir(base)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(base),
+                max_cycles=5,
+            )
+            _make_interventions_bearing_repo(covered_root)
+
+            assert lazy_core.drop_efficacy_breadcrumb(str(covered_root)) is True
+
+            crumb_path = base / lazy_core._EFFICACY_BREADCRUMB_FILENAME
+            crumb = json.loads(crumb_path.read_text(encoding="utf-8"))
+            covered_key = lazy_core.repo_key(str(covered_root))
+            assert covered_key in crumb.get("covered_scopes", []), crumb
+            assert crumb.get("interventions_covered") is True, crumb
+        finally:
+            _clear_state_dir()
+
+
+def test_drop_efficacy_breadcrumb_accumulates_two_scopes():
+    """Two drop_efficacy_breadcrumb calls for the SAME run_started_at
+    ACCUMULATE covered_scopes (union) and OR the interventions_covered flag —
+    the claude-config-second-flush case where the trio flushes once per repo
+    scope within one run. RED today: no covered_scopes key exists at all."""
+    _guard()
+    with tempfile.TemporaryDirectory() as base_td, \
+         tempfile.TemporaryDirectory() as non_iv_td, \
+         tempfile.TemporaryDirectory() as iv_td:
+        base = Path(base_td)
+        non_interventions_root = Path(non_iv_td)
+        interventions_root = Path(iv_td)
+        _set_state_dir(base)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(base),
+                max_cycles=5,
+            )
+            _make_interventions_bearing_repo(interventions_root)
+
+            assert lazy_core.drop_efficacy_breadcrumb(
+                str(non_interventions_root)
+            ) is True
+            assert lazy_core.drop_efficacy_breadcrumb(
+                str(interventions_root)
+            ) is True
+
+            crumb_path = base / lazy_core._EFFICACY_BREADCRUMB_FILENAME
+            crumb = json.loads(crumb_path.read_text(encoding="utf-8"))
+            covered = set(crumb.get("covered_scopes", []))
+            assert lazy_core.repo_key(str(non_interventions_root)) in covered, crumb
+            assert lazy_core.repo_key(str(interventions_root)) in covered, crumb
+            assert crumb.get("interventions_covered") is True, crumb
+        finally:
+            _clear_state_dir()
+
+
+def test_drop_efficacy_breadcrumb_non_interventions_scope_flag_false():
+    """A single call covering a NON-interventions-bearing repo records that
+    repo's key but leaves interventions_covered False. RED today: neither key
+    exists."""
+    _guard()
+    with tempfile.TemporaryDirectory() as base_td, \
+         tempfile.TemporaryDirectory() as non_iv_td:
+        base = Path(base_td)
+        non_interventions_root = Path(non_iv_td)
+        _set_state_dir(base)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(base),
+                max_cycles=5,
+            )
+
+            assert lazy_core.drop_efficacy_breadcrumb(
+                str(non_interventions_root)
+            ) is True
+
+            crumb_path = base / lazy_core._EFFICACY_BREADCRUMB_FILENAME
+            crumb = json.loads(crumb_path.read_text(encoding="utf-8"))
+            assert lazy_core.repo_key(str(non_interventions_root)) in crumb.get(
+                "covered_scopes", []
+            ), crumb
+            assert crumb.get("interventions_covered") is False, crumb
+        finally:
+            _clear_state_dir()
+
+
+def test_drop_efficacy_breadcrumb_writes_into_run_marker_dir_when_active_has_none():
+    """CROSS-DIR case: the active (flat) state dir holds NO live marker, but a
+    keyed sibling subdir does. The breadcrumb must be written into the RUN
+    MARKER's dir (the keyed sibling), NOT the flat active dir — the
+    claude-config-second-flush scenario where the orchestrator's active repo
+    differs from the run's originating target. RED today: drop_efficacy_
+    breadcrumb only ever reads/writes claude_state_dir() (the active dir) and
+    returns False here (no marker found there) instead of falling back."""
+    _guard()
+    with tempfile.TemporaryDirectory() as base_td, \
+         tempfile.TemporaryDirectory() as target_td, \
+         tempfile.TemporaryDirectory() as iv_td:
+        base = Path(base_td)
+        target_root = Path(target_td)
+        interventions_root = Path(iv_td)
+        _set_state_dir(base)
+        try:
+            keyed_dir = _write_target_marker(
+                base, target_root, started_at=_fresh_started_at()
+            )
+            _make_interventions_bearing_repo(interventions_root)
+
+            assert lazy_core.drop_efficacy_breadcrumb(
+                str(interventions_root)
+            ) is True
+
+            target_crumb_path = keyed_dir / lazy_core._EFFICACY_BREADCRUMB_FILENAME
+            flat_crumb_path = base / lazy_core._EFFICACY_BREADCRUMB_FILENAME
+            assert target_crumb_path.exists(), (
+                f"breadcrumb must land in the run marker's keyed dir: {keyed_dir}"
+            )
+            assert not flat_crumb_path.exists(), (
+                "breadcrumb must NOT be written into the marker-less active dir"
+            )
+            crumb = json.loads(target_crumb_path.read_text(encoding="utf-8"))
+            assert lazy_core.repo_key(str(interventions_root)) in crumb.get(
+                "covered_scopes", []
+            ), crumb
+            assert crumb.get("interventions_covered") is True, crumb
+        finally:
+            _clear_state_dir()
+
+
+def test_drop_efficacy_breadcrumb_marker_gated_returns_false():
+    """With NO live marker anywhere (neither the active flat dir nor any keyed
+    sibling subdir), drop_efficacy_breadcrumb(covered_repo_root) returns False
+    and writes no breadcrumb file — marker-gated, unchanged from today."""
+    _guard()
+    with tempfile.TemporaryDirectory() as base_td, \
+         tempfile.TemporaryDirectory() as any_td:
+        base = Path(base_td)
+        any_root = Path(any_td)
+        _set_state_dir(base)
+        try:
+            assert lazy_core.drop_efficacy_breadcrumb(str(any_root)) is False
+            flat_crumb_path = base / lazy_core._EFFICACY_BREADCRUMB_FILENAME
+            assert not flat_crumb_path.exists()
+            # No keyed subdir should have been created/written either.
+            for child in base.iterdir():
+                assert not (child / lazy_core._EFFICACY_BREADCRUMB_FILENAME).exists()
+        finally:
+            _clear_state_dir()
+
+
+_TESTS = _TESTS + [
+    ("test_drop_efficacy_breadcrumb_records_covered_scope_and_interventions_flag",
+     test_drop_efficacy_breadcrumb_records_covered_scope_and_interventions_flag),
+    ("test_drop_efficacy_breadcrumb_accumulates_two_scopes",
+     test_drop_efficacy_breadcrumb_accumulates_two_scopes),
+    ("test_drop_efficacy_breadcrumb_non_interventions_scope_flag_false",
+     test_drop_efficacy_breadcrumb_non_interventions_scope_flag_false),
+    ("test_drop_efficacy_breadcrumb_writes_into_run_marker_dir_when_active_has_none",
+     test_drop_efficacy_breadcrumb_writes_into_run_marker_dir_when_active_has_none),
+    ("test_drop_efficacy_breadcrumb_marker_gated_returns_false",
+     test_drop_efficacy_breadcrumb_marker_gated_returns_false),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())
