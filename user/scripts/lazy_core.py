@@ -15971,7 +15971,24 @@ def drop_efficacy_breadcrumb(
         return False
     try:
         run_dir, started_at = loc
-        covered_root = covered_repo_root or active_repo_root()
+        covered_root = covered_repo_root
+        if covered_root is None:
+            # Prefer the LIVE marker's OWN recorded repo_root — the run's
+            # authoritative scope — over the process-global active_repo_root()
+            # cwd fallback, which can diverge from the marker's repo when the
+            # caller never bound it via set_active_repo_root/--repo-root
+            # (interventions-telemetry-repo-scope-split-brain: a divergent cwd
+            # fallback must never be mistaken for the run's actual scope).
+            try:
+                marker = json.loads(
+                    (run_dir / _MARKER_FILENAME).read_text(encoding="utf-8")
+                )
+                if isinstance(marker, dict) and marker.get("repo_root"):
+                    covered_root = marker["repo_root"]
+            except (OSError, ValueError, json.JSONDecodeError):
+                pass
+            if covered_root is None:
+                covered_root = active_repo_root()
         covered_key = repo_key(str(covered_root))
         interventions_bearing = _repo_is_interventions_bearing(covered_root)
 
@@ -16003,10 +16020,16 @@ def drop_efficacy_breadcrumb(
 
 
 def efficacy_breadcrumb_present(now: float | None = None) -> bool:
-    """Return True iff the end-of-run efficacy flush ran for the CURRENT run —
-    i.e. a breadcrumb exists whose ``run_started_at`` matches the LIVE run
-    marker's ``started_at`` (run-scoped: a stale breadcrumb from a prior run never
-    satisfies the gate).
+    """Return True iff the end-of-run efficacy flush ran for the CURRENT run
+    AND covered an interventions-bearing scope — i.e. a breadcrumb exists whose
+    ``run_started_at`` matches the LIVE run marker's ``started_at`` (run-scoped:
+    a stale breadcrumb from a prior run never satisfies the gate) AND whose
+    ``interventions_covered`` flag is True (coverage-scoped: a flush that only
+    ever touched non-interventions-bearing scopes never satisfies the gate —
+    closing the interventions-telemetry-repo-scope-split-brain COVERAGE hole;
+    the sibling gate that inspects the trio's INVOCATION verified only that the
+    flush ran, never that it ran against a scope where intervention records
+    actually live).
 
     Returns True when there is NO live run marker — the gate is then MOOT (a
     --run-end with no marker is an idempotent no-op that must not be refused).
@@ -16024,7 +16047,9 @@ def efficacy_breadcrumb_present(now: float | None = None) -> bool:
         crumb = json.loads(crumb_path.read_text(encoding="utf-8"))
         if not isinstance(crumb, dict):
             return False
-        return crumb.get("run_started_at") == started_at
+        if crumb.get("run_started_at") != started_at:
+            return False
+        return crumb.get("interventions_covered") is True
     except (OSError, ValueError, json.JSONDecodeError):
         return False
 

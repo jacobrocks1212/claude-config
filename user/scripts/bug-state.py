@@ -7327,16 +7327,24 @@ def main() -> int:
                 sys.stdout.write(json.dumps({
                     "run_marker_deleted": False,
                     "refused": (
-                        "No efficacy-flush breadcrumb for this run. The end-of-run "
-                        "efficacy/canary/incident trio must run before --run-end: "
-                        "`efficacy-eval.py --repo-root .`, "
-                        "`efficacy-eval.py --canary --repo-root .`, and "
-                        "`incident-scan.py --repo-root .` (SKILL §1c.6 flush) each "
-                        "drop a run-scoped breadcrumb even on a clean no-op. Run the "
-                        "trio and re-invoke --run-end, or pass "
+                        "No efficacy-flush breadcrumb COVERING THE "
+                        "INTERVENTIONS-BEARING SCOPE for this run. The end-of-run "
+                        "efficacy/canary/incident trio must run before --run-end "
+                        "against the interventions-bearing scope (claude-config, "
+                        "where intervention records actually live) IN ADDITION TO "
+                        "the target repo: "
+                        "`efficacy-eval.py --repo-root <claude-config>`, "
+                        "`efficacy-eval.py --canary --repo-root <claude-config>`, and "
+                        "`incident-scan.py --repo-root <claude-config>` — alongside "
+                        "the same trio with `--repo-root .` in the target repo (SKILL "
+                        "§1c.6 flush). Each drops a run-scoped breadcrumb even on a "
+                        "clean no-op, but a target-only flush no longer discharges "
+                        "this gate. Run the trio against the interventions-bearing "
+                        "scope and re-invoke --run-end, or pass "
                         "--efficacy-skip-authorized to deliberately skip (recorded "
                         "for retro grading). The marker was NOT deleted. "
-                        "[efficacy-future-check-unenforced-orchestrator-prose]"
+                        "[efficacy-future-check-unenforced-orchestrator-prose] "
+                        "[interventions-telemetry-repo-scope-split-brain]"
                     ),
                 }, indent=2) + "\n")
                 # run-end-gate-refusals-no-telemetry-event (coupled-pair mirror
@@ -7346,8 +7354,9 @@ def main() -> int:
                 lazy_core.append_telemetry_event(
                     "gate-refusal",
                     item_id=None,
-                    data={"gate": "efficacy-flush-missing", "op": "--run-end",
-                          "reason": "missing efficacy-flush breadcrumb"},
+                    data={"gate": "efficacy-coverage-missing", "op": "--run-end",
+                          "reason": "efficacy flush did not cover the "
+                                    "interventions-bearing scope"},
                 )
                 return 1
             efficacy_skip_note = (

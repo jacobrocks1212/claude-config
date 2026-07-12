@@ -19981,7 +19981,11 @@ def test_efficacy_breadcrumb_absent_present_false_then_drop_true():
     """With a live run marker: efficacy_breadcrumb_present is False BEFORE the
     trio runs (the gate would REFUSE), and True AFTER drop_efficacy_breadcrumb
     (the gate PASSES). This is the refuse-without / pass-with pair at the helper
-    level that the --run-end gate wires."""
+    level that the --run-end gate wires.
+
+    Coverage-aware update: the marker's own repo_root (`td`) is made
+    INTERVENTIONS-BEARING so that after the drop, interventions_covered is True
+    and the gate is satisfied under the new coverage-aware semantics."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         _set_state_dir(Path(td))
@@ -19989,11 +19993,48 @@ def test_efficacy_breadcrumb_absent_present_false_then_drop_true():
             lazy_core.write_run_marker(
                 pipeline="feature", cloud=False, repo_root=td, max_cycles=5,
             )
+            _make_interventions_bearing_repo(Path(td))
             # Before the flush: no breadcrumb → gate would refuse.
             assert lazy_core.efficacy_breadcrumb_present() is False
-            # Trio runs → breadcrumb dropped → gate passes.
+            # Trio runs, covering the interventions-bearing repo_root → gate passes.
             assert lazy_core.drop_efficacy_breadcrumb() is True
             assert lazy_core.efficacy_breadcrumb_present() is True
+        finally:
+            _clear_state_dir()
+
+
+def test_efficacy_breadcrumb_present_requires_interventions_coverage():
+    """RED: efficacy_breadcrumb_present must be COVERAGE-AWARE, not just
+    presence-aware. A breadcrumb dropped for a scope that is NOT
+    interventions-bearing must NOT satisfy the gate (interventions_covered is
+    False) — the interventions-bearing scope was never actually covered. Once a
+    SEPARATE interventions-bearing scope is covered for the SAME run
+    (accumulating into the same breadcrumb), the gate is satisfied."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td, \
+         tempfile.TemporaryDirectory() as iv_td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=td, max_cycles=5,
+            )
+            # `td` itself is NOT interventions-bearing (no queue.json opt-in).
+            assert lazy_core.drop_efficacy_breadcrumb() is True, (
+                "breadcrumb write must still succeed (marker-gated only)"
+            )
+            assert lazy_core.efficacy_breadcrumb_present() is False, (
+                "a breadcrumb covering only a non-interventions-bearing scope "
+                "must NOT satisfy the gate"
+            )
+
+            # Now cover a SEPARATE interventions-bearing scope for the SAME run.
+            interventions_root = Path(iv_td)
+            _make_interventions_bearing_repo(interventions_root)
+            assert lazy_core.drop_efficacy_breadcrumb(str(interventions_root)) is True
+            assert lazy_core.efficacy_breadcrumb_present() is True, (
+                "once an interventions-bearing scope is covered this run, "
+                "the gate must pass"
+            )
         finally:
             _clear_state_dir()
 
@@ -24501,6 +24542,8 @@ _TESTS = _TESTS + [
      test_efficacy_breadcrumb_marker_gated_and_moot),
     ("test_efficacy_breadcrumb_absent_present_false_then_drop_true",
      test_efficacy_breadcrumb_absent_present_false_then_drop_true),
+    ("test_efficacy_breadcrumb_present_requires_interventions_coverage",
+     test_efficacy_breadcrumb_present_requires_interventions_coverage),
     ("test_efficacy_breadcrumb_run_scoped_stale_does_not_satisfy",
      test_efficacy_breadcrumb_run_scoped_stale_does_not_satisfy),
     ("test_efficacy_breadcrumb_clear_removes_file",

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: interventions-telemetry-repo-scope-split-brain
-status: In-progress
+status: Complete
 created: 2026-07-12
 complexity: complex
 phases: [1, 2]
@@ -80,7 +80,7 @@ All three WUs share `lazy_core.py` and/or `test_lazy_core.py`, so they run in **
 
 - [x] WU-1 — Merged cross-repo intervention-telemetry read
 - [x] WU-2 — Coverage-bearing efficacy breadcrumb + evaluator caller
-- [ ] WU-3 — Scope-checking `--run-end` gate (coupled pair)
+- [x] WU-3 — Scope-checking `--run-end` gate (coupled pair)
 
 ---
 
