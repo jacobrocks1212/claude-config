@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: hardening-intervention-records-unmeasurable-or-missing
-status: Ready
+status: In-progress
 created: 2026-07-12
 complexity: complex
 phases: [1, 2, 3]
