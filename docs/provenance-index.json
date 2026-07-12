@@ -183,6 +183,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "ensure-runtime-false-hijacked-on-owned-serving-runtime",
       "type": "bug",
       "provenance": "backfilled"
@@ -2643,6 +2648,34 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/descoped-row-recognition-needs-canonical-marker/PHASES.md": [
+    {
+      "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/descoped-row-recognition-needs-canonical-marker/SPEC.md": [
+    {
+      "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/descoped-row-recognition-needs-canonical-marker/plans/all-phases-descoped-row-marker-part-1.md": [
+    {
+      "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/descoped-row-recognition-needs-canonical-marker/plans/all-phases-descoped-row-marker-part-2.md": [
+    {
+      "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/doc-drift-lint-single-event-model-blocks-multi-event-hooks/SPEC.md": [
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
@@ -3466,6 +3499,13 @@
       "id": "per-feature-cycle-cap-defers-incomplete-work",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/plan-bug-reuses-investigate-step-inflates-loop-detector/SPEC.md": [
+    {
+      "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/probe-full-read-before-dispatch/PHASES.md": [
@@ -6245,6 +6285,11 @@
   ],
   "docs/specs/turn-routing-enforcement/hardening-log/2026-07.md": [
     {
+      "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -6649,6 +6694,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
@@ -6948,6 +6998,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "ensure-runtime-false-hijacked-on-owned-serving-runtime",
       "type": "bug",
       "provenance": "backfilled"
@@ -7149,6 +7204,11 @@
     }
   ],
   "user/scripts/pipeline_visualizer/curated_stage.py": [
+    {
+      "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "lazy-pipeline-visualizer",
       "type": "feature",
@@ -7421,6 +7481,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "ensure-runtime-false-hijacked-on-owned-serving-runtime",
       "type": "bug",
       "provenance": "backfilled"
@@ -7688,6 +7753,11 @@
   ],
   "user/scripts/tests/baselines/bug-state-test-baseline.txt": [
     {
+      "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
       "type": "bug",
       "provenance": "backfilled"
@@ -7868,6 +7938,13 @@
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/skills/_components/completeness-policy.md": [
+    {
+      "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/_components/completion-integrity-gate.md": [
