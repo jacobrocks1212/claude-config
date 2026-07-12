@@ -7255,6 +7255,101 @@ def test_update_repeat_counts_debounce_inert_without_marker():
     )
 
 
+def test_rebaseline_loop_signature_prevents_false_loop_on_checkpoint_resume():
+    """checkpoint-resume-false-loop-flips-complex-part-to-sonnet Gap 1: a checkpoint
+    --run-end clears the prompt registry and the resuming --run-start recreates it
+    fresh, so the OS-temp signature file's consume_count is stale (registry-relative
+    to the PRE-checkpoint run). rebaseline_loop_signature_after_registry_reset
+    re-baselines it to the fresh registry count so the FIRST re-probe of the same
+    route HOLDS repeat_count instead of inflating to 2 (false LOOP DETECTED). The
+    persisted count/step_count are preserved (a genuine streak survives).
+
+    RED (no rebaseline): prior_consume (3, pre-checkpoint) != current (0, fresh
+    registry) → the F1 debounce cannot prove the re-read → repeat_count 1 → 2 on a
+    route that was NEVER re-dispatched.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)
+        # A run that dispatched: several consumes recorded, then a probe of the
+        # route persists consume_count = 3 alongside count = 1.
+        for _ in range(3):
+            _record_consume(state_dir)
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+            pre = json.loads(sig_path.read_text(encoding="utf-8"))
+            # Simulate the checkpoint --run-end/--run-start registry reset: delete
+            # the registry so consumed_emission_count() drops back to 0 (the marker
+            # is re-written by --run-start; here it simply stays present).
+            (state_dir / lazy_core._REGISTRY_FILENAME).unlink(missing_ok=True)
+            # The resume re-baselines the signature's consume_count BEFORE the next
+            # probe so the debounce recognizes the re-read.
+            did = lazy_core.rebaseline_loop_signature_after_registry_reset(
+                repo_root, signature_path=sig_path,
+            )
+            post = json.loads(sig_path.read_text(encoding="utf-8"))
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["repeat_count"] == 1, f"first probe → 1, got {r1!r}"
+    assert pre.get("consume_count") == 3, f"pre-checkpoint consume_count should be 3, got {pre!r}"
+    assert did is True, "rebaseline should have rewritten the existing signature file"
+    assert post.get("consume_count") == 0, (
+        f"rebaseline must reset consume_count to the fresh (0) registry count, got {post!r}"
+    )
+    # count/step_count preserved so a genuine streak survives.
+    assert post.get("count") == 1 and post.get("step_count") == 1, (
+        f"rebaseline must PRESERVE the persisted streak fields, got {post!r}"
+    )
+    assert r2["repeat_count"] == 1, (
+        f"first re-probe after a checkpoint registry reset must HOLD (a "
+        f"probe→checkpoint→probe is not a stall) once re-baselined, got {r2!r}"
+    )
+
+
+def test_rebaseline_loop_signature_noop_when_absent_or_no_marker():
+    """rebaseline_loop_signature_after_registry_reset is a fail-open no-op when no
+    signature file exists OR no run marker is present (the debounce it feeds is
+    marker-gated). Returns False, creates nothing, never raises."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _set_state_dir(state_dir)
+        try:
+            # (a) No signature file yet, no marker → no-op, no file created.
+            no_file = lazy_core.rebaseline_loop_signature_after_registry_reset(
+                repo_root, signature_path=sig_path,
+            )
+            created = sig_path.exists()
+            # (b) Signature file present but NO marker → still a no-op (marker-gated).
+            sig_path.write_text(json.dumps({"signature": [None, None, None, None],
+                                            "count": 2, "consume_count": 9}), encoding="utf-8")
+            no_marker = lazy_core.rebaseline_loop_signature_after_registry_reset(
+                repo_root, signature_path=sig_path,
+            )
+            unchanged = json.loads(sig_path.read_text(encoding="utf-8"))
+        finally:
+            _clear_state_dir()
+    assert no_file is False, "no signature file → no-op returns False"
+    assert not created, "no-op must NOT create the signature file"
+    assert no_marker is False, "no marker → marker-gated no-op returns False"
+    assert unchanged.get("consume_count") == 9, (
+        f"no-marker no-op must leave the file untouched, got {unchanged!r}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tests: update_repeat_counts — F1 (lazy-validation-readiness) double-probe
 # debounce for repeat_count (dispatch-tuple streak).
@@ -8231,10 +8326,15 @@ def test_emit_cycle_prompt_loop_append_and_model_flip():
     """repeat_count>=2 → loop block appended (fence stripped, tokens bound,
     LOOP DETECTED present) + model=='sonnet'. repeat_count 1/None → no block,
     model=='opus'.
+
+    Uses /retro (an opus-base, NOT complexity-pinned skill) so the loop-flip to
+    sonnet is exercised. A defaulting-to-complex /execute-plan cycle is now
+    complexity-pinned to opus (checkpoint-resume-false-loop-flips-complex-part-to-
+    sonnet), so it would NOT flip — that pin is covered by its own tests below.
     """
     _guard()
     repo = Path("/nonexistent/repo")
-    state = _emit_state(sub_skill="/execute-plan")
+    state = _emit_state(sub_skill="/retro")
 
     # repeat_count == 2 → loop appended, sonnet.
     looped = lazy_core.emit_cycle_prompt(
@@ -8374,8 +8474,12 @@ def test_emit_cycle_prompt_mcp_test_loop_cycle_model_sonnet():
 #   mechanical  → sonnet
 #   complex     → opus
 #   absent/untagged → opus (back-compat — the safe default tier)
-# This composes with the loop-block downgrade (repeat_count >= 2 → sonnet):
-# a looping complex part still downgrades to sonnet.
+# This composes with the loop-block downgrade (repeat_count >= 2 → sonnet) WITH A
+# COMPLEXITY FLOOR (checkpoint-resume-false-loop-flips-complex-part-to-sonnet):
+# a looping *mechanical* part still downgrades to sonnet, but a looping *complex*
+# (or untagged-default-complex) part is PINNED to opus — a complex part on sonnet
+# is HARD-refused by the cycle prompt (model-tier-mismatch), so a loop-flip to
+# sonnet only climbs the stall streak toward a halt.
 
 def _write_complexity_plan(plan_dir: Path, name: str, complexity: str | None) -> Path:
     """Write a minimal plan file carrying an optional complexity tag; return path."""
@@ -8435,9 +8539,13 @@ def test_emit_cycle_prompt_untagged_part_cycle_model_opus():
     assert r["model"] == "opus", f"untagged part expected opus, got {r['model']!r}"
 
 
-def test_emit_cycle_prompt_complex_part_loop_cycle_model_sonnet():
-    """A looping (repeat_count>=2) `complex` part STILL downgrades to sonnet —
-    the loop-block downgrade composes with complexity tiering."""
+def test_emit_cycle_prompt_complex_part_loop_stays_opus():
+    """A looping (repeat_count>=2) `complex` execute-plan part STAYS opus — the
+    loop-flip is capped at the declared complexity floor
+    (checkpoint-resume-false-loop-flips-complex-part-to-sonnet). A complex part on
+    sonnet is HARD-refused by the cycle prompt (model-tier-mismatch), so the flip
+    must NOT downgrade it. The loop block is still appended (model-independent).
+    This MUST fail against the pre-fix unconditional-sonnet loop-flip."""
     _guard()
     repo = Path("/nonexistent/repo")
     with tempfile.TemporaryDirectory() as td:
@@ -8448,8 +8556,46 @@ def test_emit_cycle_prompt_complex_part_loop_cycle_model_sonnet():
             repeat_count=2, template_dir=_REAL_TEMPLATE_DIR,
         )
     assert r is not None and r.get("ok") is True, f"emit: {r}"
-    assert r["model"] == "sonnet", f"looping complex part expected sonnet, got {r['model']!r}"
+    assert r["model"] == "opus", f"looping complex part expected opus, got {r['model']!r}"
     assert "LOOP DETECTED" in r["prompt"], "loop block not appended for looping complex part"
+
+
+def test_emit_cycle_prompt_untagged_part_loop_stays_opus():
+    """A looping (repeat_count>=2) UNTAGGED execute-plan part STAYS opus — the
+    complexity floor uses plan_complexity's SAFE `complex` default for an untagged
+    part, matching the base-tier conservatism (untagged → opus base). Locks the
+    conservative boundary against a future 'downgrade untagged on loop' regression
+    (checkpoint-resume-false-loop-flips-complex-part-to-sonnet, Out of Scope note)."""
+    _guard()
+    repo = Path("/nonexistent/repo")
+    with tempfile.TemporaryDirectory() as td:
+        plan = _write_complexity_plan(Path(td), "part-1.md", None)
+        state = _emit_state(sub_skill="/execute-plan", sub_skill_args=str(plan))
+        r = lazy_core.emit_cycle_prompt(
+            repo, state, pipeline="feature", cloud=False,
+            repeat_count=2, template_dir=_REAL_TEMPLATE_DIR,
+        )
+    assert r is not None and r.get("ok") is True, f"emit: {r}"
+    assert r["model"] == "opus", f"looping untagged part expected opus, got {r['model']!r}"
+    assert "LOOP DETECTED" in r["prompt"], "loop block not appended for looping untagged part"
+
+
+def test_emit_cycle_prompt_mechanical_part_loop_stays_sonnet():
+    """A looping (repeat_count>=2) `mechanical` execute-plan part downgrades to
+    sonnet exactly as before — the complexity floor only pins NON-mechanical parts,
+    so a mechanical part's loop-flip is unaffected."""
+    _guard()
+    repo = Path("/nonexistent/repo")
+    with tempfile.TemporaryDirectory() as td:
+        plan = _write_complexity_plan(Path(td), "part-1.md", "mechanical")
+        state = _emit_state(sub_skill="/execute-plan", sub_skill_args=str(plan))
+        r = lazy_core.emit_cycle_prompt(
+            repo, state, pipeline="feature", cloud=False,
+            repeat_count=2, template_dir=_REAL_TEMPLATE_DIR,
+        )
+    assert r is not None and r.get("ok") is True, f"emit: {r}"
+    assert r["model"] == "sonnet", f"looping mechanical part expected sonnet, got {r['model']!r}"
+    assert "LOOP DETECTED" in r["prompt"], "loop block not appended for looping mechanical part"
 
 
 def test_emit_cycle_prompt_non_execute_plan_ignores_complexity():
@@ -8851,7 +8997,14 @@ def test_emit_cycle_prompt_addenda_before_loop_block():
         f"order must be base < addenda < loop, got base={base_idx} "
         f"addenda={addenda_idx} loop={loop_idx}"
     )
-    assert r["model"] == "sonnet", f"loop block still flips model to sonnet, got {r['model']!r}"
+    # This is a defaulting-to-complex /execute-plan cycle, so the loop-flip is
+    # capped at the opus complexity floor (checkpoint-resume-false-loop-flips-
+    # complex-part-to-sonnet) — the loop block is still appended, but the model
+    # stays opus (the ordering, not the model, is this test's subject).
+    assert r["model"] == "opus", (
+        f"complexity-pinned execute-plan loop keeps opus (loop block still "
+        f"appended), got {r['model']!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -16486,6 +16639,8 @@ _TESTS = [
     ("test_update_repeat_counts_debounce_inert_for_foreign_repo_marker", test_update_repeat_counts_debounce_inert_for_foreign_repo_marker),
     ("test_update_repeat_counts_debounce_legacy_file_without_consume_key", test_update_repeat_counts_debounce_legacy_file_without_consume_key),
     ("test_update_repeat_counts_debounce_inert_without_marker", test_update_repeat_counts_debounce_inert_without_marker),
+    ("test_rebaseline_loop_signature_prevents_false_loop_on_checkpoint_resume", test_rebaseline_loop_signature_prevents_false_loop_on_checkpoint_resume),
+    ("test_rebaseline_loop_signature_noop_when_absent_or_no_marker", test_rebaseline_loop_signature_noop_when_absent_or_no_marker),
     # loop-detected-false-positives Phase 1 — symptom 2 & 4 regression pins
     ("test_symptom2_reboot_reprobe_no_inflation", test_symptom2_reboot_reprobe_no_inflation),
     ("test_symptom4_double_probe_hygiene_no_inflation", test_symptom4_double_probe_hygiene_no_inflation),
@@ -16529,7 +16684,9 @@ _TESTS = [
     ("test_emit_cycle_prompt_mechanical_part_cycle_model_sonnet", test_emit_cycle_prompt_mechanical_part_cycle_model_sonnet),
     ("test_emit_cycle_prompt_complex_part_cycle_model_opus", test_emit_cycle_prompt_complex_part_cycle_model_opus),
     ("test_emit_cycle_prompt_untagged_part_cycle_model_opus", test_emit_cycle_prompt_untagged_part_cycle_model_opus),
-    ("test_emit_cycle_prompt_complex_part_loop_cycle_model_sonnet", test_emit_cycle_prompt_complex_part_loop_cycle_model_sonnet),
+    ("test_emit_cycle_prompt_complex_part_loop_stays_opus", test_emit_cycle_prompt_complex_part_loop_stays_opus),
+    ("test_emit_cycle_prompt_untagged_part_loop_stays_opus", test_emit_cycle_prompt_untagged_part_loop_stays_opus),
+    ("test_emit_cycle_prompt_mechanical_part_loop_stays_sonnet", test_emit_cycle_prompt_mechanical_part_loop_stays_sonnet),
     ("test_emit_cycle_prompt_non_execute_plan_ignores_complexity", test_emit_cycle_prompt_non_execute_plan_ignores_complexity),
     ("test_emit_cycle_prompt_section_selection_synthetic", test_emit_cycle_prompt_section_selection_synthetic),
     ("test_emit_cycle_prompt_refuses_unknown_token_synthetic", test_emit_cycle_prompt_refuses_unknown_token_synthetic),

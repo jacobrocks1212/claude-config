@@ -7225,6 +7225,14 @@ def main() -> int:
                 out["last_advance_consume_count"] = restored.get(
                     "last_advance_consume_count"
                 )
+            # checkpoint-resume-false-loop-flips-complex-part-to-sonnet (2026-07-12)
+            # — coupled-pair mirror of lazy-state.py. Re-baseline the loop-debounce
+            # consume_count baseline against the freshly-recreated registry so the
+            # first re-probe of the re-probed next_route HOLDS instead of inflating
+            # to a false LOOP DETECTED. Shared helper; no-op + fail-open otherwise.
+            lazy_core.rebaseline_loop_signature_after_registry_reset(
+                lazy_core.active_repo_root(), pipeline="bug"
+            )
         # harness-telemetry-ledger Phase 2 (D4-B) — coupled-pair mirror of
         # lazy-state.py: run-bracket emission AFTER write_run_marker (the fresh
         # marker supplies the run identity; marker-gated + fail-open).

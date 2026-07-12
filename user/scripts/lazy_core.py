@@ -7169,9 +7169,14 @@ def emit_cycle_prompt(
     # strictly on the explicit tag /write-plan emitted: `plan_complexity` returns
     # the SAFE `complex`/opus default for any uncertain case, so the model never
     # auto-guesses cheaper. This baseline composes with the loop-block downgrade
-    # below: a `complex`/opus part that loops (repeat_count>=2) still flips to
-    # sonnet (sonnet ∧ sonnet = sonnet), and a `mechanical`/sonnet part stays
-    # sonnet — the two never conflict because both only ever DOWNGRADE to sonnet.
+    # below WITH A COMPLEXITY FLOOR (checkpoint-resume-false-loop-flips-complex-part-
+    # to-sonnet, 2026-07-12): a `mechanical`/sonnet part stays sonnet, but a
+    # `complex`/opus (or untagged-default-complex) /execute-plan part that loops
+    # does NOT flip to sonnet — the cycle prompt HARD-refuses complex work under a
+    # sonnet dispatch (`BLOCKED model-tier-mismatch`, cycle-base-prompt.md:260,287),
+    # so a loop-flip to sonnet cannot advance the part and only climbs the stall
+    # streak toward a halt. Such a cycle is `complexity_pinned_opus` and the loop
+    # block below leaves it on opus.
     norm_sub_skill = norm_skill  # already leading-"/"-stripped above
     # Per-sub_skill base model tier.
     #
@@ -7201,18 +7206,38 @@ def emit_cycle_prompt(
         model = _mcp_test_cycle_model(state.get("spec_path"))
     else:
         model = "opus"
+    # complexity_pinned_opus: True when this is an /execute-plan cycle whose plan
+    # part's declared complexity is NOT mechanical (i.e. `complex`, or the SAFE
+    # untagged/unknown default). Such a cycle is HARD-refused on sonnet by the
+    # subagent, so the loop-block downgrade below must NOT drop it to sonnet.
+    complexity_pinned_opus = False
     if norm_sub_skill in ("execute-plan", "execute_plan"):
         plan_arg = state.get("sub_skill_args")
+        plan_token = ""
         if plan_arg:
             # sub_skill_args may carry trailing flags (e.g. "<plan> --batch");
             # the plan path is the first whitespace-delimited token.
-            plan_token = str(plan_arg).split()[0] if str(plan_arg).split() else ""
-            if plan_token and plan_complexity(Path(plan_token)) == "mechanical":
-                model = "sonnet"
+            parts = str(plan_arg).split()
+            plan_token = parts[0] if parts else ""
+        # plan_complexity defaults to the SAFE `complex` for any uncertain case
+        # (no arg, unreadable, untagged) — so an /execute-plan cycle is pinned to
+        # opus unless the part is EXPLICITLY `mechanical`. This matches the
+        # subagent's model-tier-mismatch refusal condition exactly.
+        part_complexity = (
+            plan_complexity(Path(plan_token)) if plan_token else _DEFAULT_PLAN_COMPLEXITY
+        )
+        if part_complexity == "mechanical":
+            model = "sonnet"
+        else:
+            complexity_pinned_opus = True
 
     # --- Loop block: appended when the same signature repeated (>= 2) ---------
     # The loop block lives in loop-block.md inside a ``` fence; strip the fence
-    # lines and bind its tokens. Model flips to sonnet when the block is added.
+    # lines and bind its tokens. The loop-flip downgrades to sonnet to break a
+    # stall cheaply — BUT never below a complexity-pinned-opus /execute-plan part
+    # (a complex part on sonnet is refused as model-tier-mismatch, so the flip
+    # would only climb the stall streak). Such cycles keep opus AND still get the
+    # loop block appended (the loop guidance is model-independent).
     if repeat_count is not None and repeat_count >= 2:
         loop_path = template_dir / "loop-block.md"
         try:
@@ -7222,7 +7247,8 @@ def emit_cycle_prompt(
         loop_inner = _strip_loop_fence(loop_text)
         if loop_inner:
             prompt = prompt + "\n\n" + loop_inner if prompt else loop_inner
-            model = "sonnet"
+            if not complexity_pinned_opus:
+                model = "sonnet"
 
     # --- Bind all tokens (all occurrences, all sections + loop block) ---------
     for token, value in bindings.items():
@@ -17268,6 +17294,73 @@ def restore_checkpoint_counters(checkpoint: dict | None) -> dict | None:
     marker_path = claude_state_dir() / _MARKER_FILENAME
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
     return marker
+
+
+def rebaseline_loop_signature_after_registry_reset(
+    repo_root: Path,
+    *,
+    pipeline: str = "feature",
+    signature_path: Path | None = None,
+) -> bool:
+    """Re-baseline the loop-detection signature file's ``consume_count`` to the
+    current (freshly-cleared) registry consume-count on a checkpoint resume.
+
+    ROOT CAUSE (checkpoint-resume-false-loop-flips-complex-part-to-sonnet, 2026-07-12):
+    ``update_repeat_counts``'s F1/F2 double-probe debounce HOLDS a repeat count
+    (rather than incrementing it) only when it can prove NO dispatch landed
+    between two identical probes — i.e. the persisted ``consume_count`` equals the
+    live ``consumed_emission_count()``. That ``consume_count`` lives in the OS-temp
+    signature file (``lazy-state-last-<hash>.json``), which SURVIVES ``--run-end``.
+    But a checkpoint ``--run-end`` deletes the prompt registry and the resuming
+    ``--run-start`` recreates it fresh, so ``consumed_emission_count()`` resets to
+    0 while the signature file still carries the PRE-checkpoint count. The first
+    re-probe of the SAME ``next_route`` (which a checkpoint resume deterministically
+    re-probes) then sees ``prior_consume != current``, cannot prove the re-read,
+    and inflates ``repeat_count`` to 2 → a FALSE ``LOOP DETECTED`` on a route that
+    was NEVER re-dispatched (a probe→checkpoint→probe is not a stall; a genuine
+    stall requires a DISPATCH that failed to advance between two probes).
+
+    The fix re-baselines ONLY the ``consume_count`` field to the fresh registry's
+    count (``consumed_emission_count()`` — 0 at run-start, the registry having just
+    been cleared), so the next probe of the unchanged route reads
+    ``prior_consume == current`` and HOLDS. The persisted ``signature`` / ``count``
+    / ``step_signature`` / ``step_count`` are PRESERVED untouched, so a GENUINE
+    pre-pause loop streak (``count >= 2``) survives — the loop block still fires —
+    while a never-re-attempted route no longer inflates.
+
+    Called from the checkpoint-resume block of both state scripts' ``--run-start``
+    handlers (coupled-pair mirror; the helper is shared, the call site per-script).
+    ``signature_path`` defaults to the same per-repo/per-pipeline OS-temp path
+    ``update_repeat_counts`` derives, so the two agree by construction.
+
+    Returns True when the field was re-baselined; False (no-op) when no signature
+    file exists, when it is unreadable/corrupt/wrong-shape, or when no run marker
+    is present (the debounce is marker-gated — with no marker the next probe never
+    engages it, so re-baselining would be meaningless). NEVER raises.
+    """
+    if signature_path is None:
+        repo_hash = hashlib.sha1(
+            str(repo_root.resolve()).encode("utf-8")
+        ).hexdigest()[:16]
+        prefix = "lazy-state-last" if pipeline == "feature" else f"{pipeline}-state-last"
+        signature_path = Path(tempfile.gettempdir()) / f"{prefix}-{repo_hash}.json"
+    try:
+        if not signature_path.exists():
+            return False
+        # The debounce is marker-gated (update_repeat_counts writes/reads
+        # consume_count only under a live marker). At checkpoint resume the marker
+        # was just written by --run-start, so it is present and age-fresh; a
+        # missing marker means the next probe cannot engage the debounce anyway.
+        if read_run_marker() is None:
+            return False
+        data = json.loads(signature_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return False
+        data["consume_count"] = consumed_emission_count()
+        _atomic_write(signature_path, json.dumps(data))
+        return True
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
 
 
 # ---------------------------------------------------------------------------

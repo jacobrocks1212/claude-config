@@ -11873,6 +11873,17 @@ def main() -> int:
                 out["last_advance_consume_count"] = restored.get(
                     "last_advance_consume_count"
                 )
+            # checkpoint-resume-false-loop-flips-complex-part-to-sonnet (2026-07-12):
+            # --run-end deleted the prompt registry and this --run-start recreated
+            # it fresh, so the loop-debounce consume_count baseline in the OS-temp
+            # signature file is now stale (registry-relative to the PRE-checkpoint
+            # run). Re-baseline it to the fresh registry count so the first re-probe
+            # of the deterministically-re-probed next_route HOLDS instead of
+            # inflating repeat_count to 2 (false LOOP DETECTED). Preserves a genuine
+            # pre-pause streak; no-op + fail-open when no signature file / no marker.
+            lazy_core.rebaseline_loop_signature_after_registry_reset(
+                lazy_core.active_repo_root(), pipeline="feature"
+            )
         # harness-telemetry-ledger Phase 2 (D4-B): run-bracket emission —
         # fires AFTER write_run_marker so the fresh marker supplies the run
         # identity (marker-gated + fail-open inside the emitter; no output keys).
