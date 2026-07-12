@@ -1,4 +1,4 @@
-# Lazy Queue — claude-config   (run active 🔒)
+# Lazy Queue — .   (run active 🔒)
 
 ## Features (19)
 
@@ -43,65 +43,67 @@
 | 19 | [native-android-pipeline-steering](docs/features/native-android-pipeline-steering/SPEC.md) | Research | T3 |
 | | status: Research · next: research · A real mobile client on the `mobile-queue-control` foundation: browse every lazy-enabled repo's queues, drill into SPECs and halt sentinels, and — the point — **write back** from the phone: answer `NEEDS_INPUT.md` decisions, resolve `BLOCKED.md` halts, and reorder/enqueue the queue. | | |
 
-## Bugs (28)
+## Bugs (29)
 
 | # | item | state | sev |
 |---|------|-------|------|
-| 1 | [live-settings-split-brain-disarms-enforcement-plane](docs/bugs/_archive/live-settings-split-brain-disarms-enforcement-plane/SPEC.md) | Implement | P0 |
-| | status: Implement · phase 2/5 · next: execute plan · The live `~/.claude/settings.json` on this laptop is an untracked plain file registering ONLY the two turn-routing hooks, while the tracked `user/settings.json` registers the ~10 OTHER enforcement hooks and has NEVER carried the dispatch guard. | | |
-| 2 | [interventions-telemetry-repo-scope-split-brain](docs/bugs/interventions-telemetry-repo-scope-split-brain/SPEC.md) | Spec | P1 |
-| | status: Spec · next: spec · Intervention records live in claude-config (`docs/interventions/`, 25 records), but the telemetry that must grade them lives in the TARGET repo's keyed state dir (AlgoBooth: 1,248 events / 32 runs). | | |
-| 3 | [hardening-intervention-records-unmeasurable-or-missing](docs/bugs/hardening-intervention-records-unmeasurable-or-missing/SPEC.md) | Spec | P1 |
-| | status: Spec · next: spec · The `/harden-harness` Step-4 capture contract produces records the evaluator can never grade: two records name telemetry event types that do not exist in the emit vocabulary (accepted silently — `record_intervention` validates nothing), 17 of 25 records are `target_signal: undeclared`, and round-vs-record coverage is prose-only self-attestation — a round's "Intervention record: none" exemption line is checked by no one. | | |
-| 4 | [legacy-tool-input-env-hooks-dead](docs/bugs/legacy-tool-input-env-hooks-dead/SPEC.md) | Spec | P1 |
-| | status: Spec · next: spec · `block-terminal-kill.sh` and `block-work-repo-git-push.sh` — both registered in the tracked `user/settings.json` PreToolUse Bash chain — read `$TOOL_INPUT_command`, an environment variable the hook interface never populates (the interface is stdin JSON). | | |
-| 5 | [powershell-tool-bypasses-bash-matched-guards](docs/bugs/powershell-tool-bypasses-bash-matched-guards/SPEC.md) | Spec | P1 |
-| | status: Spec · next: spec · Every command guard is matched on tool `"Bash"` only, and the three inline second layers early-allow any non-Bash tool. | | |
-| 6 | [guard-fail-open-leaves-no-trace](docs/bugs/guard-fail-open-leaves-no-trace/SPEC.md) | Spec | P2 |
-| | status: Spec · next: spec · Every PreToolUse hook fails open by documented contract (a non-zero exit is a hard harness error), but fail-open **observability** is inconsistent-to-absent: the no-python path is silent across the entire guard plane, one bash-side breadcrumb writer targets an unset variable and has never worked, two enforcement hooks have no error-path trace at all, and the severest failure class (python unavailable) is exactly the one the python-side appenders cannot record. | | |
-| 7 | [long-build-and-build-queue-matcher-bypasses](docs/bugs/long-build-and-build-queue-matcher-bypasses/SPEC.md) | Spec | P2 |
-| | status: Spec · next: spec · Empirically verified matcher-coverage gaps in two request-time guards: the long-build ownership guard allows every runner-prefixed / path-prefixed / string-wrapped form of the builds it exists to redirect (`npx tauri build`, `npm run tauri build` — the canonical Tauri invocation — `cargo tauri build`, absolute-path `cargo build --release`, `bash -c "..."`), and the build-queue enforce hook's wrapper allowlist is an **unanchored substring** checked before the deny scan, so any command merely *mentioning* `build-queue.ps1` bypasses the entire deny surface. | | |
-| 8 | [mark-complete-partial-apply-noop-unrecoverable](docs/bugs/mark-complete-partial-apply-noop-unrecoverable/SPEC.md) | Spec | P1 |
-| | status: Spec · next: spec · `apply_pseudo`'s `__mark_complete__`/`__mark_fixed__` branch performs a multi-file write sequence (receipt → SPEC flip → PHASES flip → sentinel cleanup → queue trim → ROADMAP strike) where each write is individually atomic but the SEQUENCE is not — and the branch-entry idempotency check noops on RECEIPT-EXISTS ALONE. | | |
-| 9 | [production-sentinel-writes-bypass-atomic-write](docs/bugs/production-sentinel-writes-bypass-atomic-write/SPEC.md) | Spec | P2 |
-| | status: Spec · next: spec · `user/scripts/CLAUDE.md` states all queue/marker/sentinel writes go through `lazy_core._atomic_write` — but both state scripts write production BLOCKED.md / NEEDS_INPUT.md / brief / ROADMAP files via bare `path.write_text()`. | | |
-| 10 | [stale-runtime-health-200-false-blocked](docs/bugs/stale-runtime-health-200-false-blocked/SPEC.md) | Spec | P1 |
-| | status: Spec · next: spec · The Step-9 dispatch bar is `GET /health == 200`, but the running Tauri binary + sidecar bundle routinely predates the code under test — so `/mcp-test` reports genuine-looking failures against a pre-fix binary, burns `retry_count` on non-defects, and forces the orchestrator to hand-invent restart rituals. | | |
-| 11 | [mcp-validation-peels-one-seam-per-loop](docs/bugs/mcp-validation-peels-one-seam-per-loop/SPEC.md) | Spec | P1 |
-| | status: Spec · next: spec · When `/mcp-test` fails, the only route back to validation is BLOCKED → blocked-resolve → add-phase → write-plan → execute-plan → mcp-test — a 4–6-Opus-dispatch loop (usually plus a multi-minute Rust rebuild) — and because full seam enumeration is mandated only at `retry_count >= 2` while every corrective phase is scoped to the single observed failure, each re-validation discovers only the NEXT broken seam. | | |
-| 12 | [completion-gate-refusal-opacity](docs/bugs/completion-gate-refusal-opacity/SPEC.md) | Spec | P2 |
-| | status: Spec · next: spec · `__mark_complete__`'s precondition gate (`--verify-ledger`) refuses with only a boolean `failing_check` name — `deliverables_done` without the unchecked rows, `clean_tree` without the dirty files, `head_matches_origin` without the shas — so agents use the gate itself as discovery, probing repeatedly per feature (184 gate-refusal tool errors across 48+ mined sessions). | | |
-| 13 | [loop-detector-false-positives-probes-and-cross-run-state](docs/bugs/loop-detector-false-positives-probes-and-cross-run-state/SPEC.md) | Spec | P2 |
-| | status: Spec · next: spec · The `repeat_count` / `step_repeat_count` loop tripwires false-fired on benign churn (probes, denied dispatches, resolved blockers) and their state — plus the deny ledger — survives `--run-end`, so a fresh run can open with a false-loop T6 warning and a mandatory hardening dispatch for a PRIOR-RUN denial. | | |
-| 14 | [meta-dispatch-not-by-reference-and-ack-overpriced](docs/bugs/meta-dispatch-not-by-reference-and-ack-overpriced/SPEC.md) | Spec | P2 |
-| | status: Spec · next: spec · The `@@lazy-ref` by-reference mechanism originally covered only CYCLE prompts, forcing the orchestrator to hand-transcribe multi-KB `--emit-dispatch` META prompts byte-exactly (12 "not script-emitted" + 4 "transcription slip" denials in one run). | | |
-| 15 | [fixed-bugs-unarchived-fsck](docs/bugs/fixed-bugs-unarchived-fsck/SPEC.md) | Spec | P2 |
-| | status: Spec · next: spec · 18 directories under `docs/bugs/` carry `**Status:** Fixed` but sit OUTSIDE `docs/bugs/_archive/`. | | |
-| 16 | [skills-plane-hygiene-debris](docs/bugs/skills-plane-hygiene-debris/SPEC.md) | Spec | P3 |
-| | status: Spec · next: spec · The skills plane has accumulated hygiene debris that nothing gates: two git-tracked `sh.exe.stackdump` crash dumps (no `*.stackdump` gitignore), three `_components/` files referenced by nothing, and emit-mapping rows in the lazy status/wrapper skills that still present the retro step as a live pipeline emission eight-plus weeks after the operator unwired it. | | |
-| 17 | [coord-lock-no-stale-reclaim](docs/bugs/coord-lock-no-stale-reclaim/SPEC.md) | Spec | P3 |
-| | status: Spec · next: spec · `lazy_coord.acquire_lock` is an `os.mkdir` spin lock with a ~10s timeout — but the lock directory carries NO holder metadata (no pid, no timestamp) and there is NO reclamation path. | | |
-| 18 | [test-filtered-stale-check-hardcodes-bin-debug](docs/bugs/test-filtered-stale-check-hardcodes-bin-debug/SPEC.md) | Validate | — |
-| | status: Validate · phase 0/1 · next: run mcp-test · The Phase-3 stale-DLL guard assumes every test project outputs to `bin\Debug\`, so it fires exit-4 "stale" on *every* `/mstest -TestDll "Cognito.Forms.UnitTests"` run — a false positive no rebuild can clear, which drives agents to bypass the sanctioned test path with hand-rolled `--no-build` scratchpad runners. | | |
-| 19 | [unknown](docs/bugs/unknown/SPEC.md) | Pending | — |
+| 1 | [unknown](docs/bugs/unknown/SPEC.md) | Pending | — |
 | | status: Pending · next: queue | | |
+| 2 | [descoped-row-recognition-needs-canonical-marker](docs/bugs/descoped-row-recognition-needs-canonical-marker/SPEC.md) | Spec | — |
+| | status: Spec · next: spec · `remaining_unchecked_are_verification_only()` recognizes a deliberately-dropped PHASES deliverable only when it is struck through AND tagged with one of THREE hardcoded free-text keywords (`DROPPED`/`DESCOPED`/`WON'T-FIX`). | | |
+| 3 | [interventions-telemetry-repo-scope-split-brain](docs/bugs/interventions-telemetry-repo-scope-split-brain/SPEC.md) | Spec | P1 |
+| | status: Spec · next: spec · Intervention records live in claude-config (`docs/interventions/`, 25 records), but the telemetry that must grade them lives in the TARGET repo's keyed state dir (AlgoBooth: 1,248 events / 32 runs). | | |
+| 4 | [hardening-intervention-records-unmeasurable-or-missing](docs/bugs/hardening-intervention-records-unmeasurable-or-missing/SPEC.md) | Spec | P1 |
+| | status: Spec · next: spec · The `/harden-harness` Step-4 capture contract produces records the evaluator can never grade: two records name telemetry event types that do not exist in the emit vocabulary (accepted silently — `record_intervention` validates nothing), 17 of 25 records are `target_signal: undeclared`, and round-vs-record coverage is prose-only self-attestation — a round's "Intervention record: none" exemption line is checked by no one. | | |
+| 5 | [legacy-tool-input-env-hooks-dead](docs/bugs/legacy-tool-input-env-hooks-dead/SPEC.md) | Spec | P1 |
+| | status: Spec · next: spec · `block-terminal-kill.sh` and `block-work-repo-git-push.sh` — both registered in the tracked `user/settings.json` PreToolUse Bash chain — read `$TOOL_INPUT_command`, an environment variable the hook interface never populates (the interface is stdin JSON). | | |
+| 6 | [powershell-tool-bypasses-bash-matched-guards](docs/bugs/powershell-tool-bypasses-bash-matched-guards/SPEC.md) | Spec | P1 |
+| | status: Spec · next: spec · Every command guard is matched on tool `"Bash"` only, and the three inline second layers early-allow any non-Bash tool. | | |
+| 7 | [guard-fail-open-leaves-no-trace](docs/bugs/guard-fail-open-leaves-no-trace/SPEC.md) | Spec | P2 |
+| | status: Spec · next: spec · Every PreToolUse hook fails open by documented contract (a non-zero exit is a hard harness error), but fail-open **observability** is inconsistent-to-absent: the no-python path is silent across the entire guard plane, one bash-side breadcrumb writer targets an unset variable and has never worked, two enforcement hooks have no error-path trace at all, and the severest failure class (python unavailable) is exactly the one the python-side appenders cannot record. | | |
+| 8 | [long-build-and-build-queue-matcher-bypasses](docs/bugs/long-build-and-build-queue-matcher-bypasses/SPEC.md) | Spec | P2 |
+| | status: Spec · next: spec · Empirically verified matcher-coverage gaps in two request-time guards: the long-build ownership guard allows every runner-prefixed / path-prefixed / string-wrapped form of the builds it exists to redirect (`npx tauri build`, `npm run tauri build` — the canonical Tauri invocation — `cargo tauri build`, absolute-path `cargo build --release`, `bash -c "..."`), and the build-queue enforce hook's wrapper allowlist is an **unanchored substring** checked before the deny scan, so any command merely *mentioning* `build-queue.ps1` bypasses the entire deny surface. | | |
+| 9 | [mark-complete-partial-apply-noop-unrecoverable](docs/bugs/mark-complete-partial-apply-noop-unrecoverable/SPEC.md) | Spec | P1 |
+| | status: Spec · next: spec · `apply_pseudo`'s `__mark_complete__`/`__mark_fixed__` branch performs a multi-file write sequence (receipt → SPEC flip → PHASES flip → sentinel cleanup → queue trim → ROADMAP strike) where each write is individually atomic but the SEQUENCE is not — and the branch-entry idempotency check noops on RECEIPT-EXISTS ALONE. | | |
+| 10 | [production-sentinel-writes-bypass-atomic-write](docs/bugs/production-sentinel-writes-bypass-atomic-write/SPEC.md) | Spec | P2 |
+| | status: Spec · next: spec · `user/scripts/CLAUDE.md` states all queue/marker/sentinel writes go through `lazy_core._atomic_write` — but both state scripts write production BLOCKED.md / NEEDS_INPUT.md / brief / ROADMAP files via bare `path.write_text()`. | | |
+| 11 | [stale-runtime-health-200-false-blocked](docs/bugs/stale-runtime-health-200-false-blocked/SPEC.md) | Spec | P1 |
+| | status: Spec · next: spec · The Step-9 dispatch bar is `GET /health == 200`, but the running Tauri binary + sidecar bundle routinely predates the code under test — so `/mcp-test` reports genuine-looking failures against a pre-fix binary, burns `retry_count` on non-defects, and forces the orchestrator to hand-invent restart rituals. | | |
+| 12 | [mcp-validation-peels-one-seam-per-loop](docs/bugs/mcp-validation-peels-one-seam-per-loop/SPEC.md) | Spec | P1 |
+| | status: Spec · next: spec · When `/mcp-test` fails, the only route back to validation is BLOCKED → blocked-resolve → add-phase → write-plan → execute-plan → mcp-test — a 4–6-Opus-dispatch loop (usually plus a multi-minute Rust rebuild) — and because full seam enumeration is mandated only at `retry_count >= 2` while every corrective phase is scoped to the single observed failure, each re-validation discovers only the NEXT broken seam. | | |
+| 13 | [completion-gate-refusal-opacity](docs/bugs/completion-gate-refusal-opacity/SPEC.md) | Spec | P2 |
+| | status: Spec · next: spec · `__mark_complete__`'s precondition gate (`--verify-ledger`) refuses with only a boolean `failing_check` name — `deliverables_done` without the unchecked rows, `clean_tree` without the dirty files, `head_matches_origin` without the shas — so agents use the gate itself as discovery, probing repeatedly per feature (184 gate-refusal tool errors across 48+ mined sessions). | | |
+| 14 | [loop-detector-false-positives-probes-and-cross-run-state](docs/bugs/loop-detector-false-positives-probes-and-cross-run-state/SPEC.md) | Spec | P2 |
+| | status: Spec · next: spec · The `repeat_count` / `step_repeat_count` loop tripwires false-fired on benign churn (probes, denied dispatches, resolved blockers) and their state — plus the deny ledger — survives `--run-end`, so a fresh run can open with a false-loop T6 warning and a mandatory hardening dispatch for a PRIOR-RUN denial. | | |
+| 15 | [meta-dispatch-not-by-reference-and-ack-overpriced](docs/bugs/meta-dispatch-not-by-reference-and-ack-overpriced/SPEC.md) | Spec | P2 |
+| | status: Spec · next: spec · The `@@lazy-ref` by-reference mechanism originally covered only CYCLE prompts, forcing the orchestrator to hand-transcribe multi-KB `--emit-dispatch` META prompts byte-exactly (12 "not script-emitted" + 4 "transcription slip" denials in one run). | | |
+| 16 | [fixed-bugs-unarchived-fsck](docs/bugs/fixed-bugs-unarchived-fsck/SPEC.md) | Spec | P2 |
+| | status: Spec · next: spec · 18 directories under `docs/bugs/` carry `**Status:** Fixed` but sit OUTSIDE `docs/bugs/_archive/`. | | |
+| 17 | [skills-plane-hygiene-debris](docs/bugs/skills-plane-hygiene-debris/SPEC.md) | Spec | P3 |
+| | status: Spec · next: spec · The skills plane has accumulated hygiene debris that nothing gates: two git-tracked `sh.exe.stackdump` crash dumps (no `*.stackdump` gitignore), three `_components/` files referenced by nothing, and emit-mapping rows in the lazy status/wrapper skills that still present the retro step as a live pipeline emission eight-plus weeks after the operator unwired it. | | |
+| 18 | [coord-lock-no-stale-reclaim](docs/bugs/coord-lock-no-stale-reclaim/SPEC.md) | Spec | P3 |
+| | status: Spec · next: spec · `lazy_coord.acquire_lock` is an `os.mkdir` spin lock with a ~10s timeout — but the lock directory carries NO holder metadata (no pid, no timestamp) and there is NO reclamation path. | | |
+| 19 | [test-filtered-stale-check-hardcodes-bin-debug](docs/bugs/test-filtered-stale-check-hardcodes-bin-debug/SPEC.md) | Validate | — |
+| | status: Validate · phase 0/1 · next: run mcp-test · The Phase-3 stale-DLL guard assumes every test project outputs to `bin\Debug\`, so it fires exit-4 "stale" on *every* `/mstest -TestDll "Cognito.Forms.UnitTests"` run — a false positive no rebuild can clear, which drives agents to bypass the sanctioned test path with hand-rolled `--no-build` scratchpad runners. | | |
 | 20 | [unknown](docs/bugs/unknown/SPEC.md) | Pending | — |
 | | status: Pending · next: queue | | |
-| 21 | [build-queue-orphaned-result-on-wrapper-kill](docs/bugs/build-queue-orphaned-result-on-wrapper-kill/SPEC.md) | Validate | — |
-| | status: Validate · phase 0/2 · next: run mcp-test · The queue wrapper writes `results/<seq>.json` and releases `active.lock` only after the detached build it is *tailing* exits. | | |
-| 22 | [crlf-hook-blanket-enforce-mixed-eol](docs/bugs/crlf-hook-blanket-enforce-mixed-eol/SPEC.md) | Spec | — |
-| | status: Spec · next: spec · `normalize-crlf.ps1` enforces a single blanket convention (CRLF on every non-`.sh` file) on the Cognito Forms repo, but the repo's *committed* EOL is mixed: `.cs` is CRLF, `NotificationTemplates/**/*.html` is LF. | | |
-| 23 | [unknown](docs/bugs/unknown/SPEC.md) | Pending | — |
+| 21 | [unknown](docs/bugs/unknown/SPEC.md) | Pending | — |
 | | status: Pending · next: queue | | |
-| 24 | [build-queue-outcome-opacity-and-inspect-deny](docs/bugs/build-queue-outcome-opacity-and-inspect-deny/SPEC.md) | Validate | — |
+| 22 | [build-queue-orphaned-result-on-wrapper-kill](docs/bugs/build-queue-orphaned-result-on-wrapper-kill/SPEC.md) | Validate | — |
+| | status: Validate · phase 0/2 · next: run mcp-test · The queue wrapper writes `results/<seq>.json` and releases `active.lock` only after the detached build it is *tailing* exits. | | |
+| 23 | [crlf-hook-blanket-enforce-mixed-eol](docs/bugs/crlf-hook-blanket-enforce-mixed-eol/SPEC.md) | Spec | — |
+| | status: Spec · next: spec · `normalize-crlf.ps1` enforces a single blanket convention (CRLF on every non-`.sh` file) on the Cognito Forms repo, but the repo's *committed* EOL is mixed: `.cs` is CRLF, `NotificationTemplates/**/*.html` is LF. | | |
+| 24 | [unknown](docs/bugs/unknown/SPEC.md) | Pending | — |
+| | status: Pending · next: queue | | |
+| 25 | [build-queue-outcome-opacity-and-inspect-deny](docs/bugs/build-queue-outcome-opacity-and-inspect-deny/SPEC.md) | Validate | — |
 | | status: Validate · phase 2/4 · next: run mcp-test · Agents routinely can't tell what a `/msbuild` `/mstest` `/nxbuild` `/nxtest` invocation actually did — pass, fail, zero-match, or broken log capture all surface as the same `exit_code=0` with suppressed output — so they try to inspect the runner script / results JSON / logs to disambiguate. | | |
-| 25 | [adhoc-align-cycle-commit-count-with-budget-population](docs/bugs/adhoc-align-cycle-commit-count-with-budget-population/SPEC.md) | Spec | — |
+| 26 | [adhoc-align-cycle-commit-count-with-budget-population](docs/bugs/adhoc-align-cycle-commit-count-with-budget-population/SPEC.md) | Spec | — |
 | | status: Spec · next: spec | | |
-| 26 | [adhoc-derive-multi-commit-budget-from-dispatch-sites](docs/bugs/adhoc-derive-multi-commit-budget-from-dispatch-sites/SPEC.md) | Spec | — |
+| 27 | [adhoc-derive-multi-commit-budget-from-dispatch-sites](docs/bugs/adhoc-derive-multi-commit-budget-from-dispatch-sites/SPEC.md) | Spec | — |
 | | status: Spec · next: spec | | |
-| 27 | [build-queue-no-artifact-or-process-hygiene-on-crash](docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash/SPEC.md) | ⛔ Blocked | — |
+| 28 | [build-queue-no-artifact-or-process-hygiene-on-crash](docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash/SPEC.md) | ⛔ Blocked | — |
 | | status: Blocked · phase 0/5 · next: resolve blocker · A crashed or killed build leaves orphaned compiler/test child processes and a truncated 0-byte output artifact behind. | | |
-| 28 | [build-queue-copy-lock-stale-dll-false-success](docs/bugs/build-queue-copy-lock-stale-dll-false-success/SPEC.md) | ⛔ Blocked | — |
+| 29 | [build-queue-copy-lock-stale-dll-false-success](docs/bugs/build-queue-copy-lock-stale-dll-false-success/SPEC.md) | ⛔ Blocked | — |
 | | status: Blocked · phase 1/4 · next: resolve blocker · An MSB3027 copy-lock failure (obj/ rebuilt fresh, copy to bin/Debug blocked by a leftover locker) makes MSBuild log "Build FAILED" while still exiting 0. | | |
 
 ## Needs attention
