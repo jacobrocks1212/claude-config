@@ -22,6 +22,17 @@
     ]
   },
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/lazy-route-inject.sh",
+            "timeout": 90
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "startup|resume|clear|compact",
@@ -45,6 +56,27 @@
             "type": "command",
             "command": "bash -c 'for DIR in ~/.claude-personal/plans ~/.claude/plans; do if [ -d \"$DIR\" ]; then PLAN=$(find \"$DIR\" -name \"*.md\" -newer /tmp/.claude-session-marker 2>/dev/null | sort | tail -1); if [ -n \"$PLAN\" ]; then echo \"--- POST-COMPACTION PLAN RECOVERY ---\"; echo \"Active plan: $PLAN\"; echo \"\"; echo \"MANDATORY — before continuing:\"; echo \"1. Read the full plan file at: $PLAN\"; echo \"2. Identify your current position (which batch/step)\"; echo \"3. Before each step, Read the component files listed in that step from disk\"; echo \"4. Do NOT proceed from memory — re-read everything from disk\"; echo \"---\"; head -80 \"$PLAN\"; echo \"...\"; echo \"--- END PREVIEW — Read full plan at: $PLAN ---\"; break; fi; fi; done'",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/lazy-route-inject.sh",
+            "timeout": 90
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/lazy-route-inject.sh",
+            "timeout": 90
           }
         ]
       }
@@ -112,6 +144,16 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/block-sentinel-write-on-stray-branch.sh",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/lazy-dispatch-guard.sh",
+            "timeout": 30
           }
         ]
       }

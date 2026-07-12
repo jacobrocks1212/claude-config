@@ -4690,6 +4690,74 @@ def test_straybranch_registered_in_settings():
     )
 
 
+def test_routeinject_registered_in_settings():
+    """Mount-site verification: lazy-route-inject.sh must be REGISTERED as a
+    command in user/settings.json across all three of its wired events —
+    top-level `UserPromptSubmit`, at least one `SessionStart` block whose
+    `matcher` == "compact" (there may be more than one compact-matcher block),
+    and top-level `PostCompact` — a hook on disk but unregistered is dead code."""
+    settings_path = _REPO_ROOT / "user" / "settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    hooks = settings.get("hooks", {})
+
+    userpromptsubmit = hooks.get("UserPromptSubmit", [])
+    assert userpromptsubmit, "no UserPromptSubmit block found in settings.json"
+    up_commands = [
+        h.get("command", "")
+        for block in userpromptsubmit
+        for h in block.get("hooks", [])
+    ]
+    assert any("lazy-route-inject.sh" in c for c in up_commands), (
+        f"lazy-route-inject.sh not registered in the UserPromptSubmit array; "
+        f"registered commands: {up_commands!r}"
+    )
+
+    sessionstart = hooks.get("SessionStart", [])
+    compact_blocks = [b for b in sessionstart if b.get("matcher") == "compact"]
+    assert compact_blocks, "no SessionStart matcher:compact block found in settings.json"
+    ss_commands = [
+        h.get("command", "")
+        for block in compact_blocks
+        for h in block.get("hooks", [])
+    ]
+    assert any("lazy-route-inject.sh" in c for c in ss_commands), (
+        f"lazy-route-inject.sh not registered in any SessionStart "
+        f"matcher:compact array; registered commands: {ss_commands!r}"
+    )
+
+    postcompact = hooks.get("PostCompact", [])
+    assert postcompact, "no PostCompact block found in settings.json"
+    pc_commands = [
+        h.get("command", "")
+        for block in postcompact
+        for h in block.get("hooks", [])
+    ]
+    assert any("lazy-route-inject.sh" in c for c in pc_commands), (
+        f"lazy-route-inject.sh not registered in the PostCompact array; "
+        f"registered commands: {pc_commands!r}"
+    )
+
+
+def test_dispatchguard_registered_in_settings():
+    """Mount-site verification: the hook must be REGISTERED as a command in
+    user/settings.json's PreToolUse `matcher: Agent|Task` array — a hook on
+    disk but unregistered is dead code."""
+    settings_path = _REPO_ROOT / "user" / "settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    pretooluse = settings.get("hooks", {}).get("PreToolUse", [])
+    agenttask_blocks = [b for b in pretooluse if b.get("matcher") == "Agent|Task"]
+    assert agenttask_blocks, "no PreToolUse matcher:Agent|Task block found in settings.json"
+    commands = [
+        h.get("command", "")
+        for block in agenttask_blocks
+        for h in block.get("hooks", [])
+    ]
+    assert any("lazy-dispatch-guard.sh" in c for c in commands), (
+        f"lazy-dispatch-guard.sh not registered in the PreToolUse "
+        f"matcher:Agent|Task array; registered commands: {commands!r}"
+    )
+
+
 def test_longbuild_guard_file_exists():
     """The net-new guard hook must exist on disk (WU-1)."""
     assert _LONGBUILD_GUARD_SH.exists(), (
