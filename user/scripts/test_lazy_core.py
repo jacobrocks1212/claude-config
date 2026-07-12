@@ -919,6 +919,69 @@ def test_verification_only_deliverables_then_verification_still_true():
 
 
 # ---------------------------------------------------------------------------
+# Tests: descoped-in-place (struck-through **DROPPED**) rows —
+# remaining_unchecked_are_verification_only
+#   (verification-only-bypass-blind-to-descoped-rows, 2026-07-12)
+# ---------------------------------------------------------------------------
+def test_verification_only_descoped_dropped_row_is_true():
+    """A fully-Complete PHASES whose SOLE unchecked row is a struck-through
+    **DROPPED** descope note → True (bypass-eligible).
+
+    Live shape: live-settings-split-brain-... PHASES line 128 — a deliberately
+    dropped deliverable authored as `- [ ] ~~<text>~~ **DROPPED** (...)`. Not-to-
+    be-done, exactly like a Superseded row, so it must count toward the Step-7
+    verification bypass instead of looping write-plan on an already-done item.
+    """
+    _guard()
+    text = (
+        "### Phase 4\n"
+        "- [x] warn-pass extension shipped\n"
+        "- [ ] ~~`setup.py` gains the parallel live hook/symlink check~~ "
+        "**DROPPED** (decision 2, `NEEDS_INPUT.md` resolution, 2026-07-12): "
+        "scope note only — no code deliverable here.\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is True, (
+        f"expected True (sole unchecked row is a struck-through DROPPED descope "
+        f"note — not remaining work), got {result}."
+    )
+
+
+def test_verification_only_plain_unchecked_row_still_false():
+    """CONSERVATISM: a plain unchecked row (no strikethrough, no descope marker)
+    still → False. The descope carve-out must not over-exempt genuine work."""
+    _guard()
+    text = (
+        "### Phase 4\n"
+        "- [x] warn-pass extension shipped\n"
+        "- [ ] setup.py gains the parallel live hook/symlink check\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is False, (
+        f"expected False (a plain unchecked row is genuine remaining work), "
+        f"got {result}."
+    )
+
+
+def test_verification_only_struck_without_descope_marker_still_false():
+    """CONSERVATISM: a struck-through row WITHOUT an explicit descope marker
+    still → False. Strikethrough alone (e.g. reformatting) must not exempt —
+    BOTH the strikethrough AND a descope marker are required."""
+    _guard()
+    text = (
+        "### Phase 4\n"
+        "- [x] warn-pass extension shipped\n"
+        "- [ ] ~~`setup.py` gains the parallel live hook/symlink check~~ "
+        "(still owed — struck for readability, not dropped)\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is False, (
+        f"expected False (struck-through but NOT descope-marked — still owed "
+        f"work), got {result}."
+    )
+
+
+# ---------------------------------------------------------------------------
 # Tests: fence-awareness — _unchecked_wus_in_plan_scope
 # ---------------------------------------------------------------------------
 
@@ -16387,6 +16450,10 @@ _TESTS = [
     # deliverables-after-verification fix: remaining_unchecked_are_verification_only
     ("test_verification_only_deliverables_after_verification_section_is_false", test_verification_only_deliverables_after_verification_section_is_false),
     ("test_verification_only_deliverables_then_verification_still_true", test_verification_only_deliverables_then_verification_still_true),
+    # descoped-in-place (struck-through **DROPPED**) rows: remaining_unchecked_are_verification_only
+    ("test_verification_only_descoped_dropped_row_is_true", test_verification_only_descoped_dropped_row_is_true),
+    ("test_verification_only_plain_unchecked_row_still_false", test_verification_only_plain_unchecked_row_still_false),
+    ("test_verification_only_struck_without_descope_marker_still_false", test_verification_only_struck_without_descope_marker_still_false),
     # fence-awareness: _unchecked_wus_in_plan_scope
     ("test_unchecked_wus_in_scope_skips_fenced", test_unchecked_wus_in_scope_skips_fenced),
     ("test_unchecked_wus_in_scope_real_labels_returned", test_unchecked_wus_in_scope_real_labels_returned),

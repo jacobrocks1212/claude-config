@@ -2234,6 +2234,47 @@ _DELIVERABLES_SECTION_RE = re.compile(
 )
 
 
+# Deliberately-DROPPED-in-place deliverable rows (descope-in-place). A PHASES
+# author (e.g. a NEEDS_INPUT.md resolution) may retire a planned deliverable by
+# STRIKING IT THROUGH and tagging it with an explicit descope marker, rather
+# than deleting the row (preserves the audit trail of WHY it was dropped):
+#
+#   - [ ] ~~<text>~~ **DROPPED** (decision N, NEEDS_INPUT.md resolution, <date>)
+#
+# Such a row is unambiguously not-to-be-done — exactly like a Superseded-phase
+# row — and MUST count toward the "all remaining unchecked are exempt -> True"
+# Step-7 bypass, else a fully-implemented item whose SOLE unchecked box is a
+# descope note loops write-plan forever (live: live-settings-split-brain-...
+# PHASES line 128, 2026-07-12). CONSERVATIVE BY CONSTRUCTION: BOTH a
+# strikethrough span AND an explicit descope marker are required — a plain
+# unchecked row, or a struck row WITHOUT a descope marker, still returns False
+# (never over-exempt genuine implementation work).
+#
+# OVER-FIT NOTE: the descope-marker vocabulary below is a keyword set; the
+# durable fix is a CANONICAL STRUCTURAL descope marker emitted by producers
+# (parallel to _VERIFICATION_ONLY_MARKER, with this free-text form retained as a
+# deprecation shim like _VERIFICATION_SECTION_RE). That generalization is spun
+# off as its own item — until it lands, this is the free-text shim.
+_DESCOPE_STRIKETHROUGH_RE = re.compile(r"~~.+?~~")
+_DESCOPE_MARKER_RE = re.compile(
+    r"\*\*\s*(?:DROPPED|DESCOPED|WON[’']?T[-\s]?FIX)\s*\*\*",
+    re.IGNORECASE,
+)
+
+
+def _row_is_descoped_in_place(row_text: str) -> bool:
+    """A deliberately-dropped deliverable row: struck-through AND descope-marked.
+
+    BOTH conditions are required (conservative — see the constants' comment): a
+    plain unchecked row, or a bare strikethrough without a descope marker, is
+    NOT exempt. Case-insensitive marker match; supports DROPPED / DESCOPED /
+    WON'T-FIX.
+    """
+    return bool(_DESCOPE_STRIKETHROUGH_RE.search(row_text)) and bool(
+        _DESCOPE_MARKER_RE.search(row_text)
+    )
+
+
 def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
     """Return True iff every '- [ ]' line in PHASES.md is runtime-verification-only.
 
@@ -2270,6 +2311,14 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
     line seen inside that phase marks the entire phase exempt; its unchecked rows
     count toward the True return (bypass-eligible) — they are descoped to a
     successor feature, never remaining implementation work.
+
+    Descoped-in-place rows: an unchecked row that is BOTH struck through
+    (``~~...~~``) AND carries an explicit descope marker
+    (``**DROPPED**``/``**DESCOPED**``/``**WON'T-FIX**``) is a deliberately-dropped
+    deliverable — not-to-be-done, exactly like a Superseded row — and counts
+    toward the True return (see ``_row_is_descoped_in_place``). Conservative: a
+    plain unchecked row, or a struck row without a descope marker, still returns
+    False.
     """
     in_verification = False        # legacy: enclosing header matched the regex
     section_has_marker = False     # marker present on the enclosing header line
@@ -2288,6 +2337,11 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
     # 2026-07-01; the __mark_complete__ gate itself already exempts Superseded,
     # so the bypass was the sole hold-out).
     saw_superseded_unchecked = False
+    # Deliberately-DROPPED-in-place rows (struck-through + descope marker) are
+    # exempt like Superseded rows and MUST count toward the True return — see
+    # _row_is_descoped_in_place. Tracked separately so an all-descoped remainder
+    # still bypasses (mirrors saw_superseded_unchecked).
+    saw_descoped_unchecked = False
     in_fence = False
     for line in phases_text.splitlines():
         stripped = line.strip()
@@ -2360,6 +2414,15 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
             if in_superseded_phase:
                 saw_superseded_unchecked = True
                 continue
+            # A deliberately-DROPPED-in-place row (struck-through AND descope-
+            # marked) is not-to-be-done, exactly like a Superseded-phase row.
+            # Count it toward the all-remaining-exempt -> True bypass; do NOT
+            # set saw_unchecked (it is not a verification row). Conservative:
+            # _row_is_descoped_in_place requires BOTH signals, so a plain
+            # unchecked row / a struck row without a marker falls through below.
+            if _row_is_descoped_in_place(stripped):
+                saw_descoped_unchecked = True
+                continue
             saw_unchecked = True
             row_has_marker = _VERIFICATION_ONLY_MARKER in line
             # PRIMARY: a marker on the row or its enclosing subsection exempts,
@@ -2385,11 +2448,12 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
             # Neither marker nor regex-matched header → genuine implementation row.
             return False
     # True iff there were remaining unchecked rows AND every one was exempt —
-    # verification-only (saw_unchecked, all reached a `continue`) OR inside a
-    # Superseded phase (saw_superseded_unchecked). A genuine implementation row
-    # would have returned False above. Genuinely-zero-unchecked returns False
-    # (both flags stay False) — unchanged.
-    return saw_unchecked or saw_superseded_unchecked
+    # verification-only (saw_unchecked, all reached a `continue`), inside a
+    # Superseded phase (saw_superseded_unchecked), OR a deliberately-dropped-in-
+    # place row (saw_descoped_unchecked). A genuine implementation row would
+    # have returned False above. Genuinely-zero-unchecked returns False (all
+    # flags stay False) — unchanged.
+    return saw_unchecked or saw_superseded_unchecked or saw_descoped_unchecked
 
 
 def classify_blocking_unchecked_rows(phases_text: str) -> dict:
