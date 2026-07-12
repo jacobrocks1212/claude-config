@@ -73,6 +73,28 @@
     - Use `systematic-debugging` BEFORE proposing bug fixes
     - Use `verification-before-completion` before claiming work is done
     - Use `mcp-builder` when creating MCP servers
+    - Dispatch a SUBAGENT to run `harden-harness` WITHOUT asking, the moment you
+      discover a harness/pipeline defect, gap, inconsistency, or missing contract in
+      claude-config (scripts/skills/hooks/templates) — e.g. a state-script/gate
+      defect, a lazy-* routing gap, a validate-deny/no-route, a script edge case.
+      Run it OFF the main context, NOT inline — the harden work reads large scripts,
+      edits, and runs full gates. HOW to dispatch depends on whether a `lazy-*` run
+      marker is active (the validate-deny guard `lazy-dispatch-guard.sh` is gated on
+      the marker):
+        · NO marker active (standalone session, or after `--run-end`): dispatch a
+          plain general-purpose `Agent` subagent whose prompt invokes /harden-harness
+          with the gap description. The guard is a no-op with no marker (`test -f`
+          fast path) → the dispatch is allowed.
+        · Marker ACTIVE (mid lazy-* run): do NOT hand-compose an `Agent` dispatch —
+          the guard would DENY it (unregistered prompt). Route the gap through
+          `python3 ~/.claude/scripts/lazy-state.py --emit-dispatch hardening …` and
+          dispatch its emitted prompt VERBATIM; the `hardening` class is registered
+          and the guard never blocks it (this is the in-pipeline trigger-1..4 path).
+      Auto-invoke either way: hitting the gap IS the trigger; do NOT surface it and
+      ask permission first (the instance fix never blocks; design forks are surfaced
+      via the skill's own NEEDS_INPUT path). Batch multiple gaps found in one session
+      into ONE dispatch, and relay the result (fixes + any NEEDS_INPUT) back. When the
+      user TYPES `/harden-harness` themselves it runs inline — their explicit choice.
   </auto-invoke>
 </skill-preferences>
 

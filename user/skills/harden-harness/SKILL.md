@@ -109,6 +109,32 @@ Root-cause classes (pick the most specific that applies):
 State your classification and cite the evidence (file path + line or field, transcript
 artifact, probe JSON field, or registry entry).
 
+### Step 2.5: Bug-spec FIRST — investigate + audit trail before implementing (HARD, operator-directed 2026-07-11)
+
+**Before ANY implementation in Step 3, author a bug investigation spec in claude-config.**
+Operator directive (Jacob, 2026-07-11): "every /harden-harness invocation [must] /spec-bug a
+bug spec (or /spec if scope warrants, but unlikely) in claude-config before implementation
+begins. This ensures the fix is well investigated beforehand, and serves as an audit trail."
+
+- **Where:** `docs/bugs/<slug>/SPEC.md` in the claude-config repo (descriptive kebab slug;
+  same investigation-spec contract as `/spec-bug` — see `docs/bugs/CLAUDE.md`). Use `/spec`
+  under `docs/specs/` ONLY when the change is a genuine new feature/capability whose scope
+  warrants it (rare — most harness friction is a defect → `/spec-bug`).
+- **Contents:** the reconstructed route (Step 1) + the root-cause classification (Step 2) +
+  the verified symptom + the proposed fix scope. `**Status:** Investigating` while root cause
+  is unproven; `**Status:** Concluded` once proven and the fix scope is understood. This is
+  the durable investigation record; the Step-4 HARDENING.md round CITES its slug.
+- **How to produce it:** in a dispatched/subagent harden, invoke `/spec-bug` (batch) so the
+  investigation is a real skill pass; when running inline with the investigation already done
+  this session, author the equivalent `docs/bugs/<slug>/SPEC.md` directly (the artifact is the
+  deliverable, not the interactive pass). Commit it under `harden(docs):` BEFORE the fix
+  commit, so the audit trail predates the change.
+- **Proportionality:** even a trivial one-line fix gets a SHORT bug spec (verified symptom +
+  root cause + fix scope in a few lines) — "every invocation" is literal, but the spec scales
+  to the fix. A pure NEEDS_INPUT design-fork round still authors the bug spec (Status:
+  Investigating / Concluded) documenting WHY it is operator-owned.
+- **Then** proceed to Step 3 and implement the fix the concluded spec describes.
+
 ### Step 3: Act by decision class (tiered authority)
 
 **Mechanical fixes** (template/token gaps, missing emit section, prose clarification, lint
