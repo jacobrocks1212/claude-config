@@ -15583,6 +15583,126 @@ def pending_denial_reasons() -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# efficacy-future-check-unenforced-orchestrator-prose (D1) — the end-of-run
+# efficacy-flush breadcrumb + gate.
+#
+# The self-improving-harness observability loop (efficacy-eval.py review,
+# efficacy-eval.py --canary, incident-scan.py — the "trio") is designed to run
+# ONCE per run at the §1c.6 end-of-run flush, BEFORE --run-end.  That invocation
+# was orchestrator PROSE only — nothing enforced it, and it WAS skipped at a real
+# checkpoint --run-end.  This breadcrumb gate MIRRORS the unacked-hardening gate:
+# each trio member drops a RUN-SCOPED breadcrumb when invoked (even on a clean
+# no-op), and --run-end REFUSES (exit 1, marker kept) unless the breadcrumb is
+# present OR --efficacy-skip-authorized retro-grades a deliberate skip.  The trio
+# + the commit stay orchestrator-owned (D1, over run-end-invokes-the-trio) so the
+# run's telemetry context is intact when the scripts read it and the terminal
+# commit ordering is preserved.
+#
+# RUN-SCOPING: the breadcrumb records the current run marker's ``started_at``
+# (the run identity used throughout the telemetry ledger — see
+# efficacy-eval.py).  --run-end matches the breadcrumb's ``run_started_at``
+# against the LIVE marker, so a stale breadcrumb left by a crashed prior run
+# (different started_at) never satisfies the next run's gate.
+# ---------------------------------------------------------------------------
+
+_EFFICACY_BREADCRUMB_FILENAME = "lazy-efficacy-flush.json"
+
+
+def _raw_marker_started_at() -> str | None:
+    """RAW, NON-destructive read of the live run marker's ``started_at`` (the run
+    identity), or None when no well-formed marker exists.
+
+    Unlike ``read_run_marker`` this NEVER deletes a stale/corrupt marker and NEVER
+    applies staleness or session gating — the efficacy gate reads it from the
+    --run-end path (which must not double-delete) and the trio scripts drop the
+    breadcrumb from any session.  A degraded/absent marker yields None.
+    """
+    try:
+        marker_path = claude_state_dir(create=False) / _MARKER_FILENAME
+        if not marker_path.exists():
+            return None
+        marker = json.loads(marker_path.read_text(encoding="utf-8"))
+        if not isinstance(marker, dict):
+            return None
+        started_at = marker.get("started_at")
+        return started_at if isinstance(started_at, str) and started_at else None
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def drop_efficacy_breadcrumb(now: float | None = None) -> bool:
+    """Drop the run-scoped "efficacy flush ran this run" breadcrumb that the
+    --run-end gate checks (efficacy-future-check-unenforced-orchestrator-prose).
+
+    Called by EACH trio member (efficacy-eval.py review + --canary, incident-scan)
+    on a real (non-dry-run) invocation, EVEN on a clean no-op — running the flush
+    is what discharges the gate.  MARKER-GATED (no live run marker → no write,
+    return False — an on-demand invocation outside a run leaves no residue) and
+    FAIL-OPEN (any write error → False; the flush must never wedge on a breadcrumb
+    write).
+
+    Args:
+        now: epoch float for the ``ts`` field (injectable for hermetic tests).
+
+    Returns:
+        True when the breadcrumb was written; False when marker-gated or on any
+        write failure.
+    """
+    if now is None:
+        now = time.time()
+    started_at = _raw_marker_started_at()
+    if started_at is None:
+        return False
+    try:
+        crumb_path = claude_state_dir() / _EFFICACY_BREADCRUMB_FILENAME
+        body = json.dumps({"run_started_at": started_at, "ts": now}) + "\n"
+        _atomic_write(crumb_path, body)
+        return True
+    except Exception:  # noqa: BLE001 — fail-open: a breadcrumb write never wedges
+        return False
+
+
+def efficacy_breadcrumb_present(now: float | None = None) -> bool:
+    """Return True iff the end-of-run efficacy flush ran for the CURRENT run —
+    i.e. a breadcrumb exists whose ``run_started_at`` matches the LIVE run
+    marker's ``started_at`` (run-scoped: a stale breadcrumb from a prior run never
+    satisfies the gate).
+
+    Returns True when there is NO live run marker — the gate is then MOOT (a
+    --run-end with no marker is an idempotent no-op that must not be refused).
+    Any read/parse error → False (fail-safe: a degraded breadcrumb does not
+    satisfy the gate, exactly as a degraded deny-ledger never clears hardening
+    debt).
+    """
+    started_at = _raw_marker_started_at()
+    if started_at is None:
+        return True  # no live run to have flushed — gate is moot
+    try:
+        crumb_path = claude_state_dir(create=False) / _EFFICACY_BREADCRUMB_FILENAME
+        if not crumb_path.exists():
+            return False
+        crumb = json.loads(crumb_path.read_text(encoding="utf-8"))
+        if not isinstance(crumb, dict):
+            return False
+        return crumb.get("run_started_at") == started_at
+    except (OSError, ValueError, json.JSONDecodeError):
+        return False
+
+
+def clear_efficacy_breadcrumb() -> None:
+    """Remove the efficacy-flush breadcrumb (best-effort).  Called by --run-end
+    AFTER the gate passes and the marker is deleted, so the next run starts clean
+    (run-scoping already prevents a stale breadcrumb from satisfying a later gate;
+    this is tidy-up, not correctness)."""
+    try:
+        crumb_path = claude_state_dir(create=False) / _EFFICACY_BREADCRUMB_FILENAME
+        if crumb_path.exists():
+            crumb_path.unlink()
+    except OSError:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # harness-telemetry-ledger — the telemetry ledger (sibling of the deny ledger).
 #
 # An append-only JSONL ledger of the pipeline's deterministic chokepoint events

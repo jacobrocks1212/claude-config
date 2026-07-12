@@ -10077,6 +10077,28 @@ def test_guard_deny_ledger_failure_is_fail_open():
             _clear_state_dir()
 
 
+def _seed_efficacy_breadcrumb(state_dir):
+    """Drop the run-scoped efficacy-flush breadcrumb for the marker currently in
+    ``state_dir`` so a subsequent subprocess ``--run-end`` PASSES the efficacy
+    gate (efficacy-future-check-unenforced-orchestrator-prose).
+
+    These hermetic subprocess tests exercise OTHER --run-end concerns (hardening
+    debt, checkpoint, stop-authorization) and do not run the efficacy/canary/
+    incident trio; seeding the breadcrumb in-process is the moral equivalent of
+    the trio having flushed (it mirrors the in-process ``ack_oldest_deny`` seam
+    these same tests already use for the hardening-debt gate).  Keeps the
+    ``--run-end`` output byte-identical (no ``--efficacy-skip-authorized``
+    override key).  Must be called AFTER the run-start that wrote the marker and
+    BEFORE the success ``--run-end`` (run-scoped: keyed to the live marker's
+    started_at).
+    """
+    _set_state_dir(state_dir)
+    try:
+        lazy_core.drop_efficacy_breadcrumb()
+    finally:
+        _clear_state_dir()
+
+
 def test_run_end_refuses_on_unacked_deny():
     """Subprocess: marked run + 1 unacked deny → --run-end exits 1 with the
     marker still present; after the GUARD-ALLOW ack retires it, --run-end
@@ -10134,7 +10156,8 @@ def test_run_end_refuses_on_unacked_deny():
         finally:
             _clear_state_dir()
 
-        # Now run-end SUCCEEDS (ledger empty).
+        # Now run-end SUCCEEDS (ledger empty + efficacy breadcrumb seeded).
+        _seed_efficacy_breadcrumb(state_dir)
         r2 = run(["--run-end"])
         assert r2.returncode == 0, f"run-end must succeed after ack: {r2.stdout}"
         out2 = json.loads(r2.stdout)
@@ -10151,6 +10174,7 @@ def test_run_end_refuses_on_unacked_deny():
             )
         finally:
             _clear_state_dir()
+        _seed_efficacy_breadcrumb(state_dir)
         r3 = run(["--run-end", "--ack-unhardened"])
         assert r3.returncode == 0, f"override run-end must succeed: {r3.stdout}"
         out3 = json.loads(r3.stdout)
@@ -10250,6 +10274,7 @@ def test_run_end_ack_unhardened_clears_sessionless_friction():
         assert json.loads(r.stdout)["pending_hardening"] == 1
 
         # operator override: deletes the marker AND clears the debt.
+        _seed_efficacy_breadcrumb(state_dir)
         r2 = run(["--run-end", "--ack-unhardened"])
         assert r2.returncode == 0, r2.stdout
         out2 = json.loads(r2.stdout)
@@ -10512,6 +10537,7 @@ def test_checkpoint_round_trip():
         assert (state_dir / "lazy-run-marker.json").exists(), "marker still present after failed checkpoint"
 
         # Proper checkpoint run-end writes the file + retires the marker.
+        _seed_efficacy_breadcrumb(state_dir)
         r = run(["--run-end", "--reason", "checkpoint",
                  "--next-route", "write-plan Phase 14"])
         assert r.returncode == 0, f"checkpoint run-end failed: {r.stdout}{r.stderr}"
@@ -10535,6 +10561,7 @@ def test_checkpoint_round_trip():
         assert not ckpt_path.exists(), "checkpoint must be consumed (deleted)"
 
         # A plain terminal run-end writes NO checkpoint file.
+        _seed_efficacy_breadcrumb(state_dir)
         r3 = run(["--run-end"])
         assert r3.returncode == 0
         assert not ckpt_path.exists(), "terminal run-end must not write a checkpoint"
@@ -10599,6 +10626,7 @@ def test_run_end_checkpoint_threads_operator_authorized():
 
         # Operator-authorized checkpoint → field True.
         assert run(["--run-start", "--max-cycles", "9", "--unattended"]).returncode == 0
+        _seed_efficacy_breadcrumb(state_dir)
         r = run(["--run-end", "--reason", "checkpoint",
                  "--next-route", "execute-plan Phase 2", "--operator-authorized"])
         assert r.returncode == 0, f"{r.stdout}{r.stderr}"
@@ -10608,6 +10636,7 @@ def test_run_end_checkpoint_threads_operator_authorized():
         assert run(["--run-start", "--max-cycles", "9", "--unattended"]).returncode == 0
 
         # Non-authorized checkpoint (flag omitted) → field False.
+        _seed_efficacy_breadcrumb(state_dir)
         r2 = run(["--run-end", "--reason", "checkpoint",
                   "--next-route", "execute-plan Phase 3"])
         assert r2.returncode == 0, f"{r2.stdout}{r2.stderr}"
@@ -11351,6 +11380,7 @@ def test_checkpoint_resume_preserves_counters_e2e():
         marker_path.write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
 
         # Sanctioned checkpoint pause — folds the live counts into the checkpoint.
+        _seed_efficacy_breadcrumb(state_dir)
         r = run(["--run-end", "--reason", "checkpoint",
                  "--next-route", "execute-plan Phase 4"])
         assert r.returncode == 0, f"{r.stdout}{r.stderr}"
@@ -11401,6 +11431,7 @@ def test_operator_authorized_checkpoint_resume_resets_e2e():
         marker_path.write_text(json.dumps(marker, indent=2) + "\n", encoding="utf-8")
 
         # Operator-authorized checkpoint pause (deliberate stop, fresh budget intended).
+        _seed_efficacy_breadcrumb(state_dir)
         r = run(["--run-end", "--reason", "checkpoint",
                  "--next-route", "execute-plan Phase 4", "--operator-authorized"])
         assert r.returncode == 0, f"{r.stdout}{r.stderr}"
@@ -17071,6 +17102,7 @@ def test_p7_run_end_checkpoint_attended_with_auth_succeeds():
         assert r_start.returncode == 0, f"run-start failed: {r_start.stderr}"
 
         # --operator-authorized bypasses the attended gate.
+        _seed_efficacy_breadcrumb(state_dir)
         r = run(["--run-end", "--reason", "checkpoint",
                  "--next-route", "implement Phase 3",
                  "--operator-authorized"])
@@ -17117,6 +17149,7 @@ def test_p7_run_end_checkpoint_unattended_no_auth_allowed():
         )
 
         # --run-end --reason checkpoint on an unattended marker: allowed without auth.
+        _seed_efficacy_breadcrumb(state_dir)
         r = run(["--run-end", "--reason", "checkpoint",
                  "--next-route", "overnight resume route"])
         assert r.returncode == 0, (
@@ -17152,6 +17185,7 @@ def test_p7_run_end_terminal_sanctioned_reason_allowed():
         r_start = run(["--run-start", "--max-cycles", "10"])
         assert r_start.returncode == 0
 
+        _seed_efficacy_breadcrumb(state_dir)
         r = run(["--run-end", "--reason", "terminal",
                  "--terminal-reason", "all-features-complete"])
         assert r.returncode == 0, (
@@ -17227,6 +17261,7 @@ def test_p7_run_end_terminal_nonsanctioned_reason_with_auth_allowed():
         r_start = run(["--run-start", "--max-cycles", "10"])
         assert r_start.returncode == 0
 
+        _seed_efficacy_breadcrumb(state_dir)
         r = run(["--run-end", "--reason", "terminal",
                  "--terminal-reason", "bogus-reason",
                  "--operator-authorized"])
@@ -17265,6 +17300,7 @@ def test_p7_run_end_terminal_no_terminal_reason_adds_deprecation():
         assert r_start.returncode == 0
 
         # Legacy: --run-end without --terminal-reason → still exits 0 but adds deprecation.
+        _seed_efficacy_breadcrumb(state_dir)
         r = run(["--run-end", "--reason", "terminal"])
         assert r.returncode == 0, (
             f"legacy terminal run-end (no --terminal-reason) must still exit 0; "
@@ -17898,6 +17934,7 @@ def test_marker_present_cli_absent_then_present_and_readonly():
         )
 
         # Clear it → probe returns to exit 1.
+        _seed_efficacy_breadcrumb(state_dir)
         assert run(["--run-end"]).returncode == 0
         assert run(["--marker-present"]).returncode == 1, (
             "--marker-present must exit 1 after the marker is cleared"
@@ -19509,6 +19546,180 @@ def test_observed_friction_context_resolves_hardening_template():
     assert res.get("ok") is True, res  # must NOT refuse on a missing @requires key
     assert "observed-friction" in res["prompt"], res
     assert "verification-row recognizer inconsistency" in res["prompt"], res
+
+
+# ---------------------------------------------------------------------------
+# efficacy-future-check-unenforced-orchestrator-prose (D1) — the end-of-run
+# efficacy-flush breadcrumb + the --run-end gate.
+# ---------------------------------------------------------------------------
+
+
+def test_efficacy_breadcrumb_marker_gated_and_moot():
+    """drop_efficacy_breadcrumb is MARKER-GATED (no live run marker → no write,
+    returns False, no file). efficacy_breadcrumb_present with no marker returns
+    True — the gate is MOOT (a --run-end with no marker is an idempotent no-op
+    that must not be refused)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            assert lazy_core.drop_efficacy_breadcrumb() is False
+            crumb = Path(td) / lazy_core._EFFICACY_BREADCRUMB_FILENAME
+            assert not crumb.exists(), "no marker → no breadcrumb file"
+            assert lazy_core.efficacy_breadcrumb_present() is True, "no marker → moot"
+        finally:
+            _clear_state_dir()
+
+
+def test_efficacy_breadcrumb_absent_present_false_then_drop_true():
+    """With a live run marker: efficacy_breadcrumb_present is False BEFORE the
+    trio runs (the gate would REFUSE), and True AFTER drop_efficacy_breadcrumb
+    (the gate PASSES). This is the refuse-without / pass-with pair at the helper
+    level that the --run-end gate wires."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=td, max_cycles=5,
+            )
+            # Before the flush: no breadcrumb → gate would refuse.
+            assert lazy_core.efficacy_breadcrumb_present() is False
+            # Trio runs → breadcrumb dropped → gate passes.
+            assert lazy_core.drop_efficacy_breadcrumb() is True
+            assert lazy_core.efficacy_breadcrumb_present() is True
+        finally:
+            _clear_state_dir()
+
+
+def test_efficacy_breadcrumb_run_scoped_stale_does_not_satisfy():
+    """RUN-SCOPING: a breadcrumb whose run_started_at differs from the LIVE
+    marker's started_at (a stale breadcrumb left by a crashed prior run) does NOT
+    satisfy the gate — efficacy_breadcrumb_present returns False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=td, max_cycles=5,
+            )
+            # Hand-write a breadcrumb from a DIFFERENT (prior) run identity.
+            crumb = Path(td) / lazy_core._EFFICACY_BREADCRUMB_FILENAME
+            crumb.write_text(
+                json.dumps({"run_started_at": "1999-01-01T00:00:00Z", "ts": 1.0}),
+                encoding="utf-8",
+            )
+            assert lazy_core.efficacy_breadcrumb_present() is False, (
+                "a prior-run breadcrumb must not satisfy this run's gate"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_efficacy_breadcrumb_clear_removes_file():
+    """clear_efficacy_breadcrumb removes the breadcrumb (best-effort) — called by
+    --run-end after teardown so the next run starts clean."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=td, max_cycles=5,
+            )
+            assert lazy_core.drop_efficacy_breadcrumb() is True
+            crumb = Path(td) / lazy_core._EFFICACY_BREADCRUMB_FILENAME
+            assert crumb.exists()
+            lazy_core.clear_efficacy_breadcrumb()
+            assert not crumb.exists()
+        finally:
+            _clear_state_dir()
+
+
+def _run_end_efficacy_gate_cli(script_name: str):
+    """Shared CLI subprocess exercise for the --run-end efficacy-flush gate on
+    either state script: (1) marker present + NO breadcrumb → REFUSE (exit 1,
+    marker kept); (2) marker present + breadcrumb → PASS (exit 0, marker gone);
+    (3) marker present + NO breadcrumb + --efficacy-skip-authorized → PASS (exit
+    0, efficacy_skip note)."""
+    _guard()
+    state_script = _SCRIPTS_DIR / script_name
+    pipeline = "bug" if script_name == "bug-state.py" else "feature"
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo = td_path / "repo"
+        repo.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        marker_file = state_dir / lazy_core._MARKER_FILENAME
+
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def _write_marker():
+            _set_state_dir(state_dir)
+            try:
+                lazy_core.write_run_marker(
+                    pipeline=pipeline, cloud=False, repo_root=str(repo),
+                    max_cycles=5,
+                )
+            finally:
+                _clear_state_dir()
+
+        def _run_end(*extra):
+            return subprocess.run(
+                [sys.executable, str(state_script), "--run-end",
+                 "--repo-root", str(repo), *extra],
+                capture_output=True, text=True, env=env,
+            )
+
+        # (1) No breadcrumb → refuse, marker kept.
+        _write_marker()
+        r1 = _run_end()
+        assert r1.returncode == 1, (
+            f"{script_name} --run-end without breadcrumb must exit 1; "
+            f"got {r1.returncode}; stdout={r1.stdout[:400]!r}"
+        )
+        out1 = json.loads(r1.stdout)
+        assert out1.get("run_marker_deleted") is False, out1
+        assert "efficacy-flush breadcrumb" in out1.get("refused", ""), out1
+        assert marker_file.exists(), "refused run-end must LEAVE the marker in place"
+
+        # (2) Breadcrumb present → pass, marker deleted.
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.drop_efficacy_breadcrumb() is True
+        finally:
+            _clear_state_dir()
+        r2 = _run_end()
+        assert r2.returncode == 0, (
+            f"{script_name} --run-end WITH breadcrumb must exit 0; "
+            f"got {r2.returncode}; stdout={r2.stdout[:400]!r}"
+        )
+        out2 = json.loads(r2.stdout)
+        assert out2.get("run_marker_deleted") is True, out2
+        assert not marker_file.exists(), "passed run-end must delete the marker"
+
+        # (3) No breadcrumb + --efficacy-skip-authorized → pass with note.
+        _write_marker()
+        r3 = _run_end("--efficacy-skip-authorized")
+        assert r3.returncode == 0, (
+            f"{script_name} --run-end --efficacy-skip-authorized must exit 0; "
+            f"got {r3.returncode}; stdout={r3.stdout[:400]!r}"
+        )
+        out3 = json.loads(r3.stdout)
+        assert out3.get("run_marker_deleted") is True, out3
+        assert "efficacy_skip" in out3, out3
+
+
+def test_run_end_efficacy_gate_lazy_state_cli():
+    """lazy-state.py --run-end enforces the efficacy-flush gate: refuse without
+    breadcrumb, pass with, override via --efficacy-skip-authorized."""
+    _run_end_efficacy_gate_cli("lazy-state.py")
+
+
+def test_run_end_efficacy_gate_bug_state_cli():
+    """bug-state.py --run-end mirrors the efficacy-flush gate (coupled-pair)."""
+    _run_end_efficacy_gate_cli("bug-state.py")
 
 
 # ---------------------------------------------------------------------------
@@ -23852,6 +24063,18 @@ _TESTS = _TESTS + [
      test_normalize_hardening_context_auto_trigger_passthrough),
     ("test_observed_friction_context_resolves_hardening_template",
      test_observed_friction_context_resolves_hardening_template),
+    ("test_efficacy_breadcrumb_marker_gated_and_moot",
+     test_efficacy_breadcrumb_marker_gated_and_moot),
+    ("test_efficacy_breadcrumb_absent_present_false_then_drop_true",
+     test_efficacy_breadcrumb_absent_present_false_then_drop_true),
+    ("test_efficacy_breadcrumb_run_scoped_stale_does_not_satisfy",
+     test_efficacy_breadcrumb_run_scoped_stale_does_not_satisfy),
+    ("test_efficacy_breadcrumb_clear_removes_file",
+     test_efficacy_breadcrumb_clear_removes_file),
+    ("test_run_end_efficacy_gate_lazy_state_cli",
+     test_run_end_efficacy_gate_lazy_state_cli),
+    ("test_run_end_efficacy_gate_bug_state_cli",
+     test_run_end_efficacy_gate_bug_state_cli),
     ("test_cycle_end_friction_check_symbol_present",
      test_cycle_end_friction_check_symbol_present),
     ("test_cycle_marker_clear_idempotent",

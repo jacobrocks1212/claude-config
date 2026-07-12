@@ -5631,8 +5631,12 @@ def run_smoke_tests() -> int:
                 ["--cycle-begin", "--bug-id", "bug-tl", "--nonce", "abc123",
                  "--kind", "real", "--sub-skill", "execute-plan"],
                 ["--cycle-end"],
+                # --efficacy-skip-authorized: this hermetic bracket fixture does
+                # not run the efficacy/canary/incident trio (the gate is
+                # exercised dedicated in test_lazy_core.py).
                 ["--run-end", "--reason", "terminal",
-                 "--terminal-reason", "all-bugs-fixed"],
+                 "--terminal-reason", "all-bugs-fixed",
+                 "--efficacy-skip-authorized"],
             ):
                 r = subprocess.run(
                     [sys.executable, _tl_script, "--repo-root", str(tl_repo)] + cmd,
@@ -5780,7 +5784,8 @@ def run_smoke_tests() -> int:
             r = subprocess.run(
                 [sys.executable, _tl_script, "--repo-root", str(tl_repo_e),
                  "--cloud", "--run-end", "--reason", "terminal",
-                 "--terminal-reason", "all-bugs-fixed"],
+                 "--terminal-reason", "all-bugs-fixed",
+                 "--efficacy-skip-authorized"],
                 capture_output=True, text=True, env=_tl_env(tl_state_e),
             )
             if r.returncode != 0:
@@ -6933,6 +6938,17 @@ def main() -> int:
             "for retro grading."
         ),
     )
+    # efficacy-future-check-unenforced-orchestrator-prose (D1, coupled-pair
+    # mirror of lazy-state.py): the operator override for the efficacy-flush gate.
+    parser.add_argument(
+        "--efficacy-skip-authorized", action="store_true",
+        help=(
+            "With --run-end: proceed even when the end-of-run "
+            "efficacy/canary/incident flush did not run this run (no "
+            "efficacy-flush breadcrumb). The override is recorded in the run-end "
+            "output for retro grading."
+        ),
+    )
     parser.add_argument(
         "--next-route", default=None, metavar="TEXT",
         help=(
@@ -7265,6 +7281,38 @@ def main() -> int:
             )
 
         # -----------------------------------------------------------------------
+        # efficacy-future-check-unenforced-orchestrator-prose (D1, coupled-pair
+        # mirror of lazy-state.py): the end-of-run efficacy/canary/incident trio
+        # must flush before the run is retired. Refuse (exit 1, marker LEFT IN
+        # PLACE) unless the run-scoped efficacy-flush breadcrumb is present, or
+        # --efficacy-skip-authorized retro-grades a deliberate skip. Applies to
+        # checkpoint run-ends too. The check reads the marker RAW (non-deleting).
+        # -----------------------------------------------------------------------
+        efficacy_skip_note = None
+        if not lazy_core.efficacy_breadcrumb_present():
+            if not args.efficacy_skip_authorized:
+                sys.stdout.write(json.dumps({
+                    "run_marker_deleted": False,
+                    "refused": (
+                        "No efficacy-flush breadcrumb for this run. The end-of-run "
+                        "efficacy/canary/incident trio must run before --run-end: "
+                        "`efficacy-eval.py --repo-root .`, "
+                        "`efficacy-eval.py --canary --repo-root .`, and "
+                        "`incident-scan.py --repo-root .` (SKILL §1c.6 flush) each "
+                        "drop a run-scoped breadcrumb even on a clean no-op. Run the "
+                        "trio and re-invoke --run-end, or pass "
+                        "--efficacy-skip-authorized to deliberately skip (recorded "
+                        "for retro grading). The marker was NOT deleted. "
+                        "[efficacy-future-check-unenforced-orchestrator-prose]"
+                    ),
+                }, indent=2) + "\n")
+                return 1
+            efficacy_skip_note = (
+                "OVERRIDE: --efficacy-skip-authorized retired the run without an "
+                "efficacy-flush breadcrumb (operator-authorized deliberate skip)."
+            )
+
+        # -----------------------------------------------------------------------
         # Phase 7 (lazy-validation-readiness) stop-authorization gates.
         # Coupled-pair mirror of lazy-state.py — see lazy-state.py for rationale.
         # Motivating incident 2026-06-14: attended /lazy-batch 50 stopped at 5/50.
@@ -7349,6 +7397,9 @@ def main() -> int:
 
         # Delete the marker AND the registry (both are run-scoped state).
         deleted = lazy_core.delete_run_marker(clear_registry=True)
+        # efficacy-future-check-unenforced-orchestrator-prose (D1, coupled-pair
+        # mirror): clear the run-scoped efficacy-flush breadcrumb on teardown.
+        lazy_core.clear_efficacy_breadcrumb()
         result_out: dict = {"run_marker_deleted": deleted, "reason": reason}
         if telemetry_flushed is not None:
             # Only a cloud run WITH telemetry events gains this key — every
@@ -7356,6 +7407,8 @@ def main() -> int:
             result_out["telemetry_flushed"] = telemetry_flushed
         if override_note is not None:
             result_out["override"] = override_note
+        if efficacy_skip_note is not None:
+            result_out["efficacy_skip"] = efficacy_skip_note
         if checkpoint_written is not None:
             result_out["checkpoint"] = checkpoint_written
         # Phase 7: backward-compat deprecation note for legacy --reason terminal

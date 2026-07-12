@@ -483,6 +483,15 @@ def main(argv: list[str] | None = None) -> int:
     lazy_core.set_active_repo_root(str(repo_root))
     now = args.now if args.now is not None else time.time()
 
+    # efficacy-future-check-unenforced-orchestrator-prose (D1): drop the
+    # run-scoped "efficacy flush ran this run" breadcrumb the --run-end gate
+    # checks (incident-scan is one of the trio). A real (non-dry-run) invocation
+    # satisfies the gate even on a clean no-op (no clusters cleared the bar).
+    # --dry-run is byte-inert and must NOT satisfy the gate. Marker-gated +
+    # fail-open inside the helper (no run marker → no-op).
+    if not args.dry_run:
+        lazy_core.drop_efficacy_breadcrumb()
+
     clusters = collect_clusters(repo_root, now)
     cleared = [c for c in clusters if c["cleared"]]
 

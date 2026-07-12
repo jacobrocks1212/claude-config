@@ -1102,6 +1102,17 @@ def main(argv: "list[str] | None" = None) -> int:
     except Exception:  # noqa: BLE001 — binding failure degrades to cwd rules
         pass
 
+    # efficacy-future-check-unenforced-orchestrator-prose (D1): drop the
+    # run-scoped "efficacy flush ran this run" breadcrumb the --run-end gate
+    # checks. A real (non-dry-run) invocation of ANY trio member — efficacy-eval
+    # review OR --canary, and incident-scan — satisfies the gate, EVEN on a clean
+    # no-op (no due records / no open canaries / no incidents). Placed before the
+    # --canary branch so both modes drop it. --dry-run is byte-inert and must NOT
+    # satisfy the gate (a /lazy-batch-retro citation pass is not a flush).
+    # Marker-gated + fail-open inside the helper (no run marker → no-op).
+    if not args.dry_run:
+        lazy_core.drop_efficacy_breadcrumb()
+
     today = datetime.date.today().isoformat()
 
     # --canary: the run-boundary watcher cadence (a fully separate branch;
