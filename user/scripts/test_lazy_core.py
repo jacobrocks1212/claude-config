@@ -20095,6 +20095,13 @@ def _run_end_efficacy_gate_cli(script_name: str):
         td_path = Path(td)
         repo = td_path / "repo"
         repo.mkdir()
+        # interventions-telemetry-split-brain WU-3: the run-end efficacy gate is
+        # coverage-aware — the breadcrumb discharges it only when it covered an
+        # interventions-bearing scope.  The marker's repo_root IS this fixture
+        # repo, so make it interventions-bearing so drop_efficacy_breadcrumb()
+        # (which now prefers the marker's own repo_root) records
+        # interventions_covered=True and the WITH-breadcrumb case exits 0.
+        _make_interventions_bearing_repo(repo)
         state_dir = td_path / "state"
         state_dir.mkdir()
         marker_file = state_dir / lazy_core._MARKER_FILENAME
@@ -33150,7 +33157,7 @@ _TESTS = _TESTS + [
 
 # ---------------------------------------------------------------------------
 # run-end-gate-refusals-no-telemetry-event — each of the three --run-end gate
-# refusals (unacked-hardening / efficacy-flush-missing / checkpoint-auth) must
+# refusals (unacked-hardening / efficacy-coverage-missing / checkpoint-auth) must
 # append an observability-only `gate-refusal` telemetry event carrying the
 # matching `data.gate`, while the refusal itself is UNCHANGED (exit 1, marker
 # kept).  A SUCCESSFUL --run-end must emit `run-end` and NO `gate-refusal`
@@ -33233,19 +33240,22 @@ def test_run_end_unacked_hardening_refusal_emits_gate_refusal_bug():
 
 
 def test_run_end_efficacy_flush_refusal_emits_gate_refusal_lazy():
-    """lazy-state.py --run-end with no efficacy-flush breadcrumb (gate 1 clear:
-    zero pending) refuses AND appends gate=efficacy-flush-missing."""
+    """lazy-state.py --run-end with no interventions-bearing-scope efficacy-flush
+    breadcrumb (gate 1 clear: zero pending) refuses AND appends
+    gate=efficacy-coverage-missing (interventions-telemetry-split-brain WU-3
+    made the gate coverage-aware — a flush that never covered an
+    interventions-bearing scope no longer discharges it)."""
     _assert_run_end_refusal_emits(
         "lazy-state.py", "feature", [], seed_deny=False,
-        expected_gate="efficacy-flush-missing",
+        expected_gate="efficacy-coverage-missing",
     )
 
 
 def test_run_end_efficacy_flush_refusal_emits_gate_refusal_bug():
-    """bug-state.py mirror of the efficacy-flush-missing refusal emission."""
+    """bug-state.py mirror of the efficacy-coverage-missing refusal emission."""
     _assert_run_end_refusal_emits(
         "bug-state.py", "bug", [], seed_deny=False,
-        expected_gate="efficacy-flush-missing",
+        expected_gate="efficacy-coverage-missing",
     )
 
 

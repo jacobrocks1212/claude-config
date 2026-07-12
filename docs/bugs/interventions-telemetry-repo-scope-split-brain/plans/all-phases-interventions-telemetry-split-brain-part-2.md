@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: interventions-telemetry-repo-scope-split-brain
-status: Ready
+status: In-progress
 created: 2026-07-12
 complexity: complex
 phases: [3, 4]
