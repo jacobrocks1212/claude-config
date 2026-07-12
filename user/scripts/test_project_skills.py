@@ -511,6 +511,127 @@ def test_fallback_cat_recurses_into_override(tmp_path, ps):
 
 
 # ---------------------------------------------------------------------------
+# Internal-repos union (harden Round 26 — skill_repos consolidation)
+# ---------------------------------------------------------------------------
+#
+# Regression for docs/bugs/project-skills-under-projects-machine-variable-repos-dir:
+# project_all discovered only the machine-variable passed repos_dir and silently
+# omitted the canonical git-tracked internal repos/. project_all now takes an
+# explicit `internal_repos_dir` and unions it. The scan is an OPT-IN (default None
+# → passed dir only) so these tests are hermetic — the real internal repos/ is
+# never reached unless a synthetic dir is injected.
+
+
+def _make_config_repo(base: Path, name: str, cap: str | None = None) -> Path:
+    """Create <base>/<name>/.claude/skill-config[/capabilities.txt]."""
+    sc = base / name / ".claude" / "skill-config"
+    sc.mkdir(parents=True)
+    (sc / "quality-gates.md").write_text(f"Gates for {name}.\n")
+    if cap is not None:
+        (sc / "capabilities.txt").write_text(f"{cap}\n")
+    return base / name
+
+
+def test_project_all_unions_internal_repos_dir(tmp_path, ps):
+    """project_all discovers repos from BOTH the passed repos_dir and an injected
+    internal_repos_dir (the fix: internal repos are no longer omitted)."""
+    skills_dir = tmp_path / "skills"
+    (skills_dir / "my-skill").mkdir(parents=True)
+    (skills_dir / "my-skill" / "SKILL.md").write_text("# My Skill\nContent.\n")
+
+    passed = tmp_path / "source-repos"
+    _make_config_repo(passed, "sibling-repo")
+    internal = tmp_path / "internal-repos"
+    _make_config_repo(internal, "internal-repo")
+
+    summary = ps.project_all(
+        skills_dir=skills_dir,
+        output_dir=tmp_path / "out",
+        repos_dir=passed,
+        internal_repos_dir=internal,
+    )
+
+    assert summary["repos_discovered"] == 2
+    assert "sibling-repo" in summary["repos"]
+    assert "internal-repo" in summary["repos"]
+    # The internal repo is genuinely projected to disk, not just counted.
+    assert (tmp_path / "out" / "internal-repo" / "my-skill" / "SKILL.md").exists()
+
+
+def test_project_all_internal_repos_default_none_is_hermetic(tmp_path, ps):
+    """Omitting internal_repos_dir scans ONLY the passed repos_dir — the real
+    internal repos/ must never leak into a controlled test."""
+    skills_dir = tmp_path / "skills"
+    (skills_dir / "my-skill").mkdir(parents=True)
+    (skills_dir / "my-skill" / "SKILL.md").write_text("# My Skill\nContent.\n")
+
+    passed = tmp_path / "source-repos"
+    _make_config_repo(passed, "only-repo")
+
+    summary = ps.project_all(
+        skills_dir=skills_dir,
+        output_dir=tmp_path / "out",
+        repos_dir=passed,
+    )
+
+    assert summary["repos_discovered"] == 1
+    assert list(summary["repos"].keys()) == ["only-repo"]
+
+
+def test_project_all_missing_passed_repos_still_projects_internal(tmp_path, ps):
+    """The bug scenario: passed repos_dir does not exist, but the injected internal
+    repos/ still yields the per-repo projections (no silent under-projection)."""
+    skills_dir = tmp_path / "skills"
+    (skills_dir / "my-skill").mkdir(parents=True)
+    (skills_dir / "my-skill" / "SKILL.md").write_text("# My Skill\nContent.\n")
+
+    internal = tmp_path / "internal-repos"
+    _make_config_repo(internal, "internal-repo", cap="mcp")
+
+    summary = ps.project_all(
+        skills_dir=skills_dir,
+        output_dir=tmp_path / "out",
+        repos_dir=tmp_path / "does-not-exist",
+        internal_repos_dir=internal,
+    )
+
+    assert summary["repos_discovered"] == 1
+    assert "internal-repo" in summary["repos"]
+
+
+def test_iter_config_repos_dedups_by_resolved_marker(tmp_path, ps):
+    """skill_repos.iter_config_repos dedups a repo that appears in both bases via a
+    symlink into the internal tree (resolved marker path collides → yielded once,
+    passed base wins). Symlinks are enabled on this machine (Developer Mode)."""
+    from skill_repos import iter_config_repos
+
+    internal = tmp_path / "internal-repos"
+    real_repo = _make_config_repo(internal, "shared-repo")
+
+    passed = tmp_path / "source-repos"
+    passed.mkdir()
+    # Sibling checkout symlinks INTO the internal repo (the dev-machine layout).
+    link = passed / "shared-repo"
+    link.symlink_to(real_repo, target_is_directory=True)
+
+    repos = list(iter_config_repos(passed, internal, ".claude/skill-config"))
+    assert len(repos) == 1, f"expected dedup to one repo, got {repos}"
+    # Passed base scanned first → the sibling symlink path wins.
+    assert repos[0] == link
+
+
+def test_resolve_internal_repos_root_points_at_claude_config_repos():
+    """resolve_internal_repos_root derives <claude-config>/repos from the module's
+    own location, so discovery is machine-independent."""
+    from skill_repos import resolve_internal_repos_root
+
+    root = resolve_internal_repos_root()
+    assert root.name == "repos"
+    # cognito-forms is a git-tracked internal repo with skill-config.
+    assert (root / "cognito-forms" / ".claude" / "skill-config").is_dir()
+
+
+# ---------------------------------------------------------------------------
 # Terminal-stop @section (lazy-cycle-containment Phase 6, C4)
 # ---------------------------------------------------------------------------
 #
@@ -985,3 +1106,12 @@ def test_planners_point_at_contract_not_inline_boilerplate():
         "generic write-plan still instructs emitting verbatim policy "
         "boilerplate into the plan"
     )
+
+
+if __name__ == "__main__":
+    # This suite is pytest-based (fixtures, tmp_path). Running the file directly
+    # as a quality gate (`python .../test_project_skills.py`) must actually EXECUTE
+    # the tests — without this runner the command was a silent no-op (exit 0 with
+    # nothing run), which masked a preexisting RED test. Delegate to pytest so the
+    # gate has teeth. See docs/bugs/project-skills-under-projects-machine-variable-repos-dir.
+    sys.exit(pytest.main([__file__, "-q"]))

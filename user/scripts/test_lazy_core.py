@@ -18338,7 +18338,10 @@ def _lint_skills_module():
 def test_planner_resolution_resolves_via_internal_repos_when_passed_repos_empty():
     """With an EMPTY passed repos_dir (the bug scenario: no sibling checkouts under
     ~/source/repos), the D1 gate must STILL resolve write-plan-cognito via the
-    canonical internal <claude-config>/repos/ — no 'planner-resolution' finding."""
+    canonical internal <claude-config>/repos/ — no 'planner-resolution' finding.
+    The internal scan is now an EXPLICIT parameter (production main() passes
+    resolve_internal_repos_root()); this test passes it the same way to mirror
+    the production call — see the skill_repos.py consolidation (harden Round 26)."""
     mod = _lint_skills_module()
     with tempfile.TemporaryDirectory() as td:
         empty_repos = Path(td) / "empty-source-repos"
@@ -18346,7 +18349,9 @@ def test_planner_resolution_resolves_via_internal_repos_when_passed_repos_empty(
         empty_user_skills = Path(td) / "empty-user-skills"
         empty_user_skills.mkdir()
 
-        issues = mod.lint_planner_resolution(empty_repos, empty_user_skills)
+        issues = mod.lint_planner_resolution(
+            empty_repos, empty_user_skills, mod.resolve_internal_repos_root()
+        )
         kinds = {i["kind"] for i in issues}
         # The false-RED finding this bug is about must NOT appear: the internal
         # repos/ resolution fills in for the empty passed repos_dir.

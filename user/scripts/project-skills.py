@@ -17,6 +17,12 @@ import argparse
 from pathlib import Path
 from typing import Optional
 
+# Insert this directory onto sys.path so `import skill_repos` resolves whether the
+# script is run directly (~/.claude/scripts/project-skills.py) or loaded as a
+# module in tests (mirrors the bug-state.py / lazy-state.py sibling-import guard).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from skill_repos import iter_config_repos, resolve_internal_repos_root
+
 
 # Regex patterns for the three !cat forms
 _SIMPLE_CAT = re.compile(
@@ -242,12 +248,27 @@ def project_skills(
     }
 
 
-def project_all(skills_dir: Path, output_dir: Path, repos_dir: Path) -> dict:
+def project_all(
+    skills_dir: Path,
+    output_dir: Path,
+    repos_dir: Path,
+    internal_repos_dir: Optional[Path] = None,
+) -> dict:
     """
     Project skills for _default and all repos that have .claude/skill-config/.
 
     _default projection includes ALL capabilities (no filtering).
     Repo projections filter by capabilities.txt when present.
+
+    Repos are discovered from the UNION of the passed `repos_dir` (sibling
+    checkouts under ~/source/repos) and `internal_repos_dir` (the canonical,
+    git-tracked `<claude-config>/repos/`), deduplicated by resolved skill-config
+    path. `internal_repos_dir` is an EXPLICIT opt-in: when None, only `repos_dir`
+    is scanned (keeps this function hermetic for tests); production `main()`
+    passes `resolve_internal_repos_root()` so per-repo projections appear
+    regardless of the host's ~/source/repos layout. Shared with
+    lint-skills.py via skill_repos.iter_config_repos.
+    See docs/bugs/project-skills-under-projects-machine-variable-repos-dir.
     """
     if output_dir.exists():
         shutil.rmtree(output_dir)
@@ -262,22 +283,18 @@ def project_all(skills_dir: Path, output_dir: Path, repos_dir: Path) -> dict:
 
     repos_summaries: dict = {}
 
-    if repos_dir.exists():
-        for repo_path in sorted(repos_dir.iterdir()):
-            if not repo_path.is_dir():
-                continue
-            skill_config_dir = repo_path / ".claude" / "skill-config"
-            if not skill_config_dir.is_dir():
-                continue
-            caps = _read_capabilities(repo_path)
-            repo_summary = project_skills(
-                skills_dir=skills_dir,
-                output_dir=output_dir / repo_path.name,
-                project_dir=repo_path,
-                capabilities=caps,
-            )
-            repo_summary["capabilities"] = sorted(caps) if caps is not None else None
-            repos_summaries[repo_path.name] = repo_summary
+    for repo_path in iter_config_repos(
+        repos_dir, internal_repos_dir, ".claude/skill-config"
+    ):
+        caps = _read_capabilities(repo_path)
+        repo_summary = project_skills(
+            skills_dir=skills_dir,
+            output_dir=output_dir / repo_path.name,
+            project_dir=repo_path,
+            capabilities=caps,
+        )
+        repo_summary["capabilities"] = sorted(caps) if caps is not None else None
+        repos_summaries[repo_path.name] = repo_summary
 
     return {
         "default": default_summary,
@@ -319,12 +336,18 @@ def main() -> None:
     skills_dir = args.skills_dir.expanduser().resolve()
     output_dir = args.output_dir.expanduser().resolve()
     repos_dir = args.repos_dir.expanduser().resolve()
+    # The canonical, git-tracked internal repos/ is always present (the script
+    # lives inside claude-config), so per-repo projections must be resolved from
+    # it regardless of whether ~/source/repos holds sibling checkouts. This is the
+    # fix for docs/bugs/project-skills-under-projects-machine-variable-repos-dir.
+    internal_repos_dir = resolve_internal_repos_root()
 
-    if repos_dir.exists():
+    if repos_dir.exists() or internal_repos_dir.exists():
         summary = project_all(
             skills_dir=skills_dir,
             output_dir=output_dir,
             repos_dir=repos_dir,
+            internal_repos_dir=internal_repos_dir,
         )
         default_s = summary["default"]
         print(f"Skills projected (_default): {default_s['skills_projected']}")

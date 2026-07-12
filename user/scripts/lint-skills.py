@@ -15,6 +15,12 @@ import sys
 import argparse
 from pathlib import Path
 
+# Insert this directory onto sys.path so `import skill_repos` resolves whether
+# the script is run directly (~/.claude/scripts/lint-skills.py) or loaded as a
+# module in tests (mirrors the bug-state.py / lazy-state.py sibling-import guard).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from skill_repos import iter_config_repos, resolve_internal_repos_root
+
 # Matches the literal trigger the runtime looks for anywhere on a line.
 _RUNTIME_TRIGGER = re.compile(r'!`cat\s+')
 
@@ -210,7 +216,11 @@ def _skill_dirs_under(skills_root: Path) -> set:
     return names
 
 
-def lint_planner_resolution(repos_dir: Path, user_skills_dir: Path) -> list[dict]:
+def lint_planner_resolution(
+    repos_dir: Path,
+    user_skills_dir: Path,
+    internal_repos_dir: Path | None = None,
+) -> list[dict]:
     """Enforce the D1 deterministic-planner-resolution invariants.
 
     Positive: a skill named `write-plan-cognito` must resolve under some
@@ -228,39 +238,21 @@ def lint_planner_resolution(repos_dir: Path, user_skills_dir: Path) -> list[dict
 
     user_names = _skill_dirs_under(user_skills_dir)
 
-    # Resolve repo skill roots from the UNION of two locations, deduplicated by
-    # resolved path:
-    #   1. the passed `repos_dir` (sibling working copies under ~/source/repos).
-    #      On dev machines / WSL these hold symlinks INTO the internal repos below,
-    #      so they resolve the same files; on a machine where the siblings are not
-    #      checked out, this scan is simply empty.
-    #   2. the claude-config-internal `<claude-config>/repos/`, derived from this
-    #      script's own location — the CANONICAL, git-tracked, always-present source
-    #      of repo-scoped skills. This is what makes D1 resolution machine-independent:
-    #      the gate must find `write-plan-cognito` whether or not sibling checkouts
-    #      exist under ~/source/repos (see docs/bugs/planner-resolution-lint-blind-to-internal-repos).
-    # scripts live at <claude-config>/user/scripts/lint-skills.py → parents[2] == <claude-config>.
-    internal_repos_dir = Path(__file__).resolve().parents[2] / "repos"
-
-    repo_skill_roots: list[Path] = []
-    _seen_roots: set = set()
-    for base in (repos_dir, internal_repos_dir):
-        if not base.exists():
-            continue
-        try:
-            for repo in sorted(base.iterdir()):
-                if not repo.is_dir():
-                    continue
-                root = repo / ".claude" / "skills"
-                if not root.exists():
-                    continue
-                key = root.resolve()
-                if key in _seen_roots:
-                    continue
-                _seen_roots.add(key)
-                repo_skill_roots.append(root)
-        except OSError:
-            pass
+    # Resolve repo skill roots from the UNION of the passed `repos_dir` (sibling
+    # working copies under ~/source/repos) and the canonical, git-tracked internal
+    # `<claude-config>/repos/`, deduplicated by resolved skills-root path. The
+    # internal scan is an EXPLICIT parameter (not a hidden __file__ derivation) so
+    # this function stays hermetically testable: production `main()` passes
+    # `resolve_internal_repos_root()`; tests pass an empty dir to isolate. This is
+    # what makes D1 resolution machine-independent — the gate must find
+    # `write-plan-cognito` whether or not sibling checkouts exist under
+    # ~/source/repos (see docs/bugs/planner-resolution-lint-blind-to-internal-repos
+    # and docs/bugs/project-skills-under-projects-machine-variable-repos-dir).
+    # Shared with project-skills.py via skill_repos.iter_config_repos.
+    repo_skill_roots: list[Path] = [
+        repo / ".claude" / "skills"
+        for repo in iter_config_repos(repos_dir, internal_repos_dir, ".claude/skills")
+    ]
 
     repo_names: set = set()
     for root in repo_skill_roots:
@@ -412,7 +404,11 @@ def main() -> None:
     # `write-plan-cognito` resolves repo-scoped with no user-level collision,
     # and no `execute-plan-cognito` fork exists anywhere.
     repos_dir = args.repos_dir.expanduser().resolve()
-    planner_issues = lint_planner_resolution(repos_dir, skills_dir)
+    # Production always unions the canonical internal repos/ so D1 resolution is
+    # machine-independent regardless of the host's ~/source/repos layout.
+    planner_issues = lint_planner_resolution(
+        repos_dir, skills_dir, resolve_internal_repos_root()
+    )
     if not planner_issues:
         print("OK — planner resolution: write-plan-cognito resolves; no execute-plan-cognito fork.")
     else:
