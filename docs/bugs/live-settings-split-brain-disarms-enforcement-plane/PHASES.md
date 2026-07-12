@@ -116,6 +116,8 @@ Ground-truth confirmed live 2026-07-11/12 via a read-only touchpoint audit (all 
 
 ### Phase 3: Restore the live symlink + fold per-machine content + extend the setup checks
 
+**Status:** In-progress
+
 **Scope:** Un-break THIS laptop and harden the setup-time check (SPEC Fix Scope 2 + 5, D1). First reconcile the live file's genuinely-per-machine content (D1): the pwsh `statusLine` and `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`. Fold acceptable values into the tracked SSOT where it already tolerates machine-specific content, or move the truly-divergent pwsh statusLine into the manifest-mapped `settings.local.json` overlay — after confirming Claude Code's settings.json↔settings.local.json merge precedence for `statusLine` (D1 open sub-question; a validation step, surfaced not blocking). Then restore the symlink via `setup.py repair` / `setup.ps1 repair` (real file → `.bak`, symlink created). Finally extend `setup.ps1`'s warn pass (:215-259) — and add the parallel check to `setup.py` — to verify the FULL tracked hook set is live, ideally by delegating to `doc-drift-lint.py --live` rather than re-listing hook names (the current two-hook check passes on exactly this failure).
 
 **Deliverables:**
@@ -142,6 +144,13 @@ Ground-truth confirmed live 2026-07-11/12 via a read-only touchpoint audit (all 
 **Integration Notes for Next Phase:**
 - Once restored, this laptop reads the reconciled SSOT — the D4-sibling bugs can safely edit `user/settings.json` and see it live without re-splitting.
 - Keep the `.bak` until a session confirms statusLine + autocompact override behave; the fold is the only reversible-sensitive step.
+
+**Implementation Notes (2026-07-12, `/execute-plan` part-2 cycle — partial, halted on NEEDS_INPUT):**
+- Landed: `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: "75"` folded into tracked `user/settings.json` (unambiguous per the plan's WU-6 design-fork note — env folding "never halts").
+- **Halted before the rest of WU-6.** Dispatched a `claude-code-guide` research agent for D1's open sub-question (settings.json↔settings.local.json merge precedence for `statusLine`): confirmed `settings.local.json` is a **project-scoped-only** Claude Code concept — no user-level (`~/.claude/settings.local.json`) merge exists per official docs, so the overlay option the plan flagged is not viable. Separately confirmed `ccstatusline` (the tracked default) is **not installed** on this machine (`npx ccstatusline --version` fails — no cached package), so restoring the symlink as-is would silently break this machine's currently-working pwsh statusLine. Wrote `NEEDS_INPUT.md` per the plan's explicit instruction ("do NOT guess the overlay behavior") — did NOT restore the live symlink this cycle.
+- **New finding surfaced in the same halt:** `--provenance-lookup setup.py` before touching it for WU-8 surfaced `docs/features/cross-platform-setup/SPEC.md` Decision **D6** — a previously-Locked Decision stating `setup.py check`'s ported surface is symlink-state only, "a deliberate, permanent divergence" from `setup.ps1`'s warn-only advisories (which include hook-registration checking — exactly what WU-8 asks `setup.py` to gain). Neither this bug's SPEC.md nor PHASES.md/plan shows awareness of D6. Folded into the same `NEEDS_INPUT.md` as decision 2 rather than silently overriding a cross-feature Locked Decision.
+- Batch 2 (WU-7 `setup.ps1` warn-pass extension, WU-8 `setup.py` parallel check) was **not started** — both are `Blocked by: WU-6` in the plan's Execution Schedule, and WU-6 did not complete this cycle.
+- Plan-part frontmatter flipped `Ready` → `In-progress` (see `plans/fix-settings-split-brain-part-2.md`). Resume: once `NEEDS_INPUT.md` is resolved, re-run `/execute-plan` against the same plan part.
 
 ---
 
