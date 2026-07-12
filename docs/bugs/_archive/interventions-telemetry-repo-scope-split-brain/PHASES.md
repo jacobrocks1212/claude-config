@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress  <!-- all 4 phases implemented (Parts 1 + 2); validation tail pending — /mcp-test → __mark_fixed__ own the flip to Fixed -->
+**Status:** Fixed
 
 
 **MCP runtime:** not-required — claude-config harness bug: the deliverables are Python state-script logic (`lazy_core.py` / `lazy-state.py` / `bug-state.py` / `efficacy-eval.py`), coupled orchestrator-skill prose, and intervention doc records. There is no Tauri/MCP app surface (the mcp-testing "build tooling / standalone, no app integration" untestable class). Validation is the in-file `--test` smoke harnesses + `test_lazy_core.py` (pytest).

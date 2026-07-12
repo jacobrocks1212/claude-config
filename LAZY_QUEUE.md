@@ -49,7 +49,7 @@
 |---|------|-------|------|
 | 1 | [unknown](docs/bugs/unknown/SPEC.md) | Pending | — |
 | | status: Pending · next: queue | | |
-| 2 | [interventions-telemetry-repo-scope-split-brain](docs/bugs/interventions-telemetry-repo-scope-split-brain/SPEC.md) | Implement | P1 |
+| 2 | [interventions-telemetry-repo-scope-split-brain](docs/bugs/_archive/interventions-telemetry-repo-scope-split-brain/SPEC.md) | Implement | P1 |
 | | status: Implement · phase 0/4 · next: execute plan · Intervention records live in claude-config (`docs/interventions/`, 25 records), but the telemetry that must grade them lives in the TARGET repo's keyed state dir (AlgoBooth: 1,248 events / 32 runs). | | |
 | 3 | [hardening-intervention-records-unmeasurable-or-missing](docs/bugs/hardening-intervention-records-unmeasurable-or-missing/SPEC.md) | Plan | P1 |
 | | status: Plan · next: plan · The `/harden-harness` Step-4 capture contract produces records the evaluator can never grade: two records name telemetry event types that do not exist in the emit vocabulary (accepted silently — `record_intervention` validates nothing), 17 of 25 records are `target_signal: undeclared`, and round-vs-record coverage is prose-only self-attestation — a round's "Intervention record: none" exemption line is checked by no one. | | |

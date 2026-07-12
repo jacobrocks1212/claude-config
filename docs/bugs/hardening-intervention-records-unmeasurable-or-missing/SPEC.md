@@ -9,7 +9,7 @@
 **Status:** Concluded
 **Priority:** P1
 **Last updated:** 2026-07-11
-**Related:** `docs/bugs/interventions-telemetry-repo-scope-split-brain/` (the evaluation-side
+**Related:** `docs/bugs/_archive/interventions-telemetry-repo-scope-split-brain/` (the evaluation-side
 starvation on the SAME records — fix both or the loop stays open);
 `docs/bugs/efficacy-future-check-unenforced-orchestrator-prose/` (sibling, fixed 2026-07-11
 `7d49490` — its D2 already directed hardening records toward measurable signals, prose-only);

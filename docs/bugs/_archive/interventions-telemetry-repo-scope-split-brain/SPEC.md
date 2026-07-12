@@ -6,7 +6,9 @@
 > now-mechanically-enforced end-of-run flush is a permanent clean no-op that still satisfies the
 > `--run-end` breadcrumb gate. Zero verdicts have ever been produced; no review will ever come due.
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-12
+**Fix commit:** c0b39e35
 **Priority:** P1
 **Last updated:** 2026-07-11
 **Related:** `docs/bugs/efficacy-future-check-unenforced-orchestrator-prose/` (sibling — its fix, the
