@@ -23041,6 +23041,34 @@ def test_gate_coverage_honors_spec_exemption():
         assert result["uncovered"] == [], result
 
 
+def test_classify_blocking_unchecked_rows_shim_vs_genuine():
+    """harden 2026-07: the completion-refusal classifier splits still-unchecked
+    rows into un-migrated verification-shim (under a Runtime-Verification
+    subsection, no canonical marker) vs genuine incomplete deliverables;
+    canonical-marked rows and Superseded-phase rows are excluded (not blocking)."""
+    _guard()
+    phases = (
+        "### Phase 1: Foo\n"
+        "**Status:** In-progress\n"
+        "**Deliverables:**\n"
+        "- [ ] genuine incomplete deliverable\n"
+        "**Runtime Verification**\n"
+        "- [ ] shim row under a verification subsection no marker\n"
+        "- [ ] already canonical row <!-- verification-only -->\n"
+        "### Phase 2: Bar\n"
+        "**Status:** Superseded\n"
+        "- [ ] superseded row excluded\n"
+    )
+    cls = lazy_core.classify_blocking_unchecked_rows(phases)
+    assert len(cls["genuine"]) == 1, cls
+    assert "genuine incomplete" in cls["genuine"][0], cls
+    assert len(cls["shim"]) == 1, cls
+    assert "shim row" in cls["shim"][0], cls
+    joined = " ".join(cls["shim"] + cls["genuine"])
+    assert "already canonical" not in joined, cls   # canonical → auto-ticked, not blocking
+    assert "superseded" not in joined.lower(), cls   # Superseded phase → excluded
+
+
 # ---- WU-3: apply_pseudo __mark_complete__ — ROADMAP strike + resolved-spec_dir trim ----
 
 def _write_roadmap(repo_root: Path, rows: list[str]) -> Path:
@@ -23352,6 +23380,8 @@ _TESTS = _TESTS + [
      test_parse_mcp_coverage_exemptions_requires_rationale),
     ("test_gate_coverage_honors_spec_exemption",
      test_gate_coverage_honors_spec_exemption),
+    ("test_classify_blocking_unchecked_rows_shim_vs_genuine",
+     test_classify_blocking_unchecked_rows_shim_vs_genuine),
     ("test_apply_pseudo_mark_complete_strikes_roadmap_row",
      test_apply_pseudo_mark_complete_strikes_roadmap_row),
     ("test_apply_pseudo_mark_complete_no_roadmap_is_noop_strike",

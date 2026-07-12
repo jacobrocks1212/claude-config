@@ -2392,6 +2392,90 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
     return saw_unchecked or saw_superseded_unchecked
 
 
+def classify_blocking_unchecked_rows(phases_text: str) -> dict:
+    """Split completion-blocking unchecked PHASES rows for an ACTIONABLE refusal.
+
+    ``--apply-pseudo __mark_complete__`` auto-ticks canonically
+    ``<!-- verification-only -->``-marked rows, then REFUSES on any phase that
+    still has an unchecked box — the DELIBERATE "the verification carve-out does
+    not apply at completion time" strictness (see ``_phase_completion_plan`` /
+    the parse note at its docstring). The bare "N unchecked box(es)" refusal
+    could not distinguish two very different causes, which is exactly the friction
+    observed on managed-llm-credits (5 of 7 blocking rows were merely un-migrated
+    verification rows; 2 were genuine gaps). This helper classifies the STILL
+    unchecked (post-autotick), non-Superseded rows into:
+
+      - ``shim``    – exempt by the LEGACY ``_VERIFICATION_SECTION_RE`` subsection
+                      shim (under a "Runtime Verification"-style header) but
+                      LACKING the canonical marker. Such a row would clear the
+                      gate IF migrated to the canonical marker — but migration →
+                      auto-tick ASSERTS the row was actually validated, so a row
+                      whose verification genuinely did not run on this host must
+                      NOT be blindly migrated (the open per-row host-deferral
+                      design question — see the turn-routing-enforcement
+                      NEEDS_INPUT).
+      - ``genuine`` – neither a canonical marker nor the legacy shim: a real
+                      incomplete deliverable.
+
+    DIAGNOSTIC ONLY — mirrors ``remaining_unchecked_are_verification_only``'s
+    scope tracking; does NOT change the gate's decision (the refusal still fires).
+    Returns ``{"shim": [row_excerpt, ...], "genuine": [row_excerpt, ...]}``.
+    """
+    shim: list[str] = []
+    genuine: list[str] = []
+    in_verification = False
+    section_has_marker = False
+    in_superseded_phase = False
+    in_fence = False
+    for line in phases_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        heading = re.match(r"^#{1,6}\s+(.*)$", stripped)
+        if heading:
+            heading_text = heading.group(1)
+            if re.match(r"Phase\s+\d+", heading_text):
+                in_superseded_phase = False
+                in_verification = False
+                section_has_marker = False
+            else:
+                section_has_marker = _VERIFICATION_ONLY_MARKER in line
+                in_verification = bool(_VERIFICATION_SECTION_RE.search(heading_text))
+            continue
+        if stripped.startswith("**"):
+            bold = re.match(r"^\*\*(.+?)\*\*", stripped)
+            if bold:
+                bold_text = bold.group(1)
+                if re.match(r"Status\s*:", bold_text) and "Superseded" in stripped:
+                    in_superseded_phase = True
+                    continue
+                if _VERIFICATION_ONLY_MARKER in line:
+                    section_has_marker = True
+                elif _VERIFICATION_SECTION_RE.search(bold_text):
+                    in_verification = True
+                    section_has_marker = False
+                elif _DELIVERABLES_SECTION_RE.search(bold_text):
+                    in_verification = False
+                    section_has_marker = False
+                continue
+        if re.match(r"^-\s*\[\s*\]", stripped):
+            if in_superseded_phase:
+                continue
+            # Canonical-marked rows are auto-ticked before this classifier runs,
+            # so they are not blocking — skip them defensively if any remain.
+            if _VERIFICATION_ONLY_MARKER in line or section_has_marker:
+                continue
+            excerpt = stripped[:80] + ("…" if len(stripped) > 80 else "")
+            if in_verification:
+                shim.append(excerpt)
+            else:
+                genuine.append(excerpt)
+    return {"shim": shim, "genuine": genuine}
+
+
 # A phase heading in PHASES.md: ``## Phase ...`` or ``### Phase ...`` (two or
 # three leading hashes, then the literal word "Phase"). Critically, "Phase" must
 # be followed by an actual phase IDENTIFIER — NOT an English word. This mirrors
@@ -4770,10 +4854,34 @@ def apply_pseudo(
                 # (no receipt, no status flips, no sentinel deletions). Name each
                 # offending phase so the orchestrator can route a corrective
                 # coherence cycle (per the Phase 9 refusal contract).
+                #
+                # ACTIONABLE advisory (harden 2026-07): split the blocking
+                # unchecked rows into un-migrated verification-shim rows (clear via
+                # canonical-marker migration — IF the verification actually ran)
+                # vs genuine incomplete deliverables, so the orchestrator/operator
+                # can tell a marker migration from real work. Diagnostic only — the
+                # refusal decision is unchanged.
+                cls = classify_blocking_unchecked_rows(phases_text)
+                advisory = ""
+                if cls["shim"]:
+                    advisory = (
+                        f" — of the blocking unchecked row(s), {len(cls['shim'])} "
+                        f"are un-migrated verification-shim rows (under a "
+                        f"Runtime-Verification subsection WITHOUT the canonical "
+                        f"{_VERIFICATION_ONLY_MARKER} marker) and "
+                        f"{len(cls['genuine'])} are genuine incomplete "
+                        f"deliverable(s). Migrating a shim row to the canonical "
+                        f"marker lets the gate auto-tick it — but ONLY when its "
+                        f"verification ACTUALLY ran; a row that could not run on "
+                        f"this host must be deferred, not migrated (per-row "
+                        f"host-deferral is an open design question). Shim rows: "
+                        + " | ".join(cls["shim"])
+                    )
                 return _refused(
                     f"PHASES.md is incoherent for completion — "
                     f"{len(refusals)} phase(s) block the receipt: "
                     + "; ".join(refusals)
+                    + advisory
                 )
             if to_flip:
                 # Apply the auto-flips IN PLACE: rewrite ONLY the first
