@@ -6641,6 +6641,29 @@ def governing_files_touched(repo_root: "str | Path") -> list[str]:
     return sorted(changed & GOVERNING_FILE_SET)
 
 
+# Per-sub_skill Step name for the FORWARD cycle_header (the T2 sibling of
+# DISPATCH_STEP_NAMES, which maps META dispatch classes). Keys are the normalized
+# sub_skill (leading '/' stripped, lowercased). Canonical T2 step names per
+# orchestrator-voice.md; an unmapped sub_skill falls back to itself (mirroring
+# DISPATCH_STEP_NAMES.get(cls, cls)); an absent sub_skill falls back to "Cycle".
+SUB_SKILL_STEP_NAMES: dict[str, str] = {
+    "spec":              "Spec",
+    "spec-bug":          "Investigate",
+    "plan-feature":      "Plan",
+    "plan-bug":          "Plan",
+    "spec-phases":       "Plan",
+    "write-plan":        "Plan",
+    "execute-plan":      "Implement",
+    "retro":             "Retro",
+    "retro-feature":     "Retro",
+    "mcp-test":          "Validate",
+    "realign-spec":      "Realign",
+    "ingest-research":   "Research",
+    "__mark_complete__": "Mark Complete",
+    "__mark_fixed__":    "Mark Fixed",
+}
+
+
 def format_cycle_header(
     state: dict,
     *,
@@ -6648,40 +6671,48 @@ def format_cycle_header(
     max_cycles: "int | None" = None,
     meta_cycles: "int | None" = None,
 ) -> str:
-    """Return a formatted cycle-header line for the orchestrator probe payload.
+    """Return a formatted FORWARD cycle-header line for the orchestrator probe
+    payload, in the sanctioned T2 shape (em-dash separator is U+2014 ``—``):
 
-    Produces a string in EXACTLY this form (separators are U+00B7 MIDDLE DOT
-    ``·``, and the em-dash placeholder is U+2014 ``—``):
+        ### {Step} — {summary} [{fwd}/{max}]
 
-        ### Cycle fwd {fwd}/{max} · meta {meta} · {feature} · {sub_skill}
+    This is the forward-cycle sibling of ``emit_dispatch_prompt``'s META header
+    (``### {Step} — {summary} [meta {m}]``). The prior WU-5 format —
+    ``### Cycle fwd N/M · meta K · {feature} · {sub_skill}`` — was RETIRED by the
+    orchestrator contract (lazy-batch/lazy-bug-batch SKILL.md: "the retired
+    formats … must NOT reappear") and is deliberately NOT emitted here; the probe
+    heading is echoed verbatim by the orchestrator, so a retired-format header
+    would land the forbidden shape on every forward cycle
+    (docs/bugs/format-cycle-header-emits-retired-cycle-fwd-format).
 
-    Counter rendering:
-    - ``{fwd}``    = ``forward_cycles`` if not None else ``?``
-    - ``{max}``    = ``max_cycles`` if not None else ``?``
-    - ``{meta}``   = ``meta_cycles`` if not None else ``?``  (COUNT ONLY — no
-      denominator: meta_cycles has NO ceiling. Operator decision 2026-06-14 —
-      the meta loop is unbounded; only forward_cycles is capped at max_cycles.)
+    Rendering:
+    - ``{Step}``    = ``SUB_SKILL_STEP_NAMES`` lookup on the normalized
+      ``state.get("sub_skill")``; unmapped → the normalized sub_skill itself;
+      absent/falsy sub_skill → ``Cycle``.
+    - ``{summary}`` = ``state.get("feature_id")`` if truthy else ``—`` (U+2014).
+    - ``{fwd}``     = ``forward_cycles`` if not None else ``?``.
+    - ``{max}``     = ``max_cycles`` if not None else ``?``.
 
-    State field rendering:
-    - ``{feature}``   = ``state.get("feature_id")`` if truthy else ``—`` (U+2014)
-    - ``{sub_skill}`` = ``state.get("sub_skill")``  if truthy else ``—`` (U+2014)
+    ``meta_cycles`` is accepted for signature back-compat but no longer rendered
+    into the forward header (meta cycles carry their own header via
+    ``emit_dispatch_prompt``).
     """
-    # Render each counter: use the value when supplied, else the '?' placeholder.
+    # Render forward counters: value when supplied, else the '?' placeholder.
     fwd_str = str(forward_cycles) if forward_cycles is not None else "?"
     max_str = str(max_cycles) if max_cycles is not None else "?"
-    meta_str = str(meta_cycles) if meta_cycles is not None else "?"
 
-    # Render state fields: use the value when truthy, else the em-dash sentinel.
-    feature_str = state.get("feature_id") or "—"
-    sub_skill_str = state.get("sub_skill") or "—"
+    # Step name from the sub_skill (normalized: strip a leading '/', lowercase).
+    raw_sub_skill = state.get("sub_skill") or ""
+    norm = str(raw_sub_skill).lstrip("/").strip().lower()
+    if norm:
+        step = SUB_SKILL_STEP_NAMES.get(norm, str(raw_sub_skill).lstrip("/").strip())
+    else:
+        step = "Cycle"
 
-    # meta is a bare COUNT (no "/cap") — meta_cycles is uncapped by design.
-    return (
-        f"### Cycle fwd {fwd_str}/{max_str}"
-        f" · meta {meta_str}"
-        f" · {feature_str}"
-        f" · {sub_skill_str}"
-    )
+    # Summary: the item id, or the em-dash sentinel.
+    summary = state.get("feature_id") or "—"
+
+    return f"### {step} — {summary} [{fwd_str}/{max_str}]"
 
 
 # ---------------------------------------------------------------------------

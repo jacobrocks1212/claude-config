@@ -7674,19 +7674,21 @@ def test_git_guard_status_invalid_repo_is_safe_dirty():
 # ---------------------------------------------------------------------------
 
 def test_format_cycle_header_full():
-    """All counters provided, state has feature_id and sub_skill → exact pinned string.
+    """All counters provided, state has feature_id and sub_skill → exact pinned
+    string in the SANCTIONED T2 forward shape `### {Step} — {summary} [{fwd}/{max}]`.
 
-    meta is rendered as a bare COUNT with NO denominator (operator decision
-    2026-06-14 — meta_cycles is uncapped; only forward_cycles is capped at
-    max_cycles, so only fwd shows '/max').
-    RED: format_cycle_header missing → AttributeError after _guard().
+    The retired WU-5 format (`### Cycle fwd N/M · meta K · feat · sub_skill`) must
+    NOT reappear (docs/bugs/format-cycle-header-emits-retired-cycle-fwd-format):
+    Step is derived from sub_skill (`/execute-plan` → `Implement`), summary is the
+    feature_id, counter is the forward `[fwd/max]`. meta_cycles is accepted for
+    signature back-compat but no longer rendered into the forward header.
     """
     _guard()
     state = {"feature_id": "audio-engine", "sub_skill": "/execute-plan", "other": "ignored"}
     result = lazy_core.format_cycle_header(
         state, forward_cycles=2, max_cycles=8, meta_cycles=3
     )
-    expected = "### Cycle fwd 2/8 · meta 3 · audio-engine · /execute-plan"
+    expected = "### Implement — audio-engine [2/8]"
     assert result == expected, (
         f"format_cycle_header returned wrong string.\n"
         f"  expected: {expected!r}\n"
@@ -7695,19 +7697,18 @@ def test_format_cycle_header_full():
 
 
 def test_format_cycle_header_missing_fields():
-    """state={} and all counters None → feature/sub_skill render as —, counters as ?.
+    """state={} and all counters None → Step falls back to 'Cycle', summary to the
+    em-dash sentinel, counters to '?'.
 
-    The exact placeholder contract: fwd counters None → '?', missing
-    feature_id/sub_skill → '—'.  meta is a bare COUNT (no denominator) — it
-    renders just '?' when meta_cycles is None (no '/?' cap term).
-    RED: format_cycle_header missing → AttributeError after _guard().
+    Placeholder contract: absent sub_skill → Step `Cycle`; missing feature_id →
+    summary `—`; fwd counters None → `?`.  Never the retired `· … ·` suffix.
     """
     _guard()
     state = {}
     result = lazy_core.format_cycle_header(
         state, forward_cycles=None, max_cycles=None, meta_cycles=None
     )
-    expected = "### Cycle fwd ?/? · meta ? · — · —"
+    expected = "### Cycle — — [?/?]"
     assert result == expected, (
         f"format_cycle_header returned wrong string for all-None/empty state.\n"
         f"  expected: {expected!r}\n"
