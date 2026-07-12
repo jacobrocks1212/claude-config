@@ -26,7 +26,7 @@
   PASS [cloud-defer-no-validate-halts] cloud=True real_device=False: cloud-queue-exhausted
   PASS [queue-json-missing] cloud=False real_device=True: queue-missing
   PASS [unqueued-fixed-no-receipt-halt] cloud=False real_device=True: Step 2: completion claimed without receipt
-  PASS [concluded-investigation-plan-bug] cloud=False real_device=True: Step 4: investigate bug
+  PASS [concluded-investigation-plan-bug] cloud=False real_device=True: Step 5: plan bug from concluded investigation
   PASS [concluded-investigation-guard-still-spec-bug] cloud=False real_device=True: Step 4: investigate bug
   PASS [step9-skip-pipeline-granted] cloud=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation
   PASS [step9-skip-operator-granted] cloud=False real_device=True: Step 9: skip-mcp-test → validated

@@ -88,6 +88,7 @@ _BUG_STEP_TO_STAGE = {
     # Spec (investigation is the bug-track spec equivalent)
     "Step 4: investigate bug": "Spec",
     # Plan
+    "Step 5: plan bug from concluded investigation": "Plan",
     "Step 6: spec phases": "Plan",
     "Step 7a: write plan": "Plan",
     # Implement
@@ -126,6 +127,7 @@ _FEATURE_PREFIX_RULES = (
 
 _BUG_PREFIX_RULES = (
     ("Step 4:", "Spec"),
+    ("Step 5:", "Plan"),
     ("Step 6:", "Plan"),
     ("Step 7a: write plan", "Plan"),
     ("Step 7a: execute plan", "Implement"),

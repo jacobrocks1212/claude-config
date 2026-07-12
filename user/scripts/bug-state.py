@@ -177,6 +177,17 @@ STEP_BLOCKED = "Step 3: blocked"
 STEP_BLOCKED_MISNAMED = "Step 3: mis-named blocker"
 STEP_NEEDS_INPUT = "Step 3.5: needs-input"
 STEP_INVESTIGATE = "Step 4: investigate bug"
+# Distinct routing label for the plan-bug node (SPEC Concluded, no PHASES.md yet).
+# plan-bug is a genuinely different routing step from spec-bug (it authors PHASES.md
+# from the concluded investigation), so it MUST carry its own current_step: the
+# HEAD-blind step_repeat_count oscillation counter is keyed on (feature_id,
+# current_step) ONLY (sub_skill-blind), and a distinct routing node sharing the
+# spec-bug label makes a legitimate spec-bug -> plan-bug forward transition
+# indistinguishable from same-step oscillation (false LOOP-DETECTED). The feature
+# pipeline already gives plan-feature its own step ("Step 6: plan feature (phases +
+# plan)", lazy-state.py); this is the bug-pipeline mirror. See
+# docs/bugs/plan-bug-reuses-investigate-step-inflates-loop-detector.
+STEP_PLAN_BUG = "Step 5: plan bug from concluded investigation"
 STEP_PHASES = "Step 6: spec phases"
 STEP_WRITE_PLAN = "Step 7a: write plan"
 STEP_EXECUTE_PLAN = "Step 7a: execute plan"
@@ -1429,9 +1440,12 @@ def compute_state(
         _status = spec_status(spec_dir)
         if _status == "Concluded":
             # Investigation concluded; hand off to plan-bug to author PHASES.md.
+            # DISTINCT step label (STEP_PLAN_BUG, not the reused STEP_INVESTIGATE) so
+            # the spec-bug -> plan-bug forward transition visibly advances current_step
+            # and is not mis-counted as same-step oscillation by step_repeat_count.
             return _bug_state(
                 **common,
-                current_step=STEP_INVESTIGATE,
+                current_step=STEP_PLAN_BUG,
                 sub_skill=SKILL_PLAN_BUG,
                 sub_skill_args=f"{spec_dir_str}/SPEC.md",
             )
@@ -2861,7 +2875,8 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
         #
         # Expected behavior (GREEN after impl-agent fix):
         #   sub_skill == "plan-bug"
-        #   current_step == STEP_INVESTIGATE (reused step label)
+        #   current_step == STEP_PLAN_BUG (DISTINCT plan label — spec-bug -> plan-bug
+        #     transition advances current_step so step_repeat_count is not inflated)
         #   sub_skill_args ends with "SPEC.md"  (points at concluded spec)
         (bugs_dir / "queue.json").write_text(json.dumps({
             "queue": [
@@ -3772,7 +3787,7 @@ def run_smoke_tests() -> int:
             {
                 "feature_id": "bug-concluded",
                 "sub_skill": "plan-bug",
-                "current_step": STEP_INVESTIGATE,
+                "current_step": STEP_PLAN_BUG,
             },
             # Extra: sub_skill_args must point at the SPEC.md (path ends with SPEC.md).
             lambda got, failures, name: (
