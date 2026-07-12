@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: live-settings-split-brain-disarms-enforcement-plane
-status: In-progress
+status: Complete
 created: 2026-07-12
 complexity: complex
 phases: [4, 5]
@@ -69,8 +69,8 @@ This plan's autonomous-execution policy lives in **`~/.claude/skills/_components
 
 - [x] WU-9 — Retire REGISTRATION.md per-machine design + amend SPEC §Settings placement
 - [x] WU-10 — Add the blind-window annotation for hook-event consumers
-- [ ] WU-11 — Emit a drift advisory line from `lazy-route-inject.sh`
-- [ ] WU-12 — Add a `live_settings_ok` probe field to `lazy-state.py`
+- [x] WU-11 — Emit a drift advisory line from `lazy-route-inject.sh`
+- [x] WU-12 — Add a `live_settings_ok` probe field to `lazy-state.py`
 
 ---
 

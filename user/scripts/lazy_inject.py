@@ -201,6 +201,39 @@ def _turn_n(marker: dict) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Live-settings split-brain advisory (Fix Scope 4 / D2)
+# ---------------------------------------------------------------------------
+
+def _load_doc_drift_module():
+    """Load the sibling doc-drift-lint.py (hyphenated → importlib). Module-level
+    seam so the advisory stays monkeypatchable in tests."""
+    import importlib.util
+    p = Path(__file__).parent / "doc-drift-lint.py"
+    spec = importlib.util.spec_from_file_location("_doc_drift_for_live_advisory", str(p))
+    if spec is None or spec.loader is None:
+        raise ImportError("cannot load doc-drift-lint.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _live_settings_advisory(repo_root, live_path=None):
+    """One advisory banner line when the live ~/.claude/settings.json has drifted
+    from the tracked SSOT, else None. FAIL-OPEN: any error (helper unloadable /
+    raises) returns None so the banner is NEVER broken (bug: live-settings
+    split-brain, Fix Scope 4 / D2). O(1) — a cheap symlink+resolve stat; this
+    fires every prompt-submit in a marked run."""
+    try:
+        ddl = _load_doc_drift_module()
+        ok, detail = ddl.live_settings_status(Path(repo_root), live_path=live_path)
+        if ok:
+            return None
+        return f"⚠ live settings drift: {detail}"
+    except Exception:  # noqa: BLE001 — fail-open, banner must never break
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Main inject logic
 # ---------------------------------------------------------------------------
 
@@ -325,6 +358,15 @@ def inject(stdin_text: str) -> str | None:
     # Surface any previous guard error (self-announcing breakage).
     if breadcrumb_text is not None:
         parts.append(f"HOOK_ERROR: {breadcrumb_text}")
+
+    # live-settings split-brain drift advisory (Fix Scope 4 / D2): one extra line
+    # when the live settings.json no longer reflects the tracked SSOT. Fail-open.
+    try:
+        _adv = _live_settings_advisory(marker.get("repo_root") or Path.cwd())
+        if _adv:
+            parts.append(_adv)
+    except Exception:  # noqa: BLE001 — fail-open, banner must never break
+        pass
 
     additional_context = " ".join(parts)
 

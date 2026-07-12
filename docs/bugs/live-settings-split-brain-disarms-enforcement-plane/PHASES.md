@@ -205,11 +205,21 @@ Ground-truth confirmed live 2026-07-11/12 via a read-only touchpoint audit (all 
 
 **Scope:** Make drift self-announce at runtime (SPEC Fix Scope 4 "surface it through an existing periodic surface", D2). Wire the Phase-2 `live_settings_status` helper into: (a) the `lazy-route-inject` banner (fires every prompt-submit in marked runs — a cheap symlink+resolve stat) as one advisory line when drift is detected, and (b) a `lazy-state --probe` field. Both call the SAME helper (no re-derivation). A SessionStart hook is deliberately NOT used (it would live in the very file being checked → bootstrap circularity); the banner + probe are the reinforcement surfaces.
 
+**Status:** Complete
+
 **Deliverables:**
-- [ ] `lazy-route-inject.sh` (or its Python helper): when `live_settings_status` reports drift, emit one advisory banner line naming the split + corrective (`setup repair`); silent/no-op when clean or when the helper is unavailable (fail-open, must never break the banner).
-- [ ] `lazy-state.py --probe`: a `live_settings_ok` (or equivalent) field sourced from the same helper; absent-helper / non-workstation → benign default (never a hard error).
-- [ ] Both call the single `doc-drift-lint.py` helper from Phase 2 — no duplicated symlink-resolve logic.
-- [ ] Tests: helper-integration unit coverage for the probe field (drift → field false + detail; clean → true); banner path exercised where testable (fail-open on helper error asserted).
+- [x] `lazy-route-inject.sh` (or its Python helper): when `live_settings_status` reports drift, emit one advisory banner line naming the split + corrective (`setup repair`); silent/no-op when clean or when the helper is unavailable (fail-open, must never break the banner).
+- [x] `lazy-state.py --probe`: a `live_settings_ok` (or equivalent) field sourced from the same helper; absent-helper / non-workstation → benign default (never a hard error).
+- [x] Both call the single `doc-drift-lint.py` helper from Phase 2 — no duplicated symlink-resolve logic.
+- [x] Tests: helper-integration unit coverage for the probe field (drift → field false + detail; clean → true); banner path exercised where testable (fail-open on helper error asserted).
+
+**Implementation Notes (2026-07-12):**
+- WU-11 (`user/scripts/lazy_inject.py`, the banner-building Python behind `lazy-route-inject.sh`): added `_live_settings_advisory(repo_root, live_path=None)` — returns one `⚠ live settings drift: …` line (the detail carries the `setup.ps1 repair` / `setup.py repair` corrective) on drift, `None` when clean, `None` on any error (FAIL-OPEN, never breaks the banner). Wired into `inject()` after the HOOK_ERROR block, appended to `parts`, guarded by an outer try/except so a raised helper / missing marker field can never break the banner (`printf '{}' | lazy_inject.py` still exits 0).
+- WU-12 (`user/scripts/lazy-state.py`): added `live_settings_probe(repo_root, live_path=None) -> (ok, detail)` sourced from the SAME `doc-drift-lint.live_settings_status`; wired into the `if args.probe:` block as `live_settings_ok` + `live_settings_detail`. Benign default `(True, "…unavailable…")` on any loader/helper error — never a hard error, never on the state-compute path. Default (no `--probe`) output byte-identical; `lazy-state.py --test` smoke harness stays green. Feature-pipeline-only (lazy-state-only surface); `bug-state.py` untouched (parity audit clean).
+- Both surfaces reuse the single Phase-2 helper via a `_load_doc_drift_module()` importlib seam (doc-drift-lint.py is hyphenated) — no duplicated symlink-resolve logic. The seam is a module-level monkeypatchable attribute so the fail-open path is unit-tested by forcing the loader to raise.
+- Tests: `user/scripts/test_live_settings_probe.py` (7 tests, all green) — probe clean→True / drift→False+detail / loader-error→benign(True); advisory drift→line-with-`repair` / clean→None / loader-error→None; plus a serving-path CLI smoke asserting `--probe` JSON carries the `live_settings_ok` bool key. Strict-TDD RED→GREEN.
+
+**Runtime-verification note:** MCP runtime not-required (config/scripts repo, no app runtime). The final serving-path evidence for the whole bug — the live `~/.claude/settings.json` resolving to the reconciled SSOT (all 12 hooks) + `doc-drift-lint.py --live` clean — is the `__mark_fixed__` gate's symptom-reproduction check (Phases 1-3 landed the reconciliation + symlink restore; part 1/2). Not a checkbox here (gate-owned).
 
 **Minimum Verifiable Behavior:** with the symlink intentionally broken in a scratch HOME, `lazy-state.py --probe` reports the `live_settings_ok=false` field and the banner emits its advisory line; with the symlink intact, the field is true and the banner stays silent. Helper-missing → both degrade to benign (no crash).
 

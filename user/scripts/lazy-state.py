@@ -10852,6 +10852,38 @@ def run_smoke_tests() -> int:
 
 
 # ---------------------------------------------------------------------------
+# Live-settings split-brain probe (Fix Scope 4 / D2)
+# ---------------------------------------------------------------------------
+
+
+def _load_doc_drift_module():
+    """Load the sibling doc-drift-lint.py (hyphenated → importlib). Kept as a
+    module-level seam so the live-settings probe stays monkeypatchable in tests."""
+    import importlib.util
+    p = Path(__file__).parent / "doc-drift-lint.py"
+    spec = importlib.util.spec_from_file_location("_doc_drift_for_live_settings", str(p))
+    if spec is None or spec.loader is None:
+        raise ImportError("cannot load doc-drift-lint.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def live_settings_probe(repo_root, live_path=None):
+    """(ok, detail) health of the live ~/.claude/settings.json vs the tracked
+    SSOT, sourced from doc-drift-lint's live_settings_status. FAIL-OPEN benign
+    default (True, <note>) if the helper is unloadable / raises — this probe
+    field must NEVER hard-error or gate state computation (bug: live-settings
+    split-brain, Fix Scope 4 / D2)."""
+    try:
+        ddl = _load_doc_drift_module()
+        ok, detail = ddl.live_settings_status(Path(repo_root), live_path=live_path)
+        return bool(ok), str(detail)
+    except Exception:  # noqa: BLE001 — benign default, never propagate
+        return True, "live-settings check unavailable (doc-drift-lint not loadable)"
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -12701,6 +12733,12 @@ def main() -> int:
     # --repeat-count (both may be present simultaneously).
     if args.probe:
         state["git_guards"] = lazy_core.git_guard_status(Path(args.repo_root))
+        # live-settings split-brain probe (Fix Scope 4 / D2): surface whether the
+        # live ~/.claude/settings.json still reflects the tracked SSOT. Additive,
+        # fail-open, never a state-compute dependency.
+        _ls_ok, _ls_detail = live_settings_probe(Path(args.repo_root))
+        state["live_settings_ok"] = _ls_ok
+        state["live_settings_detail"] = _ls_detail
         # C8 self-edit reload discipline (lazy-cycle-containment Phase 1):
         # surface whether this run is editing the harness it executes from, plus
         # the governing-prose files the last commit touched (so the orchestrator's
