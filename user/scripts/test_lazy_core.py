@@ -18321,6 +18321,66 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# lint_planner_resolution — D1 planner-resolution gate must resolve the canonical
+# internal <claude-config>/repos/ even when the passed --repos-dir (~/source/repos)
+# has no sibling working copies checked out.
+# Regression for docs/bugs/planner-resolution-lint-blind-to-internal-repos: the
+# gate was RED on clean `main` on a machine without sibling repos under
+# ~/source/repos, because it anchored D1 resolution to that machine-variable path
+# instead of the git-tracked internal source of truth.
+# ---------------------------------------------------------------------------
+def _lint_skills_module():
+    """Load lint-skills.py as a module (hyphenated filename → importlib)."""
+    return _load_state_script("lint-skills.py")
+
+
+def test_planner_resolution_resolves_via_internal_repos_when_passed_repos_empty():
+    """With an EMPTY passed repos_dir (the bug scenario: no sibling checkouts under
+    ~/source/repos), the D1 gate must STILL resolve write-plan-cognito via the
+    canonical internal <claude-config>/repos/ — no 'planner-resolution' finding."""
+    mod = _lint_skills_module()
+    with tempfile.TemporaryDirectory() as td:
+        empty_repos = Path(td) / "empty-source-repos"
+        empty_repos.mkdir()
+        empty_user_skills = Path(td) / "empty-user-skills"
+        empty_user_skills.mkdir()
+
+        issues = mod.lint_planner_resolution(empty_repos, empty_user_skills)
+        kinds = {i["kind"] for i in issues}
+        # The false-RED finding this bug is about must NOT appear: the internal
+        # repos/ resolution fills in for the empty passed repos_dir.
+        assert "planner-resolution" not in kinds, (
+            "write-plan-cognito must resolve via internal <claude-config>/repos/ "
+            f"even with an empty passed repos_dir; got issues: {issues}"
+        )
+        # And no spurious executor-fork false positive from the internal scan.
+        assert "executor-fork" not in kinds, (
+            f"unexpected execute-plan-cognito fork finding: {issues}"
+        )
+
+
+def test_planner_resolution_internal_repos_derives_from_script_location():
+    """The internal repos dir must be derived from lint-skills.py's own location
+    (<claude-config>/repos), so the fix is machine-independent."""
+    mod = _lint_skills_module()
+    from pathlib import Path as _P
+    internal = _P(mod.__file__).resolve().parents[2] / "repos"
+    assert (internal / "cognito-forms" / ".claude" / "skills" /
+            "write-plan-cognito" / "SKILL.md").exists(), (
+        f"expected canonical write-plan-cognito under {internal}; the D1 rename "
+        "must be present in the git-tracked internal repos/ tree"
+    )
+
+
+_TESTS = _TESTS + [
+    ("test_planner_resolution_resolves_via_internal_repos_when_passed_repos_empty",
+     test_planner_resolution_resolves_via_internal_repos_when_passed_repos_empty),
+    ("test_planner_resolution_internal_repos_derives_from_script_location",
+     test_planner_resolution_internal_repos_derives_from_script_location),
+]
+
+
 def main() -> int:
     print("=" * 60)
     print("test_lazy_core.py — characterization tests")

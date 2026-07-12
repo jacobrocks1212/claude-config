@@ -228,15 +228,37 @@ def lint_planner_resolution(repos_dir: Path, user_skills_dir: Path) -> list[dict
 
     user_names = _skill_dirs_under(user_skills_dir)
 
+    # Resolve repo skill roots from the UNION of two locations, deduplicated by
+    # resolved path:
+    #   1. the passed `repos_dir` (sibling working copies under ~/source/repos).
+    #      On dev machines / WSL these hold symlinks INTO the internal repos below,
+    #      so they resolve the same files; on a machine where the siblings are not
+    #      checked out, this scan is simply empty.
+    #   2. the claude-config-internal `<claude-config>/repos/`, derived from this
+    #      script's own location — the CANONICAL, git-tracked, always-present source
+    #      of repo-scoped skills. This is what makes D1 resolution machine-independent:
+    #      the gate must find `write-plan-cognito` whether or not sibling checkouts
+    #      exist under ~/source/repos (see docs/bugs/planner-resolution-lint-blind-to-internal-repos).
+    # scripts live at <claude-config>/user/scripts/lint-skills.py → parents[2] == <claude-config>.
+    internal_repos_dir = Path(__file__).resolve().parents[2] / "repos"
+
     repo_skill_roots: list[Path] = []
-    if repos_dir.exists():
+    _seen_roots: set = set()
+    for base in (repos_dir, internal_repos_dir):
+        if not base.exists():
+            continue
         try:
-            for repo in sorted(repos_dir.iterdir()):
+            for repo in sorted(base.iterdir()):
                 if not repo.is_dir():
                     continue
                 root = repo / ".claude" / "skills"
-                if root.exists():
-                    repo_skill_roots.append(root)
+                if not root.exists():
+                    continue
+                key = root.resolve()
+                if key in _seen_roots:
+                    continue
+                _seen_roots.add(key)
+                repo_skill_roots.append(root)
         except OSError:
             pass
 
