@@ -84,3 +84,17 @@ tracked SSOT) — it already satisfies the cross-platform-parity *spirit* of WU-
 - **Landed this cycle:** `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: "75"` folded into tracked `user/settings.json` (unambiguous per the plan; committed).
 - **Pending on this decision:** the rest of WU-6 (statusLine fold/decision + the live symlink restore itself), and Batch 2 (WU-7 `setup.ps1` warn-pass extension, WU-8 `setup.py` parallel check) — both are `Blocked by: WU-6` per the plan's Execution Schedule, so they were not started this cycle.
 - Once resolved, re-run `/execute-plan plans/fix-settings-split-brain-part-2.md --batch` to resume: it will land the statusLine choice, restore the symlink (`setup.py repair` / `setup.ps1 repair`), confirm the `.bak`, then proceed to WU-7 (and WU-8 only if decision 2 is answered "proceed as written" or "amend D6 first").
+
+## Resolution
+
+*Recorded on 2026-07-12 13:14:14 UTC.*
+
+### 1. Per-machine statusLine/env home now that the settings.local.json overlay is confirmed non-viable (D1)
+
+**Choice:** Install/adopt `ccstatusline` on this machine and accept the tracked default as-is
+**Notes:** Keep the tracked `user/settings.json` `statusLine: ccstatusline` default (do NOT fold the pwsh command into the shared SSOT — avoids the cross-machine Windows/pwsh regression risk). This machine must install `ccstatusline` (`npm install -g ccstatusline` or equivalent) and configure it before/with the live symlink restore, so restoring the symlink does not degrade the status line. The symlink restore in WU-6 proceeds with the tracked `ccstatusline` default intact.
+
+### 2. Whether setup.py should gain a live hook/symlink check (WU-8) given it conflicts with cross-platform-setup's Locked Decision D6
+
+**Choice:** Drop the `setup.py` change from WU-8; rely on `doc-drift-lint.py --live` for cross-platform parity
+**Notes:** Respect `cross-platform-setup` Locked Decision D6 (setup.py check stays symlink-state-only) — no silent override, no D6 amendment. WU-8 becomes a scope note / no-op in PHASES.md; WU-7 (the `setup.ps1` warn-pass extension, which SPEC Fix Scope 5 calls for) proceeds unaffected. `doc-drift-lint.py --live` (built in Phase 2) already provides the cross-platform live-drift check.
