@@ -4,7 +4,7 @@
 > when it OBSERVES harness friction mid-run (through its own reasoning), only for the four
 > automatic triggers. Observed friction is stranded: surface-and-defer, or an out-of-band manual fix.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P2
 **Last updated:** 2026-07-11
 **Related:** `docs/specs/turn-routing-enforcement/` (owns the dispatch guard + `--emit-dispatch`); `docs/specs/turn-routing-enforcement/NEEDS_INPUT.md` #5/#6 (surfaced from the same run); the `auto-invoke-harden-harness` operator rule (CLAUDE.md `<auto-invoke>`); `docs/bugs/efficacy-future-check-unenforced-orchestrator-prose/` (the loop-closer — the other half of fix-scope §6).
@@ -48,3 +48,7 @@ A required, guard-allowed, mid-run observed-friction harden dispatch with a bloc
 - **D1 — Block criterion (RESOLVED, operator 2026-07-11):** foreground-await iff the friction blocks THIS cycle's forward progress; everything else backgrounds so the run keeps moving. (Not "will block an imminent cycle", not "always background".)
 - **D2 — Build vehicle (RESOLVED, operator 2026-07-11):** build inline, spec-first (this document is the spec-first gate).
 - **D3 — Concurrency model:** the claude-config-vs-target-repo tree separation + the `self_edit_mode` force-await carve-out (fix scope §4). If implementation reveals a genuine race the separation does not cover, surface it as a NEEDS_INPUT rather than baking it.
+
+## Resolution (2026-07-11 — fix shipped)
+
+Fix scope §1-§6 implemented via manual `/harden-harness` (trigger 5), commit `c46ed80`, hardening-log Round 23 (`docs/specs/turn-routing-enforcement/hardening-log/2026-07.md`). `build_hardening_emit_command` gained an `observed_friction` branch; `normalize_hardening_dispatch_context` (new) rebinds the friction keys into the template's shared @requires evidence keys and defaults the new `{blocking}` token; the `--emit-dispatch hardening` handler in both state scripts normalizes hardening context; `dispatch-hardening.md` adds `observed-friction` + the efficacy-loop/measurable-signal prompt; the REQUIRED coupled-trio SKILL contract (Trigger 5 + block/background policy + `self_edit_mode` carve-out) landed in `lazy-batch`/`lazy-bug-batch`/`lazy-batch-cloud`. Gates green (test_lazy_core 959/959, +5 observed-friction tests). Intervention: `docs/interventions/harden-2026-07-r23.md` (`target_signal: undeclared` — infrastructure add; the measurable signal lives in each downstream observed-friction harden per §6). Coupled with `docs/bugs/efficacy-future-check-unenforced-orchestrator-prose/` (Round 24) — both landed so the efficacy loop is sound.

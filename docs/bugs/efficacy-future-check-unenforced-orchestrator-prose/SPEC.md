@@ -5,7 +5,7 @@
 > mechanically guarantees they fire, so the "measure the fix against future runs" loop is skippable
 > — and was skipped at a real checkpoint `--run-end` this session.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P2
 **Last updated:** 2026-07-11
 **Related:** `docs/interventions/intervention-efficacy-tracking.md` (the loop); lazy-batch SKILL §1c.6 (the prose wiring); `docs/bugs/no-mid-run-observed-friction-harden-dispatch/` (the observed-friction harden must feed this loop).
@@ -36,3 +36,7 @@ Make the future-check fire at its appropriate future condition (run-end) mechani
 
 - **D1 — Enforcement mechanism:** the breadcrumb-gate (orchestrator still runs + commits the trio; `--run-end` refuses without the breadcrumb). Chosen over `--run-end`-invokes-the-trio to preserve commit ownership + terminal-commit ordering. If implementation shows the breadcrumb can't be reliably dropped run-scoped, escalate the invoke-approach as a NEEDS_INPUT.
 - **D2 — Measurable target signals (feeds the observed-friction spec):** an auto-invoked harden's intervention SHOULD declare a MEASURABLE `target_signal` (`event:<type>`) wherever the fix targets a countable ledger signal (e.g. the friction's own recurrence), so the verdict is assertable rather than `undeclared`-INCONCLUSIVE. A genuinely-immeasurable fix (a pure diagnostic like Round 22) still records `undeclared` honestly — but the observed-friction dispatch prompt must PROMPT for a measurable signal first.
+
+## Resolution (2026-07-11 — fix shipped)
+
+Fix scope implemented via manual `/harden-harness` (trigger 5), commit `7d49490`, hardening-log Round 24 (`docs/specs/turn-routing-enforcement/hardening-log/2026-07.md`). The D1 breadcrumb-gate: a run-scoped efficacy-flush breadcrumb (keyed to the live marker's `started_at`) is dropped by each trio member (`efficacy-eval.py` review + `--canary`, `incident-scan.py`) on a real non-dry-run invocation even on a clean no-op; `lazy-state.py`/`bug-state.py --run-end` REFUSE without it, with a `--efficacy-skip-authorized` operator override (parallel to `--ack-unhardened`). Applies to `--reason checkpoint`. §1c.6 in all three trio SKILLs now states the gate. Gates green (test_lazy_core 959/959, +6 gate tests). Intervention: `docs/interventions/harden-2026-07-r24.md` (`target_signal: undeclared` — enforcement-gate add; benefit measured by the downstream records whose verdicts now land on time). Coupled with `docs/bugs/no-mid-run-observed-friction-harden-dispatch/` (Round 23) — both landed so the loop is sound (D2: the observed-friction dispatch declares a measurable signal; this gate guarantees that signal is later evaluated).
