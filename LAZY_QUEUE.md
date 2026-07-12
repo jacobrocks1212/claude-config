@@ -49,7 +49,7 @@
 |---|------|-------|------|
 | 1 | [unknown](docs/bugs/unknown/SPEC.md) | Pending | — |
 | | status: Pending · next: queue | | |
-| 2 | [descoped-row-recognition-needs-canonical-marker](docs/bugs/descoped-row-recognition-needs-canonical-marker/SPEC.md) | Spec | — |
+| 2 | [descoped-row-recognition-needs-canonical-marker](docs/bugs/_archive/descoped-row-recognition-needs-canonical-marker/SPEC.md) | Spec | — |
 | | status: Spec · next: spec · `remaining_unchecked_are_verification_only()` recognizes a deliberately-dropped PHASES deliverable only when it is struck through AND tagged with one of THREE hardcoded free-text keywords (`DROPPED`/`DESCOPED`/`WON'T-FIX`). | | |
 | 3 | [interventions-telemetry-repo-scope-split-brain](docs/bugs/interventions-telemetry-repo-scope-split-brain/SPEC.md) | Spec | P1 |
 | | status: Spec · next: spec · Intervention records live in claude-config (`docs/interventions/`, 25 records), but the telemetry that must grade them lives in the TARGET repo's keyed state dir (AlgoBooth: 1,248 events / 32 runs). | | |

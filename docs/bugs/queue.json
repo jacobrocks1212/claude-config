@@ -8,12 +8,6 @@
       "severity": null
     },
     {
-      "id": "descoped-row-recognition-needs-canonical-marker",
-      "name": "Descoped PHASES rows need a canonical structural marker (free-text DROPPED form is a shim)",
-      "spec_dir": "descoped-row-recognition-needs-canonical-marker",
-      "severity": null
-    },
-    {
       "id": "interventions-telemetry-repo-scope-split-brain",
       "name": "Interventions/telemetry repo-scope split-brain \u2014 efficacy loop structurally dead (zero verdicts ever) \u2014 Investigation Spec",
       "spec_dir": "interventions-telemetry-repo-scope-split-brain",

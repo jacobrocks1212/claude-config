@@ -7,9 +7,11 @@
 > `_VERIFICATION_ONLY_MARKER` precedent — producers emit a CANONICAL STRUCTURAL descope marker and
 > the free-text form becomes a deprecation shim.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-12
+**Fixed:** 2026-07-12
+**Fix commit:** 94754958
 **Placement:** docs/bugs/descoped-row-recognition-needs-canonical-marker
 **Related:** `docs/bugs/verification-only-bypass-blind-to-descoped-rows` (the ORIGIN — this item is that bug's explicitly front-enqueued "over-fit generalization" spin-off; its Resolution names this slug and its Fix-Scope "Generalization" paragraph is this SPEC's charter). Canonical-marker precedent this bug follows: `lazy_core.py:_VERIFICATION_ONLY_MARKER` (structural marker) + `_VERIFICATION_SECTION_RE` (retained deprecation shim + migration-gap diagnostic), documented in `user/scripts/CLAUDE.md` → "Verification-only canonical marker". Same recurring class in `docs/specs/turn-routing-enforcement/hardening-log/` (Rounds 24/25/30 + recording-panel round).
 
