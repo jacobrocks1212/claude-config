@@ -48,7 +48,7 @@
 | # | item | state | sev |
 |---|------|-------|------|
 | 1 | [live-settings-split-brain-disarms-enforcement-plane](docs/bugs/live-settings-split-brain-disarms-enforcement-plane/SPEC.md) | Implement | P0 |
-| | status: Implement · phase 0/5 · next: execute plan · The live `~/.claude/settings.json` on this laptop is an untracked plain file registering ONLY the two turn-routing hooks, while the tracked `user/settings.json` registers the ~10 OTHER enforcement hooks and has NEVER carried the dispatch guard. | | |
+| | status: Implement · phase 2/5 · next: execute plan · The live `~/.claude/settings.json` on this laptop is an untracked plain file registering ONLY the two turn-routing hooks, while the tracked `user/settings.json` registers the ~10 OTHER enforcement hooks and has NEVER carried the dispatch guard. | | |
 | 2 | [interventions-telemetry-repo-scope-split-brain](docs/bugs/interventions-telemetry-repo-scope-split-brain/SPEC.md) | Spec | P1 |
 | | status: Spec · next: spec · Intervention records live in claude-config (`docs/interventions/`, 25 records), but the telemetry that must grade them lives in the TARGET repo's keyed state dir (AlgoBooth: 1,248 events / 32 runs). | | |
 | 3 | [hardening-intervention-records-unmeasurable-or-missing](docs/bugs/hardening-intervention-records-unmeasurable-or-missing/SPEC.md) | Spec | P1 |
