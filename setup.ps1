@@ -212,49 +212,38 @@ function Invoke-Check([array]$Mappings) {
 
     Write-Host "`nCheck: $ok OK, $broken broken, $absent absent"
 
-    # Warn-only pass: verify that the marker-gated turn-routing hooks are registered
-    # in the live ~/.claude/settings.json.  This is a configuration advisory — it does
-    # NOT affect the exit code (broken count unchanged) because the hooks are per-machine
-    # and may legitimately be absent on machines that have not been armed yet (Phase 6).
+    # Warn-only pass: verify the FULL tracked hook set (all 12 hooks, not just the two
+    # turn-routing ones) is live in ~/.claude/settings.json. Delegates to
+    # doc-drift-lint.py --live rather than re-listing hook names here, so this check
+    # has exactly ONE source of truth for "what hooks are tracked" (doc-drift-lint's own
+    # hook-table cross-check). This is a configuration advisory — it does NOT affect the
+    # exit code (broken count unchanged) because the live file is per-machine and may
+    # legitimately be un-synced on a machine that has not run `repair` yet.
+    #
+    # Registration now ships TRACKED in user/settings.json (this bug's Phase 1) instead of
+    # the old per-machine manual paste-fragment. docs/specs/turn-routing-enforcement/
+    # REGISTRATION.md's paste-fragment workflow is retired by
+    # docs/bugs/live-settings-split-brain-disarms-enforcement-plane's part 3 (Phase 4) —
+    # see that doc for the full retirement; this pass only stops re-deriving hook names
+    # from it.
     $liveCfgPath = Expand-LivePath '~\.claude\settings.json'
-    $hookScripts = @('lazy-route-inject.sh', 'lazy-dispatch-guard.sh')
-    $missingHooks = [System.Collections.ArrayList]::new()
-
     if (-not (Test-Path $liveCfgPath)) {
-        Write-Host '  WARN     turn-routing hooks: ~/.claude/settings.json absent - cannot verify hook registration' -ForegroundColor Yellow
+        Write-Host '  WARN     live settings.json: absent - cannot verify the tracked hook set is live (run repair)' -ForegroundColor Yellow
     } else {
-        try {
-            $cfgText = Get-Content $liveCfgPath -Raw -ErrorAction Stop
-            $cfg = $cfgText | ConvertFrom-Json -ErrorAction Stop
-            # Flatten all hook command strings from every event array.
-            $allCommands = [System.Collections.ArrayList]::new()
-            if ($cfg.PSObject.Properties['hooks']) {
-                foreach ($eventName in $cfg.hooks.PSObject.Properties.Name) {
-                    foreach ($entry in $cfg.hooks.$eventName) {
-                        if ($entry.PSObject.Properties['hooks']) {
-                            foreach ($h in $entry.hooks) {
-                                if ($h.PSObject.Properties['command']) {
-                                    [void]$allCommands.Add($h.command)
-                                }
-                            }
-                        }
-                    }
-                }
+        $pythonCmd = Get-Command python3 -ErrorAction SilentlyContinue
+        if (-not $pythonCmd) { $pythonCmd = Get-Command python -ErrorAction SilentlyContinue }
+        if (-not $pythonCmd) {
+            Write-Host '  WARN     live settings.json hook-set check skipped - no python3/python on PATH' -ForegroundColor Yellow
+        } else {
+            $driftScript = Join-Path $script:RepoRoot 'user\scripts\doc-drift-lint.py'
+            $liveOutput = & $pythonCmd.Source $driftScript '--live' '--repo-root' $script:RepoRoot 2>&1
+            $liveExit = $LASTEXITCODE
+            if ($liveExit -eq 0) {
+                Write-Host '  OK       live settings.json reflects the tracked SSOT (doc-drift-lint --live)' -ForegroundColor Green
+            } else {
+                Write-Host '  WARN     doc-drift-lint --live reports drift between the live and tracked settings.json:' -ForegroundColor Yellow
+                foreach ($line in $liveOutput) { Write-Host "           $line" -ForegroundColor Yellow }
             }
-            foreach ($script in $hookScripts) {
-                $scriptName = $script
-                $found = $allCommands | Where-Object { $_ -like "*$scriptName*" }
-                if (-not $found) {
-                    [void]$missingHooks.Add($script)
-                }
-            }
-            if ($missingHooks.Count -gt 0) {
-                $missing = $missingHooks -join ', '
-                Write-Host "  WARN     marker-gated turn-routing hooks not registered in live settings.json ($missing) - see docs/specs/turn-routing-enforcement/REGISTRATION.md" -ForegroundColor Yellow
-            }
-        } catch {
-            $errMsg = $_.Exception.Message
-            Write-Host "  WARN     turn-routing hooks: ~/.claude/settings.json could not be parsed - cannot verify hook registration ($errMsg)" -ForegroundColor Yellow
         }
     }
 

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: live-settings-split-brain-disarms-enforcement-plane
-status: In-progress
+status: Complete
 created: 2026-07-12
 complexity: complex
 phases: [3]
@@ -70,9 +70,9 @@ Per-machine content to reconcile (D1, from live file): pwsh one-liner `statusLin
 
 ## Work Units
 
-- [ ] WU-6 — Resolve D1 per-machine content + restore the live symlink
-- [ ] WU-7 — Extend `setup.ps1` warn pass to the full hook set (or delegate to `--live`)
-- [ ] WU-8 — Add the parallel live check to `setup.py`
+- [x] WU-6 — Resolve D1 per-machine content + restore the live symlink
+- [x] WU-7 — Extend `setup.ps1` warn pass to the full hook set (or delegate to `--live`)
+- [x] WU-8 — Add the parallel live check to `setup.py` (resolved as DROPPED per `NEEDS_INPUT_RESOLVED_2026-07-12.md` decision 2 — respects `cross-platform-setup` D6; no code change)
 
 ---
 
