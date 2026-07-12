@@ -7,7 +7,9 @@
 > push/kill guards have been registered since Jun 11; on any symlink-intact machine (and the
 > cloud bootstrap) the verbatim-dispatch guard is unwired. No automatic check detects either half.
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-12
+**Fix commit:** 9948a55f
 **Priority:** P0
 **Last updated:** 2026-07-11
 **Related:** `docs/specs/turn-routing-enforcement/` (SPEC.md:114 "Settings placement" deliberately declared per-machine registration and deferred unification; `REGISTRATION.md` is the paste-fragment design this spec retires); `docs/bugs/legacy-tool-input-env-hooks-dead/` (two of the disarmed hooks are ALSO dead code internally — fixing registration alone does not revive them); `docs/bugs/powershell-tool-bypasses-bash-matched-guards/` (the reconciled SSOT is where the widened matchers must land — sequence together); the `multi-repo-concurrent-runs` per-repo hook scoping note (root `CLAUDE.md` Hooks section) — the lazy hooks are marker-gated per-repo, which is what makes merging them into the tracked file safe.

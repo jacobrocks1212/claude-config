@@ -43,7 +43,7 @@ Ground-truth confirmed live 2026-07-11/12 via a read-only touchpoint audit (all 
 
 ### Phase 1: Reconcile hook registration into the tracked SSOT
 
-**Status:** Complete
+**Status:** Fixed
 
 **Scope:** Merge the turn-routing pair into tracked `user/settings.json` so it becomes the single source of truth carrying ALL 12 hooks — the core un-split. This is the load-bearing prerequisite for the symlink restore (Phase 3): restoring the symlink BEFORE this merge would strip `lazy-route-inject`/`lazy-dispatch-guard` off the live laptop. Because these two hooks become newly-registered, they must also be documented in the root `CLAUDE.md` Hooks table (else `doc-drift-lint.py check_hooks` flags registered-but-undocumented drift), and asserted present by `test_hooks.py` (mirroring the existing straybranch/longbuild registration tests). No behavior change on any machine: the lazy hooks are marker-gated per-repo (`lazy-state.py --marker-present`, fail-open, marker-absent fast path), so universal registration is safe (SPEC Fix Scope 1).
 

@@ -8,12 +8,6 @@
       "severity": null
     },
     {
-      "id": "live-settings-split-brain-disarms-enforcement-plane",
-      "name": "Live ~/.claude/settings.json split-brain disarms the enforcement plane (10 of 12 hooks unregistered since Jun 11; dispatch guard untracked) \u2014 Investigation Spec",
-      "spec_dir": "live-settings-split-brain-disarms-enforcement-plane",
-      "severity": "P0"
-    },
-    {
       "id": "interventions-telemetry-repo-scope-split-brain",
       "name": "Interventions/telemetry repo-scope split-brain \u2014 efficacy loop structurally dead (zero verdicts ever) \u2014 Investigation Spec",
       "spec_dir": "interventions-telemetry-repo-scope-split-brain",

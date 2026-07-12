@@ -9,7 +9,7 @@
 **Status:** Concluded
 **Priority:** P1
 **Last updated:** 2026-07-11
-**Related:** `docs/bugs/live-settings-split-brain-disarms-enforcement-plane/` (on this laptop these hooks are additionally NOT REGISTERED at all — the live file lacks the whole Bash chain; fixing the split-brain alone would arm two hooks that still do nothing); `docs/bugs/powershell-tool-bypasses-bash-matched-guards/` (a rewritten kill-block matched only on `Bash` is instantly bypassable via the PowerShell tool, where `Stop-Process` is a native cmdlet — the rewrite must land with the widened matcher); `docs/specs/turn-routing-enforcement/` (owns the deny-via-JSON fail-OPEN hook contract these predate).
+**Related:** `docs/bugs/_archive/live-settings-split-brain-disarms-enforcement-plane/` (on this laptop these hooks are additionally NOT REGISTERED at all — the live file lacks the whole Bash chain; fixing the split-brain alone would arm two hooks that still do nothing); `docs/bugs/powershell-tool-bypasses-bash-matched-guards/` (a rewritten kill-block matched only on `Bash` is instantly bypassable via the PowerShell tool, where `Stop-Process` is a native cmdlet — the rewrite must land with the widened matcher); `docs/specs/turn-routing-enforcement/` (owns the deny-via-JSON fail-OPEN hook contract these predate).
 
 ## Verified Symptom
 

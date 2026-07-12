@@ -12,19 +12,19 @@ phases: [4, 5]
 > This plan is fully self-contained. The executing session needs no additional context.
 
 > **Plan series:** part 3 of 3. Sibling parts:
-> - part 1: `docs/bugs/live-settings-split-brain-disarms-enforcement-plane/plans/fix-settings-split-brain-part-1.md`
-> - part 2: `docs/bugs/live-settings-split-brain-disarms-enforcement-plane/plans/fix-settings-split-brain-part-2.md`
-> - part 3: `docs/bugs/live-settings-split-brain-disarms-enforcement-plane/plans/fix-settings-split-brain-part-3.md` (this file)
+> - part 1: `docs/bugs/_archive/live-settings-split-brain-disarms-enforcement-plane/plans/fix-settings-split-brain-part-1.md`
+> - part 2: `docs/bugs/_archive/live-settings-split-brain-disarms-enforcement-plane/plans/fix-settings-split-brain-part-2.md`
+> - part 3: `docs/bugs/_archive/live-settings-split-brain-disarms-enforcement-plane/plans/fix-settings-split-brain-part-3.md` (this file)
 >
 > Execute parts strictly in order. Each part is self-contained — do NOT cross-reference siblings during execution.
 
 # Implementation Plan — Live settings split-brain (Phases 4–5)  (v2)
 
 **PHASES.md files:**
-- `docs/bugs/live-settings-split-brain-disarms-enforcement-plane/PHASES.md` (5 phases; this part covers 4–5)
+- `docs/bugs/_archive/live-settings-split-brain-disarms-enforcement-plane/PHASES.md` (5 phases; this part covers 4–5)
 
 **SPEC.md files:**
-- `docs/bugs/live-settings-split-brain-disarms-enforcement-plane/SPEC.md`
+- `docs/bugs/_archive/live-settings-split-brain-disarms-enforcement-plane/SPEC.md`
 
 **Total phases:** 5 (this part: 2)
 **Plan version:** v2 (reference-based — components loaded from disk per step)
