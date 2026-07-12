@@ -47,8 +47,8 @@
 
 | # | item | state | sev |
 |---|------|-------|------|
-| 1 | [run-end-gate-refusals-no-telemetry-event](docs/bugs/run-end-gate-refusals-no-telemetry-event/SPEC.md) | Implement | low |
-| | status: Implement · phase 0/1 · next: execute plan · The state scripts' `--run-end` gates refuse (exit 1, marker kept) — unacked-hardening-debt, the new efficacy-flush-missing gate, and checkpoint-authorization — WITHOUT emitting a telemetry event, so those refusals are invisible to the efficacy loop that measures harness health. | | |
+| 1 | [run-end-gate-refusals-no-telemetry-event](docs/bugs/run-end-gate-refusals-no-telemetry-event/SPEC.md) | Validate | low |
+| | status: Validate · phase 1/1 · next: run mcp-test · The state scripts' `--run-end` gates refuse (exit 1, marker kept) — unacked-hardening-debt, the new efficacy-flush-missing gate, and checkpoint-authorization — WITHOUT emitting a telemetry event, so those refusals are invisible to the efficacy loop that measures harness health. | | |
 | 2 | [live-settings-split-brain-disarms-enforcement-plane](docs/bugs/live-settings-split-brain-disarms-enforcement-plane/SPEC.md) | Spec | P0 |
 | | status: Spec · next: spec · The live `~/.claude/settings.json` on this laptop is an untracked plain file registering ONLY the two turn-routing hooks, while the tracked `user/settings.json` registers the ~10 OTHER enforcement hooks and has NEVER carried the dispatch guard. | | |
 | 3 | [interventions-telemetry-repo-scope-split-brain](docs/bugs/interventions-telemetry-repo-scope-split-brain/SPEC.md) | Spec | P1 |
