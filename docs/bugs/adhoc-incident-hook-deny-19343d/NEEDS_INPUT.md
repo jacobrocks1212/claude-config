@@ -24,3 +24,12 @@ The **root-cause-trace gate blocks concluding** because the fix-site *driver* is
 - **Tune incident-scan to not re-capture never-false-positive containment denies** — Down-weight or exclude `lazy-cycle-containment|loop-formation-flag` (a provably-never-false-positive class) from incident-scan's `hook-deny` capture so it no longer generates un-actionable bug stubs. Cost: a small config/predicate change in `incident-scan.py` + tests. Risk: suppresses a genuine prompt-adherence / subagent-overreach signal — a recurring cluster could indicate a real mis-scoped skill and would no longer surface; weakest option on its own.
 
 **Recommendation:** Close as working-as-designed — no code change. The hook is provably correct, the cluster is contained to the split-brain re-arm run, and no standing driver exists; resolve the queue item toward `Won't-fix`. If the operator prefers durable value, the second option (capture the offending command in loop-formation deny events) is the recommended spin-off — implement it as a follow-up rather than relaxing the correct hook or blinding the collector.
+
+## Resolution
+
+*Recorded on 2026-07-12 UTC.*
+
+### 1. Disposition of the working-as-designed loop-formation-flag deny cluster
+
+**Choice:** Close as working-as-designed — no code change
+**Notes:** Operator selected the recommended disposition. The containment hook is provably correct; resolve this queue item toward `Won't-fix`. No code change; no spin-off enqueued this cycle (the command-capture traceability option remains the recommended follow-up should the signature recur outside a re-arm event).
