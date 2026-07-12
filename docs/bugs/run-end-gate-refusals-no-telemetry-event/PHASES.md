@@ -39,12 +39,12 @@ All planned paths exist; no net-new files. Adding 6 new call sites of `append_te
 **TDD:** yes. Tests assert the ledger append on each refusal path (they are RED before the emissions exist — the ledger has no `gate-refusal` line after a run-end refusal — and GREEN after).
 
 **Deliverables:**
-- [ ] `lazy-state.py` — insert `lazy_core.append_telemetry_event("gate-refusal", item_id=None, data={"gate": "unacked-hardening", "op": "--run-end", "reason": "<short>"})` immediately before the `return 1` in the unacked-hardening refusal branch (@~11869–11885).
-- [ ] `lazy-state.py` — same, `data.gate = "efficacy-flush-missing"`, before the efficacy-flush refusal `return 1` (@~11912–11929).
-- [ ] `lazy-state.py` — same, `data.gate = "checkpoint-auth"`, before the checkpoint-authorization refusal `return 1` (@~11957–11985).
-- [ ] `bug-state.py` — mirror all three insertions at the corresponding refusal branches (@~7252–7267, ~7292–7309, ~7323–7344). Identical `data.gate` discriminator strings and call shape (coupled-pair mirror).
-- [ ] Tests (`test_lazy_core.py`): a subprocess-driven test per refusal path **per script** (or a parametrized pair) that arms an isolated state dir + live run marker, sets up state to reach the target gate, invokes `--run-end` on the script, confirms exit code 1 + marker kept (behavior unchanged), and asserts the telemetry ledger's last event is `gate-refusal` with the expected `data.gate`. Register every new `def test_*` in a `_TESTS = _TESTS + [(...)]` block.
-- [ ] Tests: one assertion that a *successful* `--run-end` (all gates passing / overrides supplied) still emits the existing `run-end` event and NO spurious `gate-refusal` (guards against over-emission).
+- [x] `lazy-state.py` — insert `lazy_core.append_telemetry_event("gate-refusal", item_id=None, data={"gate": "unacked-hardening", "op": "--run-end", "reason": "<short>"})` immediately before the `return 1` in the unacked-hardening refusal branch (@~11869–11885).
+- [x] `lazy-state.py` — same, `data.gate = "efficacy-flush-missing"`, before the efficacy-flush refusal `return 1` (@~11912–11929).
+- [x] `lazy-state.py` — same, `data.gate = "checkpoint-auth"`, before the checkpoint-authorization refusal `return 1` (@~11957–11985).
+- [x] `bug-state.py` — mirror all three insertions at the corresponding refusal branches (@~7252–7267, ~7292–7309, ~7323–7344). Identical `data.gate` discriminator strings and call shape (coupled-pair mirror).
+- [x] Tests (`test_lazy_core.py`): a subprocess-driven test per refusal path **per script** (or a parametrized pair) that arms an isolated state dir + live run marker, sets up state to reach the target gate, invokes `--run-end` on the script, confirms exit code 1 + marker kept (behavior unchanged), and asserts the telemetry ledger's last event is `gate-refusal` with the expected `data.gate`. Register every new `def test_*` in a `_TESTS = _TESTS + [(...)]` block.
+- [x] Tests: one assertion that a *successful* `--run-end` (all gates passing / overrides supplied) still emits the existing `run-end` event and NO spurious `gate-refusal` (guards against over-emission).
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_lazy_core.py` (the repo's pytest-style runner) passes, with the new run-end-refusal telemetry tests going red→green — i.e. after a real `--run-end` that refuses on each gate, `read_telemetry_events()` shows a `gate-refusal` event carrying the matching `data.gate`. This is a runnable command whose observable is the actual ledger append, not "unit tests pass" in the abstract.
 
@@ -74,6 +74,19 @@ Subprocess-driven, mirroring `test_telemetry_append_envelope_shape_and_now_injec
 - Use `item_id=None` (run-level) — no feature/bug id exists on the run marker at these sites (see Validated Assumptions). Matches existing run-level emissions.
 - Keep the three `data.gate` discriminator strings byte-identical between `lazy-state.py` and `bug-state.py` so the efficacy loop / `kpi-scorecard.py` / `pipeline_visualizer/trends.py` aggregate one `gate-refusal` family (SPEC D1).
 - **Completion (gate-owned):** the `__mark_fixed__` gate flips `SPEC.md` **Status:** to `Fixed`, writes `FIXED.md`, and archives — do NOT author a status-flip / receipt checkbox row here.
+
+## Implementation Notes (2026-07-12, /execute-plan)
+
+**Status:** In-progress (implementation complete; completion is `__mark_fixed__`-gated).
+
+- **Landed:** three `lazy_core.append_telemetry_event("gate-refusal", item_id=None, data={"gate": …, "op": "--run-end", "reason": <short>})` calls inserted immediately before the existing `return 1` inside each of the three `--run-end` refusal branches, in BOTH scripts:
+  - `user/scripts/lazy-state.py` — `unacked-hardening` (after the `pending_hardening` refusal JSON), `efficacy-flush-missing` (after the efficacy-breadcrumb refusal JSON), `checkpoint-auth` (after the attended-checkpoint refusal JSON).
+  - `user/scripts/bug-state.py` — the same three, mirrored, with byte-identical `data.gate` discriminator strings + call shape (coupled-pair; `lazy_parity_audit.py` exit 0).
+- **`item_id=None`** (run-level) per the `## Validated Assumptions` drift correction — no feature/bug id exists on the run marker at these sites; matches the existing run-level `run-end`/`run-start`/`containment-refusal` emissions. Discriminator strings are the SSOT the efficacy loop / `kpi-scorecard.py` / `pipeline_visualizer/trends.py` aggregate.
+- **Behavior UNCHANGED:** the emission is purely additive, sits INSIDE the refusal branch, and `append_telemetry_event` is already marker-gated + fail-open — no refusal decision, exit code, message, or marker handling changed. Out-of-scope 4th (terminal-reason) gate deliberately not touched.
+- **Tests (`user/scripts/test_lazy_core.py`):** 8 new subprocess-driven `_TESTS`-registered tests (`test_run_end_*_refusal_emits_gate_refusal_{lazy,bug}` ×3 gates + `test_run_end_success_emits_run_end_not_gate_refusal_{lazy,bug}`). Each arms a live run marker in an isolated `LAZY_STATE_DIR`, drives a real `--run-end` refusal via subprocess (as orchestrator), and asserts BOTH the unchanged refusal (exit 1, marker kept) AND the appended `gate-refusal` event via `read_telemetry_events()` — the serving-path (SEAM B) regression evidence, verified RED→GREEN. The over-emission guards assert a passing `--run-end` emits `run-end` and NO `gate-refusal`.
+- **Gates:** `test_lazy_core.py` 969/969 pass (incl. the `test_no_orphaned_test_functions` orphan guard + both `--test` baseline-match tests → state-script smoke harnesses byte-unchanged); `lazy_parity_audit.py --repo-root .` exit 0; `doc-drift-lint.py --repo-root .` exit 0.
+- **Note on running the gate mid-cycle:** the full `test_lazy_core.py` suite must run with no live cycle marker in the ambient state dir (a non-isolated in-process `refuse_if_cycle_active` call `SystemExit(3)`s the runner otherwise) — a test-harness environment artifact, not a defect in this fix.
 
 ---
 

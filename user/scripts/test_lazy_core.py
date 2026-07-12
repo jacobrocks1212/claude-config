@@ -32736,5 +32736,178 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# run-end-gate-refusals-no-telemetry-event — each of the three --run-end gate
+# refusals (unacked-hardening / efficacy-flush-missing / checkpoint-auth) must
+# append an observability-only `gate-refusal` telemetry event carrying the
+# matching `data.gate`, while the refusal itself is UNCHANGED (exit 1, marker
+# kept).  A SUCCESSFUL --run-end must emit `run-end` and NO `gate-refusal`
+# (over-emission guard).  Coupled pair: asserted for BOTH lazy-state.py and
+# bug-state.py.  Driven via subprocess so the real CLI handlers run; hermetic
+# via an isolated LAZY_STATE_DIR (never the live ~/.claude/state/).
+# ---------------------------------------------------------------------------
+
+def _run_end_gate_env(state_dir: "Path") -> dict:
+    """Env for driving a state script's --run-end as the ORCHESTRATOR (so
+    refuse_if_cycle_active never refuses), pinned to an isolated state dir.
+    Mirrors lazy-state.py's telemetry-ledger-chokepoints `_tl_env`."""
+    e = {k: v for k, v in os.environ.items()
+         if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+    e["LAZY_STATE_DIR"] = str(state_dir)
+    e["LAZY_ORCHESTRATOR"] = "1"
+    return e
+
+
+def _drive_run_end(script: str, pipeline: str, extra_args, *, seed_deny: bool,
+                   state_dir: "Path"):
+    """Arm a live run marker (+ optionally seed the deny ledger so
+    pending_hardening() > 0), drive `<script> --run-end <extra_args>` via
+    subprocess, and return (result, events, marker_exists)."""
+    _set_state_dir(state_dir)
+    lazy_core.write_run_marker(
+        pipeline=pipeline, cloud=False, repo_root=str(state_dir),
+    )
+    if seed_deny:
+        assert lazy_core.append_deny_ledger_entry(
+            "tid-x", "abcabcabcabc", "guard deny (fixture)", "prompt head",
+        ) is True
+    r = subprocess.run(
+        [sys.executable, str(_SCRIPTS_DIR / script),
+         "--repo-root", str(state_dir), "--run-end", *extra_args],
+        capture_output=True, text=True, env=_run_end_gate_env(state_dir),
+    )
+    events = lazy_core.read_telemetry_events()
+    marker_exists = (state_dir / lazy_core._MARKER_FILENAME).exists()
+    return r, events, marker_exists
+
+
+def _assert_run_end_refusal_emits(script, pipeline, extra_args, *, seed_deny,
+                                  expected_gate):
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        try:
+            r, events, marker_exists = _drive_run_end(
+                script, pipeline, extra_args, seed_deny=seed_deny,
+                state_dir=Path(td),
+            )
+            # Behavior UNCHANGED: refusal exits 1 and keeps the marker.
+            assert r.returncode == 1, (r.returncode, r.stdout, r.stderr)
+            assert marker_exists, "a refused --run-end must keep the marker"
+            # New observability: exactly one gate-refusal for this gate.
+            assert events, "expected a gate-refusal telemetry event, got none"
+            last = events[-1]
+            assert last.get("event") == "gate-refusal", last
+            assert last.get("data", {}).get("gate") == expected_gate, last
+            assert last.get("data", {}).get("op") == "--run-end", last
+        finally:
+            _clear_state_dir()
+
+
+def test_run_end_unacked_hardening_refusal_emits_gate_refusal_lazy():
+    """lazy-state.py --run-end with pending unacked hardening debt refuses
+    (exit 1, marker kept) AND appends gate=unacked-hardening."""
+    _assert_run_end_refusal_emits(
+        "lazy-state.py", "feature", [], seed_deny=True,
+        expected_gate="unacked-hardening",
+    )
+
+
+def test_run_end_unacked_hardening_refusal_emits_gate_refusal_bug():
+    """bug-state.py mirror of the unacked-hardening refusal emission."""
+    _assert_run_end_refusal_emits(
+        "bug-state.py", "bug", [], seed_deny=True,
+        expected_gate="unacked-hardening",
+    )
+
+
+def test_run_end_efficacy_flush_refusal_emits_gate_refusal_lazy():
+    """lazy-state.py --run-end with no efficacy-flush breadcrumb (gate 1 clear:
+    zero pending) refuses AND appends gate=efficacy-flush-missing."""
+    _assert_run_end_refusal_emits(
+        "lazy-state.py", "feature", [], seed_deny=False,
+        expected_gate="efficacy-flush-missing",
+    )
+
+
+def test_run_end_efficacy_flush_refusal_emits_gate_refusal_bug():
+    """bug-state.py mirror of the efficacy-flush-missing refusal emission."""
+    _assert_run_end_refusal_emits(
+        "bug-state.py", "bug", [], seed_deny=False,
+        expected_gate="efficacy-flush-missing",
+    )
+
+
+def test_run_end_checkpoint_auth_refusal_emits_gate_refusal_lazy():
+    """lazy-state.py --run-end --reason checkpoint on an attended run without
+    --operator-authorized (gates 1 & 2 cleared) refuses AND appends
+    gate=checkpoint-auth."""
+    _assert_run_end_refusal_emits(
+        "lazy-state.py", "feature",
+        ["--reason", "checkpoint", "--efficacy-skip-authorized"],
+        seed_deny=False, expected_gate="checkpoint-auth",
+    )
+
+
+def test_run_end_checkpoint_auth_refusal_emits_gate_refusal_bug():
+    """bug-state.py mirror of the checkpoint-auth refusal emission."""
+    _assert_run_end_refusal_emits(
+        "bug-state.py", "bug",
+        ["--reason", "checkpoint", "--efficacy-skip-authorized"],
+        seed_deny=False, expected_gate="checkpoint-auth",
+    )
+
+
+def _assert_run_end_success_no_gate_refusal(script, pipeline):
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        try:
+            r, events, marker_exists = _drive_run_end(
+                script, pipeline,
+                ["--efficacy-skip-authorized",
+                 "--terminal-reason", "all-features-complete"],
+                seed_deny=False, state_dir=Path(td),
+            )
+            assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+            assert not marker_exists, "a successful --run-end deletes the marker"
+            assert events, "expected a run-end telemetry event"
+            assert events[-1].get("event") == "run-end", events
+            assert all(e.get("event") != "gate-refusal" for e in events), (
+                "a successful --run-end must NOT emit a gate-refusal", events
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_run_end_success_emits_run_end_not_gate_refusal_lazy():
+    """Over-emission guard: a passing lazy-state.py --run-end emits run-end and
+    NO gate-refusal (the emissions sit INSIDE each refusal branch)."""
+    _assert_run_end_success_no_gate_refusal("lazy-state.py", "feature")
+
+
+def test_run_end_success_emits_run_end_not_gate_refusal_bug():
+    """Over-emission guard mirror for bug-state.py."""
+    _assert_run_end_success_no_gate_refusal("bug-state.py", "bug")
+
+
+_TESTS = _TESTS + [
+    ("test_run_end_unacked_hardening_refusal_emits_gate_refusal_lazy",
+     test_run_end_unacked_hardening_refusal_emits_gate_refusal_lazy),
+    ("test_run_end_unacked_hardening_refusal_emits_gate_refusal_bug",
+     test_run_end_unacked_hardening_refusal_emits_gate_refusal_bug),
+    ("test_run_end_efficacy_flush_refusal_emits_gate_refusal_lazy",
+     test_run_end_efficacy_flush_refusal_emits_gate_refusal_lazy),
+    ("test_run_end_efficacy_flush_refusal_emits_gate_refusal_bug",
+     test_run_end_efficacy_flush_refusal_emits_gate_refusal_bug),
+    ("test_run_end_checkpoint_auth_refusal_emits_gate_refusal_lazy",
+     test_run_end_checkpoint_auth_refusal_emits_gate_refusal_lazy),
+    ("test_run_end_checkpoint_auth_refusal_emits_gate_refusal_bug",
+     test_run_end_checkpoint_auth_refusal_emits_gate_refusal_bug),
+    ("test_run_end_success_emits_run_end_not_gate_refusal_lazy",
+     test_run_end_success_emits_run_end_not_gate_refusal_lazy),
+    ("test_run_end_success_emits_run_end_not_gate_refusal_bug",
+     test_run_end_success_emits_run_end_not_gate_refusal_bug),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

@@ -7264,6 +7264,16 @@ def main() -> int:
                     ),
                     "pending_hardening": pending,
                 }, indent=2) + "\n")
+                # run-end-gate-refusals-no-telemetry-event (coupled-pair mirror
+                # of lazy-state.py): observability-only gate-refusal emission
+                # (marker-gated, fail-open, ZERO state side effects) immediately
+                # before the UNCHANGED refusal return. Identical data.gate string.
+                lazy_core.append_telemetry_event(
+                    "gate-refusal",
+                    item_id=None,
+                    data={"gate": "unacked-hardening", "op": "--run-end",
+                          "reason": "pending unacked hardening debt"},
+                )
                 return 1
             # Override path: the operator authorized retiring the run, so the
             # authorization must ACTUALLY CLEAR the pending debt — flip every
@@ -7306,6 +7316,16 @@ def main() -> int:
                         "[efficacy-future-check-unenforced-orchestrator-prose]"
                     ),
                 }, indent=2) + "\n")
+                # run-end-gate-refusals-no-telemetry-event (coupled-pair mirror
+                # of lazy-state.py): observability-only gate-refusal emission
+                # (marker-gated, fail-open, ZERO state side effects) immediately
+                # before the UNCHANGED refusal return. Identical data.gate string.
+                lazy_core.append_telemetry_event(
+                    "gate-refusal",
+                    item_id=None,
+                    data={"gate": "efficacy-flush-missing", "op": "--run-end",
+                          "reason": "missing efficacy-flush breadcrumb"},
+                )
                 return 1
             efficacy_skip_note = (
                 "OVERRIDE: --efficacy-skip-authorized retired the run without an "
@@ -7341,6 +7361,17 @@ def main() -> int:
                     ),
                     "attended": True,
                 }, indent=2) + "\n")
+                # run-end-gate-refusals-no-telemetry-event (coupled-pair mirror
+                # of lazy-state.py): observability-only gate-refusal emission
+                # (marker-gated, fail-open, ZERO state side effects) immediately
+                # before the UNCHANGED refusal return. Identical data.gate string.
+                lazy_core.append_telemetry_event(
+                    "gate-refusal",
+                    item_id=None,
+                    data={"gate": "checkpoint-auth", "op": "--run-end",
+                          "reason": "attended checkpoint stop without operator "
+                                    "authorization"},
+                )
                 return 1
 
         elif reason == "terminal":

@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: run-end-gate-refusals-no-telemetry-event
-status: Ready
+status: Complete
 created: 2026-07-11
 complexity: complex
 phases: [1]
@@ -52,7 +52,7 @@ There is **no MCP/runtime validation step** for this repo — the pytest tests r
 
 ## Work Units
 
-- [ ] WU-1 — Emit `gate-refusal` telemetry at the three run-end refusal sites in both state scripts + subprocess tests
+- [x] WU-1 — Emit `gate-refusal` telemetry at the three run-end refusal sites in both state scripts + subprocess tests
 
 ---
 
@@ -71,9 +71,9 @@ There is **no MCP/runtime validation step** for this repo — the pytest tests r
 #### WU-1 — Emit gate-refusal telemetry at the three run-end refusal sites in both state scripts + subprocess tests
 
 **Scope (covers the whole phase — these deliverables are tightly coupled: the coupled-pair parity gate binds both scripts, and the tests bind to the emissions):**
-- [ ] `lazy-state.py` — emit at the unacked-hardening refusal (`data.gate = "unacked-hardening"`), the efficacy-flush refusal (`"efficacy-flush-missing"`), and the checkpoint-auth refusal (`"checkpoint-auth"`), each immediately before the existing `return 1`, inside the refusal branch.
-- [ ] `bug-state.py` — mirror all three emissions at the corresponding refusal branches (identical `data.gate` strings + call shape).
-- [ ] Tests (`test_lazy_core.py`): assert each of the three refusal paths appends a `gate-refusal` event with the matching `data.gate`, for BOTH scripts, plus a guard that a successful `--run-end` emits `run-end` (not `gate-refusal`).
+- [x] `lazy-state.py` — emit at the unacked-hardening refusal (`data.gate = "unacked-hardening"`), the efficacy-flush refusal (`"efficacy-flush-missing"`), and the checkpoint-auth refusal (`"checkpoint-auth"`), each immediately before the existing `return 1`, inside the refusal branch.
+- [x] `bug-state.py` — mirror all three emissions at the corresponding refusal branches (identical `data.gate` strings + call shape).
+- [x] Tests (`test_lazy_core.py`): assert each of the three refusal paths appends a `gate-refusal` event with the matching `data.gate`, for BOTH scripts, plus a guard that a successful `--run-end` emits `run-end` (not `gate-refusal`).
 
 **TDD:** yes.
 
