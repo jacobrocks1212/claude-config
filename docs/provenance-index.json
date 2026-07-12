@@ -198,6 +198,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mcp-tooling-not-predetermined-at-planning",
       "type": "bug",
       "provenance": "backfilled"
@@ -2998,6 +3003,27 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/interventions-telemetry-repo-scope-split-brain/PHASES.md": [
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/interventions-telemetry-repo-scope-split-brain/plans/all-phases-interventions-telemetry-split-brain-part-1.md": [
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/interventions-telemetry-repo-scope-split-brain/plans/all-phases-interventions-telemetry-split-brain-part-2.md": [
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/lazy-batch-unified-driver-parity-and-accounting/FIXED.md": [
@@ -6208,6 +6234,48 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/interventions/harden-2026-07-r14.md": [
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r15.md": [
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r16.md": [
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r18.md": [
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r20.md": [
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r21.md": [
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/interventions/harden-2026-07-r27.md": [
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
@@ -6319,6 +6387,11 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "operator-checkpoint-resume-counter-reset",
@@ -6704,6 +6777,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -6798,6 +6876,11 @@
   ],
   "user/scripts/efficacy-eval.py": [
     {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "intervention-efficacy-tracking",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -6869,6 +6952,11 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
@@ -7021,6 +7109,11 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
@@ -7395,6 +7488,11 @@
   ],
   "user/scripts/test_efficacy_eval.py": [
     {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "intervention-efficacy-tracking",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -7504,6 +7602,11 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
@@ -8171,6 +8274,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "operator-checkpoint-resume-counter-reset",
       "type": "bug",
       "provenance": "backfilled"
@@ -8251,6 +8359,11 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "park-mode-halts-on-blocked",
