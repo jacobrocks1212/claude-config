@@ -77,7 +77,7 @@ Subprocess-driven, mirroring `test_telemetry_append_envelope_shape_and_now_injec
 
 ## Implementation Notes (2026-07-12, /execute-plan)
 
-**Status:** In-progress (implementation complete; completion is `__mark_fixed__`-gated).
+**Status:** Fixed
 
 - **Landed:** three `lazy_core.append_telemetry_event("gate-refusal", item_id=None, data={"gate": …, "op": "--run-end", "reason": <short>})` calls inserted immediately before the existing `return 1` inside each of the three `--run-end` refusal branches, in BOTH scripts:
   - `user/scripts/lazy-state.py` — `unacked-hardening` (after the `pending_hardening` refusal JSON), `efficacy-flush-missing` (after the efficacy-breadcrumb refusal JSON), `checkpoint-auth` (after the attended-checkpoint refusal JSON).

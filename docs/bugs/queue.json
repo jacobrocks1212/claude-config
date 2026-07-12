@@ -2,12 +2,6 @@
   "_note": "2026-07-11 hardening-audit batch: 17 investigation specs (docs deep-dive + session mining) enqueued at the head in recommended fix order \u2014 enforcement re-arm first (the settings split-brain un-blinds telemetry and re-arms every guard), then the efficacy-loop pair (so later fixes get graded), then state-plane crash consistency, pipeline-waste killers, and hygiene. Explicit severities mirror each SPEC's Priority. | Prior note (2026-07-04, partially stale \u2014 its named P0 head is archived): Ordering is hybrid (explicit queue order + severity fallback). HEAD: the P0 'skip-mcp-test-frontmatter-unquoted-colon' hardening bug is the merged-view head \u2014 /lazy-batch's unified driver picks it FIRST. The 10 build-queue/harness bugs below it carry a DEPRIORITIZED queue-entry severity of null (real severity lives in each SPEC's **Severity:** line) so they sort to merged priority 99 \u2014 AFTER every feature \u2014 set 2026-07-04 (resume-lanes-hardening) because they are PowerShell/Pester build-queue defects untestable off a Windows workstation and were otherwise interleaving ahead of the feature queue in the merged view. The two adhoc-* bugs were already null-severity. Restore a bug's priority by removing its queue entry (autodiscovery re-reads the SPEC severity) or setting an explicit severity here.",
   "queue": [
     {
-      "id": "run-end-gate-refusals-no-telemetry-event",
-      "name": "Run-end gate refusals emit no gate-refusal telemetry event",
-      "spec_dir": "run-end-gate-refusals-no-telemetry-event",
-      "severity": "low"
-    },
-    {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "name": "Live ~/.claude/settings.json split-brain disarms the enforcement plane (10 of 12 hooks unregistered since Jun 11; dispatch guard untracked) \u2014 Investigation Spec",
       "spec_dir": "live-settings-split-brain-disarms-enforcement-plane",

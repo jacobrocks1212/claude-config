@@ -7,7 +7,9 @@
 > `containment-refusal` and the `--verify-ledger` `gate-refusal`); the run-end refusal sites
 > just don't call it — so a fix targeting run-end refusals has no countable signal to grade against.
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-12
+**Fix commit:** 6229a25
 **Priority:** P3
 **Severity:** low
 **Last updated:** 2026-07-11
