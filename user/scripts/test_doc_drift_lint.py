@@ -403,6 +403,89 @@ def test_hooks_registered_undocumented_exempt_via_section_comment(tmp_path, ddl)
 
 
 # ---------------------------------------------------------------------------
+# Hooks check — multi-event hooks (a hook wired under >1 event)
+# ---------------------------------------------------------------------------
+
+# route.sh mirrors the real lazy-route-inject.sh: UserPromptSubmit (matches-all) +
+# SessionStart matcher `compact` + PostCompact (matches-all).
+MULTI_EVENT_HOOK_FILES = (
+    "a-hook.sh", "multi-hook.sh", "pair-hook.sh", "session-hook.sh", "route.sh")
+
+
+def multi_event_settings(*, events=("UserPromptSubmit", "SessionStart", "PostCompact")):
+    """default_settings() plus route.sh registered under the given events."""
+    settings = default_settings()
+    cmd = {"type": "command", "command": "bash ~/.claude/hooks/route.sh"}
+    if "UserPromptSubmit" in events:
+        settings["hooks"]["UserPromptSubmit"] = [{"hooks": [dict(cmd)]}]
+    if "SessionStart" in events:
+        settings["hooks"]["SessionStart"].append(
+            {"matcher": "compact", "hooks": [dict(cmd)]})
+    if "PostCompact" in events:
+        settings["hooks"]["PostCompact"] = [{"hooks": [dict(cmd)]}]
+    return settings
+
+
+# _fmt_events sort order (by event name): PostCompact, SessionStart, UserPromptSubmit.
+MULTI_EVENT_ROW = (
+    "| `route.sh` | PostCompact (*); SessionStart (compact); UserPromptSubmit (*) "
+    "| multi-event injector |\n")
+
+
+def test_hooks_multi_event_all_documented_clean(tmp_path):
+    table = CLEAN_HOOKS_TABLE + MULTI_EVENT_ROW
+    repo = make_repo(
+        tmp_path, hooks_table=table, settings=multi_event_settings(),
+        hook_files=MULTI_EVENT_HOOK_FILES)
+    res = run_lint(repo)
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "0 drift findings" in res.stdout
+
+
+def test_hooks_multi_event_documented_event_not_registered(tmp_path):
+    # doc lists all three, but PostCompact is NOT registered -> drift.
+    table = CLEAN_HOOKS_TABLE + MULTI_EVENT_ROW
+    repo = make_repo(
+        tmp_path, hooks_table=table,
+        settings=multi_event_settings(events=("UserPromptSubmit", "SessionStart")),
+        hook_files=MULTI_EVENT_HOOK_FILES)
+    res = run_lint(repo)
+    assert res.returncode == 1
+    assert "route.sh" in res.stdout
+    assert "PostCompact" in res.stdout
+    assert "documented under events" in res.stdout
+
+
+def test_hooks_multi_event_registered_event_not_documented(tmp_path):
+    # settings register all three; doc omits PostCompact -> drift.
+    row = ("| `route.sh` | SessionStart (compact); UserPromptSubmit (*) "
+           "| multi-event injector |\n")
+    table = CLEAN_HOOKS_TABLE + row
+    repo = make_repo(
+        tmp_path, hooks_table=table, settings=multi_event_settings(),
+        hook_files=MULTI_EVENT_HOOK_FILES)
+    res = run_lint(repo)
+    assert res.returncode == 1
+    assert "route.sh" in res.stdout
+    assert "PostCompact" in res.stdout
+
+
+def test_hooks_multi_event_matcher_mismatch(tmp_path):
+    # events match, but doc claims SessionStart (startup) while it is registered `compact`.
+    row = ("| `route.sh` | PostCompact (*); SessionStart (startup); UserPromptSubmit (*) "
+           "| multi-event injector |\n")
+    table = CLEAN_HOOKS_TABLE + row
+    repo = make_repo(
+        tmp_path, hooks_table=table, settings=multi_event_settings(),
+        hook_files=MULTI_EVENT_HOOK_FILES)
+    res = run_lint(repo)
+    assert res.returncode == 1
+    assert "route.sh" in res.stdout
+    assert "startup" in res.stdout and "compact" in res.stdout
+    assert "SessionStart" in res.stdout
+
+
+# ---------------------------------------------------------------------------
 # Scripts check
 # ---------------------------------------------------------------------------
 

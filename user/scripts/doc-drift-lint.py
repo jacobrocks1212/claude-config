@@ -7,9 +7,12 @@ Four checks (SPEC D1), all pure-read, stdlib-only, deterministic:
 
   hooks          root CLAUDE.md `## Hooks` table  <->  user/settings.json hook registrations.
                  Bidirectional. Rows claiming a trigger must be registered under exactly that
-                 event + matcher set; rows claiming "NOT registered" must appear in no
-                 registered command; a registered hook script with no table row is drift; a
-                 documented hook script must exist on disk (user/hooks/ or user/scripts/).
+                 event + matcher set; a hook wired under MULTIPLE events lists each as a
+                 "; "-separated `Event (Matcher)` clause (the shape _fmt_events emits) and must
+                 match the full registered event->matcher map; rows claiming "NOT registered"
+                 must appear in no registered command; a registered hook script with no table
+                 row is drift; a documented hook script must exist on disk (user/hooks/ or
+                 user/scripts/).
   scripts        root CLAUDE.md `## Scripts` table + user/scripts/CLAUDE.md
                  `## Files in this directory` table  ->  user/scripts/ on disk.
                  Doc->disk existence only (both tables are curated, not exhaustive);
@@ -252,13 +255,48 @@ def check_hooks(repo_root):
                     exempted=exempt))
             continue
 
-        m = _TRIGGER_RE.search(trigger)
-        if not m:
+        clauses = _TRIGGER_RE.findall(trigger)
+        if not clauses:
             findings.append(Finding(
                 "hooks", "drift", "CLAUDE.md", name,
                 "unparseable Trigger cell %r (expected `Event (Matcher, ...)` "
                 "or `NOT registered`)" % trigger, exempted=exempt))
             continue
+
+        # Multi-event form: a Trigger cell may list several `Event (Matcher)` clauses
+        # separated by "; " (the shape _fmt_events already emits on the registered side)
+        # for a hook wired under more than one event. Parse the full documented
+        # event->matcher map and compare it against registered[name]. A single-clause
+        # cell falls through to the byte-identical single-event path below.
+        if len(clauses) > 1:
+            doc_events = {ev: _parse_matcher_list(ms) for ev, ms in clauses}
+            if name not in registered:
+                findings.append(Finding(
+                    "hooks", "drift", "CLAUDE.md", name,
+                    "documented as '%s' but registered nowhere in user/settings.json"
+                    % _fmt_events(doc_events), exempted=exempt))
+                continue
+            reg_events = registered[name]
+            if set(reg_events) != set(doc_events):
+                findings.append(Finding(
+                    "hooks", "drift", "CLAUDE.md", name,
+                    "documented under events %s but registered under %s"
+                    % (_fmt_events(doc_events), _fmt_events(reg_events)),
+                    exempted=exempt))
+                continue
+            for ev, doc_ms in sorted(doc_events.items()):
+                reg_ms = reg_events[ev]
+                # An empty registered matcher set means "matches all" — no matcher
+                # comparison (same `*`-semantics as the single-event path).
+                if reg_ms and reg_ms != doc_ms:
+                    findings.append(Finding(
+                        "hooks", "drift", "CLAUDE.md", name,
+                        "documented matchers (%s) != registered matchers (%s) for event %s"
+                        % (", ".join(sorted(doc_ms)), ", ".join(sorted(reg_ms)), ev),
+                        exempted=exempt))
+            continue
+
+        m = _TRIGGER_RE.search(trigger)
         doc_event, doc_matchers = m.group(1), _parse_matcher_list(m.group(2))
         if name not in registered:
             findings.append(Finding(
