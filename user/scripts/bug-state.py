@@ -7381,6 +7381,15 @@ def main() -> int:
             if "=" in kv:
                 key, _, value = kv.partition("=")
                 context[key] = value
+        # no-mid-run-observed-friction-harden-dispatch §1 (coupled-pair mirror of
+        # lazy-state.py): normalize a hardening dispatch's context so the shared
+        # @requires evidence keys resolve for every trigger_kind — an
+        # observed-friction dispatch rebinds friction_summary/friction_detail into
+        # denied_prompt_summary/denial_reason and gets observed-friction
+        # probe_json/registry_state placeholders; auto-triggers pass through with
+        # only the {blocking} default added.
+        if cls == "hardening":
+            context = lazy_core.normalize_hardening_dispatch_context(context)
         try:
             result = lazy_core.emit_dispatch_prompt(
                 cls, context,

@@ -16561,9 +16561,11 @@ def build_hardening_emit_command(
     probe_summary: str,
     registry_summary: str,
     cwd: str,
+    observed_friction: dict | None = None,
 ) -> str:
-    """Pre-compose the single-line shell command that dispatches the routed
-    hardening debt (Phase 8 WU-8.2).
+    """Pre-compose the single-line shell command that dispatches a hardening
+    round (Phase 8 WU-8.2; observed-friction branch:
+    no-mid-run-observed-friction-harden-dispatch).
 
     The returned string is meant to be pasted verbatim into bash by the
     orchestrator when the probe withholds the forward route over pending
@@ -16584,6 +16586,16 @@ def build_hardening_emit_command(
         registry_summary: a short registry-state summary (e.g. "N entries, M
             unconsumed" or "empty").
         cwd: the repo root the dispatch should run against.
+        observed_friction: when supplied (a dict with ``friction_summary`` /
+            ``friction_detail`` / ``blocking``), build the OBSERVED-FRICTION
+            command instead — ``trigger_kind=observed-friction`` driven by
+            ORCHESTRATOR-SUPPLIED context, NOT a deny-ledger entry
+            (no-mid-run-observed-friction-harden-dispatch §1). The emitted
+            ``--context friction_summary`` / ``friction_detail`` / ``blocking``
+            keys are re-bound into the template's shared @requires evidence keys
+            by ``normalize_hardening_dispatch_context`` when the command runs, so
+            the dispatch-hardening.md template resolves. ``oldest_deny`` is
+            ignored in this mode.
 
     Returns:
         A single shell command string, safe to paste into bash.
@@ -16591,6 +16603,37 @@ def build_hardening_emit_command(
     def _ctx(key: str, value: str) -> str:
         # shlex.quote escapes the VALUE only; the key=value join stays literal.
         return f"--context {key}={shlex.quote(value)}"
+
+    # no-mid-run-observed-friction-harden-dispatch §1: the observed-friction
+    # branch is driven by ORCHESTRATOR-SUPPLIED context (a mid-run harness gap
+    # the orchestrator named through its own reasoning), NOT a deny/friction
+    # ledger entry — there is no probe withholding behind it.  The command emits
+    # the friction-specific keys (friction_summary / friction_detail / blocking);
+    # normalize_hardening_dispatch_context re-binds them into the shared
+    # @requires evidence keys (friction_summary → denied_prompt_summary,
+    # friction_detail → denial_reason) and injects observed-friction placeholders
+    # for probe_json / registry_state when the emitted command actually runs, so
+    # emit_dispatch_prompt does not refuse on a missing @requires key.
+    if observed_friction is not None:
+        friction_summary = observed_friction.get("friction_summary", "") or ""
+        friction_detail = observed_friction.get("friction_detail", "") or ""
+        blocking_raw = observed_friction.get("blocking", False)
+        blocking_str = (
+            "true"
+            if (blocking_raw is True or str(blocking_raw).strip().lower() == "true")
+            else "false"
+        )
+        parts = [
+            f"python3 ~/.claude/scripts/{state_script_name}",
+            "--emit-dispatch hardening",
+            _ctx("trigger_kind", "observed-friction"),
+            _ctx("item_id", item_id or ""),
+            _ctx("friction_summary", friction_summary),
+            _ctx("friction_detail", friction_detail),
+            _ctx("blocking", blocking_str),
+            _ctx("cwd", cwd or ""),
+        ]
+        return " ".join(parts)
 
     entry = oldest_deny or {}
 
@@ -16638,6 +16681,65 @@ def build_hardening_emit_command(
         _ctx("cwd", cwd or ""),
     ]
     return " ".join(parts)
+
+
+# Observed-friction placeholders for the two template @requires evidence keys
+# that have no meaning behind an ORCHESTRATOR-OBSERVED harness gap (there is no
+# probe withholding + no registry state driving it).  Bound as literals so the
+# dispatch-hardening.md template resolves for trigger_kind=observed-friction.
+_OBSERVED_FRICTION_PROBE_PLACEHOLDER = (
+    "observed-friction: no probe (orchestrator-observed mid-run harness gap)"
+)
+_OBSERVED_FRICTION_REGISTRY_PLACEHOLDER = (
+    "observed-friction: n/a (not a routing/deny failure)"
+)
+
+
+def normalize_hardening_dispatch_context(context: dict) -> dict:
+    """Normalize the ``--context`` dict for an ``--emit-dispatch hardening`` call
+    so the dispatch-hardening.md template's @requires keys resolve regardless of
+    trigger_kind (no-mid-run-observed-friction-harden-dispatch §1).
+
+    Two entry shapes converge on the same template:
+
+      * AUTO-TRIGGER (validate-deny / no-route / inject-hook-error /
+        process-friction): ``build_hardening_emit_command`` already pre-binds the
+        shared evidence keys (denied_prompt_summary / denial_reason / probe_json /
+        registry_state), so this normalizer only defaults ``blocking`` for them.
+
+      * OBSERVED-FRICTION (an orchestrator-observed mid-run harness gap): the
+        orchestrator supplies ``friction_summary`` / ``friction_detail`` /
+        ``blocking`` / ``item_id`` / ``cwd`` in place of the denial-specific keys.
+        This normalizer performs the SAME rebind ``build_hardening_emit_command``'s
+        process-friction branch does — friction_summary → denied_prompt_summary,
+        friction_detail → denial_reason — and injects observed-friction
+        placeholders for ``probe_json`` / ``registry_state`` (there is no probe or
+        registry behind an observed gap), so ``emit_dispatch_prompt`` does not
+        refuse on a missing @requires key.  This coupling mirrors the
+        process-friction binding the existing regression test guards, so the two
+        cannot silently drift.
+
+    Non-destructive: returns a NEW dict; the caller's ``context`` is unchanged.
+    A non-observed-friction context passes through with only the ``blocking``
+    default added — the auto-trigger paths keep binding the shared evidence keys
+    exactly as before, and the template's shared ``{blocking}`` token never goes
+    unbound for them.  An explicit override of any target key is never clobbered
+    (fill-only-when-absent), so the operator/composer stays authoritative.
+    """
+    ctx = dict(context)
+    if ctx.get("trigger_kind") == "observed-friction":
+        if "denied_prompt_summary" not in ctx and "friction_summary" in ctx:
+            ctx["denied_prompt_summary"] = ctx["friction_summary"]
+        if "denial_reason" not in ctx and "friction_detail" in ctx:
+            ctx["denial_reason"] = ctx["friction_detail"]
+        ctx.setdefault("probe_json", _OBSERVED_FRICTION_PROBE_PLACEHOLDER)
+        ctx.setdefault("registry_state", _OBSERVED_FRICTION_REGISTRY_PLACEHOLDER)
+    # `blocking` is an observed-friction concept (foreground-await vs
+    # backgrounded — the §3 block/background policy); the auto-triggers have no
+    # block policy.  Default it so a shared {blocking} token in the template
+    # never goes unbound for the auto-trigger paths (which never supply it).
+    ctx.setdefault("blocking", "n/a (auto-trigger)")
+    return ctx
 
 
 def ack_oldest_deny(now: float | None = None) -> dict | None:

@@ -780,8 +780,29 @@ If a LAZY-ROUTE banner carries a `HOOK_ERROR` breadcrumb (the inject hook failed
 **Trigger 4 — process-friction (a `kind: process-friction` deny-ledger entry):**  
 If the probe returns `route_overridden_by: "pending-hardening-debt"` and the oldest unacked ledger entry carries `kind: process-friction` (written by `--cycle-end` on a torn cycle bracket or unexpected commits), emit a hardening dispatch with `trigger_kind=process-friction`. Use the `hardening_emit_command` from the probe JSON verbatim — it already binds `friction_reason` and `friction_detail` in the `--context` keys instead of `denied_prompt_summary`/`denial_reason` (the `build_hardening_emit_command` function in `lazy_core.py` handles this automatically based on the entry's `kind`). This trigger fires **even when the runaway's work was salvaged** (D2: signal, not noise — accepting the output and hardening the bypass are orthogonal).
 
-**All four triggers → hardening dispatch:**  
-Parse the `--emit-dispatch hardening` output JSON (`dispatch_prompt`, `dispatch_model`, `dispatch_class`) and dispatch `dispatch_prompt` VERBATIM as an `Agent` call using `dispatch_model` (always `"opus"`). The prompt was registered at emit time; the guard will ALLOW it. Reference: `~/.claude/skills/_components/hardening-dispatch.md` for the full seven required `--context` keys.
+**Trigger 5 — observed-friction (REQUIRED, orchestrator-observed mid-run harness gap):**
+When the orchestrator OBSERVES harness friction mid-run through its own reasoning — a gate/state-script/routing defect, a missing dispatch class, an inconsistency, or a stranded corrective it can NAME that did NOT arrive via triggers 1–4 (no guard deny, no no-route, no hook error, no process-friction entry) — it MUST emit + dispatch an observed-friction harden. This is **required, not optional** (it mirrors the `auto-invoke /harden-harness` standing rule): observed friction is signal, and leaving it stranded is the gap `no-mid-run-observed-friction-harden-dispatch` closes. Emit:
+
+```bash
+python3 ~/.claude/scripts/lazy-state.py \
+  --emit-dispatch hardening \
+  --context trigger_kind=observed-friction \
+  --context item_id={feature_id} \
+  --context friction_summary="<one-line name of the observed harness gap>" \
+  --context friction_detail="<the specifics: what defect, where, why it is a harness gap>" \
+  --context blocking=<true|false> \
+  --context cwd="{cwd}"
+```
+
+`friction_summary`/`friction_detail` are rebound into the template's shared evidence keys and observed-friction `probe_json`/`registry_state` placeholders are injected automatically (`normalize_hardening_dispatch_context` in `lazy_core.py`); the `hardening` class tag is guard-allowed exactly like the auto-triggers. **Block/background policy (D1, operator-confirmed):**
+- **Run-blocking** (the friction stalls / loops / mis-routes THIS cycle — forward progress depends on the fix): pass `blocking=true`, dispatch the `dispatch_prompt` **foreground**, AWAIT it, then re-probe and continue. A fresh `python3` probe auto-refreshes the patched `lazy_core`.
+- **Non-blocking** (a latent inconsistency not stalling this cycle): pass `blocking=false` and dispatch **backgrounded** (`Agent` with `run_in_background: true`). The run continues on current behavior; the fix auto-refreshes on a later probe; check the background harden at cycle boundaries (harness-tracked, mirroring long-build ownership).
+- **Concurrency:** a backgrounded harden edits **claude-config** only while cycle subagents edit the **target repo** — different trees, no one-writer conflict. **EXCEPTION — `self_edit_mode`:** when the observed friction overlaps files this run is itself editing, force **foreground/await** (re-read governing files only at a cycle boundary AFTER the harden completes — never mid-edit). If implementation reveals a race the tree-separation does not cover, the harden surfaces it as a NEEDS_INPUT rather than baking a workaround.
+
+The dispatched observed-friction harden authors a claude-config bug spec first (Step 2.5) and MUST record its intervention with a MEASURABLE `target_signal` where the fix targets a countable ledger signal (the efficacy-loop feed — §6; the dispatch prompt prompts for this) so the fix's effect on future runs is asserted rather than assumed.
+
+**All triggers → hardening dispatch:**  
+Parse the `--emit-dispatch hardening` output JSON (`dispatch_prompt`, `dispatch_model`, `dispatch_class`) and dispatch `dispatch_prompt` VERBATIM as an `Agent` call using `dispatch_model` (always `"opus"`). The prompt was registered at emit time; the guard will ALLOW it. Reference: `~/.claude/skills/_components/hardening-dispatch.md` for the full required `--context` keys.
 
 **Depth cap (HARD — no recursion).** A denial of a hardening dispatch has TWO shapes; the guard's reason text discriminates them, and the recovery branches differently.
 

@@ -15073,10 +15073,13 @@ def test_emit_dispatch_cli_bug_state_mirror():
 #
 # Isolation discipline: subprocess tests set LAZY_STATE_DIR via the env dict.
 #
-# The 7 @requires keys the hardening dispatch template MUST declare (spec
+# The 8 @requires keys the hardening dispatch template MUST declare (spec
 # §"The harness-hardening stage" full contract + PHASES.md Phase 4
-# deliverables).  Read dynamically from the real template where possible;
-# this tuple is used as the ground-truth set to assert against.
+# deliverables; `blocking` added by no-mid-run-observed-friction-harden-dispatch
+# §1 — the observed-friction block/background policy token, defaulted to
+# `n/a (auto-trigger)` by normalize_hardening_dispatch_context for the
+# non-observed triggers).  Read dynamically from the real template where
+# possible; this tuple is used as the ground-truth set to assert against.
 _HARDENING_REQUIRED_KEYS: frozenset[str] = frozenset({
     "denied_prompt_summary",
     "denial_reason",
@@ -15085,6 +15088,7 @@ _HARDENING_REQUIRED_KEYS: frozenset[str] = frozenset({
     "trigger_kind",
     "item_id",
     "cwd",
+    "blocking",
 })
 
 # Resolve the harden-harness SKILL.md path relative to the repo root inferred
@@ -15178,7 +15182,7 @@ def test_hardening_dispatch_class_present():
     try:
         lazy_core.emit_dispatch_prompt(
             "hardening",
-            # Supply dummy values for all 7 required keys so binding can proceed
+            # Supply dummy values for all 8 required keys so binding can proceed
             # if the template exists; if the template is missing, ok=False is
             # returned without ValueError — that is fine for this test.
             {k: f"dummy-{k}" for k in _HARDENING_REQUIRED_KEYS},
@@ -15203,12 +15207,12 @@ def test_hardening_dispatch_class_present():
 
 def test_hardening_template_binding():
     """Phase 4 contract: the real dispatch-hardening.md template file exists,
-    declares all 7 required @requires keys, binds cleanly for feature and bug
+    declares all 8 required @requires keys, binds cleanly for feature and bug
     pipelines, and the emitted prompt satisfies the content contract.
 
-    @requires contract (all 7 must appear in the declared set):
+    @requires contract (all 8 must appear in the declared set):
       denied_prompt_summary, denial_reason, probe_json, registry_state,
-      trigger_kind, item_id, cwd
+      trigger_kind, item_id, cwd, blocking
 
     Prompt content contract:
       - contains '/harden-harness' (the skill invocation instruction)
@@ -15254,7 +15258,7 @@ def test_hardening_template_binding():
     # Assert all 7 required keys are declared.
     missing_from_declared = _HARDENING_REQUIRED_KEYS - declared_keys
     assert not missing_from_declared, (
-        f"dispatch-hardening.md @requires must declare all 7 required keys; "
+        f"dispatch-hardening.md @requires must declare all 8 required keys; "
         f"missing from declared set: {sorted(missing_from_declared)}\n"
         f"  declared: {sorted(declared_keys)}\n"
         f"  required: {sorted(_HARDENING_REQUIRED_KEYS)}"
@@ -19197,8 +19201,12 @@ def test_process_friction_context_resolves_hardening_template():
     the template's @requires so the two cannot silently drift again."""
     _guard()
     # The exact context dict the emit command supplies (mirrors the --context
-    # bindings build_hardening_emit_command emits for a process-friction entry).
-    ctx = {
+    # bindings build_hardening_emit_command emits for a process-friction entry),
+    # routed through normalize_hardening_dispatch_context exactly as the CLI
+    # --emit-dispatch hardening handler does — which injects the `blocking`
+    # default (n/a (auto-trigger)) the template now @requires
+    # (no-mid-run-observed-friction-harden-dispatch §1).
+    ctx = lazy_core.normalize_hardening_dispatch_context({
         "trigger_kind": "process-friction",
         "item_id": "hardening-blind-to-process-friction",
         "denied_prompt_summary": "unexpected-commits",
@@ -19206,7 +19214,7 @@ def test_process_friction_context_resolves_hardening_template():
         "probe_json": "step=Step 9 pending_hardening=1",
         "registry_state": "5 entries, 4 unconsumed",
         "cwd": "/repo",
-    }
+    })
     res = lazy_core.emit_dispatch_prompt("hardening", ctx, pipeline="feature")
     assert res.get("ok") is True, res  # must NOT refuse
     assert "process-friction" in res["prompt"], res
@@ -19384,6 +19392,123 @@ def test_build_hardening_emit_command_validate_deny_unchanged():
     assert "trigger_kind=validate-deny" in cmd, cmd
     assert "denied_prompt_summary=" in cmd, cmd
     assert "denial_reason=" in cmd, cmd
+
+
+def test_build_hardening_emit_command_observed_friction():
+    """no-mid-run-observed-friction-harden-dispatch §1: build_hardening_emit_command
+    given an observed_friction dict emits trigger_kind=observed-friction driven by
+    ORCHESTRATOR-SUPPLIED context (NOT a deny-ledger entry) — the friction_summary/
+    friction_detail/blocking keys, item_id, and cwd. oldest_deny is ignored in this
+    mode (there is no ledger entry behind an observed gap)."""
+    _guard()
+    cmd = lazy_core.build_hardening_emit_command(
+        "lazy-state.py",
+        item_id="managed-llm-credits",
+        oldest_deny=None,
+        probe_summary="unused-in-observed-mode",
+        registry_summary="unused-in-observed-mode",
+        cwd="/repo",
+        observed_friction={
+            "friction_summary": "scenario-yaml drift carve-out missing",
+            "friction_detail": "the gate recognizer rejects a legit '#'-header row",
+            "blocking": False,
+        },
+    )
+    assert "trigger_kind=observed-friction" in cmd, cmd
+    assert "friction_summary=" in cmd, cmd
+    assert "scenario-yaml drift carve-out missing" in cmd, cmd
+    assert "friction_detail=" in cmd, cmd
+    assert "blocking=false" in cmd, cmd
+    assert "item_id=managed-llm-credits" in cmd, cmd
+    # The observed-friction branch must NOT emit the auto-trigger kinds.
+    assert "trigger_kind=validate-deny" not in cmd, cmd
+    assert "trigger_kind=process-friction" not in cmd, cmd
+
+
+def test_build_hardening_emit_command_observed_friction_blocking_true():
+    """A run-blocking observed friction emits blocking=true (the foreground/await
+    branch of the §3 block/background policy)."""
+    _guard()
+    cmd = lazy_core.build_hardening_emit_command(
+        "bug-state.py",
+        item_id="b1",
+        oldest_deny=None,
+        probe_summary="",
+        registry_summary="",
+        cwd="/repo",
+        observed_friction={
+            "friction_summary": "s", "friction_detail": "d", "blocking": True,
+        },
+    )
+    assert "blocking=true" in cmd, cmd
+
+
+def test_normalize_hardening_context_observed_friction_rebinds():
+    """no-mid-run-observed-friction-harden-dispatch §1: normalize_hardening_dispatch_context
+    rebinds an observed-friction context's friction_summary → denied_prompt_summary and
+    friction_detail → denial_reason (the SAME rebind the process-friction branch does), and
+    injects observed-friction placeholders for probe_json / registry_state so the template's
+    @requires keys resolve. The original context is not mutated (non-destructive)."""
+    _guard()
+    original = {
+        "trigger_kind": "observed-friction",
+        "item_id": "feat",
+        "friction_summary": "missing SPEC-exemption path",
+        "friction_detail": "gate-coverage has no exemption for a SKIP_MCP feature",
+        "blocking": "false",
+        "cwd": "/repo",
+    }
+    norm = lazy_core.normalize_hardening_dispatch_context(original)
+    assert norm["denied_prompt_summary"] == "missing SPEC-exemption path", norm
+    assert norm["denial_reason"].startswith("gate-coverage has no exemption"), norm
+    assert norm["probe_json"], norm
+    assert norm["registry_state"], norm
+    assert norm["blocking"] == "false", norm
+    # Non-destructive: the caller's dict gains no evidence keys.
+    assert "denied_prompt_summary" not in original, original
+
+
+def test_normalize_hardening_context_auto_trigger_passthrough():
+    """A non-observed-friction (auto-trigger) context passes through with ONLY the
+    blocking default added — the shared evidence keys are untouched, so the
+    auto-trigger paths keep binding denied_prompt_summary/denial_reason exactly as
+    before. This is what keeps the shared {blocking} template token bound for the
+    auto-triggers (which never supply it)."""
+    _guard()
+    ctx = lazy_core.normalize_hardening_dispatch_context({
+        "trigger_kind": "validate-deny",
+        "item_id": "feat",
+        "denied_prompt_summary": "some prompt",
+        "denial_reason": "hash mismatch",
+        "probe_json": "step=1",
+        "registry_state": "empty",
+        "cwd": "/repo",
+    })
+    assert ctx["blocking"] == "n/a (auto-trigger)", ctx
+    assert ctx["denied_prompt_summary"] == "some prompt", ctx
+    assert ctx["denial_reason"] == "hash mismatch", ctx
+
+
+def test_observed_friction_context_resolves_hardening_template():
+    """Coupling regression (no-mid-run-observed-friction-harden-dispatch §1): the context
+    the CLI --emit-dispatch hardening handler builds for an observed-friction dispatch —
+    the friction keys, run through normalize_hardening_dispatch_context — MUST satisfy
+    dispatch-hardening.md's @requires so emit_dispatch_prompt resolves the route (ok=True),
+    exactly like the process-friction coupling test. This couples the normalizer's bindings
+    to the template's @requires so the two cannot silently drift."""
+    _guard()
+    ctx = lazy_core.normalize_hardening_dispatch_context({
+        "trigger_kind": "observed-friction",
+        "item_id": "managed-llm-credits",
+        "friction_summary": "verification-row recognizer inconsistency",
+        "friction_detail": "the row recognizer misses a valid verification header variant",
+        "blocking": "false",
+        "cwd": "/repo",
+    })
+    res = lazy_core.emit_dispatch_prompt("hardening", ctx, pipeline="feature")
+    assert res.get("ok") is True, res  # must NOT refuse on a missing @requires key
+    assert "observed-friction" in res["prompt"], res
+    assert "verification-row recognizer inconsistency" in res["prompt"], res
 
 
 # ---------------------------------------------------------------------------
@@ -23717,6 +23842,16 @@ _TESTS = _TESTS + [
      test_build_hardening_emit_command_process_friction_binding),
     ("test_build_hardening_emit_command_validate_deny_unchanged",
      test_build_hardening_emit_command_validate_deny_unchanged),
+    ("test_build_hardening_emit_command_observed_friction",
+     test_build_hardening_emit_command_observed_friction),
+    ("test_build_hardening_emit_command_observed_friction_blocking_true",
+     test_build_hardening_emit_command_observed_friction_blocking_true),
+    ("test_normalize_hardening_context_observed_friction_rebinds",
+     test_normalize_hardening_context_observed_friction_rebinds),
+    ("test_normalize_hardening_context_auto_trigger_passthrough",
+     test_normalize_hardening_context_auto_trigger_passthrough),
+    ("test_observed_friction_context_resolves_hardening_template",
+     test_observed_friction_context_resolves_hardening_template),
     ("test_cycle_end_friction_check_symbol_present",
      test_cycle_end_friction_check_symbol_present),
     ("test_cycle_marker_clear_idempotent",

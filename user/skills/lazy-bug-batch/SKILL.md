@@ -633,6 +633,22 @@ python3 ~/.claude/scripts/bug-state.py \
 **Trigger 4 — process-friction (a `kind: process-friction` deny-ledger entry):**  
 If the probe returns `route_overridden_by: "pending-hardening-debt"` and the oldest unacked ledger entry carries `kind: process-friction` (written by `bug-state.py --cycle-end` on a torn cycle bracket or unexpected commits), emit a hardening dispatch with `trigger_kind=process-friction`. Use the `hardening_emit_command` from the probe JSON verbatim — it already binds `friction_reason` and `friction_detail` in the `--context` keys instead of `denied_prompt_summary`/`denial_reason` (the `build_hardening_emit_command` function in `lazy_core.py` handles this automatically based on the entry's `kind`). This trigger fires **even when the runaway's work was salvaged** (D2: signal, not noise).
 
+**Trigger 5 — observed-friction (REQUIRED, orchestrator-observed mid-run harness gap):**
+Mirrors `/lazy-batch` Step 1d.1 Trigger 5. When the orchestrator OBSERVES harness friction mid-run through its own reasoning (a gate/state-script/routing defect, a missing dispatch class, an inconsistency, or a stranded corrective it can NAME) that did NOT arrive via triggers 1–4, it MUST emit + dispatch an observed-friction harden (required, not optional — mirrors the `auto-invoke /harden-harness` standing rule; the gap `no-mid-run-observed-friction-harden-dispatch` closes):
+
+```bash
+python3 ~/.claude/scripts/bug-state.py \
+  --emit-dispatch hardening \
+  --context trigger_kind=observed-friction \
+  --context item_id={bug_id} \
+  --context friction_summary="<one-line name of the observed harness gap>" \
+  --context friction_detail="<the specifics: what defect, where, why it is a harness gap>" \
+  --context blocking=<true|false> \
+  --context cwd="{cwd}"
+```
+
+`friction_summary`/`friction_detail` are rebound into the shared evidence keys and observed-friction `probe_json`/`registry_state` placeholders are injected automatically (`normalize_hardening_dispatch_context`). **Block/background policy (D1):** run-blocking (stalls THIS cycle) → `blocking=true`, dispatch foreground, await, re-probe, continue; non-blocking (latent) → `blocking=false`, dispatch backgrounded (`Agent` `run_in_background: true`), checked at cycle boundaries. **Concurrency:** a backgrounded harden edits claude-config only (cycle subagents edit the target repo — different trees); EXCEPTION `self_edit_mode` → force foreground/await. The dispatched harden authors a claude-config bug spec first (Step 2.5) and MUST record its intervention with a MEASURABLE `target_signal` where the fix targets a countable ledger signal (the efficacy-loop feed).
+
 Dispatch `dispatch_prompt` VERBATIM using `dispatch_model` (`"opus"`). Reference: `~/.claude/skills/_components/hardening-dispatch.md`.
 
 **Depth cap (two deny shapes — the guard's reason text discriminates):** **(a)** an ordinary corrective recipe on the hardening dispatch (hash mismatch — a transcription slip on YOUR copy of the emitted `dispatch_prompt`, NOT recursion) → re-run `python3 ~/.claude/scripts/bug-state.py --emit-dispatch hardening …` (fresh nonce, same `--context` keys) and make exactly ONE verbatim re-dispatch attempt, copying `dispatch_prompt` mechanically. **(b)** the guard's HALT REASON (text contains "halt" and "PushNotification" — the denied prompt matched a registered hardening-class entry, i.e. genuine depth-1 recursion) OR a SECOND recipe denial → run `python3 ~/.claude/scripts/bug-state.py --run-end`; surface `⚠ hardening dispatch denied — depth cap reached; halting run` (T6); PushNotification `"lazy-bug-batch halted — hardening dispatch denied at depth cap; operator review required."`; print final batch report, STOP. Never a hardening dispatch beyond the single (a) re-attempt.

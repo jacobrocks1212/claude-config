@@ -12050,6 +12050,17 @@ def main() -> int:
                 if "=" in kv:
                     key, _, value = kv.partition("=")
                     context[key] = value
+            # no-mid-run-observed-friction-harden-dispatch §1: normalize a
+            # hardening dispatch's context so the dispatch-hardening.md template's
+            # shared @requires evidence keys resolve for EVERY trigger_kind. An
+            # observed-friction dispatch supplies friction_summary/friction_detail/
+            # blocking in place of the denial-specific keys; the normalizer rebinds
+            # them into denied_prompt_summary/denial_reason (the same rebind the
+            # process-friction branch performs) and injects observed-friction
+            # probe_json/registry_state placeholders. Auto-trigger dispatches pass
+            # through with only the {blocking} default added.
+            if cls == "hardening":
+                context = lazy_core.normalize_hardening_dispatch_context(context)
             result = lazy_core.emit_dispatch_prompt(
                 cls, context,
                 pipeline="feature",

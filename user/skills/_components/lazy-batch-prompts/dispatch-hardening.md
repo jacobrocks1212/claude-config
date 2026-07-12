@@ -1,14 +1,21 @@
-<!-- @requires denied_prompt_summary,denial_reason,probe_json,registry_state,trigger_kind,item_id,cwd -->
+<!-- @requires denied_prompt_summary,denial_reason,probe_json,registry_state,trigger_kind,item_id,cwd,blocking -->
 <!-- dispatch-hardening.md — emitted by emit_dispatch_prompt("hardening", ...)
      The harness-hardening stage dispatch: sent whenever a validate-deny fires, the probe
      returns no-route, the inject hook errors, a process-friction ledger entry withholds the
-     forward route, or an operator triggers manually. This is the self-improvement loop — an
-     Opus subagent that root-causes WHY the route broke and either fixes the harness
-     mechanically under full gates or surfaces a NEEDS_INPUT.md for genuine design forks.
+     forward route, an operator triggers manually, or the orchestrator OBSERVES harness
+     friction mid-run through its own reasoning (observed-friction). This is the
+     self-improvement loop — an Opus subagent that root-causes WHY the route broke (or WHAT the
+     observed gap is) and either fixes the harness mechanically under full gates or surfaces a
+     NEEDS_INPUT.md for genuine design forks.
      The hardening stage is to the HARNESS what /investigate is to the target repo.
-     Valid trigger_kind values: validate-deny | no-route | inject-hook-error | process-friction | manual
+     Valid trigger_kind values: validate-deny | no-route | inject-hook-error | process-friction | observed-friction | manual
      For process-friction entries, build_hardening_emit_command binds friction_reason into
      denied_prompt_summary and friction_detail into denial_reason automatically.
+     For observed-friction dispatches (no-mid-run-observed-friction-harden-dispatch §1),
+     normalize_hardening_dispatch_context rebinds friction_summary → denied_prompt_summary and
+     friction_detail → denial_reason, injects observed-friction probe_json/registry_state
+     placeholders, and carries `blocking` (true → the orchestrator dispatched foreground/await;
+     false → backgrounded). `blocking` is `n/a (auto-trigger)` for the non-observed triggers.
      TOKENS: standard pipeline tokens + @requires keys above. -->
 
 <!-- @section role pipelines=feature,bug modes=workstation,cloud -->
@@ -19,6 +26,9 @@ follow it exactly.
 Trigger kind:   {trigger_kind}
 Item in flight: {item_id}
 Working dir:    {cwd}
+Blocking:       {blocking}   (observed-friction only: true = orchestrator is awaiting you in the
+                foreground before it re-probes; false = you are a background harden and the run
+                continues on current behavior, checked at a later cycle boundary)
 
 <!-- @section evidence pipelines=feature,bug modes=workstation,cloud -->
 ## Evidence for this dispatch
@@ -54,6 +64,28 @@ The skill will guide you through:
    <claude-config>/docs/specs/turn-routing-enforcement/hardening-log/YYYY-MM.md.
    NEVER write the log under the target repo's working tree (your cwd is the target
    repo — a relative path is the wrong tree).
+
+<!-- @section efficacy-loop pipelines=feature,bug modes=workstation,cloud -->
+## Close the efficacy loop (Step 2.5 spec-bug-first + a MEASURABLE target signal)
+
+Two non-negotiable disciplines from the skill, restated here because they close the
+self-improving-harness measurement loop (no-mid-run-observed-friction-harden-dispatch §6 +
+efficacy-future-check-unenforced-orchestrator-prose D2):
+
+- **Spec-bug FIRST (Step 2.5).** Before ANY implementation, author the claude-config bug
+  investigation spec (`docs/bugs/<slug>/SPEC.md`) — the reconstructed route + root-cause class +
+  verified symptom + fix scope — and commit it under `harden(docs):` so the audit trail predates
+  the change. Even a one-line fix gets a short spec.
+
+- **Declare a MEASURABLE `target_signal` FIRST.** When you record the round's intervention
+  (harden-harness Step 4 → `lazy-state.py --record-intervention`), name a COUNTABLE ledger signal
+  the fix targets — the observed friction's own recurrence event where one exists
+  (`--target-signal event:<type> --expected-direction decrease`). Decide this BEFORE you
+  implement: "what future-run event should this fix drive down, and how would I know?" Fall back
+  to `undeclared` ONLY for a genuinely-immeasurable pure diagnostic. A recorded intervention with
+  a measurable signal is what the end-of-run efficacy evaluator later asserts (CONFIRMED /
+  REFUTED / INCONCLUSIVE) instead of assuming — an `undeclared`-by-laziness fix leaves the loop
+  open.
 
 <!-- @section depth-cap-notice pipelines=feature,bug modes=workstation,cloud -->
 ## Depth cap (HARD RULE)
