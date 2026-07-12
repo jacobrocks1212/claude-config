@@ -33134,5 +33134,64 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# harden Round 31 (adhoc-decision-resume-cannot-enact-receipt-exempt-wont-fix)
+# — the apply-resolution needs-input path must be able to enact an
+# operator-directed receipt-EXEMPT terminal close (Won't-fix / Superseded).
+# ---------------------------------------------------------------------------
+def test_standard_bindings_split_terminal_statuses():
+    """_standard_dispatch_bindings exposes the split receipt-gated vs.
+    receipt-exempt terminal statuses per pipeline, and leaves the compound
+    forbidden_status UNCHANGED (the other templates still rely on it)."""
+    _guard()
+    bug = lazy_core._standard_dispatch_bindings("bug")
+    feat = lazy_core._standard_dispatch_bindings("feature")
+    assert bug["receipt_gated_status"] == "Fixed", bug
+    assert bug["receipt_exempt_status"] == "Won't-fix", bug
+    assert feat["receipt_gated_status"] == "Complete", feat
+    assert feat["receipt_exempt_status"] == "Superseded", feat
+    # forbidden_status must remain the compound (other templates depend on it).
+    assert bug["forbidden_status"] == "Fixed or Won't-fix", bug
+    assert feat["forbidden_status"] == "Complete", feat
+
+
+def test_apply_resolution_emits_terminal_disposition_close():
+    """The emitted apply-resolution prompt carries the needs-input
+    terminal-disposition step that SETS the receipt-exempt status
+    (Won't-fix for a bug, Superseded for a feature), and the constraint
+    permits it — closing the infinite needs-input loop for an operator-chosen
+    working-as-designed close (adhoc-decision-resume-cannot-enact-...)."""
+    _guard()
+    ctx = {
+        "item_name": "x", "spec_path": "/tmp/x", "sentinel_path": "/tmp/x/NEEDS_INPUT.md",
+        "resolution_summary": "close", "resolution_kind": "needs-input",
+        "chosen_path": "Close as working-as-designed", "item_id": "x", "cwd": "/tmp/x",
+    }
+    r_bug = lazy_core.emit_dispatch_prompt(
+        "apply-resolution", ctx, pipeline="bug", template_dir=_REAL_TEMPLATE_DIR,
+    )
+    assert r_bug.get("ok") is True, r_bug
+    pb = r_bug["prompt"]
+    assert "**Status:** Won't-fix" in pb, "bug prompt must offer the Won't-fix close"
+    assert "TERMINAL DISPOSITION" in pb, "terminal-disposition step missing"
+    # The constraint must PERMIT the receipt-exempt terminal, not forbid it.
+    assert "receipt-EXEMPT terminal status (Won't-fix)" in pb, pb[-800:]
+    assert not _TOKEN_RESIDUE_RE.findall(pb), _TOKEN_RESIDUE_RE.findall(pb)
+
+    r_feat = lazy_core.emit_dispatch_prompt(
+        "apply-resolution", ctx, pipeline="feature", template_dir=_REAL_TEMPLATE_DIR,
+    )
+    assert r_feat.get("ok") is True, r_feat
+    assert "**Status:** Superseded" in r_feat["prompt"], "feature prompt must offer the Superseded close"
+
+
+_TESTS = _TESTS + [
+    ("test_standard_bindings_split_terminal_statuses",
+     test_standard_bindings_split_terminal_statuses),
+    ("test_apply_resolution_emits_terminal_disposition_close",
+     test_apply_resolution_emits_terminal_disposition_close),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

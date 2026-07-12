@@ -6821,24 +6821,37 @@ def _standard_dispatch_bindings(pipeline: str) -> dict[str, str]:
     """Return the standard pipeline-token bindings shared by emit_cycle_prompt and
     emit_dispatch_prompt.
 
-    These five tokens appear in every dispatch template and in the cycle base
+    These seven tokens appear across the dispatch templates and the cycle base
     template.  Factored out here so the two emitters stay byte-identical on the
     same input without code duplication.
+
+    The last two tokens split the ``forbidden_status`` compound into its two
+    distinct terminal statuses so a template can reference them separately
+    (``dispatch-apply-resolution.md`` needs this: the receipt-EXEMPT terminal —
+    ``Won't-fix``/``Superseded`` — is a legitimate operator-directed close that
+    carries no receipt, whereas the receipt-GATED terminal — ``Fixed``/``Complete``
+    — must never be set without a receipt).  ``forbidden_status`` itself is
+    UNCHANGED (still the compound "Fixed or Won't-fix"/"Complete") because the
+    other dispatch templates + the cycle base template use it as the blanket
+    "set no terminal status" ban where that broad reading is correct.
 
     Args:
         pipeline: ``"feature"`` or ``"bug"``.
 
     Returns:
-        A fresh dict with the five standard pipeline tokens bound to their
+        A fresh dict with the standard pipeline tokens bound to their
         pipeline-appropriate values.
     """
     is_bug = pipeline == "bug"
     return {
-        "item_label":       "Bug" if is_bug else "Feature",
-        "pipeline_phrase":  "bug pipeline" if is_bug else "feature pipeline",
-        "receipt_name":     "FIXED.md" if is_bug else "COMPLETED.md",
-        "mark_pseudo":      "__mark_fixed__" if is_bug else "__mark_complete__",
-        "forbidden_status": "Fixed or Won't-fix" if is_bug else "Complete",
+        "item_label":            "Bug" if is_bug else "Feature",
+        "pipeline_phrase":       "bug pipeline" if is_bug else "feature pipeline",
+        "receipt_name":          "FIXED.md" if is_bug else "COMPLETED.md",
+        "mark_pseudo":           "__mark_fixed__" if is_bug else "__mark_complete__",
+        "forbidden_status":      "Fixed or Won't-fix" if is_bug else "Complete",
+        # Split terminals (apply-resolution terminal-disposition contract):
+        "receipt_gated_status":  "Fixed" if is_bug else "Complete",
+        "receipt_exempt_status": "Won't-fix" if is_bug else "Superseded",
     }
 
 

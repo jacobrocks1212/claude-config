@@ -39,6 +39,19 @@ Steps (decision-resume path — resolution_kind: needs-input):
    the question was about future-phase scaffolding not drafted yet), record that in your summary
    and move on.
 
+2b. TERMINAL DISPOSITION (receipt-EXEMPT close — enact ONLY when the operator directed it).
+   If the operator's chosen resolution is to CLOSE / RETIRE this {item_label} WITHOUT a fix —
+   a {receipt_exempt_status} disposition (the ## Resolution **Choice:**/**Notes:** direct
+   resolving the item toward {receipt_exempt_status}, e.g. "close as working-as-designed",
+   "won't fix", "retire", "superseded") — then SET the terminal status on SPEC.md:
+   change the `**Status:**` line to `**Status:** {receipt_exempt_status}`. This IS the mechanical
+   propagation of the operator's already-made close decision (they chose it via AskUserQuestion;
+   your job is to enact it), and it is receipt-EXEMPT: {receipt_exempt_status} is retired-without-a-fix
+   and the state script skips it unconditionally, so it NEVER carries a {receipt_name} receipt.
+   DO NOT write {receipt_name} and DO NOT set the receipt-GATED status {receipt_gated_status}
+   (that one stays receipt-owned). If the chosen resolution is an ordinary design choice that
+   feeds back into planning (NOT a close), skip this step entirely — do the step-2 propagation only.
+
 3. Neutralize the sentinel so the state script stops returning terminal_reason=needs-input on
    the next cycle:
 
@@ -194,7 +207,7 @@ CONSTRAINTS:
 - You MAY NOT spawn further subagents (no Agent tool). You MAY use the Skill tool for /add-phase or /plan-bug if the resolution calls for it, and Edit/Write/Read/Bash for all other work.
 - You MAY edit SPEC.md, PHASES.md, and the sentinel file — this dispatch exists to authorize exactly those edits.
 - Sentinel neutralization (rename) is mandatory for all paths EXCEPT (a) the "Defer" blocked-resolution path, which deliberately LEAVES BLOCKED.md IN PLACE, and (b) the resolution_kind: provisional path, which MUST NOT touch the NEEDS_INPUT_PROVISIONAL.md filename (it is the operator's ratification claim-check).
-- The {forbidden_status} status must NOT be set on any {item_label} doc unless a valid {receipt_name} receipt already exists.
+- The receipt-GATED terminal status ({receipt_gated_status}) must NOT be set on any {item_label} doc unless a valid {receipt_name} receipt already exists — it is receipt-owned. The receipt-EXEMPT terminal status ({receipt_exempt_status}) is DIFFERENT: it carries no receipt (retired-without-a-fix), so the receipt gate does not apply to it — you MAY set it, but ONLY when the operator's chosen resolution directs closing this {item_label} (the needs-input terminal-disposition step 2b above). Never set {receipt_exempt_status} on your own initiative.
 
 <!-- @section return-format pipelines=feature,bug modes=workstation,cloud -->
 GROUND-TRUTH OUTPUT — return a one-paragraph summary (under 8 lines) covering:

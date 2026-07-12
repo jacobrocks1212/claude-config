@@ -162,6 +162,16 @@ Triggered when `{STATE_SCRIPT}` reports `needs-input`. A batch-mode sub-skill (p
         mechanical propagation. If a decision has no impact on either doc
         (rare — e.g., the question was about future-phase scaffolding not
         drafted yet), record that in your summary and move on.
+     2b. TERMINAL DISPOSITION (receipt-exempt close). If the operator's chosen
+        resolution is to CLOSE / RETIRE this {ITEM} WITHOUT a fix (a Won't-fix /
+        Superseded / "working-as-designed" close — the ## Resolution Choice/Notes
+        direct it), SET the terminal status on SPEC.md (`**Status:** Won't-fix`
+        for a bug / `**Status:** Superseded` for a feature). This is mechanical
+        propagation of the operator's already-made close decision and is
+        receipt-EXEMPT (that terminal is skipped unconditionally and never carries
+        a receipt) — do NOT write the receipt, do NOT set the receipt-gated
+        status. Ordinary (non-close) design choices skip this step. Without it the
+        neutralized-only item loops straight back into the pipeline and re-halts.
      3. Neutralize NEEDS_INPUT.md so {STATE_SCRIPT} stops returning
         terminal_reason=needs-input on the next cycle. Run:
           python3 ~/.claude/scripts/{STATE_SCRIPT} --neutralize-sentinel {spec_path}/NEEDS_INPUT.md

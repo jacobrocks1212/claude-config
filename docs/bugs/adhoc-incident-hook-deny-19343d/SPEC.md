@@ -7,7 +7,7 @@ bug_id: adhoc-incident-hook-deny-19343d
 
 > incident-scan auto-captured 3 `lazy-cycle-containment` `loop-formation-flag` denies in claude-config within 24h (2026-07-12 14:24→15:59Z). Investigation traces the deny mechanism to correct-by-design containment and correlates all three to the `live-settings-split-brain-disarms-enforcement-plane` remediation run; the specific driving command is not transcript-recoverable, so the disposition (working-as-designed close vs. durable traceability fix) is an operator decision.
 
-**Status:** Investigating
+**Status:** Won't-fix
 **Severity:** Low
 **Discovered:** 2026-07-12
 **Placement:** docs/bugs/adhoc-incident-hook-deny-19343d
