@@ -1017,5 +1017,111 @@ def test_canary_dry_run_citation_shape_is_byte_inert(state_env):
     assert matured_rec.read_bytes() == before_matured
 
 
+# ---------------------------------------------------------------------------
+# WU-5: --rebaseline — re-freeze a poisoned baseline from the merged ledger
+# (interventions-telemetry-repo-scope-split-brain, SPEC D3)
+# ---------------------------------------------------------------------------
+
+
+def test_rebaseline_overwrites_poisoned_baseline(state_env):
+    """A record frozen at a stale single-run baseline (runs:1/events:15/
+    value:15.0) is re-frozen from the merged ledger via --rebaseline, carrying
+    the D3 provenance note — the ONLY path that overwrites a frozen baseline."""
+    repo = state_env["repo"]
+    # Poisoned capture: 1 run, 15 gate-refusals → baseline 15.0 ev/run.
+    _seed_runs(1, 15)
+    rec = _capture(repo, "harden-r14", baseline_runs=4)
+    meta0 = lazy_core.parse_sentinel(rec)
+    assert meta0["baseline"]["value"] == 15.0 and meta0["baseline"]["runs"] == 1
+    # Four more real runs accrue (1 gate-refusal each) → merged window 5 runs.
+    _seed_runs(4, 1, start=1)
+    code, payload = _run_eval(repo, "--rebaseline", "harden-r14")
+    assert code == 0, payload
+    b = lazy_core.parse_sentinel(rec)["baseline"]
+    assert b["status"] == "frozen"
+    assert b["runs"] == 5                      # default baseline_runs=20 > 5
+    assert b["events"] == 19                   # 15 + 4*1
+    assert b["value"] == 3.8                   # 19/5, no longer the poison 15.0
+    assert b["provenance"] == "backfilled-from-merged-ledger"
+    assert b.get("rebaselined_date")           # an explicit date stamp
+    # Only the baseline block is touched — every other field is preserved.
+    meta1 = lazy_core.parse_sentinel(rec)
+    assert meta1["target_signal"] == "event:gate-refusal"
+    assert meta1["review_after_runs"] == meta0["review_after_runs"]
+    assert meta1["shipped_date"] == meta0["shipped_date"]
+
+
+def test_rebaseline_is_the_only_overwrite_path(state_env):
+    """record_intervention stays never-clobbering by existence — a plain
+    re-capture no-ops; ONLY --rebaseline rewrites the frozen baseline."""
+    repo = state_env["repo"]
+    _seed_runs(1, 15)
+    rec = _capture(repo, "harden-r15", baseline_runs=4)
+    _seed_runs(4, 1, start=1)
+    # A plain re-capture is a no-op by existence — baseline unchanged.
+    res = lazy_core.record_intervention(repo, "harden-r15", pipeline="hardening")
+    assert res["noop"] is True
+    assert lazy_core.parse_sentinel(rec)["baseline"]["value"] == 15.0
+    # --rebaseline is the deliberate overwrite.
+    code, _ = _run_eval(repo, "--rebaseline", "harden-r15")
+    assert code == 0
+    assert lazy_core.parse_sentinel(rec)["baseline"]["value"] == 3.8
+
+
+def test_rebaseline_idempotent_no_double_stamp(state_env):
+    """Re-running the re-baseline act on the same day is byte-identical — it
+    never double-stamps or corrupts."""
+    repo = state_env["repo"]
+    _seed_runs(1, 15)
+    rec = _capture(repo, "harden-r16", baseline_runs=4)
+    _seed_runs(4, 1, start=1)
+    code1, _ = _run_eval(repo, "--rebaseline", "harden-r16")
+    assert code1 == 0
+    text1 = rec.read_text(encoding="utf-8")
+    code2, _ = _run_eval(repo, "--rebaseline", "harden-r16")
+    assert code2 == 0
+    assert rec.read_text(encoding="utf-8") == text1
+
+
+def test_rebaseline_no_data_is_honest_never_fabricates(state_env):
+    """A record whose merged window is empty gets an honest `unavailable`
+    baseline — NEVER a fabricated value (the evaluator's no-data honesty)."""
+    repo = state_env["repo"]
+    _seed_runs(1, 15)
+    rec = _capture(repo, "harden-empty", baseline_runs=4)
+    # Wipe the ledger → merged window is empty.
+    (Path(os.environ["LAZY_STATE_DIR"]) / "lazy-telemetry.jsonl").unlink()
+    code, payload = _run_eval(repo, "--rebaseline", "harden-empty")
+    assert code == 0, payload
+    b = lazy_core.parse_sentinel(rec)["baseline"]
+    assert b["status"] == "unavailable"
+    assert "value" not in b                    # no fabricated number
+    assert b["provenance"] == "backfilled-from-merged-ledger"
+
+
+def test_rebaseline_dry_run_is_byte_inert(state_env):
+    """--rebaseline --dry-run previews the recomputed baseline without writing."""
+    repo = state_env["repo"]
+    _seed_runs(1, 15)
+    rec = _capture(repo, "harden-r18", baseline_runs=4)
+    _seed_runs(4, 1, start=1)
+    before = rec.read_bytes()
+    code, payload = _run_eval(repo, "--rebaseline", "harden-r18", "--dry-run")
+    assert code == 0
+    assert payload["dry_run"] is True
+    assert payload["baseline"]["value"] == 3.8      # preview shows the new value
+    assert rec.read_bytes() == before               # nothing written
+
+
+def test_rebaseline_missing_record_errors(state_env):
+    """--rebaseline on a nonexistent record exits 1 with an error, writes
+    nothing."""
+    repo = state_env["repo"]
+    (repo / "docs" / "interventions").mkdir(parents=True, exist_ok=True)
+    code, payload = _run_eval(repo, "--rebaseline", "no-such-record")
+    assert code == 1
+    assert "error" in payload
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

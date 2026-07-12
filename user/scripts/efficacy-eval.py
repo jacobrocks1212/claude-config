@@ -1068,6 +1068,104 @@ def run_canary(repo_root: Path, args, today: str) -> dict:
 # main
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Re-baseline act (interventions-telemetry-repo-scope-split-brain WU-5 / D3)
+# ---------------------------------------------------------------------------
+
+def _rebaseline_record(repo_root: Path, intervention_id: str, *,
+                       today: str, dry_run: bool = False) -> dict:
+    """Re-freeze an EXISTING record's baseline from the merged telemetry ledger.
+
+    The D9 manual-backfill path: ``record_intervention`` is never-clobbering by
+    existence, so re-baselining is a DELIBERATE overwrite — the ONLY path that
+    rewrites a frozen baseline. Recomputes ``runs``/``events``/``value`` +
+    ``window_start_run``/``window_end_run``/``last_run_id`` from the merged
+    window (mirrors ``lazy_core.record_intervention``'s freeze — same trailing
+    ``baseline_runs`` window off the ``read_intervention_telemetry`` merge) and
+    stamps a provenance note (``backfilled-from-merged-ledger`` + date) so a
+    re-frozen baseline is NEVER silently equal to an original capture (SPEC D3).
+
+    Honest no-data: an empty merged window yields an ``unavailable`` baseline,
+    NEVER a fabricated value (the evaluator's existing honesty ladder). A
+    non-``event:`` / undeclared target yields ``not-computable``. Idempotent —
+    a same-day re-run is byte-identical (the baseline is recomputed from scratch
+    and overwritten, never appended). Only the ``baseline`` block is touched;
+    every other frontmatter field is preserved (the shared serializer keeps the
+    diff-stable field order). ``--dry-run`` previews without writing.
+    """
+    records = _enumerate_records(repo_root, intervention_id)
+    if not records:
+        return {
+            "rebaselined": False,
+            "id": intervention_id,
+            "error": (f"no intervention record {intervention_id!r} under "
+                      f"docs/interventions/"),
+        }
+    rec = records[0]
+    meta = rec["meta"]
+    prev = meta.get("baseline") if isinstance(meta.get("baseline"), dict) else {}
+    prev_value = prev.get("value")
+
+    events = lazy_core.read_intervention_telemetry(repo_root)
+    run_ids = sorted({
+        e.get("run_id") for e in events
+        if isinstance(e.get("run_id"), str) and e.get("run_id")
+    })
+    last_run_id = run_ids[-1] if run_ids else None
+    kind, ev_type = _resolve_target_signal(meta.get("target_signal"))
+    baseline_runs = _cfg_int(meta, "baseline_runs",
+                             lazy_core.INTERVENTION_BASELINE_RUNS)
+
+    if ev_type is None:
+        baseline: dict = {
+            "status": "not-computable",
+            "reason": ("undeclared" if kind == "undeclared"
+                       else "non-event-target"),
+            "last_run_id": last_run_id,
+        }
+    elif not run_ids:
+        # Honest no-data — never a fabricated value (D3 / the honesty ladder).
+        baseline = {
+            "status": "unavailable",
+            "reason": "no-ledger-data",
+            "last_run_id": None,
+        }
+    else:
+        window = run_ids[-baseline_runs:]
+        window_set = set(window)
+        count = sum(
+            1 for e in events
+            if e.get("run_id") in window_set and e.get("event") == ev_type
+        )
+        baseline = {
+            "status": "frozen",
+            "runs": len(window),
+            "events": count,
+            "value": round(count / len(window), 4),
+            "window_start_run": window[0],
+            "window_end_run": window[-1],
+            "last_run_id": last_run_id,
+        }
+    # D3 provenance note (appended after last_run_id → diff-stable insertion
+    # order under the sort_keys=False serializer): a re-frozen baseline is never
+    # silently equal to an original capture.
+    baseline["provenance"] = "backfilled-from-merged-ledger"
+    baseline["rebaselined_date"] = today
+
+    result = {
+        "rebaselined": not dry_run,
+        "id": intervention_id,
+        "path": str(rec["path"]),
+        "previous_value": prev_value,
+        "baseline": baseline,
+        "dry_run": bool(dry_run),
+    }
+    if not dry_run:
+        meta["baseline"] = baseline
+        _write_record(rec)
+    return result
+
+
 def main(argv: "list[str] | None" = None) -> int:
     parser = argparse.ArgumentParser(
         description="Evaluate intervention records against post-ship "
@@ -1086,6 +1184,12 @@ def main(argv: "list[str] | None" = None) -> int:
                         help="Run the harness-change canary watcher mode "
                              "(D2/D3 tripwire over open canary windows) "
                              "instead of the efficacy review.")
+    parser.add_argument("--rebaseline", default=None, metavar="INTERVENTION_ID",
+                        help="Re-freeze the named record's baseline from the "
+                             "merged telemetry ledger (WU-5 / SPEC D3 "
+                             "manual-backfill) and overwrite it with a "
+                             "provenance note. Honors --dry-run / --json; the "
+                             "ONLY path that overwrites a frozen baseline.")
     args = parser.parse_args(argv)
 
     repo_root = Path(args.repo_root)
@@ -1101,6 +1205,29 @@ def main(argv: "list[str] | None" = None) -> int:
         lazy_core.set_active_repo_root(str(repo_root))
     except Exception:  # noqa: BLE001 — binding failure degrades to cwd rules
         pass
+
+    # --rebaseline (WU-5 / D3): a deliberate data-repair act, NOT an efficacy
+    # flush — handled BEFORE the breadcrumb drop below so it never discharges
+    # the --run-end coverage gate. Read-only over the ledger; the only writer of
+    # the record is the overwrite inside _rebaseline_record.
+    if args.rebaseline:
+        result = _rebaseline_record(
+            repo_root, args.rebaseline,
+            today=datetime.date.today().isoformat(), dry_run=args.dry_run,
+        )
+        if args.json:
+            sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        elif result.get("error"):
+            sys.stdout.write(f"rebaseline: {result['error']}\n")
+        else:
+            b = result["baseline"]
+            mode = " (dry-run — nothing written)" if args.dry_run else ""
+            new = b.get("value") if b.get("status") == "frozen" else b["status"]
+            sys.stdout.write(
+                f"rebaseline {result['id']}{mode}: "
+                f"{result.get('previous_value')} → {new} "
+                f"(provenance {b['provenance']})\n")
+        return 1 if result.get("error") else 0
 
     # efficacy-future-check-unenforced-orchestrator-prose (D1): drop the
     # run-scoped "efficacy flush ran this run" breadcrumb the --run-end gate

@@ -75,8 +75,8 @@ python3 user/scripts/efficacy-eval.py --repo-root . --dry-run # byte-inert evalu
 
 ## Work Units
 
-- [ ] WU-4 — Two-scope end-of-run flush prose (coupled trio)
-- [ ] WU-5 — Re-baseline act in the efficacy evaluator
+- [x] WU-4 — Two-scope end-of-run flush prose (coupled trio)
+- [x] WU-5 — Re-baseline act in the efficacy evaluator
 - [ ] WU-6 — Apply re-baseline to the six poisoned records
 
 ---
