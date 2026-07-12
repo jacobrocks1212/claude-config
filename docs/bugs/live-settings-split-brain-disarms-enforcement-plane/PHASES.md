@@ -169,11 +169,19 @@ Ground-truth confirmed live 2026-07-11/12 via a read-only touchpoint audit (all 
 
 **Scope:** Documentation reconciliation (SPEC Fix Scope 3 + 6, D3). Rewrite/retire `REGISTRATION.md`'s paste-this-fragment per-machine design now that registration ships in the tracked SSOT (keep its 2026-06-11 pipe-test run records as historical evidence). Amend `docs/specs/turn-routing-enforcement/SPEC.md` §"Settings placement" (:114) to state registration is now tracked, not per-machine. Add a machine-scoped blind-window annotation (Jun 11 → fix date) wherever hook-derived signals are consumed (`incident-scan.py` / efficacy / retro grading), so that window reads as partially-blind, not zero-friction (D3: annotate only — backfill is impossible, silent-ignore re-poisons baselines).
 
+**Status:** Complete
+
 **Deliverables:**
-- [ ] `docs/specs/turn-routing-enforcement/REGISTRATION.md`: converted to a historical/retired doc (per-machine paste instruction removed or marked superseded; pipe-test records preserved) with a pointer to the tracked-SSOT registration.
-- [ ] `docs/specs/turn-routing-enforcement/SPEC.md` §"Settings placement" (:114): amended to reflect tracked-file registration; the deferred-unification note updated/closed.
-- [ ] Blind-window annotation recorded where hook-event consumers read it (a machine-scoped `blind_window` note for the Jun 11 → fix-date range near incident-scan/efficacy's hook-event consumption), so consumers treat the window as partially-blind.
-- [ ] Any doc that references `REGISTRATION.md` as a live instruction (e.g. `setup.ps1` warn message :253 citing it — now that Phase 3 rewrote the pass) updated to stop pointing at a retired design.
+- [x] `docs/specs/turn-routing-enforcement/REGISTRATION.md`: converted to a historical/retired doc (per-machine paste instruction removed or marked superseded; pipe-test records preserved) with a pointer to the tracked-SSOT registration.
+- [x] `docs/specs/turn-routing-enforcement/SPEC.md` §"Settings placement" (:114): amended to reflect tracked-file registration; the deferred-unification note updated/closed.
+- [x] Blind-window annotation recorded where hook-event consumers read it (a machine-scoped `blind_window` note for the Jun 11 → fix-date range near incident-scan/efficacy's hook-event consumption), so consumers treat the window as partially-blind.
+- [x] Any doc that references `REGISTRATION.md` as a live instruction (e.g. `setup.ps1` warn message :253 citing it — now that Phase 3 rewrote the pass) updated to stop pointing at a retired design.
+
+**Implementation Notes (2026-07-12):**
+- WU-9: `REGISTRATION.md` gets a top RETIRED-2026-07-12 blockquote pointing at the tracked SSOT + `setup.ps1`/`setup.py repair`; §"JSON Fragment", §"Merging with existing hooks", §"Per-machine notes" reframed historical/superseded; §"Pipe-test run records (Phase 6)" preserved verbatim (21/21). `turn-routing-enforcement/SPEC.md` §"Settings placement" (:114) split into "Original constraint (historical)" / "Current state" (RESOLVED 2026-07-12), deferred-unification note closed for this hook set; the Architecture-Pieces table "Hook registration" row (:65) updated for consistency. MVB green: `grep -rniE "paste this fragment|each machine's live settings" docs/specs/turn-routing-enforcement/` returns zero live-instruction hits (exit 1).
+- WU-9/setup.ps1: no edit needed — part-2 (Phase 3 WU-7) already rewrote the warn-pass citation (:225) to state the paste-fragment workflow is "retired by ... part 3 (Phase 4)". Ground-truth confirmed truthful now that the doc is retired.
+- WU-10: annotate-only, no behavior change. `incident-scan.py` carries a documented module-level `BLIND_WINDOW` constant (2026-06-11→2026-07-12, DESKTOP-GHTC5K6) + a one-sentence pointer in the `read_hook_events` docstring; the constant is referenced by NO executing code path (grep count = 2: def + docstring), verdicts byte-identical (`--dry-run` byte-inert). Efficacy consumer covered by a matching note on the `efficacy-eval.py` row in `user/scripts/CLAUDE.md`.
+- Gates: `doc-drift-lint.py --repo-root .` exit 0; `incident-scan.py --dry-run` clean. No new script/hook rows implied (annotation only).
 
 **Minimum Verifiable Behavior:** `grep -rn "paste this fragment\|each machine's live settings" docs/specs/turn-routing-enforcement/` returns no live-instruction hits (only historical/superseded framing); the SPEC §Settings-placement text no longer claims per-machine registration is required.
 

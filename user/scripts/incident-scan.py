@@ -68,6 +68,26 @@ ENQUEUE_CAP: int = 2
 EXCERPT_CAP: int = 20
 
 # ---------------------------------------------------------------------------
+# Field-evidence blind window (live-settings-split-brain-disarms-enforcement-plane,
+# Fix Scope 6 / Decision D3): on the DESKTOP-GHTC5K6 laptop the enforcement hooks
+# (containment / sentinel-write / long-build / build-queue / push / kill guards) were
+# UNREGISTERED in the live ~/.claude/settings.json from 2026-06-11T23:24 until the
+# split-brain fix (2026-07-12), so hook-derived signals (deny-ledger, hook-events.jsonl)
+# for that machine UNDERCOUNT across that range. This is an ANNOTATION ONLY (D3): the
+# events were never generated, so backfill is impossible and silent-ignore would re-poison
+# efficacy/KPI baselines. Consumers of read_hook_events()/read_deny_ledger() must read a
+# ZERO/low count in this window as "partially blind", NOT as zero friction. Not consumed by
+# any code path — a documented breadcrumb where a future incident-scan/efficacy read lands.
+BLIND_WINDOW = {
+    "machine": "DESKTOP-GHTC5K6",
+    "start": "2026-06-11T23:24:00Z",
+    "end": "2026-07-12T00:00:00Z",
+    "reason": "live-settings-split-brain: enforcement hooks unregistered in live settings.json",
+    "signals_affected": ["hook-events.jsonl", "lazy-deny-ledger.jsonl"],
+    "treatment": "annotate-only (D3) — undercount, not zero friction; backfill impossible",
+}
+
+# ---------------------------------------------------------------------------
 # lazy_core import (sibling module) — readers + atomic write + state-dir keying.
 # ---------------------------------------------------------------------------
 
@@ -141,7 +161,10 @@ def read_hook_events(repo_root: Path) -> list[dict]:
     """hook-events.jsonl entries for *repo_root*: everything in the keyed
     state dir (it is per-repo by construction), plus base-dir entries whose
     recorded repo_root attributes to this repo. Unattributed base-dir entries
-    are skipped (deterministic — no guessing)."""
+    are skipped (deterministic — no guessing). See BLIND_WINDOW: this
+    machine's hook-events undercount for 2026-06-11→2026-07-12 (enforcement
+    hooks were unregistered); a low count in that range is partially-blind,
+    not zero friction."""
     dirs = _event_dirs()
     events: list[dict] = []
     for i, d in enumerate(dirs):

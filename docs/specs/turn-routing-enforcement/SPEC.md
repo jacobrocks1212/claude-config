@@ -62,7 +62,7 @@ Three mechanisms, all gated on a **run marker** so ordinary interactive sessions
 | Script-persisted counters | `lazy_core.py` (EXTEND) | `forward_cycles`/`meta_cycles` move from orchestrator session memory into script-persisted run state (joining the persisted streaks), updated at probe/apply time — the inject hook can then run the FULL probe form with no session memory, and the post-compaction counter-loss class dies mechanically |
 | `/harden-harness` skill | `user/skills/harden-harness/SKILL.md` (NEW) | The hardening stage contract (below) |
 | Hardening dispatch template | `user/skills/_components/hardening-dispatch.md` (NEW) | Orchestrator-side dispatch prompt; emitted via `--emit-dispatch hardening` so it passes its own guard |
-| Hook registration | live `~/.claude/settings.json` per machine | See "Settings placement" — the live settings file is per-machine and not currently claude-config-managed on this laptop |
+| Hook registration | tracked `user/settings.json` (RESOLVED 2026-07-12); live `~/.claude/settings.json` per machine is a symlink into it | See "Settings placement" — originally per-machine and not claude-config-managed; reconciled by `docs/bugs/live-settings-split-brain-disarms-enforcement-plane` |
 
 ### The run marker (scope = orchestrator runs only)
 
@@ -111,9 +111,11 @@ When the marker is present, for every `Agent` call:
 
 **Self-recursion guard (required by inline-unbounded cadence):** the hardening dispatch is itself registry-emitted, so it passes the guard; a denial *of a hardening dispatch* must NOT dispatch another hardening stage — depth is hard-capped at 1 (the hook tags hardening-class registry entries; a deny at depth 1 halts with a T6 `⚠` + PushNotification instead of recursing). Unbounded refers to per-run dispatch count (no dedup-by-signature), not recursion depth.
 
-### Settings placement (honest constraint, surfaced)
+### Settings placement (honest constraint, surfaced — RESOLVED 2026-07-12)
 
-The live `~/.claude/settings.json` on this laptop is **not** the claude-config-tracked `user/settings.json` (that file currently carries the desktop machine's hook paths). Hook *scripts* live in claude-config (`user/hooks/`, symlinked); hook *registration* must be added to each machine's live settings.json. Phase planning must include: a `setup.ps1`-verifiable registration check (warn when the marker-gated hooks are absent from the live settings), and a documented per-machine registration snippet. Unifying settings management across machines is out of scope here (it is a candidate NEEDS_INPUT for the hardening stage's first month).
+**Original constraint (historical):** the live `~/.claude/settings.json` on this laptop was **not** the claude-config-tracked `user/settings.json` (that file only carried the desktop machine's hook paths). Hook *scripts* lived in claude-config (`user/hooks/`, symlinked); hook *registration* had to be hand-applied per machine, documented as a snippet in `REGISTRATION.md`.
+
+**Current state:** this is now resolved. Hook registration for these two hooks (and the rest of the tracked hook set) ships **tracked** in `user/settings.json` — the single SSOT — reconciled by `docs/bugs/live-settings-split-brain-disarms-enforcement-plane` Phase 1. Every machine's live `~/.claude/settings.json` is a symlink back into that tracked file, restored via `setup.ps1 repair` / `setup.py repair` when broken; `setup.ps1 check` verifies the tracked hook set is actually present in the live file. Per-machine paste registration is no longer required — `REGISTRATION.md` is retired to a historical record (see its retirement banner). The deferred "unifying settings management across machines" note below is closed for this hook set by that same bug; it is no longer an open NEEDS_INPUT candidate.
 
 ## Failure modes & containment
 

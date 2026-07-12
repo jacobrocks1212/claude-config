@@ -67,8 +67,8 @@ This plan's autonomous-execution policy lives in **`~/.claude/skills/_components
 
 ## Work Units
 
-- [ ] WU-9 — Retire REGISTRATION.md per-machine design + amend SPEC §Settings placement
-- [ ] WU-10 — Add the blind-window annotation for hook-event consumers
+- [x] WU-9 — Retire REGISTRATION.md per-machine design + amend SPEC §Settings placement
+- [x] WU-10 — Add the blind-window annotation for hook-event consumers
 - [ ] WU-11 — Emit a drift advisory line from `lazy-route-inject.sh`
 - [ ] WU-12 — Add a `live_settings_ok` probe field to `lazy-state.py`
 
