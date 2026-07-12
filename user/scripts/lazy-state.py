@@ -10842,6 +10842,152 @@ def run_smoke_tests() -> int:
         nh_ok = False
     print(f"  {'PASS' if nh_ok else 'FAIL'} [{fix_nh}] halt + fake sender: one page, dedup on re-probe, kill switch inert")
 
+    # -------------------------------------------------------------------
+    # hardening-intervention-records-unmeasurable-or-missing WU-2 (RED):
+    # --record-intervention CLI reject + hardening hard-fail. These three
+    # fixtures pin the NEW validation/reject step the handler does not yet
+    # have (lazy-state.py:12469, `if args.record_intervention:`) — driven
+    # via subprocess so the real CLI handler (guard -> validation -> write)
+    # runs, each against its OWN hermetic temp repo_root + temp
+    # LAZY_STATE_DIR (immune to any ambient run/cycle marker; mirrors the
+    # cycle-marker-mutation-guard fixture's `_cmg_env` isolation).
+    # -------------------------------------------------------------------
+    def _ri_env(state_dir: Path) -> dict:
+        e = {k: v for k, v in os.environ.items()
+             if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+        e["LAZY_STATE_DIR"] = str(state_dir)
+        return e
+
+    def _ri_run(repo_root: Path, state_dir: Path, extra_args: list):
+        return subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()),
+             "--record-intervention", "--repo-root", str(repo_root)]
+            + extra_args,
+            capture_output=True, text=True, env=_ri_env(state_dir),
+        )
+
+    # Sub-fixture 1: --pipeline hardening with NO --target-signal → the
+    # undeclared-hardening hard-fail. EXPECT exit 1, no record written,
+    # stderr carries the sibling-D2 guidance (naming the explicit
+    # --target-signal undeclared escape hatch). Current handler has no
+    # such check -> writes the record + exits 0 (RED).
+    fix_ri1 = "record-intervention-hardening-undeclared-rejected"
+    ri1_ok = True
+    with tempfile.TemporaryDirectory(prefix="lazy-ri1-repo-") as ri1_repo_td, \
+            tempfile.TemporaryDirectory(prefix="lazy-ri1-state-") as ri1_state_td:
+        ri1_repo = Path(ri1_repo_td)
+        ri1_id = "harden-ri1-undeclared"
+        ri1_record = ri1_repo / "docs" / "interventions" / f"{ri1_id}.md"
+        r = _ri_run(
+            ri1_repo, Path(ri1_state_td),
+            ["--id", ri1_id, "--pipeline", "hardening"],
+        )
+        if r.returncode != 1:
+            failures.append(
+                f"[{fix_ri1}] expected exit 1 (undeclared hardening "
+                f"reject), got {r.returncode} (stdout={r.stdout!r} "
+                f"stderr={r.stderr!r})"
+            )
+            ri1_ok = False
+        if ri1_record.exists():
+            failures.append(
+                f"[{fix_ri1}] reject must write NO {ri1_record.name}"
+            )
+            ri1_ok = False
+        if not r.stderr.strip():
+            failures.append(
+                f"[{fix_ri1}] reject must print guidance to stderr, got "
+                f"empty stderr (stdout={r.stdout!r})"
+            )
+            ri1_ok = False
+        elif "undeclared" not in r.stderr:
+            failures.append(
+                f"[{fix_ri1}] stderr must carry the sibling-D2 guidance "
+                f"(naming --target-signal undeclared), got {r.stderr!r}"
+            )
+            ri1_ok = False
+    print(f"  {'PASS' if ri1_ok else 'FAIL'} [{fix_ri1}]")
+
+    # Sub-fixture 2: --pipeline hardening --target-signal undeclared
+    # (EXPLICIT escape hatch) -> must NOT trip the hard-fail. EXPECT exit
+    # 0, record written with target_signal: undeclared. This is a
+    # non-regression guard for the escape hatch and MAY already be green
+    # today (record_intervention already accepts "undeclared" — the
+    # validator never rejects it); still authored so WU-2 cannot
+    # regress it.
+    fix_ri2 = "record-intervention-hardening-undeclared-explicit-ok"
+    ri2_ok = True
+    with tempfile.TemporaryDirectory(prefix="lazy-ri2-repo-") as ri2_repo_td, \
+            tempfile.TemporaryDirectory(prefix="lazy-ri2-state-") as ri2_state_td:
+        ri2_repo = Path(ri2_repo_td)
+        ri2_id = "harden-ri2-explicit-undeclared"
+        ri2_record = ri2_repo / "docs" / "interventions" / f"{ri2_id}.md"
+        r = _ri_run(
+            ri2_repo, Path(ri2_state_td),
+            ["--id", ri2_id, "--pipeline", "hardening",
+             "--target-signal", "undeclared"],
+        )
+        if r.returncode != 0:
+            failures.append(
+                f"[{fix_ri2}] explicit --target-signal undeclared must "
+                f"exit 0, got {r.returncode} (stdout={r.stdout!r} "
+                f"stderr={r.stderr!r})"
+            )
+            ri2_ok = False
+        if not ri2_record.exists():
+            failures.append(
+                f"[{fix_ri2}] explicit --target-signal undeclared must "
+                f"write {ri2_record.name}"
+            )
+            ri2_ok = False
+        else:
+            ri2_text = ri2_record.read_text(encoding="utf-8")
+            if "target_signal: undeclared" not in ri2_text:
+                failures.append(
+                    f"[{fix_ri2}] record frontmatter must carry "
+                    f"target_signal: undeclared, got {ri2_text!r}"
+                )
+                ri2_ok = False
+    print(f"  {'PASS' if ri2_ok else 'FAIL'} [{fix_ri2}] "
+          f"(non-regression guard for the explicit escape hatch)")
+
+    # Sub-fixture 3: an unknown event: type (default --pipeline feature)
+    # -> EXPECT exit 1, stderr naming the valid vocabulary set, no record
+    # written. Current handler silently degrades the unknown target to
+    # "undeclared" inside record_intervention and writes the record with
+    # exit 0 (RED) — WU-2 must reject it at the CLI BEFORE that degrade.
+    fix_ri3 = "record-intervention-unknown-event-rejected"
+    ri3_ok = True
+    with tempfile.TemporaryDirectory(prefix="lazy-ri3-repo-") as ri3_repo_td, \
+            tempfile.TemporaryDirectory(prefix="lazy-ri3-state-") as ri3_state_td:
+        ri3_repo = Path(ri3_repo_td)
+        ri3_id = "feat-ri3-unknown-event"
+        ri3_record = ri3_repo / "docs" / "interventions" / f"{ri3_id}.md"
+        r = _ri_run(
+            ri3_repo, Path(ri3_state_td),
+            ["--id", ri3_id, "--target-signal", "event:route-loop"],
+        )
+        if r.returncode != 1:
+            failures.append(
+                f"[{fix_ri3}] expected exit 1 (unknown event: type "
+                f"reject), got {r.returncode} (stdout={r.stdout!r} "
+                f"stderr={r.stderr!r})"
+            )
+            ri3_ok = False
+        if ri3_record.exists():
+            failures.append(
+                f"[{fix_ri3}] reject must write NO {ri3_record.name}"
+            )
+            ri3_ok = False
+        if "valid event types:" not in r.stderr:
+            failures.append(
+                f"[{fix_ri3}] stderr must name the valid vocabulary set "
+                f"(the validate_intervention_target_signal message), got "
+                f"{r.stderr!r}"
+            )
+            ri3_ok = False
+    print(f"  {'PASS' if ri3_ok else 'FAIL'} [{fix_ri3}]")
+
     if failures:
         print("\nFAILURES:")
         for f in failures:
@@ -12490,6 +12636,27 @@ def main() -> int:
             "review_after_runs": args.review_after_runs,
         }
         overrides = {k: v for k, v in overrides.items() if v is not None}
+        # hardening-intervention-records-unmeasurable-or-missing WU-2: reject
+        # unknown --target-signal vocabulary at the CLI (before it silently
+        # degrades to "undeclared" inside record_intervention), then hard-fail
+        # an undeclared --pipeline hardening record (the escape hatch is the
+        # EXPLICIT --target-signal undeclared, checked via `is None` so that
+        # string never trips this branch).
+        if args.target_signal is not None:
+            err = lazy_core.validate_intervention_target_signal(args.target_signal)
+            if err is not None:
+                sys.stderr.write(err + "\n")
+                return 1
+        if args.intervention_pipeline == "hardening" and args.target_signal is None:
+            sys.stderr.write(
+                "--record-intervention --pipeline hardening requires an "
+                "explicit --target-signal: a hardening round cannot be "
+                "recorded with an undeclared measurement target. Pass "
+                "--target-signal undeclared for a genuinely-immeasurable "
+                "hardening round (the deliberate escape hatch), or a "
+                "concrete event:<type> / kpi:<sys>.<id> target.\n"
+            )
+            return 1
         spec_path = None
         if args.spec_dir:
             spec_path = Path(args.spec_dir)

@@ -160,5 +160,8 @@
   PASS [lane-parent-run-marker] parent_run stamp/rogue-refusal/containment/serial-null
   PASS [lane-friction-no-cross-trip] per-lane cycle-end HEAD snapshots never cross-trip
   PASS [notify-halt-call-site] halt + fake sender: one page, dedup on re-probe, kill switch inert
+  PASS [record-intervention-hardening-undeclared-rejected]
+  PASS [record-intervention-hardening-undeclared-explicit-ok] (non-regression guard for the explicit escape hatch)
+  PASS [record-intervention-unknown-event-rejected]
 
 All smoke tests passed.
