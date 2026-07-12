@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: live-settings-split-brain-disarms-enforcement-plane
-status: Ready
+status: Complete
 created: 2026-07-12
 complexity: complex
 phases: [1, 2]
@@ -74,8 +74,8 @@ Live-file ground truth (source for WU-1's exact strings): `~/.claude/settings.js
 - [x] WU-1 — Merge turn-routing pair into tracked `user/settings.json`
 - [x] WU-2 — Document the two hooks in root `CLAUDE.md` Hooks table
 - [x] WU-3 — Add registration tests to `test_hooks.py`
-- [ ] WU-4 — Add `--live` check mode + reusable helper to `doc-drift-lint.py`
-- [ ] WU-5 — Add `--live` mode tests to `test_doc_drift_lint.py`
+- [x] WU-4 — Add `--live` check mode + reusable helper to `doc-drift-lint.py`
+- [x] WU-5 — Add `--live` mode tests to `test_doc_drift_lint.py`
 
 ---
 

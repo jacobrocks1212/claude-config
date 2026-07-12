@@ -80,13 +80,15 @@ Ground-truth confirmed live 2026-07-11/12 via a read-only touchpoint audit (all 
 
 ### Phase 2: `--live` drift-detection mode in `doc-drift-lint.py`
 
+**Status:** Complete
+
 **Scope:** Add a `--live` check mode to `doc-drift-lint.py` (SPEC Fix Scope 4): PASS iff the live `~/.claude/settings.json` is a symlink AND resolves to the repo's `user/settings.json`; content-identical is the accepted fallback for copy-based hosts (cloud/non-symlink-capable). This is the detection primitive that makes the split self-announce instead of waiting for a manual `setup.ps1` run — and the reusable helper D2's surfacing (Phase 5) calls. Factor the check as a standalone helper (e.g. `check_live_settings(repo_root) -> list[finding]` plus a thin `live_settings_status(repo_root) -> (ok: bool, detail: str)` the banner/probe can import) so Phase 5 does not re-implement it.
 
 **Deliverables:**
-- [ ] `doc-drift-lint.py`: `--live` argparse flag; `check_live_settings(repo_root)` returning structured findings (live path missing → finding; real-file-not-symlink → drift finding naming the corrective `setup repair`; symlink resolving elsewhere → drift; content-identical non-symlink → PASS with an advisory note; symlink→tracked → clean).
-- [ ] A small importable `live_settings_status(repo_root)` helper (bool + human detail) so Phase 5's banner/probe reuse the SAME logic (no re-derivation).
-- [ ] `--live` is opt-in: default `run_checks` (the repo-only cross-check) is unchanged and stays exit-0 on this repo; `--live` is NOT added to the default check set (it inspects machine-local state, so `test_this_repo_is_clean` must not depend on it).
-- [ ] Tests: `test_doc_drift_lint.py` — symlink-intact PASS, real-file FAIL (names `setup repair`), symlink-to-wrong-target FAIL, content-identical-copy PASS, missing-live-file finding. Follow the `tmp_path` + `ddl`-fixture convention; fabricate a fake HOME/live path via monkeypatch or an explicit `--live-path` test seam rather than touching the real `~`.
+- [x] `doc-drift-lint.py`: `--live` argparse flag; `check_live_settings(repo_root)` returning structured findings (live path missing → finding; real-file-not-symlink → drift finding naming the corrective `setup repair`; symlink resolving elsewhere → drift; content-identical non-symlink → PASS with an advisory note; symlink→tracked → clean).
+- [x] A small importable `live_settings_status(repo_root)` helper (bool + human detail) so Phase 5's banner/probe reuse the SAME logic (no re-derivation).
+- [x] `--live` is opt-in: default `run_checks` (the repo-only cross-check) is unchanged and stays exit-0 on this repo; `--live` is NOT added to the default check set (it inspects machine-local state, so `test_this_repo_is_clean` must not depend on it).
+- [x] Tests: `test_doc_drift_lint.py` — symlink-intact PASS, real-file FAIL (names `setup repair`), symlink-to-wrong-target FAIL, content-identical-copy PASS, missing-live-file finding. Follow the `tmp_path` + `ddl`-fixture convention; fabricate a fake HOME/live path via monkeypatch or an explicit `--live-path` test seam rather than touching the real `~`.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/doc-drift-lint.py --live --repo-root .` runs and returns a structured verdict; on THIS laptop pre-Phase-3 it exits non-zero naming the real-file split (that non-zero is the correct, intended detection — it flips to PASS once Phase 3 restores the symlink).
 
@@ -101,6 +103,14 @@ Ground-truth confirmed live 2026-07-11/12 via a read-only touchpoint audit (all 
 **Integration Notes for Next Phase:**
 - Expose the check as an importable helper — Phase 3's setup-check extension and Phase 5's banner/probe both call it; do NOT let those re-implement the symlink-resolve logic.
 - The content-identical fallback is deliberate: copy-based hosts (cloud bootstrap) can't symlink, so byte-equality must count as PASS or the cloud will always report drift.
+
+**Implementation Notes (2026-07-12):**
+- **Work completed (TDD, test-first):** Added `--live` mode to `doc-drift-lint.py` (94 lines): `_live_settings_path(repo_root)` (default `~/.claude/settings.json`, the test seam fallback), `check_live_settings(repo_root, live_path=None) -> list[Finding]` (`check="live"`), and the importable `live_settings_status(repo_root, live_path=None) -> (ok, detail)` helper Phase 5 will reuse. `main()` gained `--live` (store_true) + `--live-path` override; `--live` findings flow through the existing malformed/drift/exit-code accounting. Symlink target comparison via `os.path.realpath`; content comparison via `read_bytes()`.
+- **Verdict logic:** symlink→tracked = clean; real-file-content-differs = drift (message names `setup.py repair` / `setup.ps1 repair`); symlink→wrong-target = drift; real-file-content-identical = clean PASS (copy-based/cloud-host case, NOT drift); live-file-missing = finding. Exit codes: 0 clean / 1 drift / 2 malformed (missing tracked SSOT).
+- **Opt-in guarantee (HARD):** `check_live_settings` is deliberately NOT in the default `run_checks` tuple; `CHECK_NAMES` stays the 4-tuple. Two leak-guard tests pin it (`test_live_check_name_not_in_default_check_names`, `test_default_run_checks_never_emits_live_finding`), so the default `doc-drift-lint.py --repo-root .` (no `--live`) stays byte-identical + exit 0 and never touches `~/.claude`.
+- **Files modified:** `user/scripts/doc-drift-lint.py`, `user/scripts/test_doc_drift_lint.py` (8 new `--live` tests; symlink cases guard `os.symlink` OSError with `pytest.skip` for Windows-without-Developer-Mode safety).
+- **Live-machine confirmation (informational):** `doc-drift-lint.py --live --repo-root .` on this laptop exits 1, correctly flagging `~/.claude/settings.json` as a real file diverging from the tracked SSOT — exactly the split this bug fixes. That is the intended detection; the machine state is left as-is (Phase 3's symlink restore is the remedy, out of part-1 scope).
+- **Gates:** `pytest test_doc_drift_lint.py` → 44 passed (8 new); `pytest test_hooks.py test_doc_drift_lint.py` → 203 passed; `doc-drift-lint.py --repo-root .` (default) → exit 0; `lint-skills.py` → exit 0.
 
 ---
 

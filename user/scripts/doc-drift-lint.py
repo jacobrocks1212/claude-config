@@ -39,6 +39,7 @@ Known v1 limitations (documented, deliberate):
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -496,6 +497,88 @@ def check_manifest(repo_root):
 
 
 # ---------------------------------------------------------------------------
+# --live mode (WU-5): tracked user/settings.json vs the live ~/.claude/settings.json.
+#
+# NOT part of the default `run_checks()` walk — this inspects the machine-local live
+# settings path, which is host-specific and not something the hermetic default checks
+# (hooks/scripts/coupled-pairs/manifest) should ever touch. Opt-in via `--live` only.
+# ---------------------------------------------------------------------------
+
+
+def _live_settings_path(repo_root):
+    """Default live settings path. `repo_root` is accepted for symmetry with the
+    other checks' signatures but unused — the live path is always under the real
+    home directory, independent of which repo is being linted."""
+    return Path.home() / ".claude" / "settings.json"
+
+
+def check_live_settings(repo_root, live_path=None):
+    """Pure-read comparison of the tracked SSOT (repo_root/user/settings.json)
+    against the live settings path. Returns a list of Finding (check='live')."""
+    if live_path is None:
+        live_path = _live_settings_path(repo_root)
+    live_path = Path(live_path)
+    tracked = repo_root / "user" / "settings.json"
+
+    try:
+        tracked_bytes = tracked.read_bytes()
+    except OSError:
+        return [Finding("live", "malformed", "user/settings.json", "live-settings",
+                        "tracked user/settings.json is missing/unreadable at %s"
+                        % tracked)]
+
+    # Missing entirely — not present, and not even a broken symlink.
+    if not live_path.exists() and not live_path.is_symlink():
+        return [Finding(
+            "live", "drift", str(live_path), "live-settings",
+            "live settings file %s does not exist; run `python3 setup.py repair` "
+            "(or `.\\setup.ps1 repair`) to (re)create the symlink" % live_path)]
+
+    if live_path.is_symlink():
+        try:
+            live_real = os.path.realpath(str(live_path))
+            tracked_real = os.path.realpath(str(tracked))
+        except OSError:
+            return [Finding(
+                "live", "drift", str(live_path), "live-settings",
+                "live settings symlink %s could not be resolved; run "
+                "`python3 setup.py repair` (or `.\\setup.ps1 repair`)" % live_path)]
+        if live_real == tracked_real:
+            return []
+        return [Finding(
+            "live", "drift", str(live_path), "live-settings",
+            "live settings symlink %s resolves to '%s', not the tracked SSOT '%s'; "
+            "run `python3 setup.py repair` (or `.\\setup.ps1 repair`)"
+            % (live_path, live_real, tracked_real))]
+
+    # A real (non-symlink) file — the legitimate copy-based / cloud-host case.
+    try:
+        live_bytes = live_path.read_bytes()
+    except OSError:
+        return [Finding(
+            "live", "drift", str(live_path), "live-settings",
+            "live settings file %s could not be read; run `python3 setup.py repair` "
+            "(or `.\\setup.ps1 repair`)" % live_path)]
+
+    if live_bytes == tracked_bytes:
+        return []
+    return [Finding(
+        "live", "drift", str(live_path), "live-settings",
+        "live settings file %s is a real file diverging from the tracked SSOT "
+        "user/settings.json; run `python3 setup.py repair` (or `.\\setup.ps1 repair`) "
+        "to resync it" % live_path)]
+
+
+def live_settings_status(repo_root, live_path=None):
+    """Thin wrapper over check_live_settings: (ok, detail) summary."""
+    findings = check_live_settings(repo_root, live_path=live_path)
+    ok = not any(f.kind in ("drift", "malformed") for f in findings)
+    if ok:
+        return True, "live settings reflect the tracked SSOT"
+    return False, findings[0].message
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -514,10 +597,21 @@ def main(argv=None):
                     "(hooks/scripts/coupled-pairs/manifest). Pure-read.")
     parser.add_argument("--repo-root", default=".",
                         help="claude-config repo root (default: cwd)")
+    parser.add_argument("--live", action="store_true",
+                        help="also run the machine-local live-settings check "
+                             "(tracked user/settings.json vs the live "
+                             "~/.claude/settings.json). Opt-in; not part of the "
+                             "default checks.")
+    parser.add_argument("--live-path", default=None,
+                        help="override the live settings path checked by --live "
+                             "(default: ~/.claude/settings.json)")
     args = parser.parse_args(argv)
     repo_root = Path(args.repo_root).resolve()
 
     findings = run_checks(repo_root)
+    if args.live:
+        live_path = Path(args.live_path) if args.live_path else None
+        findings = findings + check_live_settings(repo_root, live_path=live_path)
     malformed = [f for f in findings if f.kind == "malformed"]
     drift = [f for f in findings if f.kind == "drift" and not f.exempted]
     exempted = [f for f in findings if f.kind == "drift" and f.exempted]

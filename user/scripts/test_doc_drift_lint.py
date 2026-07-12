@@ -7,6 +7,7 @@ THIS repo is clean.
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -594,6 +595,163 @@ def test_missing_root_claude_exit_2(tmp_path):
     (repo / "CLAUDE.md").unlink()
     res = run_lint(repo)
     assert res.returncode == 2
+
+
+# ---------------------------------------------------------------------------
+# --live mode (WU-5)
+#
+# NOT YET IMPLEMENTED — these tests are RED by design (strict TDD). They pin
+# the contract for a new `check_live_settings` / `live_settings_status` API
+# plus a `--live`/`--live-path` CLI surface on doc-drift-lint.py, none of
+# which exist yet. They will go GREEN once the impl agent adds the API.
+# ---------------------------------------------------------------------------
+
+
+def run_lint_live(repo_root, live_path):
+    return subprocess.run(
+        [
+            sys.executable,
+            str(LINT_PATH),
+            "--repo-root",
+            str(repo_root),
+            "--live",
+            "--live-path",
+            str(live_path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_live_symlink_to_tracked_is_clean(ddl, tmp_path):
+    repo = make_repo(tmp_path)
+    tracked = repo / "user" / "settings.json"
+    live_dir = tmp_path / "live-symlink-tracked"
+    live_dir.mkdir()
+    live_path = live_dir / "settings.json"
+    try:
+        os.symlink(tracked, live_path)
+    except OSError:
+        pytest.skip("symlinks unavailable on this host")
+
+    findings = ddl.check_live_settings(repo, live_path)
+    assert findings == []
+
+    ok, detail = ddl.live_settings_status(repo, live_path)
+    assert ok is True, detail
+
+    res = run_lint_live(repo, live_path)
+    assert res.returncode == 0, res.stdout + res.stderr
+
+
+def test_live_real_file_content_differs_is_drift(ddl, tmp_path):
+    repo = make_repo(tmp_path)
+    tracked = repo / "user" / "settings.json"
+    live_dir = tmp_path / "live-content-differs"
+    live_dir.mkdir()
+    live_path = live_dir / "settings.json"
+
+    tracked_obj = json.loads(tracked.read_text(encoding="utf-8"))
+    live_obj = json.loads(tracked.read_text(encoding="utf-8"))
+    live_obj["hooks"]["PreToolUse"][0]["hooks"][0]["command"] += " --extra-flag"
+    assert live_obj != tracked_obj  # sanity: genuinely different content
+    live_path.write_text(json.dumps(live_obj), encoding="utf-8")
+
+    findings = ddl.check_live_settings(repo, live_path)
+    assert len(findings) >= 1
+    assert all(f.check == "live" for f in findings)
+    combined = " ".join(f.message.lower() for f in findings)
+    assert "setup" in combined
+    assert "repair" in combined
+
+    ok, detail = ddl.live_settings_status(repo, live_path)
+    assert ok is False, detail
+
+    res = run_lint_live(repo, live_path)
+    assert res.returncode == 1, res.stdout + res.stderr
+
+
+def test_live_symlink_to_other_target_is_drift(ddl, tmp_path):
+    repo = make_repo(tmp_path)
+    other = tmp_path / "other-settings.json"
+    other.write_text(json.dumps({"hooks": {}}), encoding="utf-8")
+    live_dir = tmp_path / "live-symlink-other"
+    live_dir.mkdir()
+    live_path = live_dir / "settings.json"
+    try:
+        os.symlink(other, live_path)
+    except OSError:
+        pytest.skip("symlinks unavailable on this host")
+
+    findings = ddl.check_live_settings(repo, live_path)
+    assert len(findings) >= 1
+
+    ok, detail = ddl.live_settings_status(repo, live_path)
+    assert ok is False, detail
+
+    res = run_lint_live(repo, live_path)
+    assert res.returncode == 1, res.stdout + res.stderr
+
+
+def test_live_real_file_identical_content_is_pass(ddl, tmp_path):
+    """Copy-based / cloud-host case: a real (non-symlink) file whose content is
+    byte-identical to TRACKED is a legitimate pass, NOT drift."""
+    repo = make_repo(tmp_path)
+    tracked = repo / "user" / "settings.json"
+    live_dir = tmp_path / "live-identical-copy"
+    live_dir.mkdir()
+    live_path = live_dir / "settings.json"
+    live_path.write_bytes(tracked.read_bytes())
+
+    findings = ddl.check_live_settings(repo, live_path)
+    assert findings == []
+
+    ok, detail = ddl.live_settings_status(repo, live_path)
+    assert ok is True, detail
+
+    res = run_lint_live(repo, live_path)
+    assert res.returncode == 0, res.stdout + res.stderr
+
+
+def test_live_missing_file_is_drift(ddl, tmp_path):
+    repo = make_repo(tmp_path)
+    live_path = tmp_path / "live-missing" / "settings.json"  # parent never created
+
+    findings = ddl.check_live_settings(repo, live_path)
+    assert len(findings) >= 1
+
+    ok, detail = ddl.live_settings_status(repo, live_path)
+    assert ok is False, detail
+
+    res = run_lint_live(repo, live_path)
+    assert res.returncode == 1, res.stdout + res.stderr
+
+
+def test_live_flag_absent_stays_exit_0_on_clean_tree(tmp_path):
+    """Leak guard: --live must be opt-in. A clean fixture with no --live flag
+    stays exit 0 regardless of what a real live settings.json would say."""
+    repo = make_repo(tmp_path)
+    res = run_lint(repo)
+    assert res.returncode == 0, res.stdout + res.stderr
+
+
+def test_live_check_name_not_in_default_check_names(ddl):
+    assert "live" not in ddl.CHECK_NAMES
+
+
+def test_default_run_checks_never_emits_live_finding(ddl):
+    """The default check tuple must never fold in the live check — referencing
+    the new function object directly (not just its absence from CHECK_NAMES)
+    so this fails loudly (AttributeError) until the API exists, and keeps
+    failing if it is ever silently added to the default run_checks() walk."""
+    assert ddl.check_live_settings not in (
+        ddl.check_hooks,
+        ddl.check_scripts,
+        ddl.check_coupled_pairs,
+        ddl.check_manifest,
+    )
+    findings = ddl.run_checks(REPO_ROOT)
+    assert not any(f.check == "live" for f in findings)
 
 
 # ---------------------------------------------------------------------------
