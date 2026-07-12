@@ -10021,11 +10021,23 @@ def _parse_locked_decisions(spec_md: str) -> list[dict]:
             if len(cells) < 2:
                 continue
             first = cells[0]
-            # Skip the header row and the |---|---| separator row.
-            if not first or set(first) <= set("-: ") or first.lower() in ("id", "decision"):
+            title = cells[1]
+            # Skip the header row and the |---|---| separator row. The header's
+            # id column may be labelled 'id' / 'decision' / '#' / 'no' / 'num',
+            # and its SECOND (Decision/title) column literally reads "Decision" —
+            # key on the title-column header for robustness, not only the id
+            # label. The observed canonical header '| # | Decision | Choice |
+            # Source |' slipped the id-only skip (first == '#', not in the set)
+            # and became a PHANTOM decision id='#', title='Decision' that could
+            # never be covered → Gate 1 unsatisfiable (harden 2026-07).
+            if (
+                not first
+                or set(first) <= set("-: ")
+                or first.lower() in ("id", "decision", "#", "no", "num", "idx")
+                or title.strip().lower() == "decision"
+            ):
                 continue
             did = first
-            title = cells[1]
             decisions.append(
                 {"id": did, "title": title, "keywords": _gate_coverage_keywords(title)}
             )
@@ -10104,6 +10116,51 @@ def _resolve_scenario_text(path: Path) -> str:
     return raw
 
 
+def _parse_mcp_coverage_exemptions(spec_md: str) -> dict:
+    """Parse a ``## MCP Coverage Exemptions`` SPEC section → {id: rationale}.
+
+    This is the DETERMINISTIC home for the mcp-coverage-audit.md D7 disposition
+    "documented-MCP-untestable decisions get an inline SPEC test-exempt note".
+    Before this parser existed, ``gate_coverage`` had NO exemption path — a
+    decision was coverable ONLY by an ``mcp-tests/*.md`` scenario reference — so
+    the component's prescribed inline SPEC exempt note could not actually satisfy
+    the gate (a backend/miniflare-verified Locked Decision, which has no Tauri
+    MCP surface to drive, was permanently ``uncovered``). harden 2026-07.
+
+    Recognized surface — an H2 ``## MCP Coverage Exemptions`` whose body carries
+    bullets of the shape ``- <ID>: <rationale>`` (or ``- <ID> — <rationale>``).
+    An entry counts ONLY when BOTH the id token and a NON-EMPTY rationale are
+    present (mirroring the ``observation_gap_exemptions`` ``spec_class``-required
+    discipline: the citation is what distinguishes a verified untestable-class
+    assessment from a convenience skip). A bare ``- D4`` with no rationale is
+    IGNORED (not exempt) so an empty stub cannot launder the gate.
+
+    Returns ``{}`` when the section is absent (the gate is unchanged for every
+    SPEC that does not opt in).
+    """
+    lines = spec_md.splitlines()
+    exemptions: dict = {}
+    in_section = False
+    for ln in lines:
+        s = ln.strip()
+        if re.match(r"^##\s+MCP Coverage Exemptions\b", s, re.IGNORECASE):
+            in_section = True
+            continue
+        if in_section and re.match(r"^##\s", s):
+            break  # next H2 ends the section
+        if not in_section:
+            continue
+        # ``- <ID>: <rationale>`` or ``- <ID> — <rationale>`` (id = leading
+        # alnum token; rationale = the remainder after the : / — / - separator).
+        m = re.match(r"^-\s+([A-Za-z]?\d+|[A-Za-z]{1,4}\d*)\s*[:—\-]\s*(.+\S)\s*$", s)
+        if m:
+            did = m.group(1).strip()
+            rationale = m.group(2).strip()
+            if did and rationale:
+                exemptions[did] = rationale
+    return exemptions
+
+
 def gate_coverage(spec_path: Path) -> dict:
     """Deterministic Gate-1 MCP-coverage verdict for a feature/bug spec dir.
 
@@ -10113,7 +10170,13 @@ def gate_coverage(spec_path: Path) -> dict:
 
     A decision is **covered** iff at least one scenario file contains the
     decision ``id`` as a literal OR contains at least 2 of the decision's
-    keywords (case-insensitive). This mirrors mcp-coverage-audit.md Step 3.
+    keywords (case-insensitive) — OR it is **exempt**: listed in a
+    ``## MCP Coverage Exemptions`` SPEC section with a non-empty rationale (the
+    mcp-coverage-audit.md D7 disposition for documented-MCP-untestable decisions,
+    e.g. backend/miniflare-verified Locked Decisions with no Tauri MCP surface).
+    An exempt decision is NOT added to ``uncovered``; its entry carries
+    ``exempt: True`` + the ``rationale`` so the disposition is auditable. This
+    mirrors mcp-coverage-audit.md Step 3.
 
     Return shape::
 
@@ -10134,6 +10197,7 @@ def gate_coverage(spec_path: Path) -> dict:
             spec_md = ""
 
     decisions = _parse_locked_decisions(spec_md)
+    exemptions = _parse_mcp_coverage_exemptions(spec_md)
 
     # Gather (resolved) scenario texts.
     mcp_dir = spec_path / "mcp-tests"
@@ -10156,9 +10220,19 @@ def gate_coverage(spec_path: Path) -> dict:
             if kws and sum(1 for k in kws if k in low) >= 2:
                 covered = True
                 break
+        # Exemption path (D7): a decision documented as MCP-untestable in the
+        # ``## MCP Coverage Exemptions`` section with a non-empty rationale is
+        # NOT uncovered — it is a sanctioned disposition, not a gap. Scenario
+        # coverage still wins (a decision that is BOTH scenario-covered and
+        # listed stays covered=True, exempt=False).
+        exempt_rationale = exemptions.get(did)
+        exempt = (not covered) and bool(exempt_rationale)
         entry = {"id": did, "title": d["title"], "keywords": kws, "covered": covered}
+        if exempt:
+            entry["exempt"] = True
+            entry["rationale"] = exempt_rationale
         result_decisions.append(entry)
-        if not covered:
+        if not covered and not exempt:
             uncovered.append(did)
 
     return {

@@ -22966,6 +22966,81 @@ def test_gate_coverage_empty_mcp_tests_all_uncovered():
         assert set(result["uncovered"]) == {"L1", "L2"}, result
 
 
+def test_gate_coverage_skips_hash_decision_table_header():
+    """harden 2026-07: a '| # | Decision | Choice | Source |' header row (first
+    cell '#', not 'id') must NOT parse as a phantom decision id='#'. RED against
+    the pre-fix id-only skip which let '#' through → Gate 1 unsatisfiable."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir(parents=True, exist_ok=True)
+        (spec_dir / "SPEC.md").write_text(
+            "# Spec\n\n## Locked Decisions\n\n"
+            "| # | Decision | Choice | Source |\n"
+            "|---|----------|--------|--------|\n"
+            "| D1 | Business-model shape | Hybrid | research |\n"
+            "| D2 | Pricing baseline | $15 pack | research |\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.gate_coverage(spec_dir)
+        ids = {d["id"] for d in result["decisions"]}
+        assert ids == {"D1", "D2"}, result
+        assert "#" not in ids, result
+        assert "#" not in result["uncovered"], result
+
+
+def test_parse_mcp_coverage_exemptions_requires_rationale():
+    """The exemptions parser recognizes '- D4: rationale' (and '- D4 — r') but
+    IGNORES a bare '- D5' with no rationale (an empty stub cannot exempt)."""
+    _guard()
+    spec_md = (
+        "## MCP Coverage Exemptions\n\n"
+        "- D4: backend/miniflare — verified by Workers integration tests\n"
+        "- D5 — orthogonal fuel policy, no Tauri MCP surface\n"
+        "- D6\n"                       # bare, no rationale → ignored
+        "- D7:   \n"                   # whitespace-only rationale → ignored
+        "\n## Next Section\n"
+        "- D8: this is AFTER the section and must NOT be parsed\n"
+    )
+    ex = lazy_core._parse_mcp_coverage_exemptions(spec_md)
+    assert set(ex.keys()) == {"D4", "D5"}, ex
+    assert "backend" in ex["D4"].lower(), ex
+    assert "D6" not in ex and "D7" not in ex and "D8" not in ex, ex
+
+
+def test_gate_coverage_honors_spec_exemption():
+    """A Locked Decision with no scenario coverage but listed in
+    '## MCP Coverage Exemptions' with a rationale is NOT uncovered; its entry
+    carries exempt=True + rationale. A scenario-covered decision stays
+    covered=True (not exempt)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir(parents=True, exist_ok=True)
+        (spec_dir / "SPEC.md").write_text(
+            "# Spec\n\n## Locked Decisions\n\n"
+            "| # | Decision | Choice | Source |\n"
+            "|---|----------|--------|--------|\n"
+            "| D1 | Balance UI | categorized costs | brainstorm |\n"
+            "| D4 | Backend identity scope | Workers proxy | research |\n\n"
+            "## MCP Coverage Exemptions\n\n"
+            "- D4: backend/miniflare Workers runtime — outside the Tauri MCP "
+            "surface; verified by Workers integration tests\n",
+            encoding="utf-8",
+        )
+        mcp = spec_dir / "mcp-tests"
+        mcp.mkdir()
+        (mcp / "s.md").write_text("Validates D1 balance UI.\n", encoding="utf-8")
+        result = lazy_core.gate_coverage(spec_dir)
+        by_id = {d["id"]: d for d in result["decisions"]}
+        assert by_id["D1"]["covered"] is True, result
+        assert by_id["D1"].get("exempt") is not True, result
+        assert by_id["D4"]["covered"] is False, result
+        assert by_id["D4"].get("exempt") is True, result
+        assert "backend" in by_id["D4"].get("rationale", "").lower(), result
+        assert result["uncovered"] == [], result
+
+
 # ---- WU-3: apply_pseudo __mark_complete__ — ROADMAP strike + resolved-spec_dir trim ----
 
 def _write_roadmap(repo_root: Path, rows: list[str]) -> Path:
@@ -23271,6 +23346,12 @@ _TESTS = _TESTS + [
      test_gate_coverage_no_locked_decisions_passes_vacuously),
     ("test_gate_coverage_empty_mcp_tests_all_uncovered",
      test_gate_coverage_empty_mcp_tests_all_uncovered),
+    ("test_gate_coverage_skips_hash_decision_table_header",
+     test_gate_coverage_skips_hash_decision_table_header),
+    ("test_parse_mcp_coverage_exemptions_requires_rationale",
+     test_parse_mcp_coverage_exemptions_requires_rationale),
+    ("test_gate_coverage_honors_spec_exemption",
+     test_gate_coverage_honors_spec_exemption),
     ("test_apply_pseudo_mark_complete_strikes_roadmap_row",
      test_apply_pseudo_mark_complete_strikes_roadmap_row),
     ("test_apply_pseudo_mark_complete_no_roadmap_is_noop_strike",
