@@ -2262,13 +2262,41 @@ _DESCOPE_MARKER_RE = re.compile(
 )
 
 
+# Canonical structural descope marker (descoped-row-recognition-needs-canonical-marker).
+#
+# SINGLE SOURCE OF TRUTH for the per-row HTML comment that flags a PHASES.md
+# checkbox row (or its enclosing subsection) as a deliberately-DROPPED-in-place
+# deliverable — not-to-be-done, exactly like a Superseded row. Mirrors
+# _VERIFICATION_ONLY_MARKER exactly: a per-row HTML comment, invisible in
+# rendered markdown, PHRASING-INDEPENDENT. It is the PRIMARY descope signal —
+# a row carrying it (or under a header carrying it) is exempt regardless of the
+# free-text keyword, and needs NO accompanying strikethrough (unlike the legacy
+# _DESCOPE_STRIKETHROUGH_RE + _DESCOPE_MARKER_RE shim path, which requires BOTH).
+#
+# The legacy free-text keyword pair below is now a DEPRECATION SHIM (parallel to
+# _VERIFICATION_SECTION_RE): it still exempts un-migrated rows (no regression),
+# but when the shim (and not this marker) is what exempts a row, a _DIAGNOSTICS
+# warning names the un-migrated row so the migration gap is VISIBLE.
+#
+# check-docs-consistency.ts fallback: the marker is a ROW ANNOTATION, not a
+# sentinel, so it does NOT enter that script's SENTINEL_SCHEMAS. If a future
+# edit there cannot validate the HTML-comment form cleanly, fall back to a
+# canonical subsection-header form and update BOTH this constant's value AND the
+# producers that reference it by name (a lockstep test asserts producer == this).
+_DESCOPED_MARKER = "<!-- descoped -->"
+
+
 def _row_is_descoped_in_place(row_text: str) -> bool:
     """A deliberately-dropped deliverable row: struck-through AND descope-marked.
 
-    BOTH conditions are required (conservative — see the constants' comment): a
-    plain unchecked row, or a bare strikethrough without a descope marker, is
-    NOT exempt. Case-insensitive marker match; supports DROPPED / DESCOPED /
-    WON'T-FIX.
+    LEGACY free-text path ONLY (the deprecation shim): BOTH a strikethrough span
+    AND an explicit descope keyword marker are required — a plain unchecked row,
+    or a bare strikethrough without a descope marker, is NOT exempt. Case-
+    insensitive marker match; supports DROPPED / DESCOPED / WON'T-FIX.
+
+    The canonical structural path (the caller checking ``_DESCOPED_MARKER``,
+    row- or header-scope) requires NO strikethrough — this free-text function is
+    consulted only as a fallback for un-migrated rows lacking the canonical marker.
     """
     return bool(_DESCOPE_STRIKETHROUGH_RE.search(row_text)) and bool(
         _DESCOPE_MARKER_RE.search(row_text)
@@ -2312,13 +2340,17 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
     count toward the True return (bypass-eligible) — they are descoped to a
     successor feature, never remaining implementation work.
 
-    Descoped-in-place rows: an unchecked row that is BOTH struck through
-    (``~~...~~``) AND carries an explicit descope marker
-    (``**DROPPED**``/``**DESCOPED**``/``**WON'T-FIX**``) is a deliberately-dropped
-    deliverable — not-to-be-done, exactly like a Superseded row — and counts
-    toward the True return (see ``_row_is_descoped_in_place``). Conservative: a
-    plain unchecked row, or a struck row without a descope marker, still returns
-    False.
+    Descoped-in-place rows: the canonical structural ``_DESCOPED_MARKER``
+    (``<!-- descoped -->``, row- or header-scope) is now the PRIMARY exemption
+    signal — no strikethrough or keyword required, exactly parallel to
+    ``_VERIFICATION_ONLY_MARKER``. LEGACY (deprecation shim): an unchecked row
+    that is BOTH struck through (``~~...~~``) AND carries an explicit descope
+    marker (``**DROPPED**``/``**DESCOPED**``/``**WON'T-FIX**``) is also a
+    deliberately-dropped deliverable — not-to-be-done, exactly like a Superseded
+    row — and counts toward the True return (see ``_row_is_descoped_in_place``),
+    but emits a ``_DIAGNOSTICS`` migration warning since the canonical marker is
+    absent. Conservative: a plain unchecked row, or a struck row without a
+    descope marker AND without the canonical marker, still returns False.
     """
     in_verification = False        # legacy: enclosing header matched the regex
     section_has_marker = False     # marker present on the enclosing header line
@@ -2342,6 +2374,8 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
     # _row_is_descoped_in_place. Tracked separately so an all-descoped remainder
     # still bypasses (mirrors saw_superseded_unchecked).
     saw_descoped_unchecked = False
+    section_has_descope_marker = False   # descope marker present on the enclosing header line
+    warned_descope_rows: set[str] = set()  # de-dupe descope-shim diagnostics per row text
     in_fence = False
     for line in phases_text.splitlines():
         stripped = line.strip()
@@ -2361,12 +2395,14 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
                 in_superseded_phase = False
                 in_verification = False
                 section_has_marker = False
+                section_has_descope_marker = False
                 current_header_text = ""
             else:
                 # Non-phase heading (e.g. "### Runtime Verification" or a NOVEL
                 # header). Marker on the header line → header-scope exemption,
                 # text-independent. Else fall back to the legacy regex.
                 section_has_marker = _VERIFICATION_ONLY_MARKER in line
+                section_has_descope_marker = _DESCOPED_MARKER in line
                 in_verification = bool(_VERIFICATION_SECTION_RE.search(heading_text))
                 current_header_text = heading_text
             continue
@@ -2382,6 +2418,15 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
                 if re.match(r"Status\s*:", bold_text) and "Superseded" in stripped:
                     in_superseded_phase = True
                     continue
+                # Descope header-scope marker (orthogonal to the verification
+                # if/elif below): a bold header carrying _DESCOPED_MARKER exempts
+                # every plain row beneath it until the next phase / named-subsection
+                # boundary. A new verification or deliverables subsection header
+                # ends that scope (mirrors how section_has_marker is reset).
+                if _DESCOPED_MARKER in line:
+                    section_has_descope_marker = True
+                elif _VERIFICATION_SECTION_RE.search(bold_text) or _DELIVERABLES_SECTION_RE.search(bold_text):
+                    section_has_descope_marker = False
                 # A bold subsection header enters verification scope via the
                 # marker (text-independent) OR the legacy regex; an
                 # implementation-section header (**Deliverables:** etc.) EXITS it;
@@ -2420,8 +2465,28 @@ def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
             # set saw_unchecked (it is not a verification row). Conservative:
             # _row_is_descoped_in_place requires BOTH signals, so a plain
             # unchecked row / a struck row without a marker falls through below.
+            # PRIMARY descope path: a row carrying the canonical _DESCOPED_MARKER
+            # (or under a header carrying it) is a deliberately-dropped deliverable,
+            # exempt regardless of the free-text keyword and with NO strikethrough
+            # required. No migration diagnostic — this is the non-deprecated path.
+            if _DESCOPED_MARKER in line or section_has_descope_marker:
+                saw_descoped_unchecked = True
+                continue
+            # LEGACY deprecation shim: struck-through AND a free-text descope keyword
+            # (_DESCOPE_STRIKETHROUGH_RE + _DESCOPE_MARKER_RE) but NO canonical marker.
+            # Still exempt (no regression for un-migrated PHASES.md), but surface the
+            # migration gap so a future cycle can retire the shim.
             if _row_is_descoped_in_place(stripped):
                 saw_descoped_unchecked = True
+                if stripped not in warned_descope_rows:
+                    warned_descope_rows.add(stripped)
+                    _diag(
+                        "descope marker absent (un-migrated producer): the "
+                        f"unchecked row {stripped!r} is exempted by the legacy "
+                        f"_DESCOPE_MARKER_RE deprecation shim, not the canonical "
+                        f"{_DESCOPED_MARKER} marker. The producer should emit the "
+                        f"marker per lazy_core:_DESCOPED_MARKER."
+                    )
                 continue
             saw_unchecked = True
             row_has_marker = _VERIFICATION_ONLY_MARKER in line

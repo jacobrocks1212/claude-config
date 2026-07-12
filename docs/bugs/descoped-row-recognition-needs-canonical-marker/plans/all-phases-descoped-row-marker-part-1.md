@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: descoped-row-recognition-needs-canonical-marker
-status: Ready
+status: Complete
 created: 2026-07-12
 phases: [1]
 complexity: complex
@@ -62,8 +62,8 @@ Run all three after every batch in this part — `lazy_core.py` is shared by bot
 
 ## Work Units
 
-- [ ] WU-1 — Regression fixtures encoding the new marker/shim/header-scope behavior (TDD tests)
-- [ ] WU-2 — `_DESCOPED_MARKER` constant + marker-primary detection + shim demotion (implementation)
+- [x] WU-1 — Regression fixtures encoding the new marker/shim/header-scope behavior (TDD tests)
+- [x] WU-2 — `_DESCOPED_MARKER` constant + marker-primary detection + shim demotion (implementation)
 
 ---
 

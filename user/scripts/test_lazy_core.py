@@ -981,6 +981,117 @@ def test_verification_only_struck_without_descope_marker_still_false():
     )
 
 
+def test_verification_only_descoped_marker_only_row_is_true():
+    """The canonical structural descope marker `_DESCOPED_MARKER` alone (no
+    free-text keyword like **DROPPED**, no strikethrough) must exempt a row —
+    mirroring `_VERIFICATION_ONLY_MARKER`, which needs no accompanying regex.
+
+    RED today: `lazy_core._DESCOPED_MARKER` does not exist yet, and the
+    marker-primary detection path is unimplemented.
+    """
+    _guard()
+    text = (
+        "### Phase 4\n"
+        "- [x] warn-pass extension shipped\n"
+        "- [ ] <!-- descoped --> some deliverable dropped by decision 2\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is True, (
+        f"expected True (row carries the canonical descope marker alone — "
+        f"no free-text keyword or strikethrough required), got {result}."
+    )
+
+
+def test_verification_only_legacy_dropped_row_still_true_with_migration_diagnostic():
+    """Legacy path (struck-through **DROPPED**, NO `<!-- descoped -->` marker)
+    must still exempt (no regression) — but the deprecation shim must now
+    record a migration diagnostic naming the un-migrated descope gap, mirroring
+    `_VERIFICATION_SECTION_RE`'s existing shim-diagnostic precedent.
+
+    RED today: no migration diagnostic is emitted for the legacy descope path.
+    """
+    _guard()
+    lazy_core.clear_diagnostics()
+    text = (
+        "### Phase 4\n"
+        "- [x] warn-pass extension shipped\n"
+        "- [ ] ~~`setup.py` gains the parallel live hook/symlink check~~ "
+        "**DROPPED** (decision 2, `NEEDS_INPUT.md` resolution, 2026-07-12): "
+        "scope note only — no code deliverable here.\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is True, (
+        f"expected True (legacy struck-through DROPPED descope note — no "
+        f"regression), got {result}."
+    )
+    diags = lazy_core._DIAGNOSTICS
+    assert any(
+        "descope" in d.lower()
+        and (
+            "un-migrated" in d.lower()
+            or "unmigrated" in d.lower()
+            or "deprecat" in d.lower()
+            or "marker" in d.lower()
+        )
+        for d in diags
+    ), (
+        f"expected a migration diagnostic naming the un-migrated descope gap "
+        f"(legacy free-text path, no canonical marker), got {diags!r}"
+    )
+
+
+def test_verification_only_descoped_marker_no_diagnostic():
+    """The marker-only row (canonical `_DESCOPED_MARKER` present) must NOT
+    emit a descope migration diagnostic — the marker path is primary and
+    non-deprecated, so no warning belongs there.
+
+    RED today: the marker path doesn't exist, so this assertion cannot yet be
+    meaningfully satisfied by design (it will fail alongside the others until
+    the marker-primary detection is implemented without a spurious warning).
+    """
+    _guard()
+    lazy_core.clear_diagnostics()
+    text = (
+        "### Phase 4\n"
+        "- [x] warn-pass extension shipped\n"
+        "- [ ] <!-- descoped --> some deliverable dropped by decision 2\n"
+    )
+    lazy_core.remaining_unchecked_are_verification_only(text)
+    assert not any(
+        "descope" in d.lower()
+        and (
+            "un-migrated" in d.lower()
+            or "unmigrated" in d.lower()
+            or "deprecat" in d.lower()
+        )
+        for d in lazy_core._DIAGNOSTICS
+    ), (
+        f"marker path must not warn; got {lazy_core._DIAGNOSTICS!r}"
+    )
+
+
+def test_verification_only_descoped_header_scope_marker_exempts_rows_beneath():
+    """A bold subsection header carrying `<!-- descoped -->` must exempt every
+    plain `- [ ]` row beneath it (no per-row marker, no free-text keyword) —
+    mirroring `section_has_marker` for verification rows.
+
+    RED today: no header-scope descope marker detection exists.
+    """
+    _guard()
+    text = (
+        "### Phase 4\n"
+        "- [x] warn-pass extension shipped\n"
+        "**Descoped:** <!-- descoped -->\n"
+        "- [ ] first dropped deliverable\n"
+        "- [ ] second dropped deliverable\n"
+    )
+    result = lazy_core.remaining_unchecked_are_verification_only(text)
+    assert result is True, (
+        f"expected True (header-scope descope marker exempts every plain row "
+        f"beneath it), got {result}."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tests: fence-awareness — _unchecked_wus_in_plan_scope
 # ---------------------------------------------------------------------------
@@ -16454,6 +16565,11 @@ _TESTS = [
     ("test_verification_only_descoped_dropped_row_is_true", test_verification_only_descoped_dropped_row_is_true),
     ("test_verification_only_plain_unchecked_row_still_false", test_verification_only_plain_unchecked_row_still_false),
     ("test_verification_only_struck_without_descope_marker_still_false", test_verification_only_struck_without_descope_marker_still_false),
+    # descoped canonical marker (descoped-row-recognition-needs-canonical-marker):
+    ("test_verification_only_descoped_marker_only_row_is_true", test_verification_only_descoped_marker_only_row_is_true),
+    ("test_verification_only_legacy_dropped_row_still_true_with_migration_diagnostic", test_verification_only_legacy_dropped_row_still_true_with_migration_diagnostic),
+    ("test_verification_only_descoped_marker_no_diagnostic", test_verification_only_descoped_marker_no_diagnostic),
+    ("test_verification_only_descoped_header_scope_marker_exempts_rows_beneath", test_verification_only_descoped_header_scope_marker_exempts_rows_beneath),
     # fence-awareness: _unchecked_wus_in_plan_scope
     ("test_unchecked_wus_in_scope_skips_fenced", test_unchecked_wus_in_scope_skips_fenced),
     ("test_unchecked_wus_in_scope_real_labels_returned", test_unchecked_wus_in_scope_real_labels_returned),
