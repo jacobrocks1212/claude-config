@@ -29,11 +29,23 @@ Ask: **would the end-state product behavior differ between the options?**
    NEEDS_INPUT.md for scope-class decisions. Apply this policy in-cycle: take the complete
    path, and disclose it in the cycle summary (one `⚖ policy:` line, see Logging). NEEDS_INPUT
    is reserved for product-class decisions. Choosing a lower-effort path silently is a policy
-   violation the input-audit flags.
+   violation the input-audit flags. When applying this policy in-cycle results in a PHASES.md
+   row being struck through / dropped rather than implemented, the row MUST carry the canonical
+   structural marker (the SSOT constant `lazy_core:_DESCOPED_MARKER`) IN ADDITION to the
+   existing human-readable `**DROPPED**` / `**DESCOPED**` / `**WON'T-FIX**` note — the free-text
+   note stays for human readability; the marker is for machine recognition. See the worked
+   example below.
 2. **NEEDS_INPUT.md carrying `class: scope`** (or whose options match the scope shape
    regardless of declared class) — at Step 1g / park time, the orchestrator auto-resolves to
    the most complete option (`resolved_by: completeness-policy`), neutralizes the sentinel, and
-   continues. Both modes. No question.
+   continues. Both modes. No question. When the auto-resolution results in a PHASES.md row
+   being struck through / dropped rather than implemented, the row MUST carry the same
+   canonical structural marker (`lazy_core:_DESCOPED_MARKER`) alongside the free-text note —
+   this is the exact site the live incident (`live-settings-split-brain-disarms-enforcement-plane`)
+   goes through. Worked example (fenced so the state script never counts it as a live row):
+   ```
+   - [ ] ~~<text>~~ **DROPPED** <!-- descoped --> (decision N, NEEDS_INPUT.md resolution, <date>)
+   ```
 3. **BLOCKED.md (Step 1h).** Classify the blocker first. When every resolution path converges
    on the same product behavior (the standard "fix now / defer / halt" shape), auto-resolve:
    - **In-scope defect** → add-phase + fix now (the complete path).

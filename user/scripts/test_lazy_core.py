@@ -24284,6 +24284,10 @@ _BLOCKED_RESOLUTION_PATH = (
     Path(__file__).resolve().parent.parent
     / "skills" / "_components" / "blocked-resolution.md"
 )
+_COMPLETENESS_POLICY_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "skills" / "_components" / "completeness-policy.md"
+)
 
 
 def test_verification_only_marker_constant_present():
@@ -24395,6 +24399,30 @@ _TESTS = _TESTS + [
      test_ruvonly_novel_header_without_marker_warns_and_fails),
     ("test_ruvonly_marker_lockstep_producers_match_ssot",
      test_ruvonly_marker_lockstep_producers_match_ssot),
+]
+
+
+def test_descoped_marker_lockstep_producer_matches_ssot():
+    """The descope-authoring guidance in completeness-policy.md references the
+    canonical marker lazy_core._DESCOPED_MARKER BY VALUE — no divergent
+    hardcoding. Mirrors test_ruvonly_marker_lockstep_producers_match_ssot."""
+    _guard()
+    marker = lazy_core._DESCOPED_MARKER
+
+    assert _COMPLETENESS_POLICY_PATH.exists(), (
+        f"missing producer component: {_COMPLETENESS_POLICY_PATH}"
+    )
+    text = _COMPLETENESS_POLICY_PATH.read_text(encoding="utf-8")
+
+    assert marker in text, (
+        "completeness-policy.md must reference the canonical descope marker "
+        f"{marker!r} by value; not found"
+    )
+
+
+_TESTS = _TESTS + [
+    ("test_descoped_marker_lockstep_producer_matches_ssot",
+     test_descoped_marker_lockstep_producer_matches_ssot),
 ]
 
 

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: descoped-row-recognition-needs-canonical-marker
-status: Ready
+status: Complete
 created: 2026-07-12
 phases: [2]
 complexity: mechanical
@@ -60,8 +60,8 @@ Everything else the contract specifies that this plan does not override still ap
 
 ## Work Units
 
-- [ ] WU-3 — Lockstep test asserting `completeness-policy.md` references `_DESCOPED_MARKER` (TDD test)
-- [ ] WU-4 — Update `completeness-policy.md`'s descope-resolution guidance (implementation)
+- [x] WU-3 — Lockstep test asserting `completeness-policy.md` references `_DESCOPED_MARKER` (TDD test)
+- [x] WU-4 — Update `completeness-policy.md`'s descope-resolution guidance (implementation)
 
 ---
 
