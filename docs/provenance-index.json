@@ -56,6 +56,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "no-gemini-sprint-staging-in-claude-config",
       "type": "bug",
       "provenance": "backfilled"
@@ -2467,6 +2472,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/checkpoint-resume-false-loop-flips-complex-part-to-sonnet/SPEC.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/concurrent-same-branch-walkers-no-arbitration/PHASES.md": [
     {
       "id": "concurrent-same-branch-walkers-no-arbitration",
@@ -2505,6 +2517,13 @@
       "id": "concurrent-same-branch-walkers-no-arbitration",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/cycle-containment-allows-background-subagent-dispatch-deadlock/SPEC.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/cycle-subagent-fabricates-policy-or-stray-branch/PHASES.md": [
@@ -2622,6 +2641,20 @@
       "id": "cycle-subagent-runs-orchestrator-work",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/doc-drift-lint-single-event-model-blocks-multi-event-hooks/SPEC.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/efficacy-future-check-unenforced-orchestrator-prose/FIXED.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/ensure-runtime-false-hijacked-on-owned-serving-runtime/PHASES.md": [
@@ -2863,6 +2896,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/format-cycle-header-emits-retired-cycle-fwd-format/SPEC.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/hardening-blind-to-process-friction/PHASES.md": [
     {
       "id": "hardening-blind-to-process-friction",
@@ -2967,6 +3007,48 @@
       "id": "lazy-batch-unified-driver-parity-and-accounting",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/live-settings-split-brain-disarms-enforcement-plane/NEEDS_INPUT.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/live-settings-split-brain-disarms-enforcement-plane/NEEDS_INPUT_RESOLVED_2026-07-12.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/live-settings-split-brain-disarms-enforcement-plane/PHASES.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/live-settings-split-brain-disarms-enforcement-plane/SPEC.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/live-settings-split-brain-disarms-enforcement-plane/plans/fix-settings-split-brain-part-1.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/live-settings-split-brain-disarms-enforcement-plane/plans/fix-settings-split-brain-part-2.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/loop-detected-false-positives-from-probe-and-reboot-churn/FIXED.md": [
@@ -3166,6 +3248,13 @@
       "id": "no-gemini-sprint-staging-in-claude-config",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/no-mid-run-observed-friction-harden-dispatch/FIXED.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/no-sanctioned-queue-reorder-command/PHASES.md": [
@@ -3881,6 +3970,55 @@
       "id": "stub-spec-route-loops-until-queue-stub-cleared",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/subagent-baseline-claude-md-diet/FIXED.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/subagent-baseline-cognito-mcp-hygiene/FIXED.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/subagent-baseline-cognito-plugin-scoping/FIXED.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/subagent-baseline-dispatch-guidance/FIXED.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/subagent-baseline-skill-surface-bloat/FIXED.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/unqueued-fixed-without-receipt-dirs-perpetual-diagnostic-noise/SPEC.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/verification-only-bypass-blind-to-descoped-rows/SPEC.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/windows-portability-in-probe-glue-and-field-validators/FIXED.md": [
@@ -6030,6 +6168,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/interventions/harden-2026-07-r27.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/provenance-index.json": [
     {
       "id": "code-doc-provenance-linkage",
@@ -6099,6 +6244,11 @@
     }
   ],
   "docs/specs/turn-routing-enforcement/hardening-log/2026-07.md": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "skip-mcp-test-frontmatter-unquoted-colon",
       "type": "bug",
@@ -6220,6 +6370,13 @@
       "provenance": "backfilled"
     }
   ],
+  "setup.ps1": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "setup.py": [
     {
       "id": "cross-platform-setup",
@@ -6268,6 +6425,11 @@
   "user/hooks/lazy-cycle-containment.sh": [
     {
       "id": "adhoc-incident-hook-deny-4b767b",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
     },
@@ -6492,6 +6654,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
       "type": "bug",
       "provenance": "backfilled"
@@ -6568,6 +6735,11 @@
     }
   ],
   "user/scripts/doc-drift-lint.py": [
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "doc-drift-linter",
       "type": "feature",
@@ -6647,6 +6819,11 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
@@ -6789,6 +6966,11 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
@@ -7141,6 +7323,11 @@
   ],
   "user/scripts/test_doc_drift_lint.py": [
     {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "doc-drift-linter",
       "type": "feature",
       "provenance": "backfilled"
@@ -7168,6 +7355,11 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "incident-auto-capture",
@@ -7247,6 +7439,11 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
@@ -7632,6 +7829,11 @@
       "id": "cycle-subagent-fabricates-policy-or-stray-branch",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
