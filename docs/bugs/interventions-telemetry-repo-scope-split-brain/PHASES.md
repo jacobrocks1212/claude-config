@@ -2,6 +2,9 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress  <!-- all 4 phases implemented (Parts 1 + 2); validation tail pending — /mcp-test → __mark_fixed__ own the flip to Fixed -->
+
+
 **MCP runtime:** not-required — claude-config harness bug: the deliverables are Python state-script logic (`lazy_core.py` / `lazy-state.py` / `bug-state.py` / `efficacy-eval.py`), coupled orchestrator-skill prose, and intervention doc records. There is no Tauri/MCP app surface (the mcp-testing "build tooling / standalone, no app integration" untestable class). Validation is the in-file `--test` smoke harnesses + `test_lazy_core.py` (pytest).
 
 ## Root-cause trace (SEAM A — carried from SPEC, `traced`)
@@ -134,12 +137,19 @@ The two data planes never intersect at one `repo_root`: **records** live at `<cl
 
 **Deliverables:**
 - [x] A re-baseline act (extend `efficacy-eval.py` with an explicit re-baseline path, or a `--record-intervention`-adjacent CLI act — mechanism chosen at `/write-plan`) that recomputes an EXISTING record's frozen `baseline` from the merged ledger and overwrites it through the shared `_render_intervention_record` serializer (`lazy_core.py:16359`, diff-stable field order), stamping `provenance: backfilled-from-merged-ledger` + the date. NEVER silently equal to an original capture (D3).
-- [ ] Apply it to r14, r15, r16, r18, r20, r21 (`docs/interventions/harden-2026-07-r*.md`); confirm each new baseline reflects real merged-ledger runs/events (not the frozen `runs:1/events:15`), with `window_start_run`/`window_end_run`/`last_run_id` re-derived.
-- [ ] r5/r7 explicitly left untouched with a one-line note pointing at the sibling capture-defects bug (`hardening-intervention-records-unmeasurable-or-missing`).
+- [x] Apply it to r14, r15, r16, r18, r20, r21 (`docs/interventions/harden-2026-07-r*.md`); confirm each new baseline reflects real merged-ledger runs/events (not the frozen `runs:1/events:15`), with `window_start_run`/`window_end_run`/`last_run_id` re-derived.
+- [x] r5/r7 explicitly left untouched with a one-line note pointing at the sibling capture-defects bug (`hardening-intervention-records-unmeasurable-or-missing`).
 - [x] The re-baseline is idempotent-safe (re-running does not double-stamp or corrupt); a record whose merged window is still empty gets an HONEST no-data/pending baseline, never a fabricated value (the evaluator's existing no-data honesty ladder).
 - [x] Tests: `test_efficacy_eval.py` (or `test_lazy_core.py`) coverage for the re-baseline act — reads a fixture merged ledger, overwrites a poisoned baseline, asserts the new value + `provenance` note + no-clobber-without-the-act.
 
 **Minimum Verifiable Behavior:** After the re-baseline act runs against a fixture merged ledger, a poisoned record's `baseline` no longer reads `runs:1/events:15/value:15.0` and carries `provenance: backfilled-from-merged-ledger` — asserted in `test_efficacy_eval.py`.
+
+**Status:** Complete
+
+**Implementation Notes (2026-07-12, Part 2 WU-5 + WU-6):**
+
+- **WU-5 — re-baseline act (`efficacy-eval.py`).** Added a NEW CLI action `--rebaseline <intervention_id>` + the module-level `_rebaseline_record(repo_root, id, *, today, dry_run)`. It reuses `lazy_core.read_intervention_telemetry` (the Phase-1 merged read) and mirrors `lazy_core.record_intervention`'s baseline-freeze (same trailing `baseline_runs` window off the merged `run_id`s — default `INTERVENTION_BASELINE_RUNS=20` since `baseline_runs` is not persisted on the record), recomputes `runs`/`events`/`value` + `window_start_run`/`window_end_run`/`last_run_id`, appends `provenance: backfilled-from-merged-ledger` + `rebaselined_date` INSIDE the baseline block (after `last_run_id` → diff-stable under the `sort_keys=False` serializer), and overwrites the record via the existing `_write_record` (→ shared `_render_intervention_record`). Honesty ladder preserved: empty merged window → `status: unavailable` (no fabricated value); non-`event:`/undeclared → `not-computable`. Idempotent (recompute-from-scratch, same-day byte-identical). It is the ONLY overwrite path — `record_intervention` stays never-clobbering by existence. Handled BEFORE the breadcrumb drop in `main()` so a data-repair op never discharges the `--run-end` coverage gate. Tests: 6 new `test_rebaseline_*` in `test_efficacy_eval.py` (overwrite/only-overwrite-path/idempotent/no-data-honesty/dry-run-byte-inert/missing-record-exit-1) — RED→GREEN; full suite 45 passed.
+- **WU-6 — applied to the 6 poisoned records.** Ran `efficacy-eval.py --repo-root . --rebaseline harden-2026-07-r{14,15,16,18,20,21}` against the REAL merged ledger. Each `event:gate-refusal` baseline went from the poisoned `runs:1/events:15/value:15.0` to a real merged window `runs:3/events:22/value:7.3333` (window `2026-07-04T14:38:18Z → 2026-07-12T16:53:25Z`) + the provenance note — proving the Phase-1 merged read now surfaces originating telemetry the single-cloud-run capture never saw. All other frontmatter preserved; exactly 6 files changed. **r5 (`event:no-route`) and r7 (`event:route-loop`) left UNTOUCHED** — their target signals are vocabulary-invalid and owned by the sibling bug `docs/bugs/hardening-intervention-records-unmeasurable-or-missing` (cross-ref; not re-baselined here).
 
 **Prerequisites:**
 - Phase 1: the merged read supplies the real baseline window.

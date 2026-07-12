@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: interventions-telemetry-repo-scope-split-brain
-status: In-progress
+status: Complete
 created: 2026-07-12
 complexity: complex
 phases: [3, 4]
@@ -77,7 +77,7 @@ python3 user/scripts/efficacy-eval.py --repo-root . --dry-run # byte-inert evalu
 
 - [x] WU-4 — Two-scope end-of-run flush prose (coupled trio)
 - [x] WU-5 — Re-baseline act in the efficacy evaluator
-- [ ] WU-6 — Apply re-baseline to the six poisoned records
+- [x] WU-6 — Apply re-baseline to the six poisoned records
 
 ---
 
