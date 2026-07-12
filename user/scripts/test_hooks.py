@@ -3628,6 +3628,68 @@ def test_containment_agentid_present_denies_routing_flags_no_marker():
             )
 
 
+def test_containment_allows_state_script_reference_only_mention():
+    """SUBAGENT + live marker: a git commit/add whose MESSAGE BODY or staged
+    FILENAME merely MENTIONS a state-script token / routing flag must ALLOW —
+    the reference-only-mention false-deny (harden 2026-07,
+    lazy-cycle-containment-false-denies-reference-only-routing-mentions). RED
+    against the pre-fix unanchored _STATE_PY_RE + `flag in command` scan."""
+    _guard()
+    benign = (
+        # filename ARGUMENT to git add — not an invocation.
+        "git add user/scripts/lazy-state.py",
+        "git add user/scripts/bug-state.py",
+        # routing tokens inside a COMMIT MESSAGE body — incidental text.
+        'git commit -m "harden(script): fix lazy-state.py --probe edge; '
+        'routes to Part 2 via --emit-dispatch"',
+        'git commit -m "docs: describe /lazy-batch and --run-start routing"',
+        # a REAL read-only state-script invocation chained before a commit whose
+        # message mentions a routing flag — the invoking segment carries no
+        # routing flag, so the message mention must not trip the deny.
+        'python3 ~/.claude/scripts/lazy-state.py --marker-present && '
+        'git commit -m "note: this touched --run-start plumbing"',
+    )
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        for cmd in benign:
+            result = _run_containment(
+                _bash_preToolUse_json(cmd, agent_id=_SUBAGENT_AGENT_ID),
+                state_dir,
+                staged_paths=[],
+            )
+            assert _containment_decision(result) != "deny", (
+                f"reference-only mention {cmd!r} under marker must NOT deny; "
+                f"stdout: {result.stdout!r}"
+            )
+
+
+def test_containment_still_denies_real_state_script_invocation():
+    """The anchoring fix must PRESERVE every real-runaway deny: a SUBAGENT that
+    actually INVOKES the state script with a routing flag (segment-leading, via a
+    path prefix, or chained behind another command) still DENIES."""
+    _guard()
+    runaway = (
+        "python3 lazy-state.py --run-start",
+        "python3 ~/.claude/scripts/bug-state.py --emit-dispatch hardening",
+        "lazy-state.py --enqueue-adhoc --type bug",
+        'python3 lazy-state.py --run-start && echo done',
+    )
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        for cmd in runaway:
+            result = _run_containment(
+                _bash_preToolUse_json(cmd, agent_id=_SUBAGENT_AGENT_ID), state_dir
+            )
+            assert _containment_decision(result) == "deny", (
+                f"real state-script invocation {cmd!r} must deny; "
+                f"stdout: {result.stdout!r}"
+            )
+
+
 def test_containment_agentid_absent_allows_routing_flags_no_marker():
     """MAIN-THREAD payload + routing flags, NO marker → allow (the orchestrator
     runs these between cycles)."""
@@ -6274,6 +6336,12 @@ _TESTS = [
      test_containment_agentid_absent_allows_lazy_batch_invocation),
     ("test_containment_agentid_present_denies_routing_flags_no_marker",
      test_containment_agentid_present_denies_routing_flags_no_marker),
+    # reference-only-mention false-deny (harden 2026-07,
+    # lazy-cycle-containment-false-denies-reference-only-routing-mentions)
+    ("test_containment_allows_state_script_reference_only_mention",
+     test_containment_allows_state_script_reference_only_mention),
+    ("test_containment_still_denies_real_state_script_invocation",
+     test_containment_still_denies_real_state_script_invocation),
     ("test_containment_agentid_absent_allows_routing_flags_no_marker",
      test_containment_agentid_absent_allows_routing_flags_no_marker),
     ("test_containment_agentid_present_denies_lifecycle_no_marker",

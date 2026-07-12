@@ -231,7 +231,26 @@ _LAZY_BATCH_NESTED_RE = re.compile(
 # marker's feature dir (these are cross-feature shared state, not a 2nd feature).
 CARVE_OUT_PATHS = ("docs/features/queue.json", "docs/features/ROADMAP.md", "CLAUDE.md")
 
-_STATE_PY_RE = re.compile(r"\b(?:lazy-state|bug-state)\.py\b")
+# reference-only-mention false-deny (harden 2026-07,
+# docs/bugs/lazy-cycle-containment-false-denies-reference-only-routing-mentions):
+# a state-script INVOCATION begins a command segment (optionally behind a
+# `python`/`python3` interpreter + a path prefix), mirroring
+# build-queue-enforce.sh's _CMD_START segment anchoring and the _LAZY_BATCH_*_RE
+# anchors above. A `lazy-state.py`/`bug-state.py` token appearing as an ARGUMENT
+# to another verb (`git add user/scripts/lazy-state.py`) or inside a commit
+# MESSAGE body (`git commit -m "...routes via lazy-state.py --emit-dispatch..."`)
+# does NOT begin a command segment and MUST NOT trip the loop-formation deny.
+_STATE_PY_TAIL = (
+    r"(?:python3?\s+)?(?:[^\s;&|]*[\\/])?(?:lazy-state|bug-state)\.py\b"
+)
+_STATE_PY_INVOKE_RE = re.compile(_CMD_START + _STATE_PY_TAIL)
+# Per-segment anchored form: the command is split on the same separators the
+# _CMD_START class recognizes, then each segment is matched from its start
+# (absorbing leading whitespace + NAME=value env assignments), so the
+# routing-flag check can be scoped to the INVOKING segment only — a routing flag
+# mentioned in an unrelated later segment (a commit message) cannot trip it.
+_STATE_PY_INVOKE_SEG_RE = re.compile(r"^\s*" + _ENV_PREFIX + _STATE_PY_TAIL)
+_SEGMENT_SPLIT_RE = re.compile(r"[\n;&|({]")
 _FEATURE_DIR_RE = re.compile(r"docs/(?:features|bugs)/([^/]+)/")
 
 
@@ -466,12 +485,22 @@ def main():
             _deny(CORRECTIVE, "lazy-batch-invocation")
 
         # --- Loop-formation: lazy-state.py / bug-state.py routing flags. ---
-        if _STATE_PY_RE.search(command):
-            if any(flag in command for flag in ALLOW_LISTED_FLAGS):
-                _allow()
-            if any(flag in command for flag in LOOP_FORMATION_FLAGS):
-                _deny(CORRECTIVE, "loop-formation-flag")
-            # state-script call with no routing flag (e.g. a read) → allow.
+        # Match only a REAL invocation (segment-leading), never an incidental
+        # filename argument (`git add user/scripts/lazy-state.py`) or a
+        # commit-message mention (reference-only-mention false-deny). The
+        # routing-flag check is scoped to the INVOKING segment so a routing flag
+        # in an unrelated later segment (e.g. a commit message body) cannot trip
+        # it.
+        if _STATE_PY_INVOKE_RE.search(command):
+            for _seg in _SEGMENT_SPLIT_RE.split(command):
+                if not _STATE_PY_INVOKE_SEG_RE.match(_seg):
+                    continue
+                # A narrow ALLOW_LISTED op in this invoking segment is fine.
+                if any(flag in _seg for flag in ALLOW_LISTED_FLAGS):
+                    continue
+                if any(flag in _seg for flag in LOOP_FORMATION_FLAGS):
+                    _deny(CORRECTIVE, "loop-formation-flag")
+            # A real state-script invocation with no routing flag (a read) → allow.
             _allow()
 
         # --- Runtime-lifecycle commands. ---
