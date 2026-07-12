@@ -33337,5 +33337,262 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# read_intervention_telemetry — merged cross-repo originating-target read.
+#
+# `read_intervention_telemetry(repo_root)` today reads only (a) the ACTIVE
+# repo's state-dir telemetry ledger (`read_telemetry_events()`) and (b)
+# committed cloud segments under `<repo_root>/docs/telemetry/cloud/*.jsonl`.
+# It does NOT see the telemetry of the run's ORIGINATING TARGET repo, whose
+# events append to a DIFFERENT `repo_key`-keyed state dir sibling of the
+# current repo's flat ledger (both live under the same `LAZY_STATE_DIR` base
+# when the env override is set — see `claude_state_dir`'s override branch).
+#
+# These tests characterize the fix: after its existing reads,
+# `read_intervention_telemetry` ALSO merges the telemetry ledger of the run's
+# originating TARGET repo, resolved as the MOST-RECENT live (age <= 24h) run
+# marker found in a keyed sibling state dir (an immediate subdirectory of the
+# `LAZY_STATE_DIR` base, named `repo_key(<that repo's root>)`) whose
+# `repo_root` differs from the repo_root passed in. Merge is deduped on the
+# existing `(run_id, ts, event, item_id)` key and sorted by `(run_id, ts)`.
+# Fail-open (any resolution/read error contributes nothing, never raises).
+# Byte-identical to today when no originating foreign marker exists.
+# ---------------------------------------------------------------------------
+
+def _write_telemetry_line(path: "Path", *, run_id: str, ts: float,
+                           event: str = "cycle-begin",
+                           item_id: str = "x") -> None:
+    """Append one well-formed telemetry JSONL line (schema v1) to `path`."""
+    line = {
+        "v": lazy_core._TELEMETRY_SCHEMA_VERSION,
+        "ts": ts,
+        "run_id": run_id,
+        "event": event,
+        "item_id": item_id,
+    }
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(line) + "\n")
+
+
+def _fresh_started_at(now: float | None = None) -> str:
+    """A `started_at` timestamp within the last hour (LIVE per _MARKER_STALE_SECONDS)."""
+    import time as _time
+    import datetime as _datetime
+    if now is None:
+        now = _time.time()
+    return _datetime.datetime.fromtimestamp(
+        now, tz=_datetime.timezone.utc
+    ).strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+
+
+def _stale_started_at(now: float | None = None) -> str:
+    """A `started_at` timestamp > 24h old (STALE per _MARKER_STALE_SECONDS)."""
+    import time as _time
+    import datetime as _datetime
+    if now is None:
+        now = _time.time()
+    return _datetime.datetime.fromtimestamp(
+        now - lazy_core._MARKER_STALE_SECONDS - 3600.0, tz=_datetime.timezone.utc
+    ).strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+
+
+def _write_target_marker(base: "Path", target_root: "Path", *,
+                          started_at: str) -> "Path":
+    """Write a minimal run marker into the keyed sibling subdir for
+    `target_root`, under `base` (the LAZY_STATE_DIR override). Returns the
+    keyed subdir path."""
+    keyed_dir = base / lazy_core.repo_key(str(target_root))
+    keyed_dir.mkdir(parents=True, exist_ok=True)
+    marker_path = keyed_dir / lazy_core._MARKER_FILENAME
+    marker_path.write_text(
+        json.dumps({"repo_root": str(target_root), "started_at": started_at}),
+        encoding="utf-8",
+    )
+    return keyed_dir
+
+
+def test_read_intervention_telemetry_merges_originating_target_ledger():
+    """A LIVE foreign run marker's keyed-sibling telemetry ledger is merged in
+    alongside the current repo's flat ledger — RED today: the target repo's
+    run_id is entirely absent from the result."""
+    _guard()
+    with tempfile.TemporaryDirectory() as base_td, \
+         tempfile.TemporaryDirectory() as current_td, \
+         tempfile.TemporaryDirectory() as target_td:
+        base = Path(base_td)
+        current_root = Path(current_td)
+        target_root = Path(target_td)
+        _set_state_dir(base)
+        try:
+            # Current repo's flat ledger (today's read path).
+            _write_telemetry_line(
+                base / lazy_core._TELEMETRY_LEDGER_FILENAME,
+                run_id="RC", ts=1.0, item_id="cur-item",
+            )
+            # Target repo's keyed-sibling ledger, behind a LIVE marker.
+            keyed_dir = _write_target_marker(
+                base, target_root, started_at=_fresh_started_at()
+            )
+            _write_telemetry_line(
+                keyed_dir / lazy_core._TELEMETRY_LEDGER_FILENAME,
+                run_id="RT", ts=2.0, item_id="target-item",
+            )
+
+            events = lazy_core.read_intervention_telemetry(current_root)
+            run_ids = {e.get("run_id") for e in events}
+            assert "RC" in run_ids, f"current-repo event missing: {run_ids}"
+            assert "RT" in run_ids, (
+                f"originating-target event NOT merged (RED today): {run_ids}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_read_intervention_telemetry_dedups_overlapping_target_event():
+    """The SAME (run_id, ts, event, item_id) event present in BOTH the
+    current flat ledger and the target keyed ledger appears exactly ONCE in
+    the merged result. A second, target-UNIQUE event is also asserted present
+    so this test genuinely reds today (without the merge, BOTH the dedup
+    outcome would be vacuously "1" AND the unique event would be silently
+    absent — the unique-event assertion is what pins the merge actually ran)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as base_td, \
+         tempfile.TemporaryDirectory() as current_td, \
+         tempfile.TemporaryDirectory() as target_td:
+        base = Path(base_td)
+        current_root = Path(current_td)
+        target_root = Path(target_td)
+        _set_state_dir(base)
+        try:
+            shared_kwargs = dict(run_id="SHARED", ts=5.0, item_id="dup-item")
+            _write_telemetry_line(
+                base / lazy_core._TELEMETRY_LEDGER_FILENAME, **shared_kwargs
+            )
+            keyed_dir = _write_target_marker(
+                base, target_root, started_at=_fresh_started_at()
+            )
+            _write_telemetry_line(
+                keyed_dir / lazy_core._TELEMETRY_LEDGER_FILENAME, **shared_kwargs
+            )
+            # Target-unique event: absent today (no merge) -> proves RED.
+            _write_telemetry_line(
+                keyed_dir / lazy_core._TELEMETRY_LEDGER_FILENAME,
+                run_id="RT-UNIQUE", ts=6.0, item_id="target-only-item",
+            )
+
+            events = lazy_core.read_intervention_telemetry(current_root)
+            matches = [e for e in events if e.get("run_id") == "SHARED"]
+            assert len(matches) == 1, (
+                f"expected exactly one deduped SHARED event, got {len(matches)}: {matches}"
+            )
+            assert any(e.get("run_id") == "RT-UNIQUE" for e in events), (
+                "target-unique event NOT merged (RED today): "
+                f"{[e.get('run_id') for e in events]}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_read_intervention_telemetry_failopen_unreadable_target_ledger():
+    """A live target marker whose telemetry ledger path is unreadable (a
+    directory sits where the file should be) must never raise — the call
+    still returns the current repo's own events."""
+    _guard()
+    with tempfile.TemporaryDirectory() as base_td, \
+         tempfile.TemporaryDirectory() as current_td, \
+         tempfile.TemporaryDirectory() as target_td:
+        base = Path(base_td)
+        current_root = Path(current_td)
+        target_root = Path(target_td)
+        _set_state_dir(base)
+        try:
+            _write_telemetry_line(
+                base / lazy_core._TELEMETRY_LEDGER_FILENAME,
+                run_id="RC", ts=1.0, item_id="cur-item",
+            )
+            keyed_dir = _write_target_marker(
+                base, target_root, started_at=_fresh_started_at()
+            )
+            # Ledger path is a DIRECTORY, not a file -> unreadable as JSONL.
+            (keyed_dir / lazy_core._TELEMETRY_LEDGER_FILENAME).mkdir()
+
+            events = lazy_core.read_intervention_telemetry(current_root)  # must not raise
+            run_ids = {e.get("run_id") for e in events}
+            assert "RC" in run_ids, f"current-repo events lost on fail-open: {run_ids}"
+        finally:
+            _clear_state_dir()
+
+
+def test_read_intervention_telemetry_noop_when_no_originating_marker():
+    """Byte-identical-to-today regression guard: with NO live foreign marker
+    (no keyed subdir at all, or only a STALE one), the merged result equals
+    exactly the current repo's flat-ledger events (today's behavior)."""
+    _guard()
+    # Case A: no keyed subdirs at all.
+    with tempfile.TemporaryDirectory() as base_td, \
+         tempfile.TemporaryDirectory() as current_td:
+        base = Path(base_td)
+        current_root = Path(current_td)
+        _set_state_dir(base)
+        try:
+            _write_telemetry_line(
+                base / lazy_core._TELEMETRY_LEDGER_FILENAME,
+                run_id="RC", ts=1.0, item_id="cur-item",
+            )
+            baseline = list(lazy_core.read_telemetry_events())
+            events = lazy_core.read_intervention_telemetry(current_root)
+            assert events == baseline, (
+                f"no-keyed-subdir case must be byte-identical to today: "
+                f"{events} != {baseline}"
+            )
+        finally:
+            _clear_state_dir()
+
+    # Case B: a keyed subdir exists, but its marker is STALE (>24h old).
+    with tempfile.TemporaryDirectory() as base_td, \
+         tempfile.TemporaryDirectory() as current_td, \
+         tempfile.TemporaryDirectory() as target_td:
+        base = Path(base_td)
+        current_root = Path(current_td)
+        target_root = Path(target_td)
+        _set_state_dir(base)
+        try:
+            _write_telemetry_line(
+                base / lazy_core._TELEMETRY_LEDGER_FILENAME,
+                run_id="RC2", ts=1.0, item_id="cur-item-2",
+            )
+            keyed_dir = _write_target_marker(
+                base, target_root, started_at=_stale_started_at()
+            )
+            _write_telemetry_line(
+                keyed_dir / lazy_core._TELEMETRY_LEDGER_FILENAME,
+                run_id="RT-STALE", ts=2.0, item_id="should-not-appear",
+            )
+
+            baseline = list(lazy_core.read_telemetry_events())
+            events = lazy_core.read_intervention_telemetry(current_root)
+            assert events == baseline, (
+                f"stale-marker case must be byte-identical to today: "
+                f"{events} != {baseline}"
+            )
+            assert not any(e.get("run_id") == "RT-STALE" for e in events), (
+                "stale target's events must NOT be merged in"
+            )
+        finally:
+            _clear_state_dir()
+
+
+_TESTS = _TESTS + [
+    ("test_read_intervention_telemetry_merges_originating_target_ledger",
+     test_read_intervention_telemetry_merges_originating_target_ledger),
+    ("test_read_intervention_telemetry_dedups_overlapping_target_event",
+     test_read_intervention_telemetry_dedups_overlapping_target_event),
+    ("test_read_intervention_telemetry_failopen_unreadable_target_ledger",
+     test_read_intervention_telemetry_failopen_unreadable_target_ledger),
+    ("test_read_intervention_telemetry_noop_when_no_originating_marker",
+     test_read_intervention_telemetry_noop_when_no_originating_marker),
+]
+
+
 if __name__ == "__main__":
     sys.exit(main())

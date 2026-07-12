@@ -16313,16 +16313,79 @@ def _intervention_signal_event(target_signal: str) -> str | None:
     return None
 
 
+def _originating_telemetry_paths(current_repo_root, *, now: float | None = None) -> "list[Path]":
+    """Resolve the telemetry-ledger paths of the run's ORIGINATING TARGET repo
+    (interventions-telemetry-repo-scope-split-brain D1 v1).
+
+    The interventions-bearing repo (claude-config) must be evaluated against the
+    TARGET repo's runs' telemetry, which appends to the TARGET's repo_key-keyed
+    state dir (the split-brain). Find the MOST-RECENT live (age <= _MARKER_STALE_SECONDS)
+    run marker in a keyed sibling state dir whose recorded repo_root differs from
+    current_repo_root, and return that keyed dir's telemetry ledger + rotated
+    segments, OLDEST-first (matching read_telemetry_events' default ordering).
+
+    RAW, NON-destructive marker reads (never read_run_marker — its age gate
+    deletes a stale marker). No state-dir creation on this read path. FAIL-OPEN:
+    any error contributes nothing -> returns [].
+    """
+    if now is None:
+        now = time.time()
+    try:
+        override = os.environ.get("LAZY_STATE_DIR")
+        base = Path(override) if override else (Path.home() / ".claude" / "state")
+        if not base.is_dir():
+            return []
+        current_key = repo_key(str(current_repo_root))
+        best_dir: Path | None = None
+        best_started: float | None = None
+        for d in sorted(base.iterdir(), key=lambda p: p.name):
+            if not d.is_dir():
+                continue
+            try:
+                marker_path = d / _MARKER_FILENAME
+                marker = json.loads(marker_path.read_text(encoding="utf-8"))
+                if not isinstance(marker, dict):
+                    continue
+                started_at_str = marker.get("started_at", "")
+                started_dt = datetime.datetime.strptime(
+                    started_at_str, "%Y-%m-%dT%H:%M:%SZ"
+                )
+                started_epoch = (
+                    started_dt - datetime.datetime(1970, 1, 1)
+                ).total_seconds()
+                if now - started_epoch > _MARKER_STALE_SECONDS:
+                    continue  # stale
+                marker_repo_root = marker.get("repo_root")
+                if repo_key(str(marker_repo_root)) == current_key:
+                    continue  # self-exclusion
+            except Exception:  # noqa: BLE001
+                continue  # unparseable marker in this subdir — skip it
+            if best_started is None or started_epoch > best_started:
+                best_started = started_epoch
+                best_dir = d
+        if best_dir is None:
+            return []
+        active = best_dir / _TELEMETRY_LEDGER_FILENAME
+        return [
+            Path(f"{active}.{i}")
+            for i in range(_TELEMETRY_ROTATED_SEGMENTS, 0, -1)
+        ] + [active]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def read_intervention_telemetry(repo_root: Path) -> list[dict]:
     """Merged, deduped, chronological telemetry read for intervention windows.
 
     State-dir ledger (``read_telemetry_events`` — rotated segments + active
     file) PLUS any committed cloud segments under
     ``<repo_root>/docs/telemetry/cloud/*.jsonl`` (the trends-aggregator read
-    pattern — cloud runs' events survive only as committed segments). Deduped
-    on ``(run_id, ts, event, item_id)``; sorted by ``(run_id, ts)`` so
-    consumers see run-grouped chronological order. Read-only and fail-open —
-    any error contributes nothing rather than raising.
+    pattern — cloud runs' events survive only as committed segments) PLUS the
+    run's originating target repo's keyed-sibling ledger (see
+    ``_originating_telemetry_paths`` — interventions-telemetry-repo-scope-split-brain
+    D1 v1). Deduped on ``(run_id, ts, event, item_id)``; sorted by
+    ``(run_id, ts)`` so consumers see run-grouped chronological order.
+    Read-only and fail-open — any error contributes nothing rather than raising.
     """
     events = list(read_telemetry_events())
     try:
@@ -16331,6 +16394,12 @@ def read_intervention_telemetry(repo_root: Path) -> list[dict]:
             seg_paths = sorted(seg_dir.glob("*.jsonl"))
             if seg_paths:
                 events += read_telemetry_events(paths=seg_paths)
+    except OSError:
+        pass
+    try:
+        sibling_paths = _originating_telemetry_paths(repo_root)
+        if sibling_paths:
+            events += read_telemetry_events(paths=sibling_paths)
     except OSError:
         pass
     seen: set = set()
