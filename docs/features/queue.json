@@ -21,6 +21,30 @@
       "tier": 1
     },
     {
+      "id": "state-cli-contract-registry",
+      "name": "State-Script CLI Contract: Registry + Shared Surface",
+      "spec_dir": "state-cli-contract-registry",
+      "tier": 1
+    },
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "name": "Mechanize Prose-Only Orchestrator Contracts",
+      "spec_dir": "mechanize-prose-only-orchestrator-contracts",
+      "tier": 1
+    },
+    {
+      "id": "coupled-pair-generation",
+      "name": "Coupled-Pair Generation (derived skills from canonical + overlays)",
+      "spec_dir": "coupled-pair-generation",
+      "tier": 1
+    },
+    {
+      "id": "lazy-core-package-decomposition",
+      "name": "lazy_core Package Decomposition",
+      "spec_dir": "lazy-core-package-decomposition",
+      "tier": 1
+    },
+    {
       "id": "anti-overfit-design-gate",
       "name": "Anti-Overfit + Tautology Design Gate for Harness Changes",
       "spec_dir": "anti-overfit-design-gate",
@@ -36,6 +60,48 @@
       "id": "build-queue-eta-priority-lanes",
       "name": "Build-Queue ETA + Priority Lanes",
       "spec_dir": "build-queue-eta-priority-lanes",
+      "tier": 2
+    },
+    {
+      "id": "shared-hook-lib",
+      "name": "Shared Hook Lib (hook-prelude.sh + hook_lib.py)",
+      "spec_dir": "shared-hook-lib",
+      "tier": 2
+    },
+    {
+      "id": "skill-config-schema-and-reference-lint",
+      "name": "skill-config Schema + Reference Lint",
+      "spec_dir": "skill-config-schema-and-reference-lint",
+      "tier": 2
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "name": "Cycle-Prompt Environment Dialect Block",
+      "spec_dir": "cycle-prompt-environment-dialect",
+      "tier": 2
+    },
+    {
+      "id": "plan-structure-authoring-gate",
+      "name": "Plan-Structure Authoring Gate",
+      "spec_dir": "plan-structure-authoring-gate",
+      "tier": 2
+    },
+    {
+      "id": "efficacy-signal-integrity",
+      "name": "Efficacy Signal Integrity (sub-signals, canary staleness alarm, scorecard vantage)",
+      "spec_dir": "efficacy-signal-integrity",
+      "tier": 2
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
+      "name": "lazy-batch Skill Deflation",
+      "spec_dir": "lazy-batch-skill-deflation",
+      "tier": 2
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "name": "Bug-Queue Aging Backpressure",
+      "spec_dir": "bug-queue-aging-backpressure",
       "tier": 2
     },
     {

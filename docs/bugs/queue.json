@@ -1,45 +1,147 @@
 {
-  "_note": "Ordering is hybrid (explicit queue order + severity fallback). HEAD: the P0 'skip-mcp-test-frontmatter-unquoted-colon' hardening bug is the merged-view head \u2014 /lazy-batch's unified driver picks it FIRST. The 10 build-queue/harness bugs below it carry a DEPRIORITIZED queue-entry severity of null (real severity lives in each SPEC's **Severity:** line) so they sort to merged priority 99 \u2014 AFTER every feature \u2014 set 2026-07-04 (resume-lanes-hardening) because they are PowerShell/Pester build-queue defects untestable off a Windows workstation and were otherwise interleaving ahead of the feature queue in the merged view. The two adhoc-* bugs were already null-severity. Restore a bug's priority by removing its queue entry (autodiscovery re-reads the SPEC severity) or setting an explicit severity here.",
+  "_note": "2026-07-11 hardening-audit batch: 17 investigation specs (docs deep-dive + session mining) enqueued at the head in recommended fix order — enforcement re-arm first (the settings split-brain un-blinds telemetry and re-arms every guard), then the efficacy-loop pair (so later fixes get graded), then state-plane crash consistency, pipeline-waste killers, and hygiene. Explicit severities mirror each SPEC's Priority. | Prior note (2026-07-04, partially stale — its named P0 head is archived): Ordering is hybrid (explicit queue order + severity fallback). HEAD: the P0 'skip-mcp-test-frontmatter-unquoted-colon' hardening bug is the merged-view head — /lazy-batch's unified driver picks it FIRST. The 10 build-queue/harness bugs below it carry a DEPRIORITIZED queue-entry severity of null (real severity lives in each SPEC's **Severity:** line) so they sort to merged priority 99 — AFTER every feature — set 2026-07-04 (resume-lanes-hardening) because they are PowerShell/Pester build-queue defects untestable off a Windows workstation and were otherwise interleaving ahead of the feature queue in the merged view. The two adhoc-* bugs were already null-severity. Restore a bug's priority by removing its queue entry (autodiscovery re-reads the SPEC severity) or setting an explicit severity here.",
   "queue": [
     {
+      "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "name": "Live ~/.claude/settings.json split-brain disarms the enforcement plane (10 of 12 hooks unregistered since Jun 11; dispatch guard untracked) — Investigation Spec",
+      "spec_dir": "live-settings-split-brain-disarms-enforcement-plane",
+      "severity": "P0"
+    },
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "name": "Interventions/telemetry repo-scope split-brain — efficacy loop structurally dead (zero verdicts ever) — Investigation Spec",
+      "spec_dir": "interventions-telemetry-repo-scope-split-brain",
+      "severity": "P1"
+    },
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "name": "Hardening intervention records unmeasurable (phantom event types, undeclared signals) with prose-only capture coverage — Investigation Spec",
+      "spec_dir": "hardening-intervention-records-unmeasurable-or-missing",
+      "severity": "P1"
+    },
+    {
+      "id": "legacy-tool-input-env-hooks-dead",
+      "name": "Registered legacy hooks read $TOOL_INPUT_* env vars the hook interface never populates — push/kill protection is dead code — Investigation Spec",
+      "spec_dir": "legacy-tool-input-env-hooks-dead",
+      "severity": "P1"
+    },
+    {
+      "id": "powershell-tool-bypasses-bash-matched-guards",
+      "name": "PowerShell tool cleanly bypasses every Bash-matched guard hook — Investigation Spec",
+      "spec_dir": "powershell-tool-bypasses-bash-matched-guards",
+      "severity": "P1"
+    },
+    {
+      "id": "guard-fail-open-leaves-no-trace",
+      "name": "Guard fail-open paths leave no breadcrumb (no-python = silent total disarm; dead $STATE_DIR breadcrumb bug) — Investigation Spec",
+      "spec_dir": "guard-fail-open-leaves-no-trace",
+      "severity": "P2"
+    },
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "name": "Long-build guard misses canonical Tauri invocations; build-queue-enforce's unanchored wrapper allowlist defeats its deny surface — Investigation Spec",
+      "spec_dir": "long-build-and-build-queue-matcher-bypasses",
+      "severity": "P2"
+    },
+    {
+      "id": "mark-complete-partial-apply-noop-unrecoverable",
+      "name": "__mark_complete__ crash window leaves receipt+In-progress; receipt-only noop check can never repair it (permanent no-progress loop) — Investigation Spec",
+      "spec_dir": "mark-complete-partial-apply-noop-unrecoverable",
+      "severity": "P1"
+    },
+    {
+      "id": "production-sentinel-writes-bypass-atomic-write",
+      "name": "Production sentinel/NEEDS_INPUT/ROADMAP writes bypass lazy_core._atomic_write, violating the contributor contract — Investigation Spec",
+      "spec_dir": "production-sentinel-writes-bypass-atomic-write",
+      "severity": "P2"
+    },
+    {
+      "id": "stale-runtime-health-200-false-blocked",
+      "name": "ensure_runtime's STALE state is unreachable (stale_check never bound; stale_binary.py orphaned) — stale runtimes mint false BLOCKED verdicts — Investigation Spec",
+      "spec_dir": "stale-runtime-health-200-false-blocked",
+      "severity": "P1"
+    },
+    {
+      "id": "mcp-validation-peels-one-seam-per-loop",
+      "name": "Step-9 MCP validation peels one defect seam per full pipeline loop (seam enumeration only mandated at retry>=2) — Investigation Spec",
+      "spec_dir": "mcp-validation-peels-one-seam-per-loop",
+      "severity": "P1"
+    },
+    {
+      "id": "completion-gate-refusal-opacity",
+      "name": "verify_ledger refusals name the failing check but discard the computed offending items — gate probing burns cycles — Investigation Spec",
+      "spec_dir": "completion-gate-refusal-opacity",
+      "severity": "P2"
+    },
+    {
+      "id": "loop-detector-false-positives-probes-and-cross-run-state",
+      "name": "Loop-detector streaks advance on meta-class dispatches and leak (with deny debt) across runs — Investigation Spec",
+      "spec_dir": "loop-detector-false-positives-probes-and-cross-run-state",
+      "severity": "P2"
+    },
+    {
+      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "name": "Denial-ack requires a full Opus hardening dispatch per ledger entry (no per-entry ack CLI, no same-cause dedup) — Investigation Spec",
+      "spec_dir": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "severity": "P2"
+    },
+    {
+      "id": "fixed-bugs-unarchived-fsck",
+      "name": "18 Status:Fixed bug dirs sit outside _archive/ (archive-on-fix only wired in /lazy-bug-batch) — fsck + reconcile — Investigation Spec",
+      "spec_dir": "fixed-bugs-unarchived-fsck",
+      "severity": "P2"
+    },
+    {
+      "id": "skills-plane-hygiene-debris",
+      "name": "Skills-plane debris: tracked crash dumps, orphan components, stale retro emit-mapping rows — Investigation Spec",
+      "spec_dir": "skills-plane-hygiene-debris",
+      "severity": "P3"
+    },
+    {
+      "id": "coord-lock-no-stale-reclaim",
+      "name": "lazy_coord global mkdir lock has no holder metadata or stale reclamation — dead holder deadlocks all coordination — Investigation Spec",
+      "spec_dir": "coord-lock-no-stale-reclaim",
+      "severity": "P3"
+    },
+    {
       "id": "test-filtered-stale-check-hardcodes-bin-debug",
-      "name": "test-filtered.ps1 stale-check hardcodes `bin\\Debug\\` \u2014 permanent false positive for non-default OutputPath test projects \u2014 Investigation Spec",
+      "name": "test-filtered.ps1 stale-check hardcodes `bin\\Debug\\` — permanent false positive for non-default OutputPath test projects — Investigation Spec",
       "spec_dir": "test-filtered-stale-check-hardcodes-bin-debug",
       "severity": null
     },
     {
       "id": "build-queue-recycle-kills-concurrent-worktree-build",
-      "name": "Build queue's machine-wide VBCSCompiler recycle can kill a concurrent worktree's build \u2014 Investigation Spec",
+      "name": "Build queue's machine-wide VBCSCompiler recycle can kill a concurrent worktree's build — Investigation Spec",
       "spec_dir": "build-queue-recycle-kills-concurrent-worktree-build",
       "severity": null
     },
     {
       "id": "write-plan-plans-bypass-build-queue-skills",
-      "name": "`/write-plan` (Cognito Forms) generates plans that bypass the build-queue skills \u2014 Investigation Spec",
+      "name": "`/write-plan` (Cognito Forms) generates plans that bypass the build-queue skills — Investigation Spec",
       "spec_dir": "write-plan-plans-bypass-build-queue-skills",
       "severity": null
     },
     {
       "id": "build-queue-orphaned-result-on-wrapper-kill",
-      "name": "Build-queue orphans the result when the wrapper is killed mid-build \u2014 Investigation Spec",
+      "name": "Build-queue orphans the result when the wrapper is killed mid-build — Investigation Spec",
       "spec_dir": "build-queue-orphaned-result-on-wrapper-kill",
       "severity": null
     },
     {
       "id": "crlf-hook-blanket-enforce-mixed-eol",
-      "name": "CRLF Hook Blanket-Enforces EOL Against a Mixed-EOL Repo \u2014 Investigation Spec",
+      "name": "CRLF Hook Blanket-Enforces EOL Against a Mixed-EOL Repo — Investigation Spec",
       "spec_dir": "crlf-hook-blanket-enforce-mixed-eol",
       "severity": null
     },
     {
       "id": "worktree-claude-doc-drift",
-      "name": "Worktree CLAUDE/AGENTS Doc Drift \u2014 Investigation Spec",
+      "name": "Worktree CLAUDE/AGENTS Doc Drift — Investigation Spec",
       "spec_dir": "worktree-claude-doc-drift",
       "severity": null
     },
     {
       "id": "build-queue-outcome-opacity-and-inspect-deny",
-      "name": "Build-Queue Outcome Opacity + Enforce-Hook Over-Blocks Read-Only Inspection \u2014 Investigation Spec",
+      "name": "Build-Queue Outcome Opacity + Enforce-Hook Over-Blocks Read-Only Inspection — Investigation Spec",
       "spec_dir": "build-queue-outcome-opacity-and-inspect-deny",
       "severity": null
     },
@@ -57,13 +159,13 @@
     },
     {
       "id": "build-queue-no-artifact-or-process-hygiene-on-crash",
-      "name": "Build queue has no artifact/process hygiene on build crash \u2014 Investigation Spec",
+      "name": "Build queue has no artifact/process hygiene on build crash — Investigation Spec",
       "spec_dir": "build-queue-no-artifact-or-process-hygiene-on-crash",
       "severity": null
     },
     {
       "id": "build-queue-copy-lock-stale-dll-false-success",
-      "name": "Build Queue Certifies Success on a Copy-Lock Failure \u2192 Stale-DLL False Pass \u2014 Investigation Spec",
+      "name": "Build Queue Certifies Success on a Copy-Lock Failure → Stale-DLL False Pass — Investigation Spec",
       "spec_dir": "build-queue-copy-lock-stale-dll-false-success",
       "severity": null
     }
