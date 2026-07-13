@@ -203,12 +203,22 @@ features editing the twins' `main()`/parser plumbing in the same window), for a 
 SPEC itself calls "the higher-risk half" and "severable" (Open Questions: "deliverable (a) stands
 alone and pays for itself").
 
-**Deliverables:** none attempted.
-- [ ] `user/scripts/state_cli.py` — NOT created.
-- [ ] Shared-flag/helper hoist — NOT performed.
-- [ ] `--help` goldens — NOT added.
-- [ ] Parity-audit regex retirement — NOT performed (all existing regexes remain valid; nothing
-      moved).
+**Deliverables:** none attempted (all descoped-in-place). <!-- descoped -->
+
+The header line above carries the canonical structural header-scope descope marker
+(`lazy_core._DESCOPED_MARKER`), and each row below repeats it row-scope — the mechanical
+projection of the locked D5 deferral (SPEC § Locked Decisions item 5: "deferred, not
+provisionally accepted … not a fork requiring operator ratification"). Within THIS feature these
+deliverables are dropped-in-place (severed to the sibling `lazy-core-package-decomposition` / a vN
+follow-up), so `remaining_unchecked_are_verification_only` treats them exactly like
+Superseded-phase rows and the state machine routes forward to the completion tail instead of
+looping on write-plan. The work itself is NOT cancelled — it is tracked as an Open Question / vN
+follow-up (see SPEC Open Questions + the Cross-feature Integration Notes above); re-opening it is a
+NEW plan against the sibling feature, never an unchecked row in this one.
+- [ ] `user/scripts/state_cli.py` — NOT created. <!-- descoped -->
+- [ ] Shared-flag/helper hoist — NOT performed. <!-- descoped -->
+- [ ] `--help` goldens — NOT added. <!-- descoped -->
+- [ ] Parity-audit regex retirement — NOT performed (all regexes remain valid; nothing moved). <!-- descoped -->
 
 **Minimum Verifiable Behavior:** N/A — not attempted.
 
