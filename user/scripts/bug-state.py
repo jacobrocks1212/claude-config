@@ -1849,6 +1849,126 @@ def backfill_receipts(repo_root: Path) -> dict[str, Any]:
     return {"backfilled": written, "count": len(written)}
 
 
+def fsck(repo_root: Path) -> dict[str, Any]:
+    """Read-only lint: assert the archive-on-fix invariants across docs/bugs/.
+
+    fixed-bugs-unarchived-fsck Fix Scope §3 — the deterministic check that a
+    ``Status: Fixed`` dir outside ``_archive/``, or a ``Fixed``-without-receipt
+    dir, is surfaced LOUDLY rather than silently accumulating (the debris this
+    bug's own reconciliation sweep, commit ``efaf93b3``, cleaned up once —
+    this is what keeps it from silently recurring). Three invariants:
+
+      (a) ``unarchived-fixed`` — a ``Status: Fixed`` dir with a VALID
+          ``FIXED.md`` receipt sitting OUTSIDE ``_archive/``. The
+          ``__mark_fixed__ → --archive-fixed`` sequence minted the receipt
+          but the ``git mv`` into ``_archive/`` never ran (or ran only
+          partially) for it. Remedy: ``--archive-fixed <spec_dir>``.
+      (b) ``fixed-without-receipt`` — a ``Status: Fixed`` dir with NO valid
+          ``FIXED.md`` receipt. Completion-unverified debt — the sanctioned
+          remedy is ``--backfill-receipts`` (grandfathers it as
+          ``provenance: backfilled-unverified``), never silencing the signal
+          (see ``docs/bugs/unqueued-fixed-without-receipt-dirs-perpetual-
+          diagnostic-noise``, which resolved this exact class via the
+          backfill route, not suppression). ``Won't-fix`` dirs are exempt
+          (a different status — this check only fires on literal ``Fixed``).
+      (c) ``stale-queue-entry`` — a ``docs/bugs/queue.json`` row whose
+          ``spec_dir`` resolves to a ``Fixed`` or already-archived directory
+          — debris the ``archive_fixed`` queue-trim step should have removed.
+
+    Read-only over the filesystem — never writes, never mutates queue.json,
+    never archives anything. Runnable standalone (``--fsck``), at
+    ``--run-end``, or as a future ``docs/features/claude-config-ci/`` lane.
+
+    Returns ``{"ok": bool, "violations": [{"kind", "bug_id", "detail"}, ...]}``
+    — ``ok`` is True iff ``violations`` is empty. The CLI handler maps this to
+    exit 0 (clean) / exit 1 (violations found), per the SPEC's "exit
+    non-zero with named violations" contract.
+    """
+    repo_root = repo_root.resolve()
+    bugs_root = repo_root / "docs" / "bugs"
+    violations: list[dict[str, str]] = []
+    if not bugs_root.exists():
+        return {"ok": True, "violations": []}
+
+    archive_root = bugs_root / "_archive"
+    archive_prefix = str(archive_root.resolve()).replace("\\", "/").rstrip("/") + "/"
+
+    def _under_archive(p: Path) -> bool:
+        try:
+            resolved = str(p.resolve()).replace("\\", "/")
+        except OSError:
+            return False
+        return (resolved + "/").startswith(archive_prefix) or resolved == archive_prefix.rstrip("/")
+
+    # (a) + (b): walk every on-disk SPEC.md, archived and unarchived alike.
+    for spec_md in sorted(bugs_root.glob("**/SPEC.md")):
+        spec_dir = spec_md.parent
+        status = spec_status(spec_dir)
+        if status != BUG_STATUS_FIXED:
+            continue
+        bug_id = spec_dir.name
+        under_archive = _under_archive(spec_dir)
+        has_receipt = has_completion_receipt(spec_dir, filename="FIXED.md")
+        try:
+            rel = spec_dir.relative_to(bugs_root)
+        except ValueError:
+            rel = spec_dir
+        if has_receipt and not under_archive:
+            violations.append({
+                "kind": "unarchived-fixed",
+                "bug_id": bug_id,
+                "detail": (
+                    f"docs/bugs/{rel} is Status: Fixed with a valid FIXED.md "
+                    "receipt but sits outside _archive/ — run "
+                    f"`--archive-fixed docs/bugs/{rel}`."
+                ),
+            })
+        if not has_receipt and not under_archive:
+            violations.append({
+                "kind": "fixed-without-receipt",
+                "bug_id": bug_id,
+                "detail": (
+                    f"docs/bugs/{rel} is Status: Fixed with NO valid FIXED.md "
+                    "receipt — run --backfill-receipts, or flip to Won't-fix "
+                    "if the fix claim cannot be evidenced."
+                ),
+            })
+
+    # (c): queue.json rows pointing at a Fixed or already-archived dir.
+    queue_path = bugs_root / "queue.json"
+    if queue_path.exists():
+        try:
+            data = json.loads(queue_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            data = {}
+        items = data.get("queue", []) if isinstance(data, dict) else []
+        if isinstance(items, list):
+            for entry in items:
+                if not isinstance(entry, dict):
+                    continue
+                bug_id = entry.get("id")
+                spec_subdir = entry.get("spec_dir", bug_id)
+                if not spec_subdir:
+                    continue
+                spec_path = bugs_root / spec_subdir
+                under_archive = _under_archive(spec_path)
+                status = spec_status(spec_path) if spec_path.exists() else None
+                if under_archive or status == BUG_STATUS_FIXED:
+                    reason = "archived" if under_archive else "Status: Fixed"
+                    violations.append({
+                        "kind": "stale-queue-entry",
+                        "bug_id": bug_id or "<unknown>",
+                        "detail": (
+                            f"docs/bugs/queue.json entry '{bug_id}' points at "
+                            f"'{spec_subdir}' which is {reason} — trim the row "
+                            "(archive_fixed's queue-trim step, or a manual "
+                            "_atomic_write edit)."
+                        ),
+                    })
+
+    return {"ok": len(violations) == 0, "violations": violations}
+
+
 def enqueue_adhoc(
     repo_root: Path,
     bug_id: str,
@@ -4683,6 +4803,130 @@ def run_smoke_tests() -> int:
             print(f"  FAIL [{fix_name_br}]: {type(exc).__name__} — {exc}")
 
         # -------------------------------------------------------------------
+        # fsck bespoke block (fixed-bugs-unarchived-fsck Fix Scope §3): each
+        # of the three violation classes fires independently, and a clean
+        # tree (Fixed+receipt properly archived, no stale queue rows) → ok.
+        # -------------------------------------------------------------------
+        fix_name_fsck = "fsck-violations"
+        root_fsck = td_path / fix_name_fsck
+        bugs_fsck = root_fsck / "docs" / "bugs"
+        bugs_fsck.mkdir(parents=True, exist_ok=True)
+
+        # (a) unarchived-fixed: Status Fixed + valid FIXED.md, NOT under _archive/.
+        unarchived = bugs_fsck / "bug-unarchived-fixed"
+        unarchived.mkdir()
+        (unarchived / "SPEC.md").write_text(
+            "# Unarchived Fixed Bug\n\n**Status:** Fixed\n\n"
+            "**Severity:** P2\n\n**Discovered:** 2026-05-01\n",
+            encoding="utf-8",
+        )
+        write_completed_receipt(
+            unarchived / "FIXED.md", "bug-unarchived-fixed", "2026-05-02",
+            provenance="gated", kind="fixed",
+        )
+
+        # (b) fixed-without-receipt: Status Fixed, no FIXED.md at all.
+        no_receipt = bugs_fsck / "bug-fixed-no-receipt"
+        no_receipt.mkdir()
+        (no_receipt / "SPEC.md").write_text(
+            "# Fixed No Receipt Bug\n\n**Status:** Fixed\n\n"
+            "**Severity:** P3\n\n**Discovered:** 2026-05-01\n",
+            encoding="utf-8",
+        )
+
+        # Clean control: a properly-archived Fixed+receipted bug must NOT
+        # trip (a) or (b) — it IS under _archive/.
+        archived_ok = bugs_fsck / "_archive" / "bug-properly-archived"
+        archived_ok.mkdir(parents=True)
+        (archived_ok / "SPEC.md").write_text(
+            "# Properly Archived Bug\n\n**Status:** Fixed\n\n"
+            "**Severity:** P2\n\n**Discovered:** 2026-04-01\n",
+            encoding="utf-8",
+        )
+        write_completed_receipt(
+            archived_ok / "FIXED.md", "bug-properly-archived", "2026-04-02",
+            provenance="gated", kind="fixed",
+        )
+
+        # (c) stale-queue-entry: queue.json row pointing at the Fixed dir
+        # from (b) (still Fixed, not archived) — the queue-trim never ran.
+        (bugs_fsck / "queue.json").write_text(
+            json.dumps({"queue": [
+                {"id": "bug-fixed-no-receipt", "name": "Fixed No Receipt Bug",
+                 "spec_dir": "bug-fixed-no-receipt", "severity": "P3"},
+            ]}),
+            encoding="utf-8",
+        )
+
+        try:
+            result_fsck = fsck(root_fsck)
+            fsck_ok = True
+            if result_fsck.get("ok") is not False:
+                failures.append(
+                    f"[{fix_name_fsck}] expected ok=False with violations present, "
+                    f"got {result_fsck.get('ok')!r}"
+                )
+                fsck_ok = False
+            kinds_seen = {v.get("kind") for v in result_fsck.get("violations", [])}
+            ids_seen = {v.get("bug_id") for v in result_fsck.get("violations", [])}
+            for expected_kind in ("unarchived-fixed", "fixed-without-receipt", "stale-queue-entry"):
+                if expected_kind not in kinds_seen:
+                    failures.append(
+                        f"[{fix_name_fsck}] expected a {expected_kind!r} violation; "
+                        f"kinds seen: {kinds_seen!r}"
+                    )
+                    fsck_ok = False
+            if "bug-unarchived-fixed" not in ids_seen:
+                failures.append(
+                    f"[{fix_name_fsck}] expected 'bug-unarchived-fixed' to be flagged"
+                )
+                fsck_ok = False
+            if "bug-properly-archived" in ids_seen:
+                failures.append(
+                    f"[{fix_name_fsck}] the properly-archived control bug must NOT "
+                    f"be flagged; ids_seen={ids_seen!r}"
+                )
+                fsck_ok = False
+            print(
+                f"  {'PASS' if fsck_ok else 'FAIL'} [{fix_name_fsck}] "
+                f"ok={result_fsck.get('ok')!r} kinds={sorted(kinds_seen)!r}"
+            )
+        except Exception as exc:
+            failures.append(f"[{fix_name_fsck}] unexpected error: {exc}")
+            print(f"  FAIL [{fix_name_fsck}]: {type(exc).__name__} — {exc}")
+
+        # Clean-tree control: fsck on a tree with ONLY the properly-archived
+        # bug (no unarchived/no-receipt/stale-queue debris) → ok=True, [].
+        fix_name_fsck_clean = "fsck-clean-tree"
+        root_fsck_clean = td_path / fix_name_fsck_clean
+        bugs_fsck_clean = root_fsck_clean / "docs" / "bugs" / "_archive" / "bug-properly-archived"
+        bugs_fsck_clean.mkdir(parents=True)
+        (bugs_fsck_clean / "SPEC.md").write_text(
+            "# Properly Archived Bug\n\n**Status:** Fixed\n\n"
+            "**Severity:** P2\n\n**Discovered:** 2026-04-01\n",
+            encoding="utf-8",
+        )
+        write_completed_receipt(
+            bugs_fsck_clean / "FIXED.md", "bug-properly-archived", "2026-04-02",
+            provenance="gated", kind="fixed",
+        )
+        try:
+            result_fsck_clean = fsck(root_fsck_clean)
+            clean_ok = (
+                result_fsck_clean.get("ok") is True
+                and result_fsck_clean.get("violations") == []
+            )
+            if not clean_ok:
+                failures.append(
+                    f"[{fix_name_fsck_clean}] expected ok=True, violations=[]; "
+                    f"got {result_fsck_clean!r}"
+                )
+            print(f"  {'PASS' if clean_ok else 'FAIL'} [{fix_name_fsck_clean}] {result_fsck_clean!r}")
+        except Exception as exc:
+            failures.append(f"[{fix_name_fsck_clean}] unexpected error: {exc}")
+            print(f"  FAIL [{fix_name_fsck_clean}]: {type(exc).__name__} — {exc}")
+
+        # -------------------------------------------------------------------
         # Fixture WU-1-park (bug): --park-needs-input mode (Phase 4)
         #
         # Two-bug queue:
@@ -6772,6 +7016,16 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--fsck", action="store_true",
+        help=(
+            "Read-only lint (fixed-bugs-unarchived-fsck): assert (a) no "
+            "Status: Fixed dir with a valid receipt sits outside _archive/, "
+            "(b) no Status: Fixed dir lacks a valid receipt, (c) no "
+            "queue.json row points at a Fixed/archived dir. Exit 0 clean / "
+            "1 with named violations. Never mutates."
+        ),
+    )
+    parser.add_argument(
         "--enqueue-adhoc", action="store_true",
         help="Prepend an ad-hoc bug entry to docs/bugs/queue.json.",
     )
@@ -7226,6 +7480,25 @@ def main() -> int:
             "the deny ledger. The override is recorded in the run-end output "
             "for retro grading."
         ),
+    )
+    # meta-dispatch-not-by-reference-and-ack-overpriced Fix Scope §1+§2
+    # (coupled-pair mirror of lazy-state.py): a cheap per-entry ack CLI (with
+    # same-cause dedup) so a duplicate/no-fix/already-fixed deny-ledger entry
+    # does not cost a full hardening dispatch. Orchestrator-only.
+    parser.add_argument(
+        "--ack-deny", default=None, metavar="SELECTOR",
+        help=(
+            "Cheaply retire unacked deny-ledger entry/entries WITHOUT a full "
+            "hardening dispatch. SELECTOR is 'oldest' (FIFO) or a "
+            "denied_sha12 value/prefix. Requires --resolution. Every OTHER "
+            "unacked entry sharing the same cause (identical denied_sha12, or "
+            "identical kind+reason_head) is deduped into the same ack. "
+            "Orchestrator-only."
+        ),
+    )
+    parser.add_argument(
+        "--resolution", default=None, metavar="TEXT",
+        help="Audit note for --ack-deny (required, non-empty).",
     )
     # efficacy-future-check-unenforced-orchestrator-prose (D1, coupled-pair
     # mirror of lazy-state.py): the operator override for the efficacy-flush gate.
@@ -8052,6 +8325,23 @@ def main() -> int:
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 
+    if args.fsck:
+        # fixed-bugs-unarchived-fsck Fix Scope §3: read-only, never mutates —
+        # no refuse_if_cycle_active guard needed (there is nothing to guard).
+        result = fsck(Path(args.repo_root))
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result.get("ok") else 1
+
+    if args.ack_deny is not None:
+        # meta-dispatch-not-by-reference-and-ack-overpriced (coupled-pair
+        # mirror of lazy-state.py): cheap per-entry ack, gated EXACTLY like
+        # --backfill-receipts/--link-provenance (a cycle subagent is refused
+        # exit 3 with zero side effects).
+        lazy_core.refuse_if_cycle_active("--ack-deny")
+        result = lazy_core.ack_deny_by_selector(args.ack_deny, args.resolution or "")
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result.get("ok") else 1
+
     if args.link_provenance:
         # code-doc-provenance-linkage Phase 3 (coupled-pair mirror of
         # lazy-state.py): the manual trigger of the one-writer provenance
@@ -8113,7 +8403,10 @@ def main() -> int:
                 "gate-refusal",
                 item_id=Path(args.verify_ledger).resolve().name,
                 data={"gate": "verify-ledger",
-                      "failing_check": result.get("failing_check")},
+                      "failing_check": result.get("failing_check"),
+                      # completion-gate-refusal-opacity Fix Scope §3
+                      # (coupled-pair mirror of lazy-state.py).
+                      "detail_head": lazy_core.summarize_failing_detail(result)},
             )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result["ok"] else 1

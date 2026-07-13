@@ -386,6 +386,136 @@ def test_archived_key_proposes_recurrence_stub():
         assert _tree_hash(arch) == arch_hash, "archive must never be mutated"
 
 
+def test_archived_evidence_excluded_from_recurrence_occurrence_count():
+    """adhoc-incident-scan-rereports-archived-evidence: a signature whose
+    archived incident already reported N timestamps, and whose ledger STILL
+    carries those SAME N entries (denies are never deleted) alongside M
+    genuinely new ones, must report a recurrence whose ``occurrences`` is M
+    (not N+M) and whose evidence lines contain ONLY the M new denies — never
+    re-printing the already-adjudicated N (the live bug: the archived
+    ``adhoc-incident-hook-deny-19343d-r2`` re-reported 3 already-investigated
+    timestamps from ``adhoc-incident-hook-deny-19343d`` alongside 4 genuinely
+    new ones)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        repo = _make_repo(td)
+        state = td / "state"
+        state.mkdir()
+        old_ts = [_NOW - 10 * _H, _NOW - 9 * _H, _NOW - 8 * _H]
+        new_ts = [_NOW - 3 * _H, _NOW - 2 * _H, _NOW - 1 * _H, _NOW - 0.5 * _H]
+        old_entries = [_deny("aaaaaaaaaaaa", "SIG-RECUR x", t) for t in old_ts]
+        new_entries = [_deny("aaaaaaaaaaaa", "SIG-RECUR x", t) for t in new_ts]
+        _seed_ledger(state, old_entries + new_entries)
+
+        # Discover the deterministic incident_key + slug (independent of
+        # occurrence count) via a dry-run against the CURRENT (unarchived)
+        # state, mirroring test_archived_key_proposes_recurrence_stub.
+        probe = _run_scan(repo, state, "--dry-run")
+        key_line = [ln for ln in probe.stdout.splitlines() if "incident_key=" in ln][0]
+        incident_key = key_line.split("incident_key=", 1)[1].strip()
+        base_slug = [
+            tok for tok in probe.stdout.split() if "adhoc-incident-deny-" in tok
+        ][0].strip("`()*")
+
+        # Archive the "already investigated" incident carrying ONLY the OLD
+        # 3 timestamps as its evidence — mirrors the real 19343d capsule.
+        arch = repo / "docs" / "bugs" / "_archive" / base_slug
+        arch.mkdir(parents=True)
+        lines = "\n".join(json.dumps(e) for e in old_entries)
+        (arch / "INCIDENT.md").write_text(
+            f"---\nkind: incident-capture\nincident_key: {incident_key}\n"
+            f"signal_class: deny\noccurrences: 3\nwindow: 24h\n---\n\n"
+            f"# Incident Evidence\n\n```\n{lines}\n```\n",
+            encoding="utf-8",
+        )
+        arch_hash = _tree_hash(arch)
+
+        r = _run_scan(repo, state)
+        assert r.returncode == 0, (r.stdout, r.stderr)
+        assert "1 enqueued" in r.stdout, r.stdout
+        ids = _queue_ids(repo)
+        assert len(ids) == 1, ids
+        cap_path = repo / "docs" / "bugs" / ids[0] / "INCIDENT.md"
+        fm = _parse_frontmatter(cap_path)
+        assert fm.get("occurrences") == "4", (
+            f"expected occurrences=4 (only the genuinely new denies), got {fm}"
+        )
+        assert fm.get("recurrence_of") == base_slug, fm
+        body = cap_path.read_text(encoding="utf-8")
+        for t in old_ts:
+            assert str(t) not in body, (
+                f"already-archived timestamp {t} must NOT be re-printed in "
+                f"the new capsule: {body}"
+            )
+        for t in new_ts:
+            assert str(t) in body, (
+                f"genuinely-new timestamp {t} missing from capsule: {body}"
+            )
+        assert _tree_hash(arch) == arch_hash, "archive must never be mutated"
+
+
+def test_pure_rereport_with_no_new_evidence_does_not_reclear_bar():
+    """adhoc-incident-scan-rereports-archived-evidence: when EVERY occurrence
+    for a signature is a byte-identical re-report of an archived incident's
+    own evidence (no genuinely new activity since it closed), the cluster
+    must NOT re-clear the bar — a stale, already-adjudicated signature is not
+    flagged forever off evidence it was already investigated and closed
+    against."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        repo = _make_repo(td)
+        state = td / "state"
+        state.mkdir()
+        old_ts = [_NOW - 3 * _H, _NOW - 2 * _H, _NOW - 1 * _H]
+        old_entries = [_deny("bbbbbbbbbbbb", "SIG-STALE x", t) for t in old_ts]
+        _seed_ledger(state, old_entries)
+
+        probe = _run_scan(repo, state, "--dry-run")
+        key_line = [ln for ln in probe.stdout.splitlines() if "incident_key=" in ln][0]
+        incident_key = key_line.split("incident_key=", 1)[1].strip()
+        base_slug = [
+            tok for tok in probe.stdout.split() if "adhoc-incident-deny-" in tok
+        ][0].strip("`()*")
+
+        arch = repo / "docs" / "bugs" / "_archive" / base_slug
+        arch.mkdir(parents=True)
+        lines = "\n".join(json.dumps(e) for e in old_entries)
+        (arch / "INCIDENT.md").write_text(
+            f"---\nkind: incident-capture\nincident_key: {incident_key}\n"
+            f"signal_class: deny\noccurrences: 3\nwindow: 24h\n---\n\n"
+            f"# Incident Evidence\n\n```\n{lines}\n```\n",
+            encoding="utf-8",
+        )
+
+        r = _run_scan(repo, state, "--dry-run")
+        assert r.returncode == 0, r.stderr
+        assert "0 cleared the bar" in r.stdout, (
+            f"a signature whose ONLY occurrences are already-archived "
+            f"re-reports must not re-clear the bar: {r.stdout}"
+        )
+        assert "➕ would-enqueue" not in r.stdout, r.stdout
+
+
+def test_no_archived_incidents_byte_identical_to_before():
+    """The archived-evidence exclusion is a no-op when docs/bugs/_archive/
+    has no matching (or no) INCIDENT.md capsules — byte-identical dry-run
+    output to a repo with the feature entirely absent (regression guard: the
+    common case must not pay for or be affected by this fix)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        repo = _make_repo(td)
+        state = td / "state"
+        state.mkdir()
+        _seed_ledger(state, [
+            _deny("cccccccccccc", "SIG-NOARCH x", _NOW - i * _H) for i in (1, 2, 3)
+        ])
+        r_before = _run_scan(repo, state, "--dry-run")
+        (repo / "docs" / "bugs" / "_archive").mkdir(parents=True, exist_ok=True)
+        r_after = _run_scan(repo, state, "--dry-run")
+        assert r_before.stdout == r_after.stdout, (r_before.stdout, r_after.stdout)
+        assert "1 cleared the bar" in r_after.stdout, r_after.stdout
+
+
 # ---------------------------------------------------------------------------
 # Phase 3 — enqueue integration (sanctioned subprocess + capsule + cap)
 # ---------------------------------------------------------------------------
@@ -517,9 +647,16 @@ def test_archived_recurrence_end_to_end_capsule_carries_recurrence_of():
         qp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
         arch_hash = _tree_hash(arch)
 
-        # The signature RECURS (fresh in-window denies).
+        # The signature RECURS with 3 GENUINELY NEW in-window denies — enough
+        # to clear the bar on their own (adhoc-incident-scan-rereports-
+        # archived-evidence: a recurrence must be justified by genuinely NEW
+        # occurrences, not by re-counting the 3 already-archived timestamps
+        # alongside a single new one — see the dedicated archived-evidence
+        # dedup tests below for that exact regression).
         _seed_ledger(state, [
             _deny("abcdefabcdef", "TAKEOVER-SIG x", _NOW - 0.5 * _H),
+            _deny("abcdefabcdef", "TAKEOVER-SIG x", _NOW - 0.4 * _H),
+            _deny("abcdefabcdef", "TAKEOVER-SIG x", _NOW - 0.3 * _H),
         ])
         r2 = _run_scan(repo, state)
         assert "1 enqueued" in r2.stdout, r2.stdout
@@ -529,4 +666,8 @@ def test_archived_recurrence_end_to_end_capsule_carries_recurrence_of():
         )
         fm = _parse_frontmatter(repo / "docs" / "bugs" / ids[0] / "INCIDENT.md")
         assert fm.get("recurrence_of") == slug, fm
+        # The re-triggered capsule's occurrences must reflect ONLY the 3
+        # genuinely new denies — the 3 already-archived timestamps are
+        # excluded, not re-counted alongside them.
+        assert fm.get("occurrences") == "3", fm
         assert _tree_hash(arch) == arch_hash, "archive must never be mutated"

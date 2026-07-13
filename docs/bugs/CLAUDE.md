@@ -41,3 +41,41 @@ Both staging consumers already degrade gracefully when the staging dir is absent
 **Escape hatch:** should a future high-research-volume self-edit workflow ever warrant the
 full staging structure, see `user/skills/ingest-research/SKILL.md` line ~65 ("per-repo
 adoption" note) — parameterize the staging path via `.claude/skill-config/gemini-sprint.md`.
+
+## Fixing a bug OUT-OF-PIPELINE (harden-harness, manual in-session fixes)
+
+`__mark_fixed__ → --archive-fixed` is two separate script-owned acts: the receipt write +
+`**Status:** Fixed` flip, then `git mv` into `_archive/` (+ queue trim). `/lazy-bug-batch` runs
+both. A session that fixes a `docs/bugs/<slug>/` defect **outside** that pipeline (a
+`harden-harness` round, an in-session manual fix, a batch commit touching multiple bugs) MUST do
+ONE of:
+
+- **Finish the contract:** write the receipt (`FIXED.md`, `kind: fixed`) and run
+  `python3 user/scripts/bug-state.py --repo-root . --archive-fixed docs/bugs/<slug>` — the ONE
+  script-owned mover (evidence header, `git mv` with retry, inbound-ref repoint, queue trim, one
+  commit). Never `git mv` the dir by hand.
+- **Leave `**Status:**` untouched** and let the bug pipeline drive completion normally.
+
+**Never** a bare `**Status:** Fixed` flip with no receipt and no archive — that is precisely the
+state `bug-state.py --fsck` (below) flags, and it silently pollutes every open-backlog view
+(incident-scan dedup, the reconsider/canary once-ever guards, future spec authors checking for
+prior art) until someone greps it out by hand
+(`docs/bugs/_archive/fixed-bugs-unarchived-fsck/` — the 18-dir debris this rule now prevents).
+
+### `bug-state.py --fsck` — the invariant checker
+
+Read-only, mutates nothing. Run standalone, at `--run-end`, or as a future
+`docs/features/claude-config-ci/` lane:
+
+```bash
+python3 user/scripts/bug-state.py --repo-root . --fsck
+```
+
+Fails (exit 1, named violations) on:
+- `unarchived-fixed` — `**Status:** Fixed` + a valid `FIXED.md` receipt sitting outside
+  `_archive/` (the `--archive-fixed` step never ran). Remedy: `--archive-fixed docs/bugs/<slug>`.
+- `fixed-without-receipt` — `**Status:** Fixed` with no valid receipt (and not `Won't-fix`).
+  Remedy: `--backfill-receipts` (grandfathers as `provenance: backfilled-unverified` — honest debt,
+  never silenced) or re-disposition to `Won't-fix` if the fix claim cannot be evidenced.
+- `stale-queue-entry` — a `docs/bugs/queue.json` row pointing at a `Fixed` or already-archived dir
+  (the archive step's queue-trim missed it, or a manual queue edit went stale).

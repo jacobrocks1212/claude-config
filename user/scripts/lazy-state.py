@@ -11698,6 +11698,23 @@ def main() -> int:
                             "denials remain in the deny ledger. The override is "
                             "recorded in the run-end output for retro grading."
                         ))
+    # meta-dispatch-not-by-reference-and-ack-overpriced Fix Scope §1+§2: a
+    # cheap per-entry ack CLI (with same-cause dedup) so a duplicate/no-fix/
+    # already-fixed deny-ledger entry does not cost a full hardening dispatch.
+    # Orchestrator-only (refused for a cycle subagent via
+    # refuse_if_cycle_active, mirroring --backfill-receipts/--link-provenance).
+    parser.add_argument("--ack-deny", default=None, metavar="SELECTOR",
+                        help=(
+                            "Cheaply retire unacked deny-ledger entry/entries "
+                            "WITHOUT a full hardening dispatch. SELECTOR is "
+                            "'oldest' (FIFO) or a denied_sha12 value/prefix. "
+                            "Requires --resolution. Every OTHER unacked entry "
+                            "sharing the same cause (identical denied_sha12, or "
+                            "identical kind+reason_head) is deduped into the "
+                            "same ack. Orchestrator-only."
+                        ))
+    parser.add_argument("--resolution", default=None, metavar="TEXT",
+                        help="Audit note for --ack-deny (required, non-empty).")
     # efficacy-future-check-unenforced-orchestrator-prose (D1): the operator
     # override parallel to --ack-unhardened for the efficacy-flush gate — a
     # deliberate "no interventions/incidents exist, skip the trio" run-end. The
@@ -12823,6 +12840,15 @@ def main() -> int:
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 
+    if args.ack_deny is not None:
+        # meta-dispatch-not-by-reference-and-ack-overpriced: cheap per-entry
+        # ack, gated EXACTLY like --backfill-receipts/--link-provenance (a
+        # cycle subagent is refused exit 3 with zero side effects).
+        lazy_core.refuse_if_cycle_active("--ack-deny")
+        result = lazy_core.ack_deny_by_selector(args.ack_deny, args.resolution or "")
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0 if result.get("ok") else 1
+
     if args.link_provenance:
         # code-doc-provenance-linkage Phase 3: the manual trigger of the
         # one-writer provenance producer. Operator-only / out-of-cycle —
@@ -12886,7 +12912,12 @@ def main() -> int:
             lazy_core.append_telemetry_event(
                 "gate-refusal", item_id=_spec_dir.resolve().name,
                 data={"gate": "verify-ledger",
-                      "failing_check": result.get("failing_check")},
+                      "failing_check": result.get("failing_check"),
+                      # completion-gate-refusal-opacity Fix Scope §3: a
+                      # compact one-line summary of failing_detail so
+                      # incident mining can distinguish severities without
+                      # transcript access.
+                      "detail_head": lazy_core.summarize_failing_detail(result)},
             )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result["ok"] else 1

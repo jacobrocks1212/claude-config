@@ -6,7 +6,7 @@
 > diagnostics. The sanctioned resolution is to pay the debt via `--backfill-receipts`, not to
 > suppress the signal.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P3
 **Discovered:** 2026-07-12
 **Placement:** docs/bugs/unqueued-fixed-without-receipt-dirs-perpetual-diagnostic-noise

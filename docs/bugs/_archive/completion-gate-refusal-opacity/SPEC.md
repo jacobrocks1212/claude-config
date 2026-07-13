@@ -8,9 +8,9 @@
 > `apply_pseudo` coherence gate) partially actionable; the `verify_ledger` surface — where the
 > 146/29/9 refusals actually occur — still computes the diagnostic data and throws it away.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P2
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-12
 **Related:** commit `62fdba2` (2026-07-11, "actionable completion-refusal — split shim vs genuine unchecked rows" — the coherence-gate advisory this spec scopes AROUND) + `b9dfab2` (Round 22 docs); `docs/specs/turn-routing-enforcement/NEEDS_INPUT.md` #5 (per-row host-deferral — the design fork `62fdba2`'s advisory defers to); `docs/specs/lazy-validation-readiness/` Phase 9 WU-3 (plan-scoped `verify_ledger`); `docs/bugs/meta-dispatch-not-by-reference-and-ack-overpriced/` + `docs/bugs/loop-detector-false-positives-probes-and-cross-run-state/` (sibling specs mined from the same runs — repeated gate probes also feed the loop counters).
 
 ## Verified Symptom

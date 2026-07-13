@@ -7,9 +7,9 @@
 > 5 (`subagent-baseline-*`) are Fixed WITHOUT receipts, which autodiscovery re-surfaces as an anomaly
 > on every scan. No gate or lint asserts either invariant, so the debris only accumulates.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P2
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-12
 **Related:** `user/scripts/lazy_core.py` `archive_fixed()` (~line 6126 — the script-owned archive mechanics); `user/scripts/bug-state.py` `--archive-fixed` (CLI, help ~line 6793: "Run AFTER `--apply-pseudo __mark_fixed__`") and `_find_open_bug_dirs()` (~lines 533–590 — the autodiscovery skip/surface logic); `user/skills/lazy-bug-batch/SKILL.md` lines 42, 438–439 (the in-pipeline archive step); `user/skills/harden-harness/SKILL.md` (authors bug specs — lines ~119–129 — but carries NO archive/mark-fixed contract); `docs/features/claude-config-ci/` (Draft — the mechanical home for a commit-time fsck lane); `docs/bugs/CLAUDE.md` (lifecycle contract).
 
 ## Verified Symptom

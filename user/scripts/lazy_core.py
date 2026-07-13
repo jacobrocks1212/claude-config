@@ -2577,7 +2577,11 @@ def classify_blocking_unchecked_rows(phases_text: str) -> dict:
 
     DIAGNOSTIC ONLY — mirrors ``remaining_unchecked_are_verification_only``'s
     scope tracking; does NOT change the gate's decision (the refusal still fires).
-    Returns ``{"shim": [row_excerpt, ...], "genuine": [row_excerpt, ...]}``.
+    Returns ``{"shim": [row_excerpt, ...], "genuine": [row_excerpt, ...]}`` —
+    each excerpt is prefixed ``L<N>: `` with the row's 1-based line number
+    (completion-gate-refusal-opacity Fix Scope §2: both classes carry line
+    numbers so the coherence-gate advisory is actionable without a second
+    probe or a manual PHASES.md line count).
     """
     shim: list[str] = []
     genuine: list[str] = []
@@ -2585,7 +2589,7 @@ def classify_blocking_unchecked_rows(phases_text: str) -> dict:
     section_has_marker = False
     in_superseded_phase = False
     in_fence = False
-    for line in phases_text.splitlines():
+    for lineno, line in enumerate(phases_text.splitlines(), start=1):
         stripped = line.strip()
         if stripped.startswith("```"):
             in_fence = not in_fence
@@ -2626,7 +2630,7 @@ def classify_blocking_unchecked_rows(phases_text: str) -> dict:
             # so they are not blocking — skip them defensively if any remain.
             if _VERIFICATION_ONLY_MARKER in line or section_has_marker:
                 continue
-            excerpt = stripped[:80] + ("…" if len(stripped) > 80 else "")
+            excerpt = f"L{lineno}: " + stripped[:80] + ("…" if len(stripped) > 80 else "")
             if in_verification:
                 shim.append(excerpt)
             else:
@@ -3691,6 +3695,99 @@ _PLAN_WU_CHECKBOX_RE = re.compile(
 )
 
 
+# ---------------------------------------------------------------------------
+# completion-gate-refusal-opacity: verify_ledger `failing_detail` collectors.
+#
+# The `--verify-ledger` refusal historically named only the boolean
+# `failing_check` — every axis had already computed the offending items
+# (dirty files, divergent shas, incomplete plans, unchecked rows) and thrown
+# them away, forcing the orchestrator to re-probe by hand. These collectors
+# reuse the SAME fence-aware walks as count_deliverables /
+# _plan_wu_checkbox_counts / _unchecked_wus_in_plan_scope so the diagnostic
+# rows are byte-identical in shape to what the gate already computes — no new
+# parsing surface, just line-number-annotated capture instead of a boolean
+# reduction. Cap (`_DETAIL_MAX_ITEMS`) and excerpt truncation (`_excerpt`)
+# mirror `classify_blocking_unchecked_rows`'s 80-char convention.
+# ---------------------------------------------------------------------------
+_DETAIL_MAX_ITEMS = 10
+
+
+def _excerpt(text: str, max_chars: int = 80) -> str:
+    """Truncate ``text`` to ``max_chars`` with an ellipsis marker — the same
+    80-char convention ``classify_blocking_unchecked_rows`` uses."""
+    return text[:max_chars] + ("…" if len(text) > max_chars else "")
+
+
+def _phases_unchecked_row_detail(
+    phases_text: str, phase_set: set[int] | None = None, limit: int = _DETAIL_MAX_ITEMS
+) -> dict:
+    """Collect unchecked PHASES.md ``- [ ]`` rows with 1-based line numbers.
+
+    Fence-aware, mirroring ``count_deliverables``. When ``phase_set`` is given,
+    only rows inside a ``### Phase N`` section whose N is a member are
+    collected (mirrors ``_unchecked_wus_in_plan_scope``'s heading-tracking
+    walk — the legacy plan-scoped fallback); ``None`` scans the whole file
+    (feature-level / unscoped-legacy-plan semantics).
+
+    Returns ``{"rows": [{"line": N, "text": <=80-char excerpt}, ...], "total": M}``
+    — ``rows`` capped at ``limit``, ``total`` uncapped (so a caller can report
+    "N more" truncation honestly).
+    """
+    rows: list[dict] = []
+    total = 0
+    in_fence = False
+    current_phase: int | None = None
+    tracking = phase_set is not None
+    for lineno, line in enumerate(phases_text.splitlines(), start=1):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        if tracking:
+            h = re.match(r"^###\s+Phase\s+(\d+)", line)
+            if h:
+                current_phase = int(h.group(1))
+                continue
+            if line.startswith("## "):
+                current_phase = None
+                continue
+            if current_phase is None or current_phase not in phase_set:
+                continue
+        if re.match(r"^\s*-\s*\[\s*\]", line):
+            total += 1
+            if len(rows) < limit:
+                rows.append({"line": lineno, "text": _excerpt(stripped)})
+    return {"rows": rows, "total": total}
+
+
+def _plan_wu_unchecked_row_detail(plan_text: str, limit: int = _DETAIL_MAX_ITEMS) -> dict:
+    """Collect unchecked ISSUE-6 ``- [ ] WU-N`` rows with 1-based line numbers.
+
+    Fence-aware, mirroring ``_plan_wu_checkbox_counts``'s walk. Same return
+    shape as ``_phases_unchecked_row_detail`` — the ``deliverables_done``
+    diagnostic for the ``plan-wu-checkboxes`` source.
+    """
+    rows: list[dict] = []
+    total = 0
+    in_fence = False
+    for lineno, line in enumerate(plan_text.splitlines(), start=1):
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        m = _PLAN_WU_CHECKBOX_RE.match(line)
+        if not m or m.group("mark") != " ":
+            continue
+        total += 1
+        if len(rows) < limit:
+            stripped = line.strip()
+            rows.append({"line": lineno, "text": _excerpt(stripped)})
+    return {"rows": rows, "total": total}
+
+
 def _plan_wu_checkbox_counts(plan_text: str) -> tuple[int, int]:
     """Return ``(unchecked, checked)`` counts of per-WU plan progress checkboxes.
 
@@ -3832,6 +3929,15 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
                                      #   "plan-wu-checkboxes"       — new machine record
                                      #   "phases-fallback (…)"      — legacy plan path fired
                                      #   "phases-feature-level"     — no plan_path (whole feature)
+        "failing_detail": dict,      # diagnostic (additive, never gates) — the
+                                     # offending items for EVERY False check,
+                                     # keyed by check name; {} when ok is True
+                                     # (completion-gate-refusal-opacity):
+                                     #   clean_tree -> {dirty_files: [...], total_count, git_error?}
+                                     #   head_matches_origin -> {no_upstream, head_sha?, upstream_sha?, ahead?, behind?}
+                                     #   plan_complete -> scoped: {plan_file, plan_status}
+                                     #                    feature-level: {incomplete_plans: [{file, status}], total_count}
+                                     #   deliverables_done -> {rows: [{line, text}], total, note?}
     }
     ```
 
@@ -3843,6 +3949,12 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
     # --- check 1: clean working tree ---
     # Mirror the subprocess style used in _current_head in lazy-state.py:
     # capture_output + text + timeout guard, catch OSError/SubprocessError.
+    # `_clean_tree_stdout` / `_clean_tree_errored` are retained (not just the
+    # boolean) so a False verdict's failing_detail can name the dirty files
+    # instead of discarding the already-captured `git status --short` output
+    # (completion-gate-refusal-opacity Fix Scope §1).
+    _clean_tree_stdout = ""
+    _clean_tree_errored = False
     try:
         result = subprocess.run(
             ["git", "-C", str(repo_root), "status", "--short"],
@@ -3851,11 +3963,19 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
             timeout=30,
         )
         clean_tree = result.stdout.strip() == ""
+        _clean_tree_stdout = result.stdout
     except (OSError, subprocess.SubprocessError):
         clean_tree = False
+        _clean_tree_errored = True
 
     # --- check 2: HEAD matches upstream tracking ref ---
     # Both rev-parse commands must succeed and return identical SHA strings.
+    # `_head_sha` / `_upstream_sha` / `_no_upstream` are retained for the
+    # failing_detail payload (short shas + an explicit no-upstream
+    # discriminator, distinct from a genuine divergence).
+    _head_sha = ""
+    _upstream_sha = ""
+    _no_upstream = True
     try:
         head_result = subprocess.run(
             ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
@@ -3873,9 +3993,12 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
             head_sha = head_result.stdout.strip()
             upstream_sha = upstream_result.stdout.strip()
             head_matches_origin = bool(head_sha and upstream_sha and head_sha == upstream_sha)
+            _head_sha, _upstream_sha, _no_upstream = head_sha, upstream_sha, False
         else:
             # @{u} can fail when no upstream is configured — treat as mismatch.
             head_matches_origin = False
+            _head_sha = head_result.stdout.strip() if head_result.returncode == 0 else ""
+            _no_upstream = upstream_result.returncode != 0
     except (OSError, subprocess.SubprocessError):
         head_matches_origin = False
 
@@ -4014,6 +4137,70 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
             failing_check = key
             break
 
+    # --- failing_detail (completion-gate-refusal-opacity, Fix Scope §1) ---
+    # Populate the offending items for EVERY False check (not just the first),
+    # so a single probe is diagnostic on every axis instead of the
+    # orchestrator fixing one check and re-probing for the next. Additive
+    # only — `ok`/`failing_check`/`checks`/`deliverables_source` are
+    # byte-identical to before; an `ok: true` payload carries an empty dict.
+    failing_detail: dict = {}
+    if not clean_tree:
+        dirty_lines = [ln for ln in _clean_tree_stdout.splitlines() if ln.strip()]
+        detail_ct: dict = {
+            "dirty_files": dirty_lines[:_DETAIL_MAX_ITEMS],
+            "total_count": len(dirty_lines),
+        }
+        if _clean_tree_errored:
+            detail_ct["git_error"] = True
+        failing_detail["clean_tree"] = detail_ct
+    if not head_matches_origin:
+        detail_hm: dict = {"no_upstream": _no_upstream}
+        if _head_sha:
+            detail_hm["head_sha"] = _head_sha[:12]
+        if not _no_upstream and _upstream_sha:
+            detail_hm["upstream_sha"] = _upstream_sha[:12]
+            try:
+                lr = subprocess.run(
+                    ["git", "-C", str(repo_root), "rev-list", "--left-right",
+                     "--count", "@{u}...HEAD"],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if lr.returncode == 0:
+                    parts = lr.stdout.split()
+                    if len(parts) == 2:
+                        detail_hm["behind"] = int(parts[0])
+                        detail_hm["ahead"] = int(parts[1])
+            except (OSError, subprocess.SubprocessError, ValueError):
+                pass
+        failing_detail["head_matches_origin"] = detail_hm
+    if not plan_complete:
+        if scoped:
+            failing_detail["plan_complete"] = {
+                "plan_file": plan_path.name if plan_path is not None else None,
+                "plan_status": _plan_status(plan_path) if plan_path is not None else None,
+            }
+        else:
+            failing_detail["plan_complete"] = {
+                "incomplete_plans": [
+                    {"file": p.name, "status": _plan_status(p)}
+                    for p in incomplete_plans[:_DETAIL_MAX_ITEMS]
+                ],
+                "total_count": len(incomplete_plans),
+            }
+    if not deliverables_done:
+        if deliverables_source == "plan-wu-checkboxes":
+            failing_detail["deliverables_done"] = _plan_wu_unchecked_row_detail(plan_text)
+        elif phases_file.exists():
+            # phases-fallback (legacy plan) or phases-feature-level: re-read
+            # PHASES.md fresh here so this block never depends on which
+            # branch above happened to bind `phases_text` — diagnostic-only,
+            # on the refusal path (not a hot loop).
+            _pt = phases_file.read_text(encoding="utf-8")
+            _scope = plan_phase_set if (scoped and plan_phase_set) else None
+            failing_detail["deliverables_done"] = _phases_unchecked_row_detail(_pt, phase_set=_scope)
+        else:
+            failing_detail["deliverables_done"] = {"rows": [], "total": 0, "note": "PHASES.md absent"}
+
     return {
         "ok": failing_check is None,
         "failing_check": failing_check,
@@ -4023,7 +4210,62 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
         # source of truth; the "phases-fallback …" / "phases-feature-level"
         # values mark the legacy / feature-level paths for the operator.
         "deliverables_source": deliverables_source,
+        # Diagnostic (additive — never gates): the offending items for every
+        # False check, keyed by check name. Empty dict when ok is True.
+        "failing_detail": failing_detail,
     }
+
+
+def summarize_failing_detail(result: dict) -> str:
+    """Compact one-line summary of a ``verify_ledger`` refusal's
+    ``failing_detail``, for the ``gate-refusal`` telemetry event
+    (completion-gate-refusal-opacity Fix Scope §3 — lets incident mining
+    distinguish "dirty tree: 1 stray log file" from "dirty tree: 14
+    uncommitted source files" without transcript access). Returns ``""``
+    when ``result["ok"]`` is True or ``failing_detail`` has no entry for
+    ``result["failing_check"]``. Never raises — a malformed/legacy payload
+    (missing keys) degrades to ``""``, never a telemetry-path exception.
+    """
+    check = result.get("failing_check")
+    detail = (result.get("failing_detail") or {}).get(check) if check else None
+    if not check or not isinstance(detail, dict):
+        return ""
+    try:
+        if check == "clean_tree":
+            total = detail.get("total_count", 0)
+            files = detail.get("dirty_files") or []
+            head = f" (first: {files[0]})" if files else ""
+            return f"dirty tree: {total} file(s){head}"
+        if check == "head_matches_origin":
+            if detail.get("no_upstream"):
+                return "no upstream configured"
+            ahead, behind = detail.get("ahead"), detail.get("behind")
+            if ahead is not None and behind is not None:
+                return f"{ahead} ahead / {behind} behind upstream"
+            return "HEAD does not match upstream"
+        if check == "plan_complete":
+            if "incomplete_plans" in detail:
+                total = detail.get("total_count", 0)
+                plans = detail.get("incomplete_plans") or []
+                head = f" (first: {plans[0]['file']} — {plans[0]['status']})" if plans else ""
+                return f"{total} incomplete plan(s){head}"
+            return (
+                f"plan {detail.get('plan_file')} not Complete "
+                f"(status: {detail.get('plan_status')})"
+            )
+        if check == "deliverables_done":
+            total = detail.get("total", 0)
+            rows = detail.get("rows") or []
+            if rows:
+                head = f" (first: {rows[0]['text']})"
+            elif detail.get("note"):
+                head = f" ({detail['note']})"
+            else:
+                head = ""
+            return f"{total} unchecked row(s){head}"
+    except (KeyError, IndexError, TypeError):
+        return ""
+    return ""
 
 
 # ---------------------------------------------------------------------------
@@ -5184,7 +5426,7 @@ def apply_pseudo(
                 # refusal decision is unchanged.
                 cls = classify_blocking_unchecked_rows(phases_text)
                 advisory = ""
-                if cls["shim"]:
+                if cls["shim"] or cls["genuine"]:
                     advisory = (
                         f" — of the blocking unchecked row(s), {len(cls['shim'])} "
                         f"are un-migrated verification-shim rows (under a "
@@ -5195,9 +5437,16 @@ def apply_pseudo(
                         f"marker lets the gate auto-tick it — but ONLY when its "
                         f"verification ACTUALLY ran; a row that could not run on "
                         f"this host must be deferred, not migrated (per-row "
-                        f"host-deferral is an open design question). Shim rows: "
-                        + " | ".join(cls["shim"])
+                        f"host-deferral is an open design question)."
                     )
+                    if cls["shim"]:
+                        advisory += " Shim rows: " + " | ".join(cls["shim"])
+                    if cls["genuine"]:
+                        # completion-gate-refusal-opacity Fix Scope §2: print the
+                        # genuine excerpts (not just the count) — previously
+                        # collected at classify_blocking_unchecked_rows() above
+                        # and discarded here.
+                        advisory += " Genuine rows: " + " | ".join(cls["genuine"])
                 return _refused(
                     f"PHASES.md is incoherent for completion — "
                     f"{len(refusals)} phase(s) block the receipt: "
@@ -17864,6 +18113,133 @@ def ack_all_unacked_denies(now: float | None = None) -> int:
         # the caller does not claim a discharge that did not persist.
         return 0
     return acked_count
+
+
+def _deny_entry_same_cause_key(entry: dict) -> tuple | None:
+    """Return a hashable "same cause" key for a deny-ledger entry, or ``None``
+    when the entry carries no usable identity (meta-dispatch-not-by-reference-
+    and-ack-overpriced Fix Scope §2).
+
+    Prefers ``denied_sha12`` (the sha256-of-prompt identity a validate-deny
+    entry always carries — a byte-identical repeat denial). Falls back to
+    ``(kind, reason_head)`` for entries with no ``denied_sha12`` (e.g.
+    ``kind: process-friction``, which has no dispatched-prompt sha at all) —
+    an identical kind+reason repeat is the SPEC's named fallback identity.
+    """
+    sha = entry.get("denied_sha12")
+    if sha:
+        return ("sha", sha)
+    reason = entry.get("reason_head")
+    if reason:
+        return ("reason", entry.get("kind"), reason)
+    return None
+
+
+def ack_deny_by_selector(
+    selector: str, resolution: str, *, now: float | None = None
+) -> dict:
+    """Cheaply retire unacked deny-ledger entries by SELECTOR, WITHOUT a full
+    hardening dispatch (meta-dispatch-not-by-reference-and-ack-overpriced Fix
+    Scope §1+§2 — the ``--ack-deny <selector> --resolution <text>`` CLI).
+
+    Unlike ``ack_oldest_deny`` (called ONLY from a hardening dispatch reaching
+    guard-allow — one full Opus round per entry), this is a cheap, audited,
+    gate-free ledger operation for the two cases where a full round is
+    wasteful: (a) the entry's root cause was already fixed by an earlier round
+    THIS run (the redundant-second-dispatch case), (b) an explicit, recorded
+    no-fix classification. It must be invoked from a CLI handler that calls
+    ``refuse_if_cycle_active`` first (never reachable from a cycle subagent) —
+    this function itself performs no cycle check, matching the other
+    ledger-mutation helpers in this module (the CLI layer owns the guard).
+
+    Args:
+        selector: ``"oldest"`` (the FIFO-oldest unacked entry, mirroring
+            ``ack_oldest_deny``'s default ordering) or a ``denied_sha12``
+            value/prefix (case-insensitive, >=1 hex char) matched against the
+            first unacked entry whose ``denied_sha12`` starts with it.
+        resolution: REQUIRED non-empty audit note — who/why this entry is
+            being retired without a hardening round. Recorded verbatim on the
+            acked entry (and, deduped-mirrored, on every same-cause sibling)
+            so ``/lazy-batch-retro`` can grade the op for abuse.
+        now: epoch float for ``acked_ts`` (injectable for hermetic tests).
+
+    Same-cause dedup (Fix Scope §2): after resolving the selected target entry,
+    every OTHER unacked entry sharing the same cause key
+    (``_deny_entry_same_cause_key`` — identical ``denied_sha12``, or identical
+    ``kind``+``reason_head`` when no sha exists) is acked in the SAME ledger
+    rewrite, with ``ack_method: "manual-ack-dedup"`` and a resolution note that
+    cross-references the primary ack — so one oscillating cause never costs
+    more than one unit of retirement effort, regardless of how many times it
+    was denied.
+
+    Returns:
+        ``{"ok": bool, "acked": <entry dict> | None, "deduped": [<entry dict>, ...],
+        "error": str | None}``. ``ok`` is False (ledger untouched) when
+        ``resolution`` is blank, no unacked entry exists at all, or (sha12
+        selector) no unacked entry's ``denied_sha12`` matches.
+    """
+    if not resolution or not resolution.strip():
+        return {
+            "ok": False, "acked": None, "deduped": [],
+            "error": "resolution must be a non-empty audit note",
+        }
+    if now is None:
+        now = time.time()
+    entries = read_deny_ledger()
+
+    target: dict | None = None
+    if selector == "oldest":
+        for entry in entries:
+            if not entry.get("acked", False):
+                target = entry
+                break
+    else:
+        sel = selector.strip().lower()
+        for entry in entries:
+            if entry.get("acked", False):
+                continue
+            sha = str(entry.get("denied_sha12") or "")
+            if sha and sha.lower().startswith(sel):
+                target = entry
+                break
+
+    if target is None:
+        return {
+            "ok": False, "acked": None, "deduped": [],
+            "error": f"no unacked deny-ledger entry matches selector {selector!r}",
+        }
+
+    resolution = resolution.strip()
+    target["acked"] = True
+    target["acked_ts"] = now
+    target["ack_method"] = "manual-ack"
+    target["resolution"] = resolution
+
+    deduped: list[dict] = []
+    cause_key = _deny_entry_same_cause_key(target)
+    if cause_key is not None:
+        for entry in entries:
+            if entry is target or entry.get("acked", False):
+                continue
+            if _deny_entry_same_cause_key(entry) == cause_key:
+                entry["acked"] = True
+                entry["acked_ts"] = now
+                entry["ack_method"] = "manual-ack-dedup"
+                entry["resolution"] = (
+                    f"same-cause dedup of the entry acked at {now}: {resolution}"
+                )
+                deduped.append(entry)
+
+    try:
+        ledger_path = claude_state_dir() / _DENY_LEDGER_FILENAME
+        body = "".join(json.dumps(e) + "\n" for e in entries)
+        _atomic_write(ledger_path, body)
+    except Exception:  # noqa: BLE001
+        return {
+            "ok": False, "acked": None, "deduped": [],
+            "error": "ledger rewrite failed",
+        }
+    return {"ok": True, "acked": target, "deduped": deduped, "error": None}
 
 
 # ---------------------------------------------------------------------------

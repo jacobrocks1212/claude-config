@@ -3985,6 +3985,266 @@ def test_verify_ledger_incomplete_plan_still_fails_regression_guard():
 
 
 # ---------------------------------------------------------------------------
+# Tests: verify_ledger `failing_detail` (completion-gate-refusal-opacity) —
+# every False check names the offending items, not just the boolean.
+# ---------------------------------------------------------------------------
+
+def test_verify_ledger_failing_detail_empty_when_ok():
+    """ok=True → failing_detail is an empty dict (additive, never gates)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        _write_complete_plan(spec_dir / "plans")
+        _write_all_checked_phases(spec_dir)
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir)
+    assert result["ok"] is True, result
+    assert result["failing_detail"] == {}, result["failing_detail"]
+
+
+def test_verify_ledger_failing_detail_clean_tree_names_dirty_files():
+    """clean_tree=False → failing_detail['clean_tree'] carries the dirty file
+    list (from the already-captured `git status --short` stdout) + total_count."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        _write_complete_plan(spec_dir / "plans")
+        _write_all_checked_phases(spec_dir)
+        _commit_and_push_spec(repo_root)
+        (repo_root / "dirty.txt").write_text("untracked\n", encoding="utf-8")
+        result = lazy_core.verify_ledger(repo_root, spec_dir)
+    assert result["failing_check"] == "clean_tree", result
+    detail = result["failing_detail"]["clean_tree"]
+    assert detail["total_count"] == 1, detail
+    assert any("dirty.txt" in f for f in detail["dirty_files"]), detail
+
+
+def test_verify_ledger_failing_detail_head_matches_origin_ahead_behind():
+    """head_matches_origin=False (unpushed local commit) → failing_detail names
+    the short shas + ahead/behind counts, no_upstream False (a genuine
+    divergence, not the unconfigured-upstream branch)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        _write_complete_plan(spec_dir / "plans")
+        _write_all_checked_phases(spec_dir)
+        _commit_and_push_spec(repo_root)
+        (repo_root / "extra.txt").write_text("unpushed change\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo_root), "add", "extra.txt"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "unpushed commit"], check=True, capture_output=True)
+        result = lazy_core.verify_ledger(repo_root, spec_dir)
+    assert result["failing_check"] == "head_matches_origin", result
+    detail = result["failing_detail"]["head_matches_origin"]
+    assert detail["no_upstream"] is False, detail
+    assert detail.get("head_sha") and detail.get("upstream_sha"), detail
+    assert detail["head_sha"] != detail["upstream_sha"], detail
+    assert detail.get("ahead") == 1, detail
+    assert detail.get("behind") == 0, detail
+
+
+def test_verify_ledger_failing_detail_no_upstream_configured():
+    """head_matches_origin=False with NO upstream configured at all →
+    failing_detail['head_matches_origin']['no_upstream'] is True, distinct
+    from a genuine divergence (no ahead/behind computed)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "repo"
+        root.mkdir()
+        subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.email", "test@test.local"],
+                       check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(root), "config", "user.name", "Test"],
+                       check=True, capture_output=True)
+        spec_dir = root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        _write_complete_plan(spec_dir / "plans")
+        _write_all_checked_phases(spec_dir)
+        subprocess.run(["git", "-C", str(root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", "init"],
+                       check=True, capture_output=True)
+        result = lazy_core.verify_ledger(root, spec_dir)
+    assert result["failing_check"] == "head_matches_origin", result
+    detail = result["failing_detail"]["head_matches_origin"]
+    assert detail["no_upstream"] is True, detail
+    assert "ahead" not in detail and "behind" not in detail, detail
+
+
+def test_verify_ledger_failing_detail_plan_complete_feature_level():
+    """plan_complete=False (feature-level) → failing_detail names each
+    incomplete plan's file + parsed status."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans_dir = spec_dir / "plans"
+        plans_dir.mkdir(parents=True)
+        (plans_dir / "plan-phase-1.md").write_text(
+            "---\nkind: implementation-plan\nstatus: Ready\nphases:\n  - 1\n---\n\n"
+            "# Implementation Plan\n",
+            encoding="utf-8",
+        )
+        _write_all_checked_phases(spec_dir)
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir)
+    assert result["failing_check"] == "plan_complete", result
+    detail = result["failing_detail"]["plan_complete"]
+    assert detail["total_count"] == 1, detail
+    assert detail["incomplete_plans"][0]["file"] == "plan-phase-1.md", detail
+    assert detail["incomplete_plans"][0]["status"] == "Ready", detail
+
+
+def test_verify_ledger_failing_detail_plan_complete_scoped():
+    """plan_complete=False (plan-scoped) → failing_detail names the scoped
+    plan's own file + status (not the feature-level incomplete_plans list)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans_dir = spec_dir / "plans"
+        plans_dir.mkdir(parents=True)
+        part1 = plans_dir / "plan-part-1.md"
+        part1.write_text(
+            "---\nkind: implementation-plan\nstatus: In-progress\nphases:\n  - 1\n---\n\n"
+            "- [x] WU-1 — done\n",
+            encoding="utf-8",
+        )
+        _write_all_checked_phases(spec_dir)
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir, plan_path=part1)
+    assert result["failing_check"] == "plan_complete", result
+    detail = result["failing_detail"]["plan_complete"]
+    assert detail == {"plan_file": "plan-part-1.md", "plan_status": "In-progress"}, detail
+
+
+def test_verify_ledger_failing_detail_deliverables_done_feature_level():
+    """deliverables_done=False (feature-level PHASES.md) → failing_detail
+    carries the unchecked row's line number + excerpt, and the total count."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        _write_complete_plan(spec_dir / "plans")
+        (spec_dir / "PHASES.md").write_text(
+            "### Phase 1\n"
+            "- [x] Implement feature\n"
+            "- [ ] Wire into production context\n",
+            encoding="utf-8",
+        )
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir)
+    assert result["failing_check"] == "deliverables_done", result
+    detail = result["failing_detail"]["deliverables_done"]
+    assert detail["total"] == 1, detail
+    assert detail["rows"][0]["line"] == 3, detail
+    assert "Wire into production context" in detail["rows"][0]["text"], detail
+
+
+def test_verify_ledger_failing_detail_deliverables_done_plan_wu():
+    """deliverables_done=False (plan-scoped, plan-wu-checkboxes source) →
+    failing_detail reads the PLAN's own unchecked WU rows, not PHASES.md."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans_dir = spec_dir / "plans"
+        plans_dir.mkdir(parents=True)
+        part1 = plans_dir / "plan-part-1.md"
+        part1.write_text(
+            "---\nkind: implementation-plan\nstatus: Complete\nphases:\n  - 1\n---\n\n"
+            "- [x] WU-1 — done\n"
+            "- [ ] WU-2 — not done\n",
+            encoding="utf-8",
+        )
+        _write_all_checked_phases(spec_dir)
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir, plan_path=part1)
+    assert result["failing_check"] == "deliverables_done", result
+    assert result["deliverables_source"] == "plan-wu-checkboxes", result
+    detail = result["failing_detail"]["deliverables_done"]
+    assert detail["total"] == 1, detail
+    assert detail["rows"][0]["line"] == 9, detail
+    assert "WU-2" in detail["rows"][0]["text"], detail
+
+
+# ---------------------------------------------------------------------------
+# Tests: summarize_failing_detail (completion-gate-refusal-opacity Fix Scope
+# §3 — the compact `detail_head` telemetry string).
+# ---------------------------------------------------------------------------
+
+def test_summarize_failing_detail_clean_tree():
+    _guard()
+    result = {
+        "failing_check": "clean_tree",
+        "failing_detail": {"clean_tree": {"dirty_files": ["M foo.py"], "total_count": 3}},
+    }
+    head = lazy_core.summarize_failing_detail(result)
+    assert head == "dirty tree: 3 file(s) (first: M foo.py)", head
+
+
+def test_summarize_failing_detail_head_no_upstream():
+    _guard()
+    result = {
+        "failing_check": "head_matches_origin",
+        "failing_detail": {"head_matches_origin": {"no_upstream": True}},
+    }
+    assert lazy_core.summarize_failing_detail(result) == "no upstream configured"
+
+
+def test_summarize_failing_detail_head_ahead_behind():
+    _guard()
+    result = {
+        "failing_check": "head_matches_origin",
+        "failing_detail": {
+            "head_matches_origin": {"no_upstream": False, "ahead": 2, "behind": 1}
+        },
+    }
+    assert lazy_core.summarize_failing_detail(result) == "2 ahead / 1 behind upstream"
+
+
+def test_summarize_failing_detail_deliverables_done():
+    _guard()
+    result = {
+        "failing_check": "deliverables_done",
+        "failing_detail": {
+            "deliverables_done": {"total": 4, "rows": [{"line": 12, "text": "- [ ] foo"}]}
+        },
+    }
+    head = lazy_core.summarize_failing_detail(result)
+    assert head == "4 unchecked row(s) (first: - [ ] foo)", head
+
+
+def test_summarize_failing_detail_ok_is_empty_string():
+    """ok=True (failing_check=None) → "" — never a spurious summary."""
+    _guard()
+    result = {"ok": True, "failing_check": None, "failing_detail": {}}
+    assert lazy_core.summarize_failing_detail(result) == ""
+
+
+def test_summarize_failing_detail_malformed_never_raises():
+    """A legacy/malformed payload (missing failing_detail keys) degrades to
+    "" rather than raising — the telemetry path must never crash the gate."""
+    _guard()
+    assert lazy_core.summarize_failing_detail({}) == ""
+    assert lazy_core.summarize_failing_detail({"failing_check": "clean_tree"}) == ""
+    assert lazy_core.summarize_failing_detail(
+        {"failing_check": "clean_tree", "failing_detail": {"clean_tree": {}}}
+    ) == "dirty tree: 0 file(s)"
+
+
+# ---------------------------------------------------------------------------
 # Tests: apply_pseudo — WU-2 shared deterministic sentinel/receipt dispatcher
 # ---------------------------------------------------------------------------
 
@@ -6275,6 +6535,46 @@ def test_apply_pseudo_coherence_refuses_unchecked_verification_row():
         assert (spec_dir / "VALIDATED.md").exists(), (
             "VALIDATED.md was deleted despite the refusal — must be untouched"
         )
+
+
+def test_apply_pseudo_coherence_advisory_prints_genuine_row_excerpts():
+    """completion-gate-refusal-opacity Fix Scope §2: the coherence-gate
+    refusal's advisory previously printed the shim-row excerpts but only a
+    COUNT for genuine rows (the list was collected and discarded). Now both
+    classes carry line-numbered excerpts in the refusal message."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        phase_body = (
+            "## Phase 1 — Foundations\n"
+            "\n"
+            "**Status:** Complete\n"
+            "\n"
+            "**Deliverables:**\n"
+            "- [ ] genuinely incomplete deliverable\n"
+            "\n"
+            "**Runtime Verification:**\n"
+            "- [ ] mcp dropout check (still pending)\n"
+        )
+        _write_phases_md(spec_dir, phase_body)
+
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is False, f"expected ok=False (refused), got {result}"
+        refused = result["refused"] or ""
+        assert "Genuine rows:" in refused, (
+            f"expected the genuine-row excerpts to be printed, not just the "
+            f"count: {refused!r}"
+        )
+        assert "genuinely incomplete deliverable" in refused, refused
+        # Both classes carry a line-number prefix (Fix Scope §2).
+        assert re.search(r"L\d+: .*genuinely incomplete deliverable", refused), refused
+        assert "Shim rows:" in refused, refused
+        assert re.search(r"L\d+: .*mcp dropout check", refused), refused
 
 
 def test_apply_pseudo_coherence_refuses_zero_checkbox_in_progress_phase():
@@ -10905,6 +11205,195 @@ def test_ack_oldest_deny_empty_is_noop():
             _clear_state_dir()
 
 
+def test_ack_deny_by_selector_oldest_requires_resolution():
+    """meta-dispatch-not-by-reference-and-ack-overpriced Fix Scope §1: a blank
+    resolution refuses with ZERO writes — the ledger stays untouched."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu", denied_sha12="a" * 12,
+                reason_head="r", prompt_head="p", now=1.0,
+            )
+            result = lazy_core.ack_deny_by_selector("oldest", "")
+            assert result["ok"] is False, result
+            assert "resolution" in result["error"], result
+            assert lazy_core.pending_hardening() == 1, "blank resolution must not ack"
+        finally:
+            _clear_state_dir()
+
+
+def test_ack_deny_by_selector_oldest_fifo():
+    """selector='oldest' acks the FIFO-oldest unacked entry, recording
+    ack_method='manual-ack' + the resolution note — distinct from the
+    hardening-round ack_oldest_deny() path."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            for i in range(2):
+                lazy_core.append_deny_ledger_entry(
+                    tool_use_id=f"tu-{i}", denied_sha12=f"{i}{'a'*11}",
+                    reason_head=f"reason {i}", prompt_head=f"prompt {i}",
+                    now=float(i),
+                )
+            result = lazy_core.ack_deny_by_selector(
+                "oldest", "already fixed by round 1 this run", now=999.0
+            )
+            assert result["ok"] is True, result
+            assert result["acked"]["tool_use_id"] == "tu-0", result
+            assert result["acked"]["ack_method"] == "manual-ack", result
+            assert result["acked"]["resolution"] == "already fixed by round 1 this run", result
+            assert result["deduped"] == [], result
+            assert lazy_core.pending_hardening() == 1, "one acked → one remains"
+        finally:
+            _clear_state_dir()
+
+
+def test_ack_deny_by_selector_sha_prefix_match():
+    """A denied_sha12 prefix selector acks the matching unacked entry, not the
+    FIFO-oldest — addressed acks, not just FIFO."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu-0", denied_sha12="aaaaaaaaaaaa",
+                reason_head="r0", prompt_head="p0", now=0.0,
+            )
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu-1", denied_sha12="bbbbbbbbbbbb",
+                reason_head="r1", prompt_head="p1", now=1.0,
+            )
+            result = lazy_core.ack_deny_by_selector("bbbb", "no-fix — cosmetic", now=5.0)
+            assert result["ok"] is True, result
+            assert result["acked"]["tool_use_id"] == "tu-1", result
+            entries = lazy_core.read_deny_ledger()
+            assert entries[0]["acked"] is False, "tu-0 (non-matching) must stay unacked"
+            assert entries[1]["acked"] is True, entries
+        finally:
+            _clear_state_dir()
+
+
+def test_ack_deny_by_selector_no_match_refuses():
+    """A selector matching no unacked entry refuses with a named error and
+    ZERO writes."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu", denied_sha12="a" * 12,
+                reason_head="r", prompt_head="p", now=1.0,
+            )
+            result = lazy_core.ack_deny_by_selector("zzzzzz", "no-fix")
+            assert result["ok"] is False, result
+            assert "zzzzzz" in result["error"], result
+            assert lazy_core.pending_hardening() == 1, "no match → no ack"
+        finally:
+            _clear_state_dir()
+
+
+def test_ack_deny_by_selector_dedups_same_sha_cause():
+    """Fix Scope §2: acking one entry also acks every OTHER unacked entry
+    sharing the same denied_sha12 (a byte-identical repeat denial) — one
+    oscillating cause never costs more than one unit of retirement effort."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            for i in range(3):
+                lazy_core.append_deny_ledger_entry(
+                    tool_use_id=f"tu-{i}", denied_sha12="c" * 12,
+                    reason_head="same cause", prompt_head="same prompt",
+                    now=float(i),
+                )
+            # An UNRELATED entry with a different sha must NOT be swept in.
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu-other", denied_sha12="d" * 12,
+                reason_head="different", prompt_head="different", now=9.0,
+            )
+            result = lazy_core.ack_deny_by_selector(
+                "oldest", "root cause fixed in round 1", now=999.0
+            )
+            assert result["ok"] is True, result
+            assert result["acked"]["tool_use_id"] == "tu-0", result
+            deduped_ids = {e["tool_use_id"] for e in result["deduped"]}
+            assert deduped_ids == {"tu-1", "tu-2"}, result["deduped"]
+            for e in result["deduped"]:
+                assert e["ack_method"] == "manual-ack-dedup", e
+            assert lazy_core.pending_hardening() == 1, (
+                "only the unrelated (different-sha) entry should remain unacked"
+            )
+            entries = {e["tool_use_id"]: e for e in lazy_core.read_deny_ledger()}
+            assert entries["tu-other"]["acked"] is False, entries
+        finally:
+            _clear_state_dir()
+
+
+def test_ack_deny_by_selector_dedups_reason_head_fallback_no_sha():
+    """Fix Scope §2 fallback: entries with NO denied_sha12 (e.g. a
+    process-friction entry) dedup on identical (kind, reason_head) instead."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.append_friction_ledger_entry(
+                reason_head="torn cycle bracket", detail="d1", now=1.0,
+            )
+            lazy_core.append_friction_ledger_entry(
+                reason_head="torn cycle bracket", detail="d2", now=2.0,
+            )
+            result = lazy_core.ack_deny_by_selector("oldest", "acknowledged, no fix needed", now=9.0)
+            assert result["ok"] is True, result
+            assert len(result["deduped"]) == 1, result
+            assert lazy_core.pending_hardening() == 0, (
+                "both same-cause (kind+reason_head) entries acked in one call"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_ack_deny_by_selector_refused_for_cycle_subagent():
+    """The CLI layer's refuse_if_cycle_active guard (mirroring
+    --backfill-receipts/--link-provenance) must deny a cycle subagent calling
+    --ack-deny — invoked here at the CLI subprocess level."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu", denied_sha12="a" * 12,
+                reason_head="r", prompt_head="p", now=1.0,
+            )
+            lazy_core.write_cycle_marker(feature_id="some-feature", nonce="deadbeef")
+        finally:
+            _clear_state_dir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        env["LAZY_CYCLE_SUBAGENT"] = "1"
+        result = subprocess.run(
+            [sys.executable, str(lazy_state), "--ack-deny", "oldest",
+             "--resolution", "sneaky", "--repo-root", "."],
+            capture_output=True, text=True, env=env,
+        )
+        assert result.returncode == 3, (
+            f"a cycle subagent must be refused exit 3, got {result.returncode}: "
+            f"{result.stderr[:300]!r}"
+        )
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.pending_hardening() == 1, (
+                "refused --ack-deny must leave the ledger untouched"
+            )
+        finally:
+            _clear_state_dir()
+
+
 def test_deny_ledger_corrupt_line_skipped():
     """A corrupt (unparseable) line in the ledger is skipped, not fatal."""
     _guard()
@@ -13198,6 +13687,52 @@ def test_guard_allow_acks_on_hardening_class():
             )
         finally:
             _clear_state_dir()
+
+
+def test_dispatch_by_reference_round_trips_every_class():
+    """meta-dispatch-not-by-reference-and-ack-overpriced Fix Scope §3: EVERY
+    class in DISPATCH_CLASSES round-trips register_emission ->
+    dispatch_prompt_ref ('@@lazy-ref nonce=<hex>') -> lazy_guard.guard()
+    resolve (allow + updatedInput.prompt == the original text). Half 1 of the
+    bug (meta prompts not dispatchable by reference) is fixed in current code
+    for every class that exists TODAY — this regression guard is what keeps a
+    FUTURE emit path from silently regressing to transcription-only."""
+    _guard()
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+    import importlib
+    lazy_guard = importlib.import_module("lazy_guard")
+    import time as _time
+
+    def _hook_input(prompt, tool_use_id):
+        return json.dumps({
+            "tool_use_id": tool_use_id,
+            "tool_input": {"prompt": prompt},
+        })
+
+    for cls in lazy_core.DISPATCH_CLASSES:
+        with tempfile.TemporaryDirectory() as td:
+            state_dir = Path(td) / "state"
+            state_dir.mkdir()
+            _set_state_dir(state_dir)
+            try:
+                lazy_core.write_run_marker(
+                    pipeline="feature", cloud=False, repo_root="/r",
+                    max_cycles=5, now=_time.time(),
+                )
+                prompt = f"REAL {cls} dispatch prompt — do the thing"
+                entry = lazy_core.register_emission(prompt, cls=cls)
+                assert entry.get("nonce"), (cls, entry)
+                ref = f"@@lazy-ref nonce={entry['nonce']}"
+                out = lazy_guard.guard(_hook_input(ref, f"tu-{cls}"))
+                assert out is not None, (cls, "guard returned no output for a ref token")
+                data = json.loads(out)
+                hso = data["hookSpecificOutput"]
+                assert hso["permissionDecision"] == "allow", (cls, out)
+                assert hso["updatedInput"]["prompt"] == prompt, (
+                    f"class {cls!r} did not round-trip to the original prompt: {out}"
+                )
+            finally:
+                _clear_state_dir()
 
 
 def test_phase8_mvb_chain():
@@ -25632,6 +26167,70 @@ _TESTS = _TESTS + [
      test_skip_waiver_refusal_pipeline_structural_refuses_app_repo),
     ("test_skip_waiver_refusal_pipeline_structural_refuses_without_repo_root",
      test_skip_waiver_refusal_pipeline_structural_refuses_without_repo_root),
+]
+
+
+# ---------------------------------------------------------------------------
+# completion-gate-refusal-opacity — verify_ledger `failing_detail` +
+# summarize_failing_detail (the `detail_head` telemetry summarizer) + the
+# Surface B coherence-gate advisory now printing genuine-row excerpts.
+# ---------------------------------------------------------------------------
+_TESTS = _TESTS + [
+    ("test_verify_ledger_failing_detail_empty_when_ok",
+     test_verify_ledger_failing_detail_empty_when_ok),
+    ("test_verify_ledger_failing_detail_clean_tree_names_dirty_files",
+     test_verify_ledger_failing_detail_clean_tree_names_dirty_files),
+    ("test_verify_ledger_failing_detail_head_matches_origin_ahead_behind",
+     test_verify_ledger_failing_detail_head_matches_origin_ahead_behind),
+    ("test_verify_ledger_failing_detail_no_upstream_configured",
+     test_verify_ledger_failing_detail_no_upstream_configured),
+    ("test_verify_ledger_failing_detail_plan_complete_feature_level",
+     test_verify_ledger_failing_detail_plan_complete_feature_level),
+    ("test_verify_ledger_failing_detail_plan_complete_scoped",
+     test_verify_ledger_failing_detail_plan_complete_scoped),
+    ("test_verify_ledger_failing_detail_deliverables_done_feature_level",
+     test_verify_ledger_failing_detail_deliverables_done_feature_level),
+    ("test_verify_ledger_failing_detail_deliverables_done_plan_wu",
+     test_verify_ledger_failing_detail_deliverables_done_plan_wu),
+    ("test_summarize_failing_detail_clean_tree",
+     test_summarize_failing_detail_clean_tree),
+    ("test_summarize_failing_detail_head_no_upstream",
+     test_summarize_failing_detail_head_no_upstream),
+    ("test_summarize_failing_detail_head_ahead_behind",
+     test_summarize_failing_detail_head_ahead_behind),
+    ("test_summarize_failing_detail_deliverables_done",
+     test_summarize_failing_detail_deliverables_done),
+    ("test_summarize_failing_detail_ok_is_empty_string",
+     test_summarize_failing_detail_ok_is_empty_string),
+    ("test_summarize_failing_detail_malformed_never_raises",
+     test_summarize_failing_detail_malformed_never_raises),
+    ("test_apply_pseudo_coherence_advisory_prints_genuine_row_excerpts",
+     test_apply_pseudo_coherence_advisory_prints_genuine_row_excerpts),
+]
+
+
+# ---------------------------------------------------------------------------
+# meta-dispatch-not-by-reference-and-ack-overpriced — the cheap per-entry
+# --ack-deny CLI (+ same-cause dedup) and the DISPATCH_CLASSES round-trip
+# regression guard.
+# ---------------------------------------------------------------------------
+_TESTS = _TESTS + [
+    ("test_ack_deny_by_selector_oldest_requires_resolution",
+     test_ack_deny_by_selector_oldest_requires_resolution),
+    ("test_ack_deny_by_selector_oldest_fifo",
+     test_ack_deny_by_selector_oldest_fifo),
+    ("test_ack_deny_by_selector_sha_prefix_match",
+     test_ack_deny_by_selector_sha_prefix_match),
+    ("test_ack_deny_by_selector_no_match_refuses",
+     test_ack_deny_by_selector_no_match_refuses),
+    ("test_ack_deny_by_selector_dedups_same_sha_cause",
+     test_ack_deny_by_selector_dedups_same_sha_cause),
+    ("test_ack_deny_by_selector_dedups_reason_head_fallback_no_sha",
+     test_ack_deny_by_selector_dedups_reason_head_fallback_no_sha),
+    ("test_ack_deny_by_selector_refused_for_cycle_subagent",
+     test_ack_deny_by_selector_refused_for_cycle_subagent),
+    ("test_dispatch_by_reference_round_trips_every_class",
+     test_dispatch_by_reference_round_trips_every_class),
 ]
 
 

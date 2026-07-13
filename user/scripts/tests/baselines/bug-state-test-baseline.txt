@@ -50,6 +50,8 @@
   PASS [scoped-cloud-saturated-identity] feature_id='bug-scoped-cloud' terminal_reason='cloud-queue-exhausted-scoped'
   PASS [scoped-device-saturated-identity] feature_id='bug-scoped-dev' terminal_reason='device-queue-exhausted-scoped'
   PASS [backfill-receipts-direct] backfilled=['bug-needs-receipt'] count=1 fixed_md_written=True
+  PASS [fsck-violations] ok=False kinds=['fixed-without-receipt', 'stale-queue-entry', 'unarchived-fixed']
+  PASS [fsck-clean-tree] {'ok': True, 'violations': []}
   PASS [bug-park-needs-input-default-halt] default: terminal_reason='needs-input', parked key absent=True
   PASS [bug-park-needs-input-mode-skip] park mode: dispatched='bug-after', parked count=1
   PASS [bug-park-needs-input-resolved-reenter] resolved: dispatched='bug-parked', parked=[]

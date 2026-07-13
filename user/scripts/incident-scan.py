@@ -359,6 +359,117 @@ def scan_incident_keys(repo_root: Path) -> dict[str, dict]:
     return found
 
 
+def scan_archived_evidence_timestamps(repo_root: Path) -> dict[str, set[float]]:
+    """Union of raw evidence-line ``ts`` values already captured by every
+    ARCHIVED ``INCIDENT.md`` capsule, keyed by ``incident_key``
+    (adhoc-incident-scan-rereports-archived-evidence).
+
+    A recurrence stub's cluster (``collect_clusters``) re-sweeps the FULL
+    signal history for a signature — it has no memory of what an earlier,
+    now-archived incident already reported. When that earlier incident's
+    disposition closed (e.g. Won't-fix, working-as-designed) WITHOUT
+    changing the underlying deny/friction mechanism, its exact timestamps
+    remain in the ledger forever and get re-swept + re-counted on every
+    later scan under the SAME ``incident_key`` — inflating the recurrence's
+    occurrence count and duplicating already-adjudicated evidence lines in
+    the new capsule (live: ``docs/bugs/_archive/adhoc-incident-hook-deny-
+    19343d-r2`` re-reported the 3 timestamps ``docs/bugs/_archive/adhoc-
+    incident-hook-deny-19343d`` had already investigated and closed,
+    alongside 4 genuinely-new ones).
+
+    This reads every ``docs/bugs/_archive/*/INCIDENT.md``'s fenced evidence
+    block, parses each line as the same raw JSON the ledger/events readers
+    produced, and unions the ``"ts"`` field per ``incident_key`` — the exact
+    identity a byte-for-byte re-report shares with its prior report. Callers
+    exclude a cluster row whose ``ts`` is in this set for the row's own
+    ``incident_key`` (``_exclude_archived_evidence``), so a recurrence
+    reports ONLY occurrences an archived incident's own capsule never saw.
+
+    Best-effort / non-destructive, mirroring ``scan_incident_keys``: a
+    missing/malformed capsule or non-JSON evidence line is skipped, never
+    raised. Returns ``{}`` when ``docs/bugs/_archive/`` is absent.
+    """
+    archive = repo_root / "docs" / "bugs" / "_archive"
+    out: dict[str, set[float]] = {}
+    if not archive.is_dir():
+        return out
+    for child in sorted(archive.iterdir()):
+        if not child.is_dir() or child.name.startswith("_"):
+            continue
+        cap = child / "INCIDENT.md"
+        if not cap.is_file():
+            continue
+        try:
+            text = cap.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        key: str | None = None
+        for line in text.splitlines():
+            if line.startswith("incident_key:"):
+                key = line.split(":", 1)[1].strip()
+                break
+        if not key:
+            continue
+        bucket = out.setdefault(key, set())
+        in_fence = False
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped == "```":
+                in_fence = not in_fence
+                continue
+            if not in_fence:
+                continue
+            try:
+                obj = json.loads(stripped)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            ts = obj.get("ts") if isinstance(obj, dict) else None
+            if isinstance(ts, (int, float)):
+                bucket.add(float(ts))
+    return out
+
+
+def _exclude_archived_evidence(cluster: dict, covered: set[float]) -> dict:
+    """Return *cluster* with any row whose ``ts`` is in *covered* removed,
+    recomputing ``lines``/``occurrences``/``first_ts``/``last_ts``/``cleared``
+    from the SURVIVING rows only (adhoc-incident-scan-rereports-archived-
+    evidence). A malformed/non-JSON line is conservatively KEPT (never
+    silently dropped just because it could not be parsed for a ts).
+
+    Returns the SAME cluster object unchanged (by identity — no copy) when
+    *covered* is empty or nothing was excluded, so the common (no prior
+    archived incident) case does zero extra work.
+    """
+    if not covered:
+        return cluster
+    kept: list[str] = []
+    kept_ts: list[float] = []
+    excluded_any = False
+    for line in cluster["lines"]:
+        try:
+            obj = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            kept.append(line)
+            continue
+        ts = obj.get("ts") if isinstance(obj, dict) else None
+        if isinstance(ts, (int, float)) and float(ts) in covered:
+            excluded_any = True
+            continue
+        kept.append(line)
+        if isinstance(ts, (int, float)):
+            kept_ts.append(float(ts))
+    if not excluded_any:
+        return cluster
+    new_cluster = dict(cluster)
+    new_cluster["lines"] = kept
+    new_cluster["occurrences"] = len(kept)
+    new_cluster["first_ts"] = min(kept_ts) if kept_ts else None
+    new_cluster["last_ts"] = max(kept_ts) if kept_ts else None
+    bar = SIGNAL_BARS[cluster["signal_class"]]
+    new_cluster["cleared"] = len(kept) >= bar["min_occurrences"]
+    return new_cluster
+
+
 def _queued_ids(repo_root: Path) -> set[str]:
     qp = repo_root / "docs" / "bugs" / "queue.json"
     if not qp.exists():
@@ -516,6 +627,21 @@ def main(argv: list[str] | None = None) -> int:
         lazy_core.drop_efficacy_breadcrumb()
 
     clusters = collect_clusters(repo_root, now)
+
+    # adhoc-incident-scan-rereports-archived-evidence: exclude, PER
+    # incident_key, any evidence row whose exact ts an archived incident's
+    # own capsule already reported — BEFORE the bar filter, so a recurrence
+    # whose only "occurrences" are re-reports of already-adjudicated
+    # timestamps correctly drops below the bar instead of re-clearing it.
+    archived_evidence = scan_archived_evidence_timestamps(repo_root)
+    if archived_evidence:
+        clusters = [
+            _exclude_archived_evidence(
+                c, archived_evidence.get(incident_key(repo_root, c), set())
+            )
+            for c in clusters
+        ]
+
     cleared = [c for c in clusters if c["cleared"]]
 
     known_keys = scan_incident_keys(repo_root)
