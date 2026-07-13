@@ -2,6 +2,8 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** Complete
+
 **MCP runtime:** not-required — this feature is stdlib-only Python scripts (`lazy_core.py`,
 `efficacy-eval.py`) plus orchestrator skill-prose edits. It has no Tauri/MCP app surface, no
 audio path, and no UI state — the entire deliverable is outside MCP reach (the "build-tooling /

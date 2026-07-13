@@ -10,7 +10,7 @@
 > ledger) is recorded at ship time so backing out is mechanical, not archaeology. The window
 > closes with a verdict into the efficacy ledger and monitoring drops back to normal cadence.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-04
 **Friction-reduction feature:** yes
