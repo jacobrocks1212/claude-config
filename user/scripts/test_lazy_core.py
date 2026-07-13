@@ -13360,9 +13360,33 @@ def _set_state_dir(path: "Path") -> None:
     _os_env.environ["LAZY_STATE_DIR"] = str(path)
 
 
+# The LAZY_STATE_DIR value present when this test module was imported — i.e. the
+# operator's PROCESS-LEVEL override, if any. The documented mitigation for running
+# the full suite DURING a live lazy cycle is `LAZY_STATE_DIR=<temp> python3
+# test_lazy_core.py`, so the cycle-active guards (`refuse_if_cycle_active` reached
+# via `apply_pseudo`) read a clean temp state dir instead of the real
+# ~/.claude/state/<repo>/ carrying the live cycle marker. `_clear_state_dir()` must
+# RESTORE this value, not unconditionally delete it — otherwise an early
+# cycle-marker test's teardown strips the operator override mid-suite and every
+# later guard reads the REAL state dir and false-fails on the live marker.
+# See docs/bugs/clear-state-dir-teardown-strips-lazy-state-dir-override.
+_ORIGINAL_LAZY_STATE_DIR = _os_env.environ.get("LAZY_STATE_DIR")
+
+
 def _clear_state_dir() -> None:
-    """Remove the LAZY_STATE_DIR override so subsequent tests are unaffected."""
-    _os_env.environ.pop("LAZY_STATE_DIR", None)
+    """Restore LAZY_STATE_DIR to its process-launch value so subsequent tests
+    (and the guards they exercise) are unaffected.
+
+    Restores rather than unconditionally deletes: when the suite is launched with
+    a process-level LAZY_STATE_DIR override (the documented live-cycle mitigation),
+    an unconditional pop would strip that override mid-suite. When no override was
+    set at launch (_ORIGINAL_LAZY_STATE_DIR is None — the normal CI case), this
+    pops exactly as before, so every existing hermetic test is byte-identical.
+    """
+    if _ORIGINAL_LAZY_STATE_DIR is None:
+        _os_env.environ.pop("LAZY_STATE_DIR", None)
+    else:
+        _os_env.environ["LAZY_STATE_DIR"] = _ORIGINAL_LAZY_STATE_DIR
 
 
 # ---------------------------------------------------------------------------
@@ -34059,6 +34083,53 @@ def test_intervention_event_vocabulary_matches_live_emit_set():
 _TESTS = _TESTS + [
     ("test_intervention_event_vocabulary_matches_live_emit_set",
      test_intervention_event_vocabulary_matches_live_emit_set),
+]
+
+
+# ---------------------------------------------------------------------------
+# Regression: _clear_state_dir() must RESTORE the process-launch LAZY_STATE_DIR
+# override, not unconditionally strip it (clear-state-dir-teardown-strips-
+# lazy-state-dir-override). The documented mitigation for running the full suite
+# DURING a live lazy cycle is a process-level LAZY_STATE_DIR=<temp>; an
+# unconditional pop in an early cycle-marker test's teardown would strip that
+# override mid-suite and route later guard reads at the REAL state dir (false
+# fail on the live cycle marker).
+# ---------------------------------------------------------------------------
+
+def test_clear_state_dir_restores_process_launch_override():
+    """_clear_state_dir() restores the process-launch LAZY_STATE_DIR value when
+    one was present at import, and pops (legacy behavior) when none was."""
+    _guard()
+    live = _os_env.environ.get("LAZY_STATE_DIR")   # whatever is live right now
+    saved_original = _ORIGINAL_LAZY_STATE_DIR
+    try:
+        # Case 1: an operator override was present at process launch -> RESTORE.
+        globals()["_ORIGINAL_LAZY_STATE_DIR"] = "/operator/override/state"
+        _set_state_dir(Path("/some/per-test/temp"))   # a test set its own temp
+        _clear_state_dir()                            # teardown
+        assert _os_env.environ.get("LAZY_STATE_DIR") == "/operator/override/state", (
+            "teardown must RESTORE the process-launch override, not strip it; "
+            f"got {_os_env.environ.get('LAZY_STATE_DIR')!r}"
+        )
+        # Case 2: no override at launch -> pop (byte-identical legacy behavior).
+        globals()["_ORIGINAL_LAZY_STATE_DIR"] = None
+        _set_state_dir(Path("/some/per-test/temp2"))
+        _clear_state_dir()
+        assert "LAZY_STATE_DIR" not in _os_env.environ, (
+            "with no process-launch override, teardown must pop as before; "
+            f"got {_os_env.environ.get('LAZY_STATE_DIR')!r}"
+        )
+    finally:
+        globals()["_ORIGINAL_LAZY_STATE_DIR"] = saved_original
+        if live is None:
+            _os_env.environ.pop("LAZY_STATE_DIR", None)
+        else:
+            _os_env.environ["LAZY_STATE_DIR"] = live
+
+
+_TESTS = _TESTS + [
+    ("test_clear_state_dir_restores_process_launch_override",
+     test_clear_state_dir_restores_process_launch_override),
 ]
 
 
