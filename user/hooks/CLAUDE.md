@@ -135,6 +135,20 @@ while an in-quote one is masked away. This is a flat single-pass char scan, the 
 not-a-shell-parser discipline as `_normalize_ps_syntax`; the accepted residual is a keyword inside
 a `bash -c "kill …"` string argument (the plane-wide quoted-argument residual above).
 
+That anchoring was still **quote-blind** — a genuine separator *character* (`\n ; & | (`) inside a
+quoted argument span satisfied `_CMD_START` even though, as a matter of shell grammar, a separator
+inside quotes never begins a command segment. So a `grep 'foo|kill'` regex alternation and a
+`python -c "…\nexit(0)"` body false-denied (`block-terminal-kill-matches-separators-inside-quoted-args`,
+the reported `/build-queue-await` result-read incident). `_mask_quoted_spans` closes it by replacing
+the INTERIOR of every `'…'`/`"…"` span with a neutral `x` filler (bash rules: a `\` escapes the next
+char inside double quotes, both masked; no escaping inside single quotes; an unterminated quote masks
+to end-of-string — the fail-OPEN direction) before the four deny matchers scan. Quote delimiters and
+any post-quote real separator survive, so a genuine `echo "a;b" && kill 1` still denies; the
+`_KILL_PORT_RE` allow-exception is deliberately checked against the ORIGINAL (unmasked) command. This
+is distinct from (and does not close) the documented `bash -c "…"`/`sh -c "…"` bypass residual — a
+`bash -c "exit"` body is shell that masking would *widen to allow*, but that form is already an
+accepted plane-wide bypass, so no contract-required deny is lost.
+
 ## Per-repo keyed, not global-marker
 
 The lazy enforcement hooks (`lazy-dispatch-guard.sh`, `lazy-route-inject.sh`,
