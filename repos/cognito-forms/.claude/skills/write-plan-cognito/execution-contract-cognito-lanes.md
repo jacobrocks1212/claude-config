@@ -81,7 +81,7 @@ These replace the generic contract's MANDATORY RULES for lane plans:
 3. Every lane with testable behavior follows inline TDD — the lane agent writes failing tests first and pastes RED then GREEN ground-truth output.
 4. Lane agents use Tier 1 verification commands only, routed through the queue skills: `/msbuild -Project "<csproj>"` for an incremental project build and `/mstest -Filter "ClassName~…"` / `/nxtest -Project … -Pattern … -NoCoverage` for filtered tests. Never raw `dotnet`/`npx nx`. Nobody runs a full-solution `/msbuild` (no `-Project`) except the orchestrator at part-end Tier 2 (or on an escalation trigger).
 5. Sequenced phases: the frontend lane is NOT dispatched until the typegen seam step completes and the server-types diff is reviewed.
-6. Every lane's output is reviewed (ground-truth re-run included) before PHASES.md is updated or the next batch launches.
+6. Every lane's output is reviewed (diff review is the gate — assertion-vs-intent + propagation + scope; the `/mstest` re-run is conditional per Step L.3) before PHASES.md is updated or the next batch launches.
 7. PHASES.md is updated after EACH batch completes (not deferred).
 8. NO git commits or pushes at any point — repo policy. All git operations are manual (see commit-policy component).
 9. The part-end Tier 2 gate (full-solution `/msbuild` (no `-Project`) + filtered `/mstest`/`/nxtest` for all touched areas) is MANDATORY and 100%-pass before this plan part is reported complete.
@@ -173,15 +173,33 @@ Read `~/.claude/skills/_components/subagent-review.md` and follow its complete p
 (including the Ground-Truth Verification Gate), plus
 `~/.claude/skills/_components/mount-site-verification.md` for new files/test classes.
 
-**Cognito gate-cost rules for the ground-truth re-run:** re-run the EQUIVALENT queue-routed test
-command the lane used — `/mstest -Filter "ClassName~<same filter>"` for backend, or `/nxtest
--Project <same project> -Pattern <same pattern> -NoCoverage` for frontend. The falsified-report
-check compares PASS/FAIL outcome, not byte-identical output, so the equivalent skill command is
-sufficient. `/mstest` is already `--no-build` and filtered, so it is cheap. NEVER trigger a build
-(no full-solution `/msbuild`, no `/msbuild -Project`) as part of ground-truth verification. For
-inline-TDD lanes, the TDD-discipline checks read the lane agent's OWN pasted RED output as the
-red-state evidence — verify the failures were for the right reason (behavioral, not compile/setup
-errors) and that the GREEN run passes the same filter.
+**Cognito gate-cost rules (D5 — trust the banner; the diff read is the gate).** Field mining of 47
+execute-plan runs (164 orchestrator ground-truth re-runs) found the per-lane `/mstest` re-run
+caught **zero** clean PASS/FAIL divergences from a lane's pasted banner — every real defect in the
+corpus came from *reading the diff* (assertion-vs-intent, propagation, scope/plan-conformance),
+which a re-run cannot see (the tests were genuinely green). So the ground-truth re-run is now
+**conditional**, and the mechanical integrity ceremony is default-off:
+
+- **Default: trust the lane's `RESULT=<PASS|FAIL>` banner line.** The queue banner is
+  fidelity-tagged (`result_fidelity=verified`; `build_fidelity` forces `RESULT=FAIL` on a
+  no-output build), so its outcome is authoritative — do NOT re-run `/mstest`/`/nxtest` to
+  re-confirm a `result_fidelity=verified` result. For inline-TDD lanes, read the lane agent's OWN
+  pasted RED/GREEN output as the TDD evidence — verify the RED failed for the right reason
+  (behavioral, not compile/setup) and the GREEN passes the same filter.
+- **Conditional re-run — only when trust breaks.** Re-run the equivalent queue-routed command
+  (`/mstest -Filter "ClassName~<same>"` / `/nxtest -Project <same> -Pattern <same> -NoCoverage` —
+  compare PASS/FAIL outcome, NEVER trigger a build) ONLY if: the banner is missing / not
+  `result_fidelity=verified`, the lane reported a backgrounded `enqueued as seq=N` instead of a
+  completed banner, or the `git status --short` scope check (below) disagrees with the paste.
+  `/mstest` is `--no-build` and filtered, so the conditional re-run stays cheap when it fires.
+- **Skip the mechanical integrity ceremony by default** (overrides `subagent-review.md` Step 1.5's
+  "always" integrity commands): the `wc -l`/`grep -n` byte-diff of the `GROUND-TRUTH OUTPUT` block
+  and the "already-complete" `git log` sanity check caught nothing in the corpus — run them only if
+  something already looks off. Keep the `git status --short` scope check of the lane's touched files
+  as the one default integrity check — it is what caught out-of-scope edits (a real catch class).
+
+The load-bearing gate is Step 2's diff review (assertion-vs-intent + propagation check + scope /
+plan-conformance) — that is MANDATORY and never skipped; it is where every real defect was caught.
 
 #### Step L.4: Update PHASES.md (MANDATORY)
 
@@ -217,6 +235,7 @@ PHASES.md updated; escalation check done. If any item is unchecked, go back.
    - Failures: dispatch Sonnet fix agents, re-run the failing gate. Two failed fix attempts = blocking issue.
 2. **Integration verification:** read `~/.claude/skills/_components/integration-verification.md` and follow it (cross-lane integration, spec alignment, full-stack coverage for user-facing changes).
 2b. **Symptom reproduction (SEAM B — MANDATORY for bug fixes; this repo has no MCP step).** Because this repo declares "No MCP integration test step," the bug-completion evidence bar is enforced HERE. Read `~/.claude/skills/_components/symptom-reproduction-gate.md`. A bug-fix part may not be reported complete without the REQUIRED rung: a **serving-path regression test** — a `/mstest`-run test on the symptom's *actual serving path* (a service/controller test exercising the real path the symptom is served through), verified RED→GREEN — **NOT** a unit test asserting on the fix's *internal target* (a stored value / facet / private helper). A `local-ui-tests` Selenium run or a `/write-manual-testing-doc` artifact observing the original symptom gone at the user surface is accepted as a STRONGER alternative. Bind the evidence to the SPEC's `## Reproduction Steps`. If only an internal-target unit test exists, the part is NOT complete — route a serving-path regression-test lane.
+2c. **Pending runtime gates (feature parts — MANDATORY; this repo declares `MCP runtime: not-required`).** Read `~/.claude/skills/_components/pending-runtime-gates.md` and follow it. The flip to complete stays — but the completion OUTPUT contract changes: enumerate every unchecked `<!-- verification-only -->` / `**Runtime Verification**` row across the part's phases (count = N; N = 0 → no-op); write/update the `RUNTIME_GATES.md` ledger in the feature dir (columns: gate row text, how to run it, owning phase, date deferred — idempotent per plan, re-running replaces the plan's section); the completion report MUST LEAD with `N MANUAL RUNTIME GATES PENDING — feature not verified end-to-end` BEFORE any completion language (anti-pattern — 57077: "complete across all 5 phases" first, the unrun `:7775` manual rows a footnote, HTTP 500 found by the operator two days later); each affected phase status line gains `— RUNTIME GATES PENDING (N)`. Because this repo has no `/mcp-test` downstream owner, the report MUST state that the ledger is the ONLY owner of these rows.
 3. **CLAUDE.md review:** read `~/.claude/skills/_components/claude-md-review.md` and follow it.
 4. Leave everything uncommitted — the developer commits manually (repo policy).
 

@@ -6,6 +6,12 @@
 - `ModuleFactory.CoreService` is reset per test — do NOT cache references across tests.
 - `TestContext.Properties` drives test store behavior (auto-save, test directory).
 
+## Indexing Test Performance
+Tests in the `EntryIndexService` / `PersonSubmissionIndexing` area are pathologically slow if written naively (the class once took ~11 min; the fixes below cut it to ~1 min — PR #17028). Two rules:
+
+- **Force an immediate schema rebuild after mutating a form's index schema — never leave it to `StorageContext.Store(form)` alone.** Storing a form whose change affects the index schema (`SubmitterPersonSettings`, `Format`, field-mapping paths, etc.) does NOT invalidate the schema synchronously; the production path debounces (~8 s) before rebuild, and `EnsureValidIndex` then polls on a `Task.Delay(10000)` retry loop, so every such store costs seconds of real wall time in-test. After storing, call `IndexService.InvalidateIndex(form, rebuildFacets: true, rebuildLinkAssignments: false)` to invalidate/rebuild immediately and bypass the debounce. Wrap the pair in a `StoreFormAndRebuildSchema(form)` helper and use it in place of bare `StorageContext.Store(form)` for any schema-affecting change.
+- **Disable auto-create in tests that don't exercise it.** A form left with `SubmitterPersonSettings.CreateNewPersonEntries = true` / a set `AutoCreateActionId` does extra person-entry creation + indexing and creates lock contention that slows unrelated assertions. If a test submits entries but isn't testing auto-create, call `DisableAutoCreate(form)` during arrange.
+
 ## BaseTest Architecture
 All test classes inherit `BaseTest`: DI scope management (`diScope`), test fixtures (`TestOrg`, `TestUser`, `AdminSession`, `PublicSession`), service mocking, queue helpers.
 
