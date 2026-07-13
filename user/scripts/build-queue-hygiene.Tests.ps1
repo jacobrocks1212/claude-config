@@ -919,6 +919,25 @@ Describe 'Format-BuildQueueBanner — build_fidelity no-output arm (WU-1)' {
 	}
 }
 
+Describe 'Format-BuildQueueBanner - op-aware no-output remedy (build-queue-nxbuild-false-no-output-fail)' {
+	# Child-scope discipline: assign on its own line, assert on the next.
+
+	It 'nxbuild no-output gets the nx-appropriate remedy, NOT the dotnet obj/bin text' {
+		$result = Format-BuildQueueBanner -Seq 833 -Op nxbuild -ExitCode 1 -ResultFidelity verified -BuildFidelity no-output
+		$result | Should -Be 'build-queue: seq=833 op=nxbuild RESULT=FAIL (result_fidelity=verified) -> build produced no output; re-run the nx target (npx nx build)'
+	}
+
+	It 'msbuild no-output KEEPS the original dotnet remedy (no regression - pinned alongside WU-1)' {
+		$result = Format-BuildQueueBanner -Seq 834 -Op msbuild -ExitCode 1 -ResultFidelity verified -BuildFidelity no-output
+		$result | Should -Be 'build-queue: seq=834 op=msbuild RESULT=FAIL (result_fidelity=verified) -> build produced no output; delete obj/bin and rebuild'
+	}
+
+	It 'an unrecognized/unknown op falls back to the dotnet remedy (safe default)' {
+		$result = Format-BuildQueueBanner -Seq 835 -Op some-future-op -ExitCode 1 -ResultFidelity verified -BuildFidelity no-output
+		$result | Should -Be 'build-queue: seq=835 op=some-future-op RESULT=FAIL (result_fidelity=verified) -> build produced no output; delete obj/bin and rebuild'
+	}
+}
+
 Describe 'Get-HygieneHighlight (WU-3 status-view highlight selector)' {
 	# Pure highlight-selection helper shared by build-queue-status.ps1 and this test.
 	# Child-scope discipline: assign on its own line, assert on the next.

@@ -2175,7 +2175,13 @@ function Format-BuildQueueBanner {
 
 	  A non-PASS RESULT appends exactly one next-action suffix:
 	    - NO-TESTS-MATCHED -> "widen the filter and retry"
-	    - FAIL, build_fidelity no-output -> "build produced no output; delete obj/bin and rebuild"
+	    - FAIL, build_fidelity no-output, $Op starts with 'nx' -> "build produced no
+	      output; re-run the nx target (npx nx build)" (op-aware remedy fix for
+	      build-queue-nxbuild-false-no-output-fail — the prior dotnet-oriented
+	      remedy was unconditionally wrong for an Nx/rspack op)
+	    - FAIL, build_fidelity no-output, otherwise -> "build produced no output;
+	      delete obj/bin and rebuild" (unchanged dotnet-era remedy — msbuild and
+	      any other/unknown op)
 	    - FAIL, exit code 4 -> "rebuild (stale DLL)"
 	    - FAIL, otherwise    -> "read logs/<Seq>.build.err.log"
 
@@ -2243,7 +2249,18 @@ function Format-BuildQueueBanner {
 			$nextAction = if ($resultLabel -eq 'NO-TESTS-MATCHED') {
 				'widen the filter and retry'
 			} elseif ($BuildFidelity -eq 'no-output') {
-				'build produced no output; delete obj/bin and rebuild'
+				# Op-aware remedy (build-queue-nxbuild-false-no-output-fail): the
+				# prior single dotnet-oriented string fired identically for every
+				# op, including Nx/rspack builds where "delete obj/bin and
+				# rebuild" is inapplicable and risks an agent no-op loop. Key off
+				# the op NAME (Nx ops are dotnet-hygiene-profiled too, so the
+				# hygiene profile can't disambiguate this) — an unrecognized/
+				# unknown op keeps the original dotnet-era text.
+				if ($Op -match '^nx') {
+					'build produced no output; re-run the nx target (npx nx build)'
+				} else {
+					'build produced no output; delete obj/bin and rebuild'
+				}
 			} elseif ($ExitCode -eq 4) {
 				'rebuild (stale DLL)'
 			} else {

@@ -2,10 +2,11 @@
 
 > `/nxbuild` (frontend rspack build) reports `RESULT=FAIL (build_fidelity=no-output)` → banner "build produced no output; delete obj/bin and rebuild" on genuinely-**successful** builds, even though the raw `logs/<seq>.build.log` is populated with a success summary. This is a **distinct** defect from the already-fixed child-scope `$buildLogPath` bug (that fix landed in `7108b2e`; `$buildLogPath` is now correctly main-scoped and the log IS captured).
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-08
 **Concluded:** 2026-07-12
+**Fixed:** 2026-07-12
 **Last updated:** 2026-07-12
 **Placement:** docs/bugs/build-queue-nxbuild-false-no-output-fail
 **Related:** docs/bugs/build-queue-buildlogpath-child-scope-forces-no-output-fail (same *symptom* — `no-output` FAIL on success — different *cause*; that one was child-scope `$buildLogPath` discard, Concluded + fixed `7108b2e` 2026-07-06, and its evidence ruled out the flush-timing race **for `/msbuild`/dotnet only**), docs/bugs/build-queue-false-green-on-silent-build-failure (origin of the `no-output` gate + `Test-BuildProducedNoOutput` + `Read-WithRetry`, `fd7a81a`/`a36aa91` 2026-07-03), docs/bugs/build-queue-copy-lock-stale-dll-false-success (origin of `build_fidelity`)

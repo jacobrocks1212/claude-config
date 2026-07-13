@@ -23,10 +23,56 @@
 
 BeforeAll {
 	$script:RunnerPath = Join-Path $PSScriptRoot 'build-queue-runner.ps1'
+	$script:HygienePath = Join-Path $PSScriptRoot 'build-queue-hygiene.ps1'
+	. $script:HygienePath
 
 	function Get-SafeValue {
 		param([scriptblock]$Block, $Fallback = $null)
 		try { & $Block } catch { $Fallback }
+	}
+
+	function Invoke-DelayedBuildLogClassify {
+		<#
+		.SYNOPSIS
+		  Mirrors runner.ps1's build-log classify block (Read-WithRetry feeding
+		  Test-BuildProducedNoOutput) against a log file whose content lands on a
+		  REAL background thread after -DelayMs milliseconds -- independent of
+		  Start-Process/-Exec, since the SPEC (build-queue-nxbuild-false-no-output-fail)
+		  found the actual Start-Process-redirect race unreproducible on this
+		  machine even with a real node child. This exercises the retry-window
+		  ARITHMETIC the fix widens, using the runner's REAL Read-WithRetry /
+		  Test-BuildProducedNoOutput functions (dot-sourced from hygiene.ps1, not
+		  reimplemented).
+		#>
+		param(
+			[Parameter(Mandatory = $true)][string]$LogPath,
+			[Parameter(Mandatory = $true)][int]$ArrivalDelayMs,
+			[Parameter(Mandatory = $true)][int]$MaxAttempts,
+			[Parameter(Mandatory = $true)][int]$DelayMs,
+			[string]$Content = 'NX Successfully ran target build for project cognito-spa and 4 tasks it depends on'
+		)
+
+		$ps = [powershell]::Create()
+		$null = $ps.AddScript({
+			param($path, $delayMs, $content)
+			Start-Sleep -Milliseconds $delayMs
+			[System.IO.File]::WriteAllText($path, $content)
+		}).AddArgument($LogPath).AddArgument($ArrivalDelayMs).AddArgument($Content)
+		$handle = $ps.BeginInvoke()
+
+		try {
+			$logText = Read-WithRetry -MaxAttempts $MaxAttempts -DelayMs $DelayMs -Parse {
+				if (-not (Test-Path $LogPath)) { return $null }
+				$t = Get-SafeValue { [System.IO.File]::ReadAllText($LogPath) } $null
+				if ([string]::IsNullOrEmpty($t)) { return $null }
+				$t
+			} -Fallback $null
+
+			return Test-BuildProducedNoOutput -LogText $logText
+		} finally {
+			$null = $ps.EndInvoke($handle)
+			$ps.Dispose()
+		}
 	}
 
 	function New-FixtureStateRoot {
@@ -149,5 +195,66 @@ Describe 'build-queue-runner.ps1 — idempotent result write' {
 		$first.exit_code | Should -Be $second.exit_code
 		$second.seq | Should -Be 10
 		$second.exit_code | Should -Be 5
+	}
+}
+
+Describe 'build-queue-runner.ps1 — widened build-log classify retry window (build-queue-nxbuild-false-no-output-fail)' {
+	# RED/GREEN pair: a build log whose content lands on a background thread at
+	# ~150ms elapsed -- past the OLD 3x/50ms (~100ms) settle budget, but well
+	# inside the NEW 10x/100ms (~1s) budget the runner's classify call site now
+	# passes. Uses the REAL Read-WithRetry / Test-BuildProducedNoOutput functions
+	# (via Invoke-DelayedBuildLogClassify above) — never reimplemented.
+
+	It 'RED: under the OLD 100ms budget, a log landing at 150ms is misclassified no-output' {
+		$root = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+		$null = New-Item -ItemType Directory -Path $root -Force
+		$logPath = Join-Path $root 'seq-old.build.log'
+
+		$noOutput = Invoke-DelayedBuildLogClassify -LogPath $logPath -ArrivalDelayMs 150 -MaxAttempts 3 -DelayMs 50
+
+		# This IS the bug: a genuinely-successful build (real content landed at
+		# 150ms) gets force-failed as no-output because the old budget gave up too
+		# soon.
+		$noOutput | Should -BeTrue
+	}
+
+	It 'GREEN: under the NEW widened budget, the SAME 150ms-delayed log classifies as produced-output' {
+		$root = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+		$null = New-Item -ItemType Directory -Path $root -Force
+		$logPath = Join-Path $root 'seq-new.build.log'
+
+		$noOutput = Invoke-DelayedBuildLogClassify -LogPath $logPath -ArrivalDelayMs 150 -MaxAttempts 10 -DelayMs 100
+
+		$noOutput | Should -BeFalse
+	}
+
+	It 'GREEN: a log that never arrives still classifies no-output (genuine failure is not masked)' {
+		$root = Join-Path $TestDrive ([Guid]::NewGuid().ToString('N'))
+		$null = New-Item -ItemType Directory -Path $root -Force
+		$logPath = Join-Path $root 'seq-never.build.log'
+
+		# ArrivalDelayMs far beyond the widened budget's ~1s ceiling -- the widened
+		# window absorbs a transient flush lag, it does not mask a build that truly
+		# produced nothing.
+		$noOutput = Invoke-DelayedBuildLogClassify -LogPath $logPath -ArrivalDelayMs 5000 -MaxAttempts 10 -DelayMs 100
+
+		$noOutput | Should -BeTrue
+	}
+
+	It 'source pin: the runner''s build-log classify call site passes the widened -MaxAttempts/-DelayMs' {
+		$source = Get-Content -Raw -Path $script:RunnerPath
+		$source | Should -Match 'Read-WithRetry -MaxAttempts 10 -DelayMs 100 -Parse \{'
+	}
+
+	It 'source pin: the test-counts and active.lock Read-WithRetry call sites stay at the ORIGINAL default (unwidened)' {
+		$source = Get-Content -Raw -Path $script:RunnerPath
+		# Both remaining call sites in the runner take no -MaxAttempts/-DelayMs
+		# override (i.e. they still use Read-WithRetry's own 3x/50ms default) --
+		# the widening is scoped to the build-log no-output classify path only.
+		$countsCallSite = [regex]::Match($source, '\$counts = Read-WithRetry -Parse \{')
+		$countsCallSite.Success | Should -BeTrue
+
+		$lockCallSite = [regex]::Match($source, '\$lockSeq = Read-WithRetry -Parse \{')
+		$lockCallSite.Success | Should -BeTrue
 	}
 }

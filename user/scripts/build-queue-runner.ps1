@@ -181,17 +181,27 @@ try {
 		# Flush-safe build-log read (Root Cause C): the build log is flushed/closed
 		# by the wrapper's live-tail redirect; a single-shot ReadAllText here can
 		# race that flush and see an empty/truncated log. Route through
-		# Read-WithRetry so a not-yet-flushed log settles (3x/50ms) before we
+		# Read-WithRetry so a not-yet-flushed log settles before we
 		# classify. A genuinely-absent path returns immediately (not a race); an
-		# empty read returns $null → retry; exhaustion falls back to the same
+		# empty read returns $null -> retry; exhaustion falls back to the same
 		# fail-open no-failure verdict the single-shot read used.
+		# WIDENED WINDOW (build-queue-nxbuild-false-no-output-fail): the original
+		# 3x/50ms (~100ms ceiling) settle budget was tuned for dotnet's fast,
+		# near-immediate flush and was too tight for an npx/node/rspack process
+		# tree (Nx daemon/per-task worker fan-out), whose redirected stdout can
+		# settle to disk noticeably later -- the classifier then sees an empty
+		# read, feeds $null to Test-BuildProducedNoOutput, and force-fails a
+		# genuinely-successful build as `no-output`. 10x/100ms (~1s ceiling) is
+		# cheap relative to a multi-second-to-multi-minute build op and applies to
+		# EVERY build op (not just nx) -- a fast dotnet build still settles on
+		# attempt 1, so this is a pure widening, never a regression for msbuild.
 		# Capture the SAME flush-safe read for the no-output classifier below —
 		# the Phase-3 build-output gate classifies on this text, it does NOT
 		# re-read the log (Phase-3 Integration Note: "classifier called AFTER the
 		# Phase 2 read, not a re-read"). Left $null when the log was genuinely
 		# absent or never settled (both => no output produced).
 		$script:buildLogTextForClassify = $null
-		$logFailure = Read-WithRetry -Parse {
+		$logFailure = Read-WithRetry -MaxAttempts 10 -DelayMs 100 -Parse {
 			if ([string]::IsNullOrWhiteSpace($buildLogPath) -or -not (Test-Path $buildLogPath)) {
 				return @{ failed = $false; signature = $null }
 			}
