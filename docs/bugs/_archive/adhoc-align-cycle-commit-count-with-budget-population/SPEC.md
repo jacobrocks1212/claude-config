@@ -7,7 +7,7 @@ bug_id: adhoc-align-cycle-commit-count-with-budget-population
 
 > The process-friction `unexpected-commits` detector compares an authored-commit COUNT (`git rev-list --count --no-merges begin..HEAD`, uniform across every dispatch identity) against a per-cycle commit BUDGET that is modeled DIFFERENTLY per identity — a work-scaled, slack-and-bookend-cushioned formula for `execute-plan` alone, versus a bare flat ceiling with ZERO cushion for every other multi-commit dispatch identity. Round 42 and Round 46 each patched one concrete instance of the mismatch (both on `execute-plan`) without generalizing the fix, so the same commit categories that tripped `execute-plan` twice (an in-cycle revert/self-correction, an off-plan/unrelated commit landing on the branch, an unmodeled status-flip) remain fully exposed for the other 8 multi-commit dispatch identities — most acutely `mcp-test`, whose ceiling equals its exact documented worst case with no headroom at all.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** Medium
 **Discovered:** 2026-07-12
 **Placement:** docs/bugs/adhoc-align-cycle-commit-count-with-budget-population

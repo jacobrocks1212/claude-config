@@ -20334,60 +20334,101 @@ def test_detect_friction_mcp_test_cycle_multi_commit_within_budget():
     an engine-VALIDATED.md schema correction (`d744204da`). The
     `_MULTI_COMMIT_CEILING_OVERRIDE["mcp-test"] = 4` row closes that MAGNITUDE gap
     while leaving every OTHER multi-commit skill at the uniform ceiling of 3. A
-    genuine mcp-test runaway (>4) still trips — no gate weakened."""
+    genuine mcp-test runaway still trips — no gate weakened.
+
+    adhoc-derive-multi-commit-budget-from-dispatch-sites (2026-07-12): membership is
+    now DERIVED from a repo-scoped `commit-cadence: multi` SKILL.md frontmatter flag
+    (mirroring the real `repos/algobooth/.claude/skills/mcp-test/SKILL.md`), not the
+    retired `_MULTI_COMMIT_DISPATCH_SKILLS` frozenset — so this test builds a hermetic
+    repo_root fixture and threads it through. adhoc-align-cycle-commit-count-with-
+    budget-population (2026-07-12) then adds the shared `_CYCLE_COMMIT_NOISE_ALLOWANCE`
+    cushion on top of every registry-derived ceiling — mcp-test's effective budget is
+    now `4 + 1 = 5`; `spec`'s is `3 + 1 = 4`."""
     _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        skill_dir = repo / ".claude" / "skills" / "mcp-test"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: mcp-test\ncommit-cadence: multi\n---\n# MCP Test\n",
+            encoding="utf-8",
+        )
+        marker = {
+            "feature_id": "mcp-audio-quality-observability", "nonce": "n",
+            "run_started_at": "2026-06-16T00:00:00Z",
+            "begin_head_sha": "a28085bb938e",
+        }
+        # Round-23 2-commit cadence (self-heal + sentinel/PHASES-reconcile) — clean.
+        got = lazy_core.detect_cycle_bracket_friction(
+            marker,
+            current_run_started_at="2026-06-16T00:00:00Z",  # identity intact
+            current_head_sha="730a4df88d17",
+            sub_skill="mcp-test",
+            commits_since=2,  # self-heal commit + sentinel/PHASES-reconcile commit
+            repo_root=repo,
+        )
+        assert got is None, got
+        # 2026-06-26 pattern-abstractions 4-commit cadence (self-heal + 2-part PHASES
+        # reconcile + VALIDATED.md correction) — within the cushioned ceiling of 5, clean.
+        pa_marker = {
+            "feature_id": "pattern-abstractions", "nonce": "n",
+            "run_started_at": "2026-06-26T00:00:00Z",
+            "begin_head_sha": "0dd654ae39ce",
+        }
+        pa_got = lazy_core.detect_cycle_bracket_friction(
+            pa_marker,
+            current_run_started_at="2026-06-26T00:00:00Z",  # identity intact
+            current_head_sha="d744204da000",
+            sub_skill="mcp-test",
+            commits_since=4,
+            repo_root=repo,
+        )
+        assert pa_got is None, pa_got
+        # A genuine runaway STILL trips — no gate weakened.
+        runaway = lazy_core.detect_cycle_bracket_friction(
+            marker,
+            current_run_started_at="2026-06-16T00:00:00Z",
+            current_head_sha="730a4df88d17",
+            sub_skill="mcp-test",
+            commits_since=7,
+            repo_root=repo,
+        )
+        assert runaway is not None and runaway["reason"] == "unexpected-commits", runaway
+        # Without repo_root, mcp-test's repo-scoped flag cannot be resolved — it falls
+        # to the single-commit default (fail-closed, never a crash, never a silent
+        # escalation) — proving the derivation genuinely reads the frontmatter, not a
+        # hardcoded name.
+        no_repo_root = lazy_core.detect_cycle_bracket_friction(
+            marker,
+            current_run_started_at="2026-06-16T00:00:00Z",
+            current_head_sha="730a4df88d17",
+            sub_skill="mcp-test",
+            commits_since=3,
+        )
+        assert (
+            no_repo_root is not None
+            and no_repo_root["reason"] == "unexpected-commits"
+        ), no_repo_root
+    # The per-skill override is mcp-test-ONLY: another multi-commit member (spec, a
+    # real user-level skill resolved module-relatively with no repo_root needed) at
+    # 5 commits STILL trips against its cushioned ceiling of 4 — the override does
+    # not leak the higher ceiling to other skills.
     marker = {
         "feature_id": "mcp-audio-quality-observability", "nonce": "n",
         "run_started_at": "2026-06-16T00:00:00Z",
         "begin_head_sha": "a28085bb938e",
     }
-    # Round-23 2-commit cadence (self-heal + sentinel/PHASES-reconcile) — still clean.
-    got = lazy_core.detect_cycle_bracket_friction(
-        marker,
-        current_run_started_at="2026-06-16T00:00:00Z",  # identity intact
-        current_head_sha="730a4df88d17",
-        sub_skill="mcp-test",
-        commits_since=2,  # self-heal commit + sentinel/PHASES-reconcile commit
-    )
-    assert got is None, got
-    # 2026-06-26 pattern-abstractions 4-commit cadence (self-heal + 2-part PHASES
-    # reconcile + VALIDATED.md correction) — within the per-skill ceiling of 4, clean.
-    pa_marker = {
-        "feature_id": "pattern-abstractions", "nonce": "n",
-        "run_started_at": "2026-06-26T00:00:00Z",
-        "begin_head_sha": "0dd654ae39ce",
-    }
-    pa_got = lazy_core.detect_cycle_bracket_friction(
-        pa_marker,
-        current_run_started_at="2026-06-26T00:00:00Z",  # identity intact
-        current_head_sha="d744204da000",
-        sub_skill="mcp-test",
-        commits_since=4,
-    )
-    assert pa_got is None, pa_got
-    # A genuine runaway (>4) on the same sub_skill STILL trips — no gate weakened.
-    runaway = lazy_core.detect_cycle_bracket_friction(
-        marker,
-        current_run_started_at="2026-06-16T00:00:00Z",
-        current_head_sha="730a4df88d17",
-        sub_skill="mcp-test",
-        commits_since=7,
-    )
-    assert runaway is not None and runaway["reason"] == "unexpected-commits", runaway
-    # The per-skill override is mcp-test-ONLY: another multi-commit member (spec)
-    # at 4 commits STILL trips against the uniform ceiling of 3 — the override does
-    # not leak the higher ceiling to other skills.
-    other_skill_4 = lazy_core.detect_cycle_bracket_friction(
+    other_skill_5 = lazy_core.detect_cycle_bracket_friction(
         marker,
         current_run_started_at="2026-06-16T00:00:00Z",
         current_head_sha="730a4df88d17",
         sub_skill="spec",
-        commits_since=4,
+        commits_since=5,
     )
     assert (
-        other_skill_4 is not None
-        and other_skill_4["reason"] == "unexpected-commits"
-    ), other_skill_4
+        other_skill_5 is not None
+        and other_skill_5["reason"] == "unexpected-commits"
+    ), other_skill_5
 
 
 def test_detect_friction_planning_cycle_multi_commit_within_budget():
@@ -20657,86 +20698,149 @@ def test_detect_friction_meta_cycle_exempt_from_unexpected_commits():
     assert real_null is None, real_null
 
 
-def test_multi_commit_dispatch_skills_registry_membership():
-    """adhoc-derive-cycle-commit-budget WU-1: the `_MULTI_COMMIT_DISPATCH_SKILLS`
-    registry SSOT is a frozenset naming EXACTLY the dispatch identities whose cycle
-    legitimately commits more than once — the real skills plus the forward-advancing
-    terminal pseudo-skills. Membership in this set (not a hand-maintained literal
-    budget row) is what grants the multi-commit budget. A single-commit-only skill
-    (e.g. spec-phases) is NOT a member.
-
-    Hardening 2026-06-25 (key-detection recurrence): `spec` and `spec-bug` were ADDED
-    to the registry. The prior WU-1 assertion classified them single-commit, but live
-    evidence proved otherwise — a STUB feature's /spec Phase 1 commits the baseline-lock
-    SPEC over the auto-generated stub AND then retires the stub markers / advances to
-    needs-research in the SAME dispatched cycle (commits `9def1bfab` + `a96d51df4`,
-    95s apart, both Opus-co-authored Phase-1 work). `spec-bug` is the bug-pipeline
-    investigation analog, covered alongside per the Round 31 plan-feature/plan-bug
-    precedent. spec-phases remains single-commit (it commits only PHASES.md)."""
+def test_skill_declares_multi_commit_user_level_and_pseudo():
+    """adhoc-derive-multi-commit-budget-from-dispatch-sites: `skill_declares_multi_commit`
+    replaces the retired `_MULTI_COMMIT_DISPATCH_SKILLS` frozenset. The 6 real
+    user-level skills flagged `commit-cadence: multi` (mirroring the exact prior
+    frozenset membership minus the dead `retro-feature` row, which correctly drops
+    since its own SKILL.md is left unflagged — the missing-row class in reverse) read
+    True via the module-relative resolution path; unflagged/pseudo/junk shapes fail
+    closed to False, EXCEPT the two forward-advancing terminal pseudo-skills, which
+    are answered directly from the bounded `_MULTI_COMMIT_PSEUDO_SKILLS` dict."""
     _guard()
-    assert isinstance(lazy_core._MULTI_COMMIT_DISPATCH_SKILLS, frozenset)
-    expected = {
-        "execute-plan", "retro-feature", "mcp-test",
-        "write-plan", "plan-feature", "plan-bug",
-        "spec", "spec-bug",
-        "__mark_complete__", "__mark_fixed__",
-    }
-    assert set(lazy_core._MULTI_COMMIT_DISPATCH_SKILLS) == expected, \
-        lazy_core._MULTI_COMMIT_DISPATCH_SKILLS
-    # spec-phases remains single-commit-only (commits only PHASES.md) → NOT a member.
-    assert "spec-phases" not in lazy_core._MULTI_COMMIT_DISPATCH_SKILLS
-    # The uniform multi-commit ceiling is a named constant (not a magic literal).
+    for name in (
+        "execute-plan", "write-plan", "spec", "spec-bug", "plan-feature", "plan-bug",
+    ):
+        assert lazy_core.skill_declares_multi_commit(name) is True, name
+    # spec-phases commits only PHASES.md (genuinely single-commit) → unflagged.
+    assert lazy_core.skill_declares_multi_commit("spec-phases") is False
+    # retro-feature is DEAD (Step-8 retro unwired 2026-06, dispatched from nowhere) —
+    # its SKILL.md carries no commit-cadence flag, so it correctly reverts to the
+    # single-commit default instead of keeping stale multi-commit membership forever.
+    assert lazy_core.skill_declares_multi_commit("retro-feature") is False
+    # The 2 pseudo-skills (no SKILL.md; can never be "newly dispatched" from
+    # elsewhere) are answered from the small explicit dict, not a frontmatter read.
+    assert lazy_core.skill_declares_multi_commit("__mark_complete__") is True
+    assert lazy_core.skill_declares_multi_commit("__mark_fixed__") is True
+    # Fail-closed shapes: falsy, unknown, path traversal.
+    assert lazy_core.skill_declares_multi_commit(None) is False
+    assert lazy_core.skill_declares_multi_commit("") is False
+    assert lazy_core.skill_declares_multi_commit("no-such-skill-xyz") is False
+    assert lazy_core.skill_declares_multi_commit("../../etc/passwd") is False
+    # Leading "/" is tolerated (mirrors skill_declares_subagent_model).
+    assert lazy_core.skill_declares_multi_commit("/execute-plan") is True
+    # The retired registry symbol is genuinely gone — not just unused.
+    assert not hasattr(lazy_core, "_MULTI_COMMIT_DISPATCH_SKILLS")
+    # The uniform multi-commit ceiling + single-commit default are still named
+    # constants (unchanged by the derivation-mechanism swap).
     assert lazy_core._CYCLE_COMMIT_MULTI == 3
     assert lazy_core._CYCLE_COMMIT_BUDGET_DEFAULT == 1
 
 
+def test_skill_declares_multi_commit_repo_scoped():
+    """A repo-scoped .claude/skills/<name>/SKILL.md with the commit-cadence: multi
+    flag is honored when repo_root is passed (mirrors the real AlgoBooth mcp-test
+    skill); without repo_root the same name reads False. Flag-in-prose-only (no
+    frontmatter block hit) also reads False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        skill_dir = repo / ".claude" / "skills" / "repo-only-multi-skill"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: repo-only-multi-skill\ncommit-cadence: multi\n---\n# X\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.skill_declares_multi_commit(
+            "repo-only-multi-skill", repo_root=repo
+        ) is True
+        assert lazy_core.skill_declares_multi_commit("repo-only-multi-skill") is False
+        prose_dir = repo / ".claude" / "skills" / "prose-only-multi-skill"
+        prose_dir.mkdir(parents=True)
+        (prose_dir / "SKILL.md").write_text(
+            "---\nname: prose-only-multi-skill\n---\n\ncommit-cadence: multi\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.skill_declares_multi_commit(
+            "prose-only-multi-skill", repo_root=repo
+        ) is False
+
+
 def test_detect_friction_registry_known_skill_budgeted_without_literal_row():
-    """adhoc-derive-cycle-commit-budget WU-3 (class-closure regression): the
-    per-sub_skill commit budget is DERIVED from `_MULTI_COMMIT_DISPATCH_SKILLS`
-    membership, not from a hand-maintained literal table. This proves the
-    missing-row defect CLASS is closed: registry membership ⇒ multi-commit budget,
-    no manual budget-row append; and a skill ABSENT from the registry still defaults
-    to 1 so genuine runaways still trip. A member MAY declare a higher worst-case
-    ceiling in `_MULTI_COMMIT_CEILING_OVERRIDE` (the MAGNITUDE dimension — e.g.
-    mcp-test=4); the class-closure loop below uses each skill's EFFECTIVE ceiling so
-    the override is exercised, not bypassed."""
+    """adhoc-derive-cycle-commit-budget WU-3 (class-closure regression), updated for
+    adhoc-derive-multi-commit-budget-from-dispatch-sites: the per-sub_skill commit
+    budget is DERIVED from `skill_declares_multi_commit` (SKILL.md frontmatter), not
+    from any hand-maintained literal table or frozenset. This proves the missing-row
+    defect CLASS is closed: a NEW flagged skill is budgeted multi-commit with ZERO
+    `lazy_core.py` edits beyond the helper itself, and a skill ABSENT from the
+    flagged set still defaults to budget 1 so genuine runaways still trip. Every
+    budget below also carries the `_CYCLE_COMMIT_NOISE_ALLOWANCE` cushion
+    (adhoc-align-cycle-commit-count-with-budget-population)."""
     _guard()
     marker = {
         "feature_id": "f", "nonce": "n", "run_started_at": "2026-06-22T00:00:00Z",
         "begin_head_sha": "aaaa1111",
     }
 
-    def _friction(sub_skill, commits):
+    def _friction(sub_skill, commits, repo_root=None):
         return lazy_core.detect_cycle_bracket_friction(
             marker,
             current_run_started_at="2026-06-22T00:00:00Z",  # identity intact
             current_head_sha="bbbb2222",
             sub_skill=sub_skill,
             commits_since=commits,
+            repo_root=repo_root,
         )
 
-    # (1) A registry-known multi-commit skill is budgeted multi-commit via the
-    # DERIVATION (2-3 commits → no friction), with no literal dict row backing it.
-    assert _friction("mcp-test", 2) is None
-    assert _friction("mcp-test", lazy_core._CYCLE_COMMIT_MULTI) is None
+    allowance = lazy_core._CYCLE_COMMIT_NOISE_ALLOWANCE
 
-    # (2) A skill ABSENT from the registry still defaults to budget 1 → a 2-commit
-    # unregistered skill trips unexpected-commits (genuine-runaway detection intact).
-    absent = _friction("brand-new-skill", 2)
+    # (1) A user-level flagged multi-commit skill is budgeted multi-commit via the
+    # DERIVATION, with no literal dict row or frozenset backing it.
+    assert _friction("execute-plan", 2) is None
+    assert _friction("execute-plan", lazy_core._CYCLE_COMMIT_MULTI + allowance) is None
+
+    # (2) A skill ABSENT from the flagged set still defaults to budget
+    # 1 + allowance → a genuine runaway beyond it still trips.
+    within = _friction("brand-new-skill", 1 + allowance)
+    assert within is None, within
+    absent = _friction("brand-new-skill", 1 + allowance + 1)
     assert absent is not None and absent["reason"] == "unexpected-commits", absent
 
-    # (3) Class-closure: membership in the registry — not a literal-table row — is
-    # what grants the multi-commit budget. Every registered name is budgeted
-    # multi-commit up to its EFFECTIVE ceiling (the per-skill override when one is
-    # declared, else the uniform `_CYCLE_COMMIT_MULTI`); one commit past that
-    # effective ceiling trips.
-    for ss in lazy_core._MULTI_COMMIT_DISPATCH_SKILLS:
-        ceiling = lazy_core._MULTI_COMMIT_CEILING_OVERRIDE.get(
-            ss, lazy_core._CYCLE_COMMIT_MULTI
+    # (3) Class-closure, rebuilt against the NEW derivation mechanism: a skill that
+    # exists ONLY as a fresh SKILL.md fixture (never mentioned anywhere in
+    # lazy_core.py) still gets the multi-commit ceiling purely from its own
+    # frontmatter flag — proving the fix is a general mechanism, not a name check.
+    # One flagged fixture models a plain multi-commit skill (uniform ceiling); a
+    # second, repo-scoped fixture models a HIGHER per-skill override by reusing the
+    # real `mcp-test` identity (the only name present in
+    # `_MULTI_COMMIT_CEILING_OVERRIDE`), proving the override composes with the
+    # frontmatter-derived membership rather than being bypassed by it.
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        plain_dir = repo / ".claude" / "skills" / "brand-new-multi-skill"
+        plain_dir.mkdir(parents=True)
+        (plain_dir / "SKILL.md").write_text(
+            "---\nname: brand-new-multi-skill\ncommit-cadence: multi\n---\n# X\n",
+            encoding="utf-8",
         )
-        assert _friction(ss, ceiling) is None, (ss, ceiling)
-        over = _friction(ss, ceiling + 1)
-        assert over is not None and over["reason"] == "unexpected-commits", (ss, over)
+        ceiling = lazy_core._CYCLE_COMMIT_MULTI + allowance
+        assert _friction("brand-new-multi-skill", ceiling, repo_root=repo) is None, ceiling
+        over = _friction("brand-new-multi-skill", ceiling + 1, repo_root=repo)
+        assert over is not None and over["reason"] == "unexpected-commits", over
+
+        override_dir = repo / ".claude" / "skills" / "mcp-test"
+        override_dir.mkdir(parents=True)
+        (override_dir / "SKILL.md").write_text(
+            "---\nname: mcp-test\ncommit-cadence: multi\n---\n# X\n",
+            encoding="utf-8",
+        )
+        override_ceiling = lazy_core._MULTI_COMMIT_CEILING_OVERRIDE["mcp-test"] + allowance
+        assert _friction("mcp-test", override_ceiling, repo_root=repo) is None, override_ceiling
+        override_over = _friction("mcp-test", override_ceiling + 1, repo_root=repo)
+        assert (
+            override_over is not None
+            and override_over["reason"] == "unexpected-commits"
+        ), override_over
 
 
 def test_append_friction_ledger_entry_round_trips():
@@ -26021,8 +26125,10 @@ _TESTS = _TESTS + [
      test_detect_friction_torn_bracket_run_marker_now_absent),
     ("test_detect_friction_within_commit_budget_returns_none",
      test_detect_friction_within_commit_budget_returns_none),
-    ("test_multi_commit_dispatch_skills_registry_membership",
-     test_multi_commit_dispatch_skills_registry_membership),
+    ("test_skill_declares_multi_commit_user_level_and_pseudo",
+     test_skill_declares_multi_commit_user_level_and_pseudo),
+    ("test_skill_declares_multi_commit_repo_scoped",
+     test_skill_declares_multi_commit_repo_scoped),
     ("test_detect_friction_registry_known_skill_budgeted_without_literal_row",
      test_detect_friction_registry_known_skill_budgeted_without_literal_row),
     ("test_emit_dispatch_always_emits_json_on_error",

@@ -3,6 +3,10 @@ description: Generate an implementation plan for ALL phases across 1+ PHASES.md 
 argument-hint: <path/to/PHASES1.md> [path/to/PHASES2.md] [...]
 name: write-plan
 plan-mode: never
+# adhoc-derive-multi-commit-budget-from-dispatch-sites: this skill may emit a
+# multi-part plan series (one commit per part). Read by
+# lazy_core.skill_declares_multi_commit to derive the unexpected-commits budget.
+commit-cadence: multi
 ---
 
 # Write Plan

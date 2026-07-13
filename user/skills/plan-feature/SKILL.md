@@ -8,6 +8,10 @@ name: plan-feature
 description: Run spec-phases and write-plan as a single subagent invocation for a feature past the interactive gates (SPEC + RESEARCH_SUMMARY present). Used by /lazy-batch to consolidate planning into one orchestrator round-trip.
 argument-hint: <path/to/SPEC.md>
 plan-mode: never
+# adhoc-derive-multi-commit-budget-from-dispatch-sites: runs /spec-phases (commits
+# PHASES.md) THEN /write-plan (may commit once per plan part) in one dispatched
+# cycle. Read by lazy_core.skill_declares_multi_commit for the commit budget.
+commit-cadence: multi
 allowed-tools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit", "Agent"]
 ---
 

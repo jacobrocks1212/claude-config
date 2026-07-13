@@ -11838,6 +11838,100 @@ def skill_declares_subagent_model(
         return False
 
 
+# Frontmatter flag a skill declares to state "my dispatched cycle legitimately
+# commits more than once" (adhoc-derive-multi-commit-budget-from-dispatch-sites,
+# 2026-07-12) — the commit-budget-MEMBERSHIP analog of `subagent-model: true`
+# above. Replaces the hand-maintained `_MULTI_COMMIT_DISPATCH_SKILLS` frozenset
+# (see its retirement comment) as the input to `detect_cycle_bracket_friction`'s
+# per-sub_skill commit-budget derivation.
+_COMMIT_CADENCE_MULTI_FLAG_RE = re.compile(
+    r"^commit-cadence:\s*multi\s*$", re.IGNORECASE | re.MULTILINE
+)
+
+
+def skill_declares_multi_commit(
+    sub_skill: str | None,
+    *,
+    repo_root: "str | Path | None" = None,
+) -> bool:
+    """True iff *sub_skill* legitimately commits more than once per dispatch.
+
+    The commit-budget MEMBERSHIP source of truth for
+    ``detect_cycle_bracket_friction``'s branch-(3) derivation, replacing the
+    hand-maintained ``_MULTI_COMMIT_DISPATCH_SKILLS`` frozenset. Modeled DIRECTLY
+    on ``skill_declares_subagent_model`` (same resolution order, same fail-closed
+    posture) — a skill declares its own commit cadence via a
+    ``commit-cadence: multi`` YAML-frontmatter line, exactly like the
+    ``subagent-model: true`` sibling flag.
+
+    Two identities have no SKILL.md at all (the forward-advancing terminal
+    pseudo-skills, which dispatch no Agent subagent and can never be "newly
+    dispatched" from elsewhere): those are answered directly from the small,
+    bounded ``_MULTI_COMMIT_PSEUDO_SKILLS`` dict, checked BEFORE the normal
+    ``__``-prefix fail-closed short-circuit below (which would otherwise return
+    False for them, same as any other pseudo-skill).
+
+    Resolution order (real skills only):
+      1. Repo-scoped skill: ``<repo_root>/.claude/skills/<name>/SKILL.md``
+         (when *repo_root* is provided) — covers repo-local skills like
+         AlgoBooth's mcp-test family.
+      2. User-level skill: ``<this module's parent.parent>/skills/<name>/SKILL.md``.
+
+    Only the leading YAML frontmatter block is consulted, so prose mentioning the
+    flag never false-positives.
+
+    FAIL-CLOSED: a falsy sub_skill, a missing SKILL.md, an unreadable file, or an
+    absent flag all return False — a newly-dispatched, unflagged skill falls to
+    the conservative single-commit default (never a crash, never a silent
+    escalation).
+
+    Args:
+        sub_skill: dispatched skill name (leading "/" tolerated); None → False.
+        repo_root: optional repo root for the repo-scoped lookup.
+
+    Returns:
+        True when the pseudo-skill dict names it, or the frontmatter flag is
+        explicitly ``true``.
+    """
+    try:
+        if not sub_skill:
+            return False
+        if sub_skill in _MULTI_COMMIT_PSEUDO_SKILLS:
+            return True
+        if sub_skill.startswith("__"):
+            return False
+        norm = sub_skill[1:] if sub_skill.startswith("/") else sub_skill
+        # Refuse path-traversal shapes outright (the name is a directory key).
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", norm):
+            return False
+        candidates: list[Path] = []
+        if repo_root:
+            candidates.append(
+                Path(repo_root) / ".claude" / "skills" / norm / "SKILL.md"
+            )
+        candidates.append(
+            Path(__file__).resolve().parent.parent / "skills" / norm / "SKILL.md"
+        )
+        for skill_md in candidates:
+            try:
+                if not skill_md.is_file():
+                    continue
+                text = skill_md.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if not text.startswith("---"):
+                continue
+            end = text.find("\n---", 3)
+            if end == -1:
+                continue
+            frontmatter = text[3:end]
+            if _COMMIT_CADENCE_MULTI_FLAG_RE.search(frontmatter):
+                return True
+        return False
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def resolve_cycle_worker_nonce(passed_nonce: str | None) -> str | None:
     """Resolve the nonce stamped onto a subagent-model cycle marker so the
     dispatch guard's workstation sub-subagent exemption can find it.
@@ -12129,8 +12223,28 @@ _CYCLE_COMMIT_BUDGET_DEFAULT = 1
 # The uniform commit ceiling granted to a multi-commit dispatch identity. Every
 # multi-commit skill historically used the SAME number (3) — the per-skill budget
 # never varied, so the budget is a binary "single-commit (default 1) vs.
-# multi-commit (this ceiling)" decision keyed on registry membership below.
+# multi-commit (this ceiling)" decision keyed on skill_declares_multi_commit below.
 _CYCLE_COMMIT_MULTI = 3
+
+# Shared noise-allowance cushion (adhoc-align-cycle-commit-count-with-budget-
+# population, 2026-07-12): the `unexpected-commits` NUMERATOR
+# (`_count_authored_commits_since`) counts ONE uniform population — every authored
+# non-merge commit — for every sub_skill alike, but only `execute-plan`'s DENOMINATOR
+# (`_execute_plan_commit_budget`) modeled the noise categories that population
+# legitimately includes (an in-cycle revert/self-correction, an off-plan commit
+# landing mid-window, an unmodeled status-flip). Every OTHER registry-derived budget
+# (branch 3 below — both the multi-commit ceiling and the single-commit default) had
+# ZERO cushion, so the SAME noise categories Round 46 fixed for execute-plan remained
+# fully exposed for every other multi-commit identity — most acutely `mcp-test`,
+# whose ceiling equals its exact documented worst case with no headroom at all. This
+# ONE small, skill-agnostic allowance applied uniformly in branch 3 closes that
+# residual population mismatch WITHOUT touching `execute-plan`'s own already-correct
+# work-scaled + bookend-cushioned model (which lives entirely in
+# `_execute_plan_commit_budget`'s `budget_override` path and short-circuits branch 3
+# via the `isinstance(budget_override, int) and budget_override > 0` check above).
+# A genuine runaway (authored commits beyond the member/default ceiling + this
+# allowance) STILL trips — no gate weakened, only the population mismatch closed.
+_CYCLE_COMMIT_NOISE_ALLOWANCE = 1
 
 # ---------------------------------------------------------------------------
 # Per-skill ceiling OVERRIDE (commit-budget MAGNITUDE, not membership).
@@ -12175,65 +12289,30 @@ _MULTI_COMMIT_CEILING_OVERRIDE: dict[str, int] = {
 }
 
 # ---------------------------------------------------------------------------
-# SSOT: the multi-commit dispatch-skill registry.
+# RETIRED (adhoc-derive-multi-commit-budget-from-dispatch-sites, 2026-07-12):
+# `_MULTI_COMMIT_DISPATCH_SKILLS` — the hand-maintained frozenset that used to be
+# this SSOT — is gone. It required a human/hardening-agent to remember to append
+# every new multi-commit dispatch identity here (a missing-row class that recurred
+# 6+ times: Rounds 15, 16/17, 23, 31, 38), and it had ALREADY drifted stale in the
+# opposite direction too (`retro-feature` stayed a member long after the Step-8
+# retro phase was unwired 2026-06 and it stopped being dispatched from anywhere).
 #
-# `_MULTI_COMMIT_DISPATCH_SKILLS` names EVERY dispatch identity whose cycle
-# legitimately commits MORE THAN ONCE. It is the single source of truth the
-# per-sub_skill commit budget DERIVES from (see `detect_cycle_bracket_friction`
-# branch (3)): a name in this set ⇒ `_CYCLE_COMMIT_MULTI`; any other name ⇒
-# `_CYCLE_COMMIT_BUDGET_DEFAULT` (1).
+# Membership is now DERIVED from a `commit-cadence: multi` frontmatter flag the
+# dispatched skill's OWN SKILL.md declares — see `skill_declares_multi_commit()`
+# below, modeled directly on `skill_declares_subagent_model()` (same repo-scoped-
+# then-user-level resolution order, same leading-frontmatter-only extraction, same
+# fail-closed posture). A skill's own commit cadence now travels WITH the skill
+# (a review-visible 1-line frontmatter edit), not in a separate module 3 hops
+# away. `detect_cycle_bracket_friction` branch (3) consults it directly; a skill
+# ABSENT from this derivation (including `retro-feature`, whose SKILL.md is left
+# unflagged) falls to `_CYCLE_COMMIT_BUDGET_DEFAULT` exactly like before.
 #
-# These are the SAME string identities the dispatch sites already pass — the
-# `bug-state.py` `SKILL_*` constants (`SKILL_EXECUTE_PLAN`, `SKILL_MCP_TEST`,
-# `SKILL_WRITE_PLAN`, `SKILL_PLAN_BUG`, `SKILL_MARK_FIXED`, … `:159-166`) and the
-# `lazy-state.py` bare-literal `sub_skill="..."` dispatch sites — so this set is
-# the natural SSOT for BOTH pipelines (the shared `lazy_core` helper serves both;
-# no coupled-pair mirror).
-#
-# ADDING A NEW MULTI-COMMIT DISPATCH SKILL means adding its identity HERE,
-# co-located with the dispatch-skill set — NEVER a separate hand-maintained budget
-# row. This structural derivation replaces the prior reactive literal
-# `_CYCLE_COMMIT_BUDGET` table, whose five dated per-row provenance comments each
-# recorded a production `unexpected-commits` false-positive that was patched AFTER
-# the fact (Round 15 `execute-plan`; Rounds 16/17 the `__mark_complete__` /
-# `__mark_fixed__` pseudo-skills; a later round `mcp-test`; 2026-06-22
-# `write-plan` / `plan-feature` / `plan-bug`). Membership here closes that
-# missing-row CLASS: a newly-dispatched multi-commit skill can no longer silently
-# default to budget 1.
-#
-# The forward-advancing terminal PSEUDO-skills (`__mark_complete__` /
-# `__mark_fixed__`) are members: they dispatch no Agent subagent, but they ARE
-# dispatch identities the friction detector keys on, and their completion cycle
-# legitimately commits more than once (receipt+flip plus a Gate-1
-# corrective-coverage scenario commit).
+# The 2 forward-advancing terminal PSEUDO-skills (`__mark_complete__` /
+# `__mark_fixed__`) have no SKILL.md (they dispatch no Agent subagent) and can
+# never be "newly dispatched" from elsewhere, so they keep a small explicit,
+# bounded dict below rather than a frontmatter lookup.
 # ---------------------------------------------------------------------------
-_MULTI_COMMIT_DISPATCH_SKILLS: frozenset[str] = frozenset({
-    # Multi-batch plan execution commits once per batch.
-    "execute-plan",
-    "retro-feature",
-    # The Step-9 /mcp-test validation cycle commits the audited mechanics-only
-    # self-heal separately from the terminal sentinel + PHASES reconcile.
-    "mcp-test",
-    # Planning dispatch: /plan-feature runs /spec-phases (commits PHASES.md) THEN
-    # /write-plan, which may emit a multi-part plan series (one commit per part);
-    # /plan-bug is the bug-pipeline analog.
-    "write-plan",
-    "plan-feature",
-    "plan-bug",
-    # Spec authoring dispatch (2026-06-25 recurrence: begin_head_sha=641e96163faa,
-    # sub_skill='spec', budget=1, 2 commits). /spec is multi-phase and a single
-    # dispatched cycle legitimately commits more than once — most acutely a STUB
-    # feature's Phase 1, which (a) locks in the baseline SPEC over the
-    # auto-generated stub, then (b) retires the stub markers and advances to
-    # needs-research (the exact two commits that tripped: `9def1bfab docs(...):
-    # /spec Phase 1 — lock in baseline over auto-generated stub` + `a96d51df4
-    # docs(...): retire stub markers — baseline locked, advance to needs-research`).
-    # /spec-bug is the bug-pipeline investigation analog (evidence-gathering +
-    # investigation-spec commits), added alongside per the Round 31 plan-feature/
-    # plan-bug precedent of covering the bug analog at the same commit.
-    "spec",
-    "spec-bug",
-    # Forward-advancing terminal pseudo-skills (receipt+flip + corrective-coverage).
+_MULTI_COMMIT_PSEUDO_SKILLS: frozenset[str] = frozenset({
     "__mark_complete__",
     "__mark_fixed__",
 })
@@ -12352,15 +12431,22 @@ def detect_cycle_bracket_friction(
     budget_override: int | None = None,
     current_branch: str | None = None,
     expected_work_branch: str | None = None,
+    repo_root: "str | Path | None" = None,
     now: float | None = None,
 ) -> dict | None:
     """Detect process-friction at --cycle-end: a torn cycle bracket or unexpected
     commits (hardening-blind-to-process-friction Phase 2, Locked Decision D1).
 
-    Pure function — NO I/O. The caller (--cycle-end) supplies the live values:
-    the cycle marker as snapshotted at --cycle-begin, the CURRENT run identity
-    and HEAD sha resolved fresh at --cycle-end, the dispatched sub_skill, and the
-    number of commits HEAD advanced since ``marker['begin_head_sha']``.
+    Almost pure: every signal is computed from caller-supplied values EXCEPT the
+    registry-derived commit-budget membership test (branch 3 below), which reads
+    the dispatched skill's own SKILL.md frontmatter via ``skill_declares_multi_commit``
+    (adhoc-derive-multi-commit-budget-from-dispatch-sites, 2026-07-12) — the same
+    class of deterministic, git-committed-file read ``skill_declares_subagent_model``
+    already performs elsewhere in this module. The caller (--cycle-end) supplies
+    every other live value: the cycle marker as snapshotted at --cycle-begin, the
+    CURRENT run identity and HEAD sha resolved fresh at --cycle-end, the dispatched
+    sub_skill, and the number of commits HEAD advanced since
+    ``marker['begin_head_sha']``.
 
     Two deterministic on-disk signals (D1):
       (a) cycle-bracket-break — the run identity present at --cycle-begin
@@ -12524,20 +12610,27 @@ def detect_cycle_bracket_friction(
             # backstop that stops the mis-recorded marker from manufacturing debt.
             return None
         else:
-            # Branch (3): DERIVE the budget from the `_MULTI_COMMIT_DISPATCH_SKILLS`
-            # registry SSOT — membership ⇒ the multi-commit ceiling, else the
-            # single-commit default. No hand-maintained literal table to keep in
-            # sync (closes the recurring missing-row defect class). A member's
-            # ceiling is the uniform `_CYCLE_COMMIT_MULTI` UNLESS it declares a
-            # higher worst-case cadence in `_MULTI_COMMIT_CEILING_OVERRIDE` (the
-            # MAGNITUDE dimension — e.g. mcp-test's self-heal + 2-part reconcile +
-            # sentinel correction = 4); a non-member always gets the default.
+            # Branch (3): DERIVE the budget from skill_declares_multi_commit — a
+            # skill-declared `commit-cadence: multi` frontmatter flag (or pseudo-
+            # skill dict membership) ⇒ the multi-commit ceiling, else the
+            # single-commit default. No hand-maintained literal registry to keep in
+            # sync (closes the recurring missing-row defect class:
+            # adhoc-derive-multi-commit-budget-from-dispatch-sites). A flagged
+            # skill's ceiling is the uniform `_CYCLE_COMMIT_MULTI` UNLESS it
+            # declares a higher worst-case cadence in `_MULTI_COMMIT_CEILING_OVERRIDE`
+            # (the MAGNITUDE dimension — e.g. mcp-test's self-heal + 2-part reconcile
+            # + sentinel correction = 4); an unflagged skill always gets the default.
+            # `_CYCLE_COMMIT_NOISE_ALLOWANCE` (adhoc-align-cycle-commit-count-with-
+            # budget-population) then adds ONE shared, skill-agnostic cushion on top
+            # of EITHER ceiling — the population-alignment fix — leaving
+            # execute-plan's own budget_override model (handled above) untouched.
             ss = sub_skill or ""
-            budget = (
+            base_budget = (
                 _MULTI_COMMIT_CEILING_OVERRIDE.get(ss, _CYCLE_COMMIT_MULTI)
-                if ss in _MULTI_COMMIT_DISPATCH_SKILLS
+                if skill_declares_multi_commit(ss, repo_root=repo_root)
                 else _CYCLE_COMMIT_BUDGET_DEFAULT
             )
+            budget = base_budget + _CYCLE_COMMIT_NOISE_ALLOWANCE
         if commits_since > budget:
             return {
                 "reason": "unexpected-commits",
@@ -12741,6 +12834,7 @@ def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
         budget_override=budget_override,
         current_branch=current_branch,
         expected_work_branch=expected_work_branch,
+        repo_root=root,
     )
 
     # (5) log the friction as hardening debt (fail-open).

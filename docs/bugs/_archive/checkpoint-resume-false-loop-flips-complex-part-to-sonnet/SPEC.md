@@ -10,7 +10,7 @@
 > part on sonnet is HARD-refused by the cycle prompt (`BLOCKED model-tier-mismatch`), so the
 > flip only climbs the stall streak toward a halt.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-12
 **Placement:** docs/bugs/checkpoint-resume-false-loop-flips-complex-part-to-sonnet

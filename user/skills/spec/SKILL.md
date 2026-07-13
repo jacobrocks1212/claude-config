@@ -4,6 +4,10 @@
 # the cycle marker so the dispatch guard honors the workstation sub-subagent
 # exemption without a hardcoded skill list.
 subagent-model: true
+# adhoc-derive-multi-commit-budget-from-dispatch-sites: a STUB feature's Phase 1
+# commits the baseline-lock SPEC then retires the stub markers in one dispatched
+# cycle. Read by lazy_core.skill_declares_multi_commit for the commit budget.
+commit-cadence: multi
 description: Brainstorm, research, and draft a feature spec
 argument-hint: [feature description or work-item id]
 allowed-tools: ["Read", "Glob", "Grep", "Write", "Edit", "Bash", "AskUserQuestion", "Agent", "WebSearch"]

@@ -7,7 +7,7 @@ bug_id: adhoc-derive-multi-commit-budget-from-dispatch-sites
 
 > `_MULTI_COMMIT_DISPATCH_SKILLS` (`lazy_core.py`) is a hand-maintained `frozenset` a human/hardening-agent must remember to append every time a new multi-commit dispatch identity is introduced. This missing-row class has recurred 6+ times (Rounds 15, 16/17, 23, 31, 38 per the brief) and the registry has ALREADY drifted from ground truth in the opposite direction too: it still lists `retro-feature` as a member even though `retro-feature` is dead/unwired and dispatched from NOWHERE in either state script.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** Medium
 **Discovered:** 2026-07-12
 **Placement:** docs/bugs/adhoc-derive-multi-commit-budget-from-dispatch-sites

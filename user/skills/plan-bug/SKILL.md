@@ -8,6 +8,10 @@ name: plan-bug
 description: Bug-pipeline analog of /plan-feature — authors PHASES.md from a concluded investigation SPEC if missing and runs /write-plan as one subagent round-trip. Drives docs/bugs/.
 argument-hint: <path/to/SPEC.md>
 plan-mode: never
+# adhoc-derive-multi-commit-budget-from-dispatch-sites: the bug-pipeline analog
+# of /plan-feature's multi-commit planning cadence. Read by
+# lazy_core.skill_declares_multi_commit to derive the unexpected-commits budget.
+commit-cadence: multi
 allowed-tools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit", "Agent"]
 ---
 

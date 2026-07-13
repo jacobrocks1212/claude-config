@@ -3,6 +3,12 @@ name: mcp-test
 description: Resolve a YAML scenario, ensure MCP runtime readiness, run the deterministic engine (scripts/mcp-test/run.ts), read the compact verdict.json, forward the engine-written sentinel, and reconcile PHASES — haiku happy path, Sonnet only on failure
 argument-hint: <test description — e.g. "test mix knob crossfade" or "verify queue fire sequence" or a scenario id>
 model: haiku
+# adhoc-derive-multi-commit-budget-from-dispatch-sites: the Step-9 validation
+# cycle commits the audited self-heal separately from the terminal sentinel +
+# PHASES reconcile (documented worst case: self-heal + 2-part reconcile +
+# sentinel correction = 4, see lazy_core._MULTI_COMMIT_CEILING_OVERRIDE). Read by
+# lazy_core.skill_declares_multi_commit (repo-scoped resolution) for the budget.
+commit-cadence: multi
 ---
 
 # MCP Test — Informed Dispatcher (deterministic engine)

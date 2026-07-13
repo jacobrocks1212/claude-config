@@ -7,7 +7,7 @@ bug_id: bug-pipeline-missing-stale-plan-flip
 
 > The feature pipeline (`lazy-state.py`) has a workstation `__flip_plan_complete_stale__` pseudo-action that flips a Ready/In-progress plan whose every in-scope WU is already `[x]` to Complete inline (one deterministic step) instead of burning an `/execute-plan` Opus cycle whose only job is the frontmatter flip. The bug pipeline (`bug-state.py`) never got the mirror: its Step 7a dispatches `/execute-plan` unconditionally on the head plan. When a bug plan part is stale, the bug pipeline loops `/execute-plan` — each cycle re-verifies already-done work, and if a subagent turn ends before flipping the frontmatter (backgrounded gate, or it treats WUs-committed as done) the loop persists. The `lazy-bug-batch` SKILL already documents handling this pseudo-skill "emitted by `bug-state.py` at Step 7a", so the orchestrator handler exists — only the state-script emit is missing.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** Medium
 **Discovered:** 2026-07-12
 **Placement:** docs/bugs/bug-pipeline-missing-stale-plan-flip

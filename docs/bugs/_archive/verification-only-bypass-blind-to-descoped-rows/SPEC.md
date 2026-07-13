@@ -7,7 +7,7 @@
 > is none of those, so a fully-implemented item whose SOLE remaining unchecked box is that
 > descope note loops `write-plan` forever.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P2
 **Last updated:** 2026-07-12
 **Related:** `docs/specs/turn-routing-enforcement/` (owns the hardening stage + the Step-7 bypass); hardening-log Rounds 24 (`d8d02ef` reachability-smoke) / 25 (`f2b1552` seam-audit) + the 2026-07 recording-panel round — the same "Step-7 bypass returns `False` on a not-to-be-done row it does not recognize" class, previously hit through `_VERIFICATION_SECTION_RE` header phrasings; `user/scripts/lazy_core.py:_VERIFICATION_ONLY_MARKER` (the canonical structural-marker precedent this bug's generalization follows).

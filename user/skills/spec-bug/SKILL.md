@@ -7,6 +7,10 @@ subagent-model: true
 name: spec-bug
 description: Investigate a complex bug or issue — gather evidence, verify symptoms, produce an investigation spec, then optionally transition to /fix
 argument-hint: [bug description, area of concern, or work-item id]
+# adhoc-derive-multi-commit-budget-from-dispatch-sites: the bug-pipeline analog
+# of /spec's multi-commit investigation-spec cadence. Read by
+# lazy_core.skill_declares_multi_commit to derive the unexpected-commits budget.
+commit-cadence: multi
 ---
 
 # Spec Bug

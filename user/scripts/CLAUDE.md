@@ -630,17 +630,27 @@ per lane. The machinery is the composition of `lazy_coord.py` (locks/leases/pool
   `build-queue.ps1` FIFO on Cognito-class repos, `long-build-ownership-guard.sh` takeover
   elsewhere.
 
-> **Per-sub_skill commit budget is DERIVED, not a literal table
-> (`adhoc-derive-cycle-commit-budget`, 2026-06-22).** `detect_cycle_bracket_friction`'s
-> `unexpected-commits` budget (branch 3) is derived from the `lazy_core`-owned SSOT
-> `_MULTI_COMMIT_DISPATCH_SKILLS` (a `frozenset` of the multi-commit dispatch identities)
-> + the named ceiling `_CYCLE_COMMIT_MULTI = 3`: membership ⇒ the multi-commit ceiling, else
-> `_CYCLE_COMMIT_BUDGET_DEFAULT = 1`. This REPLACED the reactive hand-maintained
-> `_CYCLE_COMMIT_BUDGET` literal dict whose missing-row class false-positived `unexpected-commits`
-> on every newly-dispatched multi-commit sub_skill (five reactive appends). Adding a new
-> multi-commit dispatch skill now means adding its identity to the registry SSOT — co-located with
-> the dispatch-skill set — NEVER a separate budget row. Single landing site in shared `lazy_core`;
-> serves both pipelines; `budget_override` (Round 20) + `kind=="meta"` (Round 19) branches unchanged.
+> **Per-sub_skill commit budget is DERIVED from skill-declared frontmatter, not a literal
+> table or registry (`adhoc-derive-multi-commit-budget-from-dispatch-sites`, 2026-07-12,
+> superseding the 2026-06-22 `adhoc-derive-cycle-commit-budget` frozenset SSOT).**
+> `detect_cycle_bracket_friction`'s `unexpected-commits` budget (branch 3) is derived from
+> `lazy_core.skill_declares_multi_commit(sub_skill, repo_root=...)` — modeled directly on
+> `skill_declares_subagent_model`, it reads a `commit-cadence: multi` YAML-frontmatter flag from
+> the dispatched skill's own SKILL.md (repo-scoped then user-level resolution), fail-closed to
+> False on any miss. A flagged skill ⇒ the named ceiling `_CYCLE_COMMIT_MULTI = 3` (or its
+> per-skill `_MULTI_COMMIT_CEILING_OVERRIDE`), else `_CYCLE_COMMIT_BUDGET_DEFAULT = 1`; a shared
+> `_CYCLE_COMMIT_NOISE_ALLOWANCE = 1` cushion (`adhoc-align-cycle-commit-count-with-budget-
+> population`, 2026-07-12) is then added on top of either, closing the numerator/denominator
+> population mismatch the execute-plan-only bookend fix (Round 46) left for every other
+> multi-commit identity. This retired the hand-maintained `_MULTI_COMMIT_DISPATCH_SKILLS`
+> frozenset (which had already drifted stale — `retro-feature` stayed a member long after the
+> Step-8 retro phase was unwired and it stopped being dispatched from anywhere): a skill's commit
+> cadence now travels WITH the skill (a 1-line frontmatter edit its own author makes), so a newly-
+> dispatched multi-commit skill needs zero `lazy_core.py` edits. The two forward-advancing
+> terminal pseudo-skills (`__mark_complete__`/`__mark_fixed__`, no SKILL.md) keep a small bounded
+> explicit dict (`_MULTI_COMMIT_PSEUDO_SKILLS`). Single landing site in shared `lazy_core`; serves
+> both pipelines; `budget_override` (Round 20, execute-plan's own work-scaled + bookend-cushioned
+> model, untouched) + `kind=="meta"` (Round 19) branches unchanged.
 
 ## Operator halt notifications (`operator-halt-notifications`)
 
