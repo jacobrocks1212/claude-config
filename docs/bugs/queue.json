@@ -14,12 +14,6 @@
       "severity": "P2"
     },
     {
-      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
-      "name": "Denial-ack requires a full Opus hardening dispatch per ledger entry (no per-entry ack CLI, no same-cause dedup) \u2014 Investigation Spec",
-      "spec_dir": "meta-dispatch-not-by-reference-and-ack-overpriced",
-      "severity": "P2"
-    },
-    {
       "id": "build-queue-no-artifact-or-process-hygiene-on-crash",
       "name": "Build queue has no artifact/process hygiene on build crash \u2014 Investigation Spec",
       "spec_dir": "build-queue-no-artifact-or-process-hygiene-on-crash",
