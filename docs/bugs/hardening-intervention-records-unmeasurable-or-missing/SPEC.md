@@ -6,7 +6,7 @@
 > `target_signal: undeclared`, and round-vs-record coverage is prose-only self-attestation —
 > a round's "Intervention record: none" exemption line is checked by no one.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P1
 **Last updated:** 2026-07-11
 **Related:** `docs/bugs/_archive/interventions-telemetry-repo-scope-split-brain/` (the evaluation-side

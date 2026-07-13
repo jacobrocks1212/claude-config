@@ -92,7 +92,7 @@ All load-bearing assumptions are **code-provable** — skip the runtime-spike pa
 - **Review verdict:** PASS (ground-truth verified: yes — `wc -l` 8187/88, anchors 7890/7894, hermetic smoke exit 0 all-3-PASS, inserted block confirmed byte-identical to WU-2; parity exit 0).
 - **Files modified (WU-3):** `user/scripts/bug-state.py`, `user/scripts/tests/baselines/bug-state-test-baseline.txt`.
 
-**Status:** Complete _(the 2 Runtime Verification rows below are now ticked from their GREEN hermetic serving-path smoke fixtures — claude-config has no MCP runtime, so the `--test` CLI fixtures ARE the runtime evidence; ticked at coherence-recovery time per the `--apply-pseudo` third-gate contract)._
+**Status:** Fixed
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --record-intervention --id harden-test --pipeline hardening --repo-root <tmp>` exits 1 and writes no `docs/interventions/harden-test.md`; adding `--target-signal undeclared` exits 0 and writes the record.
 

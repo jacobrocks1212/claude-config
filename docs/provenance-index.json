@@ -3005,6 +3005,34 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/hardening-intervention-records-unmeasurable-or-missing/BLOCKED.md": [
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/hardening-intervention-records-unmeasurable-or-missing/PHASES.md": [
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/hardening-intervention-records-unmeasurable-or-missing/plans/all-phases-hardening-intervention-records-part-1.md": [
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/hardening-intervention-records-unmeasurable-or-missing/plans/all-phases-hardening-intervention-records-part-2.md": [
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/interventions-telemetry-repo-scope-split-brain/PHASES.md": [
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -6283,6 +6311,20 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/interventions/harden-2026-07-r5.md": [
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r7.md": [
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/provenance-index.json": [
     {
       "id": "code-doc-provenance-linkage",
@@ -6354,6 +6396,11 @@
   "docs/specs/turn-routing-enforcement/hardening-log/2026-07.md": [
     {
       "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
       "type": "bug",
       "provenance": "pipeline-gated"
     },
@@ -6777,6 +6824,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -6863,6 +6915,11 @@
     }
   ],
   "user/scripts/doc-drift-lint.py": [
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
@@ -6952,6 +7009,11 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -7109,6 +7171,11 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -7476,6 +7543,11 @@
   ],
   "user/scripts/test_doc_drift_lint.py": [
     {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -7602,6 +7674,11 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -7861,6 +7938,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
       "type": "bug",
       "provenance": "backfilled"
@@ -7911,6 +7993,11 @@
       "id": "feature-queue-lacks-on-disk-autodiscovery",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
@@ -8196,6 +8283,11 @@
   ],
   "user/skills/harden-harness/SKILL.md": [
     {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "harness-hardening-retro-fixes",
       "type": "feature",
       "provenance": "backfilled"
@@ -8272,6 +8364,11 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -8359,6 +8456,11 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
