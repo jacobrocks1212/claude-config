@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import datetime
 import json
 import os
 import re
@@ -115,6 +114,18 @@ _SOURCES: dict[str, frozenset] = {
         "conclusive-verdict-count",
         "confounded-verdict-ratio",
         "canary-closure-latency-p50-days",
+    }),
+    # anti-overfit-design-gate D6: the gate's own self-audit rows. Registered at
+    # spec-finalization so the feature's drafted `## KPI Declaration` rows lint
+    # clean (same precedent as canary-trip-precision / session-log-mining above).
+    # NO compute is wired here — the gate's ship seam + a `harness-gate` collector
+    # are seam-deferred, so `_sel_*` returns an honest NO-DATA for these until
+    # ratification wires the source. Never a fabricated zero.
+    "harness-gate": frozenset({
+        "hit-rate",                       # scoped changes flagged / total scoped changes
+        "override-rate",                  # operator sign-offs / gate-weakening hits
+        "false-positive-rate",            # flags judged spurious / total flags
+        "verdict-efficacy-disagreement",  # passed-then-REFUTED + flagged-then-CONFIRMED
     }),
 }
 

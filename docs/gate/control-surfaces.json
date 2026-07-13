@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "_doc": "Control-surface manifest for the anti-overfit-design-gate (D1, option A: committed glob manifest, self-included). A diff is IN SCOPE for the harness-change design gate iff it touches >=1 path matching a glob below. Globs are repo-root-relative POSIX, matched with fnmatch semantics where '**' matches across directory separators (see user/scripts/harness-gate.py::_glob_match). This manifest is ITSELF on the manifest (see the gate-own block), so widening or narrowing it is a control-surface change the gate reviews. The operator owns additions/removals; each is a gated change. Provisionally locked 2026-07-12 (NEEDS_INPUT_PROVISIONAL.md D1; ratification pending).",
+  "control_surfaces": [
+    "user/hooks/**",
+    "user/scripts/lazy-state.py",
+    "user/scripts/bug-state.py",
+    "user/scripts/lazy_core.py",
+    "user/scripts/lazy_guard.py",
+    "user/scripts/lazy_inject.py",
+    "user/scripts/lazy_coord.py",
+    "user/scripts/lazy-parity-manifest.json",
+    "user/scripts/build-queue*.ps1",
+    "user/skills/lazy*/**",
+    "user/skills/harden-harness/**",
+    "user/skills/_components/mcp-coverage-audit.md",
+    "user/skills/_components/adhoc-enqueue.md",
+    "user/skills/_components/sentinel-frontmatter.md",
+    "user/skills/_components/phases-runtime-validation.md",
+    "user/skills/_components/completion-integrity-gate.md",
+    "user/skills/_components/root-cause-trace-gate.md",
+    "user/skills/_components/symptom-reproduction-gate.md",
+    "user/settings.json",
+    "repos/*/.claude/settings.json"
+  ],
+  "gate_own": [
+    "user/scripts/harness-gate.py",
+    "docs/gate/control-surfaces.json",
+    "user/skills/_components/harness-change-gate.md"
+  ]
+}

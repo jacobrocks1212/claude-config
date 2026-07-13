@@ -10,6 +10,8 @@ decisions:
 date: 2026-07-04
 next_skill: spec
 class: product
+divergence: structural
+audit_divergence: structural
 ---
 
 # /spec --batch (Phase 3) — Needs Input
@@ -121,3 +123,45 @@ versus proceeding with a recorded justification, trading run-continuity against 
 
 **Recommendation:** A — authority proportional to irreversibility: weakening an existing gate is the
 one class where a wrong pass is silently catastrophic; the softer checks self-announce on recurrence.
+
+## Resolution
+
+resolved_by: auto-provisional
+decision_commit: 3c15b7ef78200b1f2dee5438ed7699d917df4d14
+
+**Provisionally accepted** under the operator's overnight park-provisional blanket directive
+(2026-07-12). For each product decision the stated `**Recommendation:**` (option A in every case)
+is adopted and propagated into `SPEC.md`; the feature is implemented against these choices but its
+`SPEC.md` **Status stays Draft** and NO `COMPLETED.md` is written — completion is mechanically
+blocked while this unratified `NEEDS_INPUT_PROVISIONAL.md` exists, per the park-provisional
+contract. The operator ratifies or redirects each choice before the feature can ever complete.
+
+> **DIVERGENCE GRADED `structural` — ratification is LOUD (honest grade, not the eligibility
+> path).** These four are the PRODUCT decisions `/spec` Phase 3 held for the operator precisely
+> because each forks product behavior: D1 forks the scope-trigger data model (committed manifest
+> vs in-code heuristic), D3 forks where blocking authority lives (completion gate vs hook vs
+> harden-harness-only), D4 forks the operator's sign-off workflow, and D7 forks autonomous-run
+> blocking behavior. A later redirect on any of them is significant rework, so the honest
+> file-level grade is `structural` (most-severe rule). This does NOT satisfy the normal
+> `provisional_eligibility` two-key predicate (which fail-closes on `structural`); the sentinel was
+> hand-authored under the operator's explicit blanket directive, and the structural grade is
+> recorded here so the ratification step scrutinizes these choices rather than rubber-stamping them.
+
+Per-decision choices (recommended option A, verbatim label from each Decision Context block):
+
+- **D1 — scope trigger — which changed paths arm the gate:** **Choice:** A — committed glob
+  manifest, self-included (`docs/gate/control-surfaces.json` with the listed initial glob set; a
+  diff is in scope iff it touches ≥1 matching path; the manifest is itself on the manifest).
+- **D3 — where the gate runs — which seam(s) host it:** **Choice:** A — two pipeline seams +
+  harden-harness delegation, one shared checker (planning-time *design seam* drafts
+  `GATE_VERDICT.md`; completion-gate *ship seam* refuses a scoped item with a missing/failing/
+  unsigned verdict; `/harden-harness` Step 3 delegates smell detection to the same checker;
+  blocking authority lives ONLY at the completion gate).
+- **D4 — override protocol — the shape of operator sign-off:** **Choice:** A — NEEDS_INPUT.md
+  decision round; approval transcribed to a verdict `override:` field; per-change only (reuses the
+  shipped halt/resume mechanism; an approved override never exempts the file/pattern from future
+  review).
+- **D7 — blocking semantics per check class for autonomous runs:** **Choice:** A — tiered
+  (gate-weakening → always the D4 sign-off halt; overfit/tautology/complexity → justify-or-halt
+  via a recorded adversarial justification; `/harden-harness` never blocked — the gate adds
+  recording, not blocking, there).

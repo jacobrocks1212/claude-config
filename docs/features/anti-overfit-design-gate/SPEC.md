@@ -11,8 +11,14 @@
 > control.
 
 **Status:** Draft
+<!-- Stays Draft by design: the four product decisions (D1/D3/D4/D7) were PROVISIONALLY accepted
+     2026-07-12 under the operator's park-provisional directive (recommended option A each; see
+     NEEDS_INPUT_PROVISIONAL.md, divergence: structural). The feature is implemented against those
+     choices but MUST NOT reach Complete until the operator ratifies-or-redirects — completion is
+     mechanically blocked while the unratified provisional sentinel exists. -->
 **Priority:** P1
-**Last updated:** 2026-07-04
+**Last updated:** 2026-07-12
+**Friction-reduction feature:** yes
 **Source:** repo-exploration proposal session 2026-07-04 (operator-requested; self-evolution
 batch); fleshed out via internal desk research 2026-07-04 (Gemini research skipped by operator
 directive — see RESEARCH.md)
@@ -100,8 +106,11 @@ sees hardening rounds, not the pipeline items that ship most control-surface cha
     self-trigger.
 - **Recommendation:** A. The initial glob set above is the recommendation; the operator owns
   additions/removals (each being a gated change thereafter).
-- **Resolution:** OPEN — recommendation is A with the listed initial manifest; awaiting
-  operator confirmation.
+- **Resolution:** **A — committed glob manifest, self-included** (`docs/gate/control-surfaces.json`
+  with the listed initial glob set). Provisionally accepted 2026-07-12 per the operator's
+  park-provisional directive (`NEEDS_INPUT_PROVISIONAL.md`, `decision_commit 3c15b7ef`,
+  divergence: structural — ratification pending; the feature does not complete until the operator
+  ratifies or redirects).
 
 ### D2. Mechanical vs LLM-adversarial split per check
 
@@ -171,7 +180,11 @@ sees hardening rounds, not the pipeline items that ship most control-surface cha
     rounds.
 - **Recommendation:** A — one checker, three consumers; blocking authority lives only at the
   completion gate, which is already the repo's fail-closed layer.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A — two pipeline seams + harden-harness delegation, one shared checker**
+  (planning-time design seam drafts the verdict; completion-gate ship seam is the only blocking
+  layer; `/harden-harness` Step 3 delegates to the same checker). Provisionally accepted 2026-07-12
+  per the operator's park-provisional directive (`NEEDS_INPUT_PROVISIONAL.md`, divergence:
+  structural — ratification pending).
 
 ### D4. Override protocol — the shape of operator sign-off
 
@@ -196,7 +209,10 @@ sees hardening rounds, not the pipeline items that ship most control-surface cha
     own bypass mechanism as gate-weakening; unauditable after the fact.
 - **Recommendation:** A — and the override is per-change, never standing: an approved weakening
   does not exempt the file or the pattern from future review.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A — NEEDS_INPUT.md decision round; approval transcribed to the verdict
+  `override:` field; per-change only.** Provisionally accepted 2026-07-12 per the operator's
+  park-provisional directive (`NEEDS_INPUT_PROVISIONAL.md`, divergence: structural — ratification
+  pending).
 
 ### D5. Verdict recording
 
@@ -259,7 +275,10 @@ sees hardening rounds, not the pipeline items that ship most control-surface cha
     specifically must not ride an ordinary cycle (stub-locked).
 - **Recommendation:** A — authority proportional to irreversibility: weakening an existing gate
   is the one class where a wrong pass is silently catastrophic.
-- **Resolution:** OPEN — recommendation is A; awaiting operator confirmation.
+- **Resolution:** **A — tiered** (gate-weakening → D4 sign-off halt; overfit/tautology/complexity
+  → justify-or-halt via a recorded adversarial justification; `/harden-harness` never blocked).
+  Provisionally accepted 2026-07-12 per the operator's park-provisional directive
+  (`NEEDS_INPUT_PROVISIONAL.md`, divergence: structural — ratification pending).
 
 ## User Experience
 
@@ -375,23 +394,125 @@ diff (origin/main..HEAD or --staged)          docs/gate/control-surfaces.json (m
 
 ## Open Questions
 
+> **D1 / D3 / D4 / D7 were PROVISIONALLY resolved to option A** on 2026-07-12 under the operator's
+> park-provisional directive (`NEEDS_INPUT_PROVISIONAL.md`, `decision_commit 3c15b7ef`, file-level
+> `divergence: structural`). These are **pending ratification** — the operator ratifies-or-redirects
+> each before the feature completes. The bullets below are retained as the ratification agenda.
+
 - **D1 — scope manifest:** committed glob manifest with the listed initial set vs heuristic
-  classification. Recommendation: the manifest, self-referentially included.
+  classification. **Provisional: A** (the manifest, self-referentially included).
 - **D3 — where the gate runs:** planning seam + completion-gate ship seam + harden-harness
-  delegation (one shared checker) vs a blocking hook vs harden-harness-only. Recommendation:
-  the two pipeline seams + delegation; no hook-layer blocking.
+  delegation (one shared checker) vs a blocking hook vs harden-harness-only. **Provisional: A**
+  (the two pipeline seams + delegation; no hook-layer blocking).
 - **D4 — override protocol:** NEEDS_INPUT.md decision round with the approval transcribed as a
   verdict `override:` field vs a hand-written override sentinel vs an env-var bypass.
-  Recommendation: NEEDS_INPUT.md round; per-change, never standing.
+  **Provisional: A** (NEEDS_INPUT.md round; per-change, never standing).
 - **D7 — blocking semantics:** tiered (weakening always halts for sign-off; other checks
-  justify-or-halt; harden-harness never blocked) vs all-halt vs all-warn. Recommendation:
-  tiered.
+  justify-or-halt; harden-harness never blocked) vs all-halt vs all-warn. **Provisional: A**
+  (tiered).
 - Deferred empirical checks: false-positive rate of the numeric-literal-change detector on
   real historical control-surface diffs (tune context rules during Phase 1 against the
   hardening log's committed fixes); whether planning-seam injection needs a claude-config
   `skill-config/` scaffold that does not exist yet (verify during Phase 2); exact
   `sentinel-frontmatter.md` + AlgoBooth `SENTINEL_SCHEMAS` lockstep obligations for the new
   `gate-verdict` kind (verify during Phase 2).
+
+## Intervention Hypothesis
+
+The gate is **not exempt from the system it enforces** (D6): it declares its own falsifiable
+hypothesis over a signal it does NOT emit. Parsed by `lazy_core.parse_intervention_hypothesis`;
+captured at completion (which, being provisional-blocked, is deferred until ratification).
+
+- target_signal: kpi:anti-overfit-gate.gate-weakening-unreviewed-reaching-main
+- expected_direction: decrease
+- signal_independence: independent — gate-weakening incidents reaching `main` unreviewed are
+  produced by `intervention-efficacy-tracking` REFUTED verdicts and `/lazy-batch-retro` findings,
+  NOT by the gate itself. The gate cannot suppress its own target signal (a change the gate wrongly
+  passed that efficacy later REFUTES indicts the gate's verdict — the definition of a signal it
+  does not control).
+- review_after_runs: 20
+
+## KPI Declaration
+
+**Friction-reduction feature:** yes — the friction this gate cuts is a *gate-weakening or overfit
+harness change reaching `main` unreviewed*, and the re-diagnosis + revert churn that follows (the
+`_VERIFICATION_SECTION_RE` whack-a-mole and the GAP-2 near-miss are the receipts). Success is
+measured by signals the gate does NOT emit (efficacy verdicts, retro findings, operator override
+rate), per D6.
+
+> **Registry residency is seam-deferred.** The `harness-gate` signal source + its four selectors
+> are registered in `kpi-scorecard.py`'s `_SOURCES` (so these drafted rows lint clean — the
+> `canary-trip-precision` spec-finalization precedent), but their COMPUTE + the
+> `docs/kpi/registry.json` rows land at ratification (the registry is concurrently owned tonight —
+> one-writer rule; the ship seam that produces the signal is itself seam-deferred). Until then the
+> rows render NO-DATA honestly, never a fabricated zero.
+
+Declared rows (draft — `--lint --spec` validates them; insert into `docs/kpi/registry.json` at
+ratification):
+
+```json
+{
+  "id": "anti-overfit-gate-hit-rate",
+  "system": "anti-overfit-gate",
+  "title": "Design-gate scoped-change hit rate",
+  "friction": "A rising share of scoped changes tripping the checker signals either genuine risk concentration or false-positive creep — paired with the false-positive-rate row to disambiguate; tuning the numeric-literal detector to reduce it is itself a sign-off-gated weakening.",
+  "signal": {"source": "harness-gate", "selector": "hit-rate"},
+  "unit": "percent",
+  "direction": "down-is-good",
+  "baseline": {"value": null, "captured_at": null, "window": "30d", "provenance": "pending"},
+  "band": null,
+  "review_by": "2026-10-01",
+  "repo_scope": "claude-config"
+}
+```
+
+```json
+{
+  "id": "anti-overfit-gate-override-rate",
+  "system": "anti-overfit-gate",
+  "title": "Gate-weakening override rate",
+  "friction": "Operator sign-offs divided by gate-weakening hits — a high rate means the gate is routinely asked to bless weakenings rather than fixing the underlying defect (Prohibition #2 erosion).",
+  "signal": {"source": "harness-gate", "selector": "override-rate"},
+  "unit": "percent",
+  "direction": "down-is-good",
+  "baseline": {"value": null, "captured_at": null, "window": "30d", "provenance": "pending"},
+  "band": null,
+  "review_by": "2026-10-01",
+  "repo_scope": "claude-config"
+}
+```
+
+```json
+{
+  "id": "anti-overfit-gate-false-positive-rate",
+  "system": "anti-overfit-gate",
+  "title": "Design-gate false-positive burden",
+  "friction": "Flags the verdict judged spurious over total flags — the row that surfaces the numeric-literal-change detector's tuning debt (RESEARCH pitfall #1); a persistently high burden is the gate becoming friction.",
+  "signal": {"source": "harness-gate", "selector": "false-positive-rate"},
+  "unit": "percent",
+  "direction": "down-is-good",
+  "baseline": {"value": null, "captured_at": null, "window": "30d", "provenance": "pending"},
+  "band": null,
+  "review_by": "2026-10-01",
+  "repo_scope": "claude-config"
+}
+```
+
+```json
+{
+  "id": "anti-overfit-gate-verdict-efficacy-disagreement",
+  "system": "anti-overfit-gate",
+  "title": "Verdict-vs-efficacy disagreement",
+  "friction": "Changes the gate PASSED that intervention-efficacy-tracking later REFUTED, plus changes it FLAGGED that were CONFIRMED — the D6 self-audit signal that makes the gate falsifiable by data it does not control (a mis-tuned gate indicts itself here).",
+  "signal": {"source": "harness-gate", "selector": "verdict-efficacy-disagreement"},
+  "unit": "count",
+  "direction": "down-is-good",
+  "baseline": {"value": null, "captured_at": null, "window": "30d", "provenance": "pending"},
+  "band": null,
+  "review_by": "2026-10-01",
+  "repo_scope": "claude-config"
+}
+```
 
 ## Research References
 

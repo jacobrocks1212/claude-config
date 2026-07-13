@@ -426,6 +426,50 @@ path may carry operator-approved prose instead (frontmatter is producer-owned
 either way). Keep in lockstep with AlgoBooth's
 `scripts/check-docs-consistency.ts` `SENTINEL_SCHEMAS`.
 
+#### `GATE_VERDICT.md` — `kind: gate-verdict`  *(new — anti-overfit-design-gate)*
+
+The **per-change recorded verdict** of the harness-change design gate
+(`anti-overfit-design-gate`, SPEC D5). A **permanent audit artifact** (COMPLETED.md /
+INVESTIGATION.md class) — explicitly NOT a halt sentinel: the state scripts key no routing on it.
+It is authored by the cycle agent at the planning seam from `harness-gate.py`'s JSON + the agent's
+own adversarial prose (the `_components/harness-change-gate.md` protocol), and consumed
+mechanically by the **completion-gate ship seam** (SPEC D3 — `lazy_core.gate_verdict_ok`, the
+seam-deferred half): a scoped item whose `GATE_VERDICT.md` is missing, carries any `fail` check, or
+carries an unsigned `gate_weakening` hit is refused at `__mark_complete__` / `__mark_fixed__`.
+
+Required:
+
+```yaml
+---
+kind: gate-verdict
+feature_id: <id>
+gate_version: <int>          # the manifest/checker contract version (1 at ship)
+date: <YYYY-MM-DD>
+scope_hit: [<repo-relative path>, ...]   # the manifest paths this change touched (>=1)
+checks:                       # each ∈ pass | flag-justified | hit-signed | declared | fail
+  overfit: <value>
+  tautology: <value>
+  gate_weakening: <value>
+  complexity: <value>
+retires: <one-line — a retired rule/surface, or `net-new` + justification>
+---
+```
+
+Optional:
+- `override: operator-approved <YYYY-MM-DD> — <one-line rationale>` — present ONLY on a
+  `gate_weakening: hit-signed` check. Transcribed from the operator's `NEEDS_INPUT.md`
+  (`written_by: harness-change-gate`) decision round (SPEC D4). **Per-change, never standing** — it
+  does not exempt the file or pattern from future review.
+
+Check-value semantics: `pass` (no flag), `flag-justified` (flagged + a recorded adversarial
+justification in the body), `hit-signed` (a gate-weakening approved via the `override` field),
+`declared` (complexity — the `retires:` line is present), `fail` (flagged with no justification →
+the ship seam refuses). The body is LOAD-BEARING for human + audit consumption: an
+`## Adversarial answers` section with one H3 per check carrying the recorded prose (the nearest
+recurrence the rule misses; how a broken change's metric would look; the weakening + its
+underlying-defect alternative; what the change retires). Keep in lockstep with AlgoBooth's
+`scripts/check-docs-consistency.ts` `SENTINEL_SCHEMAS` if it grows a `gate-verdict` rule.
+
 #### `SKIP_MCP_TEST.md` — `kind: skip-mcp-test`
 
 > **SCOPE — whole-feature, permanent; there is NO row/phase scoping.** A `SKIP_MCP_TEST.md`

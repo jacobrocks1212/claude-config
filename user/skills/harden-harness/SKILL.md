@@ -179,6 +179,24 @@ verification-regex class back-to-back (each added another literal phrase to a ma
 durable fix was structural. The over-fit detector stops that whack-a-mole: it notices when a
 fix is fitting to *observed data* rather than to *structure*, and spins off the generalization.
 
+**Mechanical delegation to the shared checker (`anti-overfit-design-gate`, SPEC D3 option A).**
+The smell detection below is now backed by the repo-wide mechanical checker
+`user/scripts/harness-gate.py` (single source — the same checker the pipeline's ship seam and the
+planning-seam `_components/harness-change-gate.md` component consume). After the mechanical fix
+lands, run it over the round's diff to make the smell detection mechanical instead of eyeballed:
+
+```
+python3 user/scripts/harness-gate.py --repo-root . --range origin/main..HEAD --json
+```
+
+CITE its output in the Step-4 round (the `overfit`/`gate_weakening` findings + `scope_hit`).
+`/harden-harness`'s own protocol is UNCHANGED by the delegation: the mechanical fix ALWAYS lands
+first, the run is NEVER blocked, and a tripped smell spins off the generalization exactly as
+below — the gate adds RECORDING here, not blocking (blocking authority lives only at the completion
+gate). A `gate_weakening: hit` in a hardening round still means STOP and fix the underlying defect
+(Prohibition #2) rather than shipping the weakening; a `flag` still triggers the spin-off decision.
+The signals below are the human-readable expansion of what the checker keys on structurally.
+
 **Over-fit smell signals (ANY ONE trips a spin-off):**
 
 1. **Literal-phrase-to-matcher.** The fix adds a literal phrase/string to a matcher — a
