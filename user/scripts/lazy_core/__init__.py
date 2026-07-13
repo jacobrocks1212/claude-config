@@ -52,6 +52,69 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "sync_deps": "depdag",
     "dep_completion_status": "depdag",
     "format_unknown_dependency_blocker": "depdag",
+
+    # Phase 2 WU-2: the document-model (parsing) seam.
+    "_FENCE": "docmodel",
+    "_FLAT_SCALAR_LINE_RE": "docmodel",
+    "_yaml_load_tolerant": "docmodel",
+    "_yaml_fallback_scalar": "docmodel",
+    "parse_sentinel": "docmodel",
+    "_PIPELINE_SKIPPED_BY": "docmodel",
+    "_APP_SURFACE_MARKERS": "docmodel",
+    "repo_has_no_app_surface": "docmodel",
+    "repo_uses_cognito_planner": "docmodel",
+    "phases_mcp_runtime_not_required": "docmodel",
+    "skip_waiver_refusal": "docmodel",
+    "spec_status": "docmodel",
+    "PROVISIONAL_SENTINEL": "docmodel",
+    "_PROVISIONAL_ELIGIBLE_GRADES": "docmodel",
+    "build_parked_entry": "docmodel",
+    "_parse_plan_frontmatter": "docmodel",
+    "_plan_status": "docmodel",
+    "_VALID_PLAN_COMPLEXITIES": "docmodel",
+    "_DEFAULT_PLAN_COMPLEXITY": "docmodel",
+    "plan_complexity": "docmodel",
+    "_plan_lowest_phase": "docmodel",
+    "_PLAN_PART_RE": "docmodel",
+    "_plan_series_index": "docmodel",
+    "_plan_sort_key": "docmodel",
+    "_plan_phase_set": "docmodel",
+    "_unchecked_wus_in_plan_scope": "docmodel",
+    "_all_wus_in_plan_scope": "docmodel",
+    "find_implementation_plans": "docmodel",
+    "_implementation_plans_exist": "docmodel",
+    "_has_any_complete_plan": "docmodel",
+    "find_retro_plans": "docmodel",
+    "latest_retro_plan": "docmodel",
+    "retro_plan_has_significant_divergences": "docmodel",
+    "count_deliverables": "docmodel",
+    "_VERIFICATION_ONLY_MARKER": "docmodel",
+    "_VERIFICATION_SECTION_RE": "docmodel",
+    "_DELIVERABLES_SECTION_RE": "docmodel",
+    "_DESCOPE_STRIKETHROUGH_RE": "docmodel",
+    "_DESCOPE_MARKER_RE": "docmodel",
+    "_DESCOPED_MARKER": "docmodel",
+    "_row_is_descoped_in_place": "docmodel",
+    "remaining_unchecked_are_verification_only": "docmodel",
+    "classify_blocking_unchecked_rows": "docmodel",
+    "_PHASE_HEADING_RE": "docmodel",
+    "_BOLD_STATUS_RE": "docmodel",
+    "_PHASE_KIND_RE": "docmodel",
+    "_VALID_PHASE_KINDS": "docmodel",
+    "_DEFAULT_PHASE_KIND": "docmodel",
+    "parse_phases": "docmodel",
+    "_IMPL_NOTES_HEADING_RE": "docmodel",
+    "_SIBLING_IMPL_NOTES_HEADING_RE": "docmodel",
+    "_sibling_impl_notes_present": "docmodel",
+    "phases_show_implementation": "docmodel",
+    "retro_staleness": "docmodel",
+    "_TERMINAL_PHASE_STATUSES": "docmodel",
+    "_phase_completion_plan": "docmodel",
+    "_coerce_evidence_count": "docmodel",
+    "_FAIL_CLOSED_EVIDENCE_SENTINELS": "docmodel",
+    "_EVIDENCE_GATE_KILL_SWITCHES": "docmodel",
+    "_FALSY_ENV_VALUES": "docmodel",
+    "_evidence_gate_killed": "docmodel",
 }
 
 # Submodule consulted when a name has no explicit entry in
@@ -59,7 +122,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
 _FALLBACK_SUBMODULE = "_monolith"
 
 # All submodules that make up this package, in no particular order.
-_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag")
+_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "docmodel")
 
 
 def __getattr__(name):

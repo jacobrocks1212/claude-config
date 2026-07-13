@@ -16,7 +16,8 @@ import re
 from pathlib import Path
 
 from ._ctx import _atomic_write, _diag
-from ._monolith import _die, has_completion_receipt, spec_status
+from ._monolith import _die, has_completion_receipt
+from .docmodel import spec_status
 
 
 # ---------------------------------------------------------------------------

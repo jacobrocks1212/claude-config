@@ -27181,9 +27181,9 @@ def test_verification_only_marker_constant_present():
     assert hasattr(lazy_core, "_VERIFICATION_ONLY_MARKER"), (
         "lazy_core must define the SSOT constant _VERIFICATION_ONLY_MARKER (WU-3)"
     )
-    assert lazy_core._monolith._VERIFICATION_ONLY_MARKER == "<!-- verification-only -->", (
+    assert lazy_core.docmodel._VERIFICATION_ONLY_MARKER == "<!-- verification-only -->", (
         "Open Question 2 resolved toward the per-row HTML comment form; "
-        f"got {lazy_core._monolith._VERIFICATION_ONLY_MARKER!r}"
+        f"got {lazy_core.docmodel._VERIFICATION_ONLY_MARKER!r}"
     )
 
 
@@ -27243,7 +27243,7 @@ def test_ruvonly_marker_lockstep_producers_match_ssot():
     (phases-runtime-verification.md, blocked-resolution.md) equals the
     lazy_core SSOT constant — string equality, no divergent hardcoding."""
     _guard()
-    marker = lazy_core._monolith._VERIFICATION_ONLY_MARKER
+    marker = lazy_core.docmodel._VERIFICATION_ONLY_MARKER
 
     assert _PHASES_RUNTIME_VERIFICATION_PATH.exists(), (
         f"missing producer component: {_PHASES_RUNTIME_VERIFICATION_PATH}"
