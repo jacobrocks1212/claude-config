@@ -18,6 +18,18 @@
        park=park  → the section is selected ONLY when the emitting probe ran
        under --park-needs-input (emit_cycle_prompt park_mode=True). Absent (or
        park=both) → always selected, byte-identical to the pre-park grammar.
+     Optional hosts attribute (cycle-prompt-environment-dialect, SPEC D2 —
+     DECLARED HERE, SELECTION LOGIC PENDING in lazy_core.py as of this WU):
+       hosts=windows  → intended to be selected ONLY when the emitting probe
+       runs on a Windows host (os.name == "nt"). Absent → always selected
+       (grammar-additive, same shape as park=). `_parse_section_attrs` already
+       captures any key=value token, so this attribute parses today WITHOUT
+       error — it is simply not yet READ by the selection loop, so a
+       hosts=windows section is (for now) selected on every host its
+       pipelines/modes/skills match, same as before this attribute existed.
+       Emitter wiring (STATE lane): filter `attrs.get("hosts")` against the
+       real host in `emit_cycle_prompt`'s selection loop, mirroring the park=
+       filter immediately below it (base template AND repo addenda loops).
      A section's content runs from the line AFTER its marker to the line
      BEFORE the next marker (or EOF). Skill names in `skills=` are bare (no
      leading slash): execute-plan, retro, retro-feature, mcp-test.
@@ -61,6 +73,8 @@
      R15 loop block (separate file) ............. loop-block.md (appended by emitter)
      R16 cloud deltas ........................... section: cloud-override (+ commit-push folded into hard-contract item 3 / turn-end via modes)
      R17 terminal stop (C4) ..................... section: terminal-stop
+     R18 environment dialect (host-conditional) .. sections: env-dialect-core (every host) / env-dialect-windows (hosts=windows)
+     R19 PHASES read mandate (phases-slice.py) ... section: env-dialect-core (stated once; skill-mcp-test-common's RECONCILE step references it, does not restate it)
 
      The ONE sanctioned restatement is the turn-end pre-return checklist, which
      is now the contract of an EXECUTED `--verify-ledger` terminal gate (item 3
@@ -111,6 +125,39 @@ Operating mode: batch
   - The state script (--cloud variant) already guaranteed this skill is safe
     to run in cloud (genuine cloud-runtime limits are handled per the CLOUD
     OVERRIDE below).
+
+<!-- @section env-dialect-core pipelines=feature,bug modes=workstation,cloud skills=all -->
+Environment dialect (core — every host, {pipeline_phrase}):
+  - Cross-process handoff: pipe data via STDIN, never a shared temp file — a
+    Bash-written path is not guaranteed readable by a separately-invoked
+    interpreter (dialect mismatch between the shell and the runtime that
+    reads it). Prefer `<producer> | python3 -c "import sys, json; d =
+    json.load(sys.stdin)"` over writing then re-`open()`-ing a temp file.
+  - Probe the run marker with `python3 ~/.claude/scripts/lazy-state.py
+    --repo-root {cwd} --marker-status` (bug pipeline: `bug-state.py`) — it
+    ALWAYS exits 0 and prints `{"present": bool, ...}`, absent marker,
+    corrupt JSON, or no state dir alike. Never hand-roll a
+    `cat <marker> 2>/dev/null | python -c "json.load(sys.stdin)"` idiom — an
+    absent file raises on empty stdin.
+  - Read PHASES.md ONLY through
+    `python3 ~/.claude/scripts/phases-slice.py {spec_path} [--phase <id>]` —
+    never a whole-file Read. A mature feature's PHASES.md routinely exceeds
+    the Read tool's cap; the slicer returns the phase index plus only the
+    phase(s) you name.
+
+<!-- @section env-dialect-windows pipelines=feature,bug modes=workstation skills=all hosts=windows -->
+Environment dialect (this host: Windows / Git Bash):
+  - No trailing `\` before a closing quote in a Windows path — `"C:\...\dir\"`
+    reads as an unterminated string to Git Bash (the `\"` escapes the quote,
+    so the shell waits for EOF). Use forward slashes (`"C:/.../dir"`) or make
+    sure the path's last character before the quote is never `\`.
+  - No `/mnt/c/...` — that is the WSL path dialect. This Bash tool is Git
+    Bash on native Windows, not WSL; use the native `C:/...` path (or a
+    relative path from {cwd}).
+  - Import `lazy_core`/state-script modules via a `$HOME`-anchored
+    `sys.path` (`sys.path.insert(0, os.path.expanduser("~/.claude/scripts"))`
+    or run the script by its `~/.claude/scripts/<name>.py` path directly) —
+    never a hardcoded `/root/...` or WSL-guessed absolute path.
 
 <!-- @section d7 pipelines=feature,bug modes=workstation,cloud skills=all -->
 Completeness-first (D7 — standing policy, pre-authorized, both modes):
@@ -371,8 +418,10 @@ Sonnet test subagent. These rules apply to EVERY mcp-test cycle:
     that omits either field and halt for operator confirmation. Audio IS
     MCP-testable (load_test_tone + get_audio_buffer), so audio untestability
     claims are usually WRONG — cross-check the SPEC before claiming a class.
-  - RECONCILE PHASES (after VALIDATED.md): walk {spec_path}'s PHASES.md and, for
-    EVERY unchecked Runtime Verification row, either tick it with a brief evidence
+  - RECONCILE PHASES (after VALIDATED.md): read {spec_path}'s PHASES.md via the
+    env-dialect-core mandate above (`phases-slice.py {spec_path} --phase <id>`,
+    never a whole-file Read) and, for EVERY unchecked Runtime Verification row,
+    either tick it with a brief evidence
     annotation when THIS validation run covers it, or — when it does NOT — re-scope
     it honestly (convert to a non-checkbox follow-up note, or downgrade your result
     to an MCP_TEST_RESULTS.md partial if it is genuinely a blocking gap) under a
