@@ -14,10 +14,11 @@
 > and a ruff/pyflakes gate on `user/scripts/` (F811 would already catch `lazy_core.py`'s
 > duplicate `_current_head` at lines 3875/5661).
 
-**Status:** Draft — decisions locked 2026-07-13 (see Decision Ledger); mechanical D2/D3/D5/D7
-auto-accepted; **product forks D1/D4/D6 park-provisional (unratified)** → no completion until an
-operator ratifies the facade mechanism. Phase 0 landed green (preconditions verified + benchmark
-harness). Phases 1–6 blocked on D1/D4 ratification (landmine L1).
+**Status:** In-progress — decisions locked 2026-07-13 (see Decision Ledger); mechanical D2/D3/D5/D7
+auto-accepted; **product forks D1/D4/D6 RATIFIED by operator 2026-07-13** (interactive session):
+L1 facade mechanism = **3 (redirect-the-patches)**; D4 = **PEP 562 lazy facade**; D6 = **ruff
+F-rules advisory-first**. Phase 0 landed green (preconditions verified + benchmark harness).
+Phases 1–6 unblocked.
 **Priority:** P1
 **Last updated:** 2026-07-13
 **Friction-reduction feature:** yes
@@ -66,13 +67,13 @@ and D6 (F811 baseline fix) are materially weaker than the SPEC assumed.
 
 | Decision | Class | Disposition 2026-07-13 |
 |----------|-------|------------------------|
-| D1 package shape + facade | product-behavior | **PARK-PROVISIONAL** — recommendation A (package + permanent facade) stands, but landmine L1 (monkeypatch-by-attribute-assignment) makes the facade a *semantic* contract, not a re-export convenience. Needs operator ratification of the facade mechanism (see below). |
+| D1 package shape + facade | product-behavior | **RATIFIED 2026-07-13 (operator, interactive)** — recommendation A (package + permanent facade) accepted; L1 facade mechanism = **3 (redirect-the-patches)**: tests are split along seams (D5) and each patch points at the owning submodule. 1125-test count + names preserved; byte baselines untouched. |
 | D2 locked constraints | mechanical | **AUTO-ACCEPT** + amended: add L2 (`__file__`-relative path anchor) and L3 (rebindable-global getter/setter) as first-commit obligations. |
 | D3 extraction order | mechanical | **AUTO-ACCEPT** — order unchanged; every step past the skeleton is L1-blocked. |
 | D5 test decomposition | mechanical | **AUTO-ACCEPT** but de-prioritized — collection is already 0.30 s, so the split's value is editor-ergonomics + per-seam selection, not collection time. `tests/` dir already exists. |
-| D6 lint gate | product-behavior | **PARK-PROVISIONAL** — ruff F-rules still worth adding, but the headline F811 (`_current_head`) is already fixed, so it lands as a *forward* guard, not a baseline-fix. Advisory-first still recommended. |
+| D6 lint gate | product-behavior | **RATIFIED 2026-07-13 (operator, interactive)** — ruff F-rules on `user/scripts/`, **advisory-first** (flip to enforcing in a later session once clean). Lands as a *forward* guard — the headline F811 (`_current_head`) is already fixed. |
 | D7 compute_state follow-up | mechanical | **AUTO-ACCEPT** — measurement-only hook; out of scope here. |
-| D4 hook fast-import | product-behavior | **PARK-PROVISIONAL** — PEP 562 lazy facade recommended, but see L1: a lazy facade over submodules re-introduces the patched-collaborator-resolution problem. Fallback B (thin `lazy_state_dir.py`/`lazy_registry.py` modules the hooks import directly) may be the *lower-risk* path precisely because it sidesteps L1 for the hook surface. Measured, not assumed, once ratified. |
+| D4 hook fast-import | product-behavior | **RATIFIED 2026-07-13 (operator, interactive)** — **PEP 562 lazy facade** accepted. Safe under L1 mechanism 3: patches target owning submodules directly, so the facade's lazy `__getattr__` never sits on the patched-collaborator-resolution path. Fallback B (thin `lazy_state_dir.py`/`lazy_registry.py`) remains the documented alternative if Phase-1/2 measurement disqualifies A. |
 
 **The unresolved fork blocking Phases 1–6 (landmine L1 — needs operator ratification):**
 Tests patch `lazy_core.time/os/subprocess/_atomic_write/write_runtime_lock/consume_nonce/...` by
@@ -94,6 +95,12 @@ are an operator decision, not a mechanical one:
 
 Until an operator picks among 1/2/3, no seam extraction lands. This is a genuine PRODUCT fork
 (it changes the invariant the whole feature is built on), correctly parked rather than force-resolved.
+
+> **RESOLVED 2026-07-13:** the operator ratified **mechanism 3 (redirect-the-patches)** in an
+> interactive session. Consequence for the invariants: "move-only" holds for production code
+> (modulo the L2/L3 required anchors + intra-package import rewiring); test patch-target lines
+> are the sanctioned edit surface, with the 1125-test count + names preserved per move commit
+> and the byte baselines untouched.
 
 ## Executive Summary
 
@@ -426,10 +433,13 @@ ruff (F-rules) on user/scripts/    advisory → enforcing after baseline fix (in
 
 ## Open Questions
 
-- **D1 (operator):** approve the package-with-permanent-facade shape (vs the B shim).
-- **D4 (operator):** approve the PEP 562 lazy facade for the hook path (fallback B pre-approved
-  as the documented alternative if Phase-1 measurement disqualifies A).
-- **D6 (operator):** approve the ruff F-rules gate on `user/scripts/` (advisory → enforcing).
+- ~~**D1 (operator):** approve the package-with-permanent-facade shape (vs the B shim).~~
+  **RESOLVED 2026-07-13:** approved; L1 mechanism = 3 (redirect-the-patches).
+- ~~**D4 (operator):** approve the PEP 562 lazy facade for the hook path.~~
+  **RESOLVED 2026-07-13:** approved (fallback B stays the documented alternative if Phase-1/2
+  measurement disqualifies A).
+- ~~**D6 (operator):** approve the ruff F-rules gate on `user/scripts/`.~~
+  **RESOLVED 2026-07-13:** approved, advisory-first.
 - **Empirical (Phase 1):** actual hook-surface import ms under the lazy facade (the ~10x
   proposal estimate is unverified until the benchmark exists); cold-start ms re-measurement
   (the ~705 ms figure is from the proposal session and was not re-measured 2026-07-11).

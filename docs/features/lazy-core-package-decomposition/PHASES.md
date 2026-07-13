@@ -1,6 +1,6 @@
 # PHASES — lazy-core-package-decomposition
 
-**Status:** In-progress (Phase 0 Complete; Phases 1–6 Blocked on L1 facade-mechanism ratification)
+**Status:** In-progress (Phase 0 Complete; L1 ratified 2026-07-13 → mechanism 3 redirect-the-patches; Phases 1–6 unblocked)
 **MCP runtime:** not-required (pure state-plane refactor; SKIP_MCP_TEST class)
 **Friction-reduction feature:** yes (KPI row `lazy-core-monolith-intervention-drag`)
 **Last updated:** 2026-07-13
@@ -10,6 +10,9 @@
 > RESEARCH_SUMMARY). L1 is a PRODUCT fork requiring operator ratification of the facade mechanism
 > (qualified-rewrite / forwarding-module-class / redirect-patches). Per the park-provisional protocol
 > the run does NOT force a mechanism; it parks and stops at the last fully-green phase (Phase 0).
+> **RATIFIED 2026-07-13 (operator, interactive): mechanism 3 — redirect-the-patches.** D4 = PEP 562
+> lazy facade; D6 = ruff advisory-first. Test patch-target lines are the sanctioned edit surface
+> (1125-test count + names preserved per move commit; byte baselines untouched).
 > Each extraction phase below carries the **per-commit invariants**: move-only (modulo the L2/L3
 > required anchors), full `test_lazy_core` suite + `lazy-state.py --test` + `bug-state.py --test`
 > byte-baselines green, `lazy_parity_audit.py` exit 0, `cli_surface_gen.py --check` exit 0,
@@ -31,10 +34,10 @@
 Proven done: receipts verified; benchmark runs and prints the baseline; no existing file's behavior
 changed (only additive script + docs). Suite unaffected (no `lazy_core.py` edit).
 
-## Phase 1 — Facade + `_ctx` skeleton ⛔ BLOCKED on L1 ratification
+## Phase 1 — Facade + `_ctx` skeleton (unblocked — L1 ratified)
 
-- [ ] Ratify the L1 facade mechanism (operator) — one of qualified-rewrite / forwarding-module-class /
-      redirect-patches. **Gate: no code below proceeds until this is chosen.**
+- [x] Ratify the L1 facade mechanism (operator) — **RATIFIED 2026-07-13: mechanism 3,
+      redirect-the-patches** (interactive session).
 - [ ] Create `user/scripts/lazy_core/` package; move the monolith body into it behind the ratified
       facade so `import lazy_core`, `from lazy_core import _atomic_write`, `lazy_core.notify_halt(...)`,
       and **module-attribute monkeypatching** all keep working byte-identically.
