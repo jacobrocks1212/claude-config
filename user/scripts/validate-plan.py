@@ -800,7 +800,22 @@ def run_structural_checks(path):
             0,
         )
 
-    lazy_core = _load_lazy_core()
+    try:
+        lazy_core = _load_lazy_core()
+    except Exception as exc:  # noqa: BLE001 — honor the never-raises contract
+        # INFRASTRUCTURE failure: the gate MACHINERY is broken (lazy_core
+        # unimportable), which is categorically different from "the plan is
+        # imperfect". Report it as a loud ERROR finding — NEVER a silent
+        # pass and NEVER a raise (the raise is exactly what let
+        # plan_structural_backstop's broad fail-open silently disarm this
+        # gate repo-wide when the flat lazy_core.py was deleted — see
+        # docs/bugs/plan-structural-backstop-silent-disarm-on-infrastructure-failure).
+        return (
+            [f"[ERROR] (infrastructure) cannot load lazy_core (the "
+             f"structural rules' shared parser source) — gate machinery "
+             f"broken, plan NOT validated: {type(exc).__name__}: {exc}"],
+            1,
+        )
     findings = []
     if kind == "phases":
         findings += rule_verification_placement(text, lazy_core)

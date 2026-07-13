@@ -346,6 +346,34 @@ class TestScopeAndIo(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertTrue(any("file not found" in l for l in lines))
 
+    def test_broken_lazy_core_loader_reports_infrastructure_error_never_raises(self):
+        """A lazy_core import failure (gate machinery broken — e.g. the
+        module deleted/moved) honors the never-raises contract: it is
+        reported as a loud [ERROR] (infrastructure) finding with exit 1,
+        never a raise (which once let plan_structural_backstop's broad
+        fail-open silently disarm this gate repo-wide — see
+        docs/bugs/plan-structural-backstop-silent-disarm-on-infrastructure-failure)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            p = _write(tmp, "plans/all-phases-foo.md", (
+                "---\nkind: implementation-plan\nfeature_id: foo\nstatus: Ready\n"
+                "phases: [1]\n---\n\n## Work Units\n- [ ] WU-1 — do the thing\n"
+            ))
+
+            def _boom():
+                raise FileNotFoundError("lazy_core.py: retired flat file")
+
+            real_loader = vp._load_lazy_core
+            vp._load_lazy_core = _boom
+            try:
+                lines, code = vp.run_structural_checks(p)
+            finally:
+                vp._load_lazy_core = real_loader
+            self.assertEqual(code, 1)
+            self.assertTrue(
+                any("(infrastructure)" in l for l in lines),
+                f"expected a loud infrastructure ERROR finding; got {lines}",
+            )
+
     def test_cli_exit_code_matches(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = _write(tmp, "PHASES.md", (

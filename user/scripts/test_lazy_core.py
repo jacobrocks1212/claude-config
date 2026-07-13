@@ -37337,6 +37337,78 @@ def test_plan_structural_backstop_missing_file_fails_open():
     assert result["findings"] == []
 
 
+def test_plan_structural_backstop_infrastructure_failure_fresh_refuses_loudly():
+    """A validate-plan.py LOADER crash (gate machinery broken — e.g. the
+    module file deleted/unimportable) on a FRESH plan degrades to a LOUD
+    infrastructure ERROR finding + refusal — NEVER the silent {'ok': True,
+    'findings': []} that disarmed the gate repo-wide when the flat
+    lazy_core.py was deleted (docs/bugs/plan-structural-backstop-silent-
+    disarm-on-infrastructure-failure)."""
+    _guard()
+    import lazy_core._monolith as _mono
+
+    def _boom():
+        raise FileNotFoundError("validate-plan.py: gone")
+
+    with tempfile.TemporaryDirectory() as td:
+        plan = Path(td) / "plans" / "all-phases-foo.md"
+        plan.parent.mkdir(parents=True, exist_ok=True)
+        plan.write_text(
+            "---\nkind: implementation-plan\nfeature_id: foo\nstatus: Ready\n"
+            "phases: [1]\n---\n\n## Work Units\n- [ ] WU-1 — do the thing\n",
+            encoding="utf-8",
+        )
+        real_loader = _mono._load_validate_plan_module
+        _mono._load_validate_plan_module = _boom
+        try:
+            result = lazy_core.plan_structural_backstop(plan)
+        finally:
+            _mono._load_validate_plan_module = real_loader
+    assert result["ok"] is False, (
+        f"a machinery failure on a FRESH plan must refuse, not silently "
+        f"pass; got {result}"
+    )
+    assert result.get("infrastructure_error") is True, result
+    assert any("(infrastructure)" in f for f in result["findings"]), result
+
+
+def test_plan_structural_backstop_infrastructure_failure_mid_execution_warns():
+    """The SAME machinery failure on a MID-EXECUTION plan (>= 1 ticked WU)
+    keeps the deliberate warns-not-refuses fail-open (ok: True) but is still
+    LOUD — findings carry the infrastructure ERROR, never an empty list."""
+    _guard()
+    import lazy_core._monolith as _mono
+
+    def _boom():
+        raise ImportError("lazy_core flat file retired")
+
+    with tempfile.TemporaryDirectory() as td:
+        plan = Path(td) / "plans" / "all-phases-foo.md"
+        plan.parent.mkdir(parents=True, exist_ok=True)
+        plan.write_text(
+            "---\nkind: implementation-plan\nfeature_id: foo\nstatus: In-progress\n"
+            "phases: [1]\n---\n\n## Work Units\n"
+            "- [x] WU-1 — did something real\n"
+            "- [ ] WU-2 — still to do\n",
+            encoding="utf-8",
+        )
+        real_loader = _mono._load_validate_plan_module
+        _mono._load_validate_plan_module = _boom
+        try:
+            result = lazy_core.plan_structural_backstop(plan)
+        finally:
+            _mono._load_validate_plan_module = real_loader
+    assert result["ok"] is True, (
+        f"mid-execution keeps warns-not-refuses even for machinery failure; "
+        f"got {result}"
+    )
+    assert result["mid_execution"] is True, result
+    assert result.get("infrastructure_error") is True, result
+    assert any("(infrastructure)" in f for f in result["findings"]), (
+        f"machinery failure must be loud (findings non-empty); got {result}"
+    )
+
+
 def test_format_plan_structural_blocker_names_findings():
     """The BLOCKED.md body names the plan path, the findings, and the
     blocker_kind classification."""
@@ -37359,6 +37431,10 @@ _TESTS = _TESTS + [
      test_plan_structural_backstop_mid_execution_warns_not_refuses),
     ("test_plan_structural_backstop_missing_file_fails_open",
      test_plan_structural_backstop_missing_file_fails_open),
+    ("test_plan_structural_backstop_infrastructure_failure_fresh_refuses_loudly",
+     test_plan_structural_backstop_infrastructure_failure_fresh_refuses_loudly),
+    ("test_plan_structural_backstop_infrastructure_failure_mid_execution_warns",
+     test_plan_structural_backstop_infrastructure_failure_mid_execution_warns),
     ("test_format_plan_structural_blocker_names_findings",
      test_format_plan_structural_blocker_names_findings),
 ]

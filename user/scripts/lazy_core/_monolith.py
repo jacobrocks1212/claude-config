@@ -4102,10 +4102,22 @@ def plan_structural_backstop(plan_path) -> dict:
     ``mid_execution`` reflects the literal checked-count discriminator
     (checked > 0); the broader legacy exemption above is folded into ``ok``
     only, so callers reading ``mid_execution`` see the documented signal
-    unchanged. Never raises — this is a backstop, not a new failure surface:
-    any internal error (unreadable plan, a broken validate-plan.py import)
-    degrades to ``ok: True`` with empty findings (fail-open), exactly like
-    every other diagnostic-only gate in this file.
+    unchanged. Never raises — this is a backstop, not a new failure surface —
+    but "never raises" is NOT "always passes": failures degrade by KIND.
+
+    - **Plan-side failure** (unreadable plan file, unparseable checkbox
+      counts): fail-open, ``ok: True`` — the plan's own imperfection is
+      governed by the findings pipeline, and a missing plan is caught by
+      the routing layer.
+    - **Infrastructure failure** (validate-plan.py loader crash / import
+      error — the gate MACHINERY is broken): degrades LOUDLY to a
+      ``[ERROR] (infrastructure)`` finding + a ``_diag`` breadcrumb +
+      ``infrastructure_error: True``, with ``ok`` honoring the SAME
+      exemption discriminator as a structural ERROR (fresh plan refuses,
+      mid-execution/legacy plan warns). A silent ``ok: True`` here once
+      disarmed this gate repo-wide with zero signal when the flat
+      ``lazy_core.py`` was deleted (see
+      docs/bugs/plan-structural-backstop-silent-disarm-on-infrastructure-failure).
     """
     try:
         plan_text = Path(plan_path).read_text(encoding="utf-8", errors="replace")
@@ -4121,8 +4133,24 @@ def plan_structural_backstop(plan_path) -> dict:
     try:
         vp_mod = _load_validate_plan_module()
         lines, exit_code = vp_mod.run_structural_checks(str(plan_path))
-    except Exception:  # noqa: BLE001
-        return {"ok": True, "findings": [], "mid_execution": mid_execution}
+    except Exception as exc:  # noqa: BLE001 — never raises; degrade LOUDLY
+        # Gate machinery broken (validate-plan.py missing/unimportable) —
+        # never a silent pass (see the docstring's failure-kind contract).
+        # run_structural_checks itself reports a lazy_core import failure as
+        # its own infrastructure ERROR finding, so this branch covers only
+        # the validate-plan.py loader itself.
+        finding = (
+            f"[ERROR] (infrastructure) plan-structure gate machinery failed "
+            f"to load/run (validate-plan.py) — plan NOT validated: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        _diag(f"plan-structural-backstop infrastructure failure: {finding}")
+        return {
+            "ok": bool(exempt),
+            "findings": [finding],
+            "mid_execution": mid_execution,
+            "infrastructure_error": True,
+        }
     has_error = exit_code == 1
     ok = (not has_error) or exempt
     return {"ok": ok, "findings": lines, "mid_execution": mid_execution}
@@ -7722,11 +7750,13 @@ def format_cycle_header(
 # + the model to dispatch it under. See the template file's header comment for
 # the authoritative marker grammar / selection semantics / token inventory.
 
-# Default cycle-prompt template directory, resolved through this module's own
-# path. lazy_core.py lives at <claude-config>/user/scripts/lazy_core.py, so
-# parent.parent is <claude-config>/user, and the templates live under
-# skills/_components/lazy-batch-prompts/. The PHASES "Validated Assumptions"
-# table confirms this resolves correctly through the ~/.claude symlink chain.
+# Default cycle-prompt template directory, resolved through the package's
+# _SCRIPTS_DIR anchor (see _ctx.py). The lazy_core package lives at
+# <claude-config>/user/scripts/lazy_core/, so _SCRIPTS_DIR is
+# <claude-config>/user/scripts, its parent is <claude-config>/user, and the
+# templates live under skills/_components/lazy-batch-prompts/. The PHASES
+# "Validated Assumptions" table confirms this resolves correctly through the
+# ~/.claude symlink chain.
 _CYCLE_TEMPLATE_DIRNAME = ("skills", "_components", "lazy-batch-prompts")
 
 # The marker line shape the emitter parses, e.g.:
@@ -11650,7 +11680,7 @@ def gate_coverage(spec_path: Path) -> dict:
 def migrate_legacy_state_dir(base: Path) -> bool:
     """Move legacy un-keyed base-dir run state into the per-repo keyed subdir.
 
-    Runs at most once per process (the ``_legacy_state_migrated`` guard).
+    Runs at most once per process (the ``_ctx.legacy_state_migrated()`` guard).
     Best-effort and idempotent:
       - No legacy ``lazy-run-marker.json`` in ``base`` → nothing to migrate
         (fresh machine / already migrated) → returns False.
@@ -12297,10 +12327,11 @@ def skill_declares_subagent_model(
       1. Repo-scoped skill: ``<repo_root>/.claude/skills/<name>/SKILL.md``
          (when *repo_root* is provided) — covers repo-local skills like
          AlgoBooth's mcp-test family.
-      2. User-level skill: ``<this module's parent.parent>/skills/<name>/SKILL.md``
-         — resolves to ``~/.claude/skills/`` for the live copy and
+      2. User-level skill: ``<_SCRIPTS_DIR.parent>/skills/<name>/SKILL.md``
+         (the package's scripts-dir anchor from ``_ctx``) — resolves to
+         ``~/.claude/skills/`` for the live copy and
          ``<claude-config>/user/skills/`` for the repo copy (the same
-         module-path trick _default_cycle_template_dir uses).
+         anchor _default_cycle_template_dir uses).
 
     Only the leading YAML frontmatter block (between the first two ``---``
     lines) is consulted, so prose mentioning the flag never false-positives.
@@ -12389,7 +12420,7 @@ def skill_declares_multi_commit(
       1. Repo-scoped skill: ``<repo_root>/.claude/skills/<name>/SKILL.md``
          (when *repo_root* is provided) — covers repo-local skills like
          AlgoBooth's mcp-test family.
-      2. User-level skill: ``<this module's parent.parent>/skills/<name>/SKILL.md``.
+      2. User-level skill: ``<_SCRIPTS_DIR.parent>/skills/<name>/SKILL.md``.
 
     Only the leading YAML frontmatter block is consulted, so prose mentioning the
     flag never false-positives.
