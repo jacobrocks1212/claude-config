@@ -29,7 +29,7 @@ canonical runner-prefixed Tauri invocation (`npx tauri build`, `npm run tauri bu
 `cargo tauri build`) and a path-qualified `cargo build --release` all walked past the
 raw-binary-token-only enumeration. Keep the existing negative space intact.
 
-**Status:** Complete
+**Status:** Fixed
 
 **Deliverables:**
 - [x] Added a module-level `_PATH_PREFIX` constant (`(?:\.?[\\/])?(?:[^\s;&|]*[\\/])?`, the same
@@ -185,7 +185,7 @@ not silent drift; item 5 requires that if the anchor semantics of `_ENV_PREFIX`/
 change, the change must land in all three hooks that carry a copy of the pair
 (`lazy-cycle-containment.sh`, `long-build-ownership-guard.sh`, `build-queue-enforce.sh`).
 
-**Status:** Provisional — NOT gate-complete (see `../NEEDS_INPUT_PROVISIONAL.md`)
+**Status:** Complete
 
 **Deliverables:**
 - [x] Decision made and recorded: **documented-limitation** (option B), NOT a nested-command
@@ -200,8 +200,10 @@ change, the change must land in all three hooks that carry a copy of the pair
 - [x] Regression tests pinning the CURRENT (unfixed) ALLOW behavior as a deliberate, documented
   residual (not a silent gap): `test_longbuild_guard_bash_dash_c_wrap_accepted_residual`,
   `test_bqe_bash_dash_c_wrapper_reference_accepted_residual` — both GREEN (asserting ALLOW).
-- [ ] <!-- verification-only --> **Operator ratification of the D2 choice** — this is the ONE
-  item this phase cannot self-certify. See `NEEDS_INPUT_PROVISIONAL.md`.
+- [x] <!-- verification-only --> **Operator ratification of the D2 choice** — this is the ONE
+  item this phase cannot self-certify. RATIFIED 2026-07-13 (operator blanket provisional
+  ratification — accept the `bash -c`/`sh -c` residual, test-pinned). See
+  `NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md`.
 
 **Implementation Notes (2026-07-12):** This session judged D2 a genuine fork with no SPEC-stated
 recommendation (unlike D1, which the SPEC does resolve). Per the park-provisional protocol, the
@@ -222,8 +224,9 @@ ALLOW behavior); `user/hooks/CLAUDE.md` contains the new "Known limitation" sect
   `bash -c "dotnet build MySln.sln"` (build-queue-enforce) both → ALLOW (the documented, pinned
   residual). **Verified 2026-07-12** via `test_longbuild_guard_bash_dash_c_wrap_accepted_residual`
   and `test_bqe_bash_dash_c_wrapper_reference_accepted_residual` (both GREEN).
-- [ ] <!-- verification-only --> Operator ratifies (or redirects) the D2 choice — NOT
-  self-certifiable this session; see `NEEDS_INPUT_PROVISIONAL.md`.
+- [x] <!-- verification-only --> Operator ratifies (or redirects) the D2 choice — RATIFIED
+  2026-07-13 (operator blanket provisional ratification; residual accepted). See
+  `NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md`.
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface in this repo.
 

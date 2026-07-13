@@ -2244,6 +2244,16 @@
   ],
   "docs/bugs/adhoc-incident-hook-deny-19343d-r3/ADHOC_BRIEF.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -2280,6 +2290,16 @@
     }
   ],
   "docs/bugs/adhoc-incident-hook-deny-19343d-r3/INCIDENT.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "anti-overfit-design-gate",
       "type": "feature",
@@ -2620,6 +2640,11 @@
   ],
   "docs/bugs/completion-gate-refusal-opacity/SPEC.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -2696,6 +2721,11 @@
     }
   ],
   "docs/bugs/coord-lock-no-stale-reclaim/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -3139,6 +3169,11 @@
   ],
   "docs/bugs/fixed-bugs-unarchived-fsck/SPEC.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3182,6 +3217,11 @@
     }
   ],
   "docs/bugs/guard-fail-open-leaves-no-trace/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -3298,6 +3338,11 @@
   ],
   "docs/bugs/hardening-intervention-records-unmeasurable-or-missing/SPEC.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3355,6 +3400,11 @@
     }
   ],
   "docs/bugs/interventions-telemetry-repo-scope-split-brain/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -3449,6 +3499,11 @@
   ],
   "docs/bugs/legacy-tool-input-env-hooks-dead/SPEC.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3512,6 +3567,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3563,6 +3623,16 @@
   ],
   "docs/bugs/long-build-and-build-queue-matcher-bypasses/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3599,6 +3669,11 @@
     }
   ],
   "docs/bugs/long-build-and-build-queue-matcher-bypasses/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -3672,6 +3747,11 @@
   ],
   "docs/bugs/loop-detector-false-positives-probes-and-cross-run-state/SPEC.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3708,6 +3788,11 @@
     }
   ],
   "docs/bugs/mark-complete-partial-apply-noop-unrecoverable/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -3870,6 +3955,11 @@
   ],
   "docs/bugs/mcp-validation-peels-one-seam-per-loop/SPEC.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3907,6 +3997,16 @@
   ],
   "docs/bugs/meta-dispatch-not-by-reference-and-ack-overpriced/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3943,6 +4043,11 @@
     }
   ],
   "docs/bugs/meta-dispatch-not-by-reference-and-ack-overpriced/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -4246,6 +4351,11 @@
   ],
   "docs/bugs/powershell-tool-bypasses-bash-matched-guards/SPEC.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -4322,6 +4432,11 @@
     }
   ],
   "docs/bugs/production-sentinel-writes-bypass-atomic-write/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -4425,6 +4540,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "loop-detected-false-positives-from-probe-and-reboot-churn",
       "type": "bug",
       "provenance": "backfilled"
@@ -4443,6 +4563,11 @@
       "id": "mcp-tooling-not-predetermined-at-planning",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "no-gemini-sprint-staging-in-claude-config",
@@ -4738,6 +4863,11 @@
   ],
   "docs/bugs/skills-plane-hygiene-debris/SPEC.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -4870,6 +5000,11 @@
     }
   ],
   "docs/bugs/stale-runtime-health-200-false-blocked/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -5055,6 +5190,11 @@
   ],
   "docs/features/ROADMAP.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5226,6 +5366,16 @@
   ],
   "docs/features/anti-overfit-design-gate/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5308,6 +5458,16 @@
   ],
   "docs/features/bug-queue-aging-backpressure/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5344,6 +5504,11 @@
     }
   ],
   "docs/features/bug-queue-aging-backpressure/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -5568,6 +5733,16 @@
   ],
   "docs/features/coupled-pair-generation/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5625,6 +5800,11 @@
     }
   ],
   "docs/features/coupled-pair-generation/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -5771,6 +5951,16 @@
   ],
   "docs/features/cycle-prompt-environment-dialect/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5821,6 +6011,11 @@
     }
   ],
   "docs/features/cycle-prompt-environment-dialect/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -5920,6 +6115,16 @@
   ],
   "docs/features/efficacy-signal-integrity/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5977,6 +6182,11 @@
     }
   ],
   "docs/features/efficacy-signal-integrity/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -6571,6 +6781,16 @@
   ],
   "docs/features/lazy-batch-skill-deflation/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -6629,6 +6849,11 @@
   ],
   "docs/features/lazy-batch-skill-deflation/SPEC.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -6672,6 +6897,11 @@
     }
   ],
   "docs/features/lazy-core-package-decomposition/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -7111,6 +7341,16 @@
   ],
   "docs/features/mechanize-prose-only-orchestrator-contracts/SKIP_MCP_TEST.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -7147,6 +7387,11 @@
     }
   ],
   "docs/features/mechanize-prose-only-orchestrator-contracts/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -7498,6 +7743,16 @@
   ],
   "docs/features/plan-structure-authoring-gate/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -7548,6 +7803,11 @@
     }
   ],
   "docs/features/plan-structure-authoring-gate/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -7889,6 +8149,11 @@
   ],
   "docs/features/shared-hook-lib/SPEC.md": [
     {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -7939,6 +8204,16 @@
     }
   ],
   "docs/features/skill-config-schema-and-reference-lint/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "anti-overfit-design-gate",
       "type": "feature",
@@ -7997,6 +8272,11 @@
     }
   ],
   "docs/features/skill-config-schema-and-reference-lint/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -8134,6 +8414,11 @@
     }
   ],
   "docs/features/state-cli-contract-registry/SPEC.md": [
+    {
+      "id": "long-build-and-build-queue-matcher-bypasses",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",

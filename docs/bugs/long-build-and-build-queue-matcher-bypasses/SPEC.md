@@ -9,7 +9,7 @@
 > entire deny surface. Both errors are one-sided in the allow direction (under-blocking) — the
 > guards are alive, their matchers are just narrower than the invocations they govern.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P2
 **Last updated:** 2026-07-11
 **Related:** `docs/features/long-build-and-runtime-ownership/` (the guard's owning spec — M5

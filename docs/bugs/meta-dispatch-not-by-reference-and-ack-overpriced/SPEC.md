@@ -8,7 +8,7 @@
 > dispatch per entry — even for explicit no-fix / already-fixed denials — with no cheap
 > ack-only ledger operation.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P2
 **Last updated:** 2026-07-11
 **Related:** `docs/specs/turn-routing-enforcement/` (owns the guard, `--emit-dispatch`, the deny ledger, and "locked decision 4" — the inline-unbounded one-hardening-per-deny cadence this spec re-opens); `docs/specs/lazy-validation-readiness/` (F2a dispatch-by-reference, F2b/F2c transcription-slip decoupling, Phase 7A meta dispatch-by-reference); `docs/specs/lazy-pipeline-ergonomics/` (F1a deny-reason customization path, F1b auto-readmit); `docs/bugs/no-mid-run-observed-friction-harden-dispatch/` (owns the mid-run ad-hoc reachability slice — scoped OUT here; its fix `c46ed80` landed 2026-07-11); `docs/bugs/_archive/hardening-blind-to-process-friction/` (D-C bare-ref deny); `docs/bugs/_archive/stale-marker-arms-validate-deny-on-unrelated-dispatches/` (D2 pre-bind no-debt deny).
