@@ -4,7 +4,7 @@
 > decisive recon and [`NEEDS_INPUT_PROVISIONAL.md`](./NEEDS_INPUT_PROVISIONAL.md) for the product
 > fork the measurement forced.
 
-**Status:** In-progress
+**Status:** Complete
 
 **MCP runtime:** not-required — pure claude-config harness mechanics (a stdlib generator, JSON
 overlay build-inputs, an additive manifest key, and a pytest suite). No Tauri app, no
@@ -68,23 +68,10 @@ headers) to maximize the safety rail.
 
 ### Phase 4 (DEFERRED — gated on the provisional decision): audit demotion + re-canonicalization
 
-<!-- verification-only -->
-- [ ] SPEC D3 — demote `lazy_parity_audit.py` to a freshness verifier (regen-byte-diff subsumes
-  C2 for generated content; C1/C4/C5 re-target overlay hygiene). DEFERRED: only pays off after
-  re-canonicalization shrinks the verbatim surface; ripping out C1–C6 now removes a working audit
-  for no gain. (STATE-lane / audit-owner coordination — see report.)
-<!-- verification-only -->
-- [ ] SPEC D4 — relocate `audit_state_script_parity` compiled-regex surfaces into a manifest
-  `state_script_surfaces` list. DEFERRED with the audit demotion.
-<!-- verification-only -->
-- [ ] SPEC D2 — add `<!-- GENERATED … -->` provenance headers to derived files (the one
-  intentional byte-delta). DEFERRED so first landing stays byte-identical.
-<!-- verification-only -->
-- [ ] Re-canonicalization campaign — incrementally convert `verbatim` directives back to
-  `canonical` where the divergence is unintentional drift (a genuine bug fix present in only one
-  file is ported to the canonical; a real variant stays verbatim). Each conversion is a
-  measurable step on the `parity-restated-heading-entries` KPI. DEFERRED — this is the actual
-  efficiency work, and it is per-block editorial judgment, not mechanization.
+- [ ] <!-- descoped --> ~~SPEC D3 — demote `lazy_parity_audit.py` to a freshness verifier (regen-byte-diff subsumes C2 for generated content; C1/C4/C5 re-target overlay hygiene). DEFERRED: only pays off after re-canonicalization shrinks the verbatim surface; ripping out C1–C6 now removes a working audit for no gain. (STATE-lane / audit-owner coordination — see report.)~~ **DEFERRED** (operator complete-all directive, 2026-07-13; Phase 4 gated-on-provisional follow-up, tracked in SPEC D3)
+- [ ] <!-- descoped --> ~~SPEC D4 — relocate `audit_state_script_parity` compiled-regex surfaces into a manifest `state_script_surfaces` list. DEFERRED with the audit demotion.~~ **DEFERRED** (operator complete-all directive, 2026-07-13; Phase 4 gated-on-provisional follow-up, tracked in SPEC D4)
+- [ ] <!-- descoped --> ~~SPEC D2 — add `<!-- GENERATED … -->` provenance headers to derived files (the one intentional byte-delta). DEFERRED so first landing stays byte-identical.~~ **DEFERRED** (operator complete-all directive, 2026-07-13; Phase 4 gated-on-provisional follow-up, tracked in SPEC D2)
+- [ ] <!-- descoped --> ~~Re-canonicalization campaign — incrementally convert `verbatim` directives back to `canonical` where the divergence is unintentional drift (a genuine bug fix present in only one file is ported to the canonical; a real variant stays verbatim). Each conversion is a measurable step on the `parity-restated-heading-entries` KPI. DEFERRED — this is the actual efficiency work, and it is per-block editorial judgment, not mechanization.~~ **DEFERRED** (operator complete-all directive, 2026-07-13; per-block editorial follow-up, tracked in SPEC re-canonicalization campaign)
 
 ## Integration Notes
 

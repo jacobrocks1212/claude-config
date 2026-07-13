@@ -11,7 +11,7 @@
 > Anything that must bind subagent behavior must live in the emitted prompt or a hook — this
 > puts the six killable clusters in the prompt, plus a never-throws `--marker-status` probe.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-11
 **Source:** repo-exploration proposal session 2026-07-11 (session-transcript mining of the

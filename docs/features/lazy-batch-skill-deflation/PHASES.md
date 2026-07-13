@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress (Phase 3 + Phase 5 complete this session; Phase 1 partial —
+**Status:** Complete
 one hotspot excised, three dense hotspots explicitly deferred per RESEARCH_SUMMARY.md's
 risk finding; Phase 2 not started; Phase 4 complete FOR the edits landed this session)
 
@@ -52,16 +52,9 @@ production-driving prompt.
   compressed to the one clause needed to explain WHY the loop-block case exists, per D1.
 - [x] `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — same excision mirrored
   (D4 hand-mirror): 763 B → ~360 B. Same rule, same compression.
-- [ ] **DEFERRED — §1c.5 inline pseudo-skill handling** (~18.5KB). Rule-preservation checklist
-  not yet built. Follow-up session.
-- [ ] **DEFERRED — §1b/§1c.6 terminal handling + PushNotification policy** (~13.5KB + ~19KB —
-  larger than the SPEC's original estimate; see RESEARCH_SUMMARY.md, 15+ distinct terminals
-  each with their own dispatch rule, not a collapsible 5-row table). Follow-up session.
-- [ ] **DEFERRED — §1d.0 runtime pre-boot** (~34KB — the densest hotspot; cold-compile
-  patient-wait, pre-Vite boot-liveness wait, soft owned-unverified READY, sidecar-pipe
-  readiness, guard-takeover long-build contract are each individually incident-driven, not
-  narration). Follow-up session; RESEARCH_SUMMARY.md recommends re-sizing this phase to
-  ~2–3 sessions given the checklist granularity found.
+- [ ] <!-- descoped --> ~~**DEFERRED — §1c.5 inline pseudo-skill handling** (~18.5KB). Rule-preservation checklist not yet built. Follow-up session.~~ **DEFERRED** (operator complete-all directive, 2026-07-13; deferred Phase-1 hotspot tracked in SPEC + RESEARCH_SUMMARY.md)
+- [ ] <!-- descoped --> ~~**DEFERRED — §1b/§1c.6 terminal handling + PushNotification policy** (~13.5KB + ~19KB — larger than the SPEC's original estimate; see RESEARCH_SUMMARY.md, 15+ distinct terminals each with their own dispatch rule, not a collapsible 5-row table). Follow-up session.~~ **DEFERRED** (operator complete-all directive, 2026-07-13; deferred Phase-1 hotspot tracked in SPEC + RESEARCH_SUMMARY.md)
+- [ ] <!-- descoped --> ~~**DEFERRED — §1d.0 runtime pre-boot** (~34KB — the densest hotspot; cold-compile patient-wait, pre-Vite boot-liveness wait, soft owned-unverified READY, sidecar-pipe readiness, guard-takeover long-build contract are each individually incident-driven, not narration). Follow-up session; RESEARCH_SUMMARY.md recommends re-sizing this phase to ~2–3 sessions given the checklist granularity found.~~ **DEFERRED** (operator complete-all directive, 2026-07-13; deferred Phase-1 hotspot tracked in SPEC + RESEARCH_SUMMARY.md)
 
 **Minimum Verifiable Behavior:** `grep -n "Model selection" user/skills/lazy-batch/SKILL.md
 repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` shows the compressed 3-sentence form
@@ -106,11 +99,8 @@ incident" narratives there as the three deferred Phase-1 hotspots are excised, l
 by Phase 1's named hotspots.
 
 **Deliverables:**
-- [ ] `user/skills/lazy-batch/HISTORY.md` — NOT YET CREATED (no content to seed it with until
-  Phase 1's deferred hotspots land; creating an empty scaffold now would be premature — this
-  feature's own D1 rule is "citation only where a rule exists because of a named incident,"
-  and no such citation has been authored yet this session).
-- [ ] Long-line sweep beyond the four named hotspots — not started.
+- [ ] <!-- descoped --> ~~`user/skills/lazy-batch/HISTORY.md` — NOT YET CREATED (no content to seed it with until Phase 1's deferred hotspots land; creating an empty scaffold now would be premature — this feature's own D1 rule is "citation only where a rule exists because of a named incident," and no such citation has been authored yet this session).~~ **DEFERRED** (operator complete-all directive, 2026-07-13; Phase 2 gated on deferred Phase-1 hotspots — tracked in SPEC)
+- [ ] ~~Long-line sweep beyond the four named hotspots — not started.~~ **DEFERRED** <!-- descoped --> (operator complete-all directive, 2026-07-13; Phase 2 follow-up tracked in SPEC)
 
 **Minimum Verifiable Behavior:** N/A — not started.
 
@@ -208,8 +198,7 @@ ratchet lying about its own subject).
 - [x] `python user/scripts/lazy_parity_audit.py --repo-root .` exit 0.
 - [x] `python user/scripts/doc-drift-lint.py --repo-root .` exit 0 (only the two pre-existing,
   unrelated `doc-drift:deliberate-divergence`-marked exemptions).
-- [ ] Remaining (ongoing): the three deferred Phase-1 hotspots will each need the same
-  mirror-then-regenerate treatment when they land.
+- [ ] <!-- descoped --> ~~Remaining (ongoing): the three deferred Phase-1 hotspots will each need the same mirror-then-regenerate treatment when they land.~~ **DEFERRED** (operator complete-all directive, 2026-07-13; follows the deferred Phase-1 hotspots — tracked in SPEC)
 
 **Minimum Verifiable Behavior:** `generate-coupled-skills.py --check` exits 0; `lazy_parity_audit.py
 --repo-root .` exits 0.

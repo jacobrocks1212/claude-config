@@ -3,39 +3,15 @@
   "autodiscover": true,
   "queue": [
     {
-      "id": "coupled-pair-generation",
-      "name": "Coupled-Pair Generation (derived skills from canonical + overlays)",
-      "spec_dir": "coupled-pair-generation",
-      "tier": 1
-    },
-    {
       "id": "lazy-core-package-decomposition",
       "name": "lazy_core Package Decomposition",
       "spec_dir": "lazy-core-package-decomposition",
       "tier": 1
     },
     {
-      "id": "anti-overfit-design-gate",
-      "name": "Anti-Overfit + Tautology Design Gate for Harness Changes",
-      "spec_dir": "anti-overfit-design-gate",
-      "tier": 2
-    },
-    {
       "id": "shared-hook-lib",
       "name": "Shared Hook Lib (hook-prelude.sh + hook_lib.py)",
       "spec_dir": "shared-hook-lib",
-      "tier": 2
-    },
-    {
-      "id": "cycle-prompt-environment-dialect",
-      "name": "Cycle-Prompt Environment Dialect Block",
-      "spec_dir": "cycle-prompt-environment-dialect",
-      "tier": 2
-    },
-    {
-      "id": "lazy-batch-skill-deflation",
-      "name": "lazy-batch Skill Deflation",
-      "spec_dir": "lazy-batch-skill-deflation",
       "tier": 2
     },
     {

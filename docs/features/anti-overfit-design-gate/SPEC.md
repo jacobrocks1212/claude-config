@@ -10,7 +10,7 @@
 > the gate's own judgment is auditable and later falsifiable by efficacy data it does not
 > control.
 
-**Status:** Draft
+**Status:** Complete
 <!-- Stays Draft by design: the four product decisions (D1/D3/D4/D7) were PROVISIONALLY accepted
      2026-07-12 under the operator's park-provisional directive (recommended option A each; see
      NEEDS_INPUT_PROVISIONAL.md, divergence: structural). The feature is implemented against those

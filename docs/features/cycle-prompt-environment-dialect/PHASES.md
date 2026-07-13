@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Complete
 
 **MCP runtime:** not-required — pure claude-config harness mechanics (a prompt-template
 component, a Python emitter, state-script subcommands). No Tauri app, no MCP-reachable
@@ -201,18 +201,7 @@ remaining direct-PHASES-walk instructions.
   confirms the remaining hits are the mcp-test variant's `**MCP runtime:**` line lookup —
   read via `_read_mcp_runtime_decision`, already a targeted single-line read, not a
   whole-file walk — and the template's own header-comment documentation references).
-- [ ] **AlgoBooth `MCP_USAGE_GUIDE.md` one-liner (cross-repo, NOT reachable this session):**
-  add a line clarifying `curl :3333/info`'s `tools` entries are STRINGS, not objects (the
-  cluster-(g) `TypeError`, 39 mined incidents). The file lives in the AlgoBooth repo itself,
-  which per `~/source/repos/CLAUDE.md` has no live local checkout ("developed via cloud
-  sessions only... the live repo was deleted from this machine"). **Wanted change** (for a
-  future AlgoBooth cloud session): in `MCP_USAGE_GUIDE.md`'s `/info` endpoint description,
-  add a line such as: "`tools` entries in the `/info` response are plain strings (tool
-  names), not objects — do not assume `.name`/`.description` attributes; iterate them
-  directly." No local file exists to point at from this workspace (claude-config's own
-  `repos/algobooth/.claude/skill-config/*.md` files only POINT AT the guide by name, per
-  `RESEARCH_SUMMARY.md`; they do not embed its content, so there is nothing to edit here as a
-  substitute).
+- [ ] <!-- descoped --> ~~**AlgoBooth `MCP_USAGE_GUIDE.md` one-liner (cross-repo, NOT reachable this session):** add a line clarifying `curl :3333/info`'s `tools` entries are STRINGS, not objects (the cluster-(g) `TypeError`, 39 mined incidents). The file lives in the AlgoBooth repo itself, which per `~/source/repos/CLAUDE.md` has no live local checkout ("developed via cloud sessions only... the live repo was deleted from this machine"). **Wanted change** (for a future AlgoBooth cloud session): in `MCP_USAGE_GUIDE.md`'s `/info` endpoint description, add a line such as: "`tools` entries in the `/info` response are plain strings (tool names), not objects — do not assume `.name`/`.description` attributes; iterate them directly." No local file exists to point at from this workspace (claude-config's own `repos/algobooth/.claude/skill-config/*.md` files only POINT AT the guide by name, per `RESEARCH_SUMMARY.md`; they do not embed its content, so there is nothing to edit here as a substitute).~~ **DEFERRED** (operator complete-all directive, 2026-07-13; cross-repo AlgoBooth change unreachable from this workspace — tracked in SPEC as a cross-repo follow-up)
 
 **Minimum Verifiable Behavior:** `grep -c "phases-slice" cycle-base-prompt.md` is 1
 (post-edit) where it was 0 pre-edit (matches the SPEC's cluster-(f) citation).
@@ -220,7 +209,7 @@ remaining direct-PHASES-walk instructions.
 **Runtime Verification** *(checked by integration test or manual testing)*:
 - [x] RECONCILE step routes through the mandate. *(Evidence: manual diff review this
   session — see the exact before/after text in `plans/` below.)* <!-- verification-only -->
-- [ ] Cross-repo row landed. *(Evidence: pending an AlgoBooth cloud session.)* <!-- verification-only -->
+- [ ] <!-- descoped --> ~~Cross-repo row landed. *(Evidence: pending an AlgoBooth cloud session.)*~~ **DEFERRED** (subject work descoped — verification deferred with it, operator complete-all directive 2026-07-13)
 
 **MCP Integration Test Assertions:** N/A.
 
@@ -247,22 +236,16 @@ in `kpi-scorecard.py`'s `_SOURCES`, wire `--capture-baseline`, and add the retro
 for per-cluster kill-rate.
 
 **Deliverables:**
-- [ ] `kpi-scorecard.py` `_SOURCES` gains a `session-log-mining` source +
-  `cycle-env-dialect-error-count` selector (or the operator's chosen final name), per the
-  registration precedent the context-diet features used.
-- [ ] `docs/kpi/registry.json`'s `cycle-env-dialect-error-rate` row (already drafted in
-  `SPEC.md`'s `## KPI Declaration`) gets its `signal.selector` updated from the interim
-  `process-friction-count` deny-ledger channel to the dedicated selector once registered.
-- [ ] Retro-grading note (for `/lazy-batch-retro` or a manual review) documenting per-cluster
-  kill-rate as the D1 hook-escalation evidence input.
+- [ ] <!-- descoped --> ~~`kpi-scorecard.py` `_SOURCES` gains a `session-log-mining` source + `cycle-env-dialect-error-count` selector (or the operator's chosen final name), per the registration precedent the context-diet features used.~~ **DEFERRED** (operator complete-all directive, 2026-07-13; Phase 4 STATE-lane measurement hookup — tracked in SPEC KPI Declaration)
+- [ ] <!-- descoped --> ~~`docs/kpi/registry.json`'s `cycle-env-dialect-error-rate` row (already drafted in `SPEC.md`'s `## KPI Declaration`) gets its `signal.selector` updated from the interim `process-friction-count` deny-ledger channel to the dedicated selector once registered.~~ **DEFERRED** (operator complete-all directive, 2026-07-13; Phase 4 STATE-lane measurement hookup — tracked in SPEC KPI Declaration)
+- [ ] <!-- descoped --> ~~Retro-grading note (for `/lazy-batch-retro` or a manual review) documenting per-cluster kill-rate as the D1 hook-escalation evidence input.~~ **DEFERRED** (operator complete-all directive, 2026-07-13; Phase 4 STATE-lane measurement hookup — tracked in SPEC)
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/kpi-scorecard.py --lint` still exits 0
 with the updated selector; a `--capture-baseline cycle-env-dialect-error-rate` run (once real
 signal history exists) stamps `provenance: measured`.
 
 **Runtime Verification** *(checked by integration test or manual testing)*:
-- [ ] Selector registered and lint-green. *(Evidence: pending — STATE lane not yet engaged.)*
-  <!-- verification-only -->
+- [ ] <!-- descoped --> ~~Selector registered and lint-green. *(Evidence: pending — STATE lane not yet engaged.)*~~ **DEFERRED** (subject work descoped — verification deferred with it, operator complete-all directive 2026-07-13)
 
 **MCP Integration Test Assertions:** N/A.
 

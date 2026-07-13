@@ -10,7 +10,7 @@
 > ratchet so re-bloat fails a gate instead of accreting silently. The dispatcher tier proves
 > the target shape: `/lazy` is 292 lines of pure dispatch glue over the same state machine.
 
-**Status:** Draft
+**Status:** Complete
 **Friction-reduction feature:** yes
 **Priority:** P2
 **Last updated:** 2026-07-12

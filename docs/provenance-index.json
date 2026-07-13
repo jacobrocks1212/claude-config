@@ -76,6 +76,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "cross-platform-setup",
       "type": "feature",
       "provenance": "backfilled"
@@ -97,6 +102,11 @@
     },
     {
       "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -228,7 +238,22 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -2219,7 +2244,27 @@
   ],
   "docs/bugs/adhoc-incident-hook-deny-19343d-r3/ADHOC_BRIEF.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -2236,7 +2281,27 @@
   ],
   "docs/bugs/adhoc-incident-hook-deny-19343d-r3/INCIDENT.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -2555,7 +2620,22 @@
   ],
   "docs/bugs/completion-gate-refusal-opacity/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -2617,7 +2697,22 @@
   ],
   "docs/bugs/coord-lock-no-stale-reclaim/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3044,7 +3139,22 @@
   ],
   "docs/bugs/fixed-bugs-unarchived-fsck/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3073,7 +3183,22 @@
   ],
   "docs/bugs/guard-fail-open-leaves-no-trace/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3173,7 +3298,22 @@
   ],
   "docs/bugs/hardening-intervention-records-unmeasurable-or-missing/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3216,7 +3356,22 @@
   ],
   "docs/bugs/interventions-telemetry-repo-scope-split-brain/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3294,7 +3449,22 @@
   ],
   "docs/bugs/legacy-tool-input-env-hooks-dead/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3342,7 +3512,22 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3378,7 +3563,27 @@
   ],
   "docs/bugs/long-build-and-build-queue-matcher-bypasses/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3395,7 +3600,22 @@
   ],
   "docs/bugs/long-build-and-build-queue-matcher-bypasses/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3452,7 +3672,22 @@
   ],
   "docs/bugs/loop-detector-false-positives-probes-and-cross-run-state/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3474,7 +3709,22 @@
   ],
   "docs/bugs/mark-complete-partial-apply-noop-unrecoverable/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3620,7 +3870,22 @@
   ],
   "docs/bugs/mcp-validation-peels-one-seam-per-loop/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3642,7 +3907,27 @@
   ],
   "docs/bugs/meta-dispatch-not-by-reference-and-ack-overpriced/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3659,7 +3944,22 @@
   ],
   "docs/bugs/meta-dispatch-not-by-reference-and-ack-overpriced/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3946,7 +4246,22 @@
   ],
   "docs/bugs/powershell-tool-bypasses-bash-matched-guards/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -4008,7 +4323,22 @@
   ],
   "docs/bugs/production-sentinel-writes-bypass-atomic-write/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -4175,6 +4505,21 @@
       "provenance": "backfilled"
     },
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -4183,6 +4528,11 @@
       "id": "host-capability-declaration-for-gated-features",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "lazy-cycle-containment",
@@ -4388,7 +4738,22 @@
   ],
   "docs/bugs/skills-plane-hygiene-debris/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -4433,6 +4798,11 @@
     {
       "id": "skip-mcp-test-frontmatter-unquoted-colon",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
@@ -4501,7 +4871,22 @@
   ],
   "docs/bugs/stale-runtime-health-200-false-blocked/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -4670,6 +5055,11 @@
   ],
   "docs/features/ROADMAP.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "code-doc-provenance-linkage",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -4680,9 +5070,19 @@
       "provenance": "backfilled"
     },
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "cross-platform-setup",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "doc-drift-linter",
@@ -4721,6 +5121,11 @@
     },
     {
       "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -4805,9 +5210,43 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/anti-overfit-design-gate/NEEDS_INPUT.md": [
+    {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/anti-overfit-design-gate/NEEDS_INPUT_PROVISIONAL.md": [
+    {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/anti-overfit-design-gate/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -4822,7 +5261,33 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/anti-overfit-design-gate/PHASES.md": [
+    {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/anti-overfit-design-gate/RESEARCH_SUMMARY.md": [
+    {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/anti-overfit-design-gate/SKIP_MCP_TEST.md": [
+    {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/anti-overfit-design-gate/SPEC.md": [
+    {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "harness-telemetry-ledger",
       "type": "feature",
@@ -4834,9 +5299,36 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/anti-overfit-design-gate/plans/all-phases-anti-overfit-design-gate-part-1.md": [
+    {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/bug-queue-aging-backpressure/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -4853,7 +5345,22 @@
   ],
   "docs/features/bug-queue-aging-backpressure/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -5052,9 +5559,36 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/coupled-pair-generation/NEEDS_INPUT_PROVISIONAL.md": [
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/coupled-pair-generation/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -5069,9 +5603,45 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/coupled-pair-generation/PHASES.md": [
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/coupled-pair-generation/RESEARCH_SUMMARY.md": [
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/coupled-pair-generation/SKIP_MCP_TEST.md": [
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/coupled-pair-generation/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -5087,6 +5657,13 @@
     },
     {
       "id": "skill-config-schema-and-reference-lint",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/coupled-pair-generation/plans/implementation.md": [
+    {
+      "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -5185,9 +5762,36 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/cycle-prompt-environment-dialect/NEEDS_INPUT_PROVISIONAL.md": [
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/cycle-prompt-environment-dialect/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -5202,9 +5806,38 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/cycle-prompt-environment-dialect/PHASES.md": [
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/cycle-prompt-environment-dialect/RESEARCH_SUMMARY.md": [
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/cycle-prompt-environment-dialect/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -5220,6 +5853,13 @@
     },
     {
       "id": "skill-config-schema-and-reference-lint",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/cycle-prompt-environment-dialect/plans/all-phases-cycle-prompt-environment-dialect-part-1.md": [
+    {
+      "id": "cycle-prompt-environment-dialect",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -5280,7 +5920,27 @@
   ],
   "docs/features/efficacy-signal-integrity/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -5318,7 +5978,22 @@
   ],
   "docs/features/efficacy-signal-integrity/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -5450,6 +6125,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/friction-kpi-registry/HANDOFF.md": [
+    {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/friction-kpi-registry/RESEARCH.md": [
     {
       "id": "harness-telemetry-ledger",
@@ -5466,6 +6148,11 @@
   ],
   "docs/features/friction-kpi-registry/SPEC.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "harness-telemetry-ledger",
       "type": "feature",
       "provenance": "backfilled"
@@ -5476,7 +6163,19 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/harness-change-canary-rollback/HANDOFF.md": [
+    {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/harness-change-canary-rollback/SPEC.md": [
+    {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "harness-telemetry-ledger",
       "type": "feature",
@@ -5819,6 +6518,11 @@
   ],
   "docs/features/intervention-efficacy-tracking/SPEC.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "harness-telemetry-ledger",
       "type": "feature",
       "provenance": "backfilled"
@@ -5836,9 +6540,36 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/lazy-batch-skill-deflation/NEEDS_INPUT_PROVISIONAL.md": [
+    {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/lazy-batch-skill-deflation/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -5853,9 +6584,45 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/lazy-batch-skill-deflation/PHASES.md": [
+    {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/lazy-batch-skill-deflation/RESEARCH_SUMMARY.md": [
+    {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/lazy-batch-skill-deflation/SKIP_MCP_TEST.md": [
+    {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/lazy-batch-skill-deflation/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -5875,9 +6642,31 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/lazy-batch-skill-deflation/plans/remaining-hotspot-excision-plan.md": [
+    {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/lazy-core-package-decomposition/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -6238,7 +7027,27 @@
   ],
   "docs/features/mechanize-prose-only-orchestrator-contracts/SKIP_MCP_TEST.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -6255,7 +7064,22 @@
   ],
   "docs/features/mechanize-prose-only-orchestrator-contracts/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -6519,6 +7343,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/parallel-worktree-batch-execution/HANDOFF.md": [
+    {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/parallel-worktree-batch-execution/RESEARCH.md": [
     {
       "id": "queue-dependency-dag",
@@ -6561,7 +7392,27 @@
   ],
   "docs/features/plan-structure-authoring-gate/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -6592,7 +7443,22 @@
   ],
   "docs/features/plan-structure-authoring-gate/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -6690,6 +7556,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "code-doc-provenance-linkage",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -6700,9 +7571,19 @@
       "provenance": "backfilled"
     },
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "cross-platform-setup",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "doc-drift-linter",
@@ -6741,6 +7622,11 @@
     },
     {
       "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -6897,7 +7783,22 @@
   ],
   "docs/features/shared-hook-lib/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -6933,7 +7834,27 @@
   ],
   "docs/features/skill-config-schema-and-reference-lint/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -6971,7 +7892,22 @@
   ],
   "docs/features/skill-config-schema-and-reference-lint/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -7071,7 +8007,22 @@
   ],
   "docs/features/state-cli-contract-registry/SPEC.md": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -7323,6 +8274,13 @@
   "docs/features/workstation-recursive-subagent-dispatch/SPEC.md": [
     {
       "id": "workstation-recursive-subagent-dispatch",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/gate/control-surfaces.json": [
+    {
+      "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -7596,6 +8554,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
@@ -7841,6 +8804,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "code-doc-provenance-linkage",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -7882,6 +8850,11 @@
     },
     {
       "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -8055,6 +9028,16 @@
   ],
   "user/scripts/coupled-overlays/lazy-batch-cloud.overlay.json": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -8062,7 +9045,38 @@
   ],
   "user/scripts/coupled-overlays/lazy-bug-batch.overlay.json": [
     {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/coupled-overlays/lazy-bug-status.overlay.json": [
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/coupled-overlays/lazy-bug.overlay.json": [
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/coupled-overlays/lazy-cloud.overlay.json": [
+    {
+      "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -8101,6 +9115,20 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/scripts/generate-coupled-skills.py": [
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/harness-gate.py": [
+    {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/scripts/incident-scan.py": [
     {
       "id": "incident-auto-capture",
@@ -8110,12 +9138,22 @@
   ],
   "user/scripts/kpi-scorecard.py": [
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/lazy-parity-manifest.json": [
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
@@ -8524,12 +9562,22 @@
   ],
   "user/scripts/lint-skill-config.py": [
     {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/lint-skills.py": [
+    {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
@@ -8728,7 +9776,19 @@
   ],
   "user/scripts/skill-size-baseline.json": [
     {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/skill-size-ratchet.py": [
+    {
+      "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -8777,6 +9837,20 @@
     },
     {
       "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/test_generate_coupled_skills.py": [
+    {
+      "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/test_harness_gate.py": [
+    {
+      "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -9138,6 +10212,13 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/test_skill_size_ratchet.py": [
+    {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/scripts/test_skill_usage_miner.py": [
     {
       "id": "skill-usage-miner",
@@ -9405,6 +10486,13 @@
       "provenance": "backfilled"
     }
   ],
+  "user/skills/_components/harness-change-gate.md": [
+    {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md": [
     {
       "id": "cycle-subagent-fabricates-policy-or-stray-branch",
@@ -9418,6 +10506,11 @@
     },
     {
       "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-environment-dialect",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -9478,6 +10571,11 @@
       "id": "probe-full-read-before-dispatch",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/_components/mcp-coverage-audit.md": [
@@ -9532,6 +10630,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "code-doc-provenance-linkage",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -9551,6 +10654,11 @@
     {
       "id": "hardening-intervention-records-unmeasurable-or-missing",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "anti-overfit-design-gate",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -9682,6 +10790,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
@@ -9752,6 +10865,11 @@
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "lazy-cycle-containment",

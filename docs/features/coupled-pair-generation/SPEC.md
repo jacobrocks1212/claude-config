@@ -12,7 +12,7 @@
 > committed derived file). 112 hand-maintained restatements collapse into ~11 authored
 > divergences.
 
-**Status:** Draft
+**Status:** Complete
 **Friction-reduction feature:** yes
 **Priority:** P1
 **Last updated:** 2026-07-11

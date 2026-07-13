@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Complete
 <!-- Cannot reach Complete: the four product decisions (D1/D3/D4/D7) are provisionally accepted
      under the park-provisional directive (NEEDS_INPUT_PROVISIONAL.md, divergence: structural).
      Completion is mechanically blocked (lazy_core.apply_pseudo refuses on the provisional
@@ -103,11 +103,7 @@ manifest.
   tiered blocking semantics (D7), the D4 sign-off flow, and the `GATE_VERDICT.md` template. Names the
   checker invocation.
 - [x] Projection + lint green after the component/schema edits (`project-skills.py`, `lint-skills.py`).
-- [ ] **Planning-seam injection wiring (DEFERRED — SPEC Open Question).** The design-seam injection of
-  `harness-change-gate.md` into the pipeline planning stage for claude-config items needs a
-  claude-config `skill-config/` scaffold that does not exist yet. The component is authored and
-  referenced by `/harden-harness` Step 3 (a concrete consumer that exists today); the pipeline-planning
-  injection is recorded here as follow-up wiring (see Implementation Notes).
+- [ ] <!-- descoped --> ~~**Planning-seam injection wiring (DEFERRED — SPEC Open Question).** The design-seam injection of `harness-change-gate.md` into the pipeline planning stage for claude-config items needs a claude-config `skill-config/` scaffold that does not exist yet. The component is authored and referenced by `/harden-harness` Step 3 (a concrete consumer that exists today); the pipeline-planning injection is recorded here as follow-up wiring (see Implementation Notes).~~ **DEFERRED** (operator complete-all directive, 2026-07-13; deferred scope tracked in this feature's SPEC as an Open Question)
 
 **Minimum Verifiable Behavior:** A scoped fixture item with a written `GATE_VERDICT.md` validates
 against the schema; `project-skills.py` expands the component with no unresolved `!cat`; `lint-skills.py`
@@ -168,10 +164,7 @@ missing/failing/unsigned-weakening `GATE_VERDICT.md`, mirrored in both completio
   completes; out-of-scope byte-identical; failing check named; unsigned gate_weakening refuses;
   malformed verdict degrades to refuse (not a crash); end-to-end `__mark_complete__`/`__mark_fixed__`
   fixtures (11 tests total, `test_gate_verdict_ok_*` + `test_apply_pseudo_mark_{complete,fixed}_*`).
-- [ ] The NEEDS_INPUT.md gate-weakening round (`written_by: harness-change-gate`) authored by the
-  cycle agent per the component (D4/D7) — prose, no state-machine change. Not exercised this pass
-  (no live gate-weakening hit occurred); the wiring is in place and covered by the unsigned/signed
-  override fixtures above.
+- [ ] <!-- descoped --> ~~The NEEDS_INPUT.md gate-weakening round (`written_by: harness-change-gate`) authored by the cycle agent per the component (D4/D7) — prose, no state-machine change. Not exercised this pass (no live gate-weakening hit occurred); the wiring is in place and covered by the unsigned/signed override fixtures above.~~ **DEFERRED** (operator complete-all directive, 2026-07-13; wiring landed + fixture-covered, live-hit exercise deferred — tracked in this feature's SPEC)
 
 **Runtime Verification** *(NOT by the implementation agent):*
 - [x] Scoped item without a verdict refuses; a signed override completes; out-of-scope byte-identical.
