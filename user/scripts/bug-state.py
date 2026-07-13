@@ -91,6 +91,15 @@ from lazy_core import (
     _has_any_complete_plan,
     count_deliverables,
     remaining_unchecked_are_verification_only,
+    # Stale-plan flip helpers (bug-pipeline-missing-stale-plan-flip) — the
+    # workstation __flip_plan_complete_stale__ mirror of lazy-state.py Step 7a.
+    # All shared in lazy_core; the cloud-saturation gate is feature-only.
+    _plan_phase_set,
+    _unchecked_wus_in_plan_scope,
+    _all_wus_in_plan_scope,
+    _phases_text_scoped_to,
+    _plan_wu_checkbox_counts,
+    _plan_unchecked_wus_are_verification_only,
     write_completed_receipt,
     has_completion_receipt,
     skip_waiver_refusal,
@@ -1484,8 +1493,59 @@ def compute_state(
                 sub_skill_args=f"{spec_dir_str}/PHASES.md",
             )
         else:
-            # A Ready/In-progress plan exists — execute it.
+            # A Ready/In-progress plan exists — execute it, UNLESS it is stale.
             plan = plans[0]
+            # Stale-plan gate — workstation mirror of lazy-state.py Step 7a
+            # (bug-pipeline-missing-stale-plan-flip). When every WU referenced by
+            # this plan's phases: scope is already checked ([x]) in PHASES.md (or
+            # the only in-scope unchecked remainder is verification-only), the plan
+            # is STALE: its work is done but its frontmatter was never flipped to
+            # Complete. Dispatching /execute-plan then burns an Opus cycle whose
+            # ONLY job is the frontmatter flip, and LOOPS if a subagent turn ends
+            # before that flip. Emit __flip_plan_complete_stale__ (applied inline
+            # by the orchestrator — lazy-bug-batch/SKILL.md already documents it)
+            # instead. The cloud-saturation gate is feature/cloud-specific
+            # (_plan_cloud_saturated is lazy-state.py-local) and is intentionally
+            # NOT mirrored here — bug-state.py has no cloud-saturated flip.
+            plan_phase_set = _plan_phase_set(plan)
+            if plan_phase_set:
+                in_scope_unchecked = _unchecked_wus_in_plan_scope(
+                    phases_text, plan_phase_set
+                )
+                # Empty-PHASES-scope guard (mirror of the feature-side
+                # decomposition-part fix): an empty in-scope unchecked list is
+                # AMBIGUOUS — either every referenced WU is already [x] (stale)
+                # OR the plan's phases: scope resolves to ZERO PHASES.md rows
+                # (scope UNDEFINED, not "done"). Disambiguate via the TOTAL
+                # (checked + unchecked) in-scope row count; a zero-row scope
+                # falls back to the plan's OWN per-WU checkboxes so a
+                # decomposition part with unchecked plan-body WUs still executes.
+                scope_total = _all_wus_in_plan_scope(phases_text, plan_phase_set)
+                if scope_total:
+                    scoped_text = _phases_text_scoped_to(
+                        phases_text, plan_phase_set
+                    )
+                    finalize_stale = (
+                        not in_scope_unchecked
+                        or remaining_unchecked_are_verification_only(scoped_text)
+                    )
+                else:
+                    plan_text = plan.read_text(encoding="utf-8", errors="replace")
+                    wu_unchecked, wu_checked = _plan_wu_checkbox_counts(plan_text)
+                    finalize_stale = bool(wu_checked) and (
+                        wu_unchecked == 0
+                        or _plan_unchecked_wus_are_verification_only(plan_text)
+                    )
+                if finalize_stale:
+                    return _bug_state(
+                        **common,
+                        current_step=(
+                            "Step 7a: flip plan Complete (stale — all referenced "
+                            "implementation deliverables already checked)"
+                        ),
+                        sub_skill="__flip_plan_complete_stale__",
+                        sub_skill_args=str(plan),
+                    )
             return _bug_state(
                 **common,
                 current_step=STEP_EXECUTE_PLAN,
@@ -2041,6 +2101,56 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             "phases: [1]\n"
             "---\n\n"
             "# Fix Plan\n",
+            encoding="utf-8",
+        )
+
+    elif name == "bug-stale-plan-flips":
+        # Stale-plan flip (bug-pipeline-missing-stale-plan-flip): the head plan's
+        # phases: [1] scope is fully checked ([x]), but Phase 2 has an unchecked
+        # row so unchecked > 0 overall and Step 7a is entered. The plan's
+        # frontmatter is still In-progress (never flipped after Phase 1 finished)
+        # -> STALE. Expected: sub_skill == __flip_plan_complete_stale__ (NOT a
+        # redundant execute-plan re-dispatch). The "mid-fix" fixture (Phase 1 has
+        # genuine unchecked WUs in scope) is the discriminating control that must
+        # stay execute-plan.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-stale", "name": "Stale Plan Bug",
+                 "spec_dir": "bug-stale"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-stale"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Stale Plan Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-05-20\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n"
+            "\n"
+            "### Phase 2\n"
+            "- [ ] Add regression test\n",
+            encoding="utf-8",
+        )
+        plans = bdir / "plans"
+        plans.mkdir()
+        # Plan scoped to phases: [1] only — the fully-checked phase.
+        # status: In-progress (never flipped after Phase 1 completed) -> STALE.
+        (plans / "all-phases-stale-part-1.md").write_text(
+            "---\n"
+            "kind: implementation-plan\n"
+            "feature_id: bug-stale\n"
+            "status: In-progress\n"
+            "created: 2026-05-20\n"
+            "phases: [1]\n"
+            "---\n\n"
+            "# Fix Plan Part 1\n",
             encoding="utf-8",
         )
 
@@ -3572,6 +3682,18 @@ def run_smoke_tests() -> int:
                 "feature_id": "bug-midfix",
                 "sub_skill": SKILL_EXECUTE_PLAN,
                 "current_step": STEP_EXECUTE_PLAN,
+            },
+        ),
+        # 3b. Stale-plan flip (bug-pipeline-missing-stale-plan-flip) — the head
+        # plan's phases: [1] scope is fully [x] but Phase 2 has an unchecked row
+        # (unchecked > 0 overall). The plan's frontmatter is still In-progress →
+        # STALE → __flip_plan_complete_stale__ (workstation mirror of
+        # lazy-state.py Step 7a), NOT a redundant execute-plan re-dispatch.
+        (
+            "bug-stale-plan-flips", False, True,
+            {
+                "feature_id": "bug-stale",
+                "sub_skill": "__flip_plan_complete_stale__",
             },
         ),
         # 4. Phases complete (retro unwired) → Step 9 mcp-test directly
