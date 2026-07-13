@@ -113,3 +113,23 @@ Per-decision choices (recommended option A, verbatim label from each Decision Co
   the SPEC's own Option-A recommendation, directing deferral given the overlapping
   `lazy-core-package-decomposition` sibling's later `compute_state` phases. This is a scope cut
   sanctioned by the SPEC's own D6 sequencing text, not a fork this NEEDS_INPUT round adjudicates.
+
+## Ratification
+
+*Recorded on 2026-07-13.*
+ratified_by: operator
+outcome: ratified
+
+Both provisionally-accepted decisions were ratified by the operator on their recommended
+option A (implemented + verified this session). No redirect; SPEC/PHASES already reflect these
+choices. The feature is unblocked for completion.
+
+### 1. D2 — skill/prose lint scope + attribution rule
+**Choice:** A — new `cli-surface-lint.py` scoped to `user/skills/**/SKILL.md`,
+`user/skills/_components/*.md`, `repos/*/.claude/skills/**`, `repos/*/.claude/skill-config/**`,
+`user/scripts/CLAUDE.md`; same-line/sentence attribution + `<!-- cli-surface: historical -->`
+exemption marker; runner integration as `lint-skills.py --check-cli-surface` (opt-in). (ratified)
+
+### 2. D4 — runtime "did you mean" on argparse error
+**Choice:** A — the two state scripts only, via `cli_surface.DidYouMeanArgumentParser`; leading
+`error:` line + exit code 2 byte-identical, epilogue additive. (ratified)

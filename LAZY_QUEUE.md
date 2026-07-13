@@ -1,4 +1,4 @@
-# Lazy Queue — .   (idle)
+# Lazy Queue — claude-config   (run active 🔒)
 
 ## Features (14)
 
