@@ -319,17 +319,39 @@ ADDITIVE to the HARDENING.md round above — it replaces nothing. From the claud
 python3 ~/.claude/scripts/lazy-state.py --record-intervention   --id harden-<YYYY-MM>-r<N>   --pipeline hardening   --target-signal event:<ledger-event-type>   --expected-direction decrease   --signal-independence "<independent|self-emitted|mixed — one-line justification>"   --repo-root <claude-config-root>
 ```
 
+The capture contract is **MECHANICALLY ENFORCED** on this CLI path (no longer prose-only
+discipline — `hardening-intervention-records-unmeasurable-or-missing`). Three enforcement seams:
+
+- **Vocabulary reject (exit 1).** `--target-signal event:<type>` is validated against the closed
+  ledger-event vocabulary (`lazy_core._INTERVENTION_EVENT_VOCABULARY`, the D4-B SSOT): `run-start`,
+  `run-end`, `cycle-begin`, `cycle-end`, `pseudo-applied`, `dispatch`, `halt`, `sentinel-resolved`,
+  `sentinel-provisionalized`, `gate-refusal`, `containment-refusal`. An unknown type is REJECTED at
+  the CLI (exit 1, naming the valid set) — never silently accepted. (This is exactly what caught
+  the old phantom `event:no-route` / `event:route-loop` records; a `no-route`/`route-loop` is a
+  hardening *trigger kind*, not an emitted event.) A `kpi:<system>.<kpi-id>` target passes through.
+- **Undeclared hardening refused (exit 1).** OMITTING `--target-signal` on `--pipeline hardening`
+  now HARD-FAILS with exit 1 + the sibling-D2 guidance — you must declare the friction's own
+  recurrence signal. For the genuinely-immeasurable diagnostic, pass an EXPLICIT
+  `--target-signal undeclared` (typed, retro-visible, `baseline: not-computable`,
+  INCONCLUSIVE-by-construction — surfaced for triage, never blocked). For a validate-deny /
+  containment-trip round the measurable signal is usually `event:containment-refusal` or
+  `event:gate-refusal`; a NEEDS_INPUT/no-friction halt round maps to `event:halt`.
+- **Round↔record coverage lint.** `doc-drift-lint.py`'s `intervention-coverage` check parses the
+  current month's `hardening-log/<YYYY-MM>.md`: every `Mechanical fix applied:` round must have a
+  matching `docs/interventions/harden-<YYYY-MM>-r<N>.md` OR an explicit `**Intervention record:**
+  none` exemption line — a missing record for a mechanical-fix round is FLAGGED. It runs standalone
+  and at the `/lazy-batch(-cloud)` `--run-end` flush (fail-open there — a lint miss warns, never
+  blocks `--run-end`). One undisciplined round no longer silently breaks coverage.
+
 - `<YYYY-MM>-r<N>` matches the round you just appended (one record per round).
-- `--target-signal` names the ledger signal the fix targets — for a validate-deny /
-  containment-trip round that is usually `event:containment-refusal` or `event:gate-refusal`;
-  when the round's evidence genuinely names no measurable signal, OMIT the three hypothesis
-  flags and the record degrades honestly to `target_signal: undeclared`
-  (INCONCLUSIVE-by-construction, surfaced for triage — never blocked).
 - The script freezes the baseline window from the telemetry ledger at capture and writes
   `docs/interventions/harden-<YYYY-MM>-r<N>.md` (`pipeline: hardening`); commit it with the
   round (same `harden(<area>):` commit). Idempotent — re-running never clobbers.
-- NON-BLOCKING: a capture failure is a one-line warning; the round itself stands. Verdicts
-  arrive later via `efficacy-eval.py` at the batch orchestrators' end-of-run flush.
+- NON-BLOCKING at completion: on the fail-open completion-gate path an unknown `event:` target
+  degrades to `undeclared` with a loud diagnostic (never a frozen bogus zero) and a capture failure
+  is a one-line warning; the round itself stands. The CLI path above is the STRICT path (exit 1 on
+  reject/undeclared) — a hardening author is interactive and corrects immediately. Verdicts arrive
+  later via `efficacy-eval.py` at the batch orchestrators' end-of-run flush.
 
 ## Commit discipline
 
