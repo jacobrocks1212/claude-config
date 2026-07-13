@@ -7,9 +7,9 @@
 > each re-validation discovers only the NEXT broken seam. Long runs pay the full pipeline
 > loop once per seam. This is the dominant observed cost in every long AlgoBooth run.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P1
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-12
 **Related:** `docs/specs/lazy-hardening/` (Phase 11 WU-1a/b/c introduced the `retry_count >= 2` escalation this spec re-scopes); `docs/specs/investigation-step/` (owns `/investigate` + the Seam Table contract the escalation consumes); `docs/bugs/stale-runtime-health-200-false-blocked/` (sibling — stale-runtime confounds burn `retry_count` toward the escalation threshold on non-defects, compounding this bug); `docs/features/friction-kpi-registry/` (the fix's KPI home — validation round-trips per feature).
 
 ## Verified Symptom

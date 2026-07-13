@@ -95,12 +95,17 @@ appended ## Resolution section (chosen path + operator notes). Then enact EXACTL
     PHASES.md (In-progress, with unchecked deliverables) per its own contract. Then
     NEUTRALIZE BLOCKED.md (see below). The next loop cycle's state script routes the
     {item_label} to plan/implement the new phase.
-    ESCALATION (only when the orchestrator flagged validation-escalation — blocker_kind
-    mcp-validation + retry_count >= 2): the new phase MUST carry a full-chain seam-audit
-    deliverable — enumerate every boundary in the failing path and live-probe each seam
-    post-fix BEFORE full re-validation; consume INVESTIGATION.md from the spec path shown above (if present)
-    and BLOCKED.md's ## Seam Enumeration section as the seam checklist. Do NOT author a
-    single-layer fix phase, and do NOT bake unproven narrative into the phase as fact.
+    SEAM-BATCHED SCOPE (HARD, mcp-validation blockers at ANY retry_count): the new phase
+    MUST carry a full-chain seam-audit deliverable scoped to the FULL ## Seam Enumeration
+    section BLOCKED.md's validation cycle already wrote (every probed-FAIL + unprobed row)
+    — live-probe each seam post-fix BEFORE full re-validation. Do NOT author a single-layer
+    fix phase scoped to only the one failure named in the blocker body.
+    ESCALATION (ADDITIONALLY, only when the orchestrator flagged validation-escalation —
+    blocker_kind mcp-validation + retry_count >= 2): the phase must ALSO consume
+    INVESTIGATION.md from the spec path shown above (if present) — its Seam Table and
+    confirmed Hypothesis-Ledger rows are citable runtime evidence; its Recommended Fix Scope
+    seeds the phase's file list. Do NOT bake unproven narrative into the phase as fact —
+    unproven hunches are the investigation's job, not the corrective phase's.
 
   "Defer this {item_label}; continue the rest of the queue":
     Edit the queue.json for this pipeline: move this {item_label}'s entry to the END of

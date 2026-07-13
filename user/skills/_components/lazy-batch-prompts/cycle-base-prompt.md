@@ -380,16 +380,23 @@ Sonnet test subagent. These rules apply to EVERY mcp-test cycle:
     nothing in it remains unchecked (per-phase flips are permitted — R7). WHY: the
     completion gate refuses an incoherent flip, so an unreconciled PHASES strands
     the feature at mark-complete.
-  - SEAM ENUMERATION (escalation — when writing BLOCKED.md at retry_count >= 2):
-    if the BLOCKED.md you are writing carries `blocker_kind: mcp-validation` and
-    `retry_count >= 2` (this is the 2nd+ validation failure for this {item_label}),
-    its body MUST include a `## Seam Enumeration` section listing EVERY boundary
-    in the failing chain (user surface → sidecar/IPC → engine → final observable),
-    each with a per-seam status: `probed-OK` / `probed-FAIL` / `unprobed`. You are
-    already inside the live runtime — you are the cheapest enumeration point. The
-    corrective phase consumes this as its seam-audit checklist so the NEXT
-    validation round does not discover the next layer cold (a feature once burned
-    three ~1M-token rounds peeling one layer per round).
+  - SEAM ENUMERATION (EVERY mcp-validation BLOCKED.md — enumerate at the FIRST
+    failure, not only on escalation): if the BLOCKED.md you are writing carries
+    `blocker_kind: mcp-validation`, at ANY `retry_count` (including 0 — the
+    FIRST validation failure for this {item_label}), its body MUST include a
+    `## Seam Enumeration` section listing EVERY boundary in the failing chain
+    (user surface → sidecar/IPC → engine → final observable) PLUS any
+    obviously-adjacent unwired seam, each with a per-seam status: `probed-OK` /
+    `probed-FAIL` / `unprobed`. You are already inside the live runtime — you
+    are the cheapest enumeration point, and probing one more boundary costs a
+    single tool call, not a full pipeline loop. The corrective phase consumes
+    this as its seam-audit checklist so the NEXT validation round does not
+    discover the next layer cold (a feature once burned three ~1M-token rounds
+    peeling one layer per round — the historical pattern this mandate now heads
+    off from round 1, not just round 3). At `retry_count >= 2` (repeated
+    failure despite an already-batched seam fix) the escalation tier ALSO
+    requires `/investigate` before the next corrective phase — see
+    `blocked-resolution.md` step 1a.
 
 <!-- @section mcp-test-runtime pipelines=feature,bug modes=workstation skills=mcp-test variant=runtime-up -->
 RUNTIME IS ALREADY UP (orchestrator-managed): the orchestrator pre-booted the

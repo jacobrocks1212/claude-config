@@ -22,7 +22,7 @@ The separation is the point: **confirm-the-cause and apply-the-fix never share a
 
 ## Inputs to read (in order)
 
-1. `<dir>/BLOCKED.md` — symptom, `blocker_kind`, `retry_count`, and the `## Seam Enumeration` section when present (written by mcp-test at `retry_count >= 2`): that section is your **starting checklist**, not something to re-derive.
+1. `<dir>/BLOCKED.md` — symptom, `blocker_kind`, `retry_count`, and the `## Seam Enumeration` section (written by mcp-test into EVERY `blocker_kind: mcp-validation` BLOCKED.md, starting at the FIRST failure — not only at escalation): that section is your **starting checklist**, not something to re-derive.
 2. `<dir>/MCP_TEST_RESULTS.md`, the feature's `PHASES.md` Validated Assumptions ledgers, and any prior `INVESTIGATION.md` rounds (start from the previous round's ledger — never re-litigate a `refuted` hypothesis without new evidence).
 3. Hypotheses passed in the dispatch prompt. **Inherited hypotheses arrive labeled `unproven` and are treated as hypotheses-to-test, never as evidence** — regardless of how confident the orchestrator's framing sounds. (Live incident: a "strong hypothesis" header produced a wrong-variant fix now suspected as the residual bug.)
 

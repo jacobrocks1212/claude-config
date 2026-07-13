@@ -53,9 +53,11 @@
   DEPRECATION SHIM that merely warns (a `_DIAGNOSTICS` entry) when a row was
   exempted by header-text alone with the marker absent (i.e. an un-migrated
   producer). The shim still covers: "Runtime Verification", "MCP Integration
-  Test" / "MCP (test) assertion(s)", "Reachability smoke", and the retry_count>=2
-  escalation "Full-chain seam audit" / "seam audit" / "seam re-validation" family
-  — but those are the LEGACY un-migrated cases, not the path new conventions take.
+  Test" / "MCP (test) assertion(s)", "Reachability smoke", and the mcp-validation
+  corrective-phase "Full-chain seam audit" / "seam audit" / "seam re-validation"
+  family (authored at ANY retry_count now, not only at `retry_count>=2`
+  escalation — see `blocked-resolution.md` step 1a) — but those are the LEGACY
+  un-migrated cases, not the path new conventions take.
   (Two consecutive single-phrase regex gaps in one run, 2026-06-16, motivated the
   move to the structural marker.)
 

@@ -28,9 +28,11 @@ This replaces the old **zero-context halt** (a bare `PushNotification` + STOP th
 
 1. **Read the sentinel.** `{spec_path}/BLOCKED.md`. Parse the YAML frontmatter (`kind`, `feature_id`, `phase`, `blocked_at`, `retry_count`, and `blocker_kind` if present) and read the markdown body. Unlike `NEEDS_INPUT.md`, `BLOCKED.md` has no mandated rich-body schema — a thin body is NOT a malformation halt; proceed, noting in chat if the blocker context is sparse.
 
-1a. **Validation-escalation check (serial-discovery guard).** If the frontmatter shows `blocker_kind: mcp-validation` AND `retry_count >= 2` (the state script also signals this mechanically via `validation_escalation: true` in its JSON), this {ITEM} has failed end-to-end validation at least twice — evidence that fixes are peeling back ONE layer per round (d8-live-looping burned three ~1M-token rounds this way: API reachability → unsupported source → command-apply drop, each "fix" validated cold against the next undiscovered layer). From here on, **every resolution path that enacts a corrective phase MUST give that phase a full-chain seam audit**: enumerate every boundary in the failing path (user surface → IPC → engine → final observable; consume the `## Seam Enumeration` section the validation cycle wrote into BLOCKED.md if present) and live-probe each seam post-fix BEFORE re-dispatching full validation. A single-layer corrective phase at `retry_count >= 2` is a drafting error — include the escalation requirement verbatim in the `{ADD_PHASE}` description and the apply-subagent prompt (step 6 carries the clause).
+1a. **Seam-batched corrective-phase policy (mcp-validation blockers — standing policy at EVERY retry level, not gated by escalation).** If the frontmatter shows `blocker_kind: mcp-validation`, at ANY `retry_count` (including 0 — the FIRST validation failure for this {ITEM}), the validation cycle that wrote this `BLOCKED.md` already enumerated every boundary in the failing chain into a `## Seam Enumeration` section (mandated in `cycle-base-prompt.md` R14 / the AlgoBooth `mcp-test` SKILL's Step 5 — enumeration happens at validation time, the cheapest point, not two loops later). **Every resolution path that enacts a corrective phase MUST scope that phase to the FULL enumerated seam set** (every `probed-FAIL` + `unprobed` row), never the single observed failure — consume the `## Seam Enumeration` section verbatim as the phase's checklist, and live-probe each seam post-fix BEFORE re-dispatching full validation. A single-layer corrective phase for an `mcp-validation` blocker is a drafting error at ANY retry level (not just at escalation) — include this requirement verbatim in the `{ADD_PHASE}` description and the apply-subagent prompt (step 6 carries the clause). This is what closes the "one seam discovered per full pipeline loop" pattern (d8-live-looping burned three ~1M-token rounds peeling one layer per round back when enumeration + batched scoping were gated behind two prior loops — the round-trip cost this policy now eliminates from round 1).
 
-   **Investigate FIRST (the seam audit's executor):** before enacting ANY corrective-phase path at this escalation level, check `{spec_path}/INVESTIGATION.md`. If absent or stale (freshness: `investigated_commit` == HEAD, or only that investigation's own `diag(...)` commits since), dispatch an `/investigate` cycle per `~/.claude/skills/_components/investigation-dispatch.md` (workstation runs dispatch now; cloud runs record the trigger and defer to a workstation run) and WAIT for its artifact before proceeding. The subsequent `{ADD_PHASE}` description then cites the artifact — its confirmed Hypothesis-Ledger rows and `## Recommended Fix Scope` — instead of restating the blocker narrative or the orchestrator's own inference. Do NOT pass orchestrator hypotheses to the corrective phase as fact; unproven hunches go to the investigation, labeled `unproven` (the no-narrative-as-fact rule lives in the dispatch component).
+   **Escalation tier (`retry_count >= 2` — the state script also signals this mechanically via `validation_escalation: true` in its JSON).** Repeated failure DESPITE an already-batched seam fix means the enumeration itself missed something, or the root cause is not what it looked like: `/investigate` is now MANDATORY before the next corrective phase, ON TOP OF (not instead of) the batched-seam-set requirement above.
+
+   **Investigate FIRST at the escalation tier (the seam audit's executor):** before enacting ANY corrective-phase path once `retry_count >= 2`, check `{spec_path}/INVESTIGATION.md`. If absent or stale (freshness: `investigated_commit` == HEAD, or only that investigation's own `diag(...)` commits since), dispatch an `/investigate` cycle per `~/.claude/skills/_components/investigation-dispatch.md` (workstation runs dispatch now; cloud runs record the trigger and defer to a workstation run) and WAIT for its artifact before proceeding. The subsequent `{ADD_PHASE}` description then cites the artifact — its confirmed Hypothesis-Ledger rows and `## Recommended Fix Scope` — instead of restating the blocker narrative or the orchestrator's own inference. Do NOT pass orchestrator hypotheses to the corrective phase as fact; unproven hunches go to the investigation, labeled `unproven` (the no-narrative-as-fact rule lives in the dispatch component).
 
 1a-research. **Research-blocked carve-out (surface the research prompt, do NOT run the blocked-resolution `AskUserQuestion`) — STEP ZERO, before classification.** A `blocked` terminal whose *real* unmet prerequisite is a missing round-N Gemini deep research is NOT a product-fork blocker and MUST NOT be routed into the steps 2–7 `AskUserQuestion` resolution menu — that menu (add-a-phase / defer / halt / custom) is the WRONG affordance for a research gap and strands the operator with an abstract choice instead of the one artifact they need: the pastable research prompt. This carve-out fires FIRST (before step 1b classification) and short-circuits to the consumer's own needs-research handler.
 
@@ -135,16 +137,21 @@ This replaces the old **zero-context halt** (a bare `PushNotification` + STOP th
        Then NEUTRALIZE BLOCKED.md
        (see below). The next loop cycle's {STATE_SCRIPT} routes the {ITEM} to
        plan/implement the new phase.
-       ESCALATION (only when the orchestrator flagged validation-escalation —
-       blocker_kind mcp-validation + retry_count >= 2): the new phase MUST carry
-       a full-chain seam-audit deliverable — enumerate every boundary in the
-       failing path and live-probe each seam post-fix to the final observable
-       BEFORE full re-validation; consume {spec_path}/INVESTIGATION.md (the
+       SEAM-BATCHED SCOPE (HARD, mcp-validation blockers at ANY retry_count):
+       the new phase MUST carry a full-chain seam-audit deliverable scoped to
+       the FULL `## Seam Enumeration` section BLOCKED.md's validation cycle
+       already wrote (every `probed-FAIL` + `unprobed` row) — live-probe each
+       seam post-fix to the final observable BEFORE full re-validation. Do NOT
+       author a single-layer fix phase scoped to only the one failure named in
+       the blocker body.
+       ESCALATION (ADDITIONALLY, only when the orchestrator flagged
+       validation-escalation — blocker_kind mcp-validation + retry_count >= 2):
+       the phase must ALSO consume {spec_path}/INVESTIGATION.md (the
        investigation cycle's artifact — its Seam Table and confirmed
        Hypothesis-Ledger rows are citable runtime evidence; its Recommended Fix
-       Scope seeds the phase's file list) and BLOCKED.md's `## Seam Enumeration`
-       section as the seam checklist. Do NOT author a single-layer fix phase,
-       and do NOT bake unproven narrative into the phase as fact.
+       Scope seeds the phase's file list). Do NOT bake unproven narrative into
+       the phase as fact — unproven hunches are the investigation's job, not
+       the corrective phase's.
        CANONICAL MARKER (harness-hardening-retro-fixes Phase 2): every
        runtime-verification / full-chain-seam-audit `- [ ]` checkbox the
        corrective phase authors (the seam-audit re-probe rows, the

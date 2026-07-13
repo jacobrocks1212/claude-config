@@ -260,8 +260,9 @@ and apply `~/.claude/skills/_components/blocked-resolution.md` for each blocked 
     `blocked_at`, `retry_count`, `blocker_kind` if present). A `BLOCKED.md` has NO mandated
     rich body — a thin body is NOT a malformation; never drop a blocked item as "missing
     `## Decision Context`" (that check is needs-input-only, Step 2). Honor the `blocked-resolution.md`
-    step 1a validation-escalation guard (`blocker_kind: mcp-validation` + `retry_count >= 2` →
-    investigate-first / full-chain seam audit) exactly as Step 1h would.
+    step 1a seam-batched corrective-phase policy (`blocker_kind: mcp-validation`, ANY `retry_count` →
+    the corrective phase is scoped to the FULL enumerated seam set; `retry_count >= 2` ADDITIONALLY →
+    investigate-first) exactly as Step 1h would.
   - **Classify FIRST, then resolve** (blocked-resolution.md step 1b): a sequencing-only blocker
     auto-resolves per `completeness-policy.md` §3 (add-phase + fix now, or `/spec-bug` /
     `--enqueue-adhoc` spin-off + dependency-gate + requeue-to-tail) — logged + push-notified, no

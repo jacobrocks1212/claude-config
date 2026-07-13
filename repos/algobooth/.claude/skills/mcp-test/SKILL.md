@@ -298,12 +298,16 @@ reconcile `PHASES.md` — both mechanical, both haiku.
 ### On a `genuine` (Gate 2) or unrepaired `harness`
 
 No terminal sentinel was written. A `genuine` runtime bug routes to `BLOCKED.md` via the normal lazy
-route (ZERO model judgment was needed — the engine classified it deterministically). At
-`retry_count >= 2` a `BLOCKED.md` with `blocker_kind: mcp-validation` MUST carry a `## Seam
-Enumeration` section (every boundary in the failing chain: user surface → sidecar/IPC → command
-queue → engine apply → state machine → final observable, each `probed-OK`/`probed-FAIL`/`unprobed`
-with one line of evidence) — you just drove the runtime, so you are the cheapest place to enumerate
-it; `blocked-resolution` / `/add-phase` consume it as the corrective phase's seam-audit checklist.
+route (ZERO model judgment was needed — the engine classified it deterministically). EVERY
+`BLOCKED.md` with `blocker_kind: mcp-validation` — at ANY `retry_count`, starting at the FIRST
+failure — MUST carry a `## Seam Enumeration` section (every boundary in the failing chain: user
+surface → sidecar/IPC → command queue → engine apply → state machine → final observable, each
+`probed-OK`/`probed-FAIL`/`unprobed` with one line of evidence, PLUS any obviously-adjacent unwired
+seam) — you just drove the runtime, so you are the cheapest place to enumerate it, and probing one
+more boundary costs a single tool call, not a full pipeline loop; `blocked-resolution` / `/add-phase`
+consume it as the corrective phase's seam-audit checklist. At `retry_count >= 2` (repeated failure
+despite an already-batched seam fix), enumeration alone is no longer sufficient — `/investigate` is
+mandatory before the next corrective phase (see `blocked-resolution.md` step 1a).
 
 ### On an `uncertain` (Gate 3) — THE ONLY Sonnet escalation
 
