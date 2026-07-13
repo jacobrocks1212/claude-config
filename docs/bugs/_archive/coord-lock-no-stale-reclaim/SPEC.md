@@ -7,9 +7,9 @@
 > layer already solves this exact problem (TTL reclamation + fencing tokens + watermarks) —
 > the lock layer beneath it never got the same treatment.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P3
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-12
 **Related:** `docs/bugs/mark-complete-partial-apply-noop-unrecoverable/` + `docs/bugs/production-sentinel-writes-bypass-atomic-write/` (siblings — shared theme: crash-consistency of script-owned state); `docs/features/parallel-worktree-batch-execution/` (the feature `lazy_coord.py` serves; consumer skill `lazy-batch-parallel`); `docs/features/long-build-and-runtime-ownership/` (owns `lazy_core.kernel_start_time`, the PID-reuse defense the fix reuses).
 
 ## Verified Defect

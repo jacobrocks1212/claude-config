@@ -140,23 +140,343 @@ def _reclaim(data: dict, pool_dir, now: float, *, leases_path=None) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Lock owner metadata + stale-holder reclamation (coord-lock-no-stale-reclaim)
+#
+# acquire_lock's os.mkdir lock previously carried NO holder metadata and had
+# NO reclamation path — a holder that dies between mkdir and release_lock
+# (e.g. SIGKILL) deadlocked every coordination mutation forever. This mirrors
+# the lease layer's dead-holder handling one level down: a successful mkdir
+# writes owner.json {pid, kernel_start_time, acquired_at} (write-temp-then-
+# os.replace, matching _write_leases); a losing mkdir reads owner.json and
+# reclaims (atomic rename-then-rmtree) ONLY on a CONFIRMED-dead holder (pid
+# gone, or pid reused — live kernel_start_time mismatches the recorded one).
+# Ambiguous states (pid alive, start-time unreadable, or a metadata-less lock
+# still inside its grace window — the crash window between mkdir and the
+# metadata write) NEVER reclaim: safety over liveness, mirroring the
+# build-queue active.lock precedent (Get-ActiveLockStatusFromText /
+# Test-ShouldReclaimLock: an unreadable pid classifies 'unknown', never
+# 'dead' — only a confirmed-dead observation reclaims).
+#
+# kernel_start_time is DUPLICATED from lazy_core.py rather than imported —
+# lazy_coord.py is stdlib-only and must NOT import lazy_core (module
+# docstring). Same deliberate-duplication policy lazy_core.py documents for
+# its own _current_head ("the two scripts are independently importable" —
+# lazy_core.py's _current_head docstring).
+# ---------------------------------------------------------------------------
+
+_LOCK_OWNER_FILENAME = "owner.json"
+_LOCK_STALE_GRACE_SECONDS_DEFAULT = 2.0
+
+_FILETIME_EPOCH_OFFSET = 116444736000000000
+_FILETIME_TICKS_PER_SEC = 10_000_000
+
+
+def kernel_start_time(
+	pid,
+	*,
+	platform=None,
+	read_stat=None,
+	get_process_times=None,
+	boot_time=None,
+	clk_tck=None,
+):
+	"""Return the kernel-reported absolute start time of ``pid`` as a Unix
+	epoch float, or ``None`` on any error (best-effort, NEVER raises).
+
+	Duplicated from ``lazy_core.kernel_start_time`` (identical contract and
+	implementation — see the module-level note above). The PID-reuse defense:
+	a reused pid held by a foreign process reports a DIFFERENT start_time, so
+	a stale-lock reclaim can tell "same holder, still running" from "pid
+	recycled to an unrelated process" apart from mere pid-existence.
+
+	  - Windows — ``ctypes`` -> ``kernel32.GetProcessTimes`` (creation FILETIME,
+	    100ns intervals since 1601-01-01, converted to a Unix epoch float).
+	  - POSIX/WSL — ``/proc/[pid]/stat`` field 22 (``starttime``, clock ticks
+	    since boot) -> epoch via ``boot_time + ticks / SC_CLK_TCK``.
+
+	Injection (hermetic ``--test``): ``read_stat`` / ``get_process_times`` /
+	``boot_time`` / ``clk_tck`` — mirrors lazy_core.kernel_start_time's seams.
+	"""
+	if platform is None:
+		platform = sys.platform
+	is_windows = str(platform).startswith("win")
+
+	try:
+		if is_windows:
+			if get_process_times is None:
+				get_process_times = _win_process_creation_filetime
+			filetime = get_process_times(pid)
+			if filetime is None:
+				return None
+			return (filetime - _FILETIME_EPOCH_OFFSET) / _FILETIME_TICKS_PER_SEC
+
+		if read_stat is None:
+			def read_stat(p):
+				return Path(f"/proc/{p}/stat").read_text(encoding="utf-8", errors="replace")
+		if clk_tck is None:
+			clk_tck = os.sysconf("SC_CLK_TCK")
+		if boot_time is None:
+			boot_time = _posix_boot_time()
+		if boot_time is None or not clk_tck:
+			return None
+
+		raw = read_stat(pid)
+		# Field 2 (comm) may contain spaces/parens; split off through the LAST
+		# ')' so the remaining fields are whitespace-delimitable. Field 22
+		# (starttime) is tail index 19 (tail starts at field 3 = state).
+		rparen = raw.rfind(")")
+		if rparen < 0:
+			return None
+		tail = raw[rparen + 1:].split()
+		if len(tail) < 20:
+			return None
+		ticks = int(tail[19])
+		return boot_time + (ticks / clk_tck)
+	except Exception:  # noqa: BLE001 - best-effort, never raises
+		return None
+
+
+def _win_process_creation_filetime(pid):
+	"""Windows creation-FILETIME extractor via ctypes -> GetProcessTimes.
+	Returns the creation FILETIME int, or None on any error."""
+	try:
+		import ctypes
+		from ctypes import wintypes
+
+		PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+		kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+		handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+		if not handle:
+			return None
+		try:
+			creation = wintypes.FILETIME()
+			exit_t = wintypes.FILETIME()
+			kernel_t = wintypes.FILETIME()
+			user_t = wintypes.FILETIME()
+			ok = kernel32.GetProcessTimes(
+				handle, ctypes.byref(creation), ctypes.byref(exit_t),
+				ctypes.byref(kernel_t), ctypes.byref(user_t),
+			)
+			if not ok:
+				return None
+			return (creation.dwHighDateTime << 32) | creation.dwLowDateTime
+		finally:
+			kernel32.CloseHandle(handle)
+	except Exception:  # noqa: BLE001
+		return None
+
+
+def _posix_boot_time():
+	"""Read system boot time (Unix epoch sec) from /proc/stat ``btime``.
+	Returns None on any error."""
+	try:
+		for line in Path("/proc/stat").read_text(encoding="utf-8").splitlines():
+			if line.startswith("btime "):
+				return float(line.split()[1])
+	except Exception:  # noqa: BLE001
+		pass
+	return None
+
+
+def _pid_status(pid, *, platform=None) -> str:
+	"""Classify pid liveness as ``'alive'`` | ``'dead'`` | ``'unknown'``
+	(best-effort, NEVER raises). Fails safe TOWARD 'unknown' on any
+	ambiguity — an inaccessible/unreadable pid must never classify 'dead'
+	(the build-queue active.lock precedent: Get-ActiveLockStatusFromText
+	treats an unreadable/unparsable observation as 'unknown', never 'dead')."""
+	if platform is None:
+		platform = sys.platform
+	try:
+		pid = int(pid)
+	except (TypeError, ValueError):
+		return "unknown"
+	if pid <= 0:
+		return "unknown"
+	if str(platform).startswith("win"):
+		return _win_pid_status(pid)
+	return _posix_pid_status(pid)
+
+
+def _posix_pid_status(pid) -> str:
+	try:
+		os.kill(pid, 0)
+	except ProcessLookupError:
+		return "dead"
+	except PermissionError:
+		return "alive"  # exists, just not signalable by us
+	except OSError:
+		return "unknown"
+	return "alive"
+
+
+def _win_pid_status(pid) -> str:
+	try:
+		import ctypes
+
+		PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+		ERROR_INVALID_PARAMETER = 87
+		ERROR_ACCESS_DENIED = 5
+		kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
+		handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+		if handle:
+			kernel32.CloseHandle(handle)
+			return "alive"
+		err = ctypes.get_last_error()
+		if err == ERROR_INVALID_PARAMETER:
+			return "dead"
+		if err == ERROR_ACCESS_DENIED:
+			return "alive"
+		return "unknown"
+	except Exception:  # noqa: BLE001
+		return "unknown"
+
+
+def _confirmed_dead_owner(owner, *, pid_status_fn=None, kernel_start_time_fn=None) -> bool:
+	"""True iff ``owner`` (a parsed owner.json dict) is a CONFIRMED-dead
+	holder: its pid no longer exists, OR the pid was reused (a live
+	kernel_start_time that mismatches the recorded one). Ambiguous states
+	(pid alive with a matching/unreadable start_time, or malformed metadata)
+	return False — never reclaim on a guess (D2 — dead-holder confirmation,
+	not a bare TTL; the lock has no fencing to make a wrong evict safe)."""
+	if not isinstance(owner, dict):
+		return False
+	pid_status_fn = pid_status_fn or _pid_status
+	kernel_start_time_fn = kernel_start_time_fn or kernel_start_time
+	try:
+		pid_int = int(owner.get("pid"))
+	except (TypeError, ValueError):
+		return False
+	status = pid_status_fn(pid_int)
+	if status == "dead":
+		return True
+	if status != "alive":
+		return False  # 'unknown' -> ambiguous, never reclaim
+	recorded_start = owner.get("kernel_start_time")
+	if recorded_start is None:
+		return False  # incomplete metadata -> ambiguous
+	live_start = kernel_start_time_fn(pid_int)
+	if live_start is None:
+		return False  # can't verify -> ambiguous, never reclaim
+	return live_start != recorded_start  # mismatch -> PID reuse, confirmed dead
+
+
+def _read_lock_owner(lock_dir):
+	"""Read+parse owner.json from a lock dir. None on missing/unreadable/
+	malformed (a metadata-less lock is handled by the grace-age fallback,
+	not treated as confirmed-dead here)."""
+	p = Path(lock_dir) / _LOCK_OWNER_FILENAME
+	try:
+		data = json.loads(p.read_text(encoding="utf-8"))
+	except (OSError, ValueError):
+		return None
+	return data if isinstance(data, dict) else None
+
+
+def _write_lock_owner(lock_dir, *, now=None, kernel_start_time_fn=None) -> None:
+	"""Best-effort: write owner.json {pid, kernel_start_time, acquired_at}
+	into a freshly-mkdir'd lock_dir via write-temp-then-os.replace (the
+	_write_leases pattern). NEVER raises — the caller already succeeded at
+	mkdir, so a metadata-write failure must not strand the lock unreleased
+	(the crash-window grace-age fallback in _maybe_reclaim_stale_lock covers
+	a lock left without owner.json, including one that never gets one)."""
+	try:
+		kernel_start_time_fn = kernel_start_time_fn or kernel_start_time
+		pid = os.getpid()
+		data = {
+			"pid": pid,
+			"kernel_start_time": kernel_start_time_fn(pid),
+			"acquired_at": _now_iso(now),
+		}
+		p = Path(lock_dir) / _LOCK_OWNER_FILENAME
+		tmp = p.with_suffix(".tmp")
+		tmp.write_text(json.dumps(data), encoding="utf-8")
+		os.replace(str(tmp), str(p))
+	except Exception:  # noqa: BLE001 - best-effort, see docstring
+		pass
+
+
+def _lock_dir_age_seconds(lock_dir, now):
+	try:
+		mtime = os.stat(str(lock_dir)).st_mtime
+	except OSError:
+		return None
+	return max(0.0, now - mtime)
+
+
+def _rename_then_remove(lock_dir) -> bool:
+	"""Atomic rename-then-rmtree reclaim (D2/Fix Scope item 2). Returns True
+	iff THIS call won the race (renamed the dir away, then removed it);
+	False if the rename lost (a racing reclaimer got there first, or the dir
+	is already gone) — the caller falls back to its normal mkdir spin, exactly
+	one reclaimer ever wins."""
+	lock_dir = Path(lock_dir)
+	stale_target = lock_dir.parent / f"{lock_dir.name}.stale-{os.getpid()}-{time.time_ns()}"
+	try:
+		os.rename(str(lock_dir), str(stale_target))
+	except OSError:
+		return False  # lost the race (or the dir is already gone)
+	shutil.rmtree(str(stale_target), ignore_errors=True)
+	return True
+
+
+def _maybe_reclaim_stale_lock(
+	lock_dir, *, grace_seconds=_LOCK_STALE_GRACE_SECONDS_DEFAULT, now=None,
+	pid_status_fn=None, kernel_start_time_fn=None,
+) -> bool:
+	"""Reclaim lock_dir iff its recorded holder is CONFIRMED dead — or, absent
+	readable owner.json, the lock dir is older than ``grace_seconds`` (the
+	crash window between mkdir and the metadata write; a metadata-less lock
+	INSIDE the grace window is ambiguous, not stale). Returns True iff THIS
+	call performed the reclaim; the caller should retry ``mkdir`` immediately."""
+	ts_now = time.time() if now is None else now
+	owner = _read_lock_owner(lock_dir)
+	if owner is None:
+		age = _lock_dir_age_seconds(lock_dir, ts_now)
+		if age is None or age <= grace_seconds:
+			return False  # vanished already (race), or still inside grace
+	elif not _confirmed_dead_owner(
+		owner, pid_status_fn=pid_status_fn, kernel_start_time_fn=kernel_start_time_fn,
+	):
+		return False
+	return _rename_then_remove(lock_dir)
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
-def acquire_lock(lock_dir, timeout=10.0, *, poll=0.05) -> None:
+def acquire_lock(
+	lock_dir, timeout=10.0, *, poll=0.05, now=None,
+	grace_seconds=None, pid_status_fn=None, kernel_start_time_fn=None,
+) -> None:
 	"""Acquire the global directory lock via atomic os.mkdir.
 
 	Retries with exponential backoff until timeout, then raises TimeoutError.
-	Never uses fcntl/flock/LockFileEx.
+	Never uses fcntl/flock/LockFileEx. On acquisition, writes ``owner.json``
+	(pid / kernel_start_time / acquired_at) into the lock dir. On a losing
+	mkdir, reclaims the lock first if its recorded holder is CONFIRMED dead
+	(see ``_maybe_reclaim_stale_lock``) — a holder that dies between ``mkdir``
+	and ``release_lock`` (e.g. SIGKILL) no longer deadlocks the pool forever
+	(docs/bugs/coord-lock-no-stale-reclaim). A genuinely live contended lock
+	still times out exactly as before; reclamation only consumes attempts
+	within the same timeout/backoff budget — callers need no signature changes.
 	"""
 	lock_dir = Path(lock_dir)
+	if grace_seconds is None:
+		grace_seconds = _LOCK_STALE_GRACE_SECONDS_DEFAULT
 	start = time.monotonic()
 	delay = poll
 	while True:
 		try:
 			os.mkdir(str(lock_dir))
+			_write_lock_owner(lock_dir, now=now, kernel_start_time_fn=kernel_start_time_fn)
 			return  # acquired
 		except FileExistsError:
+			if _maybe_reclaim_stale_lock(
+				lock_dir, grace_seconds=grace_seconds, now=now,
+				pid_status_fn=pid_status_fn, kernel_start_time_fn=kernel_start_time_fn,
+			):
+				continue  # reclaimed a confirmed-dead holder — retry mkdir now
 			elapsed = time.monotonic() - start
 			if elapsed >= timeout:
 				raise TimeoutError(
@@ -167,7 +487,15 @@ def acquire_lock(lock_dir, timeout=10.0, *, poll=0.05) -> None:
 
 
 def release_lock(lock_dir) -> None:
-	"""Release the global directory lock via os.rmdir."""
+	"""Release the global directory lock: remove ``owner.json`` (if present)
+	then ``os.rmdir`` the lock dir."""
+	lock_dir = Path(lock_dir)
+	try:
+		(lock_dir / _LOCK_OWNER_FILENAME).unlink()
+	except FileNotFoundError:
+		pass
+	except OSError:
+		pass  # best-effort; a genuine problem surfaces at rmdir below
 	try:
 		os.rmdir(str(lock_dir))
 	except FileNotFoundError:
@@ -1732,6 +2060,339 @@ def run_smoke_tests() -> int:
 			failures.append(f"[{fix15_name}] FAIL: unexpected exception: {exc!r}")
 			fix15_ok = False
 		print(f"  {'PASS' if fix15_ok else 'FAIL'} [{fix15_name}]")
+
+		# -------------------------------------------------------------------
+		# Fixture 16: lock-owner-metadata-written
+		# (coord-lock-no-stale-reclaim, Fix Scope item 1.)  A successful
+		# acquire_lock writes owner.json {pid, kernel_start_time, acquired_at}
+		# into the lock dir; release_lock removes it (rmdir succeeds — the
+		# dir is genuinely empty again, not left non-empty by the metadata file).
+		# -------------------------------------------------------------------
+		fix16_name = "lock-owner-metadata-written"
+		fix16_ok = True
+		try:
+			fix16_dir = td_path / "fix16"
+			fix16_dir.mkdir()
+			lock_dir_16 = fix16_dir / "global.lock.d"
+			acquire_lock(lock_dir_16, now=12_000_000.0)
+			owner_path_16 = lock_dir_16 / "owner.json"
+			if not owner_path_16.exists():
+				failures.append(
+					f"[{fix16_name}] FAIL: acquire_lock must write owner.json"
+				)
+				fix16_ok = False
+			else:
+				owner_16 = json.loads(owner_path_16.read_text(encoding="utf-8"))
+				if owner_16.get("pid") != os.getpid():
+					failures.append(
+						f"[{fix16_name}] FAIL: owner.json pid must be os.getpid(), "
+						f"got {owner_16!r}"
+					)
+					fix16_ok = False
+				if "kernel_start_time" not in owner_16 or "acquired_at" not in owner_16:
+					failures.append(
+						f"[{fix16_name}] FAIL: owner.json must carry "
+						f"kernel_start_time + acquired_at, got {owner_16!r}"
+					)
+					fix16_ok = False
+				if owner_16.get("acquired_at") != _now_iso(12_000_000.0):
+					failures.append(
+						f"[{fix16_name}] FAIL: acquired_at must reflect the "
+						f"injected now, got {owner_16!r}"
+					)
+					fix16_ok = False
+			release_lock(lock_dir_16)
+			if lock_dir_16.exists():
+				failures.append(
+					f"[{fix16_name}] FAIL: release_lock must remove the lock dir "
+					f"(owner.json must not block rmdir)"
+				)
+				fix16_ok = False
+		except Exception as exc:
+			failures.append(f"[{fix16_name}] FAIL: unexpected exception: {exc!r}")
+			fix16_ok = False
+		print(f"  {'PASS' if fix16_ok else 'FAIL'} [{fix16_name}]")
+
+		# -------------------------------------------------------------------
+		# Fixture 17: stale-lock-dead-holder-reclaimed
+		# (coord-lock-no-stale-reclaim, Fix Scope item 2 + Tests (a).)  A lock
+		# dir held by a CONFIRMED-dead pid is reclaimed and re-acquired within
+		# one acquire_lock call — no TimeoutError, no manual rmdir.
+		# -------------------------------------------------------------------
+		fix17_name = "stale-lock-dead-holder-reclaimed"
+		fix17_ok = True
+		try:
+			fix17_dir = td_path / "fix17"
+			fix17_dir.mkdir()
+			lock_dir_17 = fix17_dir / "global.lock.d"
+			lock_dir_17.mkdir()
+			(lock_dir_17 / "owner.json").write_text(
+				json.dumps({
+					"pid": 999_017, "kernel_start_time": 111.0,
+					"acquired_at": "2026-01-01T00:00:00Z",
+				}),
+				encoding="utf-8",
+			)
+
+			def _dead_status_17(pid):
+				return "dead"
+
+			try:
+				acquire_lock(
+					lock_dir_17, timeout=2.0, poll=0.01,
+					pid_status_fn=_dead_status_17,
+				)
+			except TimeoutError:
+				failures.append(
+					f"[{fix17_name}] FAIL: acquire_lock must reclaim a "
+					f"confirmed-dead holder within one call, got TimeoutError"
+				)
+				fix17_ok = False
+			if fix17_ok:
+				new_owner_17 = json.loads(
+					(lock_dir_17 / "owner.json").read_text(encoding="utf-8")
+				)
+				if new_owner_17.get("pid") != os.getpid():
+					failures.append(
+						f"[{fix17_name}] FAIL: the reclaiming call must stamp its "
+						f"OWN pid into a fresh owner.json, got {new_owner_17!r}"
+					)
+					fix17_ok = False
+				release_lock(lock_dir_17)
+		except Exception as exc:
+			failures.append(f"[{fix17_name}] FAIL: unexpected exception: {exc!r}")
+			fix17_ok = False
+		print(f"  {'PASS' if fix17_ok else 'FAIL'} [{fix17_name}]")
+
+		# -------------------------------------------------------------------
+		# Fixture 18: live-holder-lock-still-times-out
+		# (coord-lock-no-stale-reclaim, Fix Scope item 3 + Tests (b).)  A lock
+		# whose owner.json pid is alive with a MATCHING kernel_start_time is a
+		# genuinely live holder — acquire_lock must still raise TimeoutError,
+		# never reclaim it.
+		# -------------------------------------------------------------------
+		fix18_name = "live-holder-lock-still-times-out"
+		fix18_ok = True
+		try:
+			fix18_dir = td_path / "fix18"
+			fix18_dir.mkdir()
+			lock_dir_18 = fix18_dir / "global.lock.d"
+			lock_dir_18.mkdir()
+			(lock_dir_18 / "owner.json").write_text(
+				json.dumps({
+					"pid": 999_018, "kernel_start_time": 222.0,
+					"acquired_at": "2026-01-01T00:00:00Z",
+				}),
+				encoding="utf-8",
+			)
+
+			def _alive_status_18(pid):
+				return "alive"
+
+			def _matching_start_18(pid):
+				return 222.0
+
+			try:
+				acquire_lock(
+					lock_dir_18, timeout=0.3, poll=0.02,
+					pid_status_fn=_alive_status_18,
+					kernel_start_time_fn=_matching_start_18,
+				)
+				failures.append(
+					f"[{fix18_name}] FAIL: acquire_lock must NOT reclaim a live "
+					f"holder — expected TimeoutError"
+				)
+				fix18_ok = False
+			except TimeoutError:
+				pass  # correct
+			if not (lock_dir_18 / "owner.json").exists():
+				failures.append(
+					f"[{fix18_name}] FAIL: the live holder's owner.json must "
+					f"survive an ambiguous/live observation"
+				)
+				fix18_ok = False
+		except Exception as exc:
+			failures.append(f"[{fix18_name}] FAIL: unexpected exception: {exc!r}")
+			fix18_ok = False
+		print(f"  {'PASS' if fix18_ok else 'FAIL'} [{fix18_name}]")
+
+		# -------------------------------------------------------------------
+		# Fixture 19: pid-reuse-reclaimed
+		# (coord-lock-no-stale-reclaim, D2 + Tests (c).)  The recorded pid is
+		# ALIVE but its live kernel_start_time does not match the recorded
+		# one (the pid was reused by an unrelated process) — CONFIRMED dead,
+		# reclaimed.
+		# -------------------------------------------------------------------
+		fix19_name = "pid-reuse-reclaimed"
+		fix19_ok = True
+		try:
+			fix19_dir = td_path / "fix19"
+			fix19_dir.mkdir()
+			lock_dir_19 = fix19_dir / "global.lock.d"
+			lock_dir_19.mkdir()
+			(lock_dir_19 / "owner.json").write_text(
+				json.dumps({
+					"pid": 999_019, "kernel_start_time": 111.0,
+					"acquired_at": "2026-01-01T00:00:00Z",
+				}),
+				encoding="utf-8",
+			)
+
+			def _alive_status_19(pid):
+				return "alive"
+
+			def _mismatched_start_19(pid):
+				return 333.0  # different process now holds this (reused) pid
+
+			try:
+				acquire_lock(
+					lock_dir_19, timeout=2.0, poll=0.01,
+					pid_status_fn=_alive_status_19,
+					kernel_start_time_fn=_mismatched_start_19,
+				)
+			except TimeoutError:
+				failures.append(
+					f"[{fix19_name}] FAIL: a reused (mismatched-start-time) pid "
+					f"must be reclaimed, got TimeoutError"
+				)
+				fix19_ok = False
+			if fix19_ok:
+				release_lock(lock_dir_19)
+		except Exception as exc:
+			failures.append(f"[{fix19_name}] FAIL: unexpected exception: {exc!r}")
+			fix19_ok = False
+		print(f"  {'PASS' if fix19_ok else 'FAIL'} [{fix19_name}]")
+
+		# -------------------------------------------------------------------
+		# Fixture 20: metadata-less-stale-dir-grace-age
+		# (coord-lock-no-stale-reclaim, Fix Scope item 2 grace-age fallback +
+		# Tests (e).)  A lock dir with NO owner.json (holder died between
+		# mkdir and the metadata write) is reclaimed only once it is OLDER
+		# than the grace age; a fresh metadata-less dir is ambiguous and must
+		# NOT be reclaimed.
+		# -------------------------------------------------------------------
+		fix20_name = "metadata-less-stale-dir-grace-age"
+		fix20_ok = True
+		try:
+			fix20_dir = td_path / "fix20"
+			fix20_dir.mkdir()
+
+			# (i) Old bare dir (backdated mtime) past a tiny grace -> reclaimed.
+			lock_dir_20a = fix20_dir / "old.lock.d"
+			lock_dir_20a.mkdir()
+			old_ts = time.time() - 100.0
+			os.utime(str(lock_dir_20a), (old_ts, old_ts))
+			try:
+				acquire_lock(lock_dir_20a, timeout=2.0, poll=0.01, grace_seconds=0.1)
+			except TimeoutError:
+				failures.append(
+					f"[{fix20_name}] FAIL: a metadata-less dir past its grace "
+					f"age must be reclaimed, got TimeoutError"
+				)
+				fix20_ok = False
+			else:
+				release_lock(lock_dir_20a)
+
+			# (ii) Fresh bare dir (just created) inside a generous grace ->
+			# ambiguous, must NOT be reclaimed (TimeoutError expected).
+			lock_dir_20b = fix20_dir / "fresh.lock.d"
+			lock_dir_20b.mkdir()
+			try:
+				acquire_lock(
+					lock_dir_20b, timeout=0.3, poll=0.02, grace_seconds=30.0,
+				)
+				failures.append(
+					f"[{fix20_name}] FAIL: a FRESH metadata-less dir must NOT "
+					f"be reclaimed — expected TimeoutError"
+				)
+				fix20_ok = False
+			except TimeoutError:
+				pass  # correct
+		except Exception as exc:
+			failures.append(f"[{fix20_name}] FAIL: unexpected exception: {exc!r}")
+			fix20_ok = False
+		print(f"  {'PASS' if fix20_ok else 'FAIL'} [{fix20_name}]")
+
+		# -------------------------------------------------------------------
+		# Fixture 21: racing-reclaimers-exactly-one-acquisition
+		# (coord-lock-no-stale-reclaim, Fix Scope item 2 + Tests (d).)  Two
+		# concurrent reclaimers racing a confirmed-dead lock: no crash, and
+		# mutual exclusion holds throughout (never more than one concurrent
+		# holder) even across the reclaim.
+		# -------------------------------------------------------------------
+		fix21_name = "racing-reclaimers-exactly-one-acquisition"
+		fix21_ok = True
+		try:
+			import threading
+
+			fix21_dir = td_path / "fix21"
+			fix21_dir.mkdir()
+			lock_dir_21 = fix21_dir / "global.lock.d"
+			lock_dir_21.mkdir()
+			(lock_dir_21 / "owner.json").write_text(
+				json.dumps({
+					"pid": 999_021, "kernel_start_time": 111.0,
+					"acquired_at": "2026-01-01T00:00:00Z",
+				}),
+				encoding="utf-8",
+			)
+
+			def _pid_status_21(pid):
+				# Only the seeded zombie pid is dead; a real (our-own) pid,
+				# stamped by whichever thread wins, must read alive so the
+				# LOSER can't also reclaim the winner's live lock.
+				return "dead" if pid == 999_021 else "alive"
+
+			guard_21 = threading.Lock()
+			state_21 = {"concurrent": 0, "max_concurrent": 0, "errors": []}
+
+			def _worker_21():
+				try:
+					acquire_lock(
+						lock_dir_21, timeout=5.0, poll=0.01,
+						pid_status_fn=_pid_status_21,
+					)
+					with guard_21:
+						state_21["concurrent"] += 1
+						state_21["max_concurrent"] = max(
+							state_21["max_concurrent"], state_21["concurrent"]
+						)
+					time.sleep(0.05)
+					with guard_21:
+						state_21["concurrent"] -= 1
+					release_lock(lock_dir_21)
+				except Exception as exc:  # noqa: BLE001
+					state_21["errors"].append(repr(exc))
+
+			t1 = threading.Thread(target=_worker_21)
+			t2 = threading.Thread(target=_worker_21)
+			t1.start()
+			t2.start()
+			t1.join(timeout=10)
+			t2.join(timeout=10)
+
+			if state_21["errors"]:
+				failures.append(
+					f"[{fix21_name}] FAIL: no crash expected, got "
+					f"{state_21['errors']!r}"
+				)
+				fix21_ok = False
+			if state_21["max_concurrent"] != 1:
+				failures.append(
+					f"[{fix21_name}] FAIL: mutual exclusion violated, "
+					f"max_concurrent={state_21['max_concurrent']!r}"
+				)
+				fix21_ok = False
+			if lock_dir_21.exists():
+				failures.append(
+					f"[{fix21_name}] FAIL: both racing acquirers must have "
+					f"released the lock by the end"
+				)
+				fix21_ok = False
+		except Exception as exc:
+			failures.append(f"[{fix21_name}] FAIL: unexpected exception: {exc!r}")
+			fix21_ok = False
+		print(f"  {'PASS' if fix21_ok else 'FAIL'} [{fix21_name}]")
 
 	if failures:
 		print("\nFAILURES:")
