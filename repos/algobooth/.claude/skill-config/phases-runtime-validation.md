@@ -57,6 +57,14 @@ Record the OBSERVED ground truth (the actual tool calls + numbers, or the logged
 
 ---
 
+#### Module-Move Inbound-Seam Audit (BEFORE DRAFTING PHASES — when the plan moves/renames/deletes a module or file other code may load)
+
+> **Why this gate exists.** A moved module's OUTBOUND dependencies are visible from inside it; INBOUND consumers that load the OLD path by literal file path are not — and they break at execution (or test collection), not at planning. See `docs/bugs/planning-audit-blind-to-inbound-module-path-loads` in claude-config (the lazy-core-package-decomposition incident: all six outbound lookups were enumerated as WUs; both inbound literal-path loaders were missed and broke, one silently disarming a gate).
+
+For EACH old path the plan retires, grep the whole repo for literal-path loads — `spec_from_file_location` / `importlib.util` file loads, `runpy`, `open()`/`readFile` of the module path, subprocess/`node`/`tsx` invocations of the file, hardcoded path strings (INCLUDING tests' module-scope loaders and script imports in `scripts/`) — and record one ledger row per hit (`consumer file:line | load form | migration deliverable`), enumerating EACH hit as an explicit `- [ ]` deliverable. Zero hits is itself a recorded row (`how-confirmed: grep`, "no inbound literal-path loads of <old path>").
+
+---
+
 #### AGPL / IP Placement Audit (AlgoBooth — BEFORE DRAFTING PHASES)
 
 > **Why this gate exists.** `strudel-sidecar/` is publicly published AGPL code (`docs/legal/AGPL_PUBLICATION_MANIFEST.md`) — every file placed there is disclosed. Placement is an IP decision made at SPEC time; phases must not silently move logic sidecar-side.
