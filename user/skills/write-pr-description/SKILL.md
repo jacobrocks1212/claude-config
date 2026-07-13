@@ -1,3 +1,9 @@
+---
+name: write-pr-description
+description: Write or rewrite a pull request description in a consistent, high-quality structure. Repo-agnostic. Triggers on 'write pr description', 'rewrite pr description', 'update pr description', 'create pr description'.
+argument-hint: "[optional: PR number or branch]"
+---
+
 # Write PR Description
 
 Use this skill when writing or rewriting pull request descriptions to ensure consistent, high-quality documentation of changes.

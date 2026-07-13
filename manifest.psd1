@@ -95,5 +95,13 @@
             Path           = 'C:\Users\JacobMadsen\source\repos\cognito-docs'
             DotClaudeFiles = @('settings.local.json')
         }
+        # Overwatch (cognitoforms/overwatch) — work repo, .NET Core (net10.0). Personal,
+        # claude-config-owned root CLAUDE.md symlinked in; not committed to the team repo
+        # (kept out via Overwatch's .git/info/exclude). Shares the user-level skill tree like
+        # every repo (write-pr-description / write-pr-comments live there now).
+        'overwatch' = @{
+            Path      = 'C:\Users\JacobMadsen\source\repos\Overwatch'
+            RootFiles = @('CLAUDE.md')
+        }
     }
 }
