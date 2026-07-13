@@ -52,7 +52,7 @@ All load-bearing assumptions are **code-provable** — skip the runtime-spike pa
 **Minimum Verifiable Behavior:** `python3 -c "import lazy_core; print(lazy_core.validate_intervention_target_signal('event:no-route'))"` prints a non-None error naming the valid set; the same call with `event:gate-refusal` prints `None`.
 
 **Runtime Verification** *(checked by test/manual — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `record_intervention(..., hypothesis_overrides={"target_signal": "event:no-route"})` on a temp repo writes a record whose `target_signal` is `undeclared` and whose `baseline.status` is `not-computable` (observed on disk), with the rejection diagnostic present.
+- [x] <!-- verification-only --> `record_intervention(..., hypothesis_overrides={"target_signal": "event:no-route"})` on a temp repo writes a record whose `target_signal` is `undeclared` and whose `baseline.status` is `not-computable` (observed on disk), with the rejection diagnostic present. **(GREEN: `test_record_intervention_degrades_unknown_event_target`, `test_lazy_core.py:33959` — asserts `target_signal == "undeclared"`, `baseline_status == "not-computable"`, on-disk `target_signal: undeclared` + `not-computable`, and a `_DIAGNOSTICS` entry naming `no-route`. Re-run 2026-07-12 hermetically: passed.)**
 
 **MCP Integration Test Assertions:** N/A — no runtime-observable MCP surface in this repo.
 
@@ -92,13 +92,13 @@ All load-bearing assumptions are **code-provable** — skip the runtime-spike pa
 - **Review verdict:** PASS (ground-truth verified: yes — `wc -l` 8187/88, anchors 7890/7894, hermetic smoke exit 0 all-3-PASS, inserted block confirmed byte-identical to WU-2; parity exit 0).
 - **Files modified (WU-3):** `user/scripts/bug-state.py`, `user/scripts/tests/baselines/bug-state-test-baseline.txt`.
 
-**Status:** Complete _(the 2 Runtime Verification rows below stay unticked — completion-gate-owned; claude-config has no MCP runtime, so they are observationally satisfied by the hermetic serving-path smoke fixtures)._
+**Status:** Complete _(the 2 Runtime Verification rows below are now ticked from their GREEN hermetic serving-path smoke fixtures — claude-config has no MCP runtime, so the `--test` CLI fixtures ARE the runtime evidence; ticked at coherence-recovery time per the `--apply-pseudo` third-gate contract)._
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --record-intervention --id harden-test --pipeline hardening --repo-root <tmp>` exits 1 and writes no `docs/interventions/harden-test.md`; adding `--target-signal undeclared` exits 0 and writes the record.
 
 **Runtime Verification** *(checked by test/manual):*
-- [ ] <!-- verification-only --> Running the CLI with `--pipeline hardening` and no `--target-signal` in a temp repo exits 1, prints the sibling-D2 guidance, and leaves `docs/interventions/` empty (observed).
-- [ ] <!-- verification-only --> The same with `--target-signal event:route-loop` exits 1 naming the valid vocabulary set (the exact r7 mistake, now blocked at the CLI).
+- [x] <!-- verification-only --> Running the CLI with `--pipeline hardening` and no `--target-signal` in a temp repo exits 1, prints the sibling-D2 guidance, and leaves `docs/interventions/` empty (observed). **(GREEN: in-file `--test` fixture `[record-intervention-hardening-undeclared-rejected]`, `lazy-state.py:10874` — asserts exit 1, no `docs/interventions/<id>.md` written, sibling-D2 guidance in stderr. Re-run 2026-07-12 hermetically: PASS.)**
+- [x] <!-- verification-only --> The same with `--target-signal event:route-loop` exits 1 naming the valid vocabulary set (the exact r7 mistake, now blocked at the CLI). **(GREEN: in-file `--test` fixture `[record-intervention-unknown-event-rejected]`, `lazy-state.py:10959` — drives `--target-signal event:route-loop`, asserts exit 1, no record written, stderr carries `valid event types:`. Re-run 2026-07-12 hermetically: PASS.)**
 
 **MCP Integration Test Assertions:** N/A.
 
