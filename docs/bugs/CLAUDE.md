@@ -79,3 +79,20 @@ Fails (exit 1, named violations) on:
   never silenced) or re-disposition to `Won't-fix` if the fix claim cannot be evidenced.
 - `stale-queue-entry` — a `docs/bugs/queue.json` row pointing at a `Fixed` or already-archived dir
   (the archive step's queue-trim missed it, or a manual queue edit went stale).
+
+### Aging + pinning (`bug-queue-aging-backpressure`, PROVISIONAL)
+
+Bug-only (no feature-axis analog — features have no `**Discovered:**` field). Two mechanisms,
+both pure functions of `**Discovered:**` / an explicit pin, never fabricated state:
+
+- **Age-escalation** (`lazy_core.age_escalated_rank`) — a queued bug's effective severity rank
+  escalates one notch toward 0 (more urgent) per 7 days since `**Discovered:**`, capped at rank 1
+  (a genuine P0 always outranks mere age). Applies automatically at ordering time; no operator
+  action needed.
+- **`--pin`** (`bug-state.py --pin --id <id> [--until YYYY-MM-DD] [--reason <text>]`) — the
+  sanctioned replacement for hand-editing `queue.json` to `"severity": null`: deprioritizes a bug
+  behind a reviewable, expiring pin (`lazy_core.pin_is_active`; default max pin age 90 days if
+  `--until` is omitted). Creates the queue entry if not already queued.
+
+Both feed `lazy_core.merged_priority` — never re-implemented per-caller. Landed PROVISIONAL (D1
+parked pending ratification); see the feature's `NEEDS_INPUT_PROVISIONAL.md`.
