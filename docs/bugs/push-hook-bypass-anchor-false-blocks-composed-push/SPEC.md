@@ -6,7 +6,7 @@
 **Severity:** P2
 **Discovered:** 2026-07-13
 **Placement:** docs/bugs/push-hook-bypass-anchor-false-blocks-composed-push
-**Related:** `docs/bugs/legacy-tool-input-env-hooks-dead/` (this hook's prior stdin-JSON rewrite), `docs/bugs/powershell-tool-bypasses-bash-matched-guards/` and `docs/bugs/long-build-and-build-queue-matcher-bypasses/` (sibling hook-matcher robustness), `user/skills/push/SKILL.md` (the sanctioned caller)
+**Related:** `docs/bugs/legacy-tool-input-env-hooks-dead/` (this hook's prior stdin-JSON rewrite), `docs/bugs/powershell-tool-bypasses-bash-matched-guards/` and `docs/bugs/_archive/long-build-and-build-queue-matcher-bypasses/` (sibling hook-matcher robustness), `user/skills/push/SKILL.md` (the sanctioned caller)
 
 ---
 

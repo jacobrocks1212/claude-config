@@ -41,7 +41,7 @@ drift class has a bug trail:
   three `$TOOL_INPUT_command` env-reading hooks (`block-terminal-kill.sh`,
   `block-work-repo-git-push.sh`, `block-work-repo-git-writes.sh`) were never migrated to the
   stdin-payload pattern, precisely because there is no shared substrate to migrate *onto*.
-- `docs/bugs/long-build-and-build-queue-matcher-bypasses/` — its fix wants an anchor-semantics
+- `docs/bugs/_archive/long-build-and-build-queue-matcher-bypasses/` — its fix wants an anchor-semantics
   change (`_CMD_START` family), which today must be hand-landed in **three** files that each
   believe they own the regex.
 

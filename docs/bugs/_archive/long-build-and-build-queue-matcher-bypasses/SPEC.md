@@ -10,6 +10,8 @@
 > guards are alive, their matchers are just narrower than the invocations they govern.
 
 **Status:** Fixed
+**Fixed:** 2026-07-13
+**Fix commit:** 79929340
 **Priority:** P2
 **Last updated:** 2026-07-11
 **Related:** `docs/features/long-build-and-runtime-ownership/` (the guard's owning spec — M5

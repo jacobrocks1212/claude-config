@@ -11,7 +11,7 @@
 **Status:** Concluded
 **Priority:** P2
 **Last updated:** 2026-07-13
-**Related:** `docs/bugs/_archive/powershell-tool-bypasses-bash-matched-guards/` (item 5 — the sibling segment-start-anchoring fix on this same hook that this extends to the quoting level); `docs/bugs/long-build-and-build-queue-matcher-bypasses/` (the plane-wide `bash -c "..."` quoted-argument residual — the accepted-gap direction this fix stays inside of); `user/hooks/CLAUDE.md` → "PowerShell-syntax regex audit" + "Known limitation — `bash -c` / `sh -c` string-wraps".
+**Related:** `docs/bugs/_archive/powershell-tool-bypasses-bash-matched-guards/` (item 5 — the sibling segment-start-anchoring fix on this same hook that this extends to the quoting level); `docs/bugs/_archive/long-build-and-build-queue-matcher-bypasses/` (the plane-wide `bash -c "..."` quoted-argument residual — the accepted-gap direction this fix stays inside of); `user/hooks/CLAUDE.md` → "PowerShell-syntax regex audit" + "Known limitation — `bash -c` / `sh -c` string-wraps".
 
 ## Verified Symptom
 

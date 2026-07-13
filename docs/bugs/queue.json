@@ -8,12 +8,6 @@
       "severity": null
     },
     {
-      "id": "long-build-and-build-queue-matcher-bypasses",
-      "name": "Long-build guard misses canonical Tauri invocations; build-queue-enforce's unanchored wrapper allowlist defeats its deny surface \u2014 Investigation Spec",
-      "spec_dir": "long-build-and-build-queue-matcher-bypasses",
-      "severity": "P2"
-    },
-    {
       "id": "build-queue-no-artifact-or-process-hygiene-on-crash",
       "name": "Build queue has no artifact/process hygiene on build crash \u2014 Investigation Spec",
       "spec_dir": "build-queue-no-artifact-or-process-hygiene-on-crash",
