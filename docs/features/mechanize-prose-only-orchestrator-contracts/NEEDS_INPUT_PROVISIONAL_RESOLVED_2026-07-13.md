@@ -70,3 +70,18 @@ other guard behavior. A later redirect to option B touches only the four ALLOW-p
 satisfied, consistent with the low-risk shape `park-provisional-acceptance` is designed for.
 
 **Choice:** A — pin-by-rewrite, implemented and tested; awaiting operator ratification.
+
+## Ratification
+
+ratified_by: operator (Jacob)
+ratified_date: 2026-07-13
+decision: D1 — RATIFIED as provisionally accepted (Option A, pin-by-rewrite)
+mode: interactive AskUserQuestion (Step 1g-ratify, /lazy-batch "complete each fully" directive)
+
+The operator ratified the provisional acceptance of **Option A (pin-by-rewrite)** verbatim — no
+redirect. The guard corrects a mismatched/missing `model:` field in place on all four ALLOW paths,
+noting the rewrite in `permissionDecisionReason`; legacy registry entries with no `model` field
+fail open. The implementation and hermetic tests already on disk (`_pinned_model_update` +
+`test_guard_pins_model_on_fresh_allow` / `test_guard_pins_model_on_by_reference_and_auto_readmit_allows`)
+stand as-is — no source propagation required. This provisional sentinel is neutralized (renamed to
+`NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md`); completion is now unblocked.
