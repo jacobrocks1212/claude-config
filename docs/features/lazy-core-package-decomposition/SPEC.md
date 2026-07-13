@@ -101,6 +101,14 @@ Until an operator picks among 1/2/3, no seam extraction lands. This is a genuine
 > (modulo the L2/L3 required anchors + intra-package import rewiring); test patch-target lines
 > are the sanctioned edit surface, with the 1125-test count + names preserved per move commit
 > and the byte baselines untouched.
+>
+> **Shim follow-up (RESOLVED 2026-07-13, Option C):** Phase 1 shipped a transitional
+> `_resolve_ntfy_send` shim so the two state scripts' facade-level `[notify-halt-call-site]`
+> smoke fixtures kept working without out-of-scope edits. The operator ratified **Option C** of
+> the Phase-1 NEEDS_INPUT fork: the shim stays (correct + tested) until the notifyplane
+> extraction (Phase 2 WU-4), which carries an explicit retirement WU — redirect the two fixtures
+> to `lazy_core.notifyplane._ntfy_send`, delete the shim — leaving mechanism-3 as the SINGLE
+> patch-visibility rule for all callers, internal and external.
 
 ## Executive Summary
 

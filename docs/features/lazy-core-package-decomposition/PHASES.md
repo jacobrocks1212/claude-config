@@ -60,6 +60,10 @@ tests pass; benchmark re-run recorded (facade alone may not cut hook cost — re
 ## Phase 2 — Cleanest seams (docmodel, depdag, hostcaps, notify) ⛔ after Phase 1
 
 - [ ] Move `docmodel.py` / `depdag.py` / `hostcaps.py` / `notifyplane.py` out of the body.
+- [ ] Retire the `_resolve_ntfy_send` facade-patch shim at the notifyplane extraction (operator
+      ratified Option C, 2026-07-13, resolving the Phase-1 NEEDS_INPUT): redirect the two
+      state-script `[notify-halt-call-site]` fixtures to `lazy_core.notifyplane._ntfy_send`,
+      delete the shim — mechanism-3 becomes the SINGLE patch-visibility rule for all callers.
 - [ ] Land the hook-touched `claude_state_dir`/`_load_registry`/`append_hook_event` in a small
       submodule so the D4 latency cut is realizable + re-measured.
 - [ ] Per-commit invariants green; import-ms delta in receipt.
