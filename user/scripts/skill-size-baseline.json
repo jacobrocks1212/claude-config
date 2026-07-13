@@ -2,19 +2,19 @@
   "schema_version": 1,
   "files": {
     "user/skills/lazy-batch/SKILL.md": {
-      "byte_ceiling": 256814,
+      "byte_ceiling": 256812,
       "long_line_ceiling": 148,
       "locked_at": "2026-07-12",
-      "notes": "lazy-batch-skill-deflation Phase 3 seed ceiling — locked at the END-OF-SESSION size (after the Phase-1 model-selection excision AND the follow-up (ii) efficacy-signal-integrity D4 KPI-scorecard-flush wiring, a separate deliberate addition landed the same session, net +1529B/+1 long-line over the mid-session excision-only figure). This stops further accretion (+57%/4wk observed pre-gate) immediately; the diet's remaining Phase 1/2 hotspot excisions will lower this via --lock-in as they land, not raise it."
+      "notes": "lazy-batch-skill-deflation Phase 3 seed ceiling \u2014 locked at the END-OF-SESSION size (after the Phase-1 model-selection excision AND the follow-up (ii) efficacy-signal-integrity D4 KPI-scorecard-flush wiring, a separate deliberate addition landed the same session, net +1529B/+1 long-line over the mid-session excision-only figure). This stops further accretion (+57%/4wk observed pre-gate) immediately; the diet's remaining Phase 1/2 hotspot excisions will lower this via --lock-in as they land, not raise it."
     },
     "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md": {
-      "byte_ceiling": 210546,
+      "byte_ceiling": 210541,
       "long_line_ceiling": 127,
       "locked_at": "2026-07-12",
-      "notes": "Coupled-pair derived whale; seed ceiling at end-of-session size (D4 fallback — hand-mirrored, not yet generated; includes the mirrored follow-up (ii) KPI-scorecard-flush wiring)."
+      "notes": "Coupled-pair derived whale; seed ceiling at end-of-session size (D4 fallback \u2014 hand-mirrored, not yet generated; includes the mirrored follow-up (ii) KPI-scorecard-flush wiring)."
     },
     "user/skills/lazy-bug-batch/SKILL.md": {
-      "byte_ceiling": 101487,
+      "byte_ceiling": 101481,
       "long_line_ceiling": 36,
       "locked_at": "2026-07-12",
       "notes": "Coupled-pair derived whale (bug-axis); seed ceiling at end-of-session size (the model-selection excision has no analog in this file; the +100B is the mirrored long-build-ownership.md fallback-prose fix from follow-up (i))."
@@ -23,13 +23,13 @@
       "byte_ceiling": 28599,
       "long_line_ceiling": 14,
       "locked_at": "2026-07-12",
-      "notes": "Dispatcher-tier proof-of-shape skill (292 lines cited in SPEC) — included per D3 scope so the shape this diet targets cannot silently re-bloat either."
+      "notes": "Dispatcher-tier proof-of-shape skill (292 lines cited in SPEC) \u2014 included per D3 scope so the shape this diet targets cannot silently re-bloat either."
     },
     "user/skills/lazy-status/SKILL.md": {
       "byte_ceiling": 9790,
       "long_line_ceiling": 1,
       "locked_at": "2026-07-12",
-      "notes": "Read-only dashboard skill — small, included per D3's named scope list."
+      "notes": "Read-only dashboard skill \u2014 small, included per D3's named scope list."
     }
   }
 }

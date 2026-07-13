@@ -479,7 +479,7 @@ If Step 1c.5 did not handle this cycle, build the dispatch by CONSUMING the scri
 prompt. Composition is now `python3 ~/.claude/scripts/bug-state.py … --repeat-count --emit-prompt`
 (the bug-pipeline mirror of lazy-batch's Step 1a probe) → prefer the probe's `cycle_prompt_ref` if
 present, otherwise the `cycle_prompt` verbatim, as the Agent `prompt:`, and `cycle_model` as the
-Agent `model:`. **The `cycle_prompt_ref` MUST be same-turn-fresh (2026-07-11 banner-ref divergence, mirrors `/lazy-batch` §1d):** a by-reference dispatch is valid ONLY on the SAME turn its emission was registered. The LAZY-ROUTE banner's `nonce=`/`@@lazy-ref` is same-turn-fresh only on the turn the inject hook injected it; if any turn boundary or compaction intervened, that banner is STALE — do NOT dispatch by-reference from it (the guard's F2a can't resolve a stale nonce, and a near-miss copy can leak a literal `@@lazy-ref` line to the subagent → 0 tool uses). Re-probe with `--emit-prompt` in-turn and dispatch the fresh ref, or dispatch the banner's `cycle_prompt` verbatim (always safe). See
+Agent `model:` (a: guard now also corrects a bad `model:` on ALLOW). **The `cycle_prompt_ref` MUST be same-turn-fresh (2026-07-11 banner-ref divergence, mirrors `/lazy-batch` §1d):** a by-reference dispatch is valid ONLY on the SAME turn its emission was registered. The LAZY-ROUTE banner's `nonce=`/`@@lazy-ref` is same-turn-fresh only on the turn the inject hook injected it; if any turn boundary or compaction intervened, that banner is STALE — do NOT dispatch by-reference from it (the guard's F2a can't resolve a stale nonce, and a near-miss copy can leak a literal `@@lazy-ref` line to the subagent → 0 tool uses). Re-probe with `--emit-prompt` in-turn and dispatch the fresh ref, or dispatch the banner's `cycle_prompt` verbatim (always safe). See
 `~/.claude/skills/lazy-batch/SKILL.md` Step 1d for the shared consume-and-dispatch rules,
 in-session loop-guard cross-check, and the `cycle_prompt`-null/refused fallback — they apply
 identically to the bug pipeline.
@@ -744,7 +744,16 @@ NOT APPLICABLE to the bug pipeline. `bug-state.py` never emits `needs-research` 
 The shared handler's "increment `cycle`" step translates to **increment `meta_cycles`**. The
 per-cycle update block heading uses the two-counter format (Step 3 template).
 
-**Apply-resolution dispatch (emit-dispatch — registry-validated).** When the shared handler instructs you to dispatch the apply-resolution subagent, emit it via the script:
+**Record the decision (c):**
+
+```bash
+python3 ~/.claude/scripts/bug-state.py --record-decision \
+  --sentinel "{spec_path}/NEEDS_INPUT.md" \
+  --chosen "<chosen option>" \
+  --summary "<resolution summary>"
+```
+
+**Apply-resolution dispatch:** fields come from the record above:
 
 ```bash
 python3 ~/.claude/scripts/bug-state.py \
@@ -752,9 +761,7 @@ python3 ~/.claude/scripts/bug-state.py \
   --context item_name="{bug_name}" \
   --context spec_path="{spec_path}" \
   --context sentinel_path="{spec_path}/NEEDS_INPUT.md" \
-  --context resolution_summary="<one-line summary of the chosen resolution>" \
   --context resolution_kind="needs-input" \
-  --context chosen_path="<the option label the operator chose>" \
   --context item_id="{bug_id}" \
   --context cwd="{cwd}"
 ```
@@ -816,7 +823,16 @@ Identical to `/lazy-batch` Step 1g-ratify with the bug bindings — `{SKILL}` = 
 `{ITEM}` = bug, `{SPEC_ROOT}` = `docs/bugs`, `{ADD_PHASE}` = `/add-phase` (or `/plan-bug` if
 PHASES.md is absent), `{PUSH_RULE}` = workstation (standard push). Increment `meta_cycles`.
 
-**Apply-resolution dispatch (emit-dispatch — registry-validated).** When the shared handler instructs you to dispatch the apply-resolution subagent, emit it via the script:
+**Record the decision, then dispatch (c):**
+
+```bash
+python3 ~/.claude/scripts/bug-state.py --record-decision \
+  --sentinel "{spec_path}/BLOCKED.md" \
+  --chosen "<chosen option>" \
+  --summary "<resolution summary>"
+```
+
+**Apply-resolution dispatch:** fields come from the record above:
 
 ```bash
 python3 ~/.claude/scripts/bug-state.py \
@@ -824,9 +840,7 @@ python3 ~/.claude/scripts/bug-state.py \
   --context item_name="{bug_name}" \
   --context spec_path="{spec_path}" \
   --context sentinel_path="{spec_path}/BLOCKED.md" \
-  --context resolution_summary="<one-line summary of the chosen resolution>" \
   --context resolution_kind="blocked" \
-  --context chosen_path="<the option label the operator chose>" \
   --context item_id="{bug_id}" \
   --context cwd="{cwd}"
 ```

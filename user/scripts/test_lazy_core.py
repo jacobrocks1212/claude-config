@@ -13593,6 +13593,332 @@ def test_probe_withholds_forward_route_on_pending_debt():
         )
 
 
+def test_probe_withholds_forward_route_on_audit_obligation():
+    """mechanize-prose-only-orchestrator-contracts (b) / D2-A: a marked run
+    with an outstanding audit_obligation → a `--repeat-count --probe
+    --emit-prompt` subprocess withholds the forward route
+    (route_overridden_by == 'audit-obligation', NO cycle_prompt/cycle_model
+    key) and surfaces a ready-to-run input_audit_emit_command naming the
+    obligated item + cycle_kind. Discharging via `--emit-dispatch
+    input-audit` (a REGISTERED, marker-present emission) clears the
+    obligation so the NEXT probe emits the forward route again."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = _build_phase8_fixture_repo(td_path)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def probe():
+            return subprocess.run(
+                [sys.executable, str(lazy_state),
+                 "--repeat-count", "--probe", "--emit-prompt",
+                 "--repo-root", str(fixture_repo)],
+                capture_output=True, text=True, env=env,
+            )
+
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(fixture_repo),
+                max_cycles=10, now=_time.time(),
+            )
+        finally:
+            _clear_state_dir()
+
+        # --- (1) no obligation -> normal forward route ---
+        r0 = probe()
+        assert r0.returncode == 0, f"probe failed: {r0.stderr[:400]!r}"
+        out0 = json.loads(r0.stdout)
+        assert "cycle_prompt" in out0
+        assert "route_overridden_by" not in out0, out0.get("route_overridden_by")
+
+        # --- (2) arm the obligation directly on the marker (simulating a
+        # --cycle-end after a /spec cycle), then re-probe -> withheld ---
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.record_audit_obligation(item_id="feat-c", cycle_kind="spec")
+        finally:
+            _clear_state_dir()
+
+        r1 = probe()
+        assert r1.returncode == 0, f"probe failed: {r1.stderr[:400]!r}"
+        out1 = json.loads(r1.stdout)
+        assert out1.get("route_overridden_by") == "audit-obligation", out1
+        assert "cycle_prompt" not in out1, (
+            "withheld probe must NOT carry a cycle_prompt key"
+        )
+        assert "cycle_model" not in out1, (
+            "withheld probe must NOT carry a cycle_model key"
+        )
+        cmd = out1.get("input_audit_emit_command", "")
+        assert "--emit-dispatch input-audit" in cmd, cmd
+        assert "item_id=feat-c" in cmd, cmd
+        assert "cycle_kind=spec" in cmd, cmd
+
+        # --- (3) discharge via a REGISTERED --emit-dispatch input-audit ---
+        r_discharge = subprocess.run(
+            [sys.executable, str(lazy_state),
+             "--emit-dispatch", "input-audit",
+             "--context", "item_name=Feature C",
+             "--context", "spec_path=" + str(fixture_repo / "docs" / "features" / "feat-c"),
+             "--context", "cycle_kind=spec",
+             "--context", "cycle_summary=did the thing",
+             "--context", "cycle_commit_sha=HEAD~1",
+             "--context", "item_id=feat-c",
+             "--context", "cwd=" + str(fixture_repo)],
+            capture_output=True, text=True, env=env,
+        )
+        assert r_discharge.returncode == 0, r_discharge.stdout + r_discharge.stderr
+        discharge_out = json.loads(r_discharge.stdout)
+        assert discharge_out.get("dispatch_prompt"), discharge_out
+
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.pending_audit_obligation() is None, (
+                "a registered --emit-dispatch input-audit must discharge the "
+                "obligation"
+            )
+        finally:
+            _clear_state_dir()
+
+        # --- (4) next probe emits the forward route again ---
+        r2 = probe()
+        assert r2.returncode == 0, f"probe failed: {r2.stderr[:400]!r}"
+        out2 = json.loads(r2.stdout)
+        assert "route_overridden_by" not in out2, out2
+        assert "cycle_prompt" in out2, (
+            "discharged obligation must let the forward route emit again"
+        )
+
+
+def test_audit_obligation_helpers_no_marker_and_non_audited_kind():
+    """record_audit_obligation / pending_audit_obligation / discharge are all
+    no-ops (never raise, write nothing) without a live run marker; a
+    non-audited cycle_kind (e.g. execute-plan) never arms the obligation."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            # No marker at all.
+            assert lazy_core.record_audit_obligation("f1", "spec") is None
+            assert lazy_core.pending_audit_obligation() is None
+            assert lazy_core.discharge_audit_obligation() is False
+
+            import time as _time
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            # Non-audited sub_skill never arms the obligation.
+            lazy_core.record_audit_obligation("f1", "execute-plan")
+            assert lazy_core.pending_audit_obligation() is None
+
+            # plan-bug is DELIBERATELY excluded (lazy-bug-batch/SKILL.md Step
+            # 1d.5 skip-condition prose: "plan-bug is a planning step, not a
+            # SPEC/PHASES-authoring cycle — skip audit for plan-bug") — only
+            # spec-bug/spec-phases are audited on the bug pipeline.
+            lazy_core.record_audit_obligation("bug-1", "plan-bug")
+            assert lazy_core.pending_audit_obligation() is None
+            lazy_core.record_audit_obligation("bug-1", "spec-bug")
+            assert lazy_core.pending_audit_obligation() == {
+                "item_id": "bug-1", "cycle_kind": "spec-bug",
+            }
+            assert lazy_core.discharge_audit_obligation() is True
+
+            # An audited kind arms it; discharge clears it; a second
+            # discharge is a no-op (False, not an error).
+            lazy_core.record_audit_obligation("f1", "plan-feature")
+            obligation = lazy_core.pending_audit_obligation()
+            assert obligation == {"item_id": "f1", "cycle_kind": "plan-feature"}
+            assert lazy_core.discharge_audit_obligation() is True
+            assert lazy_core.pending_audit_obligation() is None
+            assert lazy_core.discharge_audit_obligation() is False
+        finally:
+            _clear_state_dir()
+
+
+def test_record_decision_and_read_round_trip():
+    """mechanize-prose-only-orchestrator-contracts (c) / D3-A:
+    record_decision writes an atomic record read back verbatim by
+    read_decision_record; re-recording OVERWRITES (not appends); the
+    sentinel-path key normalizes across relative/absolute and backslash/
+    forward-slash spellings of the SAME path; a never-recorded sentinel
+    reads back None."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            sentinel = str(Path(td) / "feat-1" / "NEEDS_INPUT.md")
+            assert lazy_core.read_decision_record(sentinel) is None
+
+            rec = lazy_core.record_decision(
+                sentinel, "Option A", summary="picked A over B", now=1000.0,
+            )
+            assert rec["chosen_path"] == "Option A"
+            assert rec["resolution_summary"] == "picked A over B"
+
+            got = lazy_core.read_decision_record(sentinel)
+            assert got is not None
+            assert got["chosen_path"] == "Option A"
+            assert got["resolution_summary"] == "picked A over B"
+
+            # Path-spelling normalization: forward-slash lookup of the SAME
+            # path still round-trips.
+            alt_spelling = sentinel.replace("\\", "/")
+            got_alt = lazy_core.read_decision_record(alt_spelling)
+            assert got_alt is not None
+            assert got_alt["chosen_path"] == "Option A"
+
+            # Re-recording OVERWRITES, does not append a second entry.
+            lazy_core.record_decision(sentinel, "Option B", now=2000.0)
+            got2 = lazy_core.read_decision_record(sentinel)
+            assert got2["chosen_path"] == "Option B"
+
+            # A different, never-recorded sentinel is still None.
+            other = str(Path(td) / "feat-2" / "NEEDS_INPUT.md")
+            assert lazy_core.read_decision_record(other) is None
+        finally:
+            _clear_state_dir()
+
+
+def test_bind_decision_record_context_refuses_without_record_and_binds_when_present():
+    """bind_decision_record_context (D3-A binding seam): non-apply-resolution
+    classes and an apply-resolution context with no sentinel_path pass
+    through unchanged; a sentinel_path with NO recorded decision raises
+    ValueError naming the exact --record-decision command; a recorded
+    decision REPLACES chosen_path/resolution_summary (record wins over any
+    orchestrator-typed values already in context)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            # Non-apply-resolution class -> pass through unchanged.
+            ctx = {"sentinel_path": "/x/NEEDS_INPUT.md"}
+            assert lazy_core.bind_decision_record_context(
+                "hardening", ctx, "lazy-state.py"
+            ) is ctx
+
+            # apply-resolution with no sentinel_path -> pass through unchanged.
+            ctx2 = {"item_id": "f1"}
+            assert lazy_core.bind_decision_record_context(
+                "apply-resolution", ctx2, "lazy-state.py"
+            ) is ctx2
+
+            # apply-resolution WITH sentinel_path but no record -> refuses.
+            sentinel = str(Path(td) / "feat-1" / "NEEDS_INPUT.md")
+            ctx3 = {"sentinel_path": sentinel, "item_id": "f1"}
+            try:
+                lazy_core.bind_decision_record_context(
+                    "apply-resolution", ctx3, "lazy-state.py"
+                )
+                assert False, "expected ValueError with no recorded decision"
+            except ValueError as exc:
+                assert "--record-decision" in str(exc)
+                assert sentinel in str(exc)
+
+            # Record the decision, then binding replaces the two fields
+            # (overriding any hand-typed values already in context).
+            lazy_core.record_decision(
+                sentinel, "Option A", summary="the operator's reasoning",
+            )
+            ctx4 = {
+                "sentinel_path": sentinel,
+                "item_id": "f1",
+                "chosen_path": "STALE hand-typed value",
+                "resolution_summary": "STALE",
+            }
+            bound = lazy_core.bind_decision_record_context(
+                "apply-resolution", ctx4, "lazy-state.py"
+            )
+            assert bound["chosen_path"] == "Option A"
+            assert bound["resolution_summary"] == "the operator's reasoning"
+            assert bound["item_id"] == "f1"  # unrelated keys untouched
+        finally:
+            _clear_state_dir()
+
+
+def test_record_decision_cli_and_apply_resolution_binds_end_to_end():
+    """mechanize-prose-only-orchestrator-contracts (c) / D3-A end-to-end via
+    subprocess: `--emit-dispatch apply-resolution` with a sentinel_path and
+    NO prior --record-decision refuses (exit 1, dispatch_prompt_refused
+    names --record-decision); after `--record-decision --sentinel ...
+    --chosen ... --summary ...`, the SAME emit succeeds and the emitted
+    dispatch_prompt embeds the chosen option + summary VERBATIM (Validation
+    Criteria: 'Answer reaches worker')."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_dir = td_path / "repo"
+        (repo_dir / "docs" / "features" / "feat-1").mkdir(parents=True)
+        (repo_dir / "docs" / "features" / "queue.json").write_text(json.dumps({
+            "queue": [{"id": "feat-1", "name": "Test Feature", "tier": 1}]
+        }), encoding="utf-8")
+        sentinel = repo_dir / "docs" / "features" / "feat-1" / "NEEDS_INPUT.md"
+        sentinel.write_text("# needs input\n", encoding="utf-8")
+
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        emit_args = [
+            "--emit-dispatch", "apply-resolution",
+            "--repo-root", str(repo_dir),
+            "--context", "item_name=Test Feature",
+            "--context", "spec_path=" + str(repo_dir / "docs" / "features" / "feat-1"),
+            "--context", "sentinel_path=" + str(sentinel),
+            "--context", "resolution_kind=needs-input",
+            "--context", "item_id=feat-1",
+            "--context", "cwd=" + str(repo_dir),
+        ]
+
+        # 1. No recorded decision yet -> refuses naming --record-decision.
+        r0 = run(emit_args)
+        assert r0.returncode == 1, r0.stdout
+        out0 = json.loads(r0.stdout)
+        assert out0.get("dispatch_prompt") is None
+        assert "--record-decision" in out0.get("dispatch_prompt_refused", ""), out0
+
+        # 2. Record the decision.
+        r_rec = run([
+            "--record-decision",
+            "--sentinel", str(sentinel),
+            "--chosen", "Option A — use the recommended default",
+            "--summary", "operator picked the recommended default at the prompt",
+        ])
+        assert r_rec.returncode == 0, r_rec.stdout + r_rec.stderr
+        rec_out = json.loads(r_rec.stdout)
+        assert rec_out["chosen_path"] == "Option A — use the recommended default"
+
+        # 3. The SAME emit now succeeds, embedding the recorded answer
+        # verbatim — the orchestrator never had to type chosen_path/
+        # resolution_summary as --context args at all.
+        r1 = run(emit_args)
+        assert r1.returncode == 0, r1.stdout + r1.stderr
+        out1 = json.loads(r1.stdout)
+        prompt = out1.get("dispatch_prompt") or ""
+        assert "Option A — use the recommended default" in prompt, prompt
+        assert "operator picked the recommended default at the prompt" in prompt, prompt
+
+
 def test_emit_dispatch_hardening_no_longer_acks():
     """Phase 8 WU-8.2: `--emit-dispatch hardening` no longer acks the deny
     ledger.  Subprocess: marked run + 1 unacked deny → emit hardening → the
@@ -13828,6 +14154,180 @@ def test_guard_allow_acks_on_hardening_class():
             assert decision == "allow", (
                 "an ack failure must NEVER change the allow output (fail-open)"
             )
+        finally:
+            _clear_state_dir()
+
+
+def test_guard_pins_model_on_fresh_allow():
+    """mechanize-prose-only-orchestrator-contracts (a) / D1-A: the fresh-
+    consumption ALLOW path corrects a mismatched or missing ``model:`` field
+    to the registry entry's script-selected tier (pin-by-rewrite), and is a
+    complete no-op (no updatedInput at all) both when the model already
+    matches and when the entry predates the ``model`` field (legacy
+    fail-open — never pin against an unknown tier)."""
+    _guard()
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+    import importlib
+    lazy_guard = importlib.import_module("lazy_guard")
+    import time as _time
+
+    def _hook_input(prompt, tool_use_id, model=None):
+        tool_input = {"prompt": prompt}
+        if model is not None:
+            tool_input["model"] = model
+        return json.dumps({
+            "tool_use_id": tool_use_id,
+            "tool_input": tool_input,
+        })
+
+    # --- mismatch: opus dispatched, haiku registered -> pinned to haiku ---
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td) / "state")
+        (Path(td) / "state").mkdir()
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            prompt = "cycle dispatch prompt — mismatch case"
+            lazy_core.register_emission(prompt, cls="cycle", model="haiku")
+            out = json.loads(lazy_guard.guard(
+                _hook_input(prompt, "tu-mismatch", model="opus")
+            ))
+            hso = out["hookSpecificOutput"]
+            assert hso["permissionDecision"] == "allow"
+            assert hso["updatedInput"]["model"] == "haiku", hso
+            assert "model pinned" in hso["permissionDecisionReason"]
+        finally:
+            _clear_state_dir()
+
+    # --- missing: no model in tool_input, sonnet registered -> pinned ---
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td) / "state")
+        (Path(td) / "state").mkdir()
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            prompt = "cycle dispatch prompt — missing case"
+            lazy_core.register_emission(prompt, cls="cycle", model="sonnet")
+            out = json.loads(lazy_guard.guard(
+                _hook_input(prompt, "tu-missing")
+            ))
+            hso = out["hookSpecificOutput"]
+            assert hso["permissionDecision"] == "allow"
+            assert hso["updatedInput"]["model"] == "sonnet", hso
+        finally:
+            _clear_state_dir()
+
+    # --- already correct: no updatedInput needed ---
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td) / "state")
+        (Path(td) / "state").mkdir()
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            prompt = "cycle dispatch prompt — already correct"
+            lazy_core.register_emission(prompt, cls="cycle", model="opus")
+            out = json.loads(lazy_guard.guard(
+                _hook_input(prompt, "tu-correct", model="opus")
+            ))
+            hso = out["hookSpecificOutput"]
+            assert hso["permissionDecision"] == "allow"
+            assert "updatedInput" not in hso, (
+                "no correction needed -> no updatedInput key at all"
+            )
+        finally:
+            _clear_state_dir()
+
+    # --- legacy entry (no model field) -> fail-open, no pin, no error ---
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td) / "state")
+        (Path(td) / "state").mkdir()
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            prompt = "cycle dispatch prompt — legacy entry"
+            # Register directly via register_emission with model=None (the
+            # legacy/pre-migration shape) to simulate an un-migrated entry.
+            lazy_core.register_emission(prompt, cls="cycle", model=None)
+            out = json.loads(lazy_guard.guard(
+                _hook_input(prompt, "tu-legacy", model="opus")
+            ))
+            hso = out["hookSpecificOutput"]
+            assert hso["permissionDecision"] == "allow"
+            assert "updatedInput" not in hso, (
+                "a legacy entry with no model field must never be pinned"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_guard_pins_model_on_by_reference_and_auto_readmit_allows():
+    """mechanize-prose-only-orchestrator-contracts (a) / D1-A: the F2a
+    by-reference ALLOW (which already returns updatedInput for the resolved
+    prompt) ALSO corrects model in the SAME updatedInput; the F1b
+    auto-readmit ALLOW (a pure trailing-suffix superset of a fresh cycle
+    entry) gains updatedInput for the FIRST time, carrying only the
+    corrected model (the dispatched — suffixed — prompt text is unchanged)."""
+    _guard()
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+    import importlib
+    lazy_guard = importlib.import_module("lazy_guard")
+    import time as _time
+
+    # --- by-reference (@@lazy-ref) ---
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td) / "state")
+        (Path(td) / "state").mkdir()
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            prompt = "cycle dispatch prompt — by-ref case"
+            entry = lazy_core.register_emission(prompt, cls="cycle", model="haiku")
+            ref = f"@@lazy-ref nonce={entry['nonce']}"
+            hook_input = json.dumps({
+                "tool_use_id": "tu-ref",
+                "tool_input": {"prompt": ref, "model": "opus"},
+            })
+            out = json.loads(lazy_guard.guard(hook_input))
+            hso = out["hookSpecificOutput"]
+            assert hso["permissionDecision"] == "allow"
+            assert hso["updatedInput"]["prompt"] == prompt
+            assert hso["updatedInput"]["model"] == "haiku", hso
+        finally:
+            _clear_state_dir()
+
+    # --- auto-readmit (F1b pure trailing-suffix superset) ---
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td) / "state")
+        (Path(td) / "state").mkdir()
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            base_prompt = "cycle dispatch prompt — auto-readmit base"
+            lazy_core.register_emission(base_prompt, cls="cycle", model="sonnet")
+            suffixed = base_prompt + "\n\nOrchestrator note: proceeding."
+            hook_input = json.dumps({
+                "tool_use_id": "tu-readmit",
+                "tool_input": {"prompt": suffixed, "model": "opus"},
+            })
+            out = json.loads(lazy_guard.guard(hook_input))
+            hso = out["hookSpecificOutput"]
+            assert hso["permissionDecision"] == "allow", out
+            assert "auto-readmit" in hso["permissionDecisionReason"]
+            assert hso["updatedInput"]["model"] == "sonnet", hso
+            # The dispatched (suffixed) prompt text itself is unchanged.
+            assert hso["updatedInput"]["prompt"] == suffixed
         finally:
             _clear_state_dir()
 
@@ -18349,6 +18849,21 @@ _TESTS = [
     ("test_emit_dispatch_hardening_no_longer_acks", test_emit_dispatch_hardening_no_longer_acks),
     ("test_guard_allow_acks_on_hardening_class", test_guard_allow_acks_on_hardening_class),
     ("test_phase8_mvb_chain", test_phase8_mvb_chain),
+    # mechanize-prose-only-orchestrator-contracts (a) — guard-side model pin
+    ("test_guard_pins_model_on_fresh_allow", test_guard_pins_model_on_fresh_allow),
+    ("test_guard_pins_model_on_by_reference_and_auto_readmit_allows",
+     test_guard_pins_model_on_by_reference_and_auto_readmit_allows),
+    # mechanize-prose-only-orchestrator-contracts (b) — audit obligation
+    ("test_probe_withholds_forward_route_on_audit_obligation",
+     test_probe_withholds_forward_route_on_audit_obligation),
+    ("test_audit_obligation_helpers_no_marker_and_non_audited_kind",
+     test_audit_obligation_helpers_no_marker_and_non_audited_kind),
+    # mechanize-prose-only-orchestrator-contracts (c) — decision write-back
+    ("test_record_decision_and_read_round_trip", test_record_decision_and_read_round_trip),
+    ("test_bind_decision_record_context_refuses_without_record_and_binds_when_present",
+     test_bind_decision_record_context_refuses_without_record_and_binds_when_present),
+    ("test_record_decision_cli_and_apply_resolution_binds_end_to_end",
+     test_record_decision_cli_and_apply_resolution_binds_end_to_end),
     # Phase 9 — bind-at-guard: inject never binds; guard binds on allow
     ("test_inject_unbound_marker_is_silent_noop", test_inject_unbound_marker_is_silent_noop),
     ("test_inject_bound_owner_still_produces_banner", test_inject_bound_owner_still_produces_banner),
@@ -34646,6 +35161,131 @@ def test_notify_halt_fail_open_breadcrumb_and_retry():
             _clear_state_dir()
 
 
+def test_notify_event_inert_without_config():
+    """mechanize-prose-only-orchestrator-contracts (d): notify_event is a
+    COMPLETE no-op — sender never invoked, zero writes — without config."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        home = td_path / "home"
+        (home / ".claude").mkdir(parents=True)
+        saved = _notify_push_env(HOME=str(home), USERPROFILE=str(home),
+                                 LAZY_NOTIFY_URL=None, LAZY_NOTIFY_DISABLE=None)
+        try:
+            calls: list = []
+            lazy_core.notify_event(
+                "park", "feat-x parked", str(td_path), item_id="feat-x",
+                sender=lambda t, b, l: calls.append((t, b, l)),
+            )
+            assert calls == []
+            assert list(state_dir.iterdir()) == []
+        finally:
+            _notify_pop_env(saved)
+            _clear_state_dir()
+
+
+def test_notify_event_dedup_exactly_once_and_distinguishes_events():
+    """D — exactly-once dedup: the SAME (kind, pipeline, item_id, detail)
+    observed repeatedly pages only ONCE; a DIFFERENT item (or different
+    detail) is a distinct identity and pages again."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        home = td_path / "home"
+        (home / ".claude").mkdir(parents=True)
+        saved = _notify_push_env(HOME=str(home), USERPROFILE=str(home),
+                                 LAZY_NOTIFY_URL="https://ntfy.sh/t",
+                                 LAZY_NOTIFY_DISABLE=None)
+        try:
+            calls: list = []
+            def _sender(t, b, l):
+                calls.append((t, b, l))
+
+            # First observation of feat-x parked -> sends.
+            lazy_core.notify_event(
+                "park", "feat-x parked", str(td_path),
+                item_id="feat-x", detail="unresolved NEEDS_INPUT.md",
+                sender=_sender,
+            )
+            assert len(calls) == 1
+
+            # SAME event re-observed (e.g. re-probing the same still-parked
+            # feature next cycle) -> no second page.
+            lazy_core.notify_event(
+                "park", "feat-x parked", str(td_path),
+                item_id="feat-x", detail="unresolved NEEDS_INPUT.md",
+                sender=_sender,
+            )
+            assert len(calls) == 1, "repeated observation of the SAME event must dedup"
+
+            # A DIFFERENT item parking -> distinct identity, pages again.
+            lazy_core.notify_event(
+                "park", "feat-y parked", str(td_path),
+                item_id="feat-y", detail="unresolved NEEDS_INPUT.md",
+                sender=_sender,
+            )
+            assert len(calls) == 2
+
+            # SAME item, DIFFERENT kind (budget trip vs park) -> distinct too.
+            lazy_core.notify_event(
+                "budget-trip", "feat-x budget deferred", str(td_path),
+                item_id="feat-x", detail="ceiling=5",
+                sender=_sender,
+            )
+            assert len(calls) == 3
+            assert len(lazy_core._load_notify_ledger()) == 3
+        finally:
+            _notify_pop_env(saved)
+            _clear_state_dir()
+
+
+def test_notify_event_fail_open_on_send_error():
+    """D9 (shared with notify_halt): a raising sender never propagates and
+    is never ledgered (so the next observation retries); a breadcrumb is
+    written."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        home = td_path / "home"
+        (home / ".claude").mkdir(parents=True)
+        saved = _notify_push_env(HOME=str(home), USERPROFILE=str(home),
+                                 LAZY_NOTIFY_URL="https://ntfy.sh/t",
+                                 LAZY_NOTIFY_DISABLE=None)
+        try:
+            def _boom(t, b, l):
+                raise OSError("connection refused")
+
+            lazy_core.notify_event(
+                "flush", "run flush", str(td_path), item_id=None,
+                sender=_boom,
+            )  # must NOT raise
+            crumb = state_dir / "notify-error.json"
+            assert crumb.exists()
+            assert lazy_core._load_notify_ledger() == {}, (
+                "failed send must NOT be ledgered (retry on next observation)"
+            )
+
+            calls: list = []
+            lazy_core.notify_event(
+                "flush", "run flush", str(td_path), item_id=None,
+                sender=lambda t, b, l: calls.append(t),
+            )
+            assert len(calls) == 1
+            assert len(lazy_core._load_notify_ledger()) == 1
+        finally:
+            _notify_pop_env(saved)
+            _clear_state_dir()
+
+
 def test_notify_ntfy_send_headers_and_rfc2047():
     """D1: the ntfy sender is one urllib POST — body = message, Title/Click
     headers, timeout=5. Non-latin-1 titles (em-dashes are routine in
@@ -34717,6 +35357,11 @@ _TESTS = _TESTS + [
      test_notify_halt_dedup_and_identity_refresh),
     ("test_notify_halt_fail_open_breadcrumb_and_retry",
      test_notify_halt_fail_open_breadcrumb_and_retry),
+    # mechanize-prose-only-orchestrator-contracts (d) — notify_event
+    ("test_notify_event_inert_without_config", test_notify_event_inert_without_config),
+    ("test_notify_event_dedup_exactly_once_and_distinguishes_events",
+     test_notify_event_dedup_exactly_once_and_distinguishes_events),
+    ("test_notify_event_fail_open_on_send_error", test_notify_event_fail_open_on_send_error),
     ("test_notify_ntfy_send_headers_and_rfc2047",
      test_notify_ntfy_send_headers_and_rfc2047),
 ]

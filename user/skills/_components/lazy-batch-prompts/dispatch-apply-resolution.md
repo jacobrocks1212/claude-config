@@ -6,8 +6,19 @@
      (__provisional_accept__ propagation — park-provisional-acceptance; NEVER neutralizes),
      and resolution_kind="ratify-redirect" (provisional-ratification redirect — propagates
      the changed choice, authors the decision_commit-scoped corrective phase, neutralizes).
-     The orchestrator sets resolution_kind and chosen_path from probe output + user answer
-     before calling emit_dispatch_prompt.
+     The orchestrator sets resolution_kind from probe output before calling
+     emit_dispatch_prompt. chosen_path / resolution_summary are BOUND FROM THE
+     RECORDED DECISION (mechanize-prose-only-orchestrator-contracts (c) —
+     lazy_core.bind_decision_record_context), not typed as --context args: run
+     `lazy-state.py --record-decision --sentinel <sentinel_path> --chosen
+     "<answer>" [--summary "<text>"]` FIRST (right after the operator answers
+     AskUserQuestion), THEN call --emit-dispatch apply-resolution with
+     sentinel_path in context — the emit reads chosen_path/resolution_summary
+     from the record and REFUSES (naming the exact --record-decision command)
+     if no record exists yet. This closes the hand-carry-across-compaction
+     failure mode ("Why was the plan not updated after my decision?" /
+     "My answers didn't go through") — the answer is on disk before the
+     worker is ever dispatched.
      TOKENS: standard pipeline tokens + @requires keys above. -->
 
 <!-- @section role pipelines=feature,bug modes=workstation,cloud -->

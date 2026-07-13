@@ -385,7 +385,9 @@ Print final batch report, STOP.
 
 ### 1c.6. PushNotification policy (park / halt / flush / run-end)
 
-The orchestrator fires `PushNotification` at exactly four canonical event points so the operator receives a phone notification whenever the run changes state. `PushNotification` is always called by the **orchestrator** — state scripts never call it.
+The orchestrator fires `PushNotification` at exactly four canonical event points so the operator receives a phone notification whenever the run changes state. `PushNotification` is always called by the **orchestrator** — state scripts never call it (halt/run-end excepted; script-fired).
+
+**Also script-fired (d).** `notify_event(...)` fires park/budget-trip/flush/provisional-accept too — a harmless backstop, not the sole mechanism.
 
 1. **park** (`--park` mode only) — fired once per newly-parked item when `park_mode == true` and the probe returns a non-empty `parked[]` array (the script's queue-walk park skip; `parked[]` arrives on ordinary Step 1a probes and lists ALL currently-parked items, not just new ones). **Dedup rule:** maintain an in-session set of already-notified parked ids; on each probe, fire only for ids in `parked[]` that are NOT yet in the set, then add them. Never re-fire for an id already in the set. (After a compaction boundary the set may be lost — one duplicate notification per item after a compact is acceptable; re-seed the set from the current `parked[]` on the first post-compact probe without firing.) **Wording branches on the entry's `sentinel_kind` (identical to `/lazy-batch` §1c.6 item 1):** a **needs-input** park fires `"parked {feature_name} — {N} decision(s) parked so far this run"` (T5 chat line `⏸ parked {feature_name} — {N} decision(s) · notified ({parked_count} parked this run)`); a **blocked** park (`sentinel_kind == "blocked"`, `decision_count == 0`) fires `"parked {feature_name} — BLOCKED ({phase}); deferred to flush ({parked_count} parked this run)"` (T5 chat line `⏸ parked {feature_name} — BLOCKED ({phase}) · notified ({parked_count} parked this run)`, `{phase}` from the parked entry / `BLOCKED.md` frontmatter). Both branches share the SAME dedup set (fire once per newly-parked id; never re-fire; re-seed silently after a compaction boundary).
 2. **halt** (both modes) — fired on every terminal/halt: `NEEDS_INPUT` halt, `BLOCKED` halt-for-manual, `needs-research` strict halt, `queue-blocked-on-research`, `cloud-queue-exhausted`, `device-queue-exhausted`, `host-capability-saturated`, `queue-missing`, `all-features-complete`, `queue-exhausted-all-parked` (`--park` mode — after the flush), `queue-exhausted-budget-deferred` (budget-guard — all items deferred to queue tail), `max-cycles`, script-error, and any future obstacle terminal. Most of these already carry per-terminal `PushNotification` calls above — this point names the policy explicitly so no terminal can be added without a notification. **MANDATORY: run `python3 ~/.claude/scripts/lazy-state.py --run-end` on EVERY terminal/halt path, BEFORE firing the PushNotification.** `--run-end` deletes the run marker AND the prompt registry. Missed deletion is self-healing (24h staleness + session-id mismatch on re-run) but is a protocol violation the retro grades. **Telemetry-segment commit (harness-telemetry-ledger D5-B, cloud-only):** on a cloud run, `--run-end` also flushes the run's telemetry-ledger segment to `docs/telemetry/cloud/<run_id colon-stripped>.jsonl` (script-owned, fail-open) and surfaces `telemetry_flushed: {path, events}` in its JSON. When that key is present, the orchestrator MUST `git add docs/telemetry/cloud/ && git commit -m "docs(telemetry): flush cloud run telemetry segment" && git push` (work-branch push rules unchanged) BEFORE the PushNotification, so the segment survives container reclaim — otherwise the run's telemetry dies with the container and the workstation trends aggregator never sees it. Key absent (no events / flush failed) → nothing to commit, proceed normally.
@@ -504,7 +506,8 @@ python3 ~/.claude/scripts/lazy-state.py --cloud --cycle-end
 
 **F2a dispatch-by-reference (PREFERRED when available, mirrored from `/lazy-batch` Step 1d).** When the probe emits `cycle_prompt_ref` (a `@@lazy-ref nonce=<hex>` token), use it as the `prompt:` field instead of the full `cycle_prompt` text. The PreToolUse guard resolves the token → registered bytes and rewrites the tool input before the subagent runs. Fall back to `cycle_prompt` verbatim ONLY when `cycle_prompt_ref` is absent or null.
 
-**Model selection — script-owned (mirrored with `/lazy-batch`).** Copy `cycle_model` from the `--cloud … --emit-prompt` probe verbatim into the `model:` field (never omit it). The script picks `"sonnet"` only when it appended the loop block (persisted `repeat_count >= 2` — the loop-resolution cycle is mechanical, the cloud `cycle_prompt` already carries the diagnosis); otherwise `"opus"`. The orchestrator never computes or overrides this.
+**Model selection — script-owned, guard-pinned (a).** Copy `cycle_model` verbatim into `model:` (never omit it).
+The guard now also corrects a wrong/missing `model:` on ALLOW. `"sonnet"` only when the loop block was appended (`repeat_count >= 2`); else `"opus"`. Never orchestrator-computed.
 
 ### 1d.1. Denial recovery
 
@@ -661,7 +664,16 @@ The user can mix environments: drop `RESEARCH.md` directly from workstation, the
 
 `~/.claude/skills/_components/decision-resume.md`
 
-**Apply-resolution dispatch (MUST use `--emit-dispatch apply-resolution` — do not hand-compose):** When the shared handler instructs the orchestrator to dispatch the apply-resolution subagent:
+**Record the decision, then dispatch (c):**
+
+```bash
+python3 ~/.claude/scripts/lazy-state.py --record-decision \
+  --sentinel "{spec_path}/NEEDS_INPUT.md" \
+  --chosen "{chosen option}" \
+  --summary "{resolution summary}"
+```
+
+**Apply-resolution dispatch:** chosen_path/resolution_summary come from the record above:
 
 ```bash
 python3 ~/.claude/scripts/lazy-state.py \
@@ -669,9 +681,7 @@ python3 ~/.claude/scripts/lazy-state.py \
   --context item_name="{feature_name}" \
   --context spec_path="{spec_path}" \
   --context sentinel_path="{spec_path}/NEEDS_INPUT.md" \
-  --context resolution_summary="{one-line description of the chosen resolution}" \
   --context resolution_kind="needs-input" \
-  --context chosen_path="{the operator's chosen option label}" \
   --context item_id="{feature_id}" \
   --context cwd="{cwd}"
 ```
@@ -732,7 +742,16 @@ orchestrators):
 
 `~/.claude/skills/_components/blocked-resolution.md`
 
-**Apply-resolution dispatch (MUST use `--emit-dispatch apply-resolution` — do not hand-compose):** When the shared handler instructs the orchestrator to dispatch the apply-resolution subagent:
+**Record the decision, then dispatch (c):**
+
+```bash
+python3 ~/.claude/scripts/lazy-state.py --record-decision \
+  --sentinel "{spec_path}/BLOCKED.md" \
+  --chosen "{chosen option}" \
+  --summary "{resolution summary}"
+```
+
+**Apply-resolution dispatch:** chosen_path/resolution_summary come from the record above:
 
 ```bash
 python3 ~/.claude/scripts/lazy-state.py \
@@ -740,9 +759,7 @@ python3 ~/.claude/scripts/lazy-state.py \
   --context item_name="{feature_name}" \
   --context spec_path="{spec_path}" \
   --context sentinel_path="{spec_path}/BLOCKED.md" \
-  --context resolution_summary="{one-line description of the chosen resolution}" \
   --context resolution_kind="blocked" \
-  --context chosen_path="{the operator's chosen option label}" \
   --context item_id="{feature_id}" \
   --context cwd="{cwd}"
 ```

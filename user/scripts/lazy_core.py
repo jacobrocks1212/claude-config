@@ -13686,6 +13686,7 @@ def register_emission(
     cls: str,
     item_id: str | None = None,
     now: float | None = None,
+    model: str | None = None,
 ) -> dict:
     """Register a prompt emission in the prompt registry.
 
@@ -13707,6 +13708,13 @@ def register_emission(
       - class (str): dispatch class tag (e.g. "cycle", "recovery", "hardening")
       - item_id (str|None): the feature/bug id for context (optional)
       - consumed (bool): False until consume_nonce() is called
+      - model (str|None): the script-selected model tier for this dispatch
+        (mechanize-prose-only-orchestrator-contracts (a) — model-tier pinning).
+        Populated from the emitter's return value at every registration site;
+        the validate-deny guard's ALLOW paths correct the dispatched
+        ``model:`` field to this value when it differs (pin-by-rewrite).
+        None on a legacy/unrelated registration — the guard fails open (no
+        pin) rather than pinning against an unknown tier.
 
     Ring cap: when the registry would exceed ``_REGISTRY_RING_CAP`` (64) entries,
     the oldest entry (lowest index, earliest emitted_at) is evicted first.  This
@@ -13741,6 +13749,7 @@ def register_emission(
         "class": cls,
         "item_id": item_id,
         "consumed": False,
+        "model": model,
     }
 
     data = _load_registry()
@@ -14135,6 +14144,7 @@ def register_emission_if_marked(
     cls: str,
     item_id: str | None = None,
     now: float | None = None,
+    model: str | None = None,
 ) -> dict | None:
     """Register a prompt emission only when a valid run marker is present.
 
@@ -14164,7 +14174,7 @@ def register_emission_if_marked(
     marker = read_run_marker(now=now)
     if marker is None:
         return None
-    return register_emission(prompt, cls=cls, item_id=item_id, now=now)
+    return register_emission(prompt, cls=cls, item_id=item_id, now=now, model=model)
 
 
 # ---------------------------------------------------------------------------
@@ -15346,6 +15356,320 @@ def _consume_resolution_signal(repo_root: Path, step_sig: tuple) -> bool:
         return True
     except (OSError, ValueError, json.JSONDecodeError):
         return False
+
+
+# ---------------------------------------------------------------------------
+# mechanize-prose-only-orchestrator-contracts (b): post-cycle input-audit
+# obligation — the §1d.5 dispatch made unskippable.
+#
+# ROOT CAUSE: the input-audit dispatch (--emit-dispatch input-audit) has
+# existed as a registered, guard-safe emission class for a while, but WHETHER
+# the orchestrator runs it after a /spec or plan-feature cycle was pure
+# SKILL.md prose (§1d.5) — an orchestrator under autonomous load can skip the
+# step entirely with no mechanical consequence, which is exactly the failure
+# mode §1d.5 itself exists to catch for the CYCLE SUBAGENT's self-audit ("zero
+# NEEDS_INPUT.md sentinels fired from /spec's self-audit across ~75 observed
+# cycles"). This promotes the DISPATCH obligation itself to the same
+# script-enforced withhold the pending-hardening-debt precedent uses
+# (lazy-state.py ~13215: route_overridden_by == "pending-hardening-debt").
+#
+# Mechanism (marker-field pattern, mirroring last_advance_state_key /
+# last_resolution_step_key): --cycle-end records `audit_obligation:
+# {item_id, cycle_kind}` on the run marker when the ending cycle's sub_skill
+# is an audited kind (spec/plan-feature on the feature pipeline; spec-bug/
+# plan-bug on the bug pipeline). The NEXT --emit-prompt probe sees the
+# obligation and WITHHOLDS the forward cycle_prompt (byte-identical shape to
+# the hardening-debt withhold) until --emit-dispatch input-audit registers a
+# real dispatch under the SAME live marker, which discharges it.
+# ---------------------------------------------------------------------------
+
+# The sub_skill kinds whose cycle-end obligates a post-cycle input audit.
+# feature pipeline: spec, plan-feature (author SPEC/PHASES content).  bug
+# pipeline: spec-bug, spec-phases — per the EXISTING lazy-bug-batch/SKILL.md
+# Step 1d.5 skip-condition prose this mechanizes: "plan-bug is a planning
+# step, not a SPEC/PHASES-authoring cycle — skip audit for plan-bug" (D5:
+# a discovered ambiguity resolves in favor of existing prose semantics, not
+# a naive plan-feature/plan-bug pairing). spec-phases is carried for prose
+# fidelity even though bug-state.py's live routing never emits it today
+# (SKILL_SPEC_PHASES is an unused constant) — harmless if it never fires,
+# pre-covered if the bug pipeline ever starts emitting it. One shared set —
+# a sub_skill name never collides across pipelines within a single process
+# (only one state script's sub_skill vocabulary is live).
+AUDITED_CYCLE_KINDS: frozenset = frozenset({
+    "spec", "plan-feature", "spec-bug", "spec-phases",
+})
+
+
+def record_audit_obligation(item_id: str | None, cycle_kind: str | None) -> dict | None:
+    """Record the post-cycle input-audit obligation on the run marker (D2-A).
+
+    Called from --cycle-end immediately after a /spec or plan-feature (or the
+    bug-pipeline spec-bug/plan-bug) cycle ends. Marker-gated: returns None and
+    writes nothing when no run marker is present (mirrors
+    ``record_resolution_signal``). A falsy/non-audited ``cycle_kind`` is a
+    no-op (returns the marker UNCHANGED, no write) — only the four audited
+    kinds ever arm the obligation.
+
+    Overwrites any PRIOR obligation (there is at most one outstanding
+    obligation at a time — cycles are serial, and the withhold this powers
+    forces discharge before the next cycle can begin).
+
+    Args:
+        item_id: the feature/bug id the obligation is owed for.
+        cycle_kind: the sub_skill of the cycle that just ended.
+
+    Returns:
+        The updated marker dict; None when no marker is present.
+    """
+    marker = read_run_marker()
+    if marker is None:
+        return None
+    if cycle_kind not in AUDITED_CYCLE_KINDS:
+        return marker
+    marker["audit_obligation"] = {"item_id": item_id, "cycle_kind": cycle_kind}
+    marker_path = claude_state_dir() / _MARKER_FILENAME
+    _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+    return marker
+
+
+def pending_audit_obligation() -> dict | None:
+    """Read-only: the current run marker's outstanding audit_obligation, or
+    None (no marker / no obligation / legacy marker lacking the field).
+
+    Never raises, never writes. Used by the --emit-prompt withhold check and
+    by any read-only probe/status surface that wants to display it.
+    """
+    marker = read_run_marker()
+    if marker is None:
+        return None
+    obligation = marker.get("audit_obligation")
+    return obligation if isinstance(obligation, dict) else None
+
+
+def discharge_audit_obligation() -> bool:
+    """Clear the run marker's audit_obligation (D2-A discharge).
+
+    Called at the --emit-dispatch input-audit success site, AFTER the
+    dispatch is registered under a live marker (register_emission_if_marked
+    returned a non-None entry) — the same transaction the SPEC calls out
+    ("discharged by the --emit-dispatch input-audit registration itself").
+
+    Returns True iff a marker was present and carried a (now-cleared)
+    obligation; False on a no-op (no marker, or no obligation to clear) —
+    never raises.
+    """
+    marker = read_run_marker()
+    if marker is None:
+        return False
+    if "audit_obligation" not in marker:
+        return False
+    marker.pop("audit_obligation", None)
+    marker_path = claude_state_dir() / _MARKER_FILENAME
+    _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+    return True
+
+
+def build_input_audit_emit_command(
+    state_script_name: str,
+    *,
+    item_id: str,
+    item_name: str,
+    spec_path: str,
+    cycle_kind: str,
+    cwd: str,
+) -> str:
+    """Pre-compose the single-line shell command that discharges the D2-A
+    audit obligation (mirrors ``build_hardening_emit_command``'s shape for
+    the pending-hardening-debt withhold).
+
+    ``cycle_summary`` and ``cycle_commit_sha`` are NOT script-derivable
+    narrative fields per se, but a mechanical proxy is available and used so
+    the command is genuinely ready-to-run (never a hand-fill placeholder):
+    ``cycle_commit_sha`` defaults to the SKILL.md-sanctioned fallback
+    ``"HEAD~1"``; ``cycle_summary`` defaults to the subject line of the most
+    recent commit at ``cwd`` (``git log -1 --format=%s``) when resolvable,
+    else an empty string (never fabricated prose).
+
+    Returns:
+        A single shell command string, safe to paste into bash.
+    """
+    def _ctx(key: str, value: str) -> str:
+        return f"--context {key}={shlex.quote(value)}"
+
+    cycle_summary = ""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(cwd), "log", "-1", "--format=%s"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode == 0:
+            cycle_summary = proc.stdout.strip()
+    except Exception:  # noqa: BLE001 — best-effort proxy, never fatal
+        pass
+
+    parts = [
+        f"python3 ~/.claude/scripts/{state_script_name}",
+        "--emit-dispatch input-audit",
+        _ctx("item_name", item_name or ""),
+        _ctx("spec_path", spec_path or ""),
+        _ctx("cycle_kind", cycle_kind or ""),
+        _ctx("cycle_summary", cycle_summary),
+        _ctx("cycle_commit_sha", "HEAD~1"),
+        _ctx("item_id", item_id or ""),
+        _ctx("cwd", cwd or ""),
+    ]
+    return " ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# mechanize-prose-only-orchestrator-contracts (c): decision write-back.
+#
+# Mid-run AskUserQuestion answers previously evaporated between the answer
+# and the apply-resolution dispatch — the orchestrator hand-typed
+# chosen_path/resolution_summary into the --emit-dispatch apply-resolution
+# --context args from probe output + the operator's spoken answer, a
+# hand-carry across a compaction-prone context (SPEC field evidence: "Why
+# was the plan not updated after my decision?" / "My answers didn't go
+# through").
+#
+# --record-decision writes an atomic, on-disk record keyed to the sentinel
+# path; --emit-dispatch apply-resolution then READS chosen_path /
+# resolution_summary from the record instead of accepting them as
+# orchestrator-typed context — absent a record it refuses, naming the exact
+# --record-decision command to run.  The record lives in a SIBLING state-dir
+# file (lazy-decisions.json), NOT the run marker — deliberately: it must
+# survive --run-end (which deletes the marker + registry) so the
+# answered-decisions ledger outlives the run for retro evidence (SPEC Open
+# Question 2, resolved toward the sibling-file option).
+# ---------------------------------------------------------------------------
+
+_DECISIONS_FILENAME = "lazy-decisions.json"
+
+
+def _normalize_sentinel_key(sentinel_path: str | Path) -> str:
+    """Normalize a sentinel path into a stable dict key (D3-A).
+
+    Uses os.path.normpath + forward slashes so the SAME sentinel recorded
+    and looked up via slightly different path spellings (relative vs
+    absolute, backslash vs forward slash) still round-trips. Does NOT
+    require the file to exist (recording happens against a real, existing
+    sentinel in practice, but the key derivation itself is pure string
+    normalization — no filesystem I/O, no resolve()).
+    """
+    return os.path.normpath(str(sentinel_path)).replace("\\", "/")
+
+
+def _load_decisions() -> dict:
+    """Read lazy-decisions.json entries ({sentinel_key: record}).
+
+    Read-only (create=False — a lookup must never create the state dir).
+    Corrupt/absent ⇒ {} (fail-open, mirroring _load_notify_ledger).
+    """
+    try:
+        path = claude_state_dir(create=False) / _DECISIONS_FILENAME
+        data = json.loads(path.read_text(encoding="utf-8"))
+        entries = data.get("entries") if isinstance(data, dict) else None
+        return entries if isinstance(entries, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def record_decision(
+    sentinel_path: str | Path,
+    chosen: str,
+    *,
+    summary: str | None = None,
+    now: float | None = None,
+) -> dict:
+    """Write an atomic decision record keyed to ``sentinel_path`` (D3-A).
+
+    Overwrites any PRIOR record for the SAME sentinel (a re-recorded answer
+    supersedes — the orchestrator re-running --record-decision after a
+    correction is the sanctioned override path, not a second record).
+
+    NOT marker-gated — a decision can be recorded even between runs (a
+    resumed session answering a question from a prior, now-ended run), and
+    the record is deliberately independent of run-marker lifecycle (it must
+    survive --run-end).
+
+    Returns:
+        The written record dict.
+    """
+    ts = time.time() if now is None else float(now)
+    key = _normalize_sentinel_key(sentinel_path)
+    record = {
+        "sentinel_path": str(sentinel_path),
+        "chosen_path": chosen,
+        "resolution_summary": summary or "",
+        "recorded_at": ts,
+    }
+    entries = _load_decisions()
+    entries[key] = record
+    payload = {"v": 1, "entries": entries}
+    _atomic_write(
+        claude_state_dir() / _DECISIONS_FILENAME,
+        json.dumps(payload, indent=2) + "\n",
+    )
+    return record
+
+
+def read_decision_record(sentinel_path: str | Path) -> dict | None:
+    """Read-only lookup of the decision record for ``sentinel_path``, or None
+    when no record has been written for it. Never raises."""
+    key = _normalize_sentinel_key(sentinel_path)
+    entries = _load_decisions()
+    record = entries.get(key)
+    return record if isinstance(record, dict) else None
+
+
+def bind_decision_record_context(
+    cls: str, context: dict, state_script_name: str
+) -> dict:
+    """D3-A binding seam: for ``cls == "apply-resolution"`` with a
+    ``sentinel_path`` in context, REPLACE ``chosen_path`` /
+    ``resolution_summary`` with the values from the recorded decision
+    (the record is authoritative — any orchestrator-typed values for those
+    two keys are overridden, closing the hand-carry failure mode).
+
+    Every other class, and an apply-resolution context with NO
+    ``sentinel_path`` key at all, passes through UNCHANGED — the existing
+    ``@requires`` refusal in ``emit_dispatch_prompt`` handles a missing
+    ``sentinel_path`` exactly as before (this seam only engages once a
+    sentinel is named).
+
+    Raises:
+        ValueError: when ``cls == "apply-resolution"``, ``sentinel_path`` is
+            present, but NO decision record exists for it — the message
+            names the exact ``--record-decision`` command to run. The
+            existing ``--emit-dispatch`` handler's catch-all already formats
+            any raised exception into the structured JSON refusal
+            (``dispatch_prompt_refused``, exit 1), so this composes with zero
+            new error-handling paths.
+
+    Returns:
+        The (possibly updated) context dict.
+    """
+    if cls != "apply-resolution":
+        return context
+    sentinel_path = context.get("sentinel_path")
+    if not sentinel_path:
+        return context
+    record = read_decision_record(sentinel_path)
+    if record is None:
+        cmd = (
+            f"python3 ~/.claude/scripts/{state_script_name} --record-decision "
+            f"--sentinel {shlex.quote(str(sentinel_path))} "
+            f'--chosen "<chosen option label(s)>" '
+            f'--summary "<optional resolution summary>"'
+        )
+        raise ValueError(
+            "no recorded decision for sentinel "
+            f"{sentinel_path!r} — record the operator's answer first: {cmd}"
+        )
+    context = dict(context)
+    context["chosen_path"] = record.get("chosen_path", "")
+    context["resolution_summary"] = record.get("resolution_summary", "")
+    return context
 
 
 # ---------------------------------------------------------------------------
@@ -19589,6 +19913,105 @@ def notify_halt(state: dict, repo_root: str, *, pipeline: str = "feature",
                 "(recorded in notify-ledger.json)"
             )
     except Exception as exc:  # noqa: BLE001 — D9: nothing may propagate
+        try:
+            _write_notify_error(
+                f"internal error: {exc.__class__.__name__}: {exc}",
+                identity, now=now,
+            )
+        except Exception:  # noqa: BLE001 — even the breadcrumb is best-effort
+            pass
+
+
+def notify_event(
+    kind: str,
+    message: str,
+    repo_root: str,
+    *,
+    pipeline: str = "feature",
+    item_id: str | None = None,
+    detail: str | None = None,
+    sender=None,
+    now: float | None = None,
+) -> None:
+    """mechanize-prose-only-orchestrator-contracts (d) / D4-A: generalize the
+    ``notify_halt`` seam to non-halt event points — parks, budget-guard
+    trip/extension, the run-end flush, and provisional-accepts (SPEC §1c.6
+    points that previously paged only when the ORCHESTRATOR remembered to
+    call ``PushNotification``).
+
+    Unlike ``notify_halt`` (which observes ``state["terminal_reason"]`` at
+    the ONE terminal-emission chokepoint every halt passes through),
+    ``notify_event`` is called INLINE at the exact state-transition site that
+    OBSERVES a park / budget-guard / flush / provisional-accept event — so
+    the page can no longer be forgotten by orchestrator prose. It reuses
+    every piece of ``notify_halt``'s infrastructure (config, ledger, error
+    breadcrumb, ntfy sender) — one notifier, two call shapes.
+
+    Dedup identity is CONTENT-based: ``event|{kind}|{pipeline}|{item_id}|
+    {detail}`` — no timestamp component, so a REPEATED observation of the
+    SAME event (e.g. re-probing a still-parked feature on every subsequent
+    cycle) never double-pages; a genuinely NEW event (a different item, or
+    the same item with different detail) gets its own identity and pages
+    once. This mirrors notify_halt's D4 dedup precedent without needing a
+    sentinel-mtime or day-bucket fallback (there is no sentinel to key on for
+    a park/budget/flush event in general).
+
+    Fail-OPEN, same absolute contract as notify_halt: never raises, never
+    prints to stdout, never changes any caller's return value or exit code,
+    and is a COMPLETE no-op (zero writes) without ``~/.claude/notify.json`` /
+    ``LAZY_NOTIFY_URL`` configured.
+
+    Args:
+        kind: the event kind tag (e.g. "park", "budget-trip",
+            "budget-extension", "flush", "provisional-accept") — becomes
+            part of the dedup identity and the notification body.
+        message: the notification TITLE (event-specific, caller-composed).
+        repo_root: the repo this event occurred in (for the body/link).
+        pipeline: "feature" or "bug".
+        item_id: the feature/bug id this event concerns, if any.
+        detail: optional extra body text (e.g. a park reason, a budget
+            ceiling, a flush summary line).
+        sender: injected ``sender(title, body, link)`` seam (tests inject a
+            fake; production binds ``_ntfy_send`` to the configured topic).
+        now: epoch float (injectable for hermetic tests).
+    """
+    identity: str | None = None
+    try:
+        config = _load_notify_config()
+        if config is None:
+            return  # D7 precedent: absent config ⇒ the feature does not exist.
+        identity = f"event|{kind}|{pipeline}|{item_id or ''}|{detail or ''}"
+        if identity in _load_notify_ledger():
+            return  # exactly-once per distinct event
+        try:
+            repo_name = Path(repo_root).name or str(repo_root)
+        except Exception:  # noqa: BLE001
+            repo_name = str(repo_root)
+        title = message
+        body_lines = [f"{repo_name} · {pipeline} · {item_id or '(no item)'} · {kind}"]
+        if detail:
+            body_lines.append(detail)
+        body = "\n".join(body_lines)
+        link = _github_remote_url(repo_root)
+        if sender is None:
+            url = config["url"]
+            def sender(t, b, l, _url=url):  # noqa: E731 — production binding
+                _ntfy_send(_url, t, b, l)
+        try:
+            sender(title, body, link)
+        except Exception as send_exc:  # noqa: BLE001 — fail-OPEN
+            _write_notify_error(
+                f"{send_exc.__class__.__name__}: {send_exc}", identity, now=now,
+            )
+            return
+        # Reuse the ONE ledger schema/writer notify_halt uses — a synthetic
+        # state dict carries this event's identity fields into the same
+        # notify-ledger.json (terminal_reason repurposed to hold `kind`).
+        _record_notify_send(
+            identity, {"feature_id": item_id, "terminal_reason": kind},
+            pipeline, now=now,
+        )
+    except Exception as exc:  # noqa: BLE001 — nothing may propagate
         try:
             _write_notify_error(
                 f"internal error: {exc.__class__.__name__}: {exc}",

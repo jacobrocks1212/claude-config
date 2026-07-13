@@ -1025,6 +1025,10 @@ def compute_state(
                     ),
                 )
             _PARKED.append(lazy_core.build_parked_entry(bug_id, spec_dir / "BLOCKED.md"))
+            lazy_core.notify_event(
+                "park", f"{bug_name} parked (BLOCKED.md)", str(repo_root),
+                pipeline="bug", item_id=bug_id, detail="bug-local BLOCKED.md",
+            )
             _diag(
                 f"parked: {bug_name} — bug-local BLOCKED.md; skipped (park mode). "
                 "Re-enters when resolved."
@@ -1057,6 +1061,11 @@ def compute_state(
                         ),
                     )
                 _PARKED.append(lazy_core.build_parked_entry(bug_id, _stray))
+                lazy_core.notify_event(
+                    "park", f"{bug_name} parked (mis-named blocker)", str(repo_root),
+                    pipeline="bug", item_id=bug_id,
+                    detail=f"stray blocker: {_stray.name}",
+                )
                 _diag(
                     f"parked: {bug_name} — bug-local mis-named blocker "
                     f"'{_stray.name}'; skipped (park mode). Re-enters when "
@@ -1114,6 +1123,10 @@ def compute_state(
                     ),
                 )
             _PARKED.append(lazy_core.build_parked_entry(bug_id, spec_dir / "NEEDS_INPUT.md"))
+            lazy_core.notify_event(
+                "park", f"{bug_name} parked (NEEDS_INPUT.md)", str(repo_root),
+                pipeline="bug", item_id=bug_id, detail="unresolved NEEDS_INPUT.md",
+            )
             _diag(
                 f"parked: {bug_name} — unresolved NEEDS_INPUT.md; skipped (park mode). "
                 "Re-enters when resolved."
@@ -1148,6 +1161,11 @@ def compute_state(
                         ),
                     )
                 _PARKED.append(_prov_entry)
+                lazy_core.notify_event(
+                    "park", f"{bug_name} parked (unratified provisional)",
+                    str(repo_root), pipeline="bug", item_id=bug_id,
+                    detail="validated but awaiting ratification — parks at completion",
+                )
                 _diag(
                     f"parked: {bug_name} — validated but awaiting ratification "
                     f"of {lazy_core.PROVISIONAL_SENTINEL}; __mark_fixed__ "
@@ -7301,6 +7319,26 @@ def build_parser() -> argparse.ArgumentParser:
               "--deps."),
     )
     parser.add_argument(
+        "--record-decision", action="store_true",
+        help=("mechanize-prose-only-orchestrator-contracts (c) — coupled-pair "
+              "mirror of lazy-state.py: record a mid-run AskUserQuestion "
+              "answer to an on-disk decision record keyed by --sentinel. "
+              "Requires --sentinel and --chosen; --summary optional. "
+              "Orchestrator-only (refuse_if_cycle_active FIRST)."),
+    )
+    parser.add_argument(
+        "--sentinel", default=None, metavar="PATH",
+        help="With --record-decision: the sentinel file path this answer resolves.",
+    )
+    parser.add_argument(
+        "--chosen", default=None, metavar="TEXT",
+        help="With --record-decision: the chosen option label(s).",
+    )
+    parser.add_argument(
+        "--summary", default=None, metavar="TEXT",
+        help="With --record-decision: optional resolution summary text.",
+    )
+    parser.add_argument(
         "--sync-deps", dest="sync_deps", action="store_true",
         help=("queue-dependency-dag D5 (orchestrator-only): project the bug "
               "SPEC **Depends on:** block's HARD deps into the "
@@ -7932,6 +7970,14 @@ def main() -> int:
         # harness-telemetry-ledger Phase 2 — coupled-pair mirror: capture the
         # cycle identity BEFORE the clear (read-only) for the cycle-end event.
         _tl_cycle = lazy_core.read_cycle_marker()
+        # mechanize-prose-only-orchestrator-contracts (b) / D2-A — coupled-pair
+        # mirror of lazy-state.py: arm the post-cycle input-audit obligation
+        # when the ending cycle was spec-bug or plan-bug.
+        if _tl_cycle is not None:
+            lazy_core.record_audit_obligation(
+                item_id=_tl_cycle.get("feature_id"),
+                cycle_kind=_tl_cycle.get("sub_skill"),
+            )
         friction = lazy_core.cycle_end_friction_check(repo_root=Path(args.repo_root))
         # code-doc-provenance-linkage Phase 1 (D4-A) — coupled-pair mirror:
         # record this cycle's commit bracket (marker begin_head_sha → current
@@ -8227,6 +8273,19 @@ def main() -> int:
             Path(args.repo_root)
         )
 
+        # mechanize-prose-only-orchestrator-contracts (d) — coupled-pair
+        # mirror of lazy-state.py: script-fired flush notification, read
+        # BEFORE the marker is deleted.
+        _flush_marker = lazy_core.read_run_marker()
+        if _flush_marker is not None:
+            lazy_core.notify_event(
+                "flush", f"run flushed ({reason})", str(args.repo_root),
+                pipeline="bug", item_id=_flush_marker.get("started_at"),
+                detail=(
+                    f"forward={_flush_marker.get('forward_cycles')} "
+                    f"meta={_flush_marker.get('meta_cycles')} reason={reason}"
+                ),
+            )
         # Delete the marker AND the registry (both are run-scoped state).
         deleted = lazy_core.delete_run_marker(clear_registry=True)
         # efficacy-future-check-unenforced-orchestrator-prose (D1, coupled-pair
@@ -8276,6 +8335,14 @@ def main() -> int:
         if cls == "hardening":
             context = lazy_core.normalize_hardening_dispatch_context(context)
         try:
+            # mechanize-prose-only-orchestrator-contracts (c) / D3-A —
+            # coupled-pair mirror of lazy-state.py: bind apply-resolution's
+            # chosen_path/resolution_summary from the recorded decision
+            # (raises ValueError, caught below, when a sentinel_path is
+            # named but no --record-decision has been run for it yet).
+            context = lazy_core.bind_decision_record_context(
+                cls, context, "bug-state.py",
+            )
             result = lazy_core.emit_dispatch_prompt(
                 cls, context,
                 pipeline="bug",
@@ -8300,7 +8367,13 @@ def main() -> int:
             _ref_entry = lazy_core.register_emission_if_marked(
                 prompt, cls,
                 item_id=context.get("item_id"),
+                model=model,
             )
+            # mechanize-prose-only-orchestrator-contracts (b) / D2-A —
+            # coupled-pair mirror of lazy-state.py: a registered input-audit
+            # emission discharges the obligation.
+            if _ref_entry is not None and cls == "input-audit":
+                lazy_core.discharge_audit_obligation()
             # Phase 8 WU-8.2: emission no longer acks the deny ledger.  The ack
             # moves to GUARD-ALLOW time (lazy_guard.py, on allowing a hardening-
             # class entry) so the debt clears only when a hardening dispatch
@@ -8357,14 +8430,22 @@ def main() -> int:
         )
         if result.get("ok"):
             _tl_prov = Path(args.provisionalize_sentinel)
+            _tl_prov_item = _tl_prov.resolve().parent.name
             lazy_core.append_telemetry_event(
                 "sentinel-provisionalized",
-                item_id=_tl_prov.resolve().parent.name,
+                item_id=_tl_prov_item,
                 data={
                     "decision_commit": result.get("decision_commit"),
                     "divergence": result.get("divergence"),
                     "audit_divergence": result.get("audit_divergence"),
                 },
+            )
+            # mechanize-prose-only-orchestrator-contracts (d) — coupled-pair
+            # mirror of lazy-state.py.
+            lazy_core.notify_event(
+                "provisional-accept", f"{_tl_prov_item} accepted provisionally",
+                str(args.repo_root), pipeline="bug", item_id=_tl_prov_item,
+                detail=f"divergence={result.get('divergence')} — unratified until reviewed",
             )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result["ok"] else 1
@@ -8423,6 +8504,18 @@ def main() -> int:
             args.severity, deps=_adhoc_deps,
         )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.record_decision:
+        # mechanize-prose-only-orchestrator-contracts (c) / D3-A — coupled-pair
+        # mirror of lazy-state.py.
+        lazy_core.refuse_if_cycle_active("--record-decision")
+        if not args.sentinel or not args.chosen:
+            _die("--record-decision requires --sentinel and --chosen")
+        record = lazy_core.record_decision(
+            args.sentinel, args.chosen, summary=args.summary,
+        )
+        sys.stdout.write(json.dumps(record, indent=2) + "\n")
         return 0
 
     if args.sync_deps:
@@ -8711,6 +8804,28 @@ def main() -> int:
                 registry_summary=lazy_core.registry_summary(),
                 cwd=str(args.repo_root),
             )
+        elif (
+            _emit_marker is not None
+            and lazy_core.pending_audit_obligation() is not None
+        ):
+            # mechanize-prose-only-orchestrator-contracts (b) / D2-A —
+            # coupled-pair mirror of lazy-state.py.
+            _obligation = lazy_core.pending_audit_obligation()
+            state["route_overridden_by"] = "audit-obligation"
+            _aud_item_id = _obligation.get("item_id") or state.get("feature_id") or ""
+            _aud_spec_path = (
+                state.get("spec_path")
+                if state.get("feature_id") == _obligation.get("item_id")
+                else None
+            ) or str(Path(args.repo_root) / "docs" / "bugs" / _aud_item_id)
+            state["input_audit_emit_command"] = lazy_core.build_input_audit_emit_command(
+                "bug-state.py",
+                item_id=_aud_item_id,
+                item_name=state.get("feature_name") or _aud_item_id,
+                spec_path=_aud_spec_path,
+                cycle_kind=_obligation.get("cycle_kind") or "",
+                cwd=str(args.repo_root),
+            )
         else:
             rc = state.get("repeat_count") if (args.repeat_count or args.repeat_count_peek) else None
             # Phase 9 (lazy-validation-readiness) — per-part model tiering.
@@ -8750,6 +8865,7 @@ def main() -> int:
                 _ref_entry = lazy_core.register_emission_if_marked(
                     cycle_prompt, "cycle",
                     item_id=state.get("feature_id"),
+                    model=state.get("cycle_model"),
                 )
                 if _ref_entry is not None:
                     # Surface the @@lazy-ref token so the orchestrator can use

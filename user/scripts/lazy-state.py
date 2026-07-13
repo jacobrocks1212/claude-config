@@ -2150,6 +2150,10 @@ def compute_state(
                     ),
                 )
             _PARKED.append(lazy_core.build_parked_entry(feature_id, spec_path / "BLOCKED.md"))
+            lazy_core.notify_event(
+                "park", f"{name} parked (BLOCKED.md)", str(repo_root),
+                item_id=feature_id, detail="feature-local BLOCKED.md",
+            )
             _diag(
                 f"parked: {name} — feature-local BLOCKED.md; skipped (park mode). "
                 "Re-enters when resolved."
@@ -2184,6 +2188,10 @@ def compute_state(
                         ),
                     )
                 _PARKED.append(lazy_core.build_parked_entry(feature_id, _stray))
+                lazy_core.notify_event(
+                    "park", f"{name} parked (mis-named blocker)", str(repo_root),
+                    item_id=feature_id, detail=f"stray blocker: {_stray.name}",
+                )
                 _diag(
                     f"parked: {name} — feature-local mis-named blocker "
                     f"'{_stray.name}'; skipped (park mode). Re-enters when "
@@ -2246,6 +2254,10 @@ def compute_state(
                     ),
                 )
             _PARKED.append(lazy_core.build_parked_entry(feature_id, spec_path / "NEEDS_INPUT.md"))
+            lazy_core.notify_event(
+                "park", f"{name} parked (NEEDS_INPUT.md)", str(repo_root),
+                item_id=feature_id, detail="unresolved NEEDS_INPUT.md",
+            )
             _diag(
                 f"parked: {name} — unresolved NEEDS_INPUT.md; skipped (park mode). "
                 "Re-enters when resolved."
@@ -2283,6 +2295,11 @@ def compute_state(
                         ),
                     )
                 _PARKED.append(_prov_entry)
+                lazy_core.notify_event(
+                    "park", f"{name} parked (unratified provisional)", str(repo_root),
+                    item_id=feature_id,
+                    detail="validated but awaiting ratification — parks at completion",
+                )
                 _diag(
                     f"parked: {name} — validated but awaiting ratification of "
                     f"{lazy_core.PROVISIONAL_SENTINEL}; completion deferred to "
@@ -2440,6 +2457,20 @@ def compute_state(
                         "corrective_count": _bg_corrective,
                         "near_complete_grace_granted": False,
                     }
+                    # mechanize-prose-only-orchestrator-contracts (d): script-
+                    # fired budget-guard trip notification — the FIRST trip
+                    # surfaced this probe (mirrors the rich-audit-metadata
+                    # gate above; notify_event's own content-based dedup
+                    # additionally makes repeated observations across probes
+                    # idempotent).
+                    lazy_core.notify_event(
+                        "budget-trip", f"{name} budget-guard {_bg_action}",
+                        str(repo_root), item_id=feature_id,
+                        detail=(
+                            f"count={_bg_count} ceiling={_bg_ceiling} "
+                            f"action={_bg_action}"
+                        ),
+                    )
                 _DEFERRED_BUDGET.append(feature_id)
                 continue
         # queue-dependency-dag Phase 2: the dep-gate (D2-A). An entry whose
@@ -11489,6 +11520,23 @@ def build_parser() -> argparse.ArgumentParser:
                               "empty hard set removes the key). Gated by "
                               "refuse_if_cycle_active FIRST (exit 3 for a "
                               "cycle subagent, zero side effects)."))
+    # --- mechanize-prose-only-orchestrator-contracts (c): decision write-back ---
+    parser.add_argument("--record-decision", action="store_true",
+                        help=("Record a mid-run AskUserQuestion answer to an "
+                              "on-disk decision record keyed by --sentinel, "
+                              "so it cannot evaporate before the "
+                              "apply-resolution dispatch reads it. Requires "
+                              "--sentinel and --chosen; --summary optional. "
+                              "Orchestrator-only (refuse_if_cycle_active "
+                              "FIRST, exit 3 for a cycle subagent, zero side "
+                              "effects). Survives --run-end (sibling state "
+                              "file, not the run marker)."))
+    parser.add_argument("--sentinel", default=None, metavar="PATH",
+                        help="With --record-decision: the sentinel file path this answer resolves.")
+    parser.add_argument("--chosen", default=None, metavar="TEXT",
+                        help="With --record-decision: the chosen option label(s).")
+    parser.add_argument("--summary", default=None, metavar="TEXT",
+                        help="With --record-decision: optional resolution summary text.")
     # --- code-doc-provenance-linkage: provenance CLI (mirrored on bug-state.py) ---
     parser.add_argument("--link-provenance", action="store_true",
                         help=("Manual provenance link (the one-writer producer's "
@@ -12298,6 +12346,16 @@ def main() -> int:
         # harness-telemetry-ledger Phase 2: capture the cycle identity BEFORE
         # the clear (read-only) so the cycle-end event carries the item id.
         _tl_cycle = lazy_core.read_cycle_marker()
+        # mechanize-prose-only-orchestrator-contracts (b) / D2-A: arm the
+        # post-cycle input-audit obligation when the ending cycle was a
+        # /spec or plan-feature cycle. record_audit_obligation is a no-op on
+        # a non-audited sub_skill and marker-gated (no-op with no live run),
+        # so this is byte-identical unless the withhold actually applies.
+        if _tl_cycle is not None:
+            lazy_core.record_audit_obligation(
+                item_id=_tl_cycle.get("feature_id"),
+                cycle_kind=_tl_cycle.get("sub_skill"),
+            )
         friction = lazy_core.cycle_end_friction_check(repo_root=Path(args.repo_root))
         # code-doc-provenance-linkage Phase 1 (D4-A): record this cycle's commit
         # bracket (marker begin_head_sha → current HEAD) into the state-dir
@@ -12646,6 +12704,21 @@ def main() -> int:
             Path(args.repo_root)
         )
 
+        # mechanize-prose-only-orchestrator-contracts (d): script-fired flush
+        # notification — the run's end-of-run flush state transition (the
+        # SPEC's 3rd event point). Read the marker BEFORE deletion for the
+        # run summary; the identity includes started_at so distinct runs
+        # never dedup against each other's flush.
+        _flush_marker = lazy_core.read_run_marker()
+        if _flush_marker is not None:
+            lazy_core.notify_event(
+                "flush", f"run flushed ({reason})", str(args.repo_root),
+                item_id=_flush_marker.get("started_at"),
+                detail=(
+                    f"forward={_flush_marker.get('forward_cycles')} "
+                    f"meta={_flush_marker.get('meta_cycles')} reason={reason}"
+                ),
+            )
         # Delete the marker AND the registry (both are run-scoped state).
         # clear_registry=True ensures the prompt registry does not bleed
         # across runs — entries from a previous run must never be dispatchable
@@ -12720,6 +12793,15 @@ def main() -> int:
             # through with only the {blocking} default added.
             if cls == "hardening":
                 context = lazy_core.normalize_hardening_dispatch_context(context)
+            # mechanize-prose-only-orchestrator-contracts (c) / D3-A: an
+            # apply-resolution dispatch's chosen_path/resolution_summary are
+            # bound from the recorded decision (--record-decision), not
+            # trusted from orchestrator-typed context. Raises (caught by the
+            # except below, formatted into the standard structured refusal)
+            # when sentinel_path is named but no record exists yet.
+            context = lazy_core.bind_decision_record_context(
+                cls, context, "lazy-state.py",
+            )
             result = lazy_core.emit_dispatch_prompt(
                 cls, context,
                 pipeline="feature",
@@ -12754,6 +12836,7 @@ def main() -> int:
             _ref_entry = lazy_core.register_emission_if_marked(
                 prompt, cls,
                 item_id=context.get("item_id"),
+                model=model,
             )
             # ISSUE 5 (d8-effect-chains live run): a meta/recovery dispatch goes
             # through --emit-dispatch (NOT the --repeat-count probe path), so the
@@ -12764,6 +12847,13 @@ def main() -> int:
             # this is a real, registered dispatch — not a no-marker peek).
             if _ref_entry is not None:
                 lazy_core.advance_meta_cycle()
+            # mechanize-prose-only-orchestrator-contracts (b) / D2-A: a
+            # REGISTERED (marker-present) input-audit emission discharges the
+            # D2-A obligation — this IS the "the audit dispatch itself" the
+            # SPEC names as the discharge transaction. A no-marker peek
+            # (_ref_entry is None) never discharges (nothing was dispatched).
+            if _ref_entry is not None and cls == "input-audit":
+                lazy_core.discharge_audit_obligation()
             # Phase 8 WU-8.2: emission no longer acks the deny ledger.  The ack
             # moves to GUARD-ALLOW time (lazy_guard.py, on allowing a hardening-
             # class entry) so the debt clears only when a hardening dispatch
@@ -12828,14 +12918,22 @@ def main() -> int:
         )
         if result.get("ok"):
             _tl_prov = Path(args.provisionalize_sentinel)
+            _tl_prov_item = _tl_prov.resolve().parent.name
             lazy_core.append_telemetry_event(
                 "sentinel-provisionalized",
-                item_id=_tl_prov.resolve().parent.name,
+                item_id=_tl_prov_item,
                 data={
                     "decision_commit": result.get("decision_commit"),
                     "divergence": result.get("divergence"),
                     "audit_divergence": result.get("audit_divergence"),
                 },
+            )
+            # mechanize-prose-only-orchestrator-contracts (d): script-fired
+            # provisional-accept notification (the SPEC's 4th event point).
+            lazy_core.notify_event(
+                "provisional-accept", f"{_tl_prov_item} accepted provisionally",
+                str(args.repo_root), item_id=_tl_prov_item,
+                detail=f"divergence={result.get('divergence')} — unratified until reviewed",
             )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result["ok"] else 1
@@ -12969,6 +13067,20 @@ def main() -> int:
             queue_label="queue.json",
         )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.record_decision:
+        # mechanize-prose-only-orchestrator-contracts (c) / D3-A: orchestrator-
+        # only — refuse FIRST (before any read/write) so a cycle subagent gets
+        # exit 3 with ZERO side effects, exactly like --enqueue-adhoc /
+        # --reorder-queue / --sync-deps.
+        lazy_core.refuse_if_cycle_active("--record-decision")
+        if not args.sentinel or not args.chosen:
+            _die("--record-decision requires --sentinel and --chosen")
+        record = lazy_core.record_decision(
+            args.sentinel, args.chosen, summary=args.summary,
+        )
+        sys.stdout.write(json.dumps(record, indent=2) + "\n")
         return 0
 
     if args.reassert_owner:
@@ -13229,6 +13341,33 @@ def main() -> int:
                 registry_summary=lazy_core.registry_summary(),
                 cwd=str(args.repo_root),
             )
+        elif (
+            _emit_marker is not None
+            and lazy_core.pending_audit_obligation() is not None
+        ):
+            # mechanize-prose-only-orchestrator-contracts (b) / D2-A: an
+            # undischarged post-cycle input-audit obligation (§1d.5 promoted
+            # from prose to a mechanical withhold) ALSO withholds the forward
+            # route — same shape as the pending-hardening-debt withhold above
+            # (checked FIRST; the two debts never both apply to one probe in
+            # practice, but hardening takes priority when they do). No
+            # cycle_prompt/cycle_model/registration side-effect this probe.
+            _obligation = lazy_core.pending_audit_obligation()
+            state["route_overridden_by"] = "audit-obligation"
+            _aud_item_id = _obligation.get("item_id") or state.get("feature_id") or ""
+            _aud_spec_path = (
+                state.get("spec_path")
+                if state.get("feature_id") == _obligation.get("item_id")
+                else None
+            ) or str(Path(args.repo_root) / "docs" / "features" / _aud_item_id)
+            state["input_audit_emit_command"] = lazy_core.build_input_audit_emit_command(
+                "lazy-state.py",
+                item_id=_aud_item_id,
+                item_name=state.get("feature_name") or _aud_item_id,
+                spec_path=_aud_spec_path,
+                cycle_kind=_obligation.get("cycle_kind") or "",
+                cwd=str(args.repo_root),
+            )
         else:
             rc = state.get("repeat_count") if (args.repeat_count or args.repeat_count_peek) else None
             # Phase 9 (lazy-validation-readiness) — per-part model tiering.
@@ -13272,6 +13411,7 @@ def main() -> int:
                 _ref_entry = lazy_core.register_emission_if_marked(
                     cycle_prompt, "cycle",
                     item_id=state.get("feature_id"),
+                    model=state.get("cycle_model"),
                 )
                 if _ref_entry is not None:
                     # Surface the @@lazy-ref token so the orchestrator can use

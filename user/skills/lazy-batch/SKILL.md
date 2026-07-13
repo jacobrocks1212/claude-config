@@ -466,9 +466,12 @@ Print final batch report, STOP. Do NOT try to renew the cap automatically — th
 
 ### 1c.6. PushNotification policy (park / halt / flush / run-end)
 
-The orchestrator fires `PushNotification` at exactly four canonical event points so the operator receives a phone notification whenever the run changes state. `PushNotification` is always called by the **orchestrator** — state scripts never call it.
+The orchestrator fires `PushNotification` at exactly four canonical event points so the operator receives a phone notification whenever the run changes state. `PushNotification` is always called by the **orchestrator** — state scripts never call it (halt/run-end excepted, script-fired via `notify_halt`).
 
-1. **park** (`--park` mode only) — fired once per newly-parked item when `park_mode == true` and the probe returns a non-empty `parked[]` array (the script's queue-walk park skip; `parked[]` arrives on ordinary Step 1a probes and lists ALL currently-parked items, not just new ones). **Dedup rule:** maintain an in-session set of already-notified parked ids; on each probe, fire only for ids in `parked[]` that are NOT yet in the set, then add them. Never re-fire for an id already in the set. (After a compaction boundary the set may be lost — one duplicate notification per item after a compact is acceptable; re-seed the set from the current `parked[]` on the first post-compact probe without firing.) **Wording branches on the entry's `sentinel_kind`:** for a **needs-input** park, the message carries the **running parked-count**: `"parked {feature_name} — {N} decision(s) parked so far this run"`, and the T5 chat line is `⏸ parked {feature_name} — {N} decision(s) · notified ({parked_count} parked this run)`. For a **blocked** park (`sentinel_kind == "blocked"`, `decision_count == 0`), it reads as a parked BLOCK with the blocker's phase: message `"parked {feature_name} — BLOCKED ({phase}); deferred to flush ({parked_count} parked this run)"`, T5 chat line `⏸ parked {feature_name} — BLOCKED ({phase}) · notified ({parked_count} parked this run)` (read `{phase}` from the parked entry / the `BLOCKED.md` frontmatter). Both branches are governed by the SAME dedup set (fire once per newly-parked id; never re-fire; re-seed silently after a compaction boundary).
+**Also script-fired (d).** `notify_event(kind, ...)` fires points 1/3b/5 + flush script-side too (`notify_halt` seam, exactly-once dedup) — the calls below are a harmless backstop, not the sole mechanism.
+
+1. **park** (`--park` mode only) — fired once per newly-parked item when `park_mode == true` and `parked[]` is non-empty. **Dedup** is script-guaranteed (`notify_event`, point (d)) — the in-session set below is T5-display bookkeeping only; a lost set after compaction is cosmetic, never a missed page.
+Maintain the set for the CHAT display: fire T5 only for ids not yet in the set. Needs-input: `"parked {feature_name} — {N} decision(s) parked so far this run"` / T5 `⏸ parked {feature_name} — {N} decision(s) · notified ({parked_count} parked this run)`. Blocked (`decision_count == 0`): `"parked {feature_name} — BLOCKED ({phase}); deferred to flush ({parked_count} parked this run)"` / T5 `⏸ parked {feature_name} — BLOCKED ({phase}) · notified ({parked_count} parked this run)` (`{phase}` from the entry / `BLOCKED.md` frontmatter).
 2. **halt** (both modes) — fired on every terminal/halt: `NEEDS_INPUT` halt, `BLOCKED` halt-for-manual, `needs-research` strict halt, `queue-blocked-on-research`, `queue-missing`, `all-features-complete`, `queue-exhausted-all-parked` (`--park` mode — after the flush), `queue-exhausted-budget-deferred` (budget-guard — all items deferred to queue tail), `max-cycles`, `device-queue-exhausted`, `host-capability-saturated`, script-error, and any future obstacle terminal. Most of these already carry per-terminal `PushNotification` calls above — this point names the policy explicitly so no terminal can be added without a notification.
 
    **Incident scan runs ONCE per run at the end-of-run flush, BEFORE `--run-end` (incident-auto-capture D6-A).** On the FIRST terminal/halt path this run reaches (any bullet above), run `python3 ~/.claude/scripts/incident-scan.py --repo-root .` in the orchestrator session before the `--run-end` call below — the deterministic, read-only collector clusters this run's fresh deny-ledger/hook-event evidence, dedups against open + archived `incident_key`s, and enqueues ≤2 bug stubs (with `INCIDENT.md` evidence capsules) via the sanctioned `--enqueue-adhoc --type bug` path, so captures land at the top of the bug queue for the NEXT run. Relay its report verbatim (the summary line + any `➕ Enqueued ad-hoc bug …` announce lines are sanctioned output on the T7 report path). NON-BLOCKING: a non-zero exit prints one `⚠ incident-scan failed` warning and the run-end sequence continues unchanged — the scan must never wedge a terminal path. Once per run (skip if the scan already ran in this run-end sequence); on-demand reruns are `/incident-scan`.
@@ -579,7 +582,7 @@ This saves one Opus dispatch per pseudo-skill action. On a typical feature lifec
 
 ### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)
 
-**Compaction discipline — re-read the dispatch template AND the output contract first.** Before composing this dispatch — and ALWAYS as the first action after any compaction boundary — re-read `~/.claude/skills/_components/lazy-dispatch-template.md`, `~/.claude/skills/_components/orchestrator-voice.md` (the chat-output contract — its turn templates survive summarization by re-read, not by memory; the re-reads themselves are silent mechanics), AND `~/.claude/skills/_components/completeness-policy.md` (the D7 standing policy — its auto-resolve rules likewise survive compaction by re-read, not memory). The dispatch template is the on-disk canonical dispatch skeleton (`subagent_type`, the REQUIRED `model:` field, prompt **envelope**) and carries the **Read-before-Edit rule**: compaction resets read-state, so re-`Read` any file (PHASES.md, plans, SKILLs, components) before you `Edit`/`Write` it. The prompt **contents** are NOT reconstructed by hand — they arrive pre-bound from the probe's `cycle_prompt` (the `--emit-prompt` field); the template governs only the dispatch ENVELOPE (which fields, which model). 41% of post-compaction spawns in the 2026-06-10 audit dropped the `model:` field — re-reading this template before each dispatch, and copying `cycle_model` into it rather than reconstructing prompts from memory, is what prevents that.
+**Compaction discipline — re-read the dispatch template AND the output contract first.** Before composing this dispatch — and ALWAYS as the first action after any compaction boundary — re-read `~/.claude/skills/_components/lazy-dispatch-template.md`, `~/.claude/skills/_components/orchestrator-voice.md` (the chat-output contract — its turn templates survive summarization by re-read, not by memory; the re-reads themselves are silent mechanics), AND `~/.claude/skills/_components/completeness-policy.md` (the D7 standing policy — its auto-resolve rules likewise survive compaction by re-read, not memory). The dispatch template is the on-disk canonical dispatch skeleton (`subagent_type`, the REQUIRED `model:` field, prompt **envelope**) and carries the **Read-before-Edit rule**: compaction resets read-state, so re-`Read` any file (PHASES.md, plans, SKILLs, components) before you `Edit`/`Write` it. The prompt **contents** are NOT reconstructed by hand — they arrive pre-bound from the probe's `cycle_prompt` (the `--emit-prompt` field); the template governs only the dispatch ENVELOPE (which fields, which model). 41% of post-compaction spawns in the 2026-06-10 audit dropped the `model:` field — re-reading this template, and copying `cycle_model` rather than reconstructing from memory, is what prevents that (now defense-in-depth — see "Model selection" below).
 
 **Post-compaction re-entry protocol (HARD — the first post-compaction action is NEVER a dispatch).** Compaction is the measured protocol cliff (2026-06-11 run: after the compaction boundary the counters never recovered, probes stopped entirely, and prompts went hand-authored for the rest of the run). On the first turn after any compaction boundary, BEFORE any `Agent` call: (1) re-read Step 1a of this SKILL plus the three components named above; (2) the session counters (`forward_cycles`, `meta_cycles`) are persisted in the run marker — the post-compaction probe reads them from the marker directly, so no manual reconstruction is needed. As a cross-check, verify the surviving T1/T2/T4 context broadly agrees with the marker's counters; if there is a discrepancy, trust the marker (it is the script-owned source of truth) and record any notable divergence in a single T6 `⚠` line; (3) run the FULL Step 1a probe form (`--repeat-count --emit-prompt --probe --max-cycles …`) — note: `--forward-cycles`/`--meta-cycles` are NOT passed (the marker owns the counters); proceed only from its output. Dispatching from a pre-compaction probe held in memory, or from a hand-reconstructed prompt, is a contract violation.
 
@@ -740,7 +743,7 @@ python3 ~/.claude/scripts/lazy-state.py --cycle-end
 
 **Meta-dispatch by-reference — PREFER `dispatch_prompt_ref` at ALL `--emit-dispatch` sites (Phase 7 / lazy-validation-readiness).** Every `--emit-dispatch <class>` call (hardening, input-audit, recovery, coherence-recovery, apply-resolution, needs-runtime-redispatch, investigation, and any future class) now emits BOTH `dispatch_prompt` (verbatim text) AND `dispatch_prompt_ref` (a `@@lazy-ref nonce=<hex>` token) in its JSON output. When dispatching any of these meta-dispatch prompts, PREFER `dispatch_prompt_ref` over the verbatim `dispatch_prompt` — the PreToolUse guard resolves the token to the registered bytes, eliminating byte-exact hand-transcription as a failure surface (the 2026-06-14 incident's 2 guard denials were caused by transcription drift on a verbatim meta-dispatch). Fall back to `dispatch_prompt` verbatim ONLY when `dispatch_prompt_ref` is absent or null in the emit output. This rule applies uniformly to every emit site in §1c.5, §1d, §1d.1, §1d.5, §1e, §1g, §1h, §1i, and any future dispatch site.
 
-**Model selection — script-owned.** Copy `cycle_model` from the probe verbatim into the `model:` field (never omit it). The script picks `"sonnet"` only when it appended the loop block (persisted `repeat_count >= 2` — the loop-resolution cycle is mechanical, the prompt already carries the diagnosis); otherwise `"opus"`. The orchestrator never computes or overrides this.
+**Model selection — script-owned, guard-pinned (a).** Copy `cycle_model` verbatim into `model:` (never omit it). Guard ALLOW paths now correct a wrong/missing `model:` in place too (reason: "model pinned: opus→haiku") — defense-in-depth. `"sonnet"` only when the loop block was appended (`repeat_count >= 2`); else `"opus"`. Never orchestrator-computed.
 
 #### 1d.1. Denial recovery (validate-deny guard + hardening dispatch)
 
@@ -824,6 +827,8 @@ Parse the `--emit-dispatch hardening` output JSON (`dispatch_prompt`, `dispatch_
 ### 1d.5. Post-cycle input audit (Opus — runs only on `/spec` and `plan-feature` cycles)
 
 **Why this step exists.** The dispatched cycle subagent that ran `/spec` (or `plan-feature`, which composes `/spec-phases` + `/write-plan`) self-classifies its own decisions as product-behavior vs mechanical-internal and self-decides whether to halt via `NEEDS_INPUT.md`. In practice that self-classification gets short-shrift — the subagent juggles competing pressures (integrate research, draft updates, finalize SPEC, produce summary) and the classification step is biased toward "make progress". Across ~75 observed lazy-batch cycles, zero `NEEDS_INPUT.md` sentinels fired from `/spec`'s self-audit despite multiple cycles having surfaceable product-behavior calls. This step is the independent Opus second-opinion focused on one question: did any product-behavior decision get baked into SPEC.md / PHASES.md without surfacing to the user?
+
+**Unskippable, mechanically (b).** `--cycle-end` records an `audit_obligation` on a `spec`/`plan-feature` end (bug: `spec-bug`); the next probe WITHHOLDS the forward route and surfaces a ready-to-run emit command — mirrors the hardening-debt withhold — until `--emit-dispatch input-audit` discharges it.
 
 **Ordering (Deliverable A — close the routing-order gap):** Step 1d.5 runs IMMEDIATELY after the cycle subagent returns (i.e., after Step 1d dispatch completes), BEFORE the orchestrator performs the next state probe at Step 1a. This means the audit executes after EVERY `/spec` or `plan-feature` cycle — regardless of what the NEXT state probe will return. In particular, if the next probe routes to `needs-input` (Step 1g) or `blocked` (Step 1h), that routing does NOT retroactively exempt the just-completed cycle's audit. The audit fires first; Step 1g / 1h fires afterward (on the same cycle or the subsequent one). This closes the observed gap where product-behavior decisions baked into a `/spec` cycle escaped audit because the orchestrator jumped directly to needs-input/blocked resolution.
 
@@ -973,7 +978,16 @@ No special resume detection is needed in `/lazy-batch`'s main loop — every upl
 
 **Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-batch`, `{STATE_SCRIPT}` = `lazy-state.py`, `{ITEM}` = feature, `{PUSH_RULE}` = workstation (the apply subagent's standard end-of-work push suffices). The shared handler's "increment `cycle`" step translates to **increment `meta_cycles`** (decision-resume is a meta cycle). The per-cycle update block heading uses the two-counter format (Step 3 template). Then read and apply the shared decision-resume handler exactly (single source across the feature / bug / cloud batch orchestrators):
 
-**Apply-resolution dispatch (emit-dispatch — registry-validated).** When the shared handler instructs you to dispatch the apply-resolution subagent, emit it via the script rather than hand-composing:
+**Record the decision, THEN dispatch (c).** Record the answer before the emit:
+
+```bash
+python3 ~/.claude/scripts/lazy-state.py --record-decision \
+  --sentinel "{spec_path}/NEEDS_INPUT.md" \
+  --chosen "<the option label the operator chose>" \
+  --summary "<one-line summary of the chosen resolution>"
+```
+
+**Apply-resolution dispatch.** `chosen_path`/`resolution_summary` come from the record above; the emit refuses (naming the `--record-decision` command) if missing:
 
 ```bash
 python3 ~/.claude/scripts/lazy-state.py \
@@ -981,14 +995,12 @@ python3 ~/.claude/scripts/lazy-state.py \
   --context item_name="{feature_name}" \
   --context spec_path="{spec_path}" \
   --context sentinel_path="{spec_path}/NEEDS_INPUT.md" \
-  --context resolution_summary="<one-line summary of the chosen resolution>" \
   --context resolution_kind="needs-input" \
-  --context chosen_path="<the option label the operator chose>" \
   --context item_id="{feature_id}" \
   --context cwd="{cwd}"
 ```
 
-Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The `@requires` keys for `--emit-dispatch apply-resolution` are: `item_name`, `spec_path`, `sentinel_path`, `resolution_summary`, `resolution_kind`, `chosen_path`, `item_id`, `cwd`.
+Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. `@requires` per `dispatch-apply-resolution.md`; `chosen_path`/`resolution_summary` come from the record, not `--context`.
 
 **Resolution-aware reset signal (loop-detected-false-positives — symptom 3).** A needs-input RESOLUTION is itself an Agent dispatch, so it consumes a registry nonce — which defeats the F2 double-probe debounce's "no dispatch landed between the two probes" precondition. Without a discriminator the HEAD-blind `step_repeat_count` survives a *legitimately-resolved* blocker and keeps marching toward LOOP-DETECTED. After the apply-resolution subagent returns (sentinel neutralized), record the one-shot reset signal so the resolved feature's NEXT same-step probe resets its step counter to 1:
 
@@ -1075,7 +1087,16 @@ the next run.
 
 **Pipeline binding for the shared handler below** — `{SKILL}` = `/lazy-batch`, `{STATE_SCRIPT}` = `lazy-state.py`, `{ITEM}` = feature, `{SPEC_ROOT}` = `docs/features`, `{ADD_PHASE}` = `/add-phase`, `{PUSH_RULE}` = workstation (standard push). The shared handler's "increment `cycle`" step translates to **increment `meta_cycles`** (blocked-resolution is a meta cycle). Then read and apply the shared blocked-resolution handler exactly (single source across the feature / bug / cloud batch orchestrators):
 
-**Apply-resolution dispatch (emit-dispatch — registry-validated).** When the shared handler instructs you to dispatch the apply-resolution subagent, emit it via the script rather than hand-composing:
+**Record the decision, THEN dispatch (c).** Record the answer before the emit:
+
+```bash
+python3 ~/.claude/scripts/lazy-state.py --record-decision \
+  --sentinel "{spec_path}/BLOCKED.md" \
+  --chosen "<the option label the operator chose>" \
+  --summary "<one-line summary of the chosen resolution>"
+```
+
+**Apply-resolution dispatch.** `chosen_path`/`resolution_summary` come from the record above, not a `--context` flag:
 
 ```bash
 python3 ~/.claude/scripts/lazy-state.py \
@@ -1083,9 +1104,7 @@ python3 ~/.claude/scripts/lazy-state.py \
   --context item_name="{feature_name}" \
   --context spec_path="{spec_path}" \
   --context sentinel_path="{spec_path}/BLOCKED.md" \
-  --context resolution_summary="<one-line summary of the chosen resolution>" \
   --context resolution_kind="blocked" \
-  --context chosen_path="<the option label the operator chose>" \
   --context item_id="{feature_id}" \
   --context cwd="{cwd}"
 ```

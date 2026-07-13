@@ -126,6 +126,40 @@ def _allow_json(reason: str) -> str:
     })
 
 
+def _pinned_model_update(tool_input: dict, entry: dict) -> dict | None:
+    """Model-tier pin (D1-A, mechanize-prose-only-orchestrator-contracts (a)):
+    return an ``updatedInput``-shaped dict with ``model`` corrected to the
+    registry entry's script-selected tier, or ``None`` when no correction is
+    needed.
+
+    Per-step model selection is script-owned (``lazy_core.emit_cycle_prompt`` /
+    ``emit_dispatch_prompt`` return the selected tier, now carried on the
+    registry entry as ``model``) — but nothing previously verified the
+    orchestrator actually copied it into the Agent ``model:`` field.  This is
+    the guard-side correction: pin-by-rewrite (SPEC D1-A), not deny-on-mismatch
+    (D1-B) — a transcription/omission slip is corrected in place rather than
+    forcing a deny→re-probe→re-dispatch round trip.
+
+    Fail-open on the NEW ``model`` field: an entry registered before this
+    field existed (legacy, mid-migration) has no ``model`` key — ``entry.get``
+    returns falsy and this returns ``None`` (pass through unpinned, never
+    denied).  A no-op correction (``tool_input["model"]`` already equals the
+    registered tier) also returns ``None`` — the caller's existing ALLOW path
+    is untouched when there is nothing to fix.
+
+    Returns:
+        A shallow copy of ``tool_input`` with ``model`` corrected, or ``None``.
+    """
+    pinned_model = entry.get("model")
+    if not pinned_model:
+        return None
+    if tool_input.get("model") == pinned_model:
+        return None
+    updated = dict(tool_input)
+    updated["model"] = pinned_model
+    return updated
+
+
 def _allow_with_updated_input(reason: str, updated_input: dict) -> str:
     """F2a (lazy-validation-readiness Phase 3): return an allow JSON string that
     ALSO carries ``hookSpecificOutput.updatedInput``.
@@ -410,7 +444,9 @@ def _bind_marker_on_allow(session_id: str | None) -> None:
         pass
 
 
-def _try_auto_readmit(prompt: str, tool_use_id: str, session_id: str | None) -> str | None:
+def _try_auto_readmit(
+    prompt: str, tool_input: dict, tool_use_id: str, session_id: str | None
+) -> str | None:
     """F1b (lazy-pipeline-ergonomics Phase 1): try to AUTO-READMIT a dispatch whose
     normalized prompt is a PURE TRAILING-SUFFIX superset of an unconsumed, fresh,
     ``class == "cycle"`` registry entry.
@@ -485,6 +521,14 @@ def _try_auto_readmit(prompt: str, tool_use_id: str, session_id: str | None) -> 
             f"(F1b). The appended suffix was readmitted and audited "
             f"(auto_readmit: true in the deny ledger)."
         )
+        # D1-A model-tier pin, same rule as the fresh-consumption path.
+        pin_update = _pinned_model_update(tool_input, entry)
+        if pin_update is not None:
+            reason += (
+                f" (model pinned: {tool_input.get('model')!r}"
+                f"→{entry.get('model')!r})"
+            )
+            return _allow_with_updated_input(reason, pin_update)
         return _allow_json(reason)
     except Exception:  # noqa: BLE001
         # FAIL-OPEN to DENY: any error here must fall through to the normal deny,
@@ -684,6 +728,15 @@ def guard(stdin_text: str) -> str | None:
                         f"by-reference dispatch — nonce {ref_nonce} resolved and "
                         f"consumed by {tool_use_id} (F2a)"
                     )
+                    # D1-A model-tier pin: correct model in the SAME updatedInput
+                    # when the registry entry carries a differing/absent tier.
+                    _pinned = ref_entry.get("model")
+                    if _pinned and updated_input.get("model") != _pinned:
+                        reason += (
+                            f" (model pinned: {tool_input.get('model')!r}"
+                            f"→{_pinned!r})"
+                        )
+                        updated_input["model"] = _pinned
                     return _allow_with_updated_input(reason, updated_input)
                 # consumed == False: TOCTOU race — fall through to deny below.
             # ref_entry is None: expired/consumed/unknown — fall through to deny.
@@ -726,13 +779,23 @@ def guard(stdin_text: str) -> str | None:
         # this ALLOW (best-effort / fail-open — never changes the allow output).
         _bind_marker_on_allow(session_id)
         reason = f"dispatch allowed — nonce {nonce} consumed by {tool_use_id}"
+        # D1-A model-tier pin: fresh-consumption ALLOW previously never
+        # returned updatedInput at all; add it only when the registry entry's
+        # model differs from (or is absent from) tool_input.
+        pin_update = _pinned_model_update(tool_input, entry)
+        if pin_update is not None:
+            reason += (
+                f" (model pinned: {tool_input.get('model')!r}"
+                f"→{entry.get('model')!r})"
+            )
+            return _allow_with_updated_input(reason, pin_update)
         return _allow_json(reason)
 
     # --- 1b. F1b auto-readmit: a pure trailing-suffix superset of a fresh -----
     # cycle-class entry is ALLOWED (and audited) instead of denied.  Evaluated
     # BEFORE the default deny.  Hardening-class entries and in-body edits never
     # qualify (see find_auto_readmit_entry); any error fails open to the deny.
-    readmit = _try_auto_readmit(prompt, tool_use_id, session_id)
+    readmit = _try_auto_readmit(prompt, tool_input, tool_use_id, session_id)
     if readmit is not None:
         return readmit
 
@@ -764,6 +827,14 @@ def guard(stdin_text: str) -> str | None:
                     f"idempotent re-fire — nonce {nonce} was already consumed by "
                     f"this tool_use_id ({tool_use_id}); allowing again."
                 )
+                # D1-A model-tier pin, same rule as the other ALLOW paths.
+                pin_update = _pinned_model_update(tool_input, any_entry)
+                if pin_update is not None:
+                    reason += (
+                        f" (model pinned: {tool_input.get('model')!r}"
+                        f"→{any_entry.get('model')!r})"
+                    )
+                    return _allow_with_updated_input(reason, pin_update)
                 return _allow_json(reason)
 
             # Consumed by a DIFFERENT tool_use_id — deny.

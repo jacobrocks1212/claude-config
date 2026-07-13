@@ -12,7 +12,7 @@
 
 **Status:** Draft
 **Priority:** P1
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-13
 **Source:** repo-exploration proposal session 2026-07-11 (completed review inventorying the
 `/lazy-batch` contracts with no hook/gate/script enforcement)
 **Friction-reduction feature:** yes
@@ -31,6 +31,34 @@
 >   non-halt event points.
 
 ---
+
+## Locked Decisions
+
+Research integrated (`RESEARCH_SUMMARY.md` — fresh gap inventory re-verified against HEAD at
+implementation time; all four contracts confirmed still prose-only at session start). Per SPEC
+recommendations:
+
+- **D2 — Audit-obligation mechanics** (`mechanical-internal`): **LOCKED as recommended** —
+  `--cycle-end` records `audit_obligation` on the run marker; `--emit-prompt` withholds the forward
+  route until `--emit-dispatch input-audit` discharges it (mirrors the `pending-hardening-debt`
+  withhold verbatim). Implemented.
+- **D3 — Decision-record surface** (`mechanical-internal`): **LOCKED as recommended** —
+  `--record-decision` writes an atomic sibling state-dir record (`lazy-decisions.json`, NOT the run
+  marker — Open Question 2 resolved toward the sibling file so the ledger survives `--run-end`);
+  `--emit-dispatch apply-resolution` binds `chosen_path`/`resolution_summary` from the record,
+  refusing (naming the exact command) when absent. Implemented.
+- **D4 — Notification coverage** (`mechanical-internal`): **LOCKED as recommended** —
+  `notify_event(kind, ...)` generalizes the `notify_halt` seam to park / budget-guard-trip / flush /
+  provisional-accept, same fail-OPEN + exactly-once content-based dedup contract. Event-site
+  interpretation decisions (park = each `_PARKED.append` site; budget-trip = the first trip per
+  probe, not "extension"/grace; flush = the `--run-end` transition itself) are recorded in
+  `RESEARCH_SUMMARY.md` as documented v1 scope, not missed contract. Implemented.
+- **D5 — Scope guard** (`mechanical-internal`, auto-accepted): no redesign — all four mechanizations
+  reuse existing precedent shapes. Held throughout implementation.
+- **D1 — Guard-side model pinning: rewrite vs deny** (`product-behavior`): implemented against the
+  recommended option A (pin-by-rewrite) under the operator's park-provisional protocol —
+  **PROVISIONALLY accepted, not ratified**. See `NEEDS_INPUT_PROVISIONAL.md`. SPEC Status stays
+  Draft; no `COMPLETED.md` until the operator ratifies or redirects.
 
 ## Executive Summary
 
