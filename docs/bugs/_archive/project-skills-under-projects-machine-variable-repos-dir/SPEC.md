@@ -7,7 +7,7 @@
 > OMITS the real per-repo projections (`algobooth`, `cognito-forms`) that are git-tracked inside
 > `<claude-config>/repos/`. Exit 0, no RED gate — an invisible under-projection.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2 (skill projection is machine-dependent and silently incomplete; no gate catches it)
 **Discovered:** 2026-07-11 (manual `/harden-harness`, trigger 5 — Gap A)
 **Root-cause class:** script-defect

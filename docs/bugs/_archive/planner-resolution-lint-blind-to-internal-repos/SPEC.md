@@ -7,7 +7,7 @@
 > `repos/cognito-forms/.claude/skills/write-plan-cognito/`. The D1 planner-resolution gate is a
 > standing false failure on this machine.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2 (a mandatory harness quality gate is RED on clean `main`, on at least one of the operator's machines)
 **Discovered:** 2026-07-11 (manual `/harden-harness`, trigger 5)
 **Root-cause class:** script-defect
