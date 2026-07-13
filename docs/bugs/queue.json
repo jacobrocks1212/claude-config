@@ -14,12 +14,6 @@
       "severity": "P2"
     },
     {
-      "id": "mark-complete-partial-apply-noop-unrecoverable",
-      "name": "__mark_complete__ crash window leaves receipt+In-progress; receipt-only noop check can never repair it (permanent no-progress loop) — Investigation Spec",
-      "spec_dir": "mark-complete-partial-apply-noop-unrecoverable",
-      "severity": "P1"
-    },
-    {
       "id": "production-sentinel-writes-bypass-atomic-write",
       "name": "Production sentinel/NEEDS_INPUT/ROADMAP writes bypass lazy_core._atomic_write, violating the contributor contract — Investigation Spec",
       "spec_dir": "production-sentinel-writes-bypass-atomic-write",

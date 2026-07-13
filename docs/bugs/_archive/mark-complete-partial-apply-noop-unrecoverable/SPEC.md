@@ -7,7 +7,7 @@
 > status flip leaves receipt-present + `Status: In-progress`; every re-invocation noops with
 > zero writes, the walk re-routes to mark-complete forever, and no code path can ever repair it.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P1
 **Last updated:** 2026-07-11
 **Related:** `docs/features/completion-coherence-gate-reconciliation/` (Complete — reconciled the completion gate's REFUSAL rule and made each individual write atomic; it deliberately did not address sequence-level crash-consistency, which is this bug — no fix-scope overlap, see Root Cause); `docs/bugs/production-sentinel-writes-bypass-atomic-write/` + `docs/bugs/coord-lock-no-stale-reclaim/` (siblings — shared theme: crash-consistency of script-owned state); `docs/features/CLAUDE.md` (the receipt-gate contract this bug is the blind inverse of); `user/scripts/CLAUDE.md` (atomic-write contract).

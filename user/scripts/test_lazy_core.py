@@ -5124,29 +5124,32 @@ def test_apply_pseudo_mark_complete_trims_feature_queue():
 
 
 def test_apply_pseudo_mark_complete_queue_trim_behind_receipt_noop():
-    """The queue trim sits BEHIND the receipt-noop guard: when COMPLETED.md
-    already exists the call short-circuits to noop BEFORE the trim, so an
-    entry that somehow lingered in the queue is NOT mutated on the noop re-run
-    (queue_trimmed False, queue byte-identical). This mirrors the canonical
-    idempotency test (pre-write the receipt + leave VALIDATED.md), and proves
-    the trim never fires on an already-receipted dir.
+    """The queue trim never fires on a GENUINELY-DONE (noop) dir: when the dir
+    is fully complete (receipt + SPEC Complete + own queue entry already trimmed
+    + no cleanup sentinels), the audit short-circuits to noop BEFORE the trim, so
+    an unrelated lingering entry is NOT mutated (queue_trimmed False, queue
+    byte-identical). mark-complete-partial-apply-noop-unrecoverable: the noop is
+    now gated on the FULL post-condition audit, so this fixture must itself be
+    genuinely-done (its OWN entry already absent from the queue), not merely
+    receipted.
     """
     _guard()
     with tempfile.TemporaryDirectory() as td:
         repo_root = Path(td)
         spec_dir = repo_root / "docs" / "features" / "mcp-testing"
         spec_dir.mkdir(parents=True)
-        # Pre-write a valid receipt → the noop path will be taken.
+        # Pre-write a valid receipt + flip SPEC to Complete → genuinely done.
         lazy_core.write_completed_receipt(
             spec_dir / "COMPLETED.md",
             feature_id="mcp-testing",
             date="2026-06-10",
             provenance="gated",
         )
-        _write_validated_md(spec_dir)
-        # The queue still carries the entry (simulates a never-trimmed legacy
-        # state) — the noop re-run must NOT touch it.
-        queue_path = _write_features_queue(repo_root, ["mcp-testing", "other"])
+        _write_spec_md(spec_dir, status="Complete")
+        _write_skip_mcp_test(spec_dir)
+        # The queue carries ONLY an unrelated entry (this feature's own entry was
+        # already trimmed at completion) — the noop re-run must NOT touch it.
+        queue_path = _write_features_queue(repo_root, ["other"])
         before = queue_path.read_text(encoding="utf-8")
 
         result = lazy_core.apply_pseudo(
@@ -5154,8 +5157,9 @@ def test_apply_pseudo_mark_complete_queue_trim_behind_receipt_noop():
             feature_id="mcp-testing", date="2026-06-10",
         )
         assert result["noop"] is True, f"expected noop=True, got {result}"
+        assert result.get("resumed") is False, f"expected resumed=False, got {result}"
         assert result.get("queue_trimmed", False) is False, (
-            "queue trim fired on an already-receipted (noop) dir"
+            "queue trim fired on a genuinely-done (noop) dir"
         )
         assert queue_path.read_text(encoding="utf-8") == before, (
             "queue.json was mutated on the noop re-run"
@@ -5311,8 +5315,14 @@ def test_apply_pseudo_mark_complete_refuses_contentless_skip():
 # ---- Test 12 ----
 
 def test_apply_pseudo_mark_complete_idempotent():
-    """COMPLETED.md already present → noop=True, ok=True; a still-present
-    VALIDATED.md is NOT deleted on the no-op re-run.
+    """A GENUINELY-DONE dir (valid COMPLETED.md receipt + SPEC.md Status already
+    Complete, no cleanup sentinels lingering, evidence via a kept
+    SKIP_MCP_TEST.md) → noop=True, ok=True, resumed=False, zero writes/deletes.
+
+    mark-complete-partial-apply-noop-unrecoverable: the receipt-EXISTENCE-only
+    noop was replaced by a full post-condition audit. A dir with a lingering
+    VALIDATED.md + In-progress status is now a crash-window partial-apply RESUME
+    (see test_apply_pseudo_mark_complete_resumes_partial_apply), NOT a noop.
     """
     _guard()
     with tempfile.TemporaryDirectory() as td:
@@ -5325,16 +5335,23 @@ def test_apply_pseudo_mark_complete_idempotent():
             date="2026-06-10",
             provenance="gated",
         )
-        # Also leave VALIDATED.md present — must NOT be deleted by the noop re-run.
-        _write_validated_md(spec_dir)
+        # SPEC.md already flipped to Complete; SKIP_MCP_TEST.md is the (kept)
+        # evidence so the validation gate passes on the re-run; no VALIDATED.md /
+        # RETRO_DONE.md / DEFERRED_NON_CLOUD.md linger → every post-condition met.
+        _write_spec_md(spec_dir, status="Complete")
+        _write_skip_mcp_test(spec_dir)
         result = lazy_core.apply_pseudo(
             Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
         )
         assert result["ok"] is True, f"expected ok=True on noop re-run, got {result}"
-        assert result["noop"] is True, f"expected noop=True when COMPLETED.md exists, got {result}"
-        # The leftover VALIDATED.md must NOT have been deleted.
-        assert (spec_dir / "VALIDATED.md").exists(), (
-            "VALIDATED.md was deleted on a noop re-run — must NOT be deleted"
+        assert result["noop"] is True, f"expected noop=True for a done dir, got {result}"
+        assert result.get("resumed") is False, f"expected resumed=False, got {result}"
+        assert result["wrote"] == [] and result["deleted"] == [], (
+            f"a genuinely-done noop must not write or delete anything: {result}"
+        )
+        # The kept SKIP_MCP_TEST.md must survive the noop untouched.
+        assert (spec_dir / "SKIP_MCP_TEST.md").exists(), (
+            "SKIP_MCP_TEST.md was deleted on a noop re-run — must NOT be deleted"
         )
 
 
@@ -5373,6 +5390,163 @@ def test_apply_pseudo_mark_fixed_writes_fixed_receipt():
         assert any("FIXED.md" in str(w) for w in result["wrote"]), (
             f"'FIXED.md' not in wrote: {result['wrote']}"
         )
+
+
+# ---- Crash-window RESUME (mark-complete-partial-apply-noop-unrecoverable) ----
+
+def test_apply_pseudo_mark_complete_resumes_partial_apply():
+    """The headline reproduction: a dir left in the EXACT partial state a kill
+    between the receipt write (step 3) and the SPEC status flip (step 5)
+    produces — COMPLETED.md receipt present, **Status:** In-progress, VALIDATED.md
+    still present, queue entry present, ROADMAP row unstruck — must RESUME and
+    converge to fully-applied, not noop.
+
+    Pre-fix (regression documentation): the receipt-EXISTENCE-only noop returned
+    noop=True with ZERO writes, leaving Status In-progress → the state machine
+    re-routed to __mark_complete__ every probe, an unrecoverable loop.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "docs" / "features" / "mcp-testing"
+        spec_dir.mkdir(parents=True)
+        # Materialize the crash state directly (the partial disk state IS the
+        # observable the loop routed on — no crash injection needed).
+        lazy_core.write_completed_receipt(
+            spec_dir / "COMPLETED.md",
+            feature_id="mcp-testing",
+            date="2026-06-10",
+            provenance="gated",
+        )
+        _write_spec_md(spec_dir, status="In-progress")
+        (spec_dir / "PHASES.md").write_text(
+            "# Phases\n\n**Status:** In-progress\n\n"
+            "### Phase 1\n**Status:** Complete\n- [x] A\n",
+            encoding="utf-8",
+        )
+        _write_validated_md(spec_dir)  # cleanup sentinel not yet deleted
+        queue_path = _write_features_queue(repo_root, ["mcp-testing", "other"])
+        roadmap_path = repo_root / "docs" / "features" / "ROADMAP.md"
+        roadmap_path.write_text(
+            "# Roadmap\n\n- mcp-testing: do the thing\n- other: unrelated\n",
+            encoding="utf-8",
+        )
+
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir,
+            feature_id="mcp-testing", date="2026-06-10",
+        )
+        # RESUME, not noop, not refused.
+        assert result["ok"] is True, result
+        assert result["refused"] is None, result
+        assert result.get("resumed") is True, f"expected resumed=True, got {result}"
+        assert result["noop"] is False, result
+        # Converged to fully-applied on every post-condition.
+        spec_text = (spec_dir / "SPEC.md").read_text(encoding="utf-8")
+        assert "**Status:** Complete" in spec_text and "In-progress" not in spec_text, spec_text
+        phases_text = (spec_dir / "PHASES.md").read_text(encoding="utf-8")
+        assert phases_text.startswith("# Phases\n\n**Status:** Complete"), phases_text
+        assert not (spec_dir / "VALIDATED.md").exists(), "VALIDATED.md not cleaned on resume"
+        ids = [e["id"] for e in json.loads(queue_path.read_text(encoding="utf-8"))["queue"]]
+        assert "mcp-testing" not in ids and "other" in ids, ids
+        assert result.get("queue_trimmed") is True, result
+        assert lazy_core._ROADMAP_COMPLETE_TOKEN in roadmap_path.read_text(encoding="utf-8"), (
+            "ROADMAP row not struck on resume"
+        )
+        assert result.get("roadmap_struck") is True, result
+        # A now-converged dir yields the SANCTIONED post-condition set: further
+        # audit finds nothing missing (proves convergence — the loop is broken).
+        assert lazy_core._completion_postconditions_missing(
+            spec_dir, repo_root, "mcp-testing", "Complete", is_fixed=False
+        ) == [], "post-conditions still missing after resume"
+
+
+def test_apply_pseudo_mark_complete_resume_then_clean_noop():
+    """A skip-validated crash window (SKIP_MCP_TEST.md is the KEPT evidence, so it
+    survives completion): receipt present, Status In-progress, a lingering
+    RETRO_DONE.md cleanup sentinel → RESUME converges (flips status, deletes
+    RETRO_DONE, keeps SKIP), and a SECOND invocation is then a clean noop
+    (SPEC Fix Scope item 4c)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "docs" / "features" / "skip-feat"
+        spec_dir.mkdir(parents=True)
+        lazy_core.write_completed_receipt(
+            spec_dir / "COMPLETED.md",
+            feature_id="skip-feat",
+            date="2026-06-10",
+            provenance="gated",
+        )
+        _write_spec_md(spec_dir, status="In-progress")
+        _write_skip_mcp_test(spec_dir)  # kept evidence — survives completion
+        (spec_dir / "RETRO_DONE.md").write_text(
+            "---\nkind: retro-done\nfeature_id: skip-feat\ndate: 2026-06-01\n---\n",
+            encoding="utf-8",
+        )
+
+        first = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir,
+            feature_id="skip-feat", date="2026-06-10",
+        )
+        assert first.get("resumed") is True, first
+        assert first["noop"] is False and first["refused"] is None, first
+        assert "**Status:** Complete" in (spec_dir / "SPEC.md").read_text(encoding="utf-8")
+        assert not (spec_dir / "RETRO_DONE.md").exists(), "RETRO_DONE not cleaned"
+        assert (spec_dir / "SKIP_MCP_TEST.md").exists(), "kept SKIP evidence wrongly deleted"
+
+        # Second invocation → clean noop, no writes.
+        second = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir,
+            feature_id="skip-feat", date="2026-06-10",
+        )
+        assert second["noop"] is True, f"expected clean noop after convergence, got {second}"
+        assert second.get("resumed") is False, second
+        assert second["wrote"] == [] and second["deleted"] == [], second
+
+
+def test_apply_pseudo_mark_fixed_resumes_partial_apply():
+    """The bug-pipeline mirror: __mark_fixed__ shares the same apply_pseudo
+    branch, so the crash window exists between the FIXED.md receipt and the SPEC
+    flip too. FIXED.md present + Status In-progress + a lingering VALIDATED.md →
+    RESUME flips Status to Fixed and deletes VALIDATED.md (no feature queue-trim /
+    ROADMAP-strike on the bug path); a second call is a clean noop. Uses a kept
+    SKIP_MCP_TEST.md so the validation gate still passes after VALIDATED cleanup.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "docs" / "bugs" / "some-bug"
+        spec_dir.mkdir(parents=True)
+        lazy_core.write_completed_receipt(
+            spec_dir / "FIXED.md",
+            feature_id="some-bug",
+            date="2026-06-10",
+            provenance="gated",
+            kind="fixed",
+        )
+        _write_spec_md(spec_dir, status="In-progress")
+        _write_validated_md(spec_dir)   # cleanup sentinel to be deleted on resume
+        _write_skip_mcp_test(spec_dir)  # kept evidence so the re-run gate passes
+
+        first = lazy_core.apply_pseudo(
+            repo_root, "__mark_fixed__", spec_dir,
+            feature_id="some-bug", date="2026-06-10",
+        )
+        assert first.get("resumed") is True, first
+        assert first["noop"] is False and first["refused"] is None, first
+        spec_text = (spec_dir / "SPEC.md").read_text(encoding="utf-8")
+        assert "**Status:** Fixed" in spec_text, spec_text
+        assert not (spec_dir / "VALIDATED.md").exists(), "VALIDATED not cleaned on fixed resume"
+        # The bug path never reports a feature-queue trim / ROADMAP strike.
+        assert first.get("queue_trimmed") is False and first.get("roadmap_struck") is False, first
+
+        second = lazy_core.apply_pseudo(
+            repo_root, "__mark_fixed__", spec_dir,
+            feature_id="some-bug", date="2026-06-10",
+        )
+        assert second["noop"] is True, f"expected clean noop after fixed convergence, got {second}"
+        assert second.get("resumed") is False, second
 
 
 # ---- Test 14 ----
@@ -6289,10 +6463,12 @@ def test_apply_pseudo_coherence_no_status_phase_with_unchecked_still_refuses():
 
 
 def test_apply_pseudo_coherence_idempotent_skips_check_when_receipted():
-    """Idempotency takes precedence over the coherence check: if a valid
-    COMPLETED.md already exists, the action is a noop EVEN IF PHASES.md is
-    incoherent (the check runs only on the receipt-minting path). This pins the
-    ordering: already-has-receipt noop BEFORE the coherence gate.
+    """Idempotency takes precedence over the coherence check: a receipted dir
+    NEVER re-refuses on an incoherent PHASES.md. mark-complete-partial-apply-
+    noop-unrecoverable: a receipt with a lingering VALIDATED.md + In-progress
+    PHASES is now a crash-window RESUME (the coherence gate is SKIPPED on resume,
+    so the incoherent unchecked row can NOT cause a re-refusal) — the load-bearing
+    property (receipt beats coherence re-check) is preserved via resume-not-noop.
     """
     _guard()
     with tempfile.TemporaryDirectory() as td:
@@ -6314,11 +6490,12 @@ def test_apply_pseudo_coherence_idempotent_skips_check_when_receipted():
         result = lazy_core.apply_pseudo(
             Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
         )
-        assert result["ok"] is True, f"expected ok=True (noop), got {result}"
-        assert result["noop"] is True, (
-            f"expected noop=True (receipt present, coherence check skipped), got {result}"
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        # Never re-refuses despite the incoherent PHASES (coherence skipped on resume).
+        assert result["refused"] is None, f"expected refused=None, got {result!r}"
+        assert result.get("resumed") is True, (
+            f"expected a resume (receipt + lingering VALIDATED + In-progress), got {result}"
         )
-        assert result["refused"] is None, f"expected refused=None on noop, got {result!r}"
 
 
 # ---------------------------------------------------------------------------
@@ -10017,10 +10194,14 @@ def test_apply_pseudo_mark_complete_grandfathered_retro_completes():
 
 
 def test_apply_pseudo_mark_complete_receipted_noop_beats_stale_retro():
-    """An already-receipted dir is a clean noop even when its RETRO_DONE.md is
-    stale — the staleness backstop sits AFTER the receipt-noop (matching the
-    Phase-9 coherence-gate ordering): re-completing a done feature never
-    re-refuses."""
+    """An already-receipted dir with a STALE RETRO_DONE.md never re-refuses. The
+    staleness backstop is SKIPPED on a crash-window RESUME (it sits after the
+    audit and, once a receipt exists, it already passed pre-receipt on the
+    crashed run) — so a lingering VALIDATED.md + stale RETRO_DONE.md drives a
+    RESUME (convergence + cleanup), not a re-refusal.
+    mark-complete-partial-apply-noop-unrecoverable replaced the pre-fix noop
+    here with resume-not-refuse; the load-bearing property (never re-refuse a
+    receipted dir) is preserved."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         spec_dir = Path(td) / "spec"
@@ -10046,9 +10227,14 @@ def test_apply_pseudo_mark_complete_receipted_noop_beats_stale_retro():
         result = lazy_core.apply_pseudo(
             Path(td), "__mark_complete__", spec_dir, date="2026-06-11"
         )
-    assert result["ok"] is True, result
-    assert result["noop"] is True, result
-    assert result["refused"] is None, result
+        # Never re-refuses (the load-bearing property), and the staleness gate is
+        # bypassed on the resume rather than firing.
+        assert result["ok"] is True, result
+        assert result["refused"] is None, result
+        assert result.get("resumed") is True, result
+        # The resume cleaned up the lingering cleanup sentinels.
+        assert not (spec_dir / "VALIDATED.md").exists(), result
+        assert not (spec_dir / "RETRO_DONE.md").exists(), result
 
 
 def test_apply_pseudo_mark_fixed_refuses_stale_retro_zero_writes():
@@ -10137,10 +10323,12 @@ def test_apply_pseudo_mark_fixed_grandfathered_retro_completes():
 
 
 def test_apply_pseudo_mark_fixed_receipted_noop_beats_stale_retro():
-    """An already-receipted bug dir is a clean noop even when its RETRO_DONE.md
-    is stale — the staleness backstop keeps its position AFTER the receipt-noop
-    (matching the __mark_complete__ ordering): re-fixing a done bug never
-    re-refuses."""
+    """The bug-pipeline mirror of the __mark_complete__ case: an already-receipted
+    bug dir with a STALE RETRO_DONE.md never re-refuses. The staleness backstop is
+    SKIPPED on a crash-window RESUME (a lingering VALIDATED.md + stale RETRO_DONE.md
+    drives a resume/cleanup, not a re-refusal).
+    mark-complete-partial-apply-noop-unrecoverable: resume-not-refuse preserves
+    the never-re-refuse-a-receipted-dir property on the bug axis too."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         spec_dir = Path(td) / "spec"
@@ -10166,9 +10354,11 @@ def test_apply_pseudo_mark_fixed_receipted_noop_beats_stale_retro():
         result = lazy_core.apply_pseudo(
             Path(td), "__mark_fixed__", spec_dir, date="2026-06-11"
         )
-    assert result["ok"] is True, result
-    assert result["noop"] is True, result
-    assert result["refused"] is None, result
+        assert result["ok"] is True, result
+        assert result["refused"] is None, result
+        assert result.get("resumed") is True, result
+        assert not (spec_dir / "VALIDATED.md").exists(), result
+        assert not (spec_dir / "RETRO_DONE.md").exists(), result
 
 
 # ---------------------------------------------------------------------------
@@ -16774,6 +16964,10 @@ _TESTS = [
     ("test_apply_pseudo_mark_complete_refuses_contentless_skip", test_apply_pseudo_mark_complete_refuses_contentless_skip),
     ("test_apply_pseudo_mark_complete_idempotent", test_apply_pseudo_mark_complete_idempotent),
     ("test_apply_pseudo_mark_fixed_writes_fixed_receipt", test_apply_pseudo_mark_fixed_writes_fixed_receipt),
+    # mark-complete-partial-apply-noop-unrecoverable: crash-window RESUME tests.
+    ("test_apply_pseudo_mark_complete_resumes_partial_apply", test_apply_pseudo_mark_complete_resumes_partial_apply),
+    ("test_apply_pseudo_mark_complete_resume_then_clean_noop", test_apply_pseudo_mark_complete_resume_then_clean_noop),
+    ("test_apply_pseudo_mark_fixed_resumes_partial_apply", test_apply_pseudo_mark_fixed_resumes_partial_apply),
     ("test_apply_pseudo_unknown_name_refuses", test_apply_pseudo_unknown_name_refuses),
     ("test_apply_pseudo_flip_cloud_saturated_refuses_when_no_frontmatter_status", test_apply_pseudo_flip_cloud_saturated_refuses_when_no_frontmatter_status),
     ("test_apply_pseudo_validated_from_results_escapes_special_scenarios", test_apply_pseudo_validated_from_results_escapes_special_scenarios),
@@ -23950,8 +24144,12 @@ def test_apply_pseudo_mark_complete_no_roadmap_is_noop_strike():
 
 
 def test_apply_pseudo_mark_complete_idempotent_no_reroite_strike():
-    """An already-receipted dir short-circuits to noop BEFORE the strike — a
-    ROADMAP row already struck is NOT re-mutated on the noop re-run."""
+    """A GENUINELY-DONE dir short-circuits to noop BEFORE the strike — an
+    already-struck ROADMAP row is NOT re-mutated. mark-complete-partial-apply-
+    noop-unrecoverable: the noop is now gated on the full post-condition audit,
+    so the fixture must itself be genuinely-done (SPEC Complete, kept SKIP
+    evidence, no cleanup sentinels, ROADMAP row already carrying the COMPLETE
+    token) — otherwise it would be a partial-apply resume."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         repo_root = Path(td)
@@ -23961,14 +24159,19 @@ def test_apply_pseudo_mark_complete_idempotent_no_reroite_strike():
             spec_dir / "COMPLETED.md",
             feature_id="my-feature", date="2026-06-17", provenance="gated",
         )
-        _write_validated_md(spec_dir)
-        roadmap = _write_roadmap(repo_root, ["| my-feature | thing | tier 1 |"])
+        _write_spec_md(spec_dir, status="Complete")
+        _write_skip_mcp_test(spec_dir)
+        # ROADMAP row already struck (carries the COMPLETE token) → post-condition met.
+        roadmap = _write_roadmap(
+            repo_root, [f"| my-feature | thing | {lazy_core._ROADMAP_COMPLETE_TOKEN} |"]
+        )
         before = roadmap.read_text(encoding="utf-8")
         result = lazy_core.apply_pseudo(
             repo_root, "__mark_complete__", spec_dir,
             feature_id="my-feature", date="2026-06-17",
         )
         assert result["noop"] is True, result
+        assert result.get("resumed") is False, result
         assert roadmap.read_text(encoding="utf-8") == before, (
             "ROADMAP mutated on the noop re-run"
         )
@@ -31036,9 +31239,12 @@ def test_mark_complete_receipt_noop_writes_no_provenance():
             dist_path = spec_dir / "IMPLEMENTED.md"
             assert dist_path.exists()
             dist_path.unlink()  # remove so a re-write would be visible
-            # Re-add the evidence sentinel (the first completion deleted it) so
-            # the re-run reaches the receipt-noop path, not the evidence gate.
-            _write_validated_md(spec_dir)
+            # Add a KEPT evidence sentinel (SKIP_MCP_TEST.md survives completion,
+            # unlike VALIDATED.md which the first completion deleted) so the re-run
+            # reaches the genuinely-done noop audit — NOT a partial-apply resume.
+            # (mark-complete-partial-apply-noop-unrecoverable: re-adding VALIDATED.md
+            # would itself be a missing post-condition → a resume that re-writes.)
+            _write_skip_mcp_test(spec_dir)
             second = lazy_core.apply_pseudo(
                 repo_root, "__mark_complete__", spec_dir,
                 feature_id="feat-noop", date="2026-07-04",

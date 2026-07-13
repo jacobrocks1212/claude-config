@@ -9824,6 +9824,90 @@ def run_smoke_tests() -> int:
             failures.append(f"[{fix_pp_gate}] SystemExit: {exc.code}")
             print(f"  FAIL [{fix_pp_gate}] SystemExit: {exc.code}")
 
+        # -------------------------------------------------------------------
+        # Walk-level convergence (mark-complete-partial-apply-noop-unrecoverable).
+        # A crash between the COMPLETED.md receipt write and the SPEC status flip
+        # leaves a receipt-present + Status-In-progress dir. compute_state STILL
+        # routes __mark_complete__ (the item is not CLAIMED: Status not Complete,
+        # ROADMAP unstruck). Before the fix, apply_pseudo noop'd forever against
+        # that state — the same Step-10 route computed every probe, an
+        # unrecoverable loop. Now apply_pseudo RESUMES and converges, after which
+        # compute_state no longer routes __mark_complete__ (the loop is broken).
+        # -------------------------------------------------------------------
+        fix_res = "resume-partial-apply-walk-convergence"
+        try:
+            rp_root = td_path / "resume-partial"
+            rp_feat = rp_root / "docs" / "features"
+            rp_feat.mkdir(parents=True, exist_ok=True)
+            (rp_feat / "queue.json").write_text(json.dumps({
+                "queue": [
+                    {"id": "feat-rp", "name": "Feature RP",
+                     "spec_dir": "feat-rp", "tier": 1}
+                ]
+            }))
+            (rp_feat / "ROADMAP.md").write_text(
+                "# Roadmap\n\n- feat-rp: resume me\n"
+            )
+            rp = rp_feat / "feat-rp"
+            rp.mkdir()
+            # The crash window: receipt written, Status still In-progress,
+            # VALIDATED.md + RETRO_DONE.md present, phases complete, queue entry
+            # present (the exact partial state the SPEC's trace materializes).
+            (rp / "SPEC.md").write_text(
+                "# Spec\n\n**Status:** In-progress\n\n**Depends on:** (none)\n"
+            )
+            (rp / "RESEARCH.md").write_text("# R\n")
+            (rp / "RESEARCH_SUMMARY.md").write_text("# S\n")
+            (rp / "PHASES.md").write_text("# Phases\n\n### Phase 1\n- [x] Done\n")
+            _write_yaml_sentinel(
+                rp / "RETRO_DONE.md", "retro-done",
+                feature_id="feat-rp", date="2026-05-30",
+                rounds=1, retro_plans=["retro-1-feat-rp.md"],
+                mcp_validation_status="complete",
+            )
+            _write_yaml_sentinel(
+                rp / "VALIDATED.md", "validated",
+                feature_id="feat-rp", date="2026-05-30",
+                mcp_scenarios=["AQ-TE-05"], result="all-passing",
+            )
+            _write_yaml_sentinel(
+                rp / "COMPLETED.md", "completed",
+                feature_id="feat-rp", date="2026-05-30", provenance="gated",
+            )
+            rp_ok = True
+            # (1) The partial dir STILL routes to __mark_complete__ (routing is
+            # correct — the defect was apply_pseudo noop'ing against this route).
+            got_pre = compute_state(rp_root, cloud=False, real_device=True)
+            if got_pre.get("sub_skill") != "__mark_complete__":
+                failures.append(
+                    f"[{fix_res}] partial dir must route __mark_complete__; got "
+                    f"{got_pre.get('sub_skill')!r} / {got_pre.get('terminal_reason')!r}"
+                )
+                rp_ok = False
+            # (2) apply_pseudo RESUMES (does not noop) and converges.
+            res = lazy_core.apply_pseudo(
+                rp_root, "__mark_complete__", rp, feature_id="feat-rp",
+            )
+            if not res.get("resumed"):
+                failures.append(f"[{fix_res}] expected resumed=True, got {res!r}")
+                rp_ok = False
+            if "**Status:** Complete" not in (rp / "SPEC.md").read_text(encoding="utf-8"):
+                failures.append(f"[{fix_res}] resume did not flip SPEC to Complete")
+                rp_ok = False
+            # (3) After convergence, compute_state NO LONGER routes __mark_complete__
+            # (the same Step-10 route is not computed twice — loop broken).
+            got_post = compute_state(rp_root, cloud=False, real_device=True)
+            if got_post.get("sub_skill") == "__mark_complete__":
+                failures.append(
+                    f"[{fix_res}] repaired dir must NOT re-route __mark_complete__ "
+                    f"(unrecoverable loop unbroken): {got_post!r}"
+                )
+                rp_ok = False
+            print(f"  {'PASS' if rp_ok else 'FAIL'} [{fix_res}]")
+        except SystemExit as exc:
+            failures.append(f"[{fix_res}] SystemExit: {exc.code}")
+            print(f"  FAIL [{fix_res}] SystemExit: {exc.code}")
+
         # Sub-fixture 11: flag pairing (SPEC D1) — in-process _die (SystemExit 2)
         # and CLI exit 2.
         fix_pp_flag = "park-provisional-flag-pairing"

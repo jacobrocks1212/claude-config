@@ -146,6 +146,7 @@
   PASS [needs-input-outranks-ratification]
   PASS [park-provisional-validated-parks]
   PASS [apply-pseudo-provisional-refusal]
+  PASS [resume-partial-apply-walk-convergence]
 {
   "error": "--park-provisional requires --park-needs-input (SPEC D1)",
   "path": null

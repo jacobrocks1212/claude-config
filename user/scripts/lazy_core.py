@@ -4100,6 +4100,135 @@ def _strike_roadmap_row(
     return changed
 
 
+def _top_status_is(md_path: Path, status_value: str) -> bool:
+    """True iff the FIRST ``**Status:**`` line of ``md_path`` reads ``status_value``.
+
+    A file with NO ``**Status:**`` line counts as satisfied — the completion
+    sequence's ``re.sub(count=1)`` flip is a no-op there, so a genuinely-done dir
+    whose SPEC/PHASES simply carries no top status line must not be forced into a
+    resume. An unreadable file also returns True (an IO error must never
+    manufacture a partial-apply verdict). Used by
+    ``_completion_postconditions_missing``.
+    """
+    try:
+        text = md_path.read_text(encoding="utf-8")
+    except OSError:
+        return True
+    m = re.search(r"^\*\*Status:\*\*[ \t]*(.*?)[ \t]*$", text, re.MULTILINE)
+    if m is None:
+        return True
+    return m.group(1).strip() == status_value
+
+
+def _roadmap_has_unstruck_row(
+    roadmap_path: Path, spec_path: Path, feature_id: str
+) -> bool:
+    """True iff ROADMAP.md carries a row referencing the feature that is NOT yet
+    struck (i.e. ``_strike_roadmap_row`` WOULD rewrite it).
+
+    Read-only mirror of the strike loop's match + ``_ROADMAP_COMPLETE_TOKEN``
+    idempotency test — the completion post-condition audit's inverse of the
+    ROADMAP strike. An unreadable ROADMAP returns False (the strike itself
+    surfaces the OSError as a warning; the audit must not force a resume on it).
+    """
+    try:
+        text = roadmap_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    tokens = {t for t in (feature_id, spec_path.name) if t}
+    if not tokens:
+        return False
+    token_res = [re.compile(rf"(?<![\w-]){re.escape(t)}(?![\w-])") for t in tokens]
+    for line in text.splitlines():
+        stripped = line.rstrip("\n")
+        if not any(rx.search(stripped) for rx in token_res):
+            continue
+        if _ROADMAP_COMPLETE_TOKEN in stripped:
+            continue
+        return True
+    return False
+
+
+def _completion_postconditions_missing(
+    spec_path: Path,
+    repo_root: Path,
+    feature_id: str,
+    status_value: str,
+    is_fixed: bool,
+) -> list[str]:
+    """Return the list of unsatisfied completion post-conditions for an
+    already-receipted dir (empty ⇒ the completion is fully applied → noop).
+
+    The idempotency key of ``apply_pseudo``'s ``__mark_complete__`` /
+    ``__mark_fixed__`` branch (mark-complete-partial-apply-noop-unrecoverable).
+    The receipt is the FIRST externally-observable post-condition written, so a
+    crash between the receipt write and the SPEC status flip leaves a
+    receipt-present + ``Status: In-progress`` dir that the receipt-only noop
+    could never repair (the state machine re-routed to ``__mark_complete__``
+    forever, zero writes). This audit checks EVERY post-condition the state
+    machine routes on:
+
+      * SPEC.md / PHASES.md first ``**Status:**`` line == ``status_value``
+        (a file with no status line is satisfied — the flip is a no-op there);
+      * cleanup sentinels (VALIDATED.md / RETRO_DONE.md / DEFERRED_NON_CLOUD.md)
+        absent;
+      * feature (complete) path ONLY: the queue.json entry trimmed AND the
+        ROADMAP row struck (the bug/fixed path trims via ``archive_fixed`` and
+        has no feature ROADMAP, so those two are audited only when not is_fixed).
+
+    Any missing entry means the prior completion died mid-sequence → the caller
+    RESUMES the idempotent tail. Pure read; never raises.
+    """
+    missing: list[str] = []
+
+    spec_md = spec_path / "SPEC.md"
+    if spec_md.exists() and not _top_status_is(spec_md, status_value):
+        missing.append("SPEC.md status")
+
+    phases_md = spec_path / "PHASES.md"
+    if phases_md.exists() and not _top_status_is(phases_md, status_value):
+        missing.append("PHASES.md status")
+
+    for cleanup_name in ("VALIDATED.md", "RETRO_DONE.md", "DEFERRED_NON_CLOUD.md"):
+        if (spec_path / cleanup_name).exists():
+            missing.append(cleanup_name)
+
+    if not is_fixed:
+        queue_path = repo_root / "docs" / "features" / "queue.json"
+        if queue_path.exists():
+            try:
+                qdata = json.loads(queue_path.read_text(encoding="utf-8"))
+                qitems = qdata.get("queue", [])
+                if isinstance(qitems, list):
+                    resolved_spec = _resolve_under_repo(repo_root, spec_path)
+
+                    def _entry_matches(e: dict) -> bool:
+                        sd = e.get("spec_dir")
+                        if sd == spec_path.name or e.get("id") == feature_id:
+                            return True
+                        if isinstance(sd, str) and sd:
+                            if _resolve_under_repo(repo_root, sd) == resolved_spec:
+                                return True
+                        return False
+
+                    if any(
+                        isinstance(e, dict) and _entry_matches(e) for e in qitems
+                    ):
+                        missing.append("queue.json entry")
+            except (json.JSONDecodeError, OSError):
+                # A malformed queue is a non-fatal warning at trim time, not a
+                # partial-apply signal — do not force a resume on it here.
+                pass
+
+        roadmap_path = repo_root / "docs" / "features" / "ROADMAP.md"
+        if roadmap_path.exists() and _roadmap_has_unstruck_row(
+            roadmap_path, spec_path, feature_id
+        ):
+            missing.append("ROADMAP.md row")
+
+    return missing
+
+
 def apply_pseudo(
     repo_root: Path,
     name: str,
@@ -4134,6 +4263,13 @@ def apply_pseudo(
 
     Extra keys some pseudo-skills attach (absent otherwise — callers may still
     JSON-dump unconditionally):
+      - ``resumed`` (``__mark_complete__`` / ``__mark_fixed__``): True iff this
+        call recovered a crash-window PARTIAL apply — a receipt was already
+        present but a completion post-condition was missing, so the idempotent
+        tail (SPEC/PHASES flip, sentinel delete, queue trim, ROADMAP strike,
+        provenance) was re-applied to converge
+        (mark-complete-partial-apply-noop-unrecoverable). False on the normal
+        path; a genuinely-done dir returns a plain ``noop`` earlier.
       - ``flipped_phases`` (``__mark_complete__`` / ``__mark_fixed__``): phase
         headings the completion-coherence gate auto-flipped to Complete.
       - ``queue_trimmed`` (``__mark_complete__`` / ``__mark_fixed__``): True iff
@@ -4872,14 +5008,48 @@ def apply_pseudo(
                 "to fold into receipt"
             )
 
-        # Idempotency: if the receipt already exists and parses correct kind → noop.
-        # NOTE: this noop check runs BEFORE the completion-coherence gate below,
-        # so an already-receipted dir is a clean noop even if its PHASES.md is
-        # incoherent — re-completing a done feature must never re-refuse.
+        # Idempotency / crash-recovery audit
+        # (mark-complete-partial-apply-noop-unrecoverable). The OLD check noop'd
+        # on receipt-existence ALONE — but the receipt is the FIRST
+        # externally-observable post-condition written, so a crash between the
+        # receipt write and the SPEC status flip left a receipt-present +
+        # `Status: In-progress` dir that the receipt-only noop could NEVER
+        # repair: the state machine re-routed to __mark_complete__ every probe,
+        # zero writes, unrecoverable loop.
+        #
+        # Now: receipt present → AUDIT every completion post-condition
+        # (_completion_postconditions_missing). ALL satisfied → noop (genuinely
+        # done — preserves the re-completing-never-re-refuses rule; this still
+        # runs BEFORE the retro-staleness / provisional / coherence gates below,
+        # exactly where the noop sat). ANY missing → RESUME: skip the gates +
+        # receipt write + intervention capture (steps 1–4) and re-apply only the
+        # idempotent tail (steps 5–10) to converge — mirroring archive_fixed's
+        # in-file resume-not-noop posture. The tail steps are each individually
+        # idempotent (count=1 status sub, exists-guarded deletes, no-op
+        # trims/strikes), so re-running them is safe.
         receipt_path = spec_path / receipt_filename
         existing_receipt = parse_sentinel(receipt_path)
-        if existing_receipt is not None and existing_receipt.get("kind") == receipt_kind:
-            return _noop()
+        receipt_present = (
+            existing_receipt is not None
+            and existing_receipt.get("kind") == receipt_kind
+        )
+        resuming = False
+        if receipt_present:
+            missing_postconditions = _completion_postconditions_missing(
+                spec_path, repo_root, feature_id, status_value, is_fixed
+            )
+            if not missing_postconditions:
+                # Genuinely done — carry resumed=False so the key is consistently
+                # present on every __mark_complete__/__mark_fixed__ return.
+                done = _noop()
+                done["resumed"] = False
+                return done
+            resuming = True
+            _diag(
+                f"apply_pseudo {name}: receipt present but PARTIAL apply detected "
+                f"(missing: {', '.join(missing_postconditions)}) — resuming the "
+                "idempotent completion tail (steps 5–10)"
+            )
 
         # --- Retro-staleness backstop (Phase 11 WU-5d + WU-5e) ---
         # Mechanical second key behind the state scripts' Step-8 staleness
@@ -4896,7 +5066,10 @@ def apply_pseudo(
         # the identical RETRO_DONE.md + PHASES.md shape, so the bug pipeline
         # needs the same backstop. Missing field / missing PHASES.md →
         # retro_staleness returns None (grandfathered, pre-Phase-11 behavior).
-        _staleness = retro_staleness(spec_path)
+        # Skipped on a RESUME: the receipt already exists, so this gate passed
+        # pre-receipt on the crashed run — re-refusing here would trade a silent
+        # loop for a wrong halt.
+        _staleness = None if resuming else retro_staleness(spec_path)
         if _staleness is not None:
             _now_count, _retro_count = _staleness
             return _refused(
@@ -4915,7 +5088,7 @@ def apply_pseudo(
         # complete. Sits AFTER the receipt-noop (re-completing an
         # already-receipted dir never re-refuses) and BEFORE any auto-tick
         # write, matching the retro-staleness ordering rule above.
-        if (spec_path / PROVISIONAL_SENTINEL).exists():
+        if not resuming and (spec_path / PROVISIONAL_SENTINEL).exists():
             return _refused(
                 f"unratified provisional decision(s) — {PROVISIONAL_SENTINEL} "
                 "present; ratify or redirect via the provisional-ratification "
@@ -4945,7 +5118,7 @@ def apply_pseudo(
         auto_ticked_rows = 0
         strict_gate = _evidence_gate_killed()
         phases_md_path = spec_path / "PHASES.md"
-        if phases_md_path.exists() and not strict_gate:
+        if not resuming and phases_md_path.exists() and not strict_gate:
             verdict = evaluate_completion_evidence(spec_path, repo_root)
             if verdict["verdict"] in ("exempt-and-tick", "warn-exempt"):
                 tick_res = autotick_verification_rows(
@@ -4973,7 +5146,7 @@ def apply_pseudo(
         # no-op (preserves the pre-Phase-9 behavior). ``flipped_phases`` records
         # the headings flipped.
         flipped_phases: list[str] = []
-        if phases_md_path.exists():
+        if not resuming and phases_md_path.exists():
             # Re-read: the auto-tick above may have rewritten the file.
             phases_text = phases_md_path.read_text(encoding="utf-8")
             parsed_phases = parse_phases(phases_text)
@@ -5072,30 +5245,35 @@ def apply_pseudo(
             if isinstance(raw_total, int):
                 mcp_total_count = raw_total
 
-        body_note = (
-            f"Feature {feature_id} marked {status_value.lower()} via "
-            f"apply_pseudo on {date}. Validated via: {validated_via}."
-        )
+        # Write the receipt (SKIPPED on a RESUME — the receipt already exists and
+        # re-writing it would clobber its original provenance / completed_commit /
+        # auto_ticked_rows). The idempotent tail below re-applies steps 5–10 only.
+        wrote: list[str] = []
+        if not resuming:
+            body_note = (
+                f"Feature {feature_id} marked {status_value.lower()} via "
+                f"apply_pseudo on {date}. Validated via: {validated_via}."
+            )
 
-        # Write the receipt using the existing helper.
-        # code-doc-provenance-linkage Phase 1 (D4): anchor the receipt to the
-        # HEAD at flip time. write_completed_receipt has always supported the
-        # field; this call site simply never passed it. A non-git repo_root
-        # resolves None → the field is omitted (legacy byte-shape preserved).
-        write_completed_receipt(
-            receipt_path,
-            feature_id,
-            date,
-            provenance="gated",
-            kind=receipt_kind,
-            completed_commit=_current_head(repo_root),
-            validated_via=validated_via,
-            mcp_pass_count=mcp_pass_count,
-            mcp_total_count=mcp_total_count,
-            auto_ticked_rows=auto_ticked_rows,
-            body_note=body_note,
-        )
-        wrote = [receipt_filename]
+            # Write the receipt using the existing helper.
+            # code-doc-provenance-linkage Phase 1 (D4): anchor the receipt to the
+            # HEAD at flip time. write_completed_receipt has always supported the
+            # field; this call site simply never passed it. A non-git repo_root
+            # resolves None → the field is omitted (legacy byte-shape preserved).
+            write_completed_receipt(
+                receipt_path,
+                feature_id,
+                date,
+                provenance="gated",
+                kind=receipt_kind,
+                completed_commit=_current_head(repo_root),
+                validated_via=validated_via,
+                mcp_pass_count=mcp_pass_count,
+                mcp_total_count=mcp_total_count,
+                auto_ticked_rows=auto_ticked_rows,
+                body_note=body_note,
+            )
+            wrote = [receipt_filename]
 
         # --- Intervention capture (intervention-efficacy-tracking D1-A) ---
         # AFTER the receipt write (the receipt is the completion's core; the
@@ -5106,16 +5284,19 @@ def apply_pseudo(
         # byte-inert (no keys, no file; every non-opted-in repo unchanged).
         # FAIL-OPEN: any capture error degrades to a `warnings` entry — the
         # completion stands; capture can never fail a completion.
+        # SKIPPED on a RESUME: the record is written once at the original
+        # completion (guarded by its own record-exists noop anyway); a resume
+        # re-applies only the idempotent tail, never re-captures.
         intervention_result: dict | None = None
         intervention_warnings: list[str] = []
         try:
             _spec_md_path = spec_path / "SPEC.md"
             _hyp_present = False
-            if _spec_md_path.exists():
+            if not resuming and _spec_md_path.exists():
                 _hyp_present = parse_intervention_hypothesis(
                     _spec_md_path.read_text(encoding="utf-8")
                 ) is not None
-            if _interventions_queue_flag(repo_root) or _hyp_present:
+            if not resuming and (_interventions_queue_flag(repo_root) or _hyp_present):
                 intervention_result = record_intervention(
                     repo_root,
                     feature_id,
@@ -5328,6 +5509,12 @@ def apply_pseudo(
         # the completion-coherence gate auto-flipped to Complete this call).
         # Empty list when nothing needed flipping; documented in the docstring.
         result = _ok(wrote, deleted)
+        # mark-complete-partial-apply-noop-unrecoverable: True iff this call was a
+        # crash-window RESUME (receipt already present, a post-condition was
+        # missing, and the idempotent tail was re-applied to converge). False on
+        # the normal completion path and on a genuinely-done noop (which returns
+        # earlier). The re-applied artifacts are surfaced via wrote/deleted.
+        result["resumed"] = resuming
         result["flipped_phases"] = flipped_phases
         # auto_ticked_rows: count of verification rows the evidence-gated gate
         # auto-ticked this call (completion-coherence-gate-reconciliation Phase

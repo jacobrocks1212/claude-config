@@ -29,7 +29,10 @@ spec → research → phases → plan → implement → retro → MCP validation
 
 `mark-complete` writes a `COMPLETED.md` receipt and flips `Status → Complete`. **A `Complete`
 status with no receipt is a hard error** — completion is receipt-gated by the integrity gate
-inside `__mark_complete__`. `Superseded` is exempt.
+inside `__mark_complete__`. `Superseded` is exempt. The inverse — a receipt present with a non-terminal
+Status — is a **resumable partial completion**: `apply_pseudo` audits the full post-condition set
+and resumes the interrupted write sequence rather than noop-ing (mark-complete-partial-apply fix,
+2026-07-12).
 
 ## Conventions
 

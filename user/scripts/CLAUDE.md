@@ -62,6 +62,17 @@ each time (they are the most-re-read facts in this directory):
   Not interchangeable — a justified divergence, not a bug to "fix".
 - **Coupled scripts are parity-gated.** A change to one state script usually must be mirrored to
   the other; run the parity audit (below) and consult the coupled-pairs table in the root `CLAUDE.md`.
+- **Completion is sequence-resume-safe, not just receipt-gated.** `apply_pseudo`'s
+  `__mark_complete__`/`__mark_fixed__` branch writes a receipt FIRST, then flips SPEC/PHASES status,
+  cleans sentinels, trims the queue, and strikes the ROADMAP — a sequence whose individual writes are
+  atomic but whose whole is not. The idempotency check therefore audits **all** completion
+  post-conditions (`_completion_postconditions_missing`), not receipt-existence alone: all satisfied →
+  noop; **a receipt with any missing post-condition (e.g. `**Status:** In-progress`) is a resumable
+  partial completion** — the branch RESUMES the idempotent tail (skipping the gates + receipt write +
+  intervention capture) and converges, surfacing `resumed: true`. This is the inverse of the
+  receipt-gate invariant (a `Complete` status with no receipt is a hard error): a receipt with a
+  non-terminal status is repaired by re-running the mark, never a permanent no-progress loop
+  (`mark-complete-partial-apply-noop-unrecoverable`).
 
 ### Adding a test to the in-file `--test` harness
 
