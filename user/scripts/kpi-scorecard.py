@@ -70,9 +70,11 @@ _SOURCES: dict[str, frozenset] = {
         # harness-change-canary-rollback: registered at spec-finalization so the
         # feature's drafted `## KPI Declaration` row lints clean. Compute is
         # wired in the feature's Phase 4 (until then _sel_telemetry returns an
-        # honest NO-DATA for this selector — never a fabricated zero,
-        "mcp-validation-round-trips-per-feature",).
+        # honest NO-DATA for this selector — never a fabricated zero).
         "canary-trip-precision",
+        # mcp-validation-peels-one-seam-per-loop follow-up (state batch 2):
+        # compute pending; honest NO-DATA until wired.
+        "mcp-validation-round-trips-per-feature",
     }),
     "deny-ledger": frozenset({
         "build-queue-enforce-deny-count",
