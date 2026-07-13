@@ -74,3 +74,13 @@ python3 user/scripts/cli_surface_gen.py --repo-root . --check
 
 `__mark_complete__` is REFUSED while `NEEDS_INPUT_PROVISIONAL.md` exists (D1 unratified). This
 plan's work is done; the feature waits at the ratification gate, not at implementation.
+
+## Work Units
+
+- [x] WU-1 age_escalated_rank/pin_is_active/bug_priority_marker in lazy_core + merged_priority rewire (landed 337e41de)
+- [x] WU-2 bug-state.py --pin/--until CLI + loader field population (landed 337e41de)
+- [x] WU-3 kpi-scorecard sentinel-scan selectors + registry rows + scorecard regen (landed 337e41de)
+- [x] WU-4 lazy-queue-doc + visualizer aging column (landed 337e41de)
+- [x] WU-5 tests: 17 lazy_core + 9 kpi + 6 queue-doc (landed 337e41de)
+
+> Retroactive checklist added 2026-07-13 (plan predates the plan-structural gate landing mid-run); states reflect actual execution.

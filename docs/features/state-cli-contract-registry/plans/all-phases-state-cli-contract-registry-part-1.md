@@ -159,3 +159,14 @@ is mechanically out of scope until the operator ratifies. `SPEC.md` and `PHASES.
 `Status: Draft` / `In-progress`. No `COMPLETED.md`, `IMPLEMENTED.md`, or `SKIP_MCP_TEST.md` was
 written this session (the SKIP_MCP_TEST rationale is drafted inline in `PHASES.md`'s header for
 whoever ratifies and finalizes).
+
+## Work Units
+
+- [x] WU-1 cli_surface.py model + cli_surface_gen.py generator + docs/cli/cli-surface.json (landed bfdd57a6)
+- [x] WU-2 build_parser() hoist + --dump-cli-surface on both state scripts (landed bfdd57a6)
+- [x] WU-3 cli-surface-lint.py + lint-skills --check-cli-surface (landed bfdd57a6)
+- [x] WU-4 did-you-mean suggestions on the twins + --test fixture (landed bfdd57a6)
+- [x] WU-5 tests: 18 gen + 14 lint (landed bfdd57a6)
+- [ ] WU-6 state_cli.py shared-surface extraction (D5 — DEFERRED to lazy-core-package-decomposition)
+
+> Retroactive checklist added 2026-07-13 (plan predates the plan-structural gate landing mid-run); states reflect actual execution.

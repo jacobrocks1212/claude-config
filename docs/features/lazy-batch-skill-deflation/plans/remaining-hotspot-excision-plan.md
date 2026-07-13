@@ -94,3 +94,12 @@ already establish), re-run the FULL gate suite one more time, and only then cons
 `NEEDS_INPUT_PROVISIONAL.md` (D2) is ready for operator ratification — completion is blocked
 until it is ratified (park-provisional contract), regardless of how much of the content diet
 has landed.
+
+## Work Units
+
+- [ ] WU-1 excise §1c.5 hotspot per the method above (deferred — not executed this run)
+- [ ] WU-2 excise §1b/§1c.6 hotspot (deferred)
+- [ ] WU-3 excise §1d.0 hotspot (deferred)
+- [ ] WU-4 mirror all excisions into lazy-batch-cloud + lazy-bug-batch, refresh overlays, ratchet baselines downward (deferred)
+
+> Retroactive checklist added 2026-07-13 (plan predates the plan-structural gate landing mid-run); states reflect actual execution.
