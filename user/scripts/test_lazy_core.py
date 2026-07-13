@@ -1858,7 +1858,7 @@ def test_atomic_write_creates_file():
     _guard()
     with tempfile.TemporaryDirectory() as td:
         target = Path(td) / "output.txt"
-        lazy_core._atomic_write(target, "hello world\n")
+        lazy_core._monolith._atomic_write(target, "hello world\n")
         content = target.read_text(encoding="utf-8")
     assert content == "hello world\n", f"unexpected content: {content!r}"
 
@@ -1868,7 +1868,7 @@ def test_atomic_write_creates_parent_dirs():
     _guard()
     with tempfile.TemporaryDirectory() as td:
         target = Path(td) / "nested" / "deep" / "file.txt"
-        lazy_core._atomic_write(target, "nested content\n")
+        lazy_core._monolith._atomic_write(target, "nested content\n")
         content = target.read_text(encoding="utf-8")
     assert content == "nested content\n", f"unexpected content: {content!r}"
 
@@ -1878,7 +1878,7 @@ def test_atomic_write_no_tmp_residue():
     _guard()
     with tempfile.TemporaryDirectory() as td:
         target = Path(td) / "file.txt"
-        lazy_core._atomic_write(target, "data")
+        lazy_core._monolith._atomic_write(target, "data")
         tmp_files = list(Path(td).glob("*.tmp"))
     assert tmp_files == [], f"temp file(s) not cleaned up: {tmp_files}"
 
@@ -6219,7 +6219,7 @@ def test_count_phases_cli_matches_parse_phases():
         phases.write_text(body, encoding="utf-8")
         expected = len(lazy_core.parse_phases(body))
         assert expected == 2, f"fixture sanity: expected 2, got {expected}"
-        script = Path(lazy_core.__file__).resolve().parent / "lazy-state.py"
+        script = Path(lazy_core._SCRIPTS_DIR) / "lazy-state.py"
         out = subprocess.check_output(
             [sys.executable, str(script), "--count-phases", str(phases)],
             text=True,
@@ -7797,7 +7797,7 @@ def _record_consume(state_dir: "Path") -> None:
     _set_state_dir(state_dir)
     try:
         entry = lazy_core.register_emission("dispatch prompt", "cycle")
-        consumed = lazy_core.consume_nonce(entry["nonce"])
+        consumed = lazy_core._monolith.consume_nonce(entry["nonce"])
         assert consumed, "pre-condition: the fresh nonce must consume cleanly"
     finally:
         _clear_state_dir()
@@ -8057,7 +8057,7 @@ def _record_meta_consume(state_dir: "Path", cls: str = "hardening") -> None:
     _set_state_dir(state_dir)
     try:
         entry = lazy_core.register_emission("meta dispatch prompt", cls)
-        consumed = lazy_core.consume_nonce(entry["nonce"])
+        consumed = lazy_core._monolith.consume_nonce(entry["nonce"])
         assert consumed, "pre-condition: the fresh nonce must consume cleanly"
     finally:
         _clear_state_dir()
@@ -10073,7 +10073,7 @@ def test_emit_cycle_prompt_addenda_before_loop_block():
 # `_read_mcp_runtime_decision`'s `Path(spec_path) / "PHASES.md"`) on every
 # invocation — patching the real os.name to the "wrong" platform makes that
 # internal call raise `NotImplementedError: cannot instantiate 'PosixPath'
-# on your system` (or vice versa). Instead, `lazy_core.os` (the module-level
+# on your system` (or vice versa). Instead, `lazy_core._monolith.os` (the module-level
 # name `emit_cycle_prompt`'s `os.name` reads resolve through) is rebound to a
 # transparent proxy that overrides ONLY `.name` and forwards every other
 # attribute to the REAL os module — pathlib's own `os` reference (a separate
@@ -10106,14 +10106,14 @@ def test_emit_cycle_prompt_hosts_windows_selected_on_win32():
         )
         _write_synth_template(tdir, body)
         state = _emit_state(sub_skill="/retro")
-        old_os = lazy_core.os
-        lazy_core.os = _FakeOsName("nt")
+        old_os = lazy_core._monolith.os
+        lazy_core._monolith.os = _FakeOsName("nt")
         try:
             r = lazy_core.emit_cycle_prompt(
                 repo, state, pipeline="feature", cloud=False, template_dir=tdir,
             )
         finally:
-            lazy_core.os = old_os
+            lazy_core._monolith.os = old_os
     assert r is not None and r["ok"], r
     assert "SECTION_WINDOWS" in r["prompt"], (
         "hosts=windows section must be selected when os.name == 'nt'"
@@ -10138,14 +10138,14 @@ def test_emit_cycle_prompt_hosts_windows_excluded_on_non_windows():
         )
         _write_synth_template(tdir, body)
         state = _emit_state(sub_skill="/retro")
-        old_os = lazy_core.os
-        lazy_core.os = _FakeOsName("posix")
+        old_os = lazy_core._monolith.os
+        lazy_core._monolith.os = _FakeOsName("posix")
         try:
             r = lazy_core.emit_cycle_prompt(
                 repo, state, pipeline="feature", cloud=False, template_dir=tdir,
             )
         finally:
-            lazy_core.os = old_os
+            lazy_core._monolith.os = old_os
     assert r is not None and r["ok"], r
     assert "SECTION_WINDOWS" not in r["prompt"], (
         "hosts=windows section must be EXCLUDED when os.name != 'nt'"
@@ -10169,15 +10169,15 @@ def test_emit_cycle_prompt_hosts_windows_addenda_excluded_on_non_windows():
             "ADDENDA_WINDOWS marker.\n",
         )
         state = _emit_state(sub_skill="/retro")
-        old_os = lazy_core.os
-        lazy_core.os = _FakeOsName("posix")
+        old_os = lazy_core._monolith.os
+        lazy_core._monolith.os = _FakeOsName("posix")
         try:
             r = lazy_core.emit_cycle_prompt(
                 repo, state, pipeline="feature", cloud=False,
                 template_dir=_REAL_TEMPLATE_DIR,
             )
         finally:
-            lazy_core.os = old_os
+            lazy_core._monolith.os = old_os
     assert r is not None and r["ok"], r
     assert "ADDENDA_WINDOWS" not in r["prompt"], (
         "an addenda hosts=windows section must be excluded on a non-Windows host"
@@ -11443,13 +11443,13 @@ def test_ack_oldest_deny_fifo():
                     now=float(i),
                 )
             assert lazy_core.pending_hardening() == 3
-            acked = lazy_core.ack_oldest_deny(now=999.0)
+            acked = lazy_core._monolith.ack_oldest_deny(now=999.0)
             assert acked is not None, "ack returned None despite pending entries"
             assert acked["tool_use_id"] == "tu-0", "must ack the OLDEST (tu-0)"
             assert acked["acked"] is True and acked["acked_ts"] == 999.0, acked
             assert lazy_core.pending_hardening() == 2, "one acked → 2 remain"
             # Next ack takes tu-1 (the new oldest unacked).
-            acked2 = lazy_core.ack_oldest_deny(now=1000.0)
+            acked2 = lazy_core._monolith.ack_oldest_deny(now=1000.0)
             assert acked2["tool_use_id"] == "tu-1", acked2
             assert lazy_core.pending_hardening() == 1
             # The first entry stays acked across re-reads (persisted).
@@ -11468,14 +11468,14 @@ def test_ack_oldest_deny_empty_is_noop():
         _set_state_dir(Path(td))
         try:
             # No ledger at all.
-            assert lazy_core.ack_oldest_deny() is None, "empty/absent ledger → None"
+            assert lazy_core._monolith.ack_oldest_deny() is None, "empty/absent ledger → None"
             # Ledger with a single already-acked entry.
             lazy_core.append_deny_ledger_entry(
                 tool_use_id="tu", denied_sha12="a" * 12,
                 reason_head="r", prompt_head="p", now=1.0,
             )
-            assert lazy_core.ack_oldest_deny(now=2.0) is not None  # acks it
-            assert lazy_core.ack_oldest_deny(now=3.0) is None, "all acked → no-op"
+            assert lazy_core._monolith.ack_oldest_deny(now=2.0) is not None  # acks it
+            assert lazy_core._monolith.ack_oldest_deny(now=3.0) is None, "all acked → no-op"
         finally:
             _clear_state_dir()
 
@@ -11838,7 +11838,7 @@ def test_run_end_refuses_on_unacked_deny():
     hardening dispatch reaching execution), NOT at --emit-dispatch hardening
     emission time.  The middle leg of this test previously called
     `--emit-dispatch hardening` to drain the ledger; under Phase 8 that emission
-    no longer acks, so the ack is now driven via lazy_core.ack_oldest_deny()
+    no longer acks, so the ack is now driven via lazy_core._monolith.ack_oldest_deny()
     in-process — exactly what lazy_guard.py's _ack_if_hardening does on a
     hardening-class allow.  (A separate test, test_emit_dispatch_hardening_no_
     longer_acks, pins that the emission itself does NOT ack.)"""
@@ -11878,10 +11878,10 @@ def test_run_end_refuses_on_unacked_deny():
 
         # Ack via the GUARD-ALLOW path (Phase 8): a hardening dispatch reaching
         # execution acks the oldest unacked deny.  Simulated in-process by the
-        # same lazy_core.ack_oldest_deny() call lazy_guard.py makes.
+        # same lazy_core._monolith.ack_oldest_deny() call lazy_guard.py makes.
         _set_state_dir(state_dir)
         try:
-            acked = lazy_core.ack_oldest_deny()
+            acked = lazy_core._monolith.ack_oldest_deny()
             assert acked is not None, "guard-allow ack must retire the pending deny"
         finally:
             _clear_state_dir()
@@ -13065,7 +13065,7 @@ def test_marker_advance_round_trips_counters_under_rmw():
             )
 
             # bind_marker_session: must preserve BOTH counters + watermark.
-            lazy_core.bind_marker_session("sess-abc")
+            lazy_core._monolith.bind_marker_session("sess-abc")
             after_bind = lazy_core.read_run_marker()
             assert after_bind["forward_cycles"] == 9, after_bind
             assert after_bind["meta_cycles"] == 6, after_bind
@@ -14305,14 +14305,14 @@ def test_guard_allow_acks_on_hardening_class():
             prompt = "hardening with a poisoned ack"
             lazy_core.register_emission(prompt, cls="hardening")
             # Monkeypatch ack_oldest_deny to raise — _ack_if_hardening must swallow.
-            original = lazy_core.ack_oldest_deny
+            original = lazy_core._monolith.ack_oldest_deny
             def _boom(*a, **k):
                 raise RuntimeError("ack exploded")
-            lazy_core.ack_oldest_deny = _boom  # type: ignore[assignment]
+            lazy_core._monolith.ack_oldest_deny = _boom  # type: ignore[assignment]
             try:
                 out = lazy_guard.guard(_hook_input(prompt, "tu-boom"))
             finally:
-                lazy_core.ack_oldest_deny = original  # type: ignore[assignment]
+                lazy_core._monolith.ack_oldest_deny = original  # type: ignore[assignment]
             decision = json.loads(out)["hookSpecificOutput"]["permissionDecision"]
             assert decision == "allow", (
                 "an ack failure must NEVER change the allow output (fail-open)"
@@ -14914,10 +14914,10 @@ def test_guard_bind_failure_is_fail_open():
             prompt = "Run the next cycle step with a poisoned bind."
             lazy_core.register_emission(prompt, cls="cycle")
 
-            original = lazy_core.bind_marker_session
+            original = lazy_core._monolith.bind_marker_session
             def _boom(*a, **k):
                 raise RuntimeError("bind exploded")
-            lazy_core.bind_marker_session = _boom  # type: ignore[assignment]
+            lazy_core._monolith.bind_marker_session = _boom  # type: ignore[assignment]
             try:
                 out = lazy_guard.guard(json.dumps({
                     "session_id": "poison-session",
@@ -14925,7 +14925,7 @@ def test_guard_bind_failure_is_fail_open():
                     "tool_input": {"prompt": prompt},
                 }))
             finally:
-                lazy_core.bind_marker_session = original  # type: ignore[assignment]
+                lazy_core._monolith.bind_marker_session = original  # type: ignore[assignment]
 
             decision = json.loads(out)["hookSpecificOutput"]["permissionDecision"]
             assert decision == "allow", (
@@ -15242,14 +15242,14 @@ def test_f1b_auto_readmit_error_falls_through_to_deny():
             lazy_core.register_emission(base, cls="cycle")
             dispatched = base + "\n\nORCHESTRATOR NOTE: appended."
 
-            original = lazy_core.consume_nonce
+            original = lazy_core._monolith.consume_nonce
             def _boom(*a, **k):
                 raise RuntimeError("consume exploded")
-            lazy_core.consume_nonce = _boom  # type: ignore[assignment]
+            lazy_core._monolith.consume_nonce = _boom  # type: ignore[assignment]
             try:
                 out = lazy_guard.guard(_f1_hook_input(dispatched, "tu-boom"))
             finally:
-                lazy_core.consume_nonce = original  # type: ignore[assignment]
+                lazy_core._monolith.consume_nonce = original  # type: ignore[assignment]
 
             assert out is not None
             payload = json.loads(out)
@@ -15648,7 +15648,7 @@ def test_registry_register_lookup_consume():
 
             # consume_nonce: first call True, then lookup returns None
             nonce = entry["nonce"]
-            consumed_ok = lazy_core.consume_nonce(nonce)
+            consumed_ok = lazy_core._monolith.consume_nonce(nonce)
             assert consumed_ok is True, (
                 f"consume_nonce must return True on first consumption, got {consumed_ok!r}"
             )
@@ -15658,7 +15658,7 @@ def test_registry_register_lookup_consume():
             )
 
             # second consume → False
-            second = lazy_core.consume_nonce(nonce)
+            second = lazy_core._monolith.consume_nonce(nonce)
             assert second is False, (
                 f"consume_nonce must return False when already consumed, got {second!r}"
             )
@@ -15880,7 +15880,7 @@ def test_fold_and_advance_run_counters():
     def _simulate_dispatch_consume():
         """Bump the registry consume-count by one (mimics a guard ALLOW)."""
         entry = lazy_core.register_emission("dispatch prompt", "cycle")
-        lazy_core.consume_nonce(entry["nonce"])
+        lazy_core._monolith.consume_nonce(entry["nonce"])
 
     # --- fold_run_counters ---
     # (1) Explicit flag wins over marker value
@@ -16000,7 +16000,7 @@ def test_advance_run_counters_consume_gated():
             # (2) One dispatch consume → exactly ONE advance, no matter how many
             #     probe firings happen between dispatches.
             entry = lazy_core.register_emission("p", "cycle")
-            lazy_core.consume_nonce(entry["nonce"])
+            lazy_core._monolith.consume_nonce(entry["nonce"])
             m1 = lazy_core.advance_run_counters(state)
             assert m1["forward_cycles"] == 1, (
                 f"one dispatch → forward_cycles 1, got {m1['forward_cycles']!r}"
@@ -16015,7 +16015,7 @@ def test_advance_run_counters_consume_gated():
 
             # (3) A second dispatch consume → advances again (to 2).
             entry2 = lazy_core.register_emission("p2", "cycle")
-            lazy_core.consume_nonce(entry2["nonce"])
+            lazy_core._monolith.consume_nonce(entry2["nonce"])
             m2 = lazy_core.advance_run_counters(state)
             assert m2["forward_cycles"] == 2, (
                 f"second dispatch → forward_cycles 2, got {m2['forward_cycles']!r}"
@@ -16052,7 +16052,7 @@ def test_advance_meta_cycle_increments_meta():
             # forthcoming consume. Simulate that consume; a forward probe must NOT
             # advance off it (it belonged to the meta dispatch).
             entry = lazy_core.register_emission("recovery prompt", "recovery")
-            lazy_core.consume_nonce(entry["nonce"])
+            lazy_core._monolith.consume_nonce(entry["nonce"])
             m2 = lazy_core.advance_run_counters(
                 {"sub_skill": "/execute-plan", "feature_id": "feat-x"}
             )
@@ -16112,7 +16112,7 @@ def test_advance_run_counters_census_regression_does_not_strand():
                 entry = lazy_core.register_emission(
                     f"dispatch prompt {i}", "cycle", now=now + i
                 )
-                lazy_core.consume_nonce(entry["nonce"])
+                lazy_core._monolith.consume_nonce(entry["nonce"])
             census_plateau = lazy_core.consumed_emission_count()
             assert census_plateau == lazy_core._REGISTRY_RING_CAP, (
                 f"after 80 consumed registrations the census plateaus at the ring "
@@ -16148,7 +16148,7 @@ def test_advance_run_counters_census_regression_does_not_strand():
             # stranded watermark of 64) would NOT advance — a permanent freeze.
             # Post-clamp the watermark re-arms on the census drop, so this advances.
             entry = lazy_core.register_emission("post-eviction dispatch", "cycle")
-            lazy_core.consume_nonce(entry["nonce"])
+            lazy_core._monolith.consume_nonce(entry["nonce"])
             m2 = lazy_core.advance_run_counters(state)
             assert m2["forward_cycles"] == 2, (
                 f"a census drop below the watermark must NOT permanently strand the "
@@ -16212,7 +16212,7 @@ def test_forward_cycles_survive_ring_cap_crossing_with_meta_interleave():
                 meta_entry = lazy_core.register_emission(
                     f"meta dispatch {i}", "recovery", now=now + t
                 )
-                lazy_core.consume_nonce(meta_entry["nonce"])
+                lazy_core._monolith.consume_nonce(meta_entry["nonce"])
                 t += 1
                 lazy_core.advance_meta_cycle()
 
@@ -16220,7 +16220,7 @@ def test_forward_cycles_survive_ring_cap_crossing_with_meta_interleave():
                 real_entry = lazy_core.register_emission(
                     f"real dispatch {i}", "cycle", now=now + t
                 )
-                lazy_core.consume_nonce(real_entry["nonce"])
+                lazy_core._monolith.consume_nonce(real_entry["nonce"])
                 t += 1
 
                 # --- the Phase-1 forward authority: advance on a DISTINCT state tuple ---
@@ -16282,7 +16282,7 @@ def test_forward_cycles_survive_ring_cap_crossing_with_meta_interleave():
                 f"longer freezes"
             )
             post_entry = lazy_core.register_emission("post-crossing dispatch", "cycle")
-            lazy_core.consume_nonce(post_entry["nonce"])
+            lazy_core._monolith.consume_nonce(post_entry["nonce"])
             m_post = lazy_core.advance_run_counters(
                 {"feature_id": "feat-post", "current_step": "execute-plan",
                  "sub_skill": "/execute-plan"}
@@ -19141,7 +19141,7 @@ def test_f2a_resolve_emission_consumed_nonce_returns_none():
             raw = "Execute the planned step — consumed nonce test."
             entry = lazy_core.register_emission(raw, cls="cycle")
             nonce = entry["nonce"]
-            lazy_core.consume_nonce(nonce, consumer="toolu_abc123")
+            lazy_core._monolith.consume_nonce(nonce, consumer="toolu_abc123")
 
             resolved = lazy_core.resolve_emission_by_nonce(nonce)
             assert resolved is None, (
@@ -20164,7 +20164,7 @@ def _mrcr_with_temp_home(td: str):
     os.environ["HOME"] = td
     os.environ["USERPROFILE"] = td
     os.environ.pop("LAZY_STATE_DIR", None)
-    lazy_core._legacy_state_migrated = False
+    lazy_core._ctx._legacy_state_migrated = False
     lazy_core.set_active_repo_root(None)
     return prior
 
@@ -20175,7 +20175,7 @@ def _mrcr_restore_env(prior: dict) -> None:
             os.environ.pop(k, None)
         else:
             os.environ[k] = v
-    lazy_core._legacy_state_migrated = False
+    lazy_core._ctx._legacy_state_migrated = False
     lazy_core.set_active_repo_root(None)
 
 
@@ -22053,8 +22053,8 @@ def test_skill_declares_multi_commit_user_level_and_pseudo():
     assert not hasattr(lazy_core, "_MULTI_COMMIT_DISPATCH_SKILLS")
     # The uniform multi-commit ceiling + single-commit default are still named
     # constants (unchanged by the derivation-mechanism swap).
-    assert lazy_core._CYCLE_COMMIT_MULTI == 3
-    assert lazy_core._CYCLE_COMMIT_BUDGET_DEFAULT == 1
+    assert lazy_core._monolith._CYCLE_COMMIT_MULTI == 3
+    assert lazy_core._monolith._CYCLE_COMMIT_BUDGET_DEFAULT == 1
 
 
 def test_skill_declares_multi_commit_repo_scoped():
@@ -22117,7 +22117,7 @@ def test_detect_friction_registry_known_skill_budgeted_without_literal_row():
     # (1) A user-level flagged multi-commit skill is budgeted multi-commit via the
     # DERIVATION, with no literal dict row or frozenset backing it.
     assert _friction("execute-plan", 2) is None
-    assert _friction("execute-plan", lazy_core._CYCLE_COMMIT_MULTI + allowance) is None
+    assert _friction("execute-plan", lazy_core._monolith._CYCLE_COMMIT_MULTI + allowance) is None
 
     # (2) A skill ABSENT from the flagged set still defaults to budget
     # 1 + allowance → a genuine runaway beyond it still trips.
@@ -22143,7 +22143,7 @@ def test_detect_friction_registry_known_skill_budgeted_without_literal_row():
             "---\nname: brand-new-multi-skill\ncommit-cadence: multi\n---\n# X\n",
             encoding="utf-8",
         )
-        ceiling = lazy_core._CYCLE_COMMIT_MULTI + allowance
+        ceiling = lazy_core._monolith._CYCLE_COMMIT_MULTI + allowance
         assert _friction("brand-new-multi-skill", ceiling, repo_root=repo) is None, ceiling
         over = _friction("brand-new-multi-skill", ceiling + 1, repo_root=repo)
         assert over is not None and over["reason"] == "unexpected-commits", over
@@ -25329,7 +25329,7 @@ def test_ensure_runtime_m4_genuine_dead_no_boot_unchanged_recovery():
 # dead seam: with `boot_liveness` enabled (the base default) and NO injected
 # `boot_alive`, `ensure_runtime` must derive the signal from the liveness of the
 # `restart()`-spawned `Popen` handle (`.poll()` None ⇒ alive). Driven through the
-# REAL default `restart` closure by swapping `lazy_core.subprocess`/`lazy_core.time`
+# REAL default `restart` closure by swapping `lazy_core._monolith.subprocess`/`lazy_core._monolith.time`
 # for fakes — the only way to reach the closure-shared boot-handle holder, which is
 # private to `ensure_runtime` (no injection seam, by design).
 # ---------------------------------------------------------------------------
@@ -25349,7 +25349,7 @@ class _FakeBootPopen:
 
 
 class _FakeSubprocess:
-    """Module stand-in for `lazy_core.subprocess` — `Popen(...)` returns the given
+    """Module stand-in for `lazy_core._monolith.subprocess` — `Popen(...)` returns the given
     fake handle and records the spawn; carries the DEVNULL sentinel the default
     `restart` references."""
 
@@ -25365,7 +25365,7 @@ class _FakeSubprocess:
 
 
 class _FakeTime:
-    """Module stand-in for `lazy_core.time` — `sleep` is a no-op so the default
+    """Module stand-in for `lazy_core._monolith.time` — `sleep` is a no-op so the default
     `restart`'s ~7.5-min poll loop and the patient wait run instantly; `time()` is
     a real monotonic-ish counter in case anything reads it."""
 
@@ -25402,8 +25402,8 @@ def test_ensure_runtime_production_boot_alive_live_handle_patient_waits():
         probe_calls["n"] += 1
         return (200, {"tools": ["render_chart"]}) if probe_calls["n"] >= 95 else (0, None)
 
-    _real_sub, _real_time = lazy_core.subprocess, lazy_core.time
-    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time
+    _real_sub, _real_time = lazy_core._monolith.subprocess, lazy_core._monolith.time
+    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time
     try:
         with tempfile.TemporaryDirectory() as td:
             result = lazy_core.ensure_runtime(
@@ -25417,7 +25417,7 @@ def test_ensure_runtime_production_boot_alive_live_handle_patient_waits():
                 # the exact production-call shape (lazy-state.py passes neither).
             )
     finally:
-        lazy_core.subprocess, lazy_core.time = _real_sub, _real_time
+        lazy_core._monolith.subprocess, lazy_core._monolith.time = _real_sub, _real_time
 
     assert result["state"] == "READY", result
     # Exactly ONE boot spawn (the default restart) — the patient wait added none.
@@ -25446,8 +25446,8 @@ def test_ensure_runtime_production_boot_alive_dead_handle_recovers():
     fake_sub = _FakeSubprocess(dead)
     fake_time = _FakeTime()
 
-    _real_sub, _real_time = lazy_core.subprocess, lazy_core.time
-    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time
+    _real_sub, _real_time = lazy_core._monolith.subprocess, lazy_core._monolith.time
+    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time
     try:
         with tempfile.TemporaryDirectory() as td:
             result = lazy_core.ensure_runtime(
@@ -25462,7 +25462,7 @@ def test_ensure_runtime_production_boot_alive_dead_handle_recovers():
                 # progress (the Windows wrapper-exits-early case).
             )
     finally:
-        lazy_core.subprocess, lazy_core.time = _real_sub, _real_time
+        lazy_core._monolith.subprocess, lazy_core._monolith.time = _real_sub, _real_time
 
     assert result["state"] == "BLOCKED", result
     # Patient-wait timeout (cold-compile text), NOT the 5×-crash-recovery generic —
@@ -25579,7 +25579,7 @@ def test_default_stale_check_no_boot_stamp_falls_back_to_lock_start_time():
         repo_root, _origin = _make_git_repo_with_origin(td)
         cfg = dict(lazy_core._ENSURE_RUNTIME_DEFAULT_CONFIG)
         # No write_boot_stamp call — the boot-stamp file is genuinely absent.
-        lazy_core.write_runtime_lock(
+        lazy_core._monolith.write_runtime_lock(
             repo_root, config=cfg, pid=123, start_time=_t.time() - 3600,
             port=cfg["port"], artifact_hash=None, controller_session_id="s1",
         )
@@ -25763,8 +25763,8 @@ def test_ensure_runtime_production_wrapper_exits_early_patient_waits_one_spawn()
         probe_calls["n"] += 1
         return (200, {"tools": ["render_chart"]}) if probe_calls["n"] >= 50 else (0, None)
 
-    _real_sub, _real_time = lazy_core.subprocess, lazy_core.time
-    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time
+    _real_sub, _real_time = lazy_core._monolith.subprocess, lazy_core._monolith.time
+    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time
     try:
         with tempfile.TemporaryDirectory() as td:
             result = lazy_core.ensure_runtime(
@@ -25779,7 +25779,7 @@ def test_ensure_runtime_production_wrapper_exits_early_patient_waits_one_spawn()
                 # Round-32 test never exercised.
             )
     finally:
-        lazy_core.subprocess, lazy_core.time = _real_sub, _real_time
+        lazy_core._monolith.subprocess, lazy_core._monolith.time = _real_sub, _real_time
 
     assert result["state"] == "READY", result
     # THE starvation guard: exactly ONE spawn. The Round-32 bug would re-`restart()`
@@ -25811,8 +25811,8 @@ def test_ensure_runtime_m4_wrapper_exits_early_patient_waits_one_spawn():
         probe_calls["n"] += 1
         return (200, {"tools": ["render_chart"]}) if probe_calls["n"] >= 50 else (0, None)
 
-    _real_sub, _real_time = lazy_core.subprocess, lazy_core.time
-    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time
+    _real_sub, _real_time = lazy_core._monolith.subprocess, lazy_core._monolith.time
+    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time
     try:
         with tempfile.TemporaryDirectory() as td:
             lock = _owned_lock(start_time=111.0)
@@ -25830,7 +25830,7 @@ def test_ensure_runtime_m4_wrapper_exits_early_patient_waits_one_spawn():
                 # handle + fresh stamp is the wrapper-exits-early case).
             )
     finally:
-        lazy_core.subprocess, lazy_core.time = _real_sub, _real_time
+        lazy_core._monolith.subprocess, lazy_core._monolith.time = _real_sub, _real_time
 
     assert result["state"] == "READY", result
     assert fake_sub.spawns == 1, (
@@ -25891,7 +25891,7 @@ def test_ensure_runtime_no_boot_ever_spawned_still_blocks_generic():
 
 
 class _WindowsSpawnSemanticsSubprocess:
-    """Module stand-in for `lazy_core.subprocess` that emulates Windows
+    """Module stand-in for `lazy_core._monolith.subprocess` that emulates Windows
     `CreateProcess` resolution (ensure-runtime-cold-boot-starvation-round-3).
 
     The two prior fixes' tests used `_FakeSubprocess`, whose `.Popen(*a, **kw)`
@@ -25968,8 +25968,8 @@ def test_ensure_runtime_production_restart_spawns_via_shell_on_windows_cold_boot
         probe_calls["n"] += 1
         return (200, {"tools": ["render_chart"]}) if probe_calls["n"] >= 50 else (0, None)
 
-    _real_sub, _real_time = lazy_core.subprocess, lazy_core.time
-    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time
+    _real_sub, _real_time = lazy_core._monolith.subprocess, lazy_core._monolith.time
+    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time
     try:
         with tempfile.TemporaryDirectory() as td:
             result = lazy_core.ensure_runtime(
@@ -25986,7 +25986,7 @@ def test_ensure_runtime_production_restart_spawns_via_shell_on_windows_cold_boot
                 # binds and must spawn `npm run dev:restart` through the shell on nt.
             )
     finally:
-        lazy_core.subprocess, lazy_core.time = _real_sub, _real_time
+        lazy_core._monolith.subprocess, lazy_core._monolith.time = _real_sub, _real_time
 
     assert result["state"] == "READY", (
         "the production restart() must launch the cold boot via the shell so the "
@@ -27181,9 +27181,9 @@ def test_verification_only_marker_constant_present():
     assert hasattr(lazy_core, "_VERIFICATION_ONLY_MARKER"), (
         "lazy_core must define the SSOT constant _VERIFICATION_ONLY_MARKER (WU-3)"
     )
-    assert lazy_core._VERIFICATION_ONLY_MARKER == "<!-- verification-only -->", (
+    assert lazy_core._monolith._VERIFICATION_ONLY_MARKER == "<!-- verification-only -->", (
         "Open Question 2 resolved toward the per-row HTML comment form; "
-        f"got {lazy_core._VERIFICATION_ONLY_MARKER!r}"
+        f"got {lazy_core._monolith._VERIFICATION_ONLY_MARKER!r}"
     )
 
 
@@ -27243,7 +27243,7 @@ def test_ruvonly_marker_lockstep_producers_match_ssot():
     (phases-runtime-verification.md, blocked-resolution.md) equals the
     lazy_core SSOT constant — string equality, no divergent hardcoding."""
     _guard()
-    marker = lazy_core._VERIFICATION_ONLY_MARKER
+    marker = lazy_core._monolith._VERIFICATION_ONLY_MARKER
 
     assert _PHASES_RUNTIME_VERIFICATION_PATH.exists(), (
         f"missing producer component: {_PHASES_RUNTIME_VERIFICATION_PATH}"
@@ -27773,7 +27773,7 @@ _TESTS = _TESTS + [
 # ---------------------------------------------------------------------------
 #
 # A `test_ensure_runtime_production_*` test must reach the OS signal under test
-# by swapping `lazy_core.subprocess` / `lazy_core.time` and letting the DEFAULT
+# by swapping `lazy_core._monolith.subprocess` / `lazy_core._monolith.time` and letting the DEFAULT
 # `restart` / `boot_alive` closures DERIVE the signal — it must NOT inject the
 # derivation itself as a keyword (`boot_alive=` / `restart=`), and a spawn-binding
 # production test must drive a FAITHFUL subprocess double with real Windows
@@ -27788,7 +27788,7 @@ _TESTS = _TESTS + [
 
 # The signal-under-test derivations that a production-binding test must NEVER
 # inject as keywords (the default closures must derive them from the swapped
-# `lazy_core.subprocess`/`lazy_core.time`).
+# `lazy_core._monolith.subprocess`/`lazy_core._monolith.time`).
 _PRODUCTION_BINDING_SIGNAL_KWARGS = frozenset({"boot_alive", "restart"})
 
 # Legitimate external-collaborator injections — NEVER flagged. These are real
@@ -27869,24 +27869,36 @@ def _names_used_in(node: "ast.AST") -> set:
 
 
 def _assigns_lazy_core_subprocess_double(node: "ast.AST"):
-    """If the function body assigns ``lazy_core.subprocess`` (directly, or as part
-    of a tuple ``lazy_core.subprocess, lazy_core.time = fake_sub, fake_time``),
+    """If the function body assigns ``lazy_core._monolith.subprocess`` (directly, or as part
+    of a tuple ``lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time``),
     return the set of ``ast.Name`` ids used anywhere in the function (the double's
     class name appears among them where it is constructed). Returns None when the
-    function never swaps ``lazy_core.subprocess`` (not a spawn/subprocess-binding
+    function never swaps ``lazy_core._monolith.subprocess`` (not a spawn/subprocess-binding
     test at all).
     """
+    def _is_lazy_core_chain(value: "ast.AST") -> bool:
+        # Accept BOTH the legacy `lazy_core.subprocess` form (value is the bare
+        # Name) and the post-decomposition `lazy_core._monolith.subprocess`
+        # form (value is Attribute(_monolith) over Name(lazy_core)) —
+        # lazy-core-package-decomposition WU-1 moved every real patch site to
+        # the submodule form; the collector must recognize it or the enforcer
+        # meta-tests go silently vacuous.
+        if isinstance(value, ast.Name) and value.id == "lazy_core":
+            return True
+        return (isinstance(value, ast.Attribute)
+                and isinstance(value.value, ast.Name)
+                and value.value.id == "lazy_core")
+
     swaps_subprocess = False
     for sub in ast.walk(node):
         if not isinstance(sub, ast.Assign):
             continue
         for target in sub.targets:
-            # Direct: lazy_core.subprocess = ...   AND tuple: (lazy_core.subprocess, ...) = ...
+            # Direct: lazy_core._monolith.subprocess = ...   AND tuple: (lazy_core._monolith.subprocess, ...) = ...
             elts = target.elts if isinstance(target, ast.Tuple) else [target]
             for elt in elts:
                 if (isinstance(elt, ast.Attribute) and elt.attr == "subprocess"
-                        and isinstance(elt.value, ast.Name)
-                        and elt.value.id == "lazy_core"):
+                        and _is_lazy_core_chain(elt.value)):
                     swaps_subprocess = True
     if not swaps_subprocess:
         return None
@@ -27900,7 +27912,7 @@ def _collect_spawn_double_smells(module_source: str) -> list:
 
     Shares the AST walk with Phase 1 (``_iter_production_binding_test_defs``).
     A test is flagged iff ALL of:
-      (a) it swaps ``lazy_core.subprocess`` with a double (subprocess-binding);
+      (a) it swaps ``lazy_core._monolith.subprocess`` with a double (subprocess-binding);
       (b) it does NOT inject ``restart=`` (an injected restart bypasses the real
           spawn closure, so spawn-resolution semantics are moot — and that case is
           already the Phase-1 signal-injection smell);
@@ -27959,7 +27971,7 @@ def _collect_spawn_double_smells(module_source: str) -> list:
 def test_ensure_runtime_production_tests_derive_not_inject_signal():
     """Phase 1 positive self-checking meta-test: the LIVE suite's
     ``test_ensure_runtime_production_*`` tests all reach the OS signal through the
-    default closures (swapping ``lazy_core.subprocess``/``time``) and inject
+    default closures (swapping ``lazy_core._monolith.subprocess``/``time``) and inject
     NEITHER ``boot_alive=`` NOR ``restart=``, so the collector reports ``[]``.
 
     GREEN today. It FAILS — naming the offending test and the injected kwarg — if
@@ -27973,7 +27985,7 @@ def test_ensure_runtime_production_tests_derive_not_inject_signal():
         "production-binding guard: the following test_ensure_runtime_production_* "
         "test(s) INJECT the signal under test as an ensure_runtime keyword instead "
         "of deriving it through the default closure — fix by swapping "
-        f"lazy_core.subprocess/time and passing neither boot_alive= nor restart=: {smells}"
+        f"lazy_core._monolith.subprocess/time and passing neither boot_alive= nor restart=: {smells}"
     )
 
 
@@ -28041,19 +28053,19 @@ def test_spawn_double_guard_detects_always_succeeds_double():
     synthetic_source = (
         "def test_ensure_runtime_production_spawn_bad():\n"
         "    fake_sub = _FakeSubprocess(handle)\n"
-        "    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time\n"
+        "    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time\n"
         "    lazy_core.ensure_runtime(Path(td), probe=probe)\n"
         "    assert fake_sub.shell_spawns >= 1\n"
         "\n"
         "def test_ensure_runtime_production_spawn_good():\n"
         "    fake_sub = _WindowsSpawnSemanticsSubprocess(handle)\n"
-        "    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time\n"
+        "    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time\n"
         "    lazy_core.ensure_runtime(Path(td), probe=probe)\n"
         "    assert fake_sub.shell_spawns >= 1\n"
         "\n"
         "def test_ensure_runtime_production_liveness_ok():\n"
         "    fake_sub = _FakeSubprocess(handle)\n"
-        "    lazy_core.subprocess, lazy_core.time = fake_sub, fake_time\n"
+        "    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time\n"
         "    lazy_core.ensure_runtime(Path(td), probe=probe)\n"
         "    assert result['state'] == 'READY'\n"
     )
@@ -28434,7 +28446,7 @@ def test_advance_run_counters_increments_per_feature():
             )
             # Register one consumed dispatch so the consume oracle advances.
             _entry = lazy_core.register_emission("pf", "cycle")
-            lazy_core.consume_nonce(_entry["nonce"])
+            lazy_core._monolith.consume_nonce(_entry["nonce"])
             m = lazy_core.advance_run_counters({
                 "sub_skill": "/execute-plan", "feature_id": "feat-C",
                 "current_step": "execute-plan",
@@ -30918,7 +30930,7 @@ def test_runtime_lock_round_trip_all_five_fields():
     _guard()
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
-        lazy_core.write_runtime_lock(
+        lazy_core._monolith.write_runtime_lock(
             repo, pid=123, start_time=456.5, port=3333,
             artifact_hash="deadbeef", controller_session_id="sess-uuid",
         )
@@ -30940,7 +30952,7 @@ def test_runtime_lock_written_at_repo_root_with_config_filename():
     assert "port" in cfg, "config must carry port"
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
-        lazy_core.write_runtime_lock(
+        lazy_core._monolith.write_runtime_lock(
             repo, pid=1, start_time=1.0, port=cfg["port"],
             artifact_hash="h", controller_session_id="s",
         )
@@ -30952,7 +30964,7 @@ def test_runtime_lock_atomic_write_no_partial_on_failure():
     """The write uses a temp file + os.replace (no partial production file when
     the replace fails mid-write)."""
     _guard()
-    src = inspect.getsource(lazy_core.write_runtime_lock)
+    src = inspect.getsource(lazy_core._monolith.write_runtime_lock)
     # Atomicity via the shared _atomic_write helper (temp + os.replace) OR a
     # direct os.replace — assert one of those is present, not a naive open(w).
     assert ("_atomic_write" in src) or ("os.replace" in src), \
@@ -31047,7 +31059,7 @@ def test_runtime_ownership_round_trip_compose():
             which=lambda name: None,
             kernel_start_time_fn=lambda pid, **k: 77.0,
         )
-        lazy_core.write_runtime_lock(
+        lazy_core._monolith.write_runtime_lock(
             repo, pid=spawned["pid"], start_time=spawned["start_time"],
             port=3333, artifact_hash="abc", controller_session_id="S1",
         )
@@ -31244,13 +31256,13 @@ def test_run_transient_build_does_not_call_lock_writer(monkeypatch=None):
     invoked by run_transient_build (the persistent path is structurally absent)."""
     _guard()
     called = {"n": 0}
-    original = lazy_core.write_runtime_lock
+    original = lazy_core._monolith.write_runtime_lock
 
     def spy(*args, **kwargs):
         called["n"] += 1
         return original(*args, **kwargs)
 
-    lazy_core.write_runtime_lock = spy
+    lazy_core._monolith.write_runtime_lock = spy
     try:
         lazy_core.run_transient_build(
             ["tauri", "build"], cwd="/tmp",
@@ -31259,7 +31271,7 @@ def test_run_transient_build_does_not_call_lock_writer(monkeypatch=None):
             platform="linux", which=lambda name: None,
         )
     finally:
-        lazy_core.write_runtime_lock = original
+        lazy_core._monolith.write_runtime_lock = original
     assert called["n"] == 0, (
         "run_transient_build must never call write_runtime_lock — the lock writer "
         "belongs to the Persistent Service contract only"
@@ -32048,7 +32060,7 @@ def test_run_start_owner_bind_closes_repro_a():
             # A concurrent non-owner reaches bind_marker_session BEFORE any
             # owner allow. The slot was never None → first-writer-wins protects
             # the CORRECT owner: the foreign bind is refused.
-            bound = lazy_core.bind_marker_session("FOREIGN")
+            bound = lazy_core._monolith.bind_marker_session("FOREIGN")
             assert bound is False, (
                 "a foreign bind against an owner-bound marker must be refused "
                 "(first-writer-wins now protects the correct owner)"
@@ -32088,7 +32100,7 @@ def test_run_start_legacy_unbound_preserved():
                 "legacy run-start (no session_id) must still write None "
                 "(bind-pending), preserving the documented legacy path"
             )
-            bound = lazy_core.bind_marker_session("FOREIGN")
+            bound = lazy_core._monolith.bind_marker_session("FOREIGN")
             assert bound is True, (
                 "the legacy bind-pending path must still allow the first bind"
             )
@@ -32291,7 +32303,7 @@ def test_legacy_disarm_detected_and_re_armed():
                 pipeline="feature", cloud=False, repo_root="/r", now=now,
             )
             # A foreign session wins the bind in the open window.
-            assert lazy_core.bind_marker_session("FOREIGN") is True
+            assert lazy_core._monolith.bind_marker_session("FOREIGN") is True
             # The true owner can SEE the wrong stamp (not just "absent").
             assert lazy_core.marker_owner_status("OWNER", now=now) == "foreign-stamped"
             # And re-claim it.
@@ -32535,7 +32547,7 @@ def test_telemetry_symbols_present():
     ]
     missing = [s for s in expected if not hasattr(lazy_core, s)]
     assert not missing, f"missing telemetry symbols: {missing}"
-    assert lazy_core._TELEMETRY_LEDGER_FILENAME == "lazy-telemetry.jsonl"
+    assert lazy_core._monolith._TELEMETRY_LEDGER_FILENAME == "lazy-telemetry.jsonl"
     # The D4-B halt vocabulary (dispatches whose terminal_reason is a halt).
     for reason in ("blocked", "needs-input", "needs-spec-input", "needs-research",
                    "completion-unverified", "blocked-misnamed"):
@@ -32594,7 +32606,7 @@ def test_telemetry_marker_gated_no_marker_no_emit():
         try:
             ok = lazy_core.append_telemetry_event("run-start", now=1000.0)
             assert ok is False, "no marker must gate the emit (False)"
-            ledger = Path(td) / lazy_core._TELEMETRY_LEDGER_FILENAME
+            ledger = Path(td) / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME
             assert not ledger.exists(), "no marker → no ledger file created"
             assert lazy_core.read_telemetry_events() == []
         finally:
@@ -32639,7 +32651,7 @@ def test_telemetry_emit_nondestructive_on_stale_marker():
             assert marker_path.exists(), (
                 "the emitter must NOT delete a stale marker (non-destructive read)"
             )
-            ledger = Path(td) / lazy_core._TELEMETRY_LEDGER_FILENAME
+            ledger = Path(td) / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME
             assert not ledger.exists(), "gated emit must write nothing"
         finally:
             _clear_state_dir()
@@ -32652,7 +32664,7 @@ def test_telemetry_reader_tolerates_torn_and_unknown_v():
     with tempfile.TemporaryDirectory() as td:
         _set_state_dir(Path(td))
         try:
-            ledger = Path(td) / lazy_core._TELEMETRY_LEDGER_FILENAME
+            ledger = Path(td) / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME
             good = json.dumps({
                 "v": 1, "ts": 1.0, "run_id": "2026-07-04T00:00:00Z",
                 "pipeline": "feature", "event": "run-start",
@@ -32679,7 +32691,7 @@ def test_telemetry_read_with_provenance():
     with tempfile.TemporaryDirectory() as td:
         _set_state_dir(Path(td))
         try:
-            ledger = Path(td) / lazy_core._TELEMETRY_LEDGER_FILENAME
+            ledger = Path(td) / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME
             line1 = json.dumps({"v": 1, "ts": 1.0, "run_id": "r", "pipeline":
                                 "feature", "event": "run-start", "item_id": None,
                                 "data": {}})
@@ -32693,7 +32705,7 @@ def test_telemetry_read_with_provenance():
             assert len(events) == 2, events
             assert events[0]["_line"] == 1 and events[1]["_line"] == 3, events
             assert events[0]["_source"].endswith(
-                lazy_core._TELEMETRY_LEDGER_FILENAME), events
+                lazy_core._monolith._TELEMETRY_LEDGER_FILENAME), events
             # Default read stays provenance-free (envelope purity).
             plain = lazy_core.read_telemetry_events()
             assert all("_line" not in e and "_source" not in e for e in plain)
@@ -32714,7 +32726,7 @@ def test_telemetry_rotation_shift_and_reader_order():
             lazy_core.write_run_marker(
                 pipeline="feature", cloud=False, repo_root="/r", now=now,
             )
-            ledger = Path(td) / lazy_core._TELEMETRY_LEDGER_FILENAME
+            ledger = Path(td) / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME
             # Pre-seed the full rotated chain so the shift + oldest-drop is
             # observable in one append.
             seg = lambda i: Path(str(ledger) + f".{i}")  # noqa: E731
@@ -32730,13 +32742,13 @@ def test_telemetry_rotation_shift_and_reader_order():
                                       "item_id": None, "data": {}})
             ledger.write_text(active_line + "\n", encoding="utf-8")
             # Shrink the cap so the seeded active file is over it.
-            orig_cap = lazy_core._TELEMETRY_ROTATE_BYTES
-            lazy_core._TELEMETRY_ROTATE_BYTES = 8
+            orig_cap = lazy_core._monolith._TELEMETRY_ROTATE_BYTES
+            lazy_core._monolith._TELEMETRY_ROTATE_BYTES = 8
             try:
                 ok = lazy_core.append_telemetry_event("cycle-begin",
                                                       item_id="f", now=now + 1)
             finally:
-                lazy_core._TELEMETRY_ROTATE_BYTES = orig_cap
+                lazy_core._monolith._TELEMETRY_ROTATE_BYTES = orig_cap
             assert ok is True
             n = lazy_core._TELEMETRY_ROTATED_SEGMENTS
             # active rotated to .1; old .1 shifted to .2; …; old .N dropped.
@@ -32777,7 +32789,7 @@ def test_flush_cloud_telemetry_segment_writes_colon_stripped_segment():
             )
             run_id = marker["started_at"]
             # A foreign (previous-run) line must NOT be flushed.
-            ledger = state / lazy_core._TELEMETRY_LEDGER_FILENAME
+            ledger = state / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME
             ledger.write_text(
                 json.dumps({"v": 1, "ts": 1.0, "run_id": "2020-01-01T00:00:00Z",
                             "pipeline": "feature", "event": "run-start",
@@ -34693,11 +34705,11 @@ def test_intervention_symbols_present():
     ]
     missing = [s for s in expected if not hasattr(lazy_core, s)]
     assert not missing, f"missing intervention symbols: {missing}"
-    assert lazy_core.INTERVENTION_BASELINE_RUNS == 20
-    assert lazy_core.INTERVENTION_REVIEW_AFTER_RUNS == 20
-    assert lazy_core.INTERVENTION_MIN_SAMPLE == 5
-    assert lazy_core.INTERVENTION_BAND_PCT == 20
-    assert lazy_core._INTERVENTIONS_DIRNAME == "interventions"
+    assert lazy_core._monolith.INTERVENTION_BASELINE_RUNS == 20
+    assert lazy_core._monolith.INTERVENTION_REVIEW_AFTER_RUNS == 20
+    assert lazy_core._monolith.INTERVENTION_MIN_SAMPLE == 5
+    assert lazy_core._monolith.INTERVENTION_BAND_PCT == 20
+    assert lazy_core._monolith._INTERVENTIONS_DIRNAME == "interventions"
 
 
 def test_parse_intervention_hypothesis_block_and_absent():
@@ -35031,7 +35043,7 @@ def test_canary_control_surfaces_fallback_and_manifest():
         # Absent manifest → fallback constant (mirrors the anti-overfit set).
         fallback = lazy_core._canary_control_surfaces(repo)
         assert isinstance(fallback, (list, tuple))
-        assert "user/scripts/lazy_core.py" in fallback
+        assert "user/scripts/lazy_core/**" in fallback
         assert "user/hooks/**" in fallback
         assert tuple(fallback) == tuple(lazy_core._CANARY_CONTROL_SURFACES_FALLBACK)
         # Present manifest → its globs take precedence.
@@ -35043,7 +35055,7 @@ def test_canary_control_surfaces_fallback_and_manifest():
         )
         present = lazy_core._canary_control_surfaces(repo)
         assert list(present) == ["custom/only/**", "one_file.py"]
-        assert "user/scripts/lazy_core.py" not in present
+        assert "user/scripts/lazy_core/**" not in present
 
 
 def test_canary_touched_files_from_commit():
@@ -35076,9 +35088,9 @@ def test_canary_intersects_arm_decision():
     surfaces = lazy_core._CANARY_CONTROL_SURFACES_FALLBACK
     # Exact-path match.
     arm, hits = lazy_core._canary_intersects(
-        ["user/scripts/lazy_core.py", "docs/foo.md"], surfaces)
+        ["user/scripts/lazy_core/_monolith.py", "docs/foo.md"], surfaces)
     assert arm is True
-    assert hits == ["user/scripts/lazy_core.py"]
+    assert hits == ["user/scripts/lazy_core/_monolith.py"]
     # ** glob match (segment-crossing).
     arm2, hits2 = lazy_core._canary_intersects(["user/hooks/x.sh"], surfaces)
     assert arm2 is True and hits2 == ["user/hooks/x.sh"]
@@ -35249,7 +35261,8 @@ def test_record_intervention_canary_window_override():
                 "- canary_window_runs: 5\n"
             )
             repo = _canary_repo_with_change(
-                Path(td), "user/scripts/lazy_core.py", item, spec_body=spec)
+                Path(td), "user/scripts/lazy_core/_monolith.py", item,
+                spec_body=spec)
             lazy_core.record_intervention(
                 repo, item, pipeline="feature",
                 spec_path=repo / "docs" / "features" / item,
@@ -35400,29 +35413,29 @@ def test_notify_symbols_present():
     ]
     missing = [s for s in expected if not hasattr(lazy_core, s)]
     assert not missing, f"missing notify symbols: {missing}"
-    assert lazy_core._NOTIFY_ATTENTION_TERMINALS == frozenset({
+    assert lazy_core._monolith._NOTIFY_ATTENTION_TERMINALS == frozenset({
         "blocked", "blocked-misnamed", "needs-input", "needs-spec-input",
         "needs-research", "queue-blocked-on-research", "completion-unverified",
         "stale_upstream", "queue-exhausted-all-parked",
         "queue-exhausted-budget-deferred", "queue-missing",
-    }), lazy_core._NOTIFY_ATTENTION_TERMINALS
-    assert lazy_core._NOTIFY_CLEAN_STOP_TERMINALS == frozenset({
+    }), lazy_core._monolith._NOTIFY_ATTENTION_TERMINALS
+    assert lazy_core._monolith._NOTIFY_CLEAN_STOP_TERMINALS == frozenset({
         "all-features-complete", "all-bugs-fixed", "cloud-queue-exhausted",
         "device-queue-exhausted", "host-capability-saturated",
-    }), lazy_core._NOTIFY_CLEAN_STOP_TERMINALS
+    }), lazy_core._monolith._NOTIFY_CLEAN_STOP_TERMINALS
     # Sibling-not-complement (SPEC Technical Design): sanctioned stops that
     # still demand operator action ARE attention terminals.
     for r in ("needs-research", "queue-blocked-on-research", "queue-missing"):
         assert r in lazy_core.SANCTIONED_STOP_TERMINAL
-        assert r in lazy_core._NOTIFY_ATTENTION_TERMINALS
+        assert r in lazy_core._monolith._NOTIFY_ATTENTION_TERMINALS
     # queue-exhausted-dependency-gated is deliberately in NEITHER set (holds
     # re-open by themselves as deps complete).
-    assert "queue-exhausted-dependency-gated" not in lazy_core._NOTIFY_ATTENTION_TERMINALS
-    assert "queue-exhausted-dependency-gated" not in lazy_core._NOTIFY_CLEAN_STOP_TERMINALS
-    assert lazy_core._NOTIFY_SEND_TIMEOUT_SECONDS == 5
-    assert lazy_core._NOTIFY_CONFIG_FILENAME == "notify.json"
-    assert lazy_core._NOTIFY_LEDGER_FILENAME == "notify-ledger.json"
-    assert lazy_core._NOTIFY_ERROR_FILENAME == "notify-error.json"
+    assert "queue-exhausted-dependency-gated" not in lazy_core._monolith._NOTIFY_ATTENTION_TERMINALS
+    assert "queue-exhausted-dependency-gated" not in lazy_core._monolith._NOTIFY_CLEAN_STOP_TERMINALS
+    assert lazy_core._monolith._NOTIFY_SEND_TIMEOUT_SECONDS == 5
+    assert lazy_core._monolith._NOTIFY_CONFIG_FILENAME == "notify.json"
+    assert lazy_core._monolith._NOTIFY_LEDGER_FILENAME == "notify-ledger.json"
+    assert lazy_core._monolith._NOTIFY_ERROR_FILENAME == "notify-error.json"
 
 
 def test_notify_config_precedence():
@@ -35513,7 +35526,7 @@ def test_notify_identity_sentinel_and_dateless():
 
 def test_notify_ledger_roundtrip_prune_and_atomic():
     """D8: the ledger lives at claude_state_dir()/notify-ledger.json, is
-    written via lazy_core._atomic_write, and drops entries older than 30 days
+    written via lazy_core._monolith._atomic_write, and drops entries older than 30 days
     on write; a corrupt ledger reads as empty (fail-open)."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
@@ -35522,14 +35535,14 @@ def test_notify_ledger_roundtrip_prune_and_atomic():
             now = 1751600000.0
             assert lazy_core._load_notify_ledger() == {}
             # Spy on _atomic_write to prove the ledger write goes through it.
-            real_aw = lazy_core._atomic_write
+            real_aw = lazy_core._monolith._atomic_write
             written: list = []
 
             def _spy(path, content):
                 written.append(Path(path).name)
                 real_aw(path, content)
 
-            lazy_core._atomic_write = _spy
+            lazy_core._monolith._atomic_write = _spy
             try:
                 lazy_core._record_notify_send(
                     "feature|a|needs-input|1|2",
@@ -35542,7 +35555,7 @@ def test_notify_ledger_roundtrip_prune_and_atomic():
                     "feature", now=now,
                 )
             finally:
-                lazy_core._atomic_write = real_aw
+                lazy_core._monolith._atomic_write = real_aw
             assert written == ["notify-ledger.json", "notify-ledger.json"], written
             entries = lazy_core._load_notify_ledger()
             # The 40-day-old entry was pruned by the second write.
@@ -36150,7 +36163,7 @@ def test_emission_consumed_by_nonce_fence():
             nonce = entry["nonce"]
             # Registered but NOT yet dispatched → fence closed.
             assert lazy_core.emission_consumed_by_nonce(nonce) is False
-            assert lazy_core.consume_nonce(nonce, consumer="toolu_x") is True
+            assert lazy_core._monolith.consume_nonce(nonce, consumer="toolu_x") is True
             # Dispatch landed → fence open.
             assert lazy_core.emission_consumed_by_nonce(nonce) is True
             # Unknown / falsy nonces fail closed.
@@ -36221,7 +36234,7 @@ def test_resolve_cycle_worker_nonce_rebinds_fresh_hex():
             # Once consumed there is no UNCONSUMED cycle emission to bind to →
             # a fresh hex degrades to itself (fence stays closed — the safe
             # pre-fix behavior; in production the rebind happens BEFORE consume).
-            lazy_core.consume_nonce(emission_nonce, consumer="toolu_w")
+            lazy_core._monolith.consume_nonce(emission_nonce, consumer="toolu_w")
             assert lazy_core.resolve_cycle_worker_nonce("freshhex01") == "freshhex01"
         finally:
             _clear_state_dir()
@@ -36598,7 +36611,7 @@ def test_read_intervention_telemetry_merges_originating_target_ledger():
         try:
             # Current repo's flat ledger (today's read path).
             _write_telemetry_line(
-                base / lazy_core._TELEMETRY_LEDGER_FILENAME,
+                base / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME,
                 run_id="RC", ts=1.0, item_id="cur-item",
             )
             # Target repo's keyed-sibling ledger, behind a LIVE marker.
@@ -36606,7 +36619,7 @@ def test_read_intervention_telemetry_merges_originating_target_ledger():
                 base, target_root, started_at=_fresh_started_at()
             )
             _write_telemetry_line(
-                keyed_dir / lazy_core._TELEMETRY_LEDGER_FILENAME,
+                keyed_dir / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME,
                 run_id="RT", ts=2.0, item_id="target-item",
             )
 
@@ -36638,17 +36651,17 @@ def test_read_intervention_telemetry_dedups_overlapping_target_event():
         try:
             shared_kwargs = dict(run_id="SHARED", ts=5.0, item_id="dup-item")
             _write_telemetry_line(
-                base / lazy_core._TELEMETRY_LEDGER_FILENAME, **shared_kwargs
+                base / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME, **shared_kwargs
             )
             keyed_dir = _write_target_marker(
                 base, target_root, started_at=_fresh_started_at()
             )
             _write_telemetry_line(
-                keyed_dir / lazy_core._TELEMETRY_LEDGER_FILENAME, **shared_kwargs
+                keyed_dir / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME, **shared_kwargs
             )
             # Target-unique event: absent today (no merge) -> proves RED.
             _write_telemetry_line(
-                keyed_dir / lazy_core._TELEMETRY_LEDGER_FILENAME,
+                keyed_dir / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME,
                 run_id="RT-UNIQUE", ts=6.0, item_id="target-only-item",
             )
 
@@ -36679,14 +36692,14 @@ def test_read_intervention_telemetry_failopen_unreadable_target_ledger():
         _set_state_dir(base)
         try:
             _write_telemetry_line(
-                base / lazy_core._TELEMETRY_LEDGER_FILENAME,
+                base / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME,
                 run_id="RC", ts=1.0, item_id="cur-item",
             )
             keyed_dir = _write_target_marker(
                 base, target_root, started_at=_fresh_started_at()
             )
             # Ledger path is a DIRECTORY, not a file -> unreadable as JSONL.
-            (keyed_dir / lazy_core._TELEMETRY_LEDGER_FILENAME).mkdir()
+            (keyed_dir / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME).mkdir()
 
             events = lazy_core.read_intervention_telemetry(current_root)  # must not raise
             run_ids = {e.get("run_id") for e in events}
@@ -36708,7 +36721,7 @@ def test_read_intervention_telemetry_noop_when_no_originating_marker():
         _set_state_dir(base)
         try:
             _write_telemetry_line(
-                base / lazy_core._TELEMETRY_LEDGER_FILENAME,
+                base / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME,
                 run_id="RC", ts=1.0, item_id="cur-item",
             )
             baseline = list(lazy_core.read_telemetry_events())
@@ -36730,14 +36743,14 @@ def test_read_intervention_telemetry_noop_when_no_originating_marker():
         _set_state_dir(base)
         try:
             _write_telemetry_line(
-                base / lazy_core._TELEMETRY_LEDGER_FILENAME,
+                base / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME,
                 run_id="RC2", ts=1.0, item_id="cur-item-2",
             )
             keyed_dir = _write_target_marker(
                 base, target_root, started_at=_stale_started_at()
             )
             _write_telemetry_line(
-                keyed_dir / lazy_core._TELEMETRY_LEDGER_FILENAME,
+                keyed_dir / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME,
                 run_id="RT-STALE", ts=2.0, item_id="should-not-appear",
             )
 
@@ -37855,8 +37868,7 @@ def test_intervention_event_vocabulary_matches_live_emit_set():
     """
     _guard()
     scripts_dir = Path(__file__).parent
-    sources = [
-        scripts_dir / "lazy_core.py",
+    sources = sorted((scripts_dir / "lazy_core").glob("*.py")) + [
         scripts_dir / "lazy-state.py",
         scripts_dir / "bug-state.py",
     ]
@@ -38004,7 +38016,7 @@ def test_no_bare_production_sentinel_writes():
     """Self-checking meta-test: the LIVE production regions of lazy-state.py,
     bug-state.py, and lazy_core.py carry ZERO bare ``.write_text(``/
     ``open(..., "w")`` calls — every production sentinel/queue/doc write goes
-    through ``lazy_core._atomic_write`` (production-sentinel-writes-bypass-
+    through ``lazy_core._monolith._atomic_write`` (production-sentinel-writes-bypass-
     atomic-write). GREEN today (the sweep this bug performed: `_write_yaml_
     sentinel`/`_write_yaml_blocked_sentinel` in both state scripts,
     `_write_step10_needs_input`, the ROADMAP append, the ad-hoc brief/spec
@@ -38013,12 +38025,20 @@ def test_no_bare_production_sentinel_writes():
     """
     _guard()
     scripts_dir = Path(__file__).parent
-    for filename in ("lazy-state.py", "bug-state.py", "lazy_core.py"):
-        source = (scripts_dir / filename).read_text(encoding="utf-8")
-        hits = _collect_bare_production_writes(source, filename)
+    lazy_core_dir = scripts_dir / "lazy_core"
+    # lazy-core-package-decomposition WU-1: lazy_core.py moved into the
+    # lazy_core/ package (lazy_core/_monolith.py + lazy_core/__init__.py); every
+    # module in that package is checked under the SAME "lazy_core.py" exempt-
+    # region marker key (Phase 1 has no exempt region there — production-scoped).
+    module_paths = [(p, "lazy_core.py") for p in sorted(lazy_core_dir.glob("*.py"))]
+    for filename in ("lazy-state.py", "bug-state.py"):
+        module_paths.append((scripts_dir / filename, filename))
+    for path, marker_key in module_paths:
+        source = path.read_text(encoding="utf-8")
+        hits = _collect_bare_production_writes(source, marker_key)
         assert hits == [], (
-            f"{filename}: bare production write(s) bypassing _atomic_write: "
-            f"{hits} — route through lazy_core._atomic_write instead"
+            f"{path.name}: bare production write(s) bypassing _atomic_write: "
+            f"{hits} — route through lazy_core._monolith._atomic_write instead"
         )
 
 
@@ -38102,19 +38122,29 @@ def _collect_duplicate_top_level_defs(source: str) -> list:
 
 
 def test_no_duplicate_top_level_defs_in_state_scripts():
-    """Self-checking meta-test: lazy_core.py, lazy-state.py, and bug-state.py
-    each carry ZERO duplicate top-level def/class names (the `_current_head`
-    defect this bug found and fixed — one definition silently shadowed the
-    other, undetected because this repo has no F811/pyflakes-class lint gate
-    at all). GREEN today. FAILS — naming the file + duplicate names — if a
-    future edit reintroduces a shadowed top-level definition.
+    """Self-checking meta-test: every lazy_core/ package module, lazy-state.py,
+    and bug-state.py each carry ZERO duplicate top-level def/class names (the
+    `_current_head` defect this bug found and fixed — one definition silently
+    shadowed the other, undetected because this repo has no F811/pyflakes-class
+    lint gate at all). GREEN today. FAILS — naming the file + duplicate names —
+    if a future edit reintroduces a shadowed top-level definition.
+
+    Checked PER MODULE (lazy-core-package-decomposition WU-1): lazy_core.py was
+    split into the lazy_core/ package (lazy_core/_monolith.py + lazy_core/__init__.py
+    + any future submodules). A same-named def/class in TWO DIFFERENT modules is
+    legal (module scoping); the F811 class this guard pins is a duplicate WITHIN
+    one module.
     """
     _guard()
     scripts_dir = Path(__file__).parent
-    for filename in ("lazy_core.py", "lazy-state.py", "bug-state.py"):
-        source = (scripts_dir / filename).read_text(encoding="utf-8")
+    lazy_core_dir = scripts_dir / "lazy_core"
+    module_paths = sorted(lazy_core_dir.glob("*.py"))
+    for filename in ("lazy-state.py", "bug-state.py"):
+        module_paths.append(scripts_dir / filename)
+    for path in module_paths:
+        source = path.read_text(encoding="utf-8")
         dups = _collect_duplicate_top_level_defs(source)
-        assert dups == [], f"{filename}: duplicate top-level definitions: {dups}"
+        assert dups == [], f"{path.name}: duplicate top-level definitions: {dups}"
 
 
 def test_duplicate_def_guard_detects_planted_violation():
@@ -38149,6 +38179,190 @@ _TESTS = _TESTS + [
      test_no_duplicate_top_level_defs_in_state_scripts),
     ("test_duplicate_def_guard_detects_planted_violation",
      test_duplicate_def_guard_detects_planted_violation),
+]
+
+
+# ---------------------------------------------------------------------------
+# lazy-core-package-decomposition WU-2 — lazy_core/_ctx.py contract pins
+# (RED-first / TDD Phase A). WU-1 moved the former lazy_core.py monolith body
+# into lazy_core/_monolith.py behind a PEP 562 lazy facade
+# (lazy_core/__init__.py, __getattr__-forwarding). WU-2 (not yet implemented)
+# will extract a new lazy_core/_ctx.py module owning the shared kernel
+# (_DIAGNOSTICS / _diag / clear_diagnostics / _atomic_write) plus
+# accessor-based storage for the two rebindable globals _active_repo_root and
+# _legacy_state_migrated.
+#
+# These four tests pin that contract BEFORE _ctx.py exists. The first three
+# are RED today — lazy_core._ctx has no submodule yet, so any attribute
+# access on it raises AttributeError via __init__.py's __getattr__ fallback
+# ("module 'lazy_core' has no attribute '_ctx'"), which is the CORRECT red
+# reason (it proves _ctx is the missing piece, not some other regression).
+# The fourth is a permanent regression pin for the module-attribute
+# patch-target mechanism and is expected to already be GREEN — everything
+# still lives in _monolith.py today.
+# ---------------------------------------------------------------------------
+
+def test_ctx_diagnostics_identity():
+    """Canonical-list-object contract: lazy_core._DIAGNOSTICS,
+    lazy_core._ctx._DIAGNOSTICS, and lazy_core._monolith._DIAGNOSTICS must all
+    be the SAME list object. lazy-state.py / bug-state.py mutate this list IN
+    PLACE (append via _diag(), .clear() via clear_diagnostics()); if _ctx.py
+    ever held its own separate list instead of sharing the one _monolith.py
+    (or its eventual successor) owns, a diagnostic appended through one view
+    would be invisible through another."""
+    _guard()
+    assert lazy_core._DIAGNOSTICS is lazy_core._ctx._DIAGNOSTICS, (
+        "lazy_core._DIAGNOSTICS and lazy_core._ctx._DIAGNOSTICS must be the "
+        "same list object"
+    )
+    assert lazy_core._ctx._DIAGNOSTICS is lazy_core._monolith._DIAGNOSTICS, (
+        "lazy_core._ctx._DIAGNOSTICS and lazy_core._monolith._DIAGNOSTICS must "
+        "be the same list object"
+    )
+
+
+def test_ctx_mutation_visible_through_facade():
+    """A mutation via any one view of _DIAGNOSTICS must be visible through
+    every other view, and clear_diagnostics() must clear the SAME object IN
+    PLACE (never rebind a fresh empty list) — verified by asserting the
+    list's identity survives the clear."""
+    _guard()
+    marker = f"__wu2_ctx_marker_{id(object())}__"
+    lazy_core._DIAGNOSTICS.append(marker)
+    try:
+        assert marker in lazy_core._ctx._DIAGNOSTICS, (
+            "append via lazy_core._DIAGNOSTICS not visible via "
+            "lazy_core._ctx._DIAGNOSTICS"
+        )
+        assert marker in lazy_core._monolith._DIAGNOSTICS, (
+            "append via lazy_core._DIAGNOSTICS not visible via "
+            "lazy_core._monolith._DIAGNOSTICS"
+        )
+        original_id = id(lazy_core._DIAGNOSTICS)
+        lazy_core.clear_diagnostics()
+        assert lazy_core._DIAGNOSTICS == [], "facade view not cleared"
+        assert lazy_core._ctx._DIAGNOSTICS == [], "_ctx view not cleared"
+        assert lazy_core._monolith._DIAGNOSTICS == [], "_monolith view not cleared"
+        assert id(lazy_core._DIAGNOSTICS) == original_id, (
+            "clear_diagnostics() must clear the list IN PLACE (.clear()), not "
+            "rebind a fresh list — the three views would silently diverge on "
+            "a rebind"
+        )
+    finally:
+        # Best-effort cleanup regardless of where the assertions above failed
+        # (or whether _ctx raised before any assertion ran).
+        lazy_core._monolith._DIAGNOSTICS.clear()
+
+
+def test_ctx_rebindable_globals_via_accessors():
+    """The two rebindable globals _active_repo_root / _legacy_state_migrated
+    must be reachable through lazy_core._ctx's accessor functions, AND a
+    direct module-attribute patch on lazy_core._ctx must ALSO be observed by
+    the getter — i.e. the getter reads the live module global on every call;
+    it must not cache or close over a stale value at import time."""
+    _guard()
+    original_legacy = lazy_core._ctx._legacy_state_migrated
+    original_repo_root = lazy_core._ctx._active_repo_root
+    try:
+        # --- _legacy_state_migrated ---
+        lazy_core._ctx.set_legacy_state_migrated(True)
+        assert lazy_core._ctx.legacy_state_migrated() is True, (
+            "set_legacy_state_migrated(True) must be observed by "
+            "legacy_state_migrated()"
+        )
+        lazy_core._ctx._legacy_state_migrated = False  # direct attribute patch
+        assert lazy_core._ctx.legacy_state_migrated() is False, (
+            "a direct lazy_core._ctx._legacy_state_migrated patch must be "
+            "observed by legacy_state_migrated() — the getter must read the "
+            "live module global, not a cached/closed-over value"
+        )
+
+        # --- _active_repo_root ---
+        sentinel_a = "/tmp/wu2-ctx-accessor-sentinel-repo"
+        lazy_core._ctx.set_active_repo_root_value(sentinel_a)
+        assert lazy_core._ctx.get_active_repo_root() == sentinel_a, (
+            "set_active_repo_root_value(...) must be observed by "
+            "get_active_repo_root()"
+        )
+        sentinel_b = "/tmp/wu2-ctx-accessor-direct-patch-repo"
+        lazy_core._ctx._active_repo_root = sentinel_b  # direct attribute patch
+        assert lazy_core._ctx.get_active_repo_root() == sentinel_b, (
+            "a direct lazy_core._ctx._active_repo_root patch must be observed "
+            "by get_active_repo_root() — the getter must read the live module "
+            "global"
+        )
+    finally:
+        lazy_core._ctx._legacy_state_migrated = original_legacy
+        lazy_core._ctx._active_repo_root = original_repo_root
+
+
+class _FakeTimeSentinel:
+    """Minimal module stand-in for `lazy_core._monolith.time` exposing only
+    `.time()` — the smallest double that can prove a _monolith function's
+    module-level `time.time()` call actually consults whatever object is
+    bound to the module's `time` name (the patch-TARGET-effectiveness
+    mechanism the 5 existing `test_ensure_runtime_production_*` sites all
+    rely on via `lazy_core._monolith.subprocess, lazy_core._monolith.time =
+    fake_sub, fake_time`)."""
+
+    def __init__(self, sentinel_ts: float):
+        self._sentinel_ts = sentinel_ts
+
+    def time(self):
+        return self._sentinel_ts
+
+
+def test_monolith_patch_target_effective():
+    """Permanent regression pin (mechanism-3): patching
+    `lazy_core._monolith.time` is the EFFECTIVE way to control the clock a
+    _monolith function reads via its module-level `time.time()` call.
+
+    Reuses the exact patch idiom of the 5 existing
+    `test_ensure_runtime_production_*` sites (e.g.
+    test_ensure_runtime_production_boot_alive_dead_handle_recovers at line
+    ~25430, all of which do `lazy_core._monolith.subprocess,
+    lazy_core._monolith.time = fake_sub, fake_time`) but against a much
+    cheaper function-under-test: `_notify_identity`'s sentinel-less,
+    date-keyed identity branch needs no tempfile/subprocess/config fixture at
+    all — passing a state dict with no `spec_path` key short-circuits
+    `_notify_sentinel_path` to `None` with zero file I/O, landing directly on
+    `ts = time.time() if now is None else float(now)`.
+
+    EXPECTED STATUS TODAY: PASS. Everything still lives in
+    lazy_core/_monolith.py (WU-2 hasn't extracted _ctx.py yet), so this
+    assertion is trivially satisfied now. It becomes load-bearing once WU-2
+    (and later decomposition phases) move functions out of _monolith.py: if a
+    moved function stops reading the module `time` object this test patches,
+    a future revision of this pin must patch the NEW owning submodule too —
+    a silent divergence here would mean tests are patching a clock nobody
+    reads anymore.
+    """
+    _guard()
+    sentinel_ts = 946684800.0  # 2000-01-01T00:00:00Z — cross-checked via
+    # datetime.datetime.fromtimestamp(946684800.0, tz=timezone.utc)
+    _real_time = lazy_core._monolith.time
+    lazy_core._monolith.time = _FakeTimeSentinel(sentinel_ts)
+    try:
+        identity = lazy_core._notify_identity(
+            {"terminal_reason": "blocked", "feature_id": "wu2-patch-target-probe"},
+            "feature",
+        )
+    finally:
+        lazy_core._monolith.time = _real_time
+
+    assert identity == "feature|wu2-patch-target-probe|blocked|d:2000-01-01", (
+        "expected the fake sentinel clock to be consulted for the "
+        f"sentinel-less date-keyed identity branch; got {identity!r}"
+    )
+
+
+_TESTS = _TESTS + [
+    ("test_ctx_diagnostics_identity", test_ctx_diagnostics_identity),
+    ("test_ctx_mutation_visible_through_facade",
+     test_ctx_mutation_visible_through_facade),
+    ("test_ctx_rebindable_globals_via_accessors",
+     test_ctx_rebindable_globals_via_accessors),
+    ("test_monolith_patch_target_effective", test_monolith_patch_target_effective),
 ]
 
 

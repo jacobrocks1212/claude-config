@@ -83,45 +83,17 @@ import stale_binary
 
 
 # ---------------------------------------------------------------------------
-# Diagnostics
+# Diagnostics + the atomic-write kernel now live in lazy_core._ctx (WU-2 of
+# lazy-core-package-decomposition) — _DIAGNOSTICS is a shared mutable list
+# (never rebound), so this import gives lazy_core._monolith._DIAGNOSTICS /
+# _diag / clear_diagnostics / _atomic_write identity with the _ctx-owned
+# objects. Import _ctx itself too (not just its names) so direct
+# module-attribute patches on lazy_core._ctx (e.g. in tests) stay visible to
+# the accessor-based rebindable globals below.
 # ---------------------------------------------------------------------------
 
-# Diagnostics collected across helper calls. compute_state() in lazy-state.py
-# resets this at the start of each invocation via clear_diagnostics(), and
-# merges the list into the returned state dict before returning. Callers in
-# lazy-state.py reference lazy_core._diag / lazy_core.clear_diagnostics so
-# they mutate THIS list, not a separate copy.
-_DIAGNOSTICS: list[str] = []
-
-
-def _diag(msg: str) -> None:
-    """Append a diagnostic message to the shared _DIAGNOSTICS list."""
-    _DIAGNOSTICS.append(msg)
-
-
-def clear_diagnostics() -> None:
-    """Reset the shared _DIAGNOSTICS list (call once per compute_state invocation)."""
-    _DIAGNOSTICS.clear()
-
-
-# ---------------------------------------------------------------------------
-# Infrastructure helpers
-# ---------------------------------------------------------------------------
-
-def _atomic_write(path: Path, content: str) -> None:
-    """Write content to path atomically (temp file in the same dir + replace)."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(content)
-        os.replace(tmp, path)
-    except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+from . import _ctx
+from ._ctx import _DIAGNOSTICS, _diag, clear_diagnostics, _atomic_write, _SCRIPTS_DIR
 
 
 def _die(msg: str, path: Path | None = None) -> None:
@@ -3194,7 +3166,7 @@ def _load_harness_gate_module():
     Never raises by itself; callers degrade fail-open/out-of-scope."""
     import importlib.util
 
-    path = Path(__file__).resolve().parent / "harness-gate.py"
+    path = _SCRIPTS_DIR / "harness-gate.py"
     spec = importlib.util.spec_from_file_location("harness_gate", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -4089,7 +4061,7 @@ def _load_validate_plan_module():
     raises on import failure by itself — the caller degrades fail-open."""
     import importlib.util
 
-    path = Path(__file__).resolve().parent / "validate-plan.py"
+    path = _SCRIPTS_DIR / "validate-plan.py"
     spec = importlib.util.spec_from_file_location("validate_plan", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -7773,7 +7745,7 @@ _PROMPT_RESIDUE_RE = re.compile(r"\{[a-z0-9_]+\}")
 
 def _default_cycle_template_dir() -> Path:
     """Resolve the default cycle-prompt template dir from this module's path."""
-    return Path(__file__).resolve().parent.parent.joinpath(*_CYCLE_TEMPLATE_DIRNAME)
+    return _SCRIPTS_DIR.parent.joinpath(*_CYCLE_TEMPLATE_DIRNAME)
 
 
 def _standard_dispatch_bindings(pipeline: str) -> dict[str, str]:
@@ -7985,7 +7957,7 @@ def _mcp_test_cycle_model(spec_path: str | None) -> str:
         try:
             from surface_resolver import route_mcp_test_tier
         except ImportError:
-            _here = Path(__file__).parent
+            _here = _SCRIPTS_DIR
             if str(_here) not in sys.path:
                 sys.path.insert(0, str(_here))
             from surface_resolver import route_mcp_test_tier
@@ -8782,12 +8754,12 @@ def _run_marker_scoped_keys() -> "set[str]":
 # cycle counters.
 # ---------------------------------------------------------------------------
 
-# The active repo root for this process.  None = fall back to the cwd's git
-# toplevel (set_active_repo_root is the precise binding done at main()).
-_active_repo_root: str | None = None
-
-# One-shot guard so the legacy-base-dir migration runs at most once per process.
-_legacy_state_migrated: bool = False
+# The active repo root and the legacy-migration one-shot guard are now owned
+# by lazy_core._ctx (WU-2 of lazy-core-package-decomposition) — see
+# set_active_repo_root() / active_repo_root() / migrate_legacy_state_dir()
+# below, which read/write them via the _ctx accessors so a direct
+# lazy_core._ctx._active_repo_root / _legacy_state_migrated module-attribute
+# patch (as tests do) is observed live.
 
 # Run-scoped state filenames that live directly under the state dir and must
 # migrate together from the legacy (un-keyed) base dir into the keyed subdir.
@@ -8806,15 +8778,15 @@ def set_active_repo_root(repo_root: str | None) -> None:
     Passing a falsy value clears the binding, reverting active_repo_root() to
     the cwd-git-toplevel fallback.  Idempotent within a process.
     """
-    global _active_repo_root
-    _active_repo_root = str(repo_root) if repo_root else None
+    _ctx.set_active_repo_root_value(repo_root)
 
 
 def active_repo_root() -> str:
     """Return the active repo root: the explicit binding, else the cwd's git
     toplevel, else the cwd itself.  Always returns a non-empty string."""
-    if _active_repo_root:
-        return _active_repo_root
+    bound = _ctx.get_active_repo_root()
+    if bound:
+        return bound
     try:
         cp = _git(Path.cwd(), "rev-parse", "--show-toplevel")
         top = (cp.stdout or "").strip()
@@ -11691,10 +11663,9 @@ def migrate_legacy_state_dir(base: Path) -> bool:
     NEVER called for a LAZY_STATE_DIR-overridden dir (that path returns the
     override verbatim before reaching here), so hermetic tests are untouched.
     """
-    global _legacy_state_migrated
-    if _legacy_state_migrated:
+    if _ctx.legacy_state_migrated():
         return False
-    _legacy_state_migrated = True
+    _ctx.set_legacy_state_migrated(True)
     legacy_marker = base / _MARKER_FILENAME
     if not legacy_marker.exists():
         return False
@@ -12358,7 +12329,7 @@ def skill_declares_subagent_model(
                 Path(repo_root) / ".claude" / "skills" / norm / "SKILL.md"
             )
         candidates.append(
-            Path(__file__).resolve().parent.parent / "skills" / norm / "SKILL.md"
+            _SCRIPTS_DIR.parent / "skills" / norm / "SKILL.md"
         )
         for skill_md in candidates:
             try:
@@ -12453,7 +12424,7 @@ def skill_declares_multi_commit(
                 Path(repo_root) / ".claude" / "skills" / norm / "SKILL.md"
             )
         candidates.append(
-            Path(__file__).resolve().parent.parent / "skills" / norm / "SKILL.md"
+            _SCRIPTS_DIR.parent / "skills" / norm / "SKILL.md"
         )
         for skill_md in candidates:
             try:
@@ -18488,7 +18459,7 @@ _CANARY_CONTROL_SURFACES_FALLBACK: tuple[str, ...] = (
     "user/hooks/**",
     "user/scripts/lazy-state.py",
     "user/scripts/bug-state.py",
-    "user/scripts/lazy_core.py",
+    "user/scripts/lazy_core/**",
     "user/scripts/lazy_guard.py",
     "user/scripts/lazy_inject.py",
     "user/scripts/lazy-parity-manifest.json",
@@ -20125,6 +20096,35 @@ def _ntfy_send(url: str, title: str, body: str, link: str | None = None) -> None
         resp.read()
 
 
+def _resolve_ntfy_send():
+    """Resolve the production ntfy sender, honoring the historical
+    single-module patchability contract.
+
+    Before the lazy_core package split, ``notify_halt`` and ``_ntfy_send``
+    both lived directly on the ``lazy_core`` module, so a test's
+    ``lazy_core._ntfy_send = fake`` patched exactly the name this function's
+    global lookup would resolve. Now that ``notify_halt`` lives in
+    ``_monolith`` (a different module object from the top-level ``lazy_core``
+    facade), a bare ``_ntfy_send`` global lookup here would resolve to
+    THIS module's own binding, silently ignoring a
+    ``lazy_core._ntfy_send = fake`` patch applied by callers (e.g. the
+    lazy-state.py / bug-state.py ``[notify-halt-call-site]`` smoke fixtures).
+
+    This checks the live ``lazy_core`` package's own ``__dict__`` FIRST
+    (a plain dict read — never triggers the package's ``__getattr__``
+    forwarding, so an untouched package is invisible here) and falls back to
+    this module's own ``_ntfy_send`` when the package attribute was never
+    patched — production behavior is unchanged either way, since the
+    package's PEP 562 facade would forward right back to this same function.
+    """
+    pkg = sys.modules.get("lazy_core")
+    if pkg is not None:
+        patched = pkg.__dict__.get("_ntfy_send")
+        if patched is not None:
+            return patched
+    return _ntfy_send
+
+
 def notify_halt(state: dict, repo_root: str, *, pipeline: str = "feature",
                 sender=None, now: float | None = None) -> None:
     """Page the operator about an attention-terminal halt.  Fail-OPEN observer:
@@ -20158,7 +20158,7 @@ def notify_halt(state: dict, repo_root: str, *, pipeline: str = "feature",
         if sender is None:
             url = config["url"]
             def sender(t, b, l, _url=url):  # noqa: E731 — production binding
-                _ntfy_send(_url, t, b, l)
+                _resolve_ntfy_send()(_url, t, b, l)
         diagnostics = state.get("diagnostics")
         try:
             sender(title, body, link)
@@ -20264,7 +20264,7 @@ def notify_event(
         if sender is None:
             url = config["url"]
             def sender(t, b, l, _url=url):  # noqa: E731 — production binding
-                _ntfy_send(_url, t, b, l)
+                _resolve_ntfy_send()(_url, t, b, l)
         try:
             sender(title, body, link)
         except Exception as send_exc:  # noqa: BLE001 — fail-OPEN

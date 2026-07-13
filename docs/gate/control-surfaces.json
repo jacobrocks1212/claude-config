@@ -5,7 +5,7 @@
     "user/hooks/**",
     "user/scripts/lazy-state.py",
     "user/scripts/bug-state.py",
-    "user/scripts/lazy_core.py",
+    "user/scripts/lazy_core/**",
     "user/scripts/lazy_guard.py",
     "user/scripts/lazy_inject.py",
     "user/scripts/lazy_coord.py",

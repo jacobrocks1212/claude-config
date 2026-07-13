@@ -31,11 +31,12 @@ _vp_spec = importlib.util.spec_from_file_location(
 vp = importlib.util.module_from_spec(_vp_spec)
 _vp_spec.loader.exec_module(vp)
 
-_lc_spec = importlib.util.spec_from_file_location(
-    "lazy_core", os.path.join(HERE, "lazy_core.py")
-)
-lazy_core = importlib.util.module_from_spec(_lc_spec)
-_lc_spec.loader.exec_module(lazy_core)
+# lazy_core is now a package (user/scripts/lazy_core/) behind a PEP 562 facade
+# (lazy-core-package-decomposition Phase 1) — import it as a package instead of
+# the retired flat-file spec_from_file_location load.
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import lazy_core  # noqa: E402
 
 
 def _write(tmp_path, name, content):

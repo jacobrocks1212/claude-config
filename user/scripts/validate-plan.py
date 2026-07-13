@@ -329,18 +329,22 @@ def _structural_scripts_dir():
 
 
 def _load_lazy_core():
-    """Import lazy_core.py from this script's own directory via importlib
-    (dash-free module name workaround is unnecessary here since the target
-    is a normal identifier, but spec_from_file_location keeps this resilient
-    to how validate-plan.py itself was invoked — direct path or via the
-    ~/.claude/scripts symlink, both resolve to the same real file)."""
-    import importlib.util
+    """Import the lazy_core package from this script's own directory.
 
-    path = _structural_scripts_dir() / "lazy_core.py"
-    spec = importlib.util.spec_from_file_location("lazy_core", path)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    lazy_core is now a package (user/scripts/lazy_core/) behind a PEP 562
+    facade; sys.path-based import replaces the old flat-file
+    spec_from_file_location so both direct-path and ~/.claude/scripts-symlink
+    invocations resolve to the same real package. If lazy_core is already
+    imported in this process (e.g. under pytest), the cached module is
+    returned unchanged.
+    """
+    import importlib
+    import sys
+
+    scripts_dir = str(_structural_scripts_dir())
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    return importlib.import_module("lazy_core")
 
 
 _STRUCTURAL_FENCE = "---"
