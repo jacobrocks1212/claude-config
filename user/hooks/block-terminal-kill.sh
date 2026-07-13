@@ -70,6 +70,75 @@ _CMD_START = r"(?:^|[\n;&|(]|\{(?=\s))\s*" + _ENV_PREFIX
 # invocation is not accidentally split into two segments by _CMD_START's `\n`.
 _PS_LINE_CONTINUATION_RE = re.compile(r"`\r?\n")
 
+
+def _mask_quoted(command):
+    """Blank the CONTENT of single- and double-quoted string spans.
+
+    Second operator-observed false-positive class (same bug as segment-start
+    anchoring): a termination keyword — or a shell SEPARATOR that fabricates a
+    false segment-start FOR one — appears only inside a quoted ARGUMENT VALUE,
+    not at a real command-segment start. Two field hits:
+      (a) a commit-chain guard clause carried inside a single-quoted message,
+          e.g. ``git commit -m '... || exit 1'`` — the quoted ``||`` made
+          _CMD_START match the following ``exit``;
+      (b) an ``--emit-dispatch --context "..."`` whose double-quoted prose
+          described a nonzero-status refusal using the literal keyword, e.g.
+          ``--context "refuses; exit code nonzero"``.
+    Segment-start anchoring alone cannot see these: the separator/keyword is
+    genuinely at a segment-start position WITHIN the quoted literal, but that
+    literal is one shell-quoting level below the command line the hook guards.
+
+    A flat single-pass char scan (NOT a full shell parser — the deliberate
+    same-discipline choice as every other normalization in this plane) replaces
+    each interior char of a matched quote span with a space, preserving the
+    quote chars and every offset so the existing _CMD_START matchers run
+    unchanged on the masked string. Outside a span a backslash-escaped quote
+    (``\\'`` / ``\\"``) does not open one; inside a double-quoted span ``\\"``
+    does not close it. An unbalanced trailing quote masks to end-of-string.
+
+    This can only REDUCE matches (a keyword outside every quote is untouched),
+    so real top-level ``kill`` / ``exit`` / ``&& exit`` invocations still deny;
+    the accepted residual is a keyword inside a ``bash -c "kill ..."`` string
+    argument (the same plane-wide quoted-argument residual documented in
+    user/hooks/CLAUDE.md), which does not terminate THIS terminal anyway.
+    """
+    out = []
+    quote = None  # None | "'" | '"'
+    i = 0
+    n = len(command)
+    while i < n:
+        ch = command[i]
+        if quote is None:
+            if ch == "\\" and i + 1 < n:
+                # Escaped char at top level — passthrough both, never opens a span.
+                out.append(ch)
+                out.append(command[i + 1])
+                i += 2
+                continue
+            if ch == "'" or ch == '"':
+                quote = ch
+                out.append(ch)  # keep the opening quote (offset-stable)
+                i += 1
+                continue
+            out.append(ch)
+            i += 1
+            continue
+        # Inside a quoted span.
+        if quote == '"' and ch == "\\" and i + 1 < n:
+            # Backslash-escape inside double quotes: blank both, span continues.
+            out.append(" ")
+            out.append(" ")
+            i += 2
+            continue
+        if ch == quote:
+            quote = None
+            out.append(ch)  # keep the closing quote
+            i += 1
+            continue
+        out.append(" " if ch != "\n" else "\n")  # blank interior, keep newlines
+        i += 1
+    return "".join(out)
+
 _TASKKILL_RE = re.compile(_CMD_START + r"(?:taskkill|Stop-Process)\b", re.IGNORECASE)
 _KILL_RE = re.compile(_CMD_START + r"kill\b", re.IGNORECASE)
 _KILL_PORT_RE = re.compile(r"kill-port", re.IGNORECASE)
@@ -101,6 +170,10 @@ def main():
     payload = json.loads(raw)  # JSONDecodeError → caught below → fail-open
     command = (payload.get("tool_input") or {}).get("command") or ""
     command = _PS_LINE_CONTINUATION_RE.sub(" ", command)
+    # Blank quoted-string CONTENT so a termination keyword (or a separator that
+    # fabricates a false segment-start for one) that lives only inside a quoted
+    # ARGUMENT VALUE cannot deny a benign command (see _mask_quoted).
+    command = _mask_quoted(command)
 
     # (1) Process termination — but allow `npx kill-port` for /mcp-test.
     if _TASKKILL_RE.search(command):

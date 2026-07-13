@@ -7838,6 +7838,79 @@ def test_termkill_denies_chained_kill_command():
         )
 
 
+# --- block-terminal-kill.sh: quoted-argument-value false-positive class ------
+# (block-terminal-kill-false-denies-quoted-argument-tokens) — a termination
+# keyword, or a separator that fabricates a false segment-start for one, that
+# lives only inside a quoted STRING ARGUMENT must NOT deny (_mask_quoted).
+
+def test_termkill_allows_single_quoted_guard_clause():
+    """`git commit -m '... || exit 1'` → allow. The `|| exit 1` guard clause is
+    inside a single-quoted commit message — the quoted `||` must not fabricate a
+    segment-start for the following `exit`."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH,
+            _hook_payload("git commit -m 'landed the fix || exit 1'"),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"exit inside a single-quoted commit body must allow; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_allows_double_quoted_context_prose():
+    """`--context \"refuses; exit code nonzero\"` → allow. A termination keyword
+    described in double-quoted prose (the --emit-dispatch --context case) must not
+    deny even when a `;`/`|` precedes it inside the quotes."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH,
+            _hook_payload(
+                'python3 lazy-state.py --emit-dispatch hardening '
+                '--context "the gate refuses; exit code is nonzero"'
+            ),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"exit in double-quoted --context prose must allow; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_allows_kill_inside_quoted_argument():
+    """`git commit -m '... | kill 5'` → allow. `kill` behind a quoted `|` is not
+    an invoked command."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH,
+            _hook_payload("git commit -m 'oops | kill 5 stray words'"),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"kill inside a quoted argument must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_denies_real_kill_after_quoted_message():
+    """TRUE-POSITIVE PIN: `git commit -m 'msg' && kill 9` → deny. Masking the
+    quoted message must NOT hide a real `kill` chained OUTSIDE the quotes."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH,
+            _hook_payload("git commit -m 'a benign message' && kill 9"),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) == "deny", (
+            f"a real kill chained outside the quotes must still deny; "
+            f"stdout={result.stdout!r}"
+        )
+
+
 # --- block-work-repo-git-push.sh: PS-style bypass token ---------------------
 
 def test_push_allows_with_powershell_style_bypass_token():
@@ -7932,6 +8005,15 @@ _TESTS = _TESTS + [
      test_termkill_allows_commit_message_mentioning_kill),
     ("test_termkill_denies_chained_kill_command",
      test_termkill_denies_chained_kill_command),
+    # block-terminal-kill.sh — quoted-argument-value false-positive class
+    ("test_termkill_allows_single_quoted_guard_clause",
+     test_termkill_allows_single_quoted_guard_clause),
+    ("test_termkill_allows_double_quoted_context_prose",
+     test_termkill_allows_double_quoted_context_prose),
+    ("test_termkill_allows_kill_inside_quoted_argument",
+     test_termkill_allows_kill_inside_quoted_argument),
+    ("test_termkill_denies_real_kill_after_quoted_message",
+     test_termkill_denies_real_kill_after_quoted_message),
     # block-work-repo-git-push.sh — PS-style bypass token
     ("test_push_allows_with_powershell_style_bypass_token",
      test_push_allows_with_powershell_style_bypass_token),

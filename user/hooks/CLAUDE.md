@@ -123,7 +123,17 @@ embedded text (an awk `'{exit}'` script body, a pytest `-k "...kill..."` express
 when the token BEGINS a command segment, mirroring `build-queue-enforce.sh`'s `_CMD_START`. `{`
 counts as a segment separator only when followed by whitespace (bash's `{ cmd; }` grouping
 requires a blank after the reserved word), which is exactly what keeps a no-space `{exit}` (an
-awk/PowerShell script-block literal) from matching.
+awk/PowerShell script-block literal) from matching. A **second** operator-observed false-positive
+class on the same hook (`block-terminal-kill-false-denies-quoted-argument-tokens`, 2026-07-13)
+extends this to the shell-QUOTING level: segment-start anchoring is blind to a separator/keyword
+that sits at a segment-start position *inside a quoted string literal* (a `git commit -m
+'… || exit 1'` guard clause; an `--emit-dispatch --context "…exit…"` prose string) — one quoting
+level below the command line the hook guards. `_mask_quoted` blanks the CONTENT of single-/
+double-quoted spans (quote chars + every offset preserved) before the anchored matchers run, so a
+keyword outside every quote still denies (a real `&& kill` after a quoted message is untouched)
+while an in-quote one is masked away. This is a flat single-pass char scan, the same
+not-a-shell-parser discipline as `_normalize_ps_syntax`; the accepted residual is a keyword inside
+a `bash -c "kill …"` string argument (the plane-wide quoted-argument residual above).
 
 ## Per-repo keyed, not global-marker
 
