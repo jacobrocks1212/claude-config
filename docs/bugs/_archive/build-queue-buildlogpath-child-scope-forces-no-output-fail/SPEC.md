@@ -2,7 +2,7 @@
 
 > The runner assigns `$buildLogPath` inside a `Get-SafeValue { }` child scope, so the classifier reads `$null` and force-fails every genuinely-successful build op as `build_fidelity=no-output` — the entire build-log-honesty feature is inert.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-06
 **Placement:** docs/bugs/build-queue-buildlogpath-child-scope-forces-no-output-fail

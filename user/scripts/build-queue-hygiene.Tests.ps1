@@ -38,15 +38,34 @@ Describe 'build-queue-hygiene module surface' {
 }
 
 Describe 'fail-open behavior on failure paths' {
+	# NOTE: per the child-scope quirk documented throughout this file (DLL Locker Reap /
+	# Set-LockFileAtomic / Get-BuildQueueOccupancy NOTEs) -- `{ $result = Foo } | Should -Not
+	# -Throw` invokes the scriptblock via Pester in a CHILD scope, so the inner `$result =`
+	# assignment never writes through to the outer `$result` (which stays $null). This is the
+	# SAME child-scope-discard defect class as build-queue-buildlogpath-child-scope-forces-no-output-fail,
+	# living in the test file itself. Fixed via try/catch (which does NOT introduce a new
+	# PowerShell scope), matching the safe assign-on-its-own-line style used elsewhere in this file.
 	It 'Add-ProcessToBuildJob returns $false without throwing for zero handles' {
+		$threw = $false
 		$result = $null
-		{ $result = Add-ProcessToBuildJob -JobHandle ([IntPtr]::Zero) -ProcessHandle ([IntPtr]::Zero) } | Should -Not -Throw
+		try {
+			$result = Add-ProcessToBuildJob -JobHandle ([IntPtr]::Zero) -ProcessHandle ([IntPtr]::Zero)
+		} catch {
+			$threw = $true
+		}
+		$threw | Should -Be $false
 		$result | Should -Be $false
 	}
 
 	It 'Stop-BuildJobTree returns $false without throwing for a zero handle' {
+		$threw = $false
 		$result = $null
-		{ $result = Stop-BuildJobTree -JobHandle ([IntPtr]::Zero) } | Should -Not -Throw
+		try {
+			$result = Stop-BuildJobTree -JobHandle ([IntPtr]::Zero)
+		} catch {
+			$threw = $true
+		}
+		$threw | Should -Be $false
 		$result | Should -Be $false
 	}
 }
@@ -74,8 +93,16 @@ Describe 'Reset-CompilerServer' {
 	}
 
 	It 'does not throw and returns a [bool]' {
+		# Per the same child-scope quirk (see 'fail-open behavior on failure paths' above):
+		# try/catch, not a `{ } | Should -Not -Throw` scriptblock, so $result survives.
+		$threw = $false
 		$result = $null
-		{ $result = Reset-CompilerServer } | Should -Not -Throw
+		try {
+			$result = Reset-CompilerServer
+		} catch {
+			$threw = $true
+		}
+		$threw | Should -Be $false
 		($result -eq $true -or $result -eq $false) | Should -Be $true
 	}
 }
