@@ -96,7 +96,7 @@
         ]
       },
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
@@ -107,7 +107,12 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/block-terminal-kill.sh",
             "timeout": 5
-          },
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
           {
             "type": "command",
             "command": "bash ~/.claude/hooks/lazy-cycle-containment.sh",

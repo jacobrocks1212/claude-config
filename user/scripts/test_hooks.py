@@ -6790,6 +6790,360 @@ _TESTS = _TESTS + [
 ]
 
 
+# ===========================================================================
+# legacy-tool-input-env-hooks-dead — the two REVIVED stdin-JSON hooks
+#
+# block-terminal-kill.sh + block-work-repo-git-push.sh were dead code: both read
+# $TOOL_INPUT_command (an env var the hook interface never populates), so every
+# matching payload passed clean. These pipe tests drive each rewritten hook as a
+# subprocess with crafted stdin JSON and assert the parsed permissionDecision:
+# deny leg + allow legs + malformed fail-open leg + a PowerShell-payload deny leg
+# (proving the tool-name-agnostic body), plus registration meta-tests asserting
+# each hook's PreToolUse matcher covers BOTH Bash and PowerShell.
+#
+# RED-for-the-right-reason: against the pre-rewrite (dead) hooks every deny leg
+# returns exit 0 / empty output — _hook_decision() reads None where the test
+# demands "deny".
+# ===========================================================================
+
+_TERMKILL_HOOK_SH = _HOOKS_DIR / "block-terminal-kill.sh"
+_PUSH_HOOK_SH     = _HOOKS_DIR / "block-work-repo-git-push.sh"
+
+
+def _hook_payload(command: str, cwd: str | None = None,
+                  tool_name: str = "Bash") -> str:
+    """PreToolUse JSON for the command guards, tool-name and cwd overridable.
+
+    Mirrors _bqe_payload's shape but lets a test set tool_name="PowerShell"
+    (to prove the tool-name-agnostic body) and thread a cwd (the push hook reads
+    `git config user.email` from the payload cwd)."""
+    payload = {
+        "session_id": str(uuid.uuid4()),
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": tool_name,
+        "tool_input": {"command": command},
+        "tool_use_id": "toolu_" + uuid.uuid4().hex[:24],
+    }
+    if cwd is not None:
+        payload["cwd"] = cwd
+    return json.dumps(payload)
+
+
+def _hook_decision(result: subprocess.CompletedProcess) -> str | None:
+    """permissionDecision from the hook's stdout, or None for a fast-path allow
+    (empty stdout). Shares _containment_decision's contract."""
+    return _containment_decision(result)
+
+
+def _init_email_repo(parent: Path, email: str) -> Path:
+    """Temp git repo whose local user.email is *email* — the push hook reads
+    `git config user.email` from the payload cwd to detect a work repo."""
+    repo = parent / "email-repo"
+    repo.mkdir()
+    _git(["init", "-q"], repo)
+    _git(["config", "user.email", email], repo)
+    _git(["config", "user.name", "t"], repo)
+    return repo
+
+
+# --- block-terminal-kill.sh -------------------------------------------------
+
+def test_termkill_denies_taskkill():
+    """`taskkill /F /IM node.exe` → deny (process-termination block)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH,
+            _hook_payload("taskkill /F /IM node.exe"),
+            _base_env(state_dir),
+        )
+        assert result.returncode == 0, (
+            f"hook must exit 0 (deny is JSON); got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert _hook_decision(result) == "deny", (
+            f"taskkill must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_denies_stop_process():
+    """`Stop-Process -Id 1234` → deny (retained for the PowerShell sibling bug)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH,
+            _hook_payload("Stop-Process -Id 1234"),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) == "deny", (
+            f"Stop-Process must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_denies_bare_kill():
+    """`kill 1234` → deny (kill block, non-kill-port)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH, _hook_payload("kill 1234"), _base_env(state_dir),
+        )
+        assert _hook_decision(result) == "deny", (
+            f"bare kill must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_denies_exit():
+    """`exit` → deny (session/system termination block)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH, _hook_payload("exit"), _base_env(state_dir),
+        )
+        assert _hook_decision(result) == "deny", (
+            f"exit must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_denies_wt_exe():
+    """`wt.exe -w 0 nt` → deny (Windows Terminal management block)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH, _hook_payload("wt.exe -w 0 nt"), _base_env(state_dir),
+        )
+        assert _hook_decision(result) == "deny", (
+            f"wt.exe must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_allows_kill_port():
+    """`npx kill-port 3333` → allow (the /mcp-test kill-port allowance)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH, _hook_payload("npx kill-port 3333"),
+            _base_env(state_dir),
+        )
+        assert result.returncode == 0, f"stderr={result.stderr!r}"
+        assert _hook_decision(result) is None, (
+            f"npx kill-port must allow (no deny JSON); stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_allows_plain_command():
+    """A plain `ls -la` → allow (no deny JSON)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH, _hook_payload("ls -la"), _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"plain ls must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_malformed_fails_open():
+    """Non-JSON stdin → exit 0, no deny (fail-OPEN)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(_TERMKILL_HOOK_SH, "not-json", _base_env(state_dir))
+        assert result.returncode == 0, (
+            f"malformed stdin must exit 0; got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert _hook_decision(result) is None, (
+            f"malformed stdin must fail open (no deny); stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_powershell_payload_denies():
+    """`{tool_name: PowerShell, ... Stop-Process ...}` → deny (tool-name-agnostic body)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH,
+            _hook_payload("Stop-Process -Id 1234", tool_name="PowerShell"),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) == "deny", (
+            f"PowerShell-tool Stop-Process must deny; stdout={result.stdout!r}"
+        )
+
+
+# --- block-work-repo-git-push.sh --------------------------------------------
+
+def test_push_denies_in_work_repo():
+    """`git push origin main` fired from a jacob@cognitoforms.com repo → deny."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        repo = _init_email_repo(td, "jacob@cognitoforms.com")
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload("git push origin main", cwd=str(repo)),
+            _base_env(state_dir),
+        )
+        assert result.returncode == 0, (
+            f"hook must exit 0 (deny is JSON); got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert _hook_decision(result) == "deny", (
+            f"git push in a work-email repo must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_push_allows_with_bypass_token():
+    """`CLAUDE_PUSH_APPROVED=1 git push origin main` in a work repo → allow."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        repo = _init_email_repo(td, "jacob@cognitoforms.com")
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload("CLAUDE_PUSH_APPROVED=1 git push origin main",
+                          cwd=str(repo)),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"bypass-token push must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_push_allows_in_non_work_repo():
+    """`git push origin main` from a non-work-email repo → allow."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        repo = _init_email_repo(td, "jacobmadsen12321@gmail.com")
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload("git push origin main", cwd=str(repo)),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"push in a personal-email repo must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_push_allows_non_push_command():
+    """`git commit -m x` (not a push) → allow, even in a work repo."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        repo = _init_email_repo(td, "jacob@cognitoforms.com")
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload("git commit -m x", cwd=str(repo)),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"git commit must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_push_malformed_fails_open():
+    """Non-JSON stdin → exit 0, no deny (fail-OPEN)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(_PUSH_HOOK_SH, "not-json", _base_env(state_dir))
+        assert result.returncode == 0, (
+            f"malformed stdin must exit 0; got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert _hook_decision(result) is None, (
+            f"malformed stdin must fail open (no deny); stdout={result.stdout!r}"
+        )
+
+
+def test_push_powershell_payload_denies():
+    """`{tool_name: PowerShell, ... git push ...}` in a work repo → deny."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        repo = _init_email_repo(td, "jacob@cognitoforms.com")
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload("git push origin main", cwd=str(repo),
+                          tool_name="PowerShell"),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) == "deny", (
+            f"PowerShell-tool git push in a work repo must deny; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+# --- registration meta-tests (matcher must cover Bash AND PowerShell) -------
+
+def _matcher_for_hook(hook_name: str) -> str | None:
+    """Return the matcher string of the PreToolUse block registering *hook_name*,
+    or None if the hook is not registered."""
+    settings_path = _REPO_ROOT / "user" / "settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    pretooluse = settings.get("hooks", {}).get("PreToolUse", [])
+    for block in pretooluse:
+        for h in block.get("hooks", []):
+            if hook_name in h.get("command", ""):
+                return block.get("matcher")
+    return None
+
+
+def test_termkill_registered_widened_matcher():
+    """block-terminal-kill.sh must be registered under a matcher covering BOTH
+    Bash and PowerShell (Stop-Process via the PowerShell tool must not walk past)."""
+    matcher = _matcher_for_hook("block-terminal-kill.sh")
+    assert matcher is not None, (
+        "block-terminal-kill.sh not registered in any PreToolUse block"
+    )
+    tools = matcher.split("|")
+    assert "Bash" in tools and "PowerShell" in tools, (
+        f"block-terminal-kill.sh matcher must include Bash AND PowerShell; "
+        f"got matcher={matcher!r}"
+    )
+
+
+def test_push_registered_widened_matcher():
+    """block-work-repo-git-push.sh must be registered under a matcher covering
+    BOTH Bash and PowerShell."""
+    matcher = _matcher_for_hook("block-work-repo-git-push.sh")
+    assert matcher is not None, (
+        "block-work-repo-git-push.sh not registered in any PreToolUse block"
+    )
+    tools = matcher.split("|")
+    assert "Bash" in tools and "PowerShell" in tools, (
+        f"block-work-repo-git-push.sh matcher must include Bash AND PowerShell; "
+        f"got matcher={matcher!r}"
+    )
+
+
+_TESTS = _TESTS + [
+    # block-terminal-kill.sh
+    ("test_termkill_denies_taskkill", test_termkill_denies_taskkill),
+    ("test_termkill_denies_stop_process", test_termkill_denies_stop_process),
+    ("test_termkill_denies_bare_kill", test_termkill_denies_bare_kill),
+    ("test_termkill_denies_exit", test_termkill_denies_exit),
+    ("test_termkill_denies_wt_exe", test_termkill_denies_wt_exe),
+    ("test_termkill_allows_kill_port", test_termkill_allows_kill_port),
+    ("test_termkill_allows_plain_command", test_termkill_allows_plain_command),
+    ("test_termkill_malformed_fails_open", test_termkill_malformed_fails_open),
+    ("test_termkill_powershell_payload_denies",
+     test_termkill_powershell_payload_denies),
+    # block-work-repo-git-push.sh
+    ("test_push_denies_in_work_repo", test_push_denies_in_work_repo),
+    ("test_push_allows_with_bypass_token", test_push_allows_with_bypass_token),
+    ("test_push_allows_in_non_work_repo", test_push_allows_in_non_work_repo),
+    ("test_push_allows_non_push_command", test_push_allows_non_push_command),
+    ("test_push_malformed_fails_open", test_push_malformed_fails_open),
+    ("test_push_powershell_payload_denies", test_push_powershell_payload_denies),
+    # registration meta-tests
+    ("test_termkill_registered_widened_matcher",
+     test_termkill_registered_widened_matcher),
+    ("test_push_registered_widened_matcher",
+     test_push_registered_widened_matcher),
+]
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: legacy-tool-input-env-hooks-dead
-status: Ready
+status: Complete
 created: 2026-07-12
 complexity: complex
 phases: [1]
@@ -74,10 +74,10 @@ Upstream plans and PHASES.md files this plan was authored against. Listed in dep
 
 ## Work Units
 
-- [ ] WU-1 — Author RED pipe + registration tests (test_hooks.py)
-- [ ] WU-2 — Rewrite block-terminal-kill.sh on stdin-JSON
-- [ ] WU-3 — Rewrite block-work-repo-git-push.sh on stdin-JSON
-- [ ] WU-4 — Widen the two hooks' settings.json matcher to Bash|PowerShell
+- [x] WU-1 — Author RED pipe + registration tests (test_hooks.py)
+- [x] WU-2 — Rewrite block-terminal-kill.sh on stdin-JSON
+- [x] WU-3 — Rewrite block-work-repo-git-push.sh on stdin-JSON
+- [x] WU-4 — Widen the two hooks' settings.json matcher to Bash|PowerShell
 
 ---
 
