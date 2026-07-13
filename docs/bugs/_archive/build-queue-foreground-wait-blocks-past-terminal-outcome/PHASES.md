@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** Complete
+**Status:** Fixed
 
 **MCP runtime:** not-required — claude-config PowerShell harness scripts; no `src-tauri/` and no `package.json`, so no app runtime or MCP-reachable surface. Verification is Pester on the extracted serving-path helpers (the symptom's actual serving path).
 
@@ -20,7 +20,7 @@
 
 #### Implementation Notes (2026-07-13)
 
-**Status:** Fixed
+**Status:** Complete
 **Review verdict:** PASS.
 
 - Finalization ownership verified safe: the detached runner independently does the FINAL result write (`build-queue-runner.ps1:407-435`), the seq-scoped `active.lock` release (`:446-464`), and the occupancy-gated VBCSCompiler recycle (`:377-384`). Pre-fix the wrapper only reached its own release AFTER `$proc.HasExited` — i.e. after the runner had already finalized — so the wrapper's release was always redundant cleanup. Early-return skips that redundant work; the fallback path retains it for the hard-crash case.
@@ -39,7 +39,7 @@
 
 #### Implementation Notes (2026-07-13)
 
-**Status:** Fixed
+**Status:** Complete
 **Review verdict:** PASS.
 
 - Files modified: `user/scripts/build-queue.ps1`, `user/scripts/build-queue-hygiene.ps1`, `user/scripts/build-queue-runner.ps1`, `CLAUDE.md`, `user/scripts/build-queue-foreground-outcome.Tests.ps1` (new). Shipped in commit `a0b97bf`.

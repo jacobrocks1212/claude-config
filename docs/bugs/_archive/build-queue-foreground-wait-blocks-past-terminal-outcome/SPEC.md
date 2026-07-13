@@ -5,9 +5,11 @@
 > wrapper's exit is gated on full runner-process liveness (through post-WARN hygiene), not on the
 > already-recorded terminal outcome.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-13
+**Fixed:** 2026-07-13
+**Fix commit:** 87b0579
 **Placement:** docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome
 **Related:** `docs/bugs/_archive/subagent-backgrounds-verification-ends-turn-before-green` (the `build-queue-await.ps1` turn-end gate — the *background* path that DOES key on the result file), `docs/features/build-queue-generalization` (hygiene profiles / poison-sweep), `docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash` (origin of the exit-3 `no-output` WARN)
 
