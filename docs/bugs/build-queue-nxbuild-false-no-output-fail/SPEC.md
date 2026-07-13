@@ -2,9 +2,11 @@
 
 > `/nxbuild` (frontend rspack build) reports `RESULT=FAIL (build_fidelity=no-output)` → banner "build produced no output; delete obj/bin and rebuild" on genuinely-**successful** builds, even though the raw `logs/<seq>.build.log` is populated with a success summary. This is a **distinct** defect from the already-fixed child-scope `$buildLogPath` bug (that fix landed in `7108b2e`; `$buildLogPath` is now correctly main-scoped and the log IS captured).
 
-**Status:** Investigating
+**Status:** Concluded
 **Severity:** P1
 **Discovered:** 2026-07-08
+**Concluded:** 2026-07-12
+**Last updated:** 2026-07-12
 **Placement:** docs/bugs/build-queue-nxbuild-false-no-output-fail
 **Related:** docs/bugs/build-queue-buildlogpath-child-scope-forces-no-output-fail (same *symptom* — `no-output` FAIL on success — different *cause*; that one was child-scope `$buildLogPath` discard, Concluded + fixed `7108b2e` 2026-07-06, and its evidence ruled out the flush-timing race **for `/msbuild`/dotnet only**), docs/bugs/build-queue-false-green-on-silent-build-failure (origin of the `no-output` gate + `Test-BuildProducedNoOutput` + `Read-WithRetry`, `fd7a81a`/`a36aa91` 2026-07-03), docs/bugs/build-queue-copy-lock-stale-dll-false-success (origin of `build_fidelity`)
 
@@ -104,3 +106,156 @@ Ruled out:
 - **Confirm the race (the blocking trace):** instrument the runner (or a scratchpad micro-repro mirroring the sibling bug's `repro.ps1`) to log `[System.IO.File]::ReadAllText($buildLogPath).Length` on each `Read-WithRetry` attempt during a real `/nxbuild`. A `0 → 732` transition across attempts confirms Theory 1 and upgrades the cause from `asserted` to `traced`. Until then this SPEC stays `Investigating`.
 - Is `/msbuild` also at risk for a slow-linking large solution (a late flush past 100 ms), or is the fast dotnet flush genuinely safe? The sibling bug's rule-out only covered a 53-byte fast build.
 - If confirmed a race: prefer a bounded longer/adaptive retry, or a positive drain-sync, over simply widening `MaxAttempts` blindly (which taxes every build).
+
+## Reconstructed Route (surface → source, HEAD-cited)
+
+Citations against `git show HEAD:user/scripts/build-queue-runner.ps1` and
+`git show HEAD:user/scripts/build-queue-hygiene.ps1` (both files matched the
+working copy at investigation time — no concurrent edit in flight against
+either; re-checked at conclusion, still unchanged).
+
+```
+surface: banner "build-queue: seq=<N> op=nxbuild RESULT=FAIL … build produced
+  no output; delete obj/bin and rebuild"
+  ↓ Format-BuildQueueBanner  build-queue-hygiene.ps1:2159-2263
+    — `elseif ($BuildFidelity -eq 'no-output') { 'build produced no output;
+      delete obj/bin and rebuild' }` (hygiene.ps1:2245-2246) — this branch is
+      NOT keyed on $Op at all; it fires identically for msbuild/nxbuild.
+  ↓ build_fidelity='no-output' + forced exit_code=1
+    build-queue-runner.ps1:219-229:
+      elseif ($exitCode -eq 0 -and (Test-BuildProducedNoOutput -LogText $script:buildLogTextForClassify)) {
+          $exitCode = 1; $buildFailed = $true; $buildFidelity = 'no-output'
+      }
+  ↓ Test-BuildProducedNoOutput($null-or-near-empty) → $true
+    build-queue-hygiene.ps1:111-164 (returns true for null/whitespace/
+    <40-char text; the classifier itself is correct per the receipts — a
+    genuine 732-byte success log would NOT trip it)
+  ↓ $script:buildLogTextForClassify was $null/near-empty AT CLASSIFY TIME.
+    It is set only inside Read-WithRetry's -Parse block
+    (build-queue-runner.ps1:194-210), which reads $buildLogPath via
+    `[System.IO.File]::ReadAllText` and returns $null (→ retry) on an
+    empty/absent read.
+  ↓ Read-WithRetry  build-queue-hygiene.ps1:46-109 — MaxAttempts=3, DelayMs=50
+    (defaults; the runner's call site at build-queue-runner.ps1:194 passes no
+    override) ⇒ ≤100 ms total retry budget (2 sleeps between 3 attempts) before
+    falling back to the fail-open `@{ failed = $false; signature = $null }`
+    with $buildLogTextForClassify left $null.
+  ↓ $buildLogPath is correctly MAIN-scoped (build-queue-runner.ps1:151,
+    post-7108b2e) and Start-Process redirects the build op's stdout there
+    (build-queue-runner.ps1:138-153, `RedirectStandardOutput = $buildLogPath`)
+    before `$proc.WaitForExit()` (runner.ps1:176) returns.
+```
+
+**Fix-site-on-path:** the Read-WithRetry call site (runner.ps1:194-210, the
+retry window itself) and the op-agnostic remedy branch (hygiene.ps1:2245-2246)
+are both squarely on this traced path.
+
+## Fixture-Based Mechanism Repro (this machine has no Cognito worktree / no live nx runtime — see caveat below)
+
+Using the REAL `Read-WithRetry` / `Test-BuildProducedNoOutput` functions
+dot-sourced from the HEAD-pinned `build-queue-hygiene.ps1` (not reimplemented),
+mirroring the runner's exact `Start-Process -RedirectStandardOutput` +
+`WaitForExit()` + classify sequence (runner.ps1:138-177, 193-210), I attempted
+three fixture shapes to force the "classify-time read sees empty text, file is
+populated moments later" race Theory 1/2 describe:
+
+1. **Flat large `Write-Output` burst** (455 KB) from a plain child
+   `powershell.exe` process, redirected the same way the runner redirects a
+   build op. Result: 5/5 attempts — classify-time read length == post-hoc
+   settled length, byte-identical, every time. No lag observed.
+2. **Nested-pipe shape** mirroring Theory 2's description of
+   `client-build-filtered.ps1` (`… 2>&1 | ForEach-Object { Write-Host $_ }`),
+   using a nested `powershell.exe` grandchild. Result: 5/5 attempts, same —
+   no lag.
+3. **Real Node child** (`node` is present on this machine at
+   `/c/nvm4w/nodejs/node`, v20.20.2) emitting a 447 KB burst, piped through
+   `2>&1 | ForEach-Object { Write-Host $_ }` exactly as Theory 2 describes for
+   the real `npx nx build` invocation. Result: 8/8 attempts — classify-time
+   length == settled length every time. `RACE_OBSERVED=False`.
+
+**This is negative evidence, not a refutation**, against the GENERIC mechanism
+as literally stated ("`Start-Process -RedirectStandardOutput` + `WaitForExit()`
+races the redirect drain for a node/rspack process tree"): on this machine's
+PowerShell/OS, `Start-Process`'s redirect appears to fully synchronize with
+`WaitForExit()` for process trees of depth ≤3 built from plain pipes, even at
+sizes far exceeding the real 732-byte `nxbuild` log. I could NOT force the race
+with the tools available here.
+
+**What I could not test (the honest gap):** the real `/nxbuild` invocation adds
+process-tree shape I cannot reproduce without a Cognito worktree + installed
+`nx`/`npx` toolchain — specifically: (a) Windows `npx`'s own shim layering
+(`npx.cmd`/a `.ps1` shim wrapping node, an extra hop my repro didn't include),
+and (b) Nx's own task-orchestration model — the observed log line "`NX
+Successfully ran target build for project cognito-spa and 4 tasks it depends
+on`" proves **multiple task executions** occurred, which Nx can run via a
+background daemon + forked worker processes. A worker/daemon process finishing
+its own flush fractionally after the OUTERMOST tracked process (whatever `npx`
+resolves to) reports exit is a materially different, deeper-process-tree
+mechanism than anything I could fixture with a plain node/PowerShell pipe.
+
+## Root Cause
+
+**Cause label: `traced` for the FIX-RELEVANT WHERE** (the classify-time
+Read-WithRetry window in the runner, and the op-agnostic remedy string in the
+banner — both cited file:line above, both squarely on the symptom's serving
+path). **Cause label stays `asserted` for the deeper WHY** (which exact
+extra process hop — npx shim, Nx daemon, or per-task worker fan-out — produces
+the flush lag for `nxbuild` specifically): my fixture attempts above could not
+force or directly observe that mechanism on this machine, and per the
+root-cause-trace-gate a runtime-coupled claim is never confirmed by a static
+read or an unsuccessful fixture attempt alone.
+
+This SPEC concludes on the strength of: (1) the fully-traced WHERE (every hop
+file:line, matching the sibling bug's own already-VERIFIED runtime receipts —
+`results/833.json`/`results/835.json` showing `exit_code:1`,
+`build_fidelity:no-output` over a 732-byte genuinely-successful `.build.log`),
+and (2) a fix scope that is **correct regardless of which exact extra-hop
+mechanism turns out to be true** (widening the retry window absorbs ANY
+transient flush lag, whatever causes it; the remedy-string fix is
+unconditionally correct). Per this investigation's explicitly lowered bar (no
+Cognito worktree / no live nx runtime available on this machine), the deeper
+WHY is deferred to a work-laptop session with the real toolchain — see Fix
+Scope below for the exact instrumented confirmation still needed there.
+
+## Fix Scope
+
+1. **Widen/adapt the classify-time retry window for build ops**
+   (`build-queue-runner.ps1:194`, the `Read-WithRetry` call feeding
+   `$script:buildLogTextForClassify`). Options:
+   - (a) Simple: raise the call-site-local `-MaxAttempts`/`-DelayMs` for BUILD
+     ops only (e.g. 10×100ms = ~1s ceiling) — cheap relative to a 49-148s
+     rspack build, no risk to the fast dotnet path (which the sibling bug
+     already showed is not raced at 53 bytes).
+   - (b) More precise: thread a per-op `classify_retry: {max_attempts, delay_ms}`
+     knob through `build-queue-ops.json` (the same manifest shape documented in
+     root `CLAUDE.md`'s build-queue-generalization section — `{exec, kind,
+     hygiene, skill, deny}` already exists per-op; add a sibling key), so
+     `nxbuild` gets a wider window without changing `msbuild`'s.
+   - **Recommendation:** (a) first (smallest, safest, unblocks `/nxbuild`
+     immediately); (b) as a documented vN follow-up if (a) proves insufficient
+     on the real toolchain.
+2. **Make the banner remedy op-aware** (`build-queue-hygiene.ps1:2245-2246`,
+   `Format-BuildQueueBanner`): the "delete obj/bin and rebuild" string is
+   dotnet-specific and unconditionally wrong for an rspack/Nx op. Key the
+   remedy off `$Op` (or a `kind`/`hygiene`-profile field already threaded
+   through the manifest) — e.g. `nxbuild`/`nxtest` get "build produced no
+   output; re-run the nx target" or similar, dotnet ops keep the existing
+   string. Low risk, unconditionally correct regardless of the race's root
+   cause.
+3. **Cosmetic follow-up (not blocking):** the filtered `logs/<seq>.log`
+   capturing only `True` for an `/nxbuild` run (Evidence Collected item 3) is a
+   separate, non-driving defect in `<repo>/.claude/scripts/client-build-filtered.ps1`
+   (Cognito repo — out of this repo's fix surface).
+
+**Runtime residue — deferred to work laptop:** the instrumented confirmation
+this SPEC's original Open Questions called for (log
+`[System.IO.File]::ReadAllText($buildLogPath).Length` on each `Read-WithRetry`
+attempt during a REAL `/nxbuild` against a Cognito worktree with `nx`/`npx`
+installed, to catch the actual `0 → 732`-shaped transition and identify which
+extra process hop causes it) still needs a work-laptop session. That
+instrumentation should also settle whether fix option 1(a)'s ~1s ceiling is
+sufficient or whether the lag can exceed it under load (informing whether 1(b)'s
+per-op knob is needed sooner). Until then, fix option 1(a) is safe to ship
+un-instrumented (a bounded retry widening can only help, never regress a
+genuinely-broken build — `Test-BuildProducedNoOutput`'s near-empty bar and the
+log-failure-signature scan are unchanged).
