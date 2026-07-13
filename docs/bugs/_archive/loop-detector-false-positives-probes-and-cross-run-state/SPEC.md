@@ -9,9 +9,9 @@
 > advances the step streak, and (b) neither the streak files nor the deny ledger is scoped
 > to the run-marker lifetime.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P2
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-12
 **Related:** `docs/bugs/_archive/loop-detected-false-positives-from-probe-and-reboot-churn/` (Fixed 2026-06-19, commit `14d90bd` — closed the probe/reboot/resolution classes; this spec generalizes its residual); `docs/specs/lazy-pipeline-ergonomics/` Phase 2 (F2 step-debounce, `973339b`) + `docs/specs/lazy-validation-readiness/` Phase 1 (F1 dispatch-tuple debounce, `774ef23`); commit `de39d3a` (2026-06-14, ordered multi-part advancement exemption); `docs/bugs/operator-checkpoint-resume-counter-reset/` (Fixed 2026-06-17) and `docs/bugs/adhoc-align-cycle-commit-count-with-budget-population/` (queued) + `docs/bugs/_archive/byref-dispatch-undercounts-forward-cycles/` — the `forward_cycles`/`meta_cycles` ACCOUNTING symptom is owned there and scoped OUT here; `docs/specs/turn-routing-enforcement/` (deny ledger, `--run-end` gates).
 
 ## Verified Symptom

@@ -9815,11 +9815,26 @@ def run_smoke_tests() -> int:
 
         # Sub-fixture 10: apply_pseudo __mark_complete__ refuses on an
         # unratified provisional sentinel, zero writes.
+        #
+        # Hermetically isolate LAZY_STATE_DIR for the duration of this ONE call
+        # (state-script-test-runner-crashes-on-systemexit-from-live-cycle-marker):
+        # apply_pseudo() unconditionally calls refuse_if_cycle_active(), which
+        # honors the AMBIENT LAZY_STATE_DIR (or the real per-repo keyed state
+        # dir when unset) — NOT this fixture's own pp_root temp dir. Without
+        # isolation, running --test from inside a genuinely-live cycle
+        # (exactly the scenario a hardening/cycle subagent is in) spuriously
+        # FAILs this fixture on an unrelated SystemExit(3) refusal, masking its
+        # actual assertion (the provisional-sentinel refusal). Mirrors the
+        # save/restore pattern used by sibling fixture groups elsewhere in this
+        # file (e.g. the LAZY_STATE_DIR save/restore around lines ~7057/7253).
         fix_pp_gate = "apply-pseudo-provisional-refusal"
+        _ppg_prev_env = os.environ.get("LAZY_STATE_DIR")
         try:
-            res_gate = lazy_core.apply_pseudo(
-                pp_root, "__mark_complete__", pp_prov_dir
-            )
+            with tempfile.TemporaryDirectory() as _ppg_td:
+                os.environ["LAZY_STATE_DIR"] = _ppg_td
+                res_gate = lazy_core.apply_pseudo(
+                    pp_root, "__mark_complete__", pp_prov_dir
+                )
             ppg_ok = True
             if res_gate.get("ok") or "provisional" not in str(res_gate.get("refused", "")):
                 failures.append(
@@ -9833,6 +9848,11 @@ def run_smoke_tests() -> int:
         except SystemExit as exc:
             failures.append(f"[{fix_pp_gate}] SystemExit: {exc.code}")
             print(f"  FAIL [{fix_pp_gate}] SystemExit: {exc.code}")
+        finally:
+            if _ppg_prev_env is None:
+                os.environ.pop("LAZY_STATE_DIR", None)
+            else:
+                os.environ["LAZY_STATE_DIR"] = _ppg_prev_env
 
         # -------------------------------------------------------------------
         # Walk-level convergence (mark-complete-partial-apply-noop-unrecoverable).
@@ -9895,9 +9915,27 @@ def run_smoke_tests() -> int:
                 )
                 rp_ok = False
             # (2) apply_pseudo RESUMES (does not noop) and converges.
-            res = lazy_core.apply_pseudo(
-                rp_root, "__mark_complete__", rp, feature_id="feat-rp",
-            )
+            #
+            # Hermetically isolate LAZY_STATE_DIR for this ONE call — same
+            # rationale as the apply-pseudo-provisional-refusal fixture just
+            # above (state-script-test-runner-crashes-on-systemexit-from-live-
+            # cycle-marker): apply_pseudo() unconditionally calls
+            # refuse_if_cycle_active(), which honors the AMBIENT LAZY_STATE_DIR,
+            # not this fixture's own rp_root temp dir. Discovered as a SECOND
+            # instance of the same defect class during this bug's close-out
+            # verification (this fixture postdates the bug's original scan).
+            _rp_prev_env = os.environ.get("LAZY_STATE_DIR")
+            try:
+                with tempfile.TemporaryDirectory() as _rp_td:
+                    os.environ["LAZY_STATE_DIR"] = _rp_td
+                    res = lazy_core.apply_pseudo(
+                        rp_root, "__mark_complete__", rp, feature_id="feat-rp",
+                    )
+            finally:
+                if _rp_prev_env is None:
+                    os.environ.pop("LAZY_STATE_DIR", None)
+                else:
+                    os.environ["LAZY_STATE_DIR"] = _rp_prev_env
             if not res.get("resumed"):
                 failures.append(f"[{fix_res}] expected resumed=True, got {res!r}")
                 rp_ok = False
@@ -13059,6 +13097,15 @@ def main() -> int:
                     f"⚠ pending_hardening: {_pending} — forward route withheld; "
                     f"run hardening_emit_command first\n"
                 )
+            # Residual gap B (loop-detector-false-positives-probes-and-cross-run-
+            # state): a PRIOR/crashed run's unacked denials are no longer counted
+            # in the mandatory pending_hardening above, but surface them
+            # separately as informational debt so they are not silently invisible
+            # (a T6 informational line, never a blocking one — never withholds
+            # the route, never gates --run-end).
+            _prior_pending = lazy_core.prior_run_pending_hardening()
+            if _prior_pending > 0:
+                state["prior_run_pending_hardening"] = _prior_pending
     # operator-halt-notifications (D2): the terminal-emission chokepoint —
     # page the operator on an attention-terminal halt. Config-gated (inert
     # no-op without ~/.claude/notify.json / LAZY_NOTIFY_URL), dedup-ledgered

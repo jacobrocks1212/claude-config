@@ -11,7 +11,7 @@
 > `current_step` (`"Step 6: plan feature (phases + plan)"`). This is a bug-pipeline-only
 > step-label-reuse defect.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P2
 **Discovered:** 2026-07-12
 **Last updated:** 2026-07-12

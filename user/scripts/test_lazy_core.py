@@ -7606,6 +7606,275 @@ def test_update_repeat_counts_debounce_inert_without_marker():
     )
 
 
+# ---------------------------------------------------------------------------
+# Tests: loop-detector-false-positives-probes-and-cross-run-state
+# Residual gap A — meta-class consumption must not defeat the F1/F2 debounce.
+# Residual gap B — run-lifetime scoping of the persisted streak.
+# ---------------------------------------------------------------------------
+
+
+def _record_meta_consume(state_dir: "Path", cls: str = "hardening") -> None:
+    """Register + consume a META-class (non-"cycle") emission — a mid-step
+    hardening/recovery/investigation/input-audit dispatch that consumes a
+    registry nonce WITHOUT being a forward attempt at the step.
+
+    Used by the Residual-gap-A fixtures to prove such a dispatch no longer
+    defeats the F1/F2 double-probe debounce (which now filters the oracle to
+    cls="cycle" consumptions only).
+    """
+    _set_state_dir(state_dir)
+    try:
+        entry = lazy_core.register_emission("meta dispatch prompt", cls)
+        consumed = lazy_core.consume_nonce(entry["nonce"])
+        assert consumed, "pre-condition: the fresh nonce must consume cleanly"
+    finally:
+        _clear_state_dir()
+
+
+def test_gap_a_meta_class_consume_does_not_defeat_step_debounce():
+    """Residual gap A: a META-class consume (hardening) landing BETWEEN two
+    identical same-step probes must NOT advance step_repeat_count — only a
+    CYCLE-class consume proves "a forward dispatch landed between probes".
+
+    RED (pre-fix): consumed_emission_count() counted ANY consumed class, so a
+    mid-step hardening dispatch raised the count and the F2 hold's precondition
+    (current_consume_count == prior_consume_count) failed, incrementing
+    step_repeat_count on the next same-step probe even though no forward
+    attempt occurred.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+        # A META dispatch (hardening) consumes a nonce between the two probes —
+        # NOT a forward attempt at the step.
+        _record_meta_consume(state_dir, cls="hardening")
+        _set_state_dir(state_dir)
+        try:
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["step_repeat_count"] == 1, f"first probe → 1, got {r1!r}"
+    assert r2["step_repeat_count"] == 1, (
+        f"a META-class consume between two identical same-step probes must NOT "
+        f"advance step_repeat_count (it is not a forward attempt), got {r2!r}"
+    )
+
+
+def test_gap_a_meta_class_consume_does_not_defeat_dispatch_tuple_debounce():
+    """Residual gap A mirror for repeat_count (F1, dispatch-tuple streak): the
+    SAME oracle feeds both counters, so a META-class consume between two
+    identical probes must not advance repeat_count either."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+        _record_meta_consume(state_dir, cls="investigation")
+        _set_state_dir(state_dir)
+        try:
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["repeat_count"] == 1, f"first probe → 1, got {r1!r}"
+    assert r2["repeat_count"] == 1, (
+        f"a META-class consume between two identical probes must NOT advance "
+        f"repeat_count, got {r2!r}"
+    )
+
+
+def test_gap_a_cycle_class_consume_still_trips_despite_intervening_meta():
+    """Negative/regression fixture (d8 design constraint preserved): a genuine
+    CYCLE-class dispatch between two identical same-step probes STILL trips the
+    oscillation counter, even when a META-class consume ALSO occurred in the
+    same window — the oracle counts cycle-class consumptions specifically, it
+    does not merely ignore all consumptions."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+        # Both a meta dispatch AND a genuine cycle dispatch land between probes.
+        _record_meta_consume(state_dir, cls="hardening")
+        _record_consume(state_dir)
+        _set_state_dir(state_dir)
+        try:
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["step_repeat_count"] == 1, f"first probe → 1, got {r1!r}"
+    assert r2["step_repeat_count"] == 2, (
+        f"a genuine cycle-class dispatch between probes must still trip the "
+        f"oscillation counter (1 → 2), regardless of an intervening meta "
+        f"consume, got {r2!r}"
+    )
+
+
+def _write_marker_in_at(state_dir: "Path", repo_root: "Path", now: float) -> dict:
+    """Write a fresh, bind-pending run marker at a specific epoch `now` (so two
+    calls with different `now` values produce markers with distinct
+    `started_at` identities — simulating two DIFFERENT runs for the SAME repo).
+    Returns the written marker dict."""
+    _set_state_dir(state_dir)
+    try:
+        return lazy_core.write_run_marker(
+            pipeline="feature", cloud=False, repo_root=str(repo_root), now=now,
+        )
+    finally:
+        _clear_state_dir()
+
+
+def test_gap_b_cross_run_streak_resets_on_different_run_identity():
+    """Residual gap B: a streak stamped under run A (started_at=T1) must NOT be
+    inherited by run B (started_at=T2, a DIFFERENT run for the SAME repo) — the
+    classic crashed-run-leaks-into-next-run symptom (symptom 4). The next run's
+    first probe on the SAME (feature_id, current_step) tuple must see NO PRIOR
+    (fresh streak), not an inherited count.
+
+    RED (pre-fix): the signature file is keyed only on repo_root, so run B's
+    probe reads run A's persisted count/step_count unconditionally and
+    increments them — a false LOOP-DETECTED at the NEW run's first probe.
+    """
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        # Run A: marker started_at=T1, one probe stamps the streak file. Use
+        # REAL near-current epochs (not an arbitrary fixed constant) — a marker
+        # older than _MARKER_STALE_SECONDS (24h) is treated as stale/absent by
+        # read_run_marker(), which would defeat this fixture.
+        t0 = _time.time()
+        _write_marker_in_at(state_dir, repo_root, now=t0)
+        _set_state_dir(state_dir)
+        try:
+            r_a = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+            persisted_a = json.loads(sig_path.read_text(encoding="utf-8"))
+        finally:
+            _clear_state_dir()
+        # Run A crashes — no --run-end, streak file survives untouched.
+        # Run B starts fresh: write_run_marker OVERWRITES the marker with a NEW
+        # started_at (T2 != T1, a few seconds later — still second-granularity
+        # distinct), simulating a genuinely different run.
+        _write_marker_in_at(state_dir, repo_root, now=t0 + 5)
+        _set_state_dir(state_dir)
+        try:
+            r_b = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r_a["step_repeat_count"] == 1 and r_a["repeat_count"] == 1, (
+        f"run A's first probe → 1/1, got {r_a!r}"
+    )
+    assert "run_started_at" in persisted_a, (
+        f"a marked probe must stamp the record's run identity, got {persisted_a!r}"
+    )
+    assert r_b["step_repeat_count"] == 1 and r_b["repeat_count"] == 1, (
+        f"run B (a DIFFERENT run identity) must see NO PRIOR — fresh streak "
+        f"(1/1), NOT an inherited count from run A's dead streak, got {r_b!r}"
+    )
+
+
+def test_gap_b_same_run_streak_still_accumulates():
+    """Regression: within the SAME run (unchanged marker started_at), a genuine
+    same-step oscillation with an intervening cycle-class dispatch still
+    accumulates normally — Residual gap B's cross-run reset must never fire
+    for two probes under the SAME live marker."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        _write_marker_in(state_dir, repo_root)  # ONE marker for both probes.
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+        _record_consume(state_dir)  # genuine cycle dispatch between probes.
+        _set_state_dir(state_dir)
+        try:
+            r2 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["step_repeat_count"] == 1, f"first probe → 1, got {r1!r}"
+    assert r2["step_repeat_count"] == 2, (
+        f"same run + genuine intervening dispatch must still accumulate "
+        f"(1 → 2) — the cross-run reset must not fire within one run, "
+        f"got {r2!r}"
+    )
+
+
+def test_gap_b_legacy_record_without_run_identity_is_not_treated_as_foreign():
+    """Legacy tolerance (mirrors the consume_count/head migration precedent): a
+    persisted record written with NO run_started_at key at all (predates this
+    fix, or a write taken with no live marker) is NOT proof of belonging to a
+    different run — absence is never proof. When a marker is now live, the
+    record falls through to the pre-existing same-repo streak semantics
+    (increments), it is not reset to a fresh streak."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo_root = td_path / "repo"
+        repo_root.mkdir()
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        sig_path = td_path / "sig.json"
+        legacy_sig = [
+            _STATE_A["feature_id"], _STATE_A["sub_skill"],
+            _STATE_A["sub_skill_args"], _STATE_A["current_step"],
+        ]
+        legacy_step_sig = [_STATE_A["feature_id"], _STATE_A["current_step"]]
+        sig_path.write_text(json.dumps({
+            "signature": legacy_sig, "count": 1, "head": None,
+            "step_signature": legacy_step_sig, "step_count": 1,
+        }), encoding="utf-8")
+        _write_marker_in(state_dir, repo_root)
+        _set_state_dir(state_dir)
+        try:
+            r1 = lazy_core.update_repeat_counts(repo_root, _STATE_A, signature_path=sig_path)
+        finally:
+            _clear_state_dir()
+    assert r1["step_repeat_count"] == 2 and r1["repeat_count"] == 2, (
+        f"a legacy record with no run_started_at key must NOT be treated as "
+        f"foreign — it increments as before (1 → 2), got {r1!r}"
+    )
+
+
 def test_rebaseline_loop_signature_prevents_false_loop_on_checkpoint_resume():
     """checkpoint-resume-false-loop-flips-complex-part-to-sonnet Gap 1: a checkpoint
     --run-end clears the prompt registry and the resuming --run-start recreates it
@@ -10416,6 +10685,154 @@ def test_deny_ledger_write_read_pending():
             assert reasons == ["reason one", "reason two"], reasons
         finally:
             _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# Tests: loop-detector-false-positives-probes-and-cross-run-state
+# Residual gap B (deny-ledger half) — run-scoping of the routed hardening debt.
+# ---------------------------------------------------------------------------
+
+
+def test_deny_ledger_entries_stamped_with_run_identity():
+    """append_deny_ledger_entry / append_friction_ledger_entry stamp the new
+    entry with the LIVE run marker's started_at (None when no marker)."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td)
+        _set_state_dir(state_dir)
+        try:
+            marker = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=_time.time(),
+            )
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu", denied_sha12="a" * 12,
+                reason_head="r", prompt_head="p", now=1.0,
+            )
+            lazy_core.append_friction_ledger_entry(
+                "unexpected-commits", "detail", now=2.0,
+            )
+            entries = lazy_core.read_deny_ledger()
+        finally:
+            _clear_state_dir()
+    assert len(entries) == 2, entries
+    assert entries[0]["run_started_at"] == marker["started_at"], entries[0]
+    assert entries[1]["run_started_at"] == marker["started_at"], entries[1]
+
+
+def test_pending_hardening_excludes_prior_run_debt():
+    """Residual gap B (deny-ledger half — symptom 4): an unacked entry stamped
+    under a PRIOR run (a crashed run's leftover) must NOT force the NEXT run to
+    dispatch a hardening round. pending_hardening()/pending_denial_reasons()
+    default to current_run_only=True; prior_run_pending_hardening() surfaces
+    the leftover informationally.
+
+    RED (pre-fix): pending_hardening() counted ALL unacked entries machine-wide
+    regardless of which run wrote them, so a crashed run's undrained denial
+    forced --run-end/probe-withholding for a run that never saw it.
+    """
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td)
+        _set_state_dir(state_dir)
+        try:
+            # Run A: marker + one unacked deny stamped with run A's identity.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=1_000_000.0,
+            )
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu-a", denied_sha12="a" * 12,
+                reason_head="run-a reason", prompt_head="p", now=1.0,
+            )
+        finally:
+            _clear_state_dir()
+        # Run A "crashes" (no --run-end — the ledger entry is left unacked).
+        # Run B starts fresh: a NEW marker with a DIFFERENT started_at.
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=2_000_000.0,
+            )
+            # Run B's own mandatory debt is 0 (it has not denied anything yet).
+            pending_b = lazy_core.pending_hardening()
+            reasons_b = lazy_core.pending_denial_reasons()
+            prior_b = lazy_core.prior_run_pending_hardening()
+            # Total (informational/retro) count still sees both.
+            total = lazy_core.pending_hardening(current_run_only=False)
+        finally:
+            _clear_state_dir()
+    assert pending_b == 0, (
+        f"run B must NOT owe run A's undrained denial as mandatory debt, "
+        f"got pending_hardening={pending_b}"
+    )
+    assert reasons_b == [], f"run B's mandatory denial reasons must be empty, got {reasons_b!r}"
+    assert prior_b == 1, (
+        f"run A's leftover denial must surface as informational prior-run debt, "
+        f"got prior_run_pending_hardening={prior_b}"
+    )
+    assert total == 1, f"the unfiltered/retro total must still see it, got {total}"
+
+
+def test_oldest_unacked_deny_scopes_to_current_run():
+    """oldest_unacked_deny() mirrors pending_hardening()'s run-scoping: a
+    prior-run entry is skipped so the command bound into the hardening-dispatch
+    prompt always names an entry that actually drove the CURRENT run's debt."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td)
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=1_000_000.0,
+            )
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu-a", denied_sha12="a" * 12,
+                reason_head="run-a reason", prompt_head="p", now=1.0,
+            )
+        finally:
+            _clear_state_dir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=2_000_000.0,
+            )
+            oldest_default = lazy_core.oldest_unacked_deny()
+            oldest_unscoped = lazy_core.oldest_unacked_deny(current_run_only=False)
+        finally:
+            _clear_state_dir()
+    assert oldest_default is None, (
+        f"the only unacked entry belongs to run A — current-run-scoped lookup "
+        f"must find nothing for run B, got {oldest_default!r}"
+    )
+    assert oldest_unscoped is not None and oldest_unscoped["reason_head"] == "run-a reason", (
+        f"unscoped lookup still finds run A's entry, got {oldest_unscoped!r}"
+    )
+
+
+def test_pending_hardening_no_marker_fallback_stays_unfiltered():
+    """No live marker at all → pending_hardening()/pending_denial_reasons()
+    fall back to the unfiltered total (no established run identity to scope
+    against) — byte-identical to every existing no-marker caller/test."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.append_deny_ledger_entry(
+                tool_use_id="tu", denied_sha12="a" * 12,
+                reason_head="r", prompt_head="p", now=1.0,
+            )
+            pending = lazy_core.pending_hardening()
+            reasons = lazy_core.pending_denial_reasons()
+            prior = lazy_core.prior_run_pending_hardening()
+        finally:
+            _clear_state_dir()
+    assert pending == 1, f"no marker → unfiltered fallback, got {pending}"
+    assert reasons == ["r"], reasons
+    assert prior == 0, (
+        f"no marker → no established run identity to compare against, "
+        f"prior_run_pending_hardening must be 0, got {prior}"
+    )
 
 
 def test_deny_ledger_head_truncation():
@@ -17040,6 +17457,15 @@ _TESTS = [
     ("test_update_repeat_counts_debounce_inert_for_foreign_repo_marker", test_update_repeat_counts_debounce_inert_for_foreign_repo_marker),
     ("test_update_repeat_counts_debounce_legacy_file_without_consume_key", test_update_repeat_counts_debounce_legacy_file_without_consume_key),
     ("test_update_repeat_counts_debounce_inert_without_marker", test_update_repeat_counts_debounce_inert_without_marker),
+    # loop-detector-false-positives-probes-and-cross-run-state — Residual gap A
+    # (meta-class consumption must not defeat the debounce) + Residual gap B
+    # (run-lifetime scoping of the persisted streak)
+    ("test_gap_a_meta_class_consume_does_not_defeat_step_debounce", test_gap_a_meta_class_consume_does_not_defeat_step_debounce),
+    ("test_gap_a_meta_class_consume_does_not_defeat_dispatch_tuple_debounce", test_gap_a_meta_class_consume_does_not_defeat_dispatch_tuple_debounce),
+    ("test_gap_a_cycle_class_consume_still_trips_despite_intervening_meta", test_gap_a_cycle_class_consume_still_trips_despite_intervening_meta),
+    ("test_gap_b_cross_run_streak_resets_on_different_run_identity", test_gap_b_cross_run_streak_resets_on_different_run_identity),
+    ("test_gap_b_same_run_streak_still_accumulates", test_gap_b_same_run_streak_still_accumulates),
+    ("test_gap_b_legacy_record_without_run_identity_is_not_treated_as_foreign", test_gap_b_legacy_record_without_run_identity_is_not_treated_as_foreign),
     ("test_rebaseline_loop_signature_prevents_false_loop_on_checkpoint_resume", test_rebaseline_loop_signature_prevents_false_loop_on_checkpoint_resume),
     ("test_rebaseline_loop_signature_noop_when_absent_or_no_marker", test_rebaseline_loop_signature_noop_when_absent_or_no_marker),
     # loop-detected-false-positives Phase 1 — symptom 2 & 4 regression pins
@@ -17191,6 +17617,12 @@ _TESTS = [
     #           single-slot templates, meta cycle_header
     ("test_phase7_symbols_present", test_phase7_symbols_present),
     ("test_deny_ledger_write_read_pending", test_deny_ledger_write_read_pending),
+    # loop-detector-false-positives-probes-and-cross-run-state — Residual gap B
+    # (deny-ledger half): run-scoping of the routed hardening debt.
+    ("test_deny_ledger_entries_stamped_with_run_identity", test_deny_ledger_entries_stamped_with_run_identity),
+    ("test_pending_hardening_excludes_prior_run_debt", test_pending_hardening_excludes_prior_run_debt),
+    ("test_oldest_unacked_deny_scopes_to_current_run", test_oldest_unacked_deny_scopes_to_current_run),
+    ("test_pending_hardening_no_marker_fallback_stays_unfiltered", test_pending_hardening_no_marker_fallback_stays_unfiltered),
     ("test_deny_ledger_head_truncation", test_deny_ledger_head_truncation),
     ("test_ack_oldest_deny_fifo", test_ack_oldest_deny_fifo),
     ("test_ack_oldest_deny_empty_is_noop", test_ack_oldest_deny_empty_is_noop),

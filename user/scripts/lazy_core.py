@@ -6153,6 +6153,14 @@ def update_repeat_counts(
     # or an unmarked prior write) from a recorded count — only a recorded prior
     # count can prove a re-read, so a legacy/unmarked prior never debounces.
     prior_consume_count: object = _MISSING
+    # Residual gap B (loop-detector-false-positives-probes-and-cross-run-state):
+    # the run-marker's ``started_at`` the record was written under. _MISSING
+    # distinguishes "no run_started_at key" (legacy file, or a probe taken with
+    # no live marker) from a recorded run identity — only a recorded identity
+    # can prove "this streak belongs to a DIFFERENT/no-longer-live run", so a
+    # legacy/unmarked prior is never treated as foreign (conservative: it falls
+    # through to the pre-existing same-run behavior).
+    prior_run_started_at: object = _MISSING
     try:
         raw = signature_path.read_text(encoding="utf-8")
         data = json.loads(raw)
@@ -6185,6 +6193,14 @@ def update_repeat_counts(
         # debounce stays inert (cannot prove a re-read).
         if isinstance(data, dict) and isinstance(data.get("consume_count"), int):
             prior_consume_count = data["consume_count"]
+        # ``run_started_at`` is OPTIONAL (Residual gap B migration, like
+        # ``head``/``step_*``/``consume_count``) and, like ``consume_count``,
+        # is written ONLY on a marked probe (mirrored below) — so a str value
+        # here always means "this record was stamped under a live run".
+        # Read it INDEPENDENTLY so a partially-upgraded file still reads what
+        # it can.
+        if isinstance(data, dict) and isinstance(data.get("run_started_at"), str):
+            prior_run_started_at = data["run_started_at"]
         # If shape is wrong, treat as no-prior (counts stay 0, sig lists None).
     except (OSError, ValueError, json.JSONDecodeError):
         # File absent, unreadable, or corrupt → treat as no prior.
@@ -6215,12 +6231,47 @@ def update_repeat_counts(
     # closed for the marker itself).  Gate the oracle on the marker's `repo_root`
     # matching the probe's resolved `repo_root`; a marker missing `repo_root`
     # (legacy/bind-pending) is treated as non-matching → debounce stays inert.
+    # Residual gap A (loop-detector-false-positives-probes-and-cross-run-state):
+    # count only CYCLE-class consumptions as "a dispatch landed between probes".
+    # A mid-step META dispatch (hardening / recovery / coherence-recovery /
+    # investigation / input-audit / …) still consumes a registry nonce, but it
+    # is not a forward attempt at the step, so it must not defeat the F1/F2
+    # hold. Filtering the oracle to cls="cycle" is the localized fix (D1,
+    # oracle refinement over signal generalization) — a genuine same-step
+    # oscillation still dispatches a CYCLE each repeat, so it still trips.
     current_consume_count: object = _MISSING
     _marker = read_run_marker()
+    _marker_started_at: object = _MISSING
     if _marker is not None:
         _marker_repo = _marker.get("repo_root")
         if _marker_repo is not None and Path(_marker_repo).resolve() == repo_root.resolve():
-            current_consume_count = consumed_emission_count()
+            current_consume_count = consumed_emission_count(cls="cycle")
+            _marker_started_at = _marker.get("started_at")
+
+    # --- Residual gap B: run-lifetime scoping of streak state ----------------
+    # (loop-detector-false-positives-probes-and-cross-run-state) Streak files
+    # live outside the per-repo keyed state dir (an OS-tempdir file keyed only
+    # on repo_root) and NOTHING previously cleared them at --run-end/--run-start
+    # — a next run's first probe landing on the same (feature_id, current_step)
+    # as a dead run's last probe silently INHERITS that streak (the false-loop
+    # T6 warning at run open). Stamp/compare against the run marker's
+    # ``started_at`` (the established run identity, already resolved above,
+    # repo-scoped the same way the F1/F2 oracle is): reset to NO PRIOR only when
+    # we can PROVE the persisted record belongs to a DIFFERENT, SPECIFIC run —
+    # i.e. a live marker exists now AND the record carries a DIFFERENT recorded
+    # run_started_at (this is exactly the crash scenario: the dead run had a
+    # live marker throughout, so every one of its probes stamped its identity).
+    # A record with NO run_started_at key at all (legacy/pre-migration, or a
+    # write taken with no marker) is NOT treated as foreign — same legacy-
+    # tolerance discipline as the head/step_*/consume_count migrations
+    # elsewhere in this function: absence is never proof, so it falls through
+    # to the pre-existing same-repo streak semantics (conservative — never
+    # reset on ambiguous data). When no marker is live for this repo, behavior
+    # is UNCHANGED (no established run identity to compare against at all).
+    if _marker_started_at is not _MISSING and prior_run_started_at is not _MISSING:
+        if prior_run_started_at != _marker_started_at:
+            prior_sig_list = None
+            prior_step_sig_list = None
 
     # --- Compute the dispatch-tuple count (Phase 9 WU-2 — HEAD-aware) ---------
     # JSON round-trips tuples as lists, so compare new_sig as a list.
@@ -6391,6 +6442,12 @@ def update_repeat_counts(
         # migrations). current_consume_count is the sentinel when no marker.
         if current_consume_count is not _MISSING:
             record["consume_count"] = current_consume_count
+        # Residual gap B: record the LIVE run's identity ONLY on a marked
+        # probe — same legacy-tolerant discipline as consume_count. Omitting
+        # the key on the no-marker path keeps that path's persisted shape
+        # byte-identical to before this fix.
+        if _marker_started_at is not _MISSING:
+            record["run_started_at"] = _marker_started_at
         _atomic_write(signature_path, json.dumps(record))
 
     return {"repeat_count": count, "step_repeat_count": step_count}
@@ -12944,7 +13001,7 @@ def registry_summary() -> str:
     return f"{len(entries)} entries, {unconsumed} unconsumed"
 
 
-def consumed_emission_count() -> int:
+def consumed_emission_count(cls: str | None = None) -> int:
     """Return the number of CONSUMED registry entries — the dispatch oracle.
 
     The validate-deny guard calls ``consume_nonce`` on every ALLOW (one consume
@@ -12953,6 +13010,18 @@ def consumed_emission_count() -> int:
     around a re-read: an UNCHANGED consumed-count between two identical step
     probes means NO dispatch happened between them → the second probe is a
     re-read, not a re-attempt → hold the step counter (double-probe debounce).
+
+    ``cls`` (loop-detector-false-positives-probes-and-cross-run-state, Residual
+    gap A): when given, count ONLY consumed entries whose ``class`` field equals
+    ``cls`` (e.g. ``"cycle"``) instead of every consumed entry regardless of
+    class. The F1/F2 oracle in ``update_repeat_counts`` uses ``cls="cycle"`` so
+    a mid-step META-class dispatch (``hardening``, ``recovery``,
+    ``coherence-recovery``, ``investigation``, ``input-audit``, …) no longer
+    counts as "a dispatch landed between probes" for the streak debounce — only
+    a genuine forward CYCLE attempt does. Every OTHER caller (the
+    forward/meta-cycle watermark machinery in ``advance_run_counters`` etc.)
+    keeps calling this with no argument (``cls=None``), which is
+    byte-identical to the pre-existing unfiltered count.
 
     Read-only: ``_load_registry`` passes ``create=False`` so a probe never
     creates the state dir as a side-effect, and returns ``{"entries": []}`` (→ 0)
@@ -12976,9 +13045,15 @@ def consumed_emission_count() -> int:
     residual watermark consumers.
 
     Returns:
-        The count of entries whose ``consumed`` flag is truthy (0 when empty).
+        The count of entries whose ``consumed`` flag is truthy (0 when empty),
+        optionally restricted to entries whose ``class`` equals ``cls``.
     """
     entries = _load_registry().get("entries", [])
+    if cls is not None:
+        return sum(
+            1 for e in entries
+            if e.get("consumed", False) and e.get("class") == cls
+        )
     return sum(1 for e in entries if e.get("consumed", False))
 
 
@@ -14711,6 +14786,14 @@ def append_deny_ledger_entry(
             "reason_head": (reason_head or "")[:_LEDGER_HEAD_CHARS],
             "prompt_head": (prompt_head or "")[:_LEDGER_HEAD_CHARS],
             "acked": False,
+            # Residual gap B (loop-detector-false-positives-probes-and-cross-run-state):
+            # stamp the entry with the LIVE run marker's identity (None when no
+            # marker exists — e.g. a manual/no-marker deny). `pending_hardening()`
+            # et al. compare this against the CURRENT live marker so a crashed
+            # run's leftover unacked entries no longer force the NEXT run to
+            # drain debt it never saw. Non-destructive read — never creates the
+            # state dir as a side effect.
+            "run_started_at": _raw_marker_started_at(),
         }
         ledger_path = claude_state_dir() / _DENY_LEDGER_FILENAME
         # Append a single compact JSON line.  Plain append (not _atomic_write):
@@ -14770,6 +14853,10 @@ def append_friction_ledger_entry(
             "reason_head": (reason_head or "")[:_LEDGER_HEAD_CHARS],
             "detail": (detail or "")[:_LEDGER_HEAD_CHARS],
             "acked": False,
+            # Residual gap B — same run-identity stamp as append_deny_ledger_entry
+            # (None when no live run marker exists, e.g. the torn-bracket case
+            # where the marker is already gone by the time --cycle-end runs).
+            "run_started_at": _raw_marker_started_at(),
         }
         ledger_path = claude_state_dir() / _DENY_LEDGER_FILENAME
         with ledger_path.open("a", encoding="utf-8") as fh:
@@ -16036,25 +16123,70 @@ def read_deny_ledger() -> list[dict]:
     return entries
 
 
-def pending_hardening() -> int:
+def pending_hardening(*, current_run_only: bool = True) -> int:
     """Return the count of unacked deny-ledger entries (the routed hardening debt).
 
     An entry is "pending" when its ``acked`` field is falsy.  A missing or empty
     ledger → 0.
+
+    ``current_run_only`` (Residual gap B,
+    loop-detector-false-positives-probes-and-cross-run-state; default True): when
+    a LIVE run marker exists, count only unacked entries whose ``run_started_at``
+    matches the live marker's ``started_at`` — i.e. debt this run actually owes.
+    An unacked entry stamped with a DIFFERENT run's identity (or no identity at
+    all — a legacy/pre-fix entry) belongs to a run that already ended (a crash
+    left it undrained); it remains in the ledger for retro/incident mining but no
+    longer forces the NEXT run to dispatch a hardening round for a denial it
+    never saw (symptom 4). When NO live marker exists, there is no run identity
+    to scope against, so this returns the unfiltered total — byte-identical to
+    the pre-fix behavior for every no-marker caller/test. Pass
+    ``current_run_only=False`` for the informational/retro total.
     """
-    return sum(1 for e in read_deny_ledger() if not e.get("acked", False))
+    entries = [e for e in read_deny_ledger() if not e.get("acked", False)]
+    if not current_run_only:
+        return len(entries)
+    current_started = _raw_marker_started_at()
+    if current_started is None:
+        return len(entries)
+    return sum(1 for e in entries if e.get("run_started_at") == current_started)
 
 
-def pending_denial_reasons() -> list[str]:
+def pending_denial_reasons(*, current_run_only: bool = True) -> list[str]:
     """Return the ``reason_head`` strings of all unacked deny-ledger entries, in
     FIFO order.  Used to surface ``pending_denials`` in the marker-gated probe
     enrichment so the orchestrator sees WHAT it still owes a hardening round for.
+
+    ``current_run_only`` mirrors ``pending_hardening`` — see its docstring for the
+    Residual-gap-B run-scoping contract.
     """
-    return [
-        e.get("reason_head", "")
-        for e in read_deny_ledger()
-        if not e.get("acked", False)
-    ]
+    entries = [e for e in read_deny_ledger() if not e.get("acked", False)]
+    if current_run_only:
+        current_started = _raw_marker_started_at()
+        if current_started is not None:
+            entries = [e for e in entries if e.get("run_started_at") == current_started]
+    return [e.get("reason_head", "") for e in entries]
+
+
+def prior_run_pending_hardening() -> int:
+    """Return the count of unacked deny-ledger entries that belong to a run OTHER
+    than the live one (Residual gap B — the informational T6 counterpart to
+    ``pending_hardening()``'s now run-scoped mandatory debt).
+
+    ``pending_hardening()`` (default ``current_run_only=True``) excludes these
+    from the MANDATORY hardening-withholding count; this helper surfaces them
+    separately so the orchestrator can report "N denial(s) from a prior/crashed
+    run remain unacked" as an informational line, never a blocking one. When no
+    live marker exists, returns 0 (there is no "other run" to compare against —
+    ``pending_hardening()`` itself falls back to the unfiltered total in that
+    case, so nothing is silently hidden).
+    """
+    current_started = _raw_marker_started_at()
+    if current_started is None:
+        return 0
+    return sum(
+        1 for e in read_deny_ledger()
+        if not e.get("acked", False) and e.get("run_started_at") != current_started
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -17422,7 +17554,7 @@ def _interventions_queue_flag(repo_root: Path) -> bool:
     return isinstance(data, dict) and data.get("interventions") is True
 
 
-def oldest_unacked_deny() -> dict | None:
+def oldest_unacked_deny(*, current_run_only: bool = True) -> dict | None:
     """Return the OLDEST (FIFO) unacked deny-ledger entry, or None when there is
     no pending debt.
 
@@ -17431,10 +17563,21 @@ def oldest_unacked_deny() -> dict | None:
     from this entry (``prompt_head`` → denied_prompt_summary, ``reason_head`` →
     denial_reason).  Read-only — does NOT mutate the ledger (the guard's
     allow-time ack is the only mutator now).
+
+    ``current_run_only`` (Residual gap B, default True): mirrors
+    ``pending_hardening()`` — when a live run marker exists, skip an unacked
+    entry whose ``run_started_at`` does not match it (a prior/crashed run's
+    leftover), so the entry bound into the hardening-dispatch command is always
+    the one that actually drove ``pending_hardening() > 0`` for THIS run. When no
+    live marker exists, behavior is unchanged (oldest unacked overall).
     """
+    current_started = _raw_marker_started_at() if current_run_only else None
     for entry in read_deny_ledger():
-        if not entry.get("acked", False):
-            return entry
+        if entry.get("acked", False):
+            continue
+        if current_started is not None and entry.get("run_started_at") != current_started:
+            continue
+        return entry
     return None
 
 

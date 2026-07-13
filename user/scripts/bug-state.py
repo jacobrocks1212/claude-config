@@ -8300,6 +8300,13 @@ def main() -> int:
                     f"⚠ pending_hardening: {_pending} — forward route withheld; "
                     f"run hardening_emit_command first\n"
                 )
+            # Residual gap B (loop-detector-false-positives-probes-and-cross-run-
+            # state): surface a PRIOR/crashed run's leftover unacked denials as
+            # informational debt (never blocking — never withholds the route,
+            # never gates --run-end). Coupled-pair mirror of lazy-state.py.
+            _prior_pending = lazy_core.prior_run_pending_hardening()
+            if _prior_pending > 0:
+                state["prior_run_pending_hardening"] = _prior_pending
     # operator-halt-notifications (D2): the terminal-emission chokepoint —
     # coupled-pair mirror of lazy-state.py (parity surface #7). Config-gated,
     # dedup-ledgered, fail-OPEN; state's feature_id holds the bug id.

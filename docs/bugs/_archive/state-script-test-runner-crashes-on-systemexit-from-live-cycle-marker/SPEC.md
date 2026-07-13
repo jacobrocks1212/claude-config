@@ -7,7 +7,7 @@ bug_id: state-script-test-runner-crashes-on-systemexit-from-live-cycle-marker
 
 > Spun off from the harden-harness round that fixed `lazy-cycle-containment-false-denies-reference-only-routing-mentions` (2026-07-12). SECONDARY-1: a cycle subagent cannot run the documented quality gate `python lazy-state.py --test` / `bug-state.py --test` mid-run — the suite aborts partway.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** Low (downgraded from Medium — see Root Cause; the originally-reported crash does not reproduce at HEAD)
 **Discovered:** 2026-07-12
 **Concluded:** 2026-07-12
