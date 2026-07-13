@@ -44,3 +44,110 @@
 - `docs/gate/control-surfaces.json` — `user/scripts/lazy_core/**` glob (+ in-body canary mirror)
 - `docs/features/lazy-core-package-decomposition/GATE_VERDICT.md` — recorded gate verdict
 - `user/scripts/lazy-state.py`, `user/scripts/bug-state.py` — eager `load_all()` in `main()` (commit 1b)
+
+## Phase 2 — Cleanest seams (depdag, docmodel, hostcaps, notifyplane, statedir)
+
+#### Implementation Notes (Phase 2)
+**Completed:** 2026-07-13 (plan part 2 of 6, `/execute-plan`, 5 batches / 5 move-only commits)
+**Work completed:**
+- WU-1 `depdag.py` (commit e1d31e28): queue-dependency-DAG plane, 10 top-level names, 472 monolith
+  deletions -> 491-line module. Zero test redirects (no patch sites target moved consumers). depdag
+  imports `_die` + `has_completion_receipt` from `_monolith` top-level (no cycle: monolith never
+  imports depdag) and — post-WU-2 — `spec_status` from `.docmodel`.
+- WU-2 `docmodel.py` (commit d35306c9): read-path document-model plane, 61 names across 5 disjoint
+  ranges (1,901 lines) — sentinel parsing + SKIP/app-surface predicates (moved WITH the sentinel
+  plane; contiguous, marker-plane-free), `spec_status`, PROVISIONAL/parked-entry builders, plan-file
+  parsing, PHASES analysis (`_PHASE_HEADING_RE`, `_VERIFICATION_ONLY_MARKER`). **Sliced AROUND the
+  receipt writers** `has_completion_receipt`/`write_completed_receipt` (write-path stays in
+  `_monolith` per SPEC D2 ordering). Import-back: `from . import docmodel` + 28-name value import +
+  4 `docmodel._VERIFICATION_ONLY_MARKER` attribute rewrites (patched-name rule). 3 test patch-site
+  redirects (`_VERIFICATION_ONLY_MARKER`). One deferred local import (`_die` in `parse_sentinel`).
+- WU-3 `hostcaps.py` (commit c730a6bb): host-capability plane, 12 names, 375 pure deletions, ZERO
+  monolith insertions (no import-back needed — every consumer resolves via facade). `utc_now_iso`
+  moved with the contiguous slice (zero bare-name monolith consumers; no patch sites — rationale in
+  the module docstring). `write_deferred_requires_host` (writer) sliced around. Deferred local
+  imports: probe primitives in `_default_host_probes`; `read_run_marker` (+ `claude_state_dir`,
+  re-pointed at WU-5) in `host_present_capabilities`. `_FakeOsName` trio untouched (consumers =
+  `emit_cycle_prompt`, monolith-resident).
+- WU-4 `notifyplane.py` + shim retirement (commit 5b1a57db): notify plane (22 names, 575 pure
+  deletions, monolith tail). **Ratified Option C executed:** `_resolve_ntfy_send` DELETED (29
+  lines); the two production sender closures rewrote the resolver call to plain `_ntfy_send(...)`
+  (module-global, ordinary mechanism-3). Receipt: `grep -rn "_resolve_ntfy_send" user/scripts/`
+  -> ZERO hits. State-script `[notify-halt-call-site]` fixtures redirected `lazy_core._ntfy_send`
+  -> `lazy_core.notifyplane._ntfy_send` (3 lines each, symmetric; production
+  `lazy_core.notify_halt(` call sites untouched — parity audit exit 0). 19 test-line redirects:
+  11 `_NOTIFY_*` constant reads, 4 ledger-spy `_atomic_write` (scoped to
+  `test_notify_ledger_roundtrip_prune_and_atomic`; the 3 kernel-direct `_atomic_write` tests + 2
+  sentinel-lint prose mentions stay on `_monolith`), 3+1 pin-test `time` lines
+  (`test_monolith_patch_target_effective` — its own docstring mandated the re-point when
+  `_notify_identity` moved).
+- WU-5 `statedir.py` + benchmark + receipt (this commit): hook-touched state-dir surface — 12 names
+  (`claude_state_dir`, `_load_registry`, `append_hook_event` + closure: `repo_key`,
+  `migrate_legacy_state_dir`, `active_repo_root`/`set_active_repo_root`, `_MARKER_FILENAME`,
+  `_REGISTRY_FILENAME`, `_HOOK_EVENTS_FILENAME`, `_LEGACY_STATE_FILENAMES`, `_LEDGER_HEAD_CHARS`),
+  ~249 lines across 8 disjoint ranges. TDD: `test_hook_surface_imports_without_monolith` written
+  and verified RED first (subprocess exit 1 — `_monolith` in `sys.modules`), GREEN post-extraction.
+  Monolith import-back: 8-name value import. ONE deferred local import: `_git` in
+  `active_repo_root`'s cwd-git fallback (the hook path always binds `--repo-root`, so the fallback
+  — and its `_monolith` load — is never paid by hooks). WU-3/WU-4 deferred `claude_state_dir`
+  imports re-pointed to `.statedir` (hostcaps 1 site split; notifyplane 3 sites).
+  `benchmark_lazy_core_import.py` gained additive `--hook-surface` (fresh-subprocess import +
+  3-name facade touch, records `monolith_loaded_samples`).
+
+**Receipts (per-commit invariant battery, all 5 commits):** pytest `user/scripts/` green (2219
+passed per commit; 2220 on the final — the +1 TDD pin), `lazy-state.py --test` + `bug-state.py
+--test` byte-pinned baselines pass with ZERO baseline regeneration, `lazy_parity_audit.py` exit 0,
+`cli_surface_gen.py --check` OK, `doc-drift-lint.py` 0 findings, `lint-skills.py` OK. Collected
+count 1141 with identical name set through WU-1..4; 1142 after WU-5's sanctioned pin (name-set
+diff = exactly the one addition).
+
+**Benchmark (2026-07-13, post-WU-5):** cold `import lazy_core` best 32.45 / median 35.85 ms; hook
+surface (import + `claude_state_dir` + `_load_registry` + `append_hook_event`) best **42.64** /
+median **43.98 ms** with **`monolith_loaded_samples=0`** — the D4 cut is mechanically realized
+(statedir resolves all three; `_monolith` never imports on that path; pinned by the WU-5 test).
+HONEST caveats: (a) the <15 ms KPI aspiration is NOT met — the Python-interpreter + facade
+baseline alone is ~32 ms, so the statedir increment is ~8-11 ms; (b) the guard's marker-reading
+paths (`read_run_marker` etc.) still load `_monolith` until Phase 5 — this number covers ONLY the
+statedir-resolved hook surface. Monolith LoC: 20,289 (post-P1) -> 16,784 (post-P2).
+
+**Review verdicts (batch audit trail):**
+- Batch 1 (WU-1): PASS (dedicated review subagent; byte-verbatim move confirmed via difflib).
+- Batch 2 (WU-2): PASS (dedicated review subagent; 0 unexplained diff lines across 1,905 deletions
+  / 41 sanctioned insertions; 5 semantically-null blank-line collapses at range joints noted).
+- Batch 3 (WU-3): PASS (inline: 375-deletion/0-insertion numstat, facade 12/12 AST-verified,
+  residue grep zero, full battery green pre-commit; agent report corroborated).
+- Batch 4 (WU-4): PASS (inline: full move-only accounting — all 37 body-diff lines are the
+  sanctioned shim deletion + 2 closure rewrites + 4 deferred imports; name set identical).
+- Batch 5 (WU-5): PASS (inline: TDD RED->GREEN pin, AST unresolved-name scan clean after the
+  `_LEDGER_HEAD_CHARS` closure fix, full battery green pre-commit).
+
+**Deviations & findings (for the retro):**
+1. Task tools (TaskCreate/TaskUpdate) unavailable in the executing environment — plan-part WU
+   checkboxes + PHASES.md served as the persistent ledger.
+2. Importer-diff guard deviation (documented per commit message): each seam commit also carries
+   the plan-part WU checkbox tick (+ status flips) — required by `/execute-plan`'s verify-ledger
+   contract; the plan's allowed-set enumeration omitted the plan file itself.
+3. Plan drift: the "keep in sync with phases-slice.py" comment the plan required to travel with
+   `_PHASE_HEADING_RE` never existed in `_monolith.py` — the sync obligation lives on
+   `phases-slice.py`'s side (its own "keep byte-identical" comment + the facade map) and is
+   intact. HARDENING GAP (batched to harden-harness): no mechanical test pins the two regex
+   copies equal.
+4. Plan said suite count 1135; live baseline was 1141 (+4 sanctioned Phase-1 `_ctx` tests, +2
+   hardening-round tests post-authoring). Name-set diffs were verified per commit against the
+   live captured baseline.
+5. WU-2/WU-3 subagents each initially ended their turn with verification incomplete (backgrounded
+   test runs); resumed and completed honestly. WU-4/WU-5 executed inline by the orchestrator on
+   coordinator directive (contract deviation recorded: batches 4-5 had zero sub-subagent
+   dispatches; scripted transforms + full battery + the inline review protocol applied instead).
+6. `append_hook_event`'s fail-open masked a missing closure constant during WU-5 (returned False
+   instead of raising on the unresolved `_LEDGER_HEAD_CHARS`) — caught by the existing shape
+   test, fixed by moving the constant. Note for Phase 4/5 movers: fail-open functions hide
+   NameErrors; AST-scan for unresolved names after every slice.
+
+**Files modified (net, Phase 2):**
+- `user/scripts/lazy_core/{depdag,docmodel,hostcaps,notifyplane,statedir}.py` (new seam modules)
+- `user/scripts/lazy_core/{__init__,_monolith}.py` (facade map growth; pure seam deletions + import-backs)
+- `user/scripts/test_lazy_core.py` (mechanism-3 redirects; +1 TDD pin)
+- `user/scripts/lazy-state.py`, `user/scripts/bug-state.py` (WU-4 fixture lines only)
+- `user/scripts/benchmark_lazy_core_import.py` (WU-5 `--hook-surface`)
+- plan part 2 (WU ticks + status), `PHASES.md` (P2 rows + receipt), this file

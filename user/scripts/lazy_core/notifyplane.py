@@ -215,7 +215,7 @@ def _load_notify_ledger() -> dict:
     Read-only (create=False — a probe that never sends must not create the
     state dir).  Corrupt/absent ⇒ {} (fail-open).
     """
-    from ._monolith import claude_state_dir  # Phase-5 re-point (claude_state_dir -> .statedir in WU-5)
+    from .statedir import claude_state_dir  # re-pointed at WU-5 (statedir extraction)
     try:
         path = claude_state_dir(create=False) / _NOTIFY_LEDGER_FILENAME
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -230,7 +230,7 @@ def _record_notify_send(identity: str, state: dict, pipeline: str,
     """Ledger a successful send (D8) via _atomic_write, pruning entries older
     than 30 days.  The schema is re-ping-ready: notified_at is the timestamp a
     future reping_hours key would compare against (D4-B, additive later)."""
-    from ._monolith import claude_state_dir  # Phase-5 re-point (claude_state_dir -> .statedir in WU-5)
+    from .statedir import claude_state_dir  # re-pointed at WU-5 (statedir extraction)
     ts = time.time() if now is None else float(now)
     cutoff = ts - _NOTIFY_LEDGER_MAX_AGE_SECONDS
     entries = {
@@ -256,7 +256,7 @@ def _write_notify_error(message: str, identity: str | None,
                         *, now: float | None = None) -> None:
     """Overwrite the notify-error.json breadcrumb (the hook-error.json
     pattern: a single at-a-glance 'why no page' file, D9)."""
-    from ._monolith import claude_state_dir  # Phase-5 re-point (claude_state_dir -> .statedir in WU-5)
+    from .statedir import claude_state_dir  # re-pointed at WU-5 (statedir extraction)
     entry = {
         "ts": time.time() if now is None else float(now),
         "source": "notify_halt",

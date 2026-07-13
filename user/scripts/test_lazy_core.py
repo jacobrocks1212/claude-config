@@ -38432,6 +38432,34 @@ def test_monolith_patch_target_effective():
     )
 
 
+def test_hook_surface_imports_without_monolith():
+    """D4 mechanical pin (lazy-core-package-decomposition Phase 2 WU-5): the
+    hook fast path — touching `lazy_core.claude_state_dir`,
+    `lazy_core._load_registry`, and `lazy_core.append_hook_event` through the
+    facade — must NOT import the ~17K-line `lazy_core._monolith` module. This
+    is the realized D4 hook-latency cut: the three hook-touched names resolve
+    from the small `statedir` submodule (stdlib + `_ctx` only). RED before the
+    statedir extraction (the names resolve from `_monolith`), GREEN after.
+
+    Fresh subprocess so this session's own imports cannot contaminate
+    `sys.modules`.
+    """
+    _guard()
+    probe = (
+        "import sys; sys.path.insert(0, {scripts!r}); import lazy_core; "
+        "lazy_core.claude_state_dir; lazy_core._load_registry; "
+        "lazy_core.append_hook_event; "
+        "sys.exit(1 if 'lazy_core._monolith' in sys.modules else 0)"
+    ).format(scripts=str(_SCRIPTS_DIR))
+    result = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True,
+    )
+    assert result.returncode == 0, (
+        "hook-surface facade touch imported lazy_core._monolith (the D4 cut "
+        f"is not realized); stderr: {result.stderr[-500:]}"
+    )
+
+
 _TESTS = _TESTS + [
     ("test_ctx_diagnostics_identity", test_ctx_diagnostics_identity),
     ("test_ctx_mutation_visible_through_facade",
@@ -38439,6 +38467,8 @@ _TESTS = _TESTS + [
     ("test_ctx_rebindable_globals_via_accessors",
      test_ctx_rebindable_globals_via_accessors),
     ("test_monolith_patch_target_effective", test_monolith_patch_target_effective),
+    ("test_hook_surface_imports_without_monolith",
+     test_hook_surface_imports_without_monolith),
 ]
 
 

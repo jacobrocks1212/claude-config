@@ -11,14 +11,19 @@ its receipt:
   (3) largest-module LoC census of lazy_core (the monolith today; the package
       submodules once the split lands — asserts "no post-split module >4K LoC")
 
-There is NO hook-surface-only measurement yet: isolating the state-dir/registry
-surface requires the lazy facade (D4), which does not exist at baseline. Once the
-facade lands, add a ``--hook-surface`` mode importing only the hook-touched names
-and record its delta against the full-import number here.
+``--hook-surface`` (Phase 2 WU-5, the post-facade follow-up this docstring
+promised at Phase 0): best-of-N fresh-subprocess timing of ``import lazy_core``
+PLUS touching exactly the three hook-touched names (``claude_state_dir``,
+``_load_registry``, ``append_hook_event``) through the facade — the D4
+hook-latency cut, printed beside the full-import number. The sample also
+records whether ``lazy_core._monolith`` got imported (it must not; the honest
+caveat: the guard's marker-reading paths still load ``_monolith`` — this mode
+measures ONLY the statedir-resolved hook surface).
 
 Usage:
   python3 user/scripts/benchmark_lazy_core_import.py [--repo-root .] [--iters 5]
                                                      [--json] [--no-collect]
+                                                     [--hook-surface]
 
 Exit 0 always (a benchmark never gates); malformed --repo-root -> exit 2.
 """
@@ -64,6 +69,44 @@ def measure_import_ms(scripts_dir: Path, iters: int) -> dict:
         "best_ms": round(min(good), 2) if good else None,
         "median_ms": round(sorted(good)[len(good) // 2], 2) if good else None,
         "all_ms": [round(s, 2) for s in samples],
+    }
+
+
+def measure_hook_surface_ms(scripts_dir: Path, iters: int) -> dict:
+    """Best-of-N *cold* hook-surface touches: ``import lazy_core`` + attribute
+    access on exactly the three hook-touched names, each in a fresh subprocess.
+    Records per-sample whether ``lazy_core._monolith`` was imported — the D4
+    cut holds only while it is not (statedir resolves all three)."""
+    code = (
+        "import sys, time; sys.path.insert(0, %r); "
+        "t = time.perf_counter(); import lazy_core; "
+        "lazy_core.claude_state_dir; lazy_core._load_registry; "
+        "lazy_core.append_hook_event; "
+        "ms = (time.perf_counter() - t) * 1000.0; "
+        "sys.stdout.write('%%.4f %%d' %% (ms, 1 if 'lazy_core._monolith' in sys.modules else 0))"
+        % str(scripts_dir)
+    )
+    samples: list[float] = []
+    monolith_hits = 0
+    for _ in range(max(1, iters)):
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+        )
+        parts = (proc.stdout or "").strip().split()
+        try:
+            samples.append(float(parts[0]))
+            monolith_hits += int(parts[1])
+        except (IndexError, ValueError):
+            samples.append(float("nan"))
+    good = [s for s in samples if s == s]  # drop NaN
+    return {
+        "iters": len(samples),
+        "best_ms": round(min(good), 2) if good else None,
+        "median_ms": round(sorted(good)[len(good) // 2], 2) if good else None,
+        "all_ms": [round(s, 2) for s in samples],
+        "monolith_loaded_samples": monolith_hits,
     }
 
 
@@ -127,13 +170,17 @@ def _count_lines(path: Path) -> int:
         return -1
 
 
-def build_report(repo_root: Path, iters: int, do_collect: bool) -> dict:
+def build_report(
+    repo_root: Path, iters: int, do_collect: bool, hook_surface: bool = False
+) -> dict:
     scripts_dir = _scripts_dir(repo_root)
     report = {
         "repo_root": str(repo_root),
         "import": measure_import_ms(scripts_dir, iters),
         "loc": measure_loc(scripts_dir),
     }
+    if hook_surface:
+        report["hook_surface"] = measure_hook_surface_ms(scripts_dir, iters)
     if do_collect:
         report["collection"] = measure_collection(scripts_dir)
     return report
@@ -146,6 +193,13 @@ def render(report: dict) -> str:
         f"import lazy_core (cold, best of {imp['iters']}): "
         f"best={imp['best_ms']} ms  median={imp['median_ms']} ms"
     )
+    if "hook_surface" in report:
+        hs = report["hook_surface"]
+        lines.append(
+            f"hook surface (import + 3 hook names, best of {hs['iters']}): "
+            f"best={hs['best_ms']} ms  median={hs['median_ms']} ms  "
+            f"monolith_loaded_samples={hs['monolith_loaded_samples']}"
+        )
     if "collection" in report:
         col = report["collection"]
         lines.append(
@@ -167,6 +221,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--iters", type=int, default=5)
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--no-collect", action="store_true")
+    ap.add_argument("--hook-surface", action="store_true")
     args = ap.parse_args(argv)
 
     repo_root = Path(args.repo_root).resolve()
@@ -176,7 +231,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    report = build_report(repo_root, args.iters, do_collect=not args.no_collect)
+    report = build_report(
+        repo_root, args.iters,
+        do_collect=not args.no_collect,
+        hook_surface=args.hook_surface,
+    )
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:

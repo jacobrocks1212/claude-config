@@ -1,6 +1,6 @@
 # PHASES — lazy-core-package-decomposition
 
-**Status:** In-progress (Phase 0 Complete; L1 ratified 2026-07-13 → mechanism 3 redirect-the-patches; Phases 1–6 unblocked)
+**Status:** In-progress (Phases 0–2 Complete; L1 ratified 2026-07-13 → mechanism 3 redirect-the-patches; Phases 3–6 remain)
 **MCP runtime:** not-required (pure state-plane refactor; SKIP_MCP_TEST class)
 **Friction-reduction feature:** yes (KPI row `lazy-core-monolith-intervention-drag`)
 **Last updated:** 2026-07-13
@@ -57,16 +57,26 @@ changed (only additive script + docs). Suite unaffected (no `lazy_core.py` edit)
 Proven done: all 20 importers + 2 hooks + auditors green with zero edits; identity + patchability
 tests pass; benchmark re-run recorded (facade alone may not cut hook cost — record the honest number).
 
-## Phase 2 — Cleanest seams (docmodel, depdag, hostcaps, notify) ⛔ after Phase 1
+## Phase 2 — Cleanest seams (docmodel, depdag, hostcaps, notify) ✅ COMPLETE (green)
 
-- [ ] Move `docmodel.py` / `depdag.py` / `hostcaps.py` / `notifyplane.py` out of the body.
-- [ ] Retire the `_resolve_ntfy_send` facade-patch shim at the notifyplane extraction (operator
+- [x] Move `docmodel.py` / `depdag.py` / `hostcaps.py` / `notifyplane.py` out of the body.
+      (Commits e1d31e28 / d35306c9 / c730a6bb / 5b1a57db — one move-only commit per seam.)
+- [x] Retire the `_resolve_ntfy_send` facade-patch shim at the notifyplane extraction (operator
       ratified Option C, 2026-07-13, resolving the Phase-1 NEEDS_INPUT): redirect the two
       state-script `[notify-halt-call-site]` fixtures to `lazy_core.notifyplane._ntfy_send`,
       delete the shim — mechanism-3 becomes the SINGLE patch-visibility rule for all callers.
-- [ ] Land the hook-touched `claude_state_dir`/`_load_registry`/`append_hook_event` in a small
-      submodule so the D4 latency cut is realizable + re-measured.
-- [ ] Per-commit invariants green; import-ms delta in receipt.
+      Receipt: `grep -rn "_resolve_ntfy_send" user/scripts/` → ZERO hits (commit 5b1a57db).
+- [x] Land the hook-touched `claude_state_dir`/`_load_registry`/`append_hook_event` in a small
+      submodule so the D4 latency cut is realizable + re-measured. (`statedir.py`, 295 LoC;
+      TDD pin `test_hook_surface_imports_without_monolith` RED→GREEN.)
+- [x] Per-commit invariants green; import-ms delta in receipt. (Hook surface best 42.64 /
+      median 43.98 ms, `monolith_loaded_samples=0`, vs the 88.7/93.7 ms Phase-0 full-monolith
+      baseline — honest number: the <15 ms KPI aspiration is NOT met, interpreter+facade
+      baseline dominates; guard marker paths still load `_monolith` until Phase 5.)
+
+Proven done: 5 move-only commits, each with the full battery green (pytest `user/scripts/`
+2219→2220 passed, both byte baselines untouched, parity/cli-surface/doc-drift/lint-skills exit 0);
+suite 1141→1142 (one sanctioned TDD pin added); monolith 20,289 → 16,784 LoC.
 
 ## Phase 3 — Test split ⛔ after Phase 2 (de-prioritized — collection already 0.30 s)
 

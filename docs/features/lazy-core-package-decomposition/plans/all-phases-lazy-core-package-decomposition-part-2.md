@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-core-package-decomposition
-status: In-progress
+status: Complete
 created: 2026-07-13
 phases: [2]
 complexity: complex
@@ -87,7 +87,7 @@ Where this plan's repo uses non-default gates or component paths (this is claude
 - [x] WU-2 — Extract `docmodel.py` (sentinel/SPEC/plan/PHASES parsing)
 - [x] WU-3 — Extract `hostcaps.py` (host capabilities)
 - [x] WU-4 — Extract `notifyplane.py` (halt notifier) + retire the `_resolve_ntfy_send` shim (ratified Option C)
-- [ ] WU-5 — Extract `statedir.py` (hook surface) + `--hook-surface` benchmark + phase receipt
+- [x] WU-5 — Extract `statedir.py` (hook surface) + `--hook-surface` benchmark + phase receipt
 
 ---
 

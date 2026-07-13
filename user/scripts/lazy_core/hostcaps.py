@@ -332,10 +332,11 @@ def host_present_capabilities(*, probes=None, cache: bool = True) -> set[str]:
     Returns:
         The set of present capability ids.
     """
-    # Phase-5 re-point: read_run_marker (the marker plane) stays in _monolith;
-    # claude_state_dir moves to .statedir only in a LATER WU (WU-5) — currently
-    # still in _monolith. Deferred import avoids a top-level circular import.
-    from ._monolith import read_run_marker, claude_state_dir
+    # Phase-5 re-point: read_run_marker (the marker plane) stays in _monolith.
+    # Deferred import avoids a top-level circular import. claude_state_dir
+    # moved to .statedir in WU-5 (re-pointed).
+    from ._monolith import read_run_marker
+    from .statedir import claude_state_dir
 
     probe_map = _default_host_probes() if probes is None else probes
 

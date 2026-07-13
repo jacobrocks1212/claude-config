@@ -152,6 +152,19 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "_ntfy_send": "notifyplane",
     "notify_halt": "notifyplane",
     "notify_event": "notifyplane",
+    # Phase 2 WU-5 (Batch 5): the hook-touched state-dir surface (D4 cut).
+    "_HOOK_EVENTS_FILENAME": "statedir",
+    "_LEDGER_HEAD_CHARS": "statedir",
+    "_LEGACY_STATE_FILENAMES": "statedir",
+    "_MARKER_FILENAME": "statedir",
+    "_REGISTRY_FILENAME": "statedir",
+    "_load_registry": "statedir",
+    "active_repo_root": "statedir",
+    "append_hook_event": "statedir",
+    "claude_state_dir": "statedir",
+    "migrate_legacy_state_dir": "statedir",
+    "repo_key": "statedir",
+    "set_active_repo_root": "statedir",
 }
 
 # Submodule consulted when a name has no explicit entry in
@@ -159,7 +172,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
 _FALLBACK_SUBMODULE = "_monolith"
 
 # All submodules that make up this package, in no particular order.
-_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "docmodel", "hostcaps", "notifyplane")
+_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "docmodel", "hostcaps", "notifyplane", "statedir")
 
 
 def __getattr__(name):
