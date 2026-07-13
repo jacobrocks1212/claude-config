@@ -33872,6 +33872,84 @@ def test_mark_complete_provenance_falls_back_to_message_grep():
         assert "src/g.py" in index
 
 
+def test_item_scope_excludes_foreign_harden_commits():
+    """gate-scope-folds-concurrent-harden-commits: an item's completion-gate
+    scope EXCLUDES foreground harden-workstream commits (subject `harden(...)`)
+    that a cycle bracket's range diff swept in — the item answers only for its
+    OWN commits' touched files."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        seed = _prov_git_fixture_repo(repo_root)
+        spec_dir = repo_root / "docs" / "features" / "feat-scope"
+        spec_dir.mkdir(parents=True)
+        # The item's OWN commit touches only docs (zero control surfaces).
+        _prov_git_commit_file(
+            repo_root, "docs/features/feat-scope/PHASES.md",
+            "chore(feat-scope): mark plan complete")
+        # A foreign observed-friction harden commit lands mid-run on a control
+        # surface, inside the same begin..end bracket window.
+        end = _prov_git_commit_file(
+            repo_root, "user/scripts/lazy_core.py",
+            "harden(script): fix scope derivation")
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.append_commit_bracket("feat-scope", seed, end)
+            files = lazy_core._item_commit_touched_files(spec_dir, repo_root)
+        finally:
+            _clear_state_dir()
+        assert "docs/features/feat-scope/PHASES.md" in files, f"got {files}"
+        assert "user/scripts/lazy_core.py" not in files, (
+            f"foreign harden commit's control-surface file leaked into item "
+            f"scope: {files}")
+
+
+def test_item_scope_byte_identical_without_foreign_commits():
+    """No foreign harden commit → the pre-existing range-derived file set is
+    returned unchanged (byte-identical common-case behavior)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        seed = _prov_git_fixture_repo(repo_root)
+        spec_dir = repo_root / "docs" / "features" / "feat-plain"
+        spec_dir.mkdir(parents=True)
+        end = _prov_git_commit_file(
+            repo_root, "docs/features/feat-plain/PHASES.md",
+            "chore(feat-plain): mark plan complete")
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.append_commit_bracket("feat-plain", seed, end)
+            files = lazy_core._item_commit_touched_files(spec_dir, repo_root)
+            range_files = lazy_core.derive_touched_from_range(
+                repo_root, f"{seed}..{end}")["files"]
+        finally:
+            _clear_state_dir()
+        assert files == range_files, f"expected {range_files}, got {files}"
+        assert "docs/features/feat-plain/PHASES.md" in files
+
+
+def test_commit_subject_is_foreign_harden_classifies_and_fails_open():
+    """_commit_subject_is_foreign_harden: True for a `harden(...)` subject,
+    False for an item commit, and False (fail-open) for an unreadable sha."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        sha_harden = _prov_git_commit_file(
+            repo_root, "user/hooks/h.sh", "harden(hook): tighten guard")
+        sha_item = _prov_git_commit_file(
+            repo_root, "src/x.py", "fix(feat-x): real work")
+        assert lazy_core._commit_subject_is_foreign_harden(repo_root, sha_harden)
+        assert not lazy_core._commit_subject_is_foreign_harden(repo_root, sha_item)
+        # Bad sha → fail-open False (never drops a real item commit).
+        assert not lazy_core._commit_subject_is_foreign_harden(
+            repo_root, "deadbeefdeadbeef")
+
+
 def test_mark_complete_refused_gate_writes_no_provenance():
     """A refused completion (no evidence sentinel) writes NOTHING — no
     distillate, no index."""
@@ -34012,6 +34090,12 @@ _TESTS = _TESTS + [
      test_mark_complete_emits_provenance_from_brackets),
     ("test_mark_complete_provenance_falls_back_to_message_grep",
      test_mark_complete_provenance_falls_back_to_message_grep),
+    ("test_item_scope_excludes_foreign_harden_commits",
+     test_item_scope_excludes_foreign_harden_commits),
+    ("test_item_scope_byte_identical_without_foreign_commits",
+     test_item_scope_byte_identical_without_foreign_commits),
+    ("test_commit_subject_is_foreign_harden_classifies_and_fails_open",
+     test_commit_subject_is_foreign_harden_classifies_and_fails_open),
     ("test_mark_complete_refused_gate_writes_no_provenance",
      test_mark_complete_refused_gate_writes_no_provenance),
     ("test_mark_complete_receipt_noop_writes_no_provenance",

@@ -3293,13 +3293,66 @@ def gate_verdict_ok(spec_path: Path, repo_root: Path) -> dict:
     return {"ok": True, "in_scope": True, "reason": "gate verdict clean"}
 
 
+# A hardening-workstream commit carries the harden-harness Commit-discipline
+# prefix ``harden(<area>):`` on its subject line (the skill MANDATES it on every
+# commit it makes). It is the ONLY structural signal distinguishing a foreground
+# observed-friction harden commit — a DIFFERENT workstream — from a queue item's
+# own shipped commits when both land inside one cycle bracket's git-log range.
+# A pipeline item never commits under this prefix, so excluding it from an item's
+# completion-gate scope can never drop the item's own work.
+_FOREIGN_HARDEN_SUBJECT_RE = re.compile(r"^\s*harden\(")
+
+
+def _commit_subject_is_foreign_harden(repo_root: Path, sha: str) -> bool:
+    """True iff commit ``sha``'s subject begins with the harden-harness
+    commit-discipline prefix ``harden(`` — the structural marker of a
+    hardening-workstream commit (a different workstream from any queue item).
+
+    FAIL-OPEN: an unreadable subject (non-git tree, bad sha, git unavailable)
+    returns ``False`` — treated as NOT foreign, so a real item commit is never
+    silently dropped and the completion gate is never weakened by a read error.
+    """
+    lines = _git_capture_lines(
+        repo_root, ["show", "-s", "--format=%s", str(sha)])
+    if not lines:
+        return False
+    return bool(_FOREIGN_HARDEN_SUBJECT_RE.match(lines[0]))
+
+
+def _files_from_commits(repo_root: Path, shas: "list[str]") -> "list[str]":
+    """Union the per-commit ``git show --name-only`` file sets for ``shas``
+    (each commit's OWN diff, not a range diff). Sorted; empty on any read
+    failure per commit (fail-open, never raises)."""
+    files: set[str] = set()
+    for sha in shas:
+        lines = _git_capture_lines(
+            repo_root,
+            ["show", "--no-merges", "--name-only", "--format=", str(sha)])
+        for ln in (lines or []):
+            s = ln.strip()
+            if s:
+                files.add(s)
+    return sorted(files)
+
+
 def _item_commit_touched_files(spec_path: Path, repo_root: Path) -> "list[str]":
     """The touched-file set for an item's shipped commits, reusing the
     EXISTING derivation ``write_provenance`` already uses (commit-brackets
     primary, message-grep fallback via ``derive_touched_from_brackets`` /
     ``derive_touched_from_grep``) — never re-implemented. ``spec_path`` may
     be the item's SPEC.md file or its containing dir; the item id is the
-    dir's basename either way."""
+    dir's basename either way.
+
+    FOREIGN-HARDEN EXCLUSION (gate-scope-folds-concurrent-harden-commits): the
+    bracket ledger records each cycle as a ``begin_sha..end_sha`` RANGE, so a
+    foreground observed-friction ``harden(...)`` commit the orchestrator lands
+    mid-run is swept into the range diff even though it is a DIFFERENT
+    workstream from the queue item. Those foreign commits are excluded from the
+    item's completion-gate scope so a feature is never forced to answer for a
+    concurrent harden workstream's control-surface changes. When no foreign
+    commit is present (the common case), the pre-existing range-derived file
+    set is returned BYTE-IDENTICALLY (no re-derivation, no behavior change).
+    """
     item_dir = Path(spec_path)
     if item_dir.name == "SPEC.md":
         item_dir = item_dir.parent
@@ -3307,7 +3360,15 @@ def _item_commit_touched_files(spec_path: Path, repo_root: Path) -> "list[str]":
     derived = derive_touched_from_brackets(repo_root, item_id)
     if derived is None:
         derived = derive_touched_from_grep(repo_root, item_id)
-    return list((derived or {}).get("files") or [])
+    commit_shas = list((derived or {}).get("commits") or [])
+    non_foreign = [
+        c for c in commit_shas
+        if not _commit_subject_is_foreign_harden(repo_root, c)]
+    if non_foreign == commit_shas:
+        # No foreign harden commit was filtered — preserve the exact prior
+        # file set (byte-identical common-case behavior).
+        return list((derived or {}).get("files") or [])
+    return _files_from_commits(repo_root, non_foreign)
 
 
 def evaluate_completion_evidence(feature_dir: Path, repo_root: Path) -> dict:
