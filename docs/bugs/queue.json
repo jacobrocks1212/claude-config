@@ -2,12 +2,6 @@
   "_note": "2026-07-11 hardening-audit batch: 17 investigation specs (docs deep-dive + session mining) enqueued at the head in recommended fix order — enforcement re-arm first (the settings split-brain un-blinds telemetry and re-arms every guard), then the efficacy-loop pair (so later fixes get graded), then state-plane crash consistency, pipeline-waste killers, and hygiene. Explicit severities mirror each SPEC's Priority. | Prior note (2026-07-04, partially stale — its named P0 head is archived): Ordering is hybrid (explicit queue order + severity fallback). HEAD: the P0 'skip-mcp-test-frontmatter-unquoted-colon' hardening bug is the merged-view head — /lazy-batch's unified driver picks it FIRST. The 10 build-queue/harness bugs below it carry a DEPRIORITIZED queue-entry severity of null (real severity lives in each SPEC's **Severity:** line) so they sort to merged priority 99 — AFTER every feature — set 2026-07-04 (resume-lanes-hardening) because they are PowerShell/Pester build-queue defects untestable off a Windows workstation and were otherwise interleaving ahead of the feature queue in the merged view. The two adhoc-* bugs were already null-severity. Restore a bug's priority by removing its queue entry (autodiscovery re-reads the SPEC severity) or setting an explicit severity here.",
   "queue": [
     {
-      "id": "legacy-tool-input-env-hooks-dead",
-      "name": "Registered legacy hooks read $TOOL_INPUT_* env vars the hook interface never populates — push/kill protection is dead code — Investigation Spec",
-      "spec_dir": "legacy-tool-input-env-hooks-dead",
-      "severity": "P1"
-    },
-    {
       "id": "powershell-tool-bypasses-bash-matched-guards",
       "name": "PowerShell tool cleanly bypasses every Bash-matched guard hook — Investigation Spec",
       "spec_dir": "powershell-tool-bypasses-bash-matched-guards",
@@ -44,12 +38,6 @@
       "severity": "P1"
     },
     {
-      "id": "mcp-validation-peels-one-seam-per-loop",
-      "name": "Step-9 MCP validation peels one defect seam per full pipeline loop (seam enumeration only mandated at retry>=2) — Investigation Spec",
-      "spec_dir": "mcp-validation-peels-one-seam-per-loop",
-      "severity": "P1"
-    },
-    {
       "id": "completion-gate-refusal-opacity",
       "name": "verify_ledger refusals name the failing check but discard the computed offending items — gate probing burns cycles — Investigation Spec",
       "spec_dir": "completion-gate-refusal-opacity",
@@ -74,33 +62,9 @@
       "severity": "P2"
     },
     {
-      "id": "skills-plane-hygiene-debris",
-      "name": "Skills-plane debris: tracked crash dumps, orphan components, stale retro emit-mapping rows — Investigation Spec",
-      "spec_dir": "skills-plane-hygiene-debris",
-      "severity": "P3"
-    },
-    {
-      "id": "coord-lock-no-stale-reclaim",
-      "name": "lazy_coord global mkdir lock has no holder metadata or stale reclamation — dead holder deadlocks all coordination — Investigation Spec",
-      "spec_dir": "coord-lock-no-stale-reclaim",
-      "severity": "P3"
-    },
-    {
-      "id": "test-filtered-stale-check-hardcodes-bin-debug",
-      "name": "test-filtered.ps1 stale-check hardcodes `bin\\Debug\\` — permanent false positive for non-default OutputPath test projects — Investigation Spec",
-      "spec_dir": "test-filtered-stale-check-hardcodes-bin-debug",
-      "severity": null
-    },
-    {
       "id": "build-queue-orphaned-result-on-wrapper-kill",
       "name": "Build-queue orphans the result when the wrapper is killed mid-build — Investigation Spec",
       "spec_dir": "build-queue-orphaned-result-on-wrapper-kill",
-      "severity": null
-    },
-    {
-      "id": "crlf-hook-blanket-enforce-mixed-eol",
-      "name": "CRLF Hook Blanket-Enforces EOL Against a Mixed-EOL Repo — Investigation Spec",
-      "spec_dir": "crlf-hook-blanket-enforce-mixed-eol",
       "severity": null
     },
     {
