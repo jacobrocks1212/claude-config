@@ -91,3 +91,16 @@ scripts, the `_deny_entry_same_cause_key` dedup, and the `DISPATCH_CLASSES` roun
 guard for Half 1) is complete, TDD-covered in `test_lazy_core.py`, and does not depend on this
 ratification to be correct code — only the bug's own completion bookkeeping (Status/archive) is
 gated on it.
+
+
+## Ratification
+
+ratified_by: operator (Jacob)
+ratified_date: 2026-07-13
+mode: blanket ratification (operator directive, /lazy-batch run 2026-07-13 — "ratify all remaining provisional accepted decisions, and complete all the features")
+
+All provisionally-accepted decisions recorded in the Resolution / provisional-acceptance section(s)
+above are **RATIFIED AS-IS** to their provisionally-accepted (recommended) option — no redirect. The
+operator issued a blanket ratification of every outstanding `--park-provisional` decision in this run.
+The on-disk implementations stand unchanged; completion is unblocked. This provisional sentinel is
+neutralized (renamed to `NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md`).

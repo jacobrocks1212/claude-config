@@ -94,3 +94,16 @@ Not yet ratified. This file documents the provisional choice; the bug's `SPEC.md
 stays `Concluded` (not `Fixed`) until an operator reviews and either ratifies B or redirects to A.
 Fix Scope items 1, 2, and 4 (the matcher-gap closures + regression tests) are implemented,
 tested, and landed independent of this decision — they do not depend on the D2 outcome.
+
+
+## Ratification
+
+ratified_by: operator (Jacob)
+ratified_date: 2026-07-13
+mode: blanket ratification (operator directive, /lazy-batch run 2026-07-13 — "ratify all remaining provisional accepted decisions, and complete all the features")
+
+All provisionally-accepted decisions recorded in the Resolution / provisional-acceptance section(s)
+above are **RATIFIED AS-IS** to their provisionally-accepted (recommended) option — no redirect. The
+operator issued a blanket ratification of every outstanding `--park-provisional` decision in this run.
+The on-disk implementations stand unchanged; completion is unblocked. This provisional sentinel is
+neutralized (renamed to `NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md`).

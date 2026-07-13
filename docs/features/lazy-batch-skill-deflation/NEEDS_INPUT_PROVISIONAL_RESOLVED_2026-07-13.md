@@ -66,3 +66,16 @@ low-risk shape `park-provisional-acceptance` is designed for.
 
 **Choice:** A — HISTORY.md sidecar in the skill directory (with B opportunistically where an
 existing doc already covers an incident).
+
+
+## Ratification
+
+ratified_by: operator (Jacob)
+ratified_date: 2026-07-13
+mode: blanket ratification (operator directive, /lazy-batch run 2026-07-13 — "ratify all remaining provisional accepted decisions, and complete all the features")
+
+All provisionally-accepted decisions recorded in the Resolution / provisional-acceptance section(s)
+above are **RATIFIED AS-IS** to their provisionally-accepted (recommended) option — no redirect. The
+operator issued a blanket ratification of every outstanding `--park-provisional` decision in this run.
+The on-disk implementations stand unchanged; completion is unblocked. This provisional sentinel is
+neutralized (renamed to `NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md`).

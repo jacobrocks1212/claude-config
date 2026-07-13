@@ -69,3 +69,16 @@ decision_commit: 7a503f808eb9c0c7ef135078e03e9064b0a7ef9c
   keep derived files byte-identical; defer audit demotion, provenance headers, and the
   re-canonicalization campaign to Phase 4 pending operator ratification. Implemented in full this
   session (generator + 5 overlays + `--check` drift gate + 34 tests, all gates green).
+
+
+## Ratification
+
+ratified_by: operator (Jacob)
+ratified_date: 2026-07-13
+mode: blanket ratification (operator directive, /lazy-batch run 2026-07-13 — "ratify all remaining provisional accepted decisions, and complete all the features")
+
+All provisionally-accepted decisions recorded in the Resolution / provisional-acceptance section(s)
+above are **RATIFIED AS-IS** to their provisionally-accepted (recommended) option — no redirect. The
+operator issued a blanket ratification of every outstanding `--park-provisional` decision in this run.
+The on-disk implementations stand unchanged; completion is unblocked. This provisional sentinel is
+neutralized (renamed to `NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md`).

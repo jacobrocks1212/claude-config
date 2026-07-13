@@ -65,3 +65,16 @@ This is `isolated` divergence on both keys — a later redirect to option C is s
 nothing in the prompt-section implementation would need to be un-done or reworked. Ratify (stay
 at A pending KPI evidence) or redirect (commission the hook now) before this feature's Phase 4
 measurement-hookup phase closes it out.
+
+
+## Ratification
+
+ratified_by: operator (Jacob)
+ratified_date: 2026-07-13
+mode: blanket ratification (operator directive, /lazy-batch run 2026-07-13 — "ratify all remaining provisional accepted decisions, and complete all the features")
+
+All provisionally-accepted decisions recorded in the Resolution / provisional-acceptance section(s)
+above are **RATIFIED AS-IS** to their provisionally-accepted (recommended) option — no redirect. The
+operator issued a blanket ratification of every outstanding `--park-provisional` decision in this run.
+The on-disk implementations stand unchanged; completion is unblocked. This provisional sentinel is
+neutralized (renamed to `NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md`).

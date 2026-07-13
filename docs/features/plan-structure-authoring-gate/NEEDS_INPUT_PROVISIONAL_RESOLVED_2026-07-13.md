@@ -143,3 +143,16 @@ decision_commit: c9162482028410a92b4692c552a8bba2f0c1f74a
 - **D4-NOT-DONE — Choice:** (b) — Phase 4 stays open; feature stays `In-progress`
   (`PHASES.md`) / `Draft` (`SPEC.md`), no `COMPLETED.md`, no Status flip to Complete, pending
   operator ratification of the above and a follow-up STATE-lane session for Phase 4.
+
+
+## Ratification
+
+ratified_by: operator (Jacob)
+ratified_date: 2026-07-13
+mode: blanket ratification (operator directive, /lazy-batch run 2026-07-13 — "ratify all remaining provisional accepted decisions, and complete all the features")
+
+All provisionally-accepted decisions recorded in the Resolution / provisional-acceptance section(s)
+above are **RATIFIED AS-IS** to their provisionally-accepted (recommended) option — no redirect. The
+operator issued a blanket ratification of every outstanding `--park-provisional` decision in this run.
+The on-disk implementations stand unchanged; completion is unblocked. This provisional sentinel is
+neutralized (renamed to `NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md`).

@@ -84,3 +84,16 @@ explicit pointer-adoption of the generic default. Shipped as this feature's Phas
 Both choices are config/doc-surface-only (isolated divergence on both keys) — a redirect at
 ratification would mean deleting/renaming a JSON file and a markdown pointer file, with no
 downstream architectural coupling. Ratify-or-redirect before this feature completes.
+
+
+## Ratification
+
+ratified_by: operator (Jacob)
+ratified_date: 2026-07-13
+mode: blanket ratification (operator directive, /lazy-batch run 2026-07-13 — "ratify all remaining provisional accepted decisions, and complete all the features")
+
+All provisionally-accepted decisions recorded in the Resolution / provisional-acceptance section(s)
+above are **RATIFIED AS-IS** to their provisionally-accepted (recommended) option — no redirect. The
+operator issued a blanket ratification of every outstanding `--park-provisional` decision in this run.
+The on-disk implementations stand unchanged; completion is unblocked. This provisional sentinel is
+neutralized (renamed to `NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md`).
