@@ -7,7 +7,7 @@
 > `skill-usage-miner.py` hygiene sweep exists but is on-demand only — it never gates a commit,
 > so debris persists until a human happens to run it.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P3
 **Last updated:** 2026-07-11
 **Related:** `user/skills/CLAUDE.md` ("Usage audit / pruning" — the on-demand miner + the deliberate-`archived/`-move rule); `archived/CLAUDE.md` (the audit-trail table convention for deprecated config); `docs/features/skill-usage-miner/` (Complete — the sweep tool); `docs/features/claude-config-ci/` (Draft — the standing commit-time prevention vehicle, cross-linked in Fix Scope); commit `ea738f4` (2026-06-14, "docs(retro-unwire): remove stale /retro prose from lazy-pipeline skills and components" — the sweep that missed the mapping tables); commit `f8719a8` ("chore: sync skills, components, hooks, and repo configs" — the sync that committed the crash dumps).

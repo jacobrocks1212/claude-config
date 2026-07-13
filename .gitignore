@@ -9,5 +9,8 @@
 Thumbs.db
 .DS_Store
 
+# Git-Bash (MSYS) crash dumps
+*.stackdump
+
 # Python bytecode (repo-root setup.py imported by its test suite)
 __pycache__/

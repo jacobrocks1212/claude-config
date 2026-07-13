@@ -249,7 +249,6 @@ Sub-skill routing table (from `bug-state.py`'s `SKILL_*` constants):
 | `spec-phases` | `/spec-phases` — decompose bug SPEC into PHASES |
 | `write-plan` | `/write-plan` — write implementation plan |
 | `execute-plan` | `/execute-plan` — run the next ready plan |
-| `retro-feature` | `/retro-feature` — retrospective pass |
 | `mcp-test` | `/mcp-test` — MCP / runtime validation |
 
 After the skill returns:

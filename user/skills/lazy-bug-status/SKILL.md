@@ -88,8 +88,7 @@ The state script emits both real sub-skill names and pseudo-skills (prefixed `__
 | `write-plan` | /write-plan — write the implementation plan |
 | `execute-plan` | /execute-plan — run the next plan |
 | `mcp-test` | /mcp-test — validate via MCP |
-| `retro-feature` | /retro-feature — run retrospective |
-| `__write_deferred_non_cloud__` | DEFER MCP test (cloud) → fall through to retro on next cycle |
+| `__write_deferred_non_cloud__` | DEFER MCP test (cloud) → phases complete routes directly to the Step 9 MCP gate on the next cycle (retro is unwired) |
 | `__write_validated_from_skip__` | promote SKIP_MCP_TEST.md → VALIDATED.md |
 | `__write_validated_from_results__` | promote MCP_TEST_RESULTS.md → VALIDATED.md |
 | `__mark_fixed__` | mark bug fixed, write FIXED.md receipt, archive to _archive/ |
