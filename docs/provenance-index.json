@@ -141,6 +141,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "state-cli-contract-registry",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "toolify-auto-promotion",
       "type": "feature",
       "provenance": "backfilled"
@@ -234,6 +239,11 @@
     },
     {
       "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "state-cli-contract-registry",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -6019,6 +6029,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/state-cli-contract-registry/PHASES.md": [
+    {
+      "id": "state-cli-contract-registry",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/stub-origin-provisional-exclusion/PHASES.md": [
     {
       "id": "stub-origin-provisional-exclusion",
@@ -6413,6 +6430,11 @@
       "id": "skip-mcp-test-frontmatter-unquoted-colon",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "state-cli-contract-registry",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "manifest.psd1": [
@@ -6554,6 +6576,11 @@
       "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "state-cli-contract-registry",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/hooks/block-noncanonical-blocker-write.sh": [
@@ -6578,6 +6605,13 @@
       "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/hooks/block-terminal-kill.sh": [
+    {
+      "id": "state-cli-contract-registry",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/hooks/build-queue-enforce.sh": [
@@ -7283,6 +7317,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "state-cli-contract-registry",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "stub-origin-provisional-exclusion",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -7610,6 +7649,11 @@
       "id": "multi-repo-concurrent-runs",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "state-cli-contract-registry",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/test_incident_scan.py": [
@@ -7784,6 +7828,11 @@
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "state-cli-contract-registry",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "unified-pipeline-orchestrator",

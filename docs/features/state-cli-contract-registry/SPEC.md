@@ -13,7 +13,7 @@
 > `lazy-state.py`'s and ~half its production lines are verbatim copies — so coupled-pair parity
 > for that surface becomes structural instead of a hand-maintained regex ratchet.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P1
 **Last updated:** 2026-07-11
 **Friction-reduction feature:** yes

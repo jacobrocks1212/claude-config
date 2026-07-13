@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Complete
 <!-- Cannot reach Complete: D2 and D4 are provisionally accepted under the park-provisional
      directive (NEEDS_INPUT_PROVISIONAL.md, divergence: contained). Completion is mechanically
      blocked (lazy_core.apply_pseudo refuses on the provisional sentinel) until the operator

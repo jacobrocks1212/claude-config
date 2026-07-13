@@ -3,12 +3,6 @@
   "autodiscover": true,
   "queue": [
     {
-      "id": "state-cli-contract-registry",
-      "name": "State-Script CLI Contract: Registry + Shared Surface",
-      "spec_dir": "state-cli-contract-registry",
-      "tier": 1
-    },
-    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "name": "Mechanize Prose-Only Orchestrator Contracts",
       "spec_dir": "mechanize-prose-only-orchestrator-contracts",
