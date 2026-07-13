@@ -9,7 +9,7 @@
 > quota), hand-pinned deprioritizations expire instead of living forever, and queue age becomes
 > visible in `LAZY_QUEUE.md`.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-13
 **Source:** repo-exploration proposal session 2026-07-11

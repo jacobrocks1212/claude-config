@@ -238,6 +238,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -2259,6 +2264,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -2302,6 +2312,11 @@
     },
     {
       "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -2645,6 +2660,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -2724,6 +2744,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -3174,6 +3199,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3220,6 +3250,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -3343,6 +3378,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3403,6 +3443,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -3504,6 +3549,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3569,6 +3619,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -3638,6 +3693,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3672,6 +3732,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -3752,6 +3817,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3791,6 +3861,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -3960,6 +4035,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -4012,6 +4092,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -4046,6 +4131,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -4356,6 +4446,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -4435,6 +4530,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -4631,6 +4731,11 @@
     },
     {
       "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -4868,6 +4973,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5003,6 +5113,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -5176,6 +5291,11 @@
   ],
   "docs/cli/cli-surface.json": [
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5196,6 +5316,11 @@
     },
     {
       "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -5381,6 +5506,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5456,6 +5586,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/bug-queue-aging-backpressure/NEEDS_INPUT_PROVISIONAL.md": [
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/bug-queue-aging-backpressure/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
@@ -5469,6 +5606,11 @@
     },
     {
       "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -5503,10 +5645,29 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/bug-queue-aging-backpressure/PHASES.md": [
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/bug-queue-aging-backpressure/RESEARCH_SUMMARY.md": [
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/bug-queue-aging-backpressure/SPEC.md": [
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -5541,6 +5702,13 @@
     },
     {
       "id": "skill-config-schema-and-reference-lint",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/bug-queue-aging-backpressure/plans/all-phases-bug-queue-aging-backpressure-part-1.md": [
+    {
+      "id": "bug-queue-aging-backpressure",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -5748,6 +5916,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5803,6 +5976,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -5966,6 +6144,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -6014,6 +6197,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -6130,6 +6318,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -6185,6 +6378,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -6796,6 +6994,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -6854,6 +7057,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -6900,6 +7108,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -7356,6 +7569,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -7390,6 +7608,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -7758,6 +7981,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -7806,6 +8034,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -7923,6 +8156,11 @@
     },
     {
       "id": "anti-overfit-design-gate",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -8154,6 +8392,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -8220,6 +8463,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -8275,6 +8523,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -8417,6 +8670,11 @@
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -8863,12 +9121,22 @@
   ],
   "docs/kpi/SCORECARD.md": [
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
   "docs/kpi/registry.json": [
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
@@ -9874,6 +10142,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "code-doc-provenance-linkage",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -10056,6 +10329,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -10104,6 +10382,11 @@
     }
   ],
   "user/scripts/lazy-queue-doc.py": [
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "mobile-queue-control",
       "type": "feature",
@@ -10359,6 +10642,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "code-doc-provenance-linkage",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -10612,6 +10900,11 @@
     }
   ],
   "user/scripts/pipeline_visualizer/probe.py": [
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "lazy-pipeline-visualizer",
       "type": "feature",
@@ -10886,6 +11179,11 @@
   ],
   "user/scripts/test_kpi_scorecard.py": [
     {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "efficacy-signal-integrity",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -10996,6 +11294,11 @@
       "id": "stub-spec-route-loops-until-queue-stub-cleared",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "code-doc-provenance-linkage",
@@ -11121,6 +11424,11 @@
     }
   ],
   "user/scripts/test_lazy_queue_doc.py": [
+    {
+      "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "lazy-pipeline-visualizer",
       "type": "feature",

@@ -15,12 +15,6 @@
       "tier": 2
     },
     {
-      "id": "bug-queue-aging-backpressure",
-      "name": "Bug-Queue Aging Backpressure",
-      "spec_dir": "bug-queue-aging-backpressure",
-      "tier": 2
-    },
-    {
       "id": "claude-config-ci",
       "name": "CI for claude-config Itself",
       "spec_dir": "claude-config-ci",
