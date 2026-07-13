@@ -24,7 +24,7 @@ whether the efficacy loop produces usable verdicts instead of structurally-guara
   dep lives in the bug pipeline, so `--sync-deps` projection into `queue.json` is deferred to
   spec-finalization — do not hand-edit `deps`.)
 
-> Substantive (non-block) cross-links: `docs/bugs/hardening-intervention-records-unmeasurable-or-missing/`
+> Substantive (non-block) cross-links: `docs/bugs/_archive/hardening-intervention-records-unmeasurable-or-missing/`
 > (capture-side validation — sub-signal targets only pay off if records are vocabulary-valid);
 > `docs/bugs/efficacy-future-check-unenforced-orchestrator-prose/` (the run-end breadcrumb gate,
 > shipped `7d49490`, guarantees the flush this feature's signals ride on);

@@ -8,12 +8,6 @@
       "severity": null
     },
     {
-      "id": "hardening-intervention-records-unmeasurable-or-missing",
-      "name": "Hardening intervention records unmeasurable (phantom event types, undeclared signals) with prose-only capture coverage \u2014 Investigation Spec",
-      "spec_dir": "hardening-intervention-records-unmeasurable-or-missing",
-      "severity": "P1"
-    },
-    {
       "id": "legacy-tool-input-env-hooks-dead",
       "name": "Registered legacy hooks read $TOOL_INPUT_* env vars the hook interface never populates \u2014 push/kill protection is dead code \u2014 Investigation Spec",
       "spec_dir": "legacy-tool-input-env-hooks-dead",

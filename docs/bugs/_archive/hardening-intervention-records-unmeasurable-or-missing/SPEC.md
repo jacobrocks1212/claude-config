@@ -7,6 +7,8 @@
 > a round's "Intervention record: none" exemption line is checked by no one.
 
 **Status:** Fixed
+**Fixed:** 2026-07-12
+**Fix commit:** 74e2c121
 **Priority:** P1
 **Last updated:** 2026-07-11
 **Related:** `docs/bugs/_archive/interventions-telemetry-repo-scope-split-brain/` (the evaluation-side

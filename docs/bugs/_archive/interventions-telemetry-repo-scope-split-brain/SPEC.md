@@ -15,7 +15,7 @@
 run-end breadcrumb gate, shipped 2026-07-11 in `7d49490`; this bug is why that gate verifies
 INVOCATION but not COVERAGE); `docs/bugs/no-mid-run-observed-friction-harden-dispatch/` (sibling —
 its fix-scope §6 requires measurable intervention records, which this split-brain makes ungradeable);
-`docs/bugs/hardening-intervention-records-unmeasurable-or-missing/` (the capture-side defects on the
+`docs/bugs/_archive/hardening-intervention-records-unmeasurable-or-missing/` (the capture-side defects on the
 same records); `docs/features/efficacy-signal-integrity/` (the follow-the-fix measurement-plane
 feature); `docs/interventions/intervention-efficacy-tracking.md` (the loop);
 `docs/features/multi-repo-concurrent-runs/` (origin of the per-repo state-dir keying that created
