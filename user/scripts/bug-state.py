@@ -181,6 +181,12 @@ TR_CLOUD_DEFERRED_SCOPED = "cloud-queue-exhausted-scoped"
 TR_DEVICE_DEFERRED_SCOPED = "device-queue-exhausted-scoped"
 TR_BLOCKED_SCOPED = "blocked-scoped"
 TR_NEEDS_INPUT_SCOPED = "needs-input-scoped"
+# Coupled-pair mirror of lazy-state.py's TR_COMPLETE_SCOPED
+# (lazy-queue-doc-renders-bogus-rows-for-stale-complete-entries): a --bug-id
+# scoped query matching an already-Fixed(+receipted)/Won't-fix entry returns
+# its OWN identity + this terminal instead of falling through to a global
+# terminal with no identity attached.
+TR_FIXED_SCOPED = "bug-fixed-scoped"
 # park-provisional-acceptance (coupled-pair mirror of lazy-state.py): the
 # non-park halt on an unratified NEEDS_INPUT_PROVISIONAL.md + its scoped twin.
 TR_NEEDS_RATIFICATION = "needs-ratification"
@@ -244,6 +250,7 @@ STEP_NEEDS_INPUT_PARKED_SCOPED = "Needs-input, parked (scoped)"
 # park-provisional-acceptance (coupled-pair mirror of lazy-state.py).
 STEP_NEEDS_RATIFICATION = "Step 3.6: needs-ratification"
 STEP_PROVISIONAL_PARKED_SCOPED = "Provisional, parked (scoped)"
+STEP_FIXED_SCOPED = "Fixed (scoped)"
 
 # Severity rank for on-disk ordering (lower number = higher priority)
 _SEVERITY_RANK = {"P0": 0, "P1": 1, "P2": 2, "Low": 3}
@@ -842,12 +849,34 @@ def compute_state(
 
         if status == BUG_STATUS_WONT_FIX:
             # Receipt-exempt: retired without fix. Skip.
+            # Coupled-pair mirror of lazy-state.py's TR_COMPLETE_SCOPED
+            # (lazy-queue-doc-renders-bogus-rows-for-stale-complete-entries): a
+            # scoped match on an already-done bug must return ITS OWN identity,
+            # not `continue` into a global terminal with no identity attached.
+            if scope_bug_id is not None and str(bug_id) == str(scope_bug_id):
+                return _scoped_skip_state(
+                    bug_id=bug_id,
+                    bug_name=bug_name,
+                    spec_dir=spec_dir,
+                    current_step=STEP_FIXED_SCOPED,
+                    terminal_reason=TR_FIXED_SCOPED,
+                    notify_message=f"{bug_name}: already resolved (Won't-fix).",
+                )
             continue
 
         if status == BUG_STATUS_FIXED:
             # Receipt required for Fixed bugs.
             if has_completion_receipt(spec_dir, filename="FIXED.md"):
-                # Genuinely done.
+                # Genuinely done. Same scoped-identity mirror as above.
+                if scope_bug_id is not None and str(bug_id) == str(scope_bug_id):
+                    return _scoped_skip_state(
+                        bug_id=bug_id,
+                        bug_name=bug_name,
+                        spec_dir=spec_dir,
+                        current_step=STEP_FIXED_SCOPED,
+                        terminal_reason=TR_FIXED_SCOPED,
+                        notify_message=f"{bug_name}: already fixed.",
+                    )
                 continue
             # Claimed Fixed WITHOUT a FIXED.md receipt.
             return _bug_state(

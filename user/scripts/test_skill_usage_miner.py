@@ -618,7 +618,12 @@ def test_hygiene_sweep_flags_all_four_classes():
         by_path = {f["path"]: f for f in findings}
         assert by_path["user/skills/sh.exe.stackdump"]["kind"] == "stray-file"
         assert by_path["user/skills/remotion"]["kind"] == "dangling-symlink"
-        assert "C:/Users/nobody/nonexistent" in by_path["user/skills/remotion"]["detail"]
+        # Windows os.readlink() normalizes the reparse point's stored target to
+        # backslashes (and strips the NT extended-length prefix, per
+        # hygiene_sweep's own stripping) even when the symlink was created
+        # from a forward-slash target — compare separator-insensitively.
+        detail = by_path["user/skills/remotion"]["detail"].replace("\\", "/")
+        assert "C:/Users/nobody/nonexistent" in detail
         assert by_path["user/skills/local-site"]["kind"] == "case-variant-dispatcher"
         assert by_path["user/skills/empty-dir"]["kind"] == "missing-dispatcher"
         assert by_path["repos/somerepo/.claude/skills/junk.txt"]["kind"] == "stray-file"

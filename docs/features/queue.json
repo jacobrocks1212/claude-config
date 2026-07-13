@@ -3,24 +3,6 @@
   "autodiscover": true,
   "queue": [
     {
-      "id": "friction-kpi-registry",
-      "name": "Friction KPI Registry + Scorecards",
-      "spec_dir": "friction-kpi-registry",
-      "tier": 1
-    },
-    {
-      "id": "parallel-worktree-batch-execution",
-      "name": "Sanctioned Parallel-Worktree Batch Execution",
-      "spec_dir": "parallel-worktree-batch-execution",
-      "tier": 1
-    },
-    {
-      "id": "harness-change-canary-rollback",
-      "name": "Harness-Change Canary + Rollback",
-      "spec_dir": "harness-change-canary-rollback",
-      "tier": 1
-    },
-    {
       "id": "state-cli-contract-registry",
       "name": "State-Script CLI Contract: Registry + Shared Surface",
       "spec_dir": "state-cli-contract-registry",
@@ -48,18 +30,6 @@
       "id": "anti-overfit-design-gate",
       "name": "Anti-Overfit + Tautology Design Gate for Harness Changes",
       "spec_dir": "anti-overfit-design-gate",
-      "tier": 2
-    },
-    {
-      "id": "build-queue-generalization",
-      "name": "Generalize Build-Queue Beyond Cognito",
-      "spec_dir": "build-queue-generalization",
-      "tier": 2
-    },
-    {
-      "id": "build-queue-eta-priority-lanes",
-      "name": "Build-Queue ETA + Priority Lanes",
-      "spec_dir": "build-queue-eta-priority-lanes",
       "tier": 2
     },
     {

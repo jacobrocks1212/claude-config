@@ -364,6 +364,11 @@ TR_DEVICE_DEFERRED_SCOPED = "device-queue-exhausted-scoped"
 TR_HOST_DEFERRED_SCOPED = "host-capability-saturated-scoped"
 TR_BLOCKED_SCOPED = "blocked-scoped"
 TR_NEEDS_INPUT_SCOPED = "needs-input-scoped"
+# A --feature-id scoped query matching an entry that is ALREADY genuinely done
+# (Superseded, or Complete+receipted) returns its OWN identity + this terminal
+# instead of falling through to a global terminal with no identity attached
+# (lazy-queue-doc-renders-bogus-rows-for-stale-complete-entries).
+TR_COMPLETE_SCOPED = "feature-complete-scoped"
 # park-provisional-acceptance: the non-park halt on an unratified
 # NEEDS_INPUT_PROVISIONAL.md (Step 3.6) + its scoped park-mode twin.
 TR_NEEDS_RATIFICATION = "needs-ratification"
@@ -376,6 +381,7 @@ STEP_DEVICE_DEFERRED_SCOPED = "Device-deferred (scoped)"
 STEP_HOST_DEFERRED_SCOPED = "Host-capability-deferred (scoped)"
 STEP_BLOCKED_PARKED_SCOPED = "Blocked, parked (scoped)"
 STEP_NEEDS_INPUT_PARKED_SCOPED = "Needs-input, parked (scoped)"
+STEP_COMPLETE_SCOPED = "Complete (scoped)"
 STEP_NEEDS_RATIFICATION = "Step 3.6: needs-ratification"
 STEP_PROVISIONAL_PARKED_SCOPED = "Provisional, parked (scoped)"
 
@@ -1892,6 +1898,29 @@ def compute_state(
         # (a retired feature was never validated).
         if completion_claimed(roadmap_text, name, spec_path):
             if spec_status(spec_path) == "Superseded" or has_completion_receipt(spec_path):
+                # Scoped-match identity preservation (lazy-queue-doc-renders-
+                # bogus-rows-for-stale-complete-entries): a --feature-id query
+                # matching an entry that is ALREADY genuinely done (Superseded,
+                # or Complete+receipted) must return ITS OWN identity + a scoped
+                # complete terminal — not `continue` into the rest of the walk,
+                # which (under scoping) skips every other entry too and falls
+                # through to whatever GLOBAL terminal the exhausted walk
+                # produces (e.g. all-features-complete with unrelated
+                # diagnostics). That fallthrough is exactly what let
+                # pipeline_visualizer.probe / lazy-queue-doc.py render a
+                # Complete+receipted queue entry as an "unknown"/Pending row —
+                # the state script's own scoped answer carried no identity for
+                # probe.py to key on. UNSCOPED (scope_feature_id is None) stays
+                # byte-identical — this branch fires ONLY on a scoped match.
+                if scope_feature_id is not None and feature_id == scope_feature_id:
+                    return _scoped_skip_state(
+                        feature_id=feature_id,
+                        feature_name=name,
+                        spec_path=spec_path,
+                        current_step=STEP_COMPLETE_SCOPED,
+                        terminal_reason=TR_COMPLETE_SCOPED,
+                        notify_message=f"{name}: already complete.",
+                    )
                 continue
             # Claimed Complete WITHOUT a receipt → the SPEC/ROADMAP was flipped
             # outside the validation gate (a cycle subagent or hand edit). This

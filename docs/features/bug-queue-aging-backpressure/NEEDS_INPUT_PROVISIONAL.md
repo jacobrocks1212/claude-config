@@ -3,8 +3,7 @@ kind: needs-input
 feature_id: bug-queue-aging-backpressure
 written_by: spec
 decisions:
-  - D1 — backpressure mechanism: age-escalation in the merged comparator vs. an every-Nth-run
-    aged-bug quota
+  - "D1 — backpressure mechanism: age-escalation in the merged comparator vs. an every-Nth-run aged-bug quota"
 date: 2026-07-13
 next_skill: none
 class: product

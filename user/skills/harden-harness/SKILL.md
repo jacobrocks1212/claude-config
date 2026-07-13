@@ -323,7 +323,7 @@ template (the harness's own hypothesis-ledger discipline):
 
 **Action:**
 <one of:>
-  - Mechanical fix applied: <description>. Gates run: test_lazy_core.py N/N, test_hooks.py N/N, lint-skills.py OK, --test suites OK. Commit: <hash>.
+  - Mechanical fix applied: <description>. Gates run: test_lazy_core.py N/N, test_hooks.py N/N, lint-skills.py OK, lazy-state.py/bug-state.py --test suites OK. Commit: <hash>.
   - NEEDS_INPUT.md written: <path>. Decisions: <decision titles>.
 
 **Over-fit spin-off:** <one of:>

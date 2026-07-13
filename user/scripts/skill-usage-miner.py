@@ -393,6 +393,18 @@ def hygiene_sweep(repo_root) -> list:
             if entry.is_symlink() and not entry.exists():
                 try:
                     target = os.readlink(entry)
+                    if os.name == "nt":
+                        # Windows os.readlink() reports the reparse point's
+                        # substitute name, which carries the NT
+                        # extended-length prefix ('\\?\', or its UNC variant
+                        # '\\?\UNC\') even for a symlink created from a plain
+                        # path — strip it so the printed detail matches what
+                        # was actually asked for (setup.py's
+                        # _strip_extended_prefix precedent).
+                        if target.startswith("\\\\?\\UNC\\"):
+                            target = "\\\\" + target[len("\\\\?\\UNC\\"):]
+                        elif target.startswith("\\\\?\\"):
+                            target = target[len("\\\\?\\"):]
                 except OSError:
                     target = "?"
                 findings.append({
@@ -403,8 +415,18 @@ def hygiene_sweep(repo_root) -> list:
             if entry.is_dir():
                 if entry.name == "_components":
                     continue
-                if (entry / "SKILL.md").is_file():
-                    fm = _frontmatter_name(entry / "SKILL.md")
+                # Exact-case membership check — NOT `(entry / "SKILL.md").is_file()`,
+                # which resolves case-INsensitively on NTFS/APFS default mounts and
+                # would silently treat a `skill.md` case-variant as the canonical
+                # dispatcher, making the case-variant-dispatcher class unreachable
+                # on Windows/macOS (a real cross-platform bug — this repo lives on
+                # Windows). List the dir once and match names case-sensitively.
+                md_like = sorted((p for p in entry.iterdir()
+                                   if p.is_file() and p.name.lower() == "skill.md"),
+                                  key=lambda p: p.name)
+                canonical = next((p for p in md_like if p.name == "SKILL.md"), None)
+                if canonical is not None:
+                    fm = _frontmatter_name(canonical)
                     if fm is None:
                         findings.append({
                             "path": rel, "kind": "malformed-frontmatter",
@@ -418,12 +440,10 @@ def hygiene_sweep(repo_root) -> list:
                                        "matches the dir; dir name used as the "
                                        "invocation key)")})
                     continue
-                case_variant = [p.name for p in sorted(entry.iterdir())
-                                if p.is_file() and p.name.lower() == "skill.md"]
-                if case_variant:
+                if md_like:
                     findings.append({
                         "path": rel, "kind": "case-variant-dispatcher",
-                        "detail": (f"case-variant dispatcher `{case_variant[0]}` "
+                        "detail": (f"case-variant dispatcher `{md_like[0].name}` "
                                    "(contract expects `SKILL.md`)")})
                 else:
                     findings.append({

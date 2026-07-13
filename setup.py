@@ -361,8 +361,29 @@ def _symlink(target, live, is_dir):
     os.symlink(target, live, target_is_directory=is_dir)
 
 
+def _strip_extended_prefix(path):
+    """Strip the Windows extended-length path prefix ('\\\\?\\', or its UNC
+    variant '\\\\?\\UNC\\') from a raw os.readlink() result.
+
+    Windows symlinks/junctions created from a plain absolute target are
+    still reported back by os.readlink() with this prefix prepended (an NT
+    kernel object-namespace artifact, not something the caller asked for).
+    Left unstripped, every downstream comparison/print sees a spurious
+    mismatch against the prefix-free repo path — a real cross-platform bug,
+    not a test quirk (docs/bugs/setup-py-windows-extended-path-prefix-mismatch).
+    """
+    if path.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + path[len("\\\\?\\UNC\\"):]
+    if path.startswith("\\\\?\\"):
+        return path[len("\\\\?\\"):]
+    return path
+
+
 def _readlink(path):
-    return os.readlink(path)
+    target = os.readlink(path)
+    if _WINDOWS:
+        target = _strip_extended_prefix(target)
+    return target
 
 
 def _create_junction(target, live):  # pragma: no cover - Windows-only

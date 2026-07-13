@@ -36,14 +36,27 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def parse_item_state(raw: dict, pipeline: str) -> dict:
+def parse_item_state(raw: dict, pipeline: str, item_id: Optional[str] = None) -> dict:
     """Attach `curated_stage` to an already-parsed state dict, preserving the
-    script's own fields (feature_id/current_step/terminal_reason/…)."""
+    script's own fields (feature_id/current_step/terminal_reason/…).
+
+    `item_id` (the queue entry's own known id — always available to the caller,
+    since it's what was passed as --feature-id/--bug-id) backfills `feature_id`
+    when the state script's own JSON omits it. A state script that hits an
+    unrelated hard failure (e.g. a malformed sentinel's YAML frontmatter
+    elsewhere in the on-disk tree) can exit non-zero while still printing a
+    well-formed JSON object — just one with no identity field of its own
+    (`{"error": ..., "path": ...}`, no `feature_id`). Without this backfill the
+    row loses its identity entirely and renders as an unrelated "unknown" row
+    downstream (lazy-queue-doc-renders-bogus-rows-for-stale-complete-entries).
+    """
     item = dict(raw)
     item["curated_stage"] = curated_stage(
         raw.get("current_step"), raw.get("terminal_reason"), pipeline
     )
     item.setdefault("error", None)
+    if not item.get("feature_id") and item_id:
+        item["feature_id"] = item_id
     return item
 
 
@@ -71,7 +84,7 @@ def parse_state_output(stdout: str, item_id: Optional[str], pipeline: str) -> di
             "curated_stage": "Pending",
             "error": "state-script output was not a JSON object",
         }
-    return parse_item_state(raw, pipeline)
+    return parse_item_state(raw, pipeline, item_id=item_id)
 
 
 def _run_state_script(script: Path, repo_root: Path, scope_flag: str, scope_id: str) -> str:

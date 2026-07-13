@@ -47,6 +47,12 @@ _SIDE_STATE_BY_TERMINAL = {
     # side-state, NOT a deferred one.
     "blocked-scoped": "Blocked",
     "needs-input-scoped": "Needs-input",
+    # lazy-queue-doc-renders-bogus-rows-for-stale-complete-entries: a scoped
+    # query matching an already-done item (feature: Superseded/Complete+receipted;
+    # bug: Won't-fix/Fixed+receipted) returns its own identity + one of these
+    # terminals instead of falling through to an unrelated global terminal.
+    "feature-complete-scoped": "Complete",
+    "bug-fixed-scoped": "Complete",
 }
 
 # --- Workflow rollup: literal current_step → curated node. ---
