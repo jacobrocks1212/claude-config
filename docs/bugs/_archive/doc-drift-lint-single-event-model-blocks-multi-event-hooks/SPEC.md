@@ -1,6 +1,6 @@
 # Bug: doc-drift-lint `check_hooks` single-event model blocks multi-event hooks
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** Low
 **Discovered:** 2026-07-12
 **Component:** `user/scripts/doc-drift-lint.py::check_hooks`
