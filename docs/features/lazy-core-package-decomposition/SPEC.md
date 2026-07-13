@@ -14,9 +14,12 @@
 > and a ruff/pyflakes gate on `user/scripts/` (F811 would already catch `lazy_core.py`'s
 > duplicate `_current_head` at lines 3875/5661).
 
-**Status:** Draft
+**Status:** Draft — decisions locked 2026-07-13 (see Decision Ledger); mechanical D2/D3/D5/D7
+auto-accepted; **product forks D1/D4/D6 park-provisional (unratified)** → no completion until an
+operator ratifies the facade mechanism. Phase 0 landed green (preconditions verified + benchmark
+harness). Phases 1–6 blocked on D1/D4 ratification (landmine L1).
 **Priority:** P1
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-13
 **Friction-reduction feature:** yes
 **Source:** repo-exploration proposal session 2026-07-11 (architectural review of the state-script
 plane; all line anchors and metrics re-measured against the working tree 2026-07-11)
@@ -45,6 +48,52 @@ plane; all line anchors and metrics re-measured against the working tree 2026-07
 > spec's D6).
 
 ---
+
+## Decision Ledger (2026-07-13 finalization)
+
+Re-audited against HEAD `337e41de` after tonight's ~20 lazy_core commits. See
+`RESEARCH_SUMMARY.md` for the measured inventory and the three landmines.
+
+**Refreshed metrics (SPEC anchors were stale):** `lazy_core.py` 20,172 LoC (was 17,686);
+`import lazy_core` 88.7 ms cold best (was 107 ms warm); `test_lazy_core.py` 37,842 LoC / 1125 tests;
+**collection 0.30 s in-proc** (was cited 8.60 s — the test-drag premise is largely stale); the
+duplicate `_current_head` F811 is **already resolved** (single def @6510; a duplicate-def guard test
+already exists). Net: D1 (blast radius) and D4 (hook import cost) rationales stand; D5 (test drag)
+and D6 (F811 baseline fix) are materially weaker than the SPEC assumed.
+
+**Preconditions (Phase 0) — SATISFIED:** both hard-dep bugs carry Fixed+archived receipts under
+`docs/bugs/_archive/` — write-path moves are dep-gate-unblocked.
+
+| Decision | Class | Disposition 2026-07-13 |
+|----------|-------|------------------------|
+| D1 package shape + facade | product-behavior | **PARK-PROVISIONAL** — recommendation A (package + permanent facade) stands, but landmine L1 (monkeypatch-by-attribute-assignment) makes the facade a *semantic* contract, not a re-export convenience. Needs operator ratification of the facade mechanism (see below). |
+| D2 locked constraints | mechanical | **AUTO-ACCEPT** + amended: add L2 (`__file__`-relative path anchor) and L3 (rebindable-global getter/setter) as first-commit obligations. |
+| D3 extraction order | mechanical | **AUTO-ACCEPT** — order unchanged; every step past the skeleton is L1-blocked. |
+| D5 test decomposition | mechanical | **AUTO-ACCEPT** but de-prioritized — collection is already 0.30 s, so the split's value is editor-ergonomics + per-seam selection, not collection time. `tests/` dir already exists. |
+| D6 lint gate | product-behavior | **PARK-PROVISIONAL** — ruff F-rules still worth adding, but the headline F811 (`_current_head`) is already fixed, so it lands as a *forward* guard, not a baseline-fix. Advisory-first still recommended. |
+| D7 compute_state follow-up | mechanical | **AUTO-ACCEPT** — measurement-only hook; out of scope here. |
+| D4 hook fast-import | product-behavior | **PARK-PROVISIONAL** — PEP 562 lazy facade recommended, but see L1: a lazy facade over submodules re-introduces the patched-collaborator-resolution problem. Fallback B (thin `lazy_state_dir.py`/`lazy_registry.py` modules the hooks import directly) may be the *lower-risk* path precisely because it sidesteps L1 for the hook surface. Measured, not assumed, once ratified. |
+
+**The unresolved fork blocking Phases 1–6 (landmine L1 — needs operator ratification):**
+Tests patch `lazy_core.time/os/subprocess/_atomic_write/write_runtime_lock/consume_nonce/...` by
+direct attribute assignment. A function that leaves the `lazy_core` namespace stops resolving those
+patched names from it, silently breaking tests. The three candidate mechanisms — each with a cost —
+are an operator decision, not a mechanical one:
+
+1. **Qualified-access rewrite** — every mover references collaborators as `lazy_core.X`. Preserves
+   patchability but violates the SPEC's "zero logic edits / move-only" invariant across hundreds of
+   sites; large, reviewable-but-noisy diff.
+2. **Forwarding-module-class facade** — `sys.modules["lazy_core"]` becomes a class instance proxying
+   `__getattr__`/`__setattr__` to a single body module. Keeps patchability *only while the body stays
+   in one module* — i.e. it enables the package skeleton but NOT genuine seam extraction. Good for the
+   D1 skeleton; does not by itself deliver the size/hook wins.
+3. **Redirect the patches** — split tests along seams (D5) and point each patch at the owning submodule
+   (`lazy_core.runtimeplane.subprocess`). Delivers real extraction but edits test bodies (must preserve
+   the 1125 count + names; "baselines untouched" still holds — these are pytest tests, not the byte
+   baselines).
+
+Until an operator picks among 1/2/3, no seam extraction lands. This is a genuine PRODUCT fork
+(it changes the invariant the whole feature is built on), correctly parked rather than force-resolved.
 
 ## Executive Summary
 
