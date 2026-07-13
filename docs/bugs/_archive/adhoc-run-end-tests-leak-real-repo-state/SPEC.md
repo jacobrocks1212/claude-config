@@ -32,6 +32,8 @@ bug_id: adhoc-run-end-tests-leak-real-repo-state
 **Status:** Fixed
 **Severity:** Medium
 **Discovered:** 2026-07-13
+**Fixed:** 2026-07-13
+**Fix commit:** 5e7c8793
 **Placement:** docs/bugs/adhoc-run-end-tests-leak-real-repo-state
 **Related:** `docs/bugs/_archive/adhoc-incident-hook-deny-19343d-r2` (field fallout context);
 `user/scripts/test_lazy_core.py` (fix site); `user/scripts/lazy_core.py` (`drop_efficacy_breadcrumb`,
