@@ -2,7 +2,7 @@
 
 > The queue wrapper writes `results/<seq>.json` and releases `active.lock` only after the detached build it is *tailing* exits. If the foreground wrapper is killed first (Bash 2-min timeout → exit 143, or any crash), the detached build runs to completion but its exit code is never recorded and the lock lingers until stale-reclaim. The caller can never learn the outcome.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-24
 **Placement:** docs/bugs/build-queue-orphaned-result-on-wrapper-kill

@@ -62,12 +62,6 @@
       "severity": "P2"
     },
     {
-      "id": "build-queue-orphaned-result-on-wrapper-kill",
-      "name": "Build-queue orphans the result when the wrapper is killed mid-build — Investigation Spec",
-      "spec_dir": "build-queue-orphaned-result-on-wrapper-kill",
-      "severity": null
-    },
-    {
       "id": "build-queue-outcome-opacity-and-inspect-deny",
       "name": "Build-Queue Outcome Opacity + Enforce-Hook Over-Blocks Read-Only Inspection — Investigation Spec",
       "spec_dir": "build-queue-outcome-opacity-and-inspect-deny",

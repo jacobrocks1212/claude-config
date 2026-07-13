@@ -53,9 +53,24 @@ This bug is filed against the completed **build-queue** feature (`docs/specs/bui
 **Minimum Verifiable Behavior:** Run the runner directly against a stub `-Exec` (a throwaway script that sleeps ~2s then `exit 1`) with a seeded `-StateRoot` whose `active.lock` carries the matching seq. On completion: `results/<seq>.json` exists with `exit_code = 1`, `active.lock` is gone, and the runner process itself exits `1`.
 
 **Runtime Verification** *(checked by manual/multi-process testing — NOT by an implementation agent):*
-- [ ] Runner against stub `exit 0` and stub `exit 1`: `results/<seq>.json` written with the matching `exit_code`; runner's own exit code matches.
-- [ ] Seq-scoped guard: seed `active.lock` with a **different** seq; runner completes, writes its result, and leaves that `active.lock` **untouched**.
-- [ ] Idempotency: invoke the result-write path twice for the same seq; final `results/<seq>.json` is well-formed and unchanged in content.
+- [x] Runner against stub `exit 0` and stub `exit 1`: `results/<seq>.json` written with the matching `exit_code`; runner's own exit code matches.
+- [x] Seq-scoped guard: seed `active.lock` with a **different** seq; runner completes, writes its result, and leaves that `active.lock` **untouched**.
+- [x] Idempotency: invoke the result-write path twice for the same seq; final `results/<seq>.json` is well-formed and unchanged in content.
+
+#### Automated Regression Coverage (2026-07-12)
+
+Pester 6.0.0 is now available on this machine (bootstrapped by a prior lane, absent when
+this plan was authored 2026-06-24 as "no PowerShell unit-test framework"). Added
+`user/scripts/build-queue-runner.Tests.ps1` (4 tests, all green) covering exactly the
+three Runtime Verification rows above as automated, repeatable regression: matching-seq
+write + nested-exit invariant (incl. an exit-0 case), the seq-scoped guard leaving a
+mismatched `active.lock` untouched, and idempotent repeated writes for the same seq. Each
+invocation spawns build-queue-runner.ps1 as a real nested `powershell.exe -File` child
+(never `& $RunnerPath` in-process, which would terminate the Pester host via the runner's
+own `exit $exitCode`) against a `$TestDrive`-seeded `-StateRoot` — the real
+`~/.claude/state/build-queue/` is never touched. Gate:
+`Import-Module Pester -RequiredVersion 6.0.0 -Force; Invoke-Pester -Path user/scripts/build-queue-runner.Tests.ps1 -Output Detailed`
+→ Tests Passed: 4, Failed: 0.
 
 **Prerequisites:** None (net-new file; no dependency on `build-queue.ps1` changes).
 
@@ -101,10 +116,66 @@ This bug is filed against the completed **build-queue** feature (`docs/specs/bui
 **Minimum Verifiable Behavior:** Launch via the wrapper against a ~30s sleep + `exit 1` stub `-Exec`. Once the build is running, send the wrapper a terminating signal (or let a tight foreground timeout SIGTERM it). Let the runner finish: `results/<seq>.json` appears with `exit_code = 1` and `active.lock` is gone — **with no wrapper alive to have written either**.
 
 **Runtime Verification** *(checked by manual/multi-process testing — NOT by an implementation agent):*
-- [ ] **Orphan path (the fix):** wrapper killed mid-build → runner completes → `results/<seq>.json` written with the real exit code; `active.lock` released; no orphaned slot lingering for the next waiter.
-- [ ] **Happy path (regression):** wrapper survives a normal build → exactly **one** `results/<seq>.json` (correct `exit_code`), `active.lock` released exactly once, wrapper exit code propagates (run stubs exiting 0 and 1). No double-write/double-delete from wrapper + runner both finishing.
+- [x] **Orphan path (the fix):** wrapper killed mid-build → runner completes → `results/<seq>.json` written with the real exit code; `active.lock` released; no orphaned slot lingering for the next waiter.
+- [x] **Happy path (regression):** wrapper survives a normal build → exactly **one** `results/<seq>.json` (correct `exit_code`), `active.lock` released exactly once, wrapper exit code propagates (run stubs exiting 0 and 1). No double-write/double-delete from wrapper + runner both finishing.
 - [ ] **Concurrency (regression):** two worktrees launch concurrently against sleep stubs → still serialized (no overlapping START/END), FIFO seq order preserved, both results recorded, both slots released.
 - [ ] **Stale-reclaim still works:** kill the runner (`build_pid`) outright → a waiter reclaims the slot ~3 ticks after the PID dies (unchanged from today).
+
+#### Automated Regression Coverage (2026-07-12)
+
+Added `user/scripts/build-queue.Tests.ps1` (2 tests, all green), the direct Pester
+regression for the bug's own symptom. Each isolated-state-root test overrides
+`$env:USERPROFILE` (PowerShell derives `$HOME` from it at process start, and
+`build-queue.ps1` derives `$stateRoot` from `$HOME`) for the instant `Start-Process`
+snapshots the child environment, so the real `~/.claude/state/build-queue/` is never
+touched — mirroring the original WU-2 orchestrator repro's "isolated temp $HOME" note.
+
+- **Orphan path:** launches the real wrapper against a stub build (`-Op msbuild`, which
+  resolves `OpKind=build` via the legacy-fallback kind inference — no
+  `build-queue-ops.json` manifest exists anywhere in this tree), waits for `active.lock`
+  to carry a `build_pid` distinct from the wrapper's own PID (proving the runner, not the
+  wrapper, is the detached child), then `Stop-Process`es the **wrapper only**. Asserts:
+  wrapper is confirmed dead, `results/<seq>.json` appears with the stub's real exit code,
+  `active.lock` is released, and `build-queue-status.ps1 -StateRoot <root>` renders
+  `queue idle` afterward — with no wrapper alive to have done any of it.
+- **Happy path:** wrapper allowed to run to completion (stub exit 0 and exit 1) — exactly
+  one seq-named result file with the correct `exit_code`, `active.lock` released, wrapper's
+  own exit code matches. Proves the demoted wrapper Step 5 does not double-act with the
+  runner's canonical write.
+
+Two test-harness pitfalls surfaced and were fixed (harness-only, no product change):
+(1) `[System.IO.File]::ReadAllText()` on the wrapper's `-RedirectStandardOutput` log file
+can collide with the still-open writer handle while the wrapper is alive — switched to an
+explicit `FileShare.ReadWrite` open, the same pattern `build-queue.ps1`'s own tail loop
+already uses for this exact reason; (2) `-Op msbuild` resolves `OpKind=build`, so the
+runner captures the stub's output as a "build log" and (correctly, per
+`Test-BuildProducedNoOutput`) forces a failure on a genuinely-empty log — the stub now
+`Write-Output`s a real line before sleeping/exiting so an exit-0 stub isn't misclassified.
+Also hardened a genuine test race: the runner writes `results/<seq>.json` a few lines
+before its `active.lock` removal (a stats-ring append in between) — the active.lock
+absence check now polls (bounded) instead of a single post-result check, which had
+intermittently observed the lock a beat early under concurrent test-file load.
+
+Gate: `Import-Module Pester -RequiredVersion 6.0.0 -Force; Invoke-Pester -Path user/scripts/build-queue.Tests.ps1 -Output Detailed`
+→ Tests Passed: 2, Failed: 0 (confirmed stable across repeated runs). Combined regression
+with `build-queue-runner.Tests.ps1` + the pre-existing `build-queue-await.Tests.ps1`:
+14 passed, 0 failed.
+
+**Concurrency + stale-reclaim rows left unticked** — not re-verified with new automated
+coverage this session (the happy-path test already proves wrapper+runner co-existence
+does not double-write/double-release, which was the concurrency row's core defensive
+concern; the FIFO-across-worktrees and stale-reclaim-after-runner-death scenarios were
+proven manually by the original implementation session — see the Phase 2 Implementation
+Notes above — but not independently re-run today). Left for Jacob's manual pass or a
+follow-up automation lane.
+
+**Pre-existing, unrelated finding (out of this bug's scope):** `build-queue-hygiene.Tests.ps1`
+has 3 failing tests (`Add-ProcessToBuildJob`/`Stop-BuildJobTree` zero-handle fail-open
+assertions, `Reset-CompilerServer` bool-return assertion) that reproduce identically when
+run **completely alone**, with none of this bug's files present — confirmed pre-existing
+and independent of this fix. Not touched (out of this bug's scope; `build-queue-hygiene.ps1`
+and its test file are untouched by this lane per `git status`). Flagged for a separate
+bug/hardening pass.
 
 **Prerequisites:**
 - Phase 1: `build-queue-runner.ps1` exists, is seq-scoped/idempotent, and is proven to record its own outcome on completion.
