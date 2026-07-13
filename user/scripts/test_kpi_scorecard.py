@@ -120,8 +120,9 @@ class TestLintGreen:
         assert errors == []
         # The six D8 rows + harness-change-canary-rollback's trip-precision +
         # skill-config-broken-reference-reads + the three
-        # efficacy-signal-integrity intervention-records rows.
-        assert len(registry["kpis"]) == 11
+        # efficacy-signal-integrity intervention-records rows + the
+        # mcp-validation-round-trips-per-feature follow-up row (state batch 2).
+        assert len(registry["kpis"]) == 12
         ids = {r["id"] for r in registry["kpis"]}
         assert "canary-trip-precision" in ids
         assert {"efficacy-verdicts-produced", "confounded-verdict-ratio",
