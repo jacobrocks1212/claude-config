@@ -9,6 +9,8 @@ decisions:
   - "Dispatch-guard contract for WORKSTATION sub-subagent dispatches: how should `lazy_guard.py` distinguish a cycle worker's now-authorized test-agent/impl-agent split from an orchestrator improvising an unregistered cycle prompt, without weakening the integrity guard? (harden Round 9, 2026-07)"
   - "Completion-gate treatment of un-migrated + host-blocked verification rows: add a per-row host-capability deferral so a feature blocked only on host-unavailable backend verification can complete-modulo-deferral instead of all-or-nothing, and/or converge the completion recognizer with the routing bypass? (harden Round 22, 2026-07)"
   - "Corrective-coverage dispatch: add a registered `--emit-dispatch corrective-coverage` class (or a Step-10→mcp-test re-route) to author NEW mcp-test coverage for a genuinely-untested-but-testable row discovered at completion, since coherence-recovery correctly refuses implementation work and no legitimate dispatch path exists? (harden Round 22, 2026-07)"
+  - "GATE_VERDICT.md authoring route: no sanctioned emit-dispatch class authors GATE_VERDICT.md for a genuinely-in-scope control-surface feature at __mark_complete__ — add a `gate-verdict` emit class, make it interactive-only, or move the gate to planning-time? (harden Round 36, 2026-07)"
+  - "Provisional gate at the ship seam: should gate_verdict_ok (D3, STRUCTURALLY PROVISIONAL/unratified) hard-block completion before anti-overfit-design-gate is ratified, or degrade to advisory/planning-time until then? (harden Round 36, 2026-07)"
 date: 2026-06-16
 class: product
 next_skill: harden-harness
@@ -108,6 +110,52 @@ The instance is NOT hard-blocked — the worker's documented fallback ("When you
 - **Leave it manual** — Rejected: a stranded coverage gap forces an out-of-band manual cycle every time, defeating the pipeline's dispatch-for-discovered-work contract.
 
 **Recommendation:** The Step-10 → mcp-test re-route (option 2) IF a clean "uncovered non-exempt verification row remains" predicate can be defined (it reuses the shipped mcp-test dispatch); otherwise the dedicated `corrective-coverage` emit class.
+
+### 7. GATE_VERDICT.md has no in-pipeline authoring route + a provisional gate is live-blocking the ship seam
+
+*(harden Round 36 — 2026-07-13, from the claude-config `state-cli-contract-registry` `/lazy-batch` run.)*
+
+Round 36 mechanically fixed the **run-blocking** half of this dispatch — the completion-gate scope
+derivation was folding a concurrent harden workstream's commits into the active feature's scope
+(`docs/bugs/gate-scope-folds-concurrent-harden-commits/`), so a feature whose OWN commits touch
+zero control surfaces is no longer dragged into `gate_verdict_ok` scope. The two forks below are the
+**latent** half the mechanical fix deliberately does NOT close — they bite a feature whose OWN
+commits genuinely touch a control surface, and they are operator-owned, not mechanical defects.
+
+**Fork 7a — No route authors `GATE_VERDICT.md` in-pipeline.** `gate_verdict_ok` (anti-overfit-design-gate
+D3 ship seam, `lazy_core.py`) refuses `__mark_complete__` for a genuinely-in-scope control-surface
+feature lacking a `GATE_VERDICT.md`, but there is no automated path to author one under a marked run:
+the emit-dispatch classes (`apply-resolution`, `input-audit`, `investigation`, `recovery`,
+`coherence-recovery`, `needs-*`, `hardening`) NONE author it; `coherence-recovery` is hard-scoped to
+PHASES.md reconciliation; the orchestrator's Write/Edit is sentinel-scoped (HARD CONSTRAINT 1) and
+`GATE_VERDICT.md` is not a sentinel; and the dispatch guard denies a hand-composed unregistered
+`Agent`. Net: a `gate_verdict_ok` refusal for a legitimately-in-scope feature has no in-pipeline
+recovery.
+
+- **Option A — new `gate-verdict` emit-dispatch class** authoring `GATE_VERDICT.md` (running the
+  adversarial `_components/harness-change-gate.md` questions), analogous to `coherence-recovery` but
+  scoped to the verdict file. Un-blocks in-pipeline.
+- **Option B — interactive-only authoring**: the batch orchestrator halts a genuinely-in-scope
+  control-surface feature to `NEEDS_INPUT.md` for operator authoring. Preserves the human-judgment
+  intent; blocks autonomous completion of control-surface features.
+- **Option C — planning-time only**: move the verdict requirement to the `/spec` planning seam and
+  REMOVE the completion-time hard block (a present-and-clean `GATE_VERDICT.md` becomes an
+  authoring-time artifact, not a ship-seam gate).
+
+**Fork 7b — A structurally-provisional gate is live-blocking at the ship seam.** `anti-overfit-design-gate`
+is STRUCTURALLY PROVISIONAL (`docs/features/anti-overfit-design-gate/NEEDS_INPUT_PROVISIONAL.md`,
+D1/D3/D4/D7 auto-accepted-not-ratified, `divergence: structural`), yet its D3 ship seam
+(`gate_verdict_ok`) hard-blocks `__mark_complete__` across every control-surface feature. Should a
+provisional, unratified gate hard-block the ship seam before ratification — or degrade to
+advisory/planning-time (Fork-7a option C) until the operator ratifies (or redirects) the provisional
+sentinel? Resolving 7b toward "advisory until ratified" would MOOT 7a's in-pipeline authoring need.
+
+**Recommendation (non-binding):** Fork 7a option A (a `gate-verdict` emit class) if the gate stays a
+completion-time block; OR Fork 7b "advisory until ratified" + Fork 7a option C if the operator
+prefers to defer hard enforcement until anti-overfit-design-gate is ratified. Either path removes the
+no-route dead-end for a genuinely-in-scope feature without weakening the gate's intent. This is a
+gate-semantics / authority fork, surfaced rather than baked silently (Round 36 did NOT self-dispatch
+a second hardening stage — depth-1 cap; the run-blocking half is already fixed mechanically).
 
 ## Why this is surfaced and not auto-applied
 
