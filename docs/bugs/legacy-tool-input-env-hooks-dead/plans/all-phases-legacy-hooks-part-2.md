@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: legacy-tool-input-env-hooks-dead
-status: Ready
+status: In-progress
 created: 2026-07-12
 complexity: mechanical
 phases: [2]
@@ -72,7 +72,7 @@ Where this plan's repo uses non-default gates (this is **claude-config**; the Ph
 
 ## Work Units
 
-- [ ] WU-5 — Retire block-work-repo-git-writes.sh to archived/ (git mv + deprecation row)
+- [x] WU-5 — Retire block-work-repo-git-writes.sh to archived/ (git mv + deprecation row)
 - [ ] WU-6 — Reconcile the root CLAUDE.md Hooks table + user/hooks/CLAUDE.md reference
 
 ---
