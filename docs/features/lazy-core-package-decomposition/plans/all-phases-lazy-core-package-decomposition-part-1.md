@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-core-package-decomposition
-status: Ready
+status: Complete
 created: 2026-07-13
 phases: [1]
 complexity: complex
@@ -75,11 +75,11 @@ Where this plan's repo uses non-default gates or component paths (this is claude
 
 ## Work Units
 
-- [ ] WU-1 — Package skeleton: body move + PEP 562 facade + scripted patch-target redirect
-- [ ] WU-2 — `_ctx.py`: mutable-global + shared-kernel hoist with identity/patchability tests
-- [ ] WU-3 — L2 `_SCRIPTS_DIR` anchor: repoint the six `__file__`-relative lookups
-- [ ] WU-4 — Doc row + control-surface manifest + gate verdict
-- [ ] WU-5 — Commit 1a battery; `load_all()` wiring (commit 1b); benchmark re-run + honest numbers
+- [x] WU-1 — Package skeleton: body move + PEP 562 facade + scripted patch-target redirect
+- [x] WU-2 — `_ctx.py`: mutable-global + shared-kernel hoist with identity/patchability tests
+- [x] WU-3 — L2 `_SCRIPTS_DIR` anchor: repoint the six `__file__`-relative lookups
+- [x] WU-4 — Doc row + control-surface manifest + gate verdict
+- [x] WU-5 — Commit 1a battery; `load_all()` wiring (commit 1b); benchmark re-run + honest numbers
 
 ---
 

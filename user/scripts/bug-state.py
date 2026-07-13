@@ -8007,6 +8007,10 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    # Eager-import the lazy_core package (PEP 562 facade) so a broken submodule
+    # fails at process start, not at first attribute access (SPEC D4-A).
+    lazy_core.load_all()
+
     parser = build_parser()
     args = parser.parse_args()
 

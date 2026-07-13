@@ -38,19 +38,21 @@ changed (only additive script + docs). Suite unaffected (no `lazy_core.py` edit)
 
 - [x] Ratify the L1 facade mechanism (operator) — **RATIFIED 2026-07-13: mechanism 3,
       redirect-the-patches** (interactive session).
-- [ ] Create `user/scripts/lazy_core/` package; move the monolith body into it behind the ratified
+- [x] Create `user/scripts/lazy_core/` package; move the monolith body into it behind the ratified
       facade so `import lazy_core`, `from lazy_core import _atomic_write`, `lazy_core.notify_halt(...)`,
       and **module-attribute monkeypatching** all keep working byte-identically.
-- [ ] **L2 fix (required, not optional):** expose a `_SCRIPTS_DIR` anchor
+- [x] **L2 fix (required, not optional):** expose a `_SCRIPTS_DIR` anchor
       (`Path(__file__).resolve().parent.parent`) and repoint the six `__file__`-relative lookups
       (harness-gate@3141, validate-plan@3975, cycle-template@7659, `__file__`@7871, skill-path
       @12244/@12339) at it.
-- [ ] **L3 fix:** `_ctx.py` owns `_DIAGNOSTICS` (same list object), `_active_repo_root` +
+- [x] **L3 fix:** `_ctx.py` owns `_DIAGNOSTICS` (same list object), `_active_repo_root` +
       `_legacy_state_migrated` behind getter/setter; identity test
       `lazy_core._DIAGNOSTICS is lazy_core._ctx._DIAGNOSTICS` + a mutate-through-facade visibility test.
-- [ ] Update the `user/scripts/CLAUDE.md` `lazy_core.py` row → `lazy_core/` package in the SAME commit
+- [x] Update the `user/scripts/CLAUDE.md` `lazy_core.py` row → `lazy_core/` package in the SAME commit
       (doc-drift-lint doc→disk gate).
-- [ ] Importer-diff guard: no file outside the package + its tests (+ the doc row) is touched.
+- [x] Importer-diff guard: no file outside the package + its tests (+ the doc row) is touched
+      (commit 1a deviation, documented: `validate-plan.py` + `test_validate_plan.py` inbound flat-file
+      loaders were a plan enumeration gap — reviewer-mandated fixes, included to keep the battery green).
 
 Proven done: all 20 importers + 2 hooks + auditors green with zero edits; identity + patchability
 tests pass; benchmark re-run recorded (facade alone may not cut hook cost — record the honest number).
