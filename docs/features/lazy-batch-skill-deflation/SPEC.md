@@ -13,7 +13,31 @@
 **Status:** Draft
 **Friction-reduction feature:** yes
 **Priority:** P2
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-12
+
+## Locked Decisions
+
+Research integrated (this SPEC's own inline recon — reproduced/re-verified 2026-07-12; see
+`RESEARCH_SUMMARY.md`). Per SPEC recommendations:
+
+- **D1 — Excision principle** (`mechanical-internal`): **LOCKED as recommended** — route on
+  verdict fields, never narrate the machinery; keep trigger/invocation/routing-table/hard-
+  constraints/one-line-incident-citation, delete internal-state-ladder restatement.
+- **D3 — Size + long-line ratchet lint** (`mechanical-internal`): **LOCKED as recommended** —
+  extend the skill-lint family with a per-file byte-ceiling + long-line-count ratchet over a
+  committed baseline JSON; opt-in per file; `--lock-in` is the only way to lower a ceiling.
+- **D4 — Coupled-pair mirroring strategy** (`mechanical-internal`): **LOCKED as recommended,
+  FALLBACK path** — `coupled-pair-generation` landed as a byte-faithful generator substrate, but
+  its premise (token-substituted derived bodies) is refuted: most derived-file blocks are
+  `verbatim` overlay entries. This feature therefore hand-mirrors each canonical excision into
+  `lazy-batch-cloud` / `lazy-bug-batch` per their existing divergence tables, then regenerates
+  overlays (`generate-coupled-skills.py --extract`) so `--check` stays green — the fallback
+  D4 explicitly priced in as "the expensive path."
+- **D2 — Motivating-incident narratives relocate to a HISTORY sidecar** (`product-behavior`):
+  **PARKED — provisionally accepted** on recommendation (option A, HISTORY.md sidecar) per
+  `NEEDS_INPUT_PROVISIONAL.md` in this feature dir. Implementation proceeds against option A;
+  Status stays Draft and completion is mechanically blocked until the operator ratifies or
+  redirects.
 **Source:** repo-exploration proposal session 2026-07-11 (line anchors and sizes re-verified
 against the working tree the same day — the file was modified today; all numbers below are
 live measurements)

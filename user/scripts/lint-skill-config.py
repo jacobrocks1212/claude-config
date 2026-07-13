@@ -262,17 +262,6 @@ _PROSE_FALLBACK_HINTS = re.compile(
 # Keyed on (source file, repo-relative POSIX path from repo_root; referenced skill-config
 # filename). Downgrades a finding from error to a printed warning; never deletes it.
 SUPPRESSIONS: dict[tuple[str, str], str] = {
-    ("user/skills/lazy-batch/SKILL.md", "long-build-ownership.md"):
-        "bare prose pointer ('Full rule: ...'), no fallback form, file exists only in "
-        "AlgoBooth — SKILLS-lane follow-up: give it a fallback or scope the mention to "
-        "AlgoBooth (skill-config-schema-and-reference-lint final report).",
-    ("user/skills/lazy-bug-batch/SKILL.md", "long-build-ownership.md"):
-        "same class as lazy-batch/SKILL.md (mirrors the coupled pair) — SKILLS-lane follow-up.",
-    ("user/skills/lazy-batch/SKILL.md", "cycle-prompt-addenda.md"):
-        "bare prose pointer, no fallback form, file exists only in AlgoBooth — SKILLS-lane "
-        "follow-up (skill-config-schema-and-reference-lint final report).",
-    ("user/skills/_components/lazy-dispatch-template.md", "cycle-prompt-addenda.md"):
-        "same class — component prose, no fallback form — SKILLS-lane follow-up.",
     ("user/skills/ingest-research/SKILL.md", "gemini-sprint.md"):
         "aspirational: \"parameterize ... later\" — not a live reference to any repo today.",
 }

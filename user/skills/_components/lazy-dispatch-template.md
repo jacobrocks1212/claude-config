@@ -41,9 +41,9 @@ the field most often dropped post-compaction, so verify it is present on every d
   contents are NOT inlined here; they live in `_components/lazy-batch-prompts/cycle-base-prompt.md`, which
   the SCRIPT reads to assemble `cycle_prompt`.
 - **NEVER hand-append to `cycle_prompt`.** Repo-specific instructions (e.g. an audio-INVARIANTS gate) do
-  NOT belong splice onto the emitted prompt — they live in `<repo>/.claude/skill-config/cycle-prompt-addenda.md`
-  (same `@section` grammar as the base template), which the SCRIPT reads and appends, token-bound and
-  residue-checked, as part of `cycle_prompt`. A live orchestrator hand-spliced the AlgoBooth audio gate
+  NOT belong splice onto the emitted prompt — they live in `<repo>/.claude/skill-config/cycle-prompt-addenda.md` (AlgoBooth-only today; absent in a repo with no such file → no-op, the emitted prompt is unaffected)
+  (same `@section` grammar as the base template), which the SCRIPT reads and appends,
+  token-bound and residue-checked, as part of `cycle_prompt`. A live orchestrator hand-spliced the AlgoBooth audio gate
   onto the prompt on 2026-06-11 — that path is now closed; if a repo gate is missing, add a section to the
   addenda file, do not edit the dispatch.
 - One cycle = one dispatch (HARD CONSTRAINT 4). Never chain sub-skills in a single dispatch.

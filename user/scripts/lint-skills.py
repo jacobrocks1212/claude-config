@@ -394,6 +394,15 @@ def main() -> None:
             "schema checks, and the cross-repo .claude/skill-config/<file> reference sweep."
         ),
     )
+    parser.add_argument(
+        "--check-skill-size",
+        action="store_true",
+        help=(
+            "Also run the skill-size ratchet (skill-size-ratchet.py, lazy-batch-skill-deflation "
+            "D3): per-file byte + long-line ceiling check against the committed "
+            "skill-size-baseline.json. Opt-in per file; a file not listed is unaffected."
+        ),
+    )
     args = parser.parse_args()
     skills_dir = args.skills_dir.expanduser().resolve()
 
@@ -491,6 +500,31 @@ def main() -> None:
             exit_code = 1
         else:
             print("OK — skill-config schema + reference lint clean.")
+
+    # Skill-size ratchet (optional; lazy-batch-skill-deflation D3).
+    if args.check_skill_size:
+        import importlib.util as _ilu
+        _ss_spec = _ilu.spec_from_file_location(
+            "skill_size_ratchet", Path(__file__).resolve().parent / "skill-size-ratchet.py"
+        )
+        skill_size_ratchet = _ilu.module_from_spec(_ss_spec)
+        _ss_spec.loader.exec_module(skill_size_ratchet)
+        ss_repo_root = Path(__file__).resolve().parents[2]
+        ss_baseline = skill_size_ratchet.load_baseline(skill_size_ratchet.default_baseline_path())
+        ss_findings = skill_size_ratchet.check(ss_repo_root, ss_baseline)
+        if ss_findings:
+            for finding in ss_findings:
+                if finding["metric"] == "missing":
+                    print(f"MISSING  {finding['file']} — listed in baseline but not found on disk")
+                else:
+                    print(
+                        f"OVER-CEILING  {finding['file']}  {finding['metric']}="
+                        f"{finding['current']} > ceiling={finding['ceiling']}"
+                    )
+            print(f"\n{len(ss_findings)} skill-size ratchet finding(s) found.")
+            exit_code = 1
+        else:
+            print(f"OK — skill-size ratchet: {len(ss_baseline['files'])} file(s) within ceiling.")
 
     sys.exit(exit_code)
 
