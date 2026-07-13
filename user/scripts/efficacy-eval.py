@@ -82,7 +82,12 @@ def _resolve_target_signal(target_signal) -> "tuple[str, str | None]":
 
     Returns ``(kind, event_type)``:
       - ``("event", <type>)`` — an ``event:<type>`` target; the evaluator
-        counts matching ledger ``event`` fields directly.
+        counts matching ledger ``event`` fields directly. A sub-signal target
+        (``event:<type>/<signature>``, efficacy-signal-integrity D1) resolves
+        to the SAME bare ``<type>`` here — the sub-signal's ``<signature>``
+        component is read separately via ``_target_signature`` and folded into
+        the counting predicate by the caller (this function's contract stays
+        "which ledger event type", not "which sub-signal").
       - ``("kpi", None)`` — a ``kpi:<system>.<kpi-id>`` target. The preferred
         vocabulary resolves through the friction-kpi-registry (SOFT dep, built
         concurrently); until that registry is wired here, kpi targets are
@@ -98,10 +103,89 @@ def _resolve_target_signal(target_signal) -> "tuple[str, str | None]":
         return ("undeclared", None)
     if target_signal.startswith("event:"):
         ev = target_signal[len("event:"):]
+        if "/" in ev:
+            ev = ev.split("/", 1)[0]
         return ("event", ev) if ev else ("invalid", None)
     if target_signal.startswith("kpi:"):
         return ("kpi", None)
     return ("invalid", None)
+
+
+# ---------------------------------------------------------------------------
+# Sub-signal targets (efficacy-signal-integrity D1) — event:<type>/<signature>
+# ---------------------------------------------------------------------------
+
+# v1 scope (D1): the ONE event type with both a verified signature field and a
+# confounding population is gate-refusal, whose `data.gate` values are the
+# CLOSED set of first-positional-argument strings every
+# `append_telemetry_event("gate-refusal", data={"gate": <sig>, ...})` call site
+# passes across lazy-state.py / bug-state.py (verified by grep 2026-07-12).
+# Kept here (not in lazy_core._INTERVENTION_EVENT_VOCABULARY, which validates
+# only the bare <type>) — the capture-side vocabulary check that would also
+# validate <signature> against this set is a STATE-lane seam, reported
+# separately (this evaluator only COUNTS; it does not gate capture).
+_GATE_REFUSAL_SIGNATURES: frozenset[str] = frozenset({
+    "gate-coverage",
+    "unacked-hardening",
+    "efficacy-coverage-missing",
+    "checkpoint-auth",
+    "apply-pseudo",
+    "verify-ledger",
+})
+
+
+def _target_signature(target_signal) -> "str | None":
+    """Return the ``<signature>`` component of an ``event:<type>/<signature>``
+    sub-signal target, else ``None`` (bare ``event:<type>``, non-event,
+    ``undeclared``, or ``invalid``). Pure string parsing — no vocabulary
+    enforcement here (that is capture's job); an unrecognized signature still
+    parses (counts against it honestly — it will simply never match any real
+    ledger event, degrading to a quiet always-zero, never an error)."""
+    if isinstance(target_signal, str) and target_signal.startswith("event:"):
+        rest = target_signal[len("event:"):]
+        if "/" in rest:
+            _, sig = rest.split("/", 1)
+            return sig or None
+    return None
+
+
+def _event_matches_target(event: dict, ev_type: "str | None",
+                          signature: "str | None") -> bool:
+    """The sub-signal-aware counting predicate: an event counts toward a
+    target iff its ``event`` field matches ``ev_type`` AND — when the target
+    declares a sub-signal ``signature`` — its ``data.gate`` matches too. A
+    bare (signature-less) target matches every event of its type, unchanged
+    from pre-sub-signal behavior."""
+    if event.get("event") != ev_type:
+        return False
+    if signature is None:
+        return True
+    return (event.get("data") or {}).get("gate") == signature
+
+
+def _same_signal(a, b) -> bool:
+    """D1 same-signal predicate for the D6 confounder cap: two target_signal
+    strings overlap iff they name the same ``event:<type>`` AND either carries
+    NO sub-signature (a bare/undivided declaration conservatively confounds
+    every sub-signal of its type — SPEC D1: "an undivided declaration still
+    confounds") OR both carry the identical sub-signature. Two DIFFERENT
+    sub-signatures of the same type are DISJOINT (the whole point of the
+    seam). Non-``event:`` targets (kpi:/undeclared/invalid/None) fall back to
+    exact string equality — unchanged pre-sub-signal behavior."""
+    if a == b:
+        return True
+    if not isinstance(a, str) or not isinstance(b, str):
+        return False
+    if not (a.startswith("event:") and b.startswith("event:")):
+        return False
+    kind_a, ev_a = _resolve_target_signal(a)
+    kind_b, ev_b = _resolve_target_signal(b)
+    if kind_a != "event" or kind_b != "event" or ev_a != ev_b:
+        return False
+    sig_a, sig_b = _target_signature(a), _target_signature(b)
+    if sig_a is None or sig_b is None:
+        return True
+    return sig_a == sig_b
 
 
 # ---------------------------------------------------------------------------
@@ -212,10 +296,12 @@ def _compute_verdict(meta: dict, events: list[dict],
         result["reason"] = f"invalid target_signal {meta.get('target_signal')!r}"
         return result
 
+    signature = _target_signature(meta.get("target_signal"))
     window_set = set(window)
     post_events = sum(
         1 for e in events
-        if e.get("run_id") in window_set and e.get("event") == ev_type
+        if e.get("run_id") in window_set
+        and _event_matches_target(e, ev_type, signature)
     )
     post_value = round(post_events / len(window), 4) if window else None
     result["post_events"] = post_events
@@ -417,8 +503,8 @@ def _review_record(rec: dict, all_records: list[dict], events: list[dict],
     mine_target = meta.get("target_signal")
     same_signal = [
         c for c in confounders
-        if c.get("target_signal") == mine_target
-        and mine_target not in (None, "undeclared")
+        if mine_target not in (None, "undeclared")
+        and _same_signal(mine_target, c.get("target_signal"))
     ]
     capped = False
     if same_signal and verdict["verdict"] != "inconclusive":
@@ -506,6 +592,13 @@ CANARY_REGRESSION_BAND_PCT = 25
 CANARY_MIN_POST_OCCURRENCES = 3
 CANARY_INCIDENT_TRIP_COUNT = 2
 
+# efficacy-signal-integrity D2 — canary staleness alarm: a still-open canary
+# within this many days of the 30-day wall-clock ceiling (CANARY_WINDOW_DAYS_
+# CEILING) with ZERO observed post-ship runs is "projected to no-data-close"
+# — the operator should hear about it BEFORE the ceiling silently launders it
+# into `closed-clean (no-data)`.
+CANARY_STALENESS_LOOKAHEAD_DAYS = 7
+
 
 # --- WU-5: D2 tripwire band + D3 surface-based incident attribution ---------
 
@@ -532,10 +625,12 @@ def _canary_band_trip(meta: dict, canary: dict, events: list[dict],
     if not isinstance(baseline, dict) or baseline.get("status") != "frozen":
         out["reason"] = "band-not-evaluable (no frozen baseline)"
         return out
+    signature = _target_signature(meta.get("target_signal"))
     window_set = set(window)
     post_events = sum(
         1 for e in events
-        if e.get("run_id") in window_set and e.get("event") == ev_type
+        if e.get("run_id") in window_set
+        and _event_matches_target(e, ev_type, signature)
     )
     post_value = round(post_events / len(window), 4) if window else 0.0
     base_value = float(baseline.get("value") or 0.0)
@@ -880,6 +975,18 @@ def _canary_window_runs(canary: dict) -> int:
     return lazy_core.CANARY_WINDOW_RUNS_DEFAULT
 
 
+def _canary_age_days(opened, today: str) -> "int | None":
+    """Days elapsed since `opened` (canary staleness alarm — D2). An
+    unparseable date returns None (the caller then skips it from the
+    staleness aggregate rather than fabricating an age)."""
+    try:
+        o = datetime.date.fromisoformat(str(opened))
+        t = datetime.date.fromisoformat(str(today))
+    except (ValueError, TypeError):
+        return None
+    return (t - o).days
+
+
 def _canary_ceiling_matured(opened, today: str) -> bool:
     """True when the 30-day wall-clock ceiling has elapsed since `opened`
     (closes a rarely-run repo's canary even with < window_runs runs). An
@@ -1010,6 +1117,8 @@ def run_canary(repo_root: Path, args, today: str) -> dict:
     closed_no_data: list[str] = []
     closed_clean: list[str] = []
     monitoring: list[dict] = []
+    still_open_ages: list[int] = []
+    projected_no_data = 0
     for rec in open_recs:
         ev = _canary_evaluate_record(rec, events, run_ids, incidents, today)
         if ev["trip"]:
@@ -1048,10 +1157,36 @@ def run_canary(repo_root: Path, args, today: str) -> dict:
                 "attributed": len(ev["attributed"]),
                 "unattributed": len(ev["unattributed"]),
             })
+            # efficacy-signal-integrity D2 — the staleness alarm's population
+            # is exactly the STILL-open set (records neither tripped nor
+            # matured this run): age off the frozen `canary.opened` date, and
+            # "projected to no-data-close" iff it is within the lookahead
+            # window of the 30-day ceiling AND has accrued zero observable
+            # post-ship runs so far.
+            age_days = _canary_age_days(
+                (rec["meta"].get("canary") or {}).get("opened"), today)
+            if age_days is not None:
+                still_open_ages.append(age_days)
+                remaining = lazy_core.CANARY_WINDOW_DAYS_CEILING - age_days
+                if ev["post_runs"] == 0 and remaining <= CANARY_STALENESS_LOOKAHEAD_DAYS:
+                    projected_no_data += 1
 
     notify = None
     if trips:
         notify = "canary tripped: " + ", ".join(t["id"] for t in trips)
+    staleness = {
+        "open_count": len(monitoring),
+        "oldest_age_days": max(still_open_ages) if still_open_ages else 0,
+        "projected_no_data_close_count": projected_no_data,
+        "lookahead_days": CANARY_STALENESS_LOOKAHEAD_DAYS,
+    }
+    staleness_notify = None
+    if staleness["open_count"] > 0:
+        staleness_notify = (
+            f"⚠ {staleness['open_count']} canaries open, oldest "
+            f"{staleness['oldest_age_days']}d, "
+            f"{staleness['projected_no_data_close_count']} will "
+            f"no-data-close within {CANARY_STALENESS_LOOKAHEAD_DAYS}d")
     return {
         "mode": "canary",
         "open_canaries": len(open_recs),
@@ -1060,6 +1195,8 @@ def run_canary(repo_root: Path, args, today: str) -> dict:
         "closed_clean": closed_clean,
         "monitoring": monitoring,
         "notify": notify,
+        "staleness": staleness,
+        "staleness_notify": staleness_notify,
         "dry_run": bool(args.dry_run),
     }
 
@@ -1131,11 +1268,13 @@ def _rebaseline_record(repo_root: Path, intervention_id: str, *,
             "last_run_id": None,
         }
     else:
+        signature = _target_signature(meta.get("target_signal"))
         window = run_ids[-baseline_runs:]
         window_set = set(window)
         count = sum(
             1 for e in events
-            if e.get("run_id") in window_set and e.get("event") == ev_type
+            if e.get("run_id") in window_set
+            and _event_matches_target(e, ev_type, signature)
         )
         baseline = {
             "status": "frozen",
@@ -1251,6 +1390,10 @@ def main(argv: "list[str] | None" = None) -> int:
             payload = {"mode": "canary", "error": f"canary watcher degraded: "
                        f"{exc}", "trips": [], "closed_no_data": [],
                        "monitoring": [], "notify": None,
+                       "staleness": {"open_count": 0, "oldest_age_days": 0,
+                                    "projected_no_data_close_count": 0,
+                                    "lookahead_days": CANARY_STALENESS_LOOKAHEAD_DAYS},
+                       "staleness_notify": None,
                        "dry_run": bool(args.dry_run)}
         if args.json:
             sys.stdout.write(json.dumps(payload, indent=2) + "\n")
@@ -1266,6 +1409,8 @@ def main(argv: "list[str] | None" = None) -> int:
                     f"  ⚠ canary tripped: {t['id']}\n"
                     f"    reason: {t['reason']}\n"
                     f"    {t['consequence']}\n")
+            if payload.get("staleness_notify"):
+                sys.stdout.write(f"  {payload['staleness_notify']}\n")
         return 0
 
     records = _enumerate_records(repo_root, args.id)

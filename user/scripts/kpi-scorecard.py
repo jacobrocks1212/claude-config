@@ -104,7 +104,19 @@ _SOURCES: dict[str, frozenset] = {
         "buddy-first-ask-ctx-tokens",          # pr-review-buddy-phase0-subagent-isolation
         "turn1-baseline-ctx-tokens-noncognito",  # pr-review-plugin-repo-scoping-and-orphan-purge
     }),
+    # efficacy-signal-integrity Phase 3: a pure-read scan of committed
+    # docs/interventions/*.md frontmatter + `## Review <date>` / `## Canary
+    # <date>` body sections — never a re-implementation of the evaluator's
+    # own verdict/canary arithmetic, just a read over what it already wrote.
+    "intervention-records": frozenset({
+        "conclusive-verdict-count",
+        "confounded-verdict-ratio",
+        "canary-closure-latency-p50-days",
+    }),
 }
+
+# vantage.host closed enum (efficacy-signal-integrity D3).
+_VANTAGE_HOSTS = frozenset({"workstation", "cloud", "any"})
 
 _DIRECTIONS = frozenset({"down-is-good", "up-is-good"})
 _PROVENANCES = frozenset({"measured", "retro-derived", "pending"})
@@ -120,6 +132,10 @@ _STATUS_PENDING = "PENDING-BASELINE"
 _STATUS_OK = "OK"
 _STATUS_WARN = "WARN"
 _STATUS_BREACH = "BREACH"
+# efficacy-signal-integrity D3: rendered INSTEAD OF NO-DATA when the current
+# repo/host cannot observe the row's declared vantage — pure classification,
+# no new data access.
+_STATUS_WRONG_VANTAGE = "WRONG-VANTAGE"
 
 _DIRECTION_GLYPH = {"down-is-good": "▼", "up-is-good": "▲"}  # ▼ ▲
 
@@ -277,6 +293,19 @@ def lint_row(row, errors: list, warnings: list, today: datetime.date) -> None:
     for field in ("repo_scope", "notes"):
         if field in row and not isinstance(row.get(field), str):
             errors.append(f"{label}: {field} must be a string when present")
+    vantage = row.get("vantage")
+    if vantage is not None:
+        if not isinstance(vantage, dict):
+            errors.append(f"{label}: vantage must be an object {{repo, host}}")
+        else:
+            v_repo = vantage.get("repo", "any")
+            v_host = vantage.get("host", "any")
+            if not isinstance(v_repo, str) or not v_repo.strip():
+                errors.append(f"{label}: vantage.repo must be a non-empty string")
+            if v_host not in _VANTAGE_HOSTS:
+                errors.append(
+                    f"{label}: vantage.host {v_host!r} not in "
+                    f"{sorted(_VANTAGE_HOSTS)}")
 
 
 def lint_registry(registry, today: datetime.date) -> Tuple[list, list]:
@@ -483,6 +512,97 @@ def _canary_date_epoch(value) -> Optional[float]:
         return None
 
 
+# efficacy-signal-integrity D2 — canary staleness alarm constants. Mirrored
+# (documented, deliberate duplication — kpi-scorecard.py is a pure-read
+# renderer that does not import efficacy-eval.py, same house pattern as
+# lazy_coord.py's documented small-helper duplication from lazy_core.py) from
+# lazy_core.CANARY_WINDOW_DAYS_CEILING / efficacy-eval.py's
+# CANARY_STALENESS_LOOKAHEAD_DAYS.
+_CANARY_WINDOW_DAYS_CEILING = 30
+_CANARY_STALENESS_LOOKAHEAD_DAYS = 7
+
+
+def _canary_age_days(opened, today: datetime.date) -> Optional[int]:
+    """Days elapsed since `opened` (canary staleness alarm). Unparseable →
+    None (skipped from the aggregate, never fabricated)."""
+    try:
+        o = datetime.datetime.strptime(str(opened), "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+    return (today - o).days
+
+
+def _canary_post_run_count(meta: dict, run_ids: list) -> int:
+    """Distinct post-ship run_ids strictly newer than the record's frozen
+    `baseline.last_run_id` (mirrors efficacy-eval.py's `_post_runs`; None
+    boundary ⇒ every run counts)."""
+    baseline = meta.get("baseline") or {}
+    boundary = baseline.get("last_run_id") if isinstance(baseline, dict) else None
+    if boundary is None:
+        return len(run_ids)
+    return sum(1 for r in run_ids if isinstance(r, str) and r > boundary)
+
+
+def _canary_health_summary(repo_root, today: datetime.date) -> dict:
+    """The Canary health section's data: open count, oldest age, and the
+    count of open canaries projected to `closed-clean (no-data)`-close within
+    the lookahead window (nearing the 30-day ceiling AND zero observed
+    post-ship runs so far). Pure read over docs/interventions/*.md; fail-open
+    to an honest all-zero summary on any error."""
+    try:
+        lazy_core = _bind_lazy_core(repo_root)
+        interventions = Path(repo_root) / "docs" / "interventions"
+        open_records = []
+        if interventions.is_dir():
+            for path in sorted(interventions.glob("*.md")):
+                try:
+                    meta = lazy_core.parse_sentinel(path)
+                except (SystemExit, Exception):  # noqa: BLE001
+                    continue
+                if not isinstance(meta, dict):
+                    continue
+                canary = meta.get("canary")
+                if isinstance(canary, dict) and canary.get("status") == "open":
+                    open_records.append((meta.get("intervention_id") or
+                                         path.stem, meta, canary))
+        if not open_records:
+            return {"open_count": 0, "oldest_age_days": 0,
+                    "projected_no_data_close_count": 0, "items": []}
+        try:
+            events = lazy_core.read_intervention_telemetry(repo_root)
+            run_ids = sorted({
+                e.get("run_id") for e in events
+                if isinstance(e.get("run_id"), str) and e.get("run_id")
+            })
+        except Exception:  # noqa: BLE001
+            run_ids = []
+        ages: list = []
+        projected = 0
+        items: list = []
+        for rid, meta, canary in open_records:
+            age = _canary_age_days(canary.get("opened"), today)
+            if age is None:
+                continue
+            ages.append(age)
+            remaining = _CANARY_WINDOW_DAYS_CEILING - age
+            post_count = _canary_post_run_count(meta, run_ids)
+            will_no_data = (remaining <= _CANARY_STALENESS_LOOKAHEAD_DAYS
+                           and post_count == 0)
+            if will_no_data:
+                projected += 1
+            items.append({"id": rid, "age_days": age,
+                         "remaining_days": remaining, "post_runs": post_count})
+        return {
+            "open_count": len(open_records),
+            "oldest_age_days": max(ages) if ages else 0,
+            "projected_no_data_close_count": projected,
+            "items": items,
+        }
+    except Exception:  # noqa: BLE001 — never break a scorecard render
+        return {"open_count": 0, "oldest_age_days": 0,
+                "projected_no_data_close_count": 0, "items": []}
+
+
 def _canary_revert_closed_as_noise(repo_root, rid: str) -> bool:
     """True iff the `canary-revert-<rid>` bug resolved as `Won't-fix` (the
     close-as-noise triage outcome). An open / in-progress / fixed / MISSING
@@ -546,6 +666,147 @@ def _sel_canary_trip_precision(
         1 for rid in trips
         if not _canary_revert_closed_as_noise(repo_root, rid))
     return (round(not_noise / len(trips) * 100.0, 1), None)
+
+
+# -- intervention-records (efficacy-signal-integrity Phase 3) -----------------
+
+_REVIEW_SECTION_RE = re.compile(r"(?m)^## Review (\d{4}-\d{2}-\d{2})\s*$")
+_VERDICT_LINE_RE = re.compile(r"(?m)^- verdict:\s*([A-Z]+)")
+
+
+def _iter_review_sections(body: str):
+    """Yield (date_str, section_text) for each `## Review <date>` section in
+    a record body — everything up to the next `## ` header or EOF."""
+    matches = list(_REVIEW_SECTION_RE.finditer(body))
+    for i, m in enumerate(matches):
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(body)
+        yield (m.group(1), body[start:end])
+
+
+def _sel_conclusive_verdict_count(
+        repo_root, cutoff: float) -> Tuple[Optional[float], Optional[str]]:
+    """Count `## Review` sections in the window whose verdict is CONFIRMED or
+    REFUTED — the measurement-theater KPI (a ledger that never yields a
+    conclusive verdict is not measuring anything)."""
+    interventions = Path(repo_root) / "docs" / "interventions"
+    if not interventions.is_dir():
+        return (None, "no interventions ledger — no reviews have run yet")
+    count = 0
+    any_review = False
+    for path in sorted(interventions.glob("*.md")):
+        try:
+            body = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for date_str, section in _iter_review_sections(body):
+            ts = _canary_date_epoch(date_str)
+            if ts is None or ts < cutoff:
+                continue
+            any_review = True
+            m = _VERDICT_LINE_RE.search(section)
+            if m and m.group(1) in ("CONFIRMED", "REFUTED"):
+                count += 1
+    if not any_review:
+        return (None, "no reviews recorded in the window")
+    return (float(count), None)
+
+
+def _sel_confounded_verdict_ratio(
+        repo_root, cutoff: float) -> Tuple[Optional[float], Optional[str]]:
+    """Share of due reviews in the window capped INCONCLUSIVE (confounded) —
+    the D6 same-signal cap; the sub-signal seam (efficacy-signal-integrity
+    Phase 1) is the lever that moves this down."""
+    interventions = Path(repo_root) / "docs" / "interventions"
+    if not interventions.is_dir():
+        return (None, "no interventions ledger — no reviews have run yet")
+    total = 0
+    confounded = 0
+    for path in sorted(interventions.glob("*.md")):
+        try:
+            body = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        for date_str, section in _iter_review_sections(body):
+            ts = _canary_date_epoch(date_str)
+            if ts is None or ts < cutoff:
+                continue
+            total += 1
+            if "confounded" in section.lower():
+                confounded += 1
+    if total == 0:
+        return (None, "no due reviews in the window — ratio is undefined")
+    return (round(100.0 * confounded / total, 1), None)
+
+
+def _canary_closed_date(meta: dict, body: str) -> Optional[str]:
+    """The closed-on date for a terminal (non-open) canary: the trip date
+    (`canary_revert_enqueued`, stamped at trip — tripped canaries get no `##
+    Canary` body section) for a tripped canary, else the `## Canary <date>`
+    heading date (closed-clean / closed-clean (no-data))."""
+    status = (meta.get("canary") or {}).get("status")
+    if status == "tripped":
+        return meta.get("canary_revert_enqueued")
+    if isinstance(status, str) and status.startswith("closed-clean"):
+        m = re.search(r"(?m)^## Canary (\d{4}-\d{2}-\d{2})", body)
+        return m.group(1) if m else None
+    return None
+
+
+def _sel_canary_closure_latency_p50(
+        repo_root, cutoff: float) -> Tuple[Optional[float], Optional[str]]:
+    """Median opened→closed days over canaries closed in the window,
+    EXCLUDING `closed-clean (no-data)` ceiling closes (those never count as a
+    genuine closure latency — the canary-health alarm counts them
+    separately). Both `closed-clean` and `tripped` count as terminal
+    closures."""
+    lazy_core = _bind_lazy_core(repo_root)
+    interventions = Path(repo_root) / "docs" / "interventions"
+    if not interventions.is_dir():
+        return (None, "no interventions ledger — no canaries have closed")
+    latencies: list = []
+    for path in sorted(interventions.glob("*.md")):
+        try:
+            meta = lazy_core.parse_sentinel(path)
+        except (SystemExit, Exception):  # noqa: BLE001
+            continue
+        if not isinstance(meta, dict):
+            continue
+        canary = meta.get("canary")
+        if not isinstance(canary, dict):
+            continue
+        status = canary.get("status")
+        if status == "closed-clean (no-data)":
+            continue  # excluded per the KPI's own notes
+        if status not in ("closed-clean", "tripped"):
+            continue
+        try:
+            body = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        closed = _canary_closed_date(meta, body)
+        opened_ts = _canary_date_epoch(canary.get("opened"))
+        closed_ts = _canary_date_epoch(closed) if closed else None
+        if opened_ts is None or closed_ts is None:
+            continue
+        if closed_ts < cutoff:
+            continue  # closed before the window
+        latencies.append((closed_ts - opened_ts) / 86400.0)
+    if not latencies:
+        return (None, "no canary closures (excluding no-data) in the window")
+    return (round(statistics.median(latencies), 1), None)
+
+
+def _sel_intervention_records(
+        repo_root, selector: str,
+        cutoff: float) -> Tuple[Optional[float], Optional[str]]:
+    if selector == "conclusive-verdict-count":
+        return _sel_conclusive_verdict_count(repo_root, cutoff)
+    if selector == "confounded-verdict-ratio":
+        return _sel_confounded_verdict_ratio(repo_root, cutoff)
+    if selector == "canary-closure-latency-p50-days":
+        return _sel_canary_closure_latency_p50(repo_root, cutoff)
+    return (None, f"unknown intervention-records selector {selector!r}")
 
 
 def _sel_telemetry(repo_root, selector: str,
@@ -633,6 +894,8 @@ def compute_reading(row, *, repo_root,
             return _sel_deny_count(_deny_windowed(entries, cutoff), selector)
         elif source == "telemetry-ledger":
             return _sel_telemetry(repo_root, selector, cutoff)
+        elif source == "intervention-records":
+            return _sel_intervention_records(repo_root, selector, cutoff)
         elif source == "sentinel-scan":
             if selector == "open-halt-count":
                 return _sel_open_halt_count(repo_root)
@@ -656,9 +919,35 @@ def compute_readings(registry, *, repo_root, now: float) -> dict:
 # Status engine (D4-A) + renderer (Phase 2)
 # ---------------------------------------------------------------------------
 
-def row_status(row, value) -> str:
-    """The D4-A honesty ladder: NO-DATA → PENDING-BASELINE → band comparison."""
+def _vantage_match(row, repo_root, host) -> bool:
+    """efficacy-signal-integrity D3: does the CURRENT (repo_root, host) match
+    the row's declared `vantage`? Absent/non-dict `vantage` → always matches
+    (default any/any, fully backward-compatible). A dimension is checked ONLY
+    when the caller supplies a value for it AND the row declares a non-"any"
+    value — omitting `repo_root`/`host` (old callers, --lint) never produces a
+    WRONG-VANTAGE classification, preserving pre-D3 behavior exactly."""
+    vantage = row.get("vantage")
+    if not isinstance(vantage, dict):
+        return True
+    v_repo = vantage.get("repo", "any")
+    v_host = vantage.get("host", "any")
+    if v_repo not in (None, "any") and repo_root is not None:
+        if Path(repo_root).name != v_repo:
+            return False
+    if v_host not in (None, "any") and host is not None:
+        if host != v_host:
+            return False
+    return True
+
+
+def row_status(row, value, *, repo_root=None, host=None) -> str:
+    """The D4-A honesty ladder: NO-DATA → PENDING-BASELINE → band comparison.
+    efficacy-signal-integrity D3: a NO-DATA value renders WRONG-VANTAGE
+    instead when the current (repo_root, host) cannot observe this row's
+    declared vantage — pure classification swap, no new data access."""
     if value is None:
+        if not _vantage_match(row, repo_root, host):
+            return _STATUS_WRONG_VANTAGE
         return _STATUS_NO_DATA
     baseline = row.get("baseline") or {}
     band = row.get("band")
@@ -711,9 +1000,14 @@ def _band_cell(row) -> str:
     return f"{_fmt_num(band['warn'])} / {_fmt_num(band['breach'])}"
 
 
-def render_scorecard(registry, readings: dict, *, today: datetime.date) -> str:
+def render_scorecard(registry, readings: dict, *, today: datetime.date,
+                     repo_root=None, host=None, canary_health=None) -> str:
     """Render the full SCORECARD.md — a PURE function of (registry, readings,
-    today). No wall-clock embed; unchanged inputs → byte-identical output."""
+    today, repo_root, host, canary_health). No wall-clock embed; unchanged
+    inputs → byte-identical output. `repo_root`/`host` (efficacy-signal-
+    integrity D3) enable the WRONG-VANTAGE classification; omitted, every row
+    renders exactly as before D3 shipped. `canary_health` (D2) feeds the
+    Canary health section; omitted renders an honest "(none open)"."""
     lines = [
         "# Friction KPI Scorecard",
         "",
@@ -721,7 +1015,8 @@ def render_scorecard(registry, readings: dict, *, today: datetime.date) -> str:
         "`user/scripts/kpi-scorecard.py` — script-computed values only, "
         "no embedded wall-clock (freshness is this file's git commit "
         "time). An absent/unrecordable signal renders NO-DATA, never a "
-        "fabricated zero; a `pending` baseline renders PENDING-BASELINE.",
+        "fabricated zero; a `pending` baseline renders PENDING-BASELINE; a "
+        "signal unobservable from this repo/host renders WRONG-VANTAGE.",
         "",
     ]
     kpis = [r for r in registry.get("kpis", []) if isinstance(r, dict)]
@@ -745,7 +1040,7 @@ def render_scorecard(registry, readings: dict, *, today: datetime.date) -> str:
         for row in by_system[system]:
             rid = row.get("id")
             value, note = readings.get(rid, (None, "no reading computed"))
-            status = row_status(row, value)
+            status = row_status(row, value, repo_root=repo_root, host=host)
             window = (row.get("baseline") or {}).get("window", "")
             if value is None:
                 current = "—"
@@ -793,6 +1088,29 @@ def render_scorecard(registry, readings: dict, *, today: datetime.date) -> str:
                 pass
     lines.extend(health if health else ["- (none)"])
 
+    # efficacy-signal-integrity D2: the committed-channel canary staleness
+    # alarm — mirrors the run-end flush notify line so the operator reaches
+    # it even on a day with no run. A `closed-clean (no-data)` close is
+    # ALWAYS a distinct, separately-counted signal from a genuine clean close
+    # (never laundered into silence here either).
+    lines.append("")
+    lines.append("## Canary health")
+    lines.append("")
+    ch = canary_health or {"open_count": 0, "oldest_age_days": 0,
+                           "projected_no_data_close_count": 0}
+    if ch.get("open_count", 0) == 0:
+        lines.append("- (none open)")
+    else:
+        lines.append(
+            f"- {ch['open_count']} canaries open, oldest "
+            f"{ch['oldest_age_days']}d, "
+            f"{ch['projected_no_data_close_count']} will no-data-close "
+            f"within {_CANARY_STALENESS_LOOKAHEAD_DAYS}d")
+        if ch.get("projected_no_data_close_count", 0) > 0:
+            lines.append(
+                "  - ⚠ a no-data close launders an unwatched change as "
+                "observed — investigate before the 30-day ceiling fires.")
+
     if notes:
         lines.append("")
         lines.append("## Notes")
@@ -806,8 +1124,21 @@ def render_scorecard(registry, readings: dict, *, today: datetime.date) -> str:
 # CLI
 # ---------------------------------------------------------------------------
 
+def _resolve_host(host_arg: Optional[str]) -> str:
+    """efficacy-signal-integrity D3: resolve the CURRENT host classification.
+    Explicit `--host` wins; else `LAZY_HOST_KIND` env; else the safe default
+    `workstation` (kpi-scorecard's typical invocation context — the
+    claude-config commit path). An unrecognized value falls back to
+    `workstation` rather than erroring a render."""
+    for candidate in (host_arg, os.environ.get("LAZY_HOST_KIND")):
+        if candidate in _VANTAGE_HOSTS - {"any"}:
+            return candidate
+    return "workstation"
+
+
 def _cmd_render(repo_root: Path, *, stdout: bool, today: datetime.date,
-                now: Optional[float] = None) -> int:
+                now: Optional[float] = None,
+                host: Optional[str] = None) -> int:
     import time
     path = registry_path(repo_root)
     try:
@@ -818,7 +1149,10 @@ def _cmd_render(repo_root: Path, *, stdout: bool, today: datetime.date,
         return 1
     readings = compute_readings(registry, repo_root=repo_root,
                                 now=now if now is not None else time.time())
-    doc = render_scorecard(registry, readings, today=today)
+    canary_health = _canary_health_summary(repo_root, today)
+    doc = render_scorecard(registry, readings, today=today,
+                           repo_root=repo_root, host=_resolve_host(host),
+                           canary_health=canary_health)
     if stdout:
         sys.stdout.write(doc)
         return 0
@@ -1077,6 +1411,10 @@ def main(argv=None) -> int:
                         help="Stamp the row's baseline from the current window "
                              "(provenance: measured). Refuses when the signal "
                              "has no data.")
+    parser.add_argument("--host", default=None, choices=sorted(_VANTAGE_HOSTS - {"any"}),
+                        help="Current host classification for the D3 vantage "
+                             "check (default: $LAZY_HOST_KIND env, else "
+                             "'workstation'). Only affects rendering.")
     args = parser.parse_args(argv)
 
     repo_root = Path(args.repo_root)
@@ -1090,7 +1428,7 @@ def main(argv=None) -> int:
                               today)
     if args.lint:
         return _cmd_lint(repo_root, today)
-    return _cmd_render(repo_root, stdout=args.stdout, today=today)
+    return _cmd_render(repo_root, stdout=args.stdout, today=today, host=args.host)
 
 
 if __name__ == "__main__":

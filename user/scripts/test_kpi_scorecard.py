@@ -118,10 +118,14 @@ class TestLintGreen:
         registry = ksc.load_registry(path)
         errors, warnings = ksc.lint_registry(registry, today=_TODAY)
         assert errors == []
-        # The six D8 rows + the harness-change-canary-rollback trip-precision row.
-        assert len(registry["kpis"]) == 7
+        # The six D8 rows + harness-change-canary-rollback's trip-precision +
+        # skill-config-broken-reference-reads + the three
+        # efficacy-signal-integrity intervention-records rows.
+        assert len(registry["kpis"]) == 11
         ids = {r["id"] for r in registry["kpis"]}
         assert "canary-trip-precision" in ids
+        assert {"efficacy-verdicts-produced", "confounded-verdict-ratio",
+                "canary-closure-latency-p50"} <= ids
 
     def test_up_is_good_band_ordering_valid(self):
         row = _row(direction="up-is-good", band={"warn": 90, "breach": 80})
@@ -746,6 +750,288 @@ class TestCanaryTripPrecision:
         line = next(l for l in doc.splitlines()
                     if "Canary trip precision" in l)
         assert "0" not in line.split("|")[2]       # current cell carries no zero
+
+
+# ---------------------------------------------------------------------------
+# efficacy-signal-integrity Phase 3 — vantage / WRONG-VANTAGE
+# ---------------------------------------------------------------------------
+
+class TestVantageLint:
+    def test_absent_vantage_is_valid(self):
+        errors, _ = _lint(_registry(_row()))
+        assert errors == []
+
+    def test_valid_vantage_object(self):
+        row = _row(vantage={"repo": "claude-config", "host": "workstation"})
+        errors, _ = _lint(_registry(row))
+        assert errors == []
+
+    def test_invalid_host_enum(self):
+        row = _row(vantage={"repo": "claude-config", "host": "laptop"})
+        errors, _ = _lint(_registry(row))
+        assert any("vantage.host" in e for e in errors)
+
+    def test_vantage_must_be_object(self):
+        row = _row(vantage="claude-config")
+        errors, _ = _lint(_registry(row))
+        assert any("vantage must be an object" in e for e in errors)
+
+    def test_vantage_repo_must_be_nonempty_string(self):
+        row = _row(vantage={"repo": "", "host": "any"})
+        errors, _ = _lint(_registry(row))
+        assert any("vantage.repo" in e for e in errors)
+
+
+class TestVantageStatus:
+    def test_no_data_matching_vantage_stays_no_data(self, tmp_path):
+        row = _row(vantage={"repo": tmp_path.name, "host": "workstation"})
+        status = ksc.row_status(row, None, repo_root=tmp_path, host="workstation")
+        assert status == "NO-DATA"
+
+    def test_no_data_wrong_repo_is_wrong_vantage(self, tmp_path):
+        row = _row(vantage={"repo": "some-other-repo", "host": "any"})
+        status = ksc.row_status(row, None, repo_root=tmp_path, host="workstation")
+        assert status == "WRONG-VANTAGE"
+
+    def test_no_data_wrong_host_is_wrong_vantage(self, tmp_path):
+        row = _row(vantage={"repo": "any", "host": "cloud"})
+        status = ksc.row_status(row, None, repo_root=tmp_path, host="workstation")
+        assert status == "WRONG-VANTAGE"
+
+    def test_any_vantage_never_wrong(self, tmp_path):
+        row = _row(vantage={"repo": "any", "host": "any"})
+        status = ksc.row_status(row, None, repo_root=tmp_path, host="workstation")
+        assert status == "NO-DATA"
+
+    def test_value_present_ignores_vantage(self, tmp_path):
+        row = _row(vantage={"repo": "some-other-repo", "host": "cloud"})
+        status = ksc.row_status(row, 3.0, repo_root=tmp_path, host="workstation")
+        assert status in ("OK", "WARN", "BREACH")
+
+    def test_omitted_repo_root_host_never_wrong_vantage(self):
+        """Old callers (--lint, or any caller that never passes repo_root/host)
+        get byte-identical NO-DATA — never a surprise WRONG-VANTAGE."""
+        row = _row(vantage={"repo": "some-other-repo", "host": "cloud"})
+        status = ksc.row_status(row, None)
+        assert status == "NO-DATA"
+
+    def test_render_wrong_vantage(self, tmp_path):
+        row = _row(vantage={"repo": "some-other-repo", "host": "any"})
+        doc = ksc.render_scorecard(
+            _registry(row), {"sample-kpi": (None, "not observable here")},
+            today=_TODAY, repo_root=tmp_path, host="workstation")
+        assert "WRONG-VANTAGE" in doc
+
+
+# ---------------------------------------------------------------------------
+# efficacy-signal-integrity Phase 3 — intervention-records selectors
+# ---------------------------------------------------------------------------
+
+def _ivr_row(selector, **overrides):
+    unit = {"conclusive-verdict-count": "count/90d",
+            "confounded-verdict-ratio": "percent",
+            "canary-closure-latency-p50-days": "days"}[selector]
+    row = _row(id=f"ivr-{selector}",
+              signal={"source": "intervention-records", "selector": selector},
+              unit=unit)
+    row.update(overrides)
+    return row
+
+
+def _write_review_record(repo_root: Path, rid: str, reviews: list) -> None:
+    """A minimal, hand-written (never through the real evaluator — this suite
+    tests kpi-scorecard.py's OWN read, not efficacy-eval.py) intervention
+    record carrying `## Review <date>` sections, mirroring the shape
+    efficacy-eval.py's `_review_record` actually appends."""
+    d = repo_root / "docs" / "interventions"
+    d.mkdir(parents=True, exist_ok=True)
+    lines = ["---", "kind: intervention", f"intervention_id: {rid}",
+             "status: open", "---", ""]
+    for r in reviews:
+        suffix = " (confounded cap)" if r.get("confounded") else ""
+        lines.append(f"## Review {r['date']}")
+        lines.append("")
+        lines.append(f"- verdict: {r['verdict']}{suffix}")
+        if r.get("confounded"):
+            lines.append(
+                "- reason: confounded — same-signal overlap with other-id "
+                "(raw: movement +50.0% vs band ±20% (direction decrease))")
+        else:
+            lines.append(
+                "- reason: movement -50.0% vs band ±20% (direction decrease)")
+        lines.append("")
+    (d / f"{rid}.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+class TestConclusiveVerdictCount:
+    def test_no_interventions_dir_is_no_data(self, tmp_path):
+        value, note = ksc.compute_reading(
+            _ivr_row("conclusive-verdict-count"), repo_root=tmp_path, now=_NOW)
+        assert value is None
+        assert note
+
+    def test_counts_confirmed_and_refuted_not_inconclusive(self, tmp_path):
+        _write_review_record(tmp_path, "rec-a",
+                             [{"date": "2026-07-03", "verdict": "CONFIRMED"}])
+        _write_review_record(tmp_path, "rec-b",
+                             [{"date": "2026-07-03", "verdict": "REFUTED"}])
+        _write_review_record(tmp_path, "rec-c",
+                             [{"date": "2026-07-03", "verdict": "INCONCLUSIVE"}])
+        value, note = ksc.compute_reading(
+            _ivr_row("conclusive-verdict-count"), repo_root=tmp_path, now=_NOW)
+        assert note is None
+        assert value == 2.0
+
+    def test_window_excludes_old_reviews(self, tmp_path):
+        _write_review_record(tmp_path, "rec-old",
+                             [{"date": "2020-01-01", "verdict": "CONFIRMED"}])
+        value, note = ksc.compute_reading(
+            _ivr_row("conclusive-verdict-count"), repo_root=tmp_path, now=_NOW)
+        assert value is None
+        assert "no reviews" in note
+
+
+class TestConfoundedVerdictRatio:
+    def test_no_reviews_is_no_data(self, tmp_path):
+        value, note = ksc.compute_reading(
+            _ivr_row("confounded-verdict-ratio"), repo_root=tmp_path, now=_NOW)
+        assert value is None
+
+    def test_ratio_over_due_reviews(self, tmp_path):
+        _write_review_record(tmp_path, "rec-a", [
+            {"date": "2026-07-03", "verdict": "INCONCLUSIVE", "confounded": True}])
+        _write_review_record(tmp_path, "rec-b",
+                             [{"date": "2026-07-03", "verdict": "CONFIRMED"}])
+        _write_review_record(tmp_path, "rec-c",
+                             [{"date": "2026-07-03", "verdict": "REFUTED"}])
+        _write_review_record(tmp_path, "rec-d",
+                             [{"date": "2026-07-03", "verdict": "INCONCLUSIVE"}])
+        value, note = ksc.compute_reading(
+            _ivr_row("confounded-verdict-ratio"), repo_root=tmp_path, now=_NOW)
+        assert note is None
+        assert value == 25.0        # 1 of 4 due reviews confounded
+
+
+def _write_canary_record(repo_root: Path, rid: str, *, status: str,
+                         opened: str, canary_section_date=None,
+                         enqueued=None, baseline_last_run_id=None) -> None:
+    d = repo_root / "docs" / "interventions"
+    d.mkdir(parents=True, exist_ok=True)
+    lines = ["---", "kind: intervention", f"intervention_id: {rid}"]
+    if baseline_last_run_id is not None:
+        lines += ["baseline:", "  status: frozen",
+                  f"  last_run_id: '{baseline_last_run_id}'"]
+    lines += ["canary:", f"  status: {status}", f"  opened: '{opened}'"]
+    if enqueued is not None:
+        lines.append(f"canary_revert_enqueued: '{enqueued}'")
+    lines += ["---", ""]
+    if canary_section_date is not None:
+        lines.append(f"## Canary {canary_section_date}")
+        lines.append("")
+        lines.append(
+            "- window: closed after 4/4 observed post-ship run(s) "
+            "(matured: True)")
+        lines.append("")
+    (d / f"{rid}.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+class TestCanaryClosureLatency:
+    def test_no_interventions_dir_is_no_data(self, tmp_path):
+        value, note = ksc.compute_reading(
+            _ivr_row("canary-closure-latency-p50-days"), repo_root=tmp_path,
+            now=_NOW)
+        assert value is None
+
+    def test_closed_clean_latency_median(self, tmp_path):
+        _write_canary_record(tmp_path, "clean-a", status="closed-clean",
+                             opened="2026-06-20",
+                             canary_section_date="2026-06-25")   # 5 days
+        _write_canary_record(tmp_path, "clean-b", status="closed-clean",
+                             opened="2026-06-15",
+                             canary_section_date="2026-06-25")   # 10 days
+        value, note = ksc.compute_reading(
+            _ivr_row("canary-closure-latency-p50-days"), repo_root=tmp_path,
+            now=_NOW)
+        assert note is None
+        assert value == 7.5
+
+    def test_no_data_close_excluded(self, tmp_path):
+        _write_canary_record(tmp_path, "nodata",
+                             status="closed-clean (no-data)",
+                             opened="2026-06-01",
+                             canary_section_date="2026-07-01")
+        value, note = ksc.compute_reading(
+            _ivr_row("canary-closure-latency-p50-days"), repo_root=tmp_path,
+            now=_NOW)
+        assert value is None
+
+    def test_tripped_uses_revert_enqueued_date(self, tmp_path):
+        _write_canary_record(tmp_path, "tripped-a", status="tripped",
+                             opened="2026-06-20", enqueued="2026-06-30")
+        value, note = ksc.compute_reading(
+            _ivr_row("canary-closure-latency-p50-days"), repo_root=tmp_path,
+            now=_NOW)
+        assert note is None
+        assert value == 10.0
+
+    def test_open_canary_not_counted(self, tmp_path):
+        _write_canary_record(tmp_path, "still-open", status="open",
+                             opened="2026-06-01")
+        value, note = ksc.compute_reading(
+            _ivr_row("canary-closure-latency-p50-days"), repo_root=tmp_path,
+            now=_NOW)
+        assert value is None
+
+
+# ---------------------------------------------------------------------------
+# efficacy-signal-integrity Phase 2/3 — Canary health section
+# ---------------------------------------------------------------------------
+
+class TestCanaryHealthSummary:
+    def test_no_open_canaries_is_all_zero(self, tmp_path):
+        ch = ksc._canary_health_summary(tmp_path, _TODAY)
+        assert ch["open_count"] == 0
+        assert ch["oldest_age_days"] == 0
+        assert ch["projected_no_data_close_count"] == 0
+
+    def test_open_canary_ages_and_projects_no_data(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("LAZY_STATE_DIR", str(tmp_path / "state"))
+        _write_canary_record(tmp_path, "stale-one", status="open",
+                             opened="2026-06-09")   # 25 days before _TODAY
+        ch = ksc._canary_health_summary(tmp_path, _TODAY)
+        assert ch["open_count"] == 1
+        assert ch["oldest_age_days"] == 25
+        assert ch["projected_no_data_close_count"] == 1
+
+    def test_open_canary_with_observed_run_not_projected(self, tmp_path,
+                                                         monkeypatch):
+        state = tmp_path / "state"
+        monkeypatch.setenv("LAZY_STATE_DIR", str(state))
+        _write_canary_record(tmp_path, "stale-but-observed", status="open",
+                             opened="2026-06-09",
+                             baseline_last_run_id="2026-06-01T00:00:00Z")
+        _write_telemetry(state, [
+            _tel_event("run-start", ts=_NOW, run_id="2026-07-01T00:00:00Z"),
+        ])
+        ch = ksc._canary_health_summary(tmp_path, _TODAY)
+        assert ch["open_count"] == 1
+        assert ch["projected_no_data_close_count"] == 0
+
+    def test_render_includes_canary_health_section(self):
+        doc = ksc.render_scorecard(
+            _registry(_row()), {"sample-kpi": (1.0, None)}, today=_TODAY,
+            canary_health={"open_count": 2, "oldest_age_days": 24,
+                          "projected_no_data_close_count": 1})
+        section = doc.split("## Canary health", 1)[1]
+        assert ("2 canaries open, oldest 24d, 1 will no-data-close within 7d"
+               in section)
+        assert "⚠" in section
+
+    def test_render_no_open_canaries(self):
+        doc = ksc.render_scorecard(_registry(_row()), {"sample-kpi": (1.0, None)},
+                                   today=_TODAY)
+        section = doc.split("## Canary health", 1)[1].split("##", 1)[0]
+        assert "(none open)" in section
 
 
 # ---------------------------------------------------------------------------

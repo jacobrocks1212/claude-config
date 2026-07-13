@@ -8,10 +8,16 @@
 > distinguishes "wrong repo/machine to observe this" from "signal genuinely absent", and the
 > scorecard regenerates where its registry actually lives.
 
-**Status:** Draft
+**Status:** In-progress
 **Priority:** P2
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-12
 **Source:** repo-exploration proposal session 2026-07-11
+
+> **Finalization note (2026-07-12):** D1/D3 (`mechanical-internal (proposed)`) auto-accepted per
+> their SPEC recommendations. D2/D4 (`product-behavior`) provisionally adopted per the overnight
+> park-provisional protocol — see `NEEDS_INPUT_PROVISIONAL.md` for the ratify-or-redirect record.
+> All three phases are implemented and gated green (see `PHASES.md`); the feature is NOT flipped
+> to Complete pending D2/D4 ratification.
 
 **Friction-reduction feature:** yes — it is the measurement plane itself: every KPI below measures
 whether the efficacy loop produces usable verdicts instead of structurally-guaranteed INCONCLUSIVEs.
@@ -160,13 +166,13 @@ for trip precision ever being computable):
 
 - kpi: canary-trip-precision
 
-Three new rows are drafted below with **pending** baselines (`band: null` — never a fabricated
+Three new rows were drafted below with **pending** baselines (`band: null` — never a fabricated
 zero). Their signal source (`intervention-records`, a pure-read scan of committed
-`docs/interventions/*.md` frontmatter) and selectors are registered in `kpi-scorecard.py`
-(`_SOURCES`) **at spec-finalization**, per the `canary-trip-precision` / `session-log-mining`
-precedent ("registered at spec-finalization so the drafted rows lint clean") — until then the
-drafts are carried in non-lintable fences deliberately, because this Draft session may not edit
-`kpi-scorecard.py`. At finalization the fences flip to `json` and lint as full-schema rows.
+`docs/interventions/*.md` frontmatter) and selectors are now REGISTERED in `kpi-scorecard.py`
+(`_SOURCES`), per the `canary-trip-precision` / `session-log-mining` precedent — landed this
+session (Phase 3). The three rows below are committed as full-schema entries in
+`docs/kpi/registry.json` (lint-clean, verified via `kpi-scorecard.py --lint`); the fenced blocks
+here are retained verbatim as the historical draft record.
 
 ```jsonc
 {
@@ -229,7 +235,14 @@ drafts are carried in non-lintable fences deliberately, because this Draft sessi
 
 ## Open Questions
 
-- D2/D4 operator ratification (alarm thresholds as a registry band; regen commit point) at
-  finalization.
+- **D2/D4 operator ratification** — provisionally adopted per `NEEDS_INPUT_PROVISIONAL.md`
+  (2026-07-12); pending ratify-or-redirect before this feature completes. D2 (alarm channel) is
+  fully implemented; D4 (regen commit point)'s orchestrator-prose wiring is a reported SKILLS-lane
+  cross-lane seam, not yet landed.
 - Whether the `intervention-records` source should also feed the visualizer trends page once the
   telemetry trends work lands (rendering add only — the computation stays in `kpi-scorecard.py`).
+- **Cross-lane seam (new, 2026-07-12):** `lazy_core.validate_intervention_target_signal` /
+  `_intervention_signal_event` do not yet parse `event:<type>/<signature>` — a sub-signal
+  `target_signal` degrades to `undeclared` at capture time until that STATE-lane gate is
+  extended. Reported for the STATE lane; the evaluation-side seam (this feature's Phase 1) is
+  fully landed and tested via the `--rebaseline` workaround.

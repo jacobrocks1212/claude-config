@@ -26,6 +26,7 @@ Run with: python -m pytest user/scripts/test_efficacy_eval.py -q
 
 from __future__ import annotations
 
+import datetime
 import io
 import json
 import os
@@ -75,9 +76,12 @@ def state_env(tmp_path, monkeypatch):
 
 
 def _seed_runs(n: int, events_per_run: int, *, start: int = 0,
-               event: str = "gate-refusal") -> list[str]:
+               event: str = "gate-refusal",
+               data: dict | None = None) -> list[str]:
     """Seed `n` fixture runs (run index `start`..`start+n-1`) into the
-    LAZY_STATE_DIR ledger via the REAL marker + emitter. Returns run_ids."""
+    LAZY_STATE_DIR ledger via the REAL marker + emitter. Returns run_ids.
+    `data` (efficacy-signal-integrity D1) stamps every emitted event's `data`
+    payload — e.g. `{"gate": "gate-coverage"}` for a sub-signal fixture."""
     run_ids: list[str] = []
     for i in range(start, start + n):
         now = _BASE_NOW + i * 3600.0
@@ -93,7 +97,8 @@ def _seed_runs(n: int, events_per_run: int, *, start: int = 0,
         ) is True
         for j in range(events_per_run):
             assert lazy_core.append_telemetry_event(
-                event, item_id=f"i{i}", data={}, now=now + 1.0 + j,
+                event, item_id=f"i{i}", data=dict(data or {}),
+                now=now + 1.0 + j,
             ) is True
     return run_ids
 
@@ -393,6 +398,145 @@ def test_malformed_repo_root_exits_2(state_env):
         code = eff.main(["--repo-root",
                          str(state_env["repo"] / "nope-not-a-dir"), "--json"])
     assert code == 2
+
+
+# ---------------------------------------------------------------------------
+# Sub-signal targets (efficacy-signal-integrity D1) — event:<type>/<signature>
+# ---------------------------------------------------------------------------
+
+
+def _set_target_signal(rec_path: Path, target_signal: str) -> None:
+    """Fixture-only mutation (mirrors `_add_canary`'s pattern below): directly
+    set `target_signal` on an existing record via parse -> mutate -> the
+    SHARED serializer. `lazy_core.record_intervention`'s capture-time
+    vocabulary check (`validate_intervention_target_signal`) does not yet
+    parse the `event:<type>/<signature>` sub-signal syntax — it degrades ANY
+    unrecognized `event:` string to `undeclared` before the record is ever
+    written (a reported STATE-lane seam; see the feature report). This
+    bypasses only THAT gate, exactly the way `_add_canary` bypasses the
+    canary-registration capture path to fixture the watcher's input — real
+    record IO throughout, never a hand-rolled shape."""
+    meta = lazy_core.parse_sentinel(rec_path)
+    body = eff._split_record_body(rec_path.read_text(encoding="utf-8"))
+    meta["target_signal"] = target_signal
+    lazy_core._atomic_write(
+        rec_path, lazy_core._render_intervention_record(meta, body))
+
+
+def _capture_subsignal(repo: Path, rid: str, *, target: str,
+                       direction: str = "decrease", review_after: int = 4,
+                       min_sample: int = 5, band: int = 20,
+                       shipped_date: str | None = None) -> Path:
+    """Capture a normal (valid, non-sub-signal) record, fixture-mutate
+    `target_signal` to the sub-signal string (`_set_target_signal`), then
+    re-freeze the baseline via efficacy-eval's OWN `--rebaseline` — the
+    sub-signal-aware path (mine). `lazy_core`'s capture-time baseline freeze
+    would otherwise use whatever bare target the record was captured under,
+    so re-freezing after the mutation is required for a baseline that
+    actually reflects the sub-signal's counting predicate."""
+    rec = _capture(repo, rid, target="event:gate-refusal", direction=direction,
+                   review_after=review_after, min_sample=min_sample,
+                   band=band, shipped_date=shipped_date)
+    _set_target_signal(rec, target)
+    code, _ = _run_eval(repo, "--rebaseline", rid)
+    assert code == 0
+    return rec
+
+
+def test_sub_signal_targets_grade_disjointly(state_env):
+    """D1 + Validation Criteria row 1: two records on DIFFERENT gate-refusal
+    sub-signals with overlapping post windows both grade CONCLUSIVELY — the
+    sub-signals are DISJOINT, so neither confounds the other."""
+    repo = state_env["repo"]
+    _seed_runs(4, 2, data={"gate": "gate-coverage"})            # runs 0-3
+    _capture_subsignal(repo, "sub-a", target="event:gate-refusal/gate-coverage",
+                       shipped_date="2026-07-01")
+    _seed_runs(4, 2, start=4, data={"gate": "apply-pseudo"})     # runs 4-7
+    _capture_subsignal(repo, "sub-b", target="event:gate-refusal/apply-pseudo",
+                       shipped_date="2026-07-02")
+    _seed_runs(4, 0, start=8)                                    # runs 8-11: post
+    code, payload = _run_eval(repo)
+    assert code == 0
+    va = _verdict_of(payload, "sub-a")
+    vb = _verdict_of(payload, "sub-b")
+    assert va["verdict"] == "confirmed", va
+    assert vb["verdict"] == "confirmed", vb
+    assert "confounded" not in va["reason"]
+    assert "confounded" not in vb["reason"]
+
+
+def test_bare_target_still_confounds_sub_signal(state_env):
+    """D1 (conservative overlap) + Validation Criteria row 2: an undivided
+    bare `event:gate-refusal` declaration confounds EVERY sub-signal of its
+    type — both records would otherwise CONFIRM; the cap forces both to
+    INCONCLUSIVE (confounded)."""
+    repo = state_env["repo"]
+    _seed_runs(4, 2, data={"gate": "apply-pseudo"})              # runs 0-3
+    _capture_subsignal(repo, "sub-target",
+                       target="event:gate-refusal/apply-pseudo",
+                       shipped_date="2026-07-01")
+    _seed_runs(4, 2, start=4, data={"gate": "gate-coverage"})     # runs 4-7
+    _capture(repo, "bare-target", target="event:gate-refusal",
+             shipped_date="2026-07-02")
+    _seed_runs(4, 0, start=8)                                     # runs 8-11: post
+    code, payload = _run_eval(repo)
+    assert code == 0
+    v_bare = _verdict_of(payload, "bare-target")
+    v_sub = _verdict_of(payload, "sub-target")
+    assert v_bare["verdict"] == "inconclusive" and "confounded" in v_bare["reason"], v_bare
+    assert v_sub["verdict"] == "inconclusive" and "confounded" in v_sub["reason"], v_sub
+
+
+# ---------------------------------------------------------------------------
+# Canary staleness alarm (efficacy-signal-integrity D2)
+# ---------------------------------------------------------------------------
+
+
+def test_canary_staleness_alarm_precedes_ceiling(state_env):
+    """D2 + Validation Criteria row 3: a still-open canary within the
+    lookahead window of the 30-day ceiling, with ZERO observed post-ship
+    runs, surfaces via `staleness`/`staleness_notify` BEFORE the ceiling
+    fires (no close yet)."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)
+    rec = _capture(repo, "stale-soon")
+    opened = (datetime.date.today() - datetime.timedelta(days=25)).isoformat()
+    _add_canary(rec, opened=opened, window_runs=100)
+    code, payload = _run_canary(repo)
+    assert code == 0
+    assert _mon_of(payload, "stale-soon") is not None    # still open, no close
+    staleness = payload["staleness"]
+    assert staleness["open_count"] == 1
+    assert staleness["oldest_age_days"] == 25
+    assert staleness["projected_no_data_close_count"] == 1
+    assert payload["staleness_notify"] is not None
+    assert "1 canaries open" in payload["staleness_notify"]
+    assert "will no-data-close within 7d" in payload["staleness_notify"]
+
+
+def test_canary_staleness_notify_zero_projected_when_not_near_ceiling(state_env):
+    """A fresh open canary (far from the ceiling) still surfaces in the
+    continuous open-canary gauge, but with a projected no-data-close count of
+    zero (no false alarm)."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)
+    rec = _capture(repo, "fresh-canary")
+    _add_canary(rec, opened=datetime.date.today().isoformat(), window_runs=100)
+    code, payload = _run_canary(repo)
+    assert payload["staleness"]["open_count"] == 1
+    assert payload["staleness"]["projected_no_data_close_count"] == 0
+    assert payload["staleness_notify"] is not None
+    assert "0 will no-data-close" in payload["staleness_notify"]
+
+
+def test_canary_staleness_silent_when_no_open_canaries(state_env):
+    """No open canaries at all → the continuous gauge reports zero and emits
+    no notify line."""
+    repo = state_env["repo"]
+    code, payload = _run_canary(repo)
+    assert code == 0
+    assert payload["staleness"]["open_count"] == 0
+    assert payload["staleness_notify"] is None
 
 
 # ---------------------------------------------------------------------------

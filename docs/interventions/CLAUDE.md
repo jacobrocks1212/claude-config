@@ -118,6 +118,49 @@ Optional per-record D5 overrides: `- baseline_runs: N` · `- min_sample: N` · `
 `friction-kpi-registry` (until wired into `efficacy-eval.py::_resolve_target_signal`, a kpi
 target reviews as `INCONCLUSIVE (kpi-unresolvable)` — honest, never an error).
 
+### Sub-signal targets (`efficacy-signal-integrity` D1) — `event:<type>/<signature>`
+
+`event:gate-refusal` targets may additionally declare a **sub-signal** —
+`event:gate-refusal/<signature>` where `<signature>` matches the emitted event's
+`data.gate` value (the closed set every `append_telemetry_event("gate-refusal", data=
+{"gate": ...})` call site passes: `gate-coverage`, `unacked-hardening`,
+`efficacy-coverage-missing`, `checkpoint-auth`, `apply-pseudo`, `verify-ledger` — v1 scope
+is `gate-refusal` only, the one event type with both a verified signature field and a
+confounding population). The evaluator (`efficacy-eval.py::_resolve_target_signal` +
+`_target_signature` + `_event_matches_target`) counts only ledger events whose `event`
+type AND `data.gate` both match. The D6 same-signal confounder cap
+(`efficacy-eval.py::_same_signal`) then treats two DIFFERENT sub-signals of the same type
+as **disjoint** (each grades its own co-shipped hardening round conclusively), while a
+bare, undivided `event:gate-refusal` declaration still **conservatively confounds every
+sub-signal of its type** (an undivided declaration cannot rule out overlap).
+
+> **Capture-side seam (not yet closed):** `lazy_core.validate_intervention_target_signal`
+> and `lazy_core._intervention_signal_event` do not yet parse the `/<signature>` suffix —
+> a sub-signal `target_signal` declared in a SPEC's `## Intervention Hypothesis` block or a
+> `--record-intervention --target-signal` CLI call is degraded to `undeclared` at capture
+> time (the closed-vocabulary check rejects the unsplit `gate-refusal/<signature>` string).
+> Until that STATE-lane seam is closed, a sub-signal record must be captured under a plain
+> `event:gate-refusal` (or any valid target) and then have its `target_signal` field
+> corrected and its baseline re-frozen via `efficacy-eval.py --rebaseline <id>` (the
+> evaluator's own sub-signal-aware re-freeze path) before its sub-signal counting takes
+> effect. See `docs/features/efficacy-signal-integrity/`.
+
+### Canary staleness alarm (`efficacy-signal-integrity` D2)
+
+`efficacy-eval.py --canary` additionally computes a **continuous staleness gauge** over
+every still-open canary after this run's trips/closes are applied: open count, oldest age
+(days since `opened`), and a **projected no-data-close count** — open canaries within
+`CANARY_STALENESS_LOOKAHEAD_DAYS` (7) of the 30-day wall-clock ceiling
+(`CANARY_WINDOW_DAYS_CEILING`) that have accrued **zero** observable post-ship runs so far.
+Surfaced as `staleness` (`{open_count, oldest_age_days, projected_no_data_close_count,
+lookahead_days}`) and a one-line `staleness_notify` (`"⚠ N canaries open, oldest Xd, M
+will no-data-close within 7d"`, rendered whenever `open_count > 0`) in both the `--json`
+payload and the plain-text flush output — reaching the operator **before** the 30-day
+ceiling silently launders an unwatched canary into `closed-clean (no-data)`, not after.
+`docs/kpi/SCORECARD.md`'s `## Canary health` section (`kpi-scorecard.py::
+_canary_health_summary`) mirrors the same three numbers as a committed channel the
+operator can read without a live run.
+
 ## Backfill (D9 — manual opt-in only)
 
 No bulk backfill. To measure an already-shipped change:
