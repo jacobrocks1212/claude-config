@@ -195,6 +195,13 @@ def _state(
     # "budget_guard" / "gated_heads".
     if _BUDGET_RESUMED is not None:
         out["budget_resumed_near_complete"] = _BUDGET_RESUMED
+    # guard-fail-open-leaves-no-trace item 4 (STATE-lane descoped residual):
+    # the REPORT-ONLY "guards executed 0 times this run" advisory, surfaced
+    # ONLY when lazy_core.guard_plane_heartbeat() returned a verdict (None
+    # before the marker/min-cycle threshold — default output byte-identical
+    # on a fresh/short run). NEVER gates any route.
+    if _GUARD_PLANE_HEARTBEAT is not None:
+        out["guard_plane_heartbeat"] = dict(_GUARD_PLANE_HEARTBEAT)
     return out
 
 
@@ -288,6 +295,14 @@ _BUDGET_RESUMED: str | None = None
 # "dep_gated" probe key ONLY when non-empty (byte-identity discipline). Reset
 # at the start of each compute_state().
 _DEP_GATED: list = []
+
+# guard-fail-open-leaves-no-trace item 4 (STATE-lane descoped residual): the
+# REPORT-ONLY "guards executed 0 times this run" advisory
+# (lazy_core.guard_plane_heartbeat()'s verdict dict, or None). Surfaced via
+# the "guard_plane_heartbeat" probe key ONLY when not None (byte-identity
+# discipline — a fresh/short run's default output is unchanged). Recomputed
+# at the start of each compute_state(); NEVER gates any route.
+_GUARD_PLANE_HEARTBEAT: dict | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -1674,6 +1689,15 @@ def compute_state(
     # resume-flush surfaced feature_id for this invocation.
     _BUDGET_RESUMED = None
     repo_root = repo_root.resolve()
+
+    # guard-fail-open-leaves-no-trace item 4 (STATE-lane descoped residual):
+    # a REPORT-ONLY, never-halting "guards executed 0 times this run"
+    # advisory. Computed once per probe (cheap: two small bounded file
+    # reads); folded into the output ONLY when lazy_core returns a verdict
+    # (None before the marker/min-cycle threshold — see its docstring for
+    # the honesty caveat). Never gates any route below.
+    global _GUARD_PLANE_HEARTBEAT
+    _GUARD_PLANE_HEARTBEAT = lazy_core.guard_plane_heartbeat()
 
     # WU-8: auto-trigger stale-upstream detection at probe start when an ADO
     # materialization mirror exists. check_stale_upstream writes STALE_UPSTREAM.md
@@ -3333,6 +3357,46 @@ def compute_state(
                     current_step="Step 7a: flip plan Complete (cloud-saturated)",
                     sub_skill="__flip_plan_complete_cloud_saturated__",
                     sub_skill_args=str(plan),
+                )
+            # plan-structure-authoring-gate Phase 4 pickup backstop: validate
+            # the plan part STRUCTURALLY (in-process, via validate-plan.py's
+            # run_structural_checks) at first /execute-plan routing. A FRESH
+            # plan (zero ticked WUs) carrying a structural ERROR refuses the
+            # route (BLOCKED.md, blocker_kind: plan-structural-invalid); a
+            # plan already mid-execution (>=1 ticked WU) is WARN-only and
+            # falls through — never blocks in-flight work.
+            _pstruct = lazy_core.plan_structural_backstop(plan)
+            if not _pstruct["ok"]:
+                blocked_file = spec_path / "BLOCKED.md"
+                if not blocked_file.exists():
+                    body = lazy_core.format_plan_structural_blocker(
+                        str(plan), _pstruct["findings"],
+                    )
+                    _write_yaml_blocked_sentinel(
+                        blocked_file,
+                        feature_id=feature_id,
+                        phase="Plan structural validation",
+                        blocker_kind="plan-structural-invalid",
+                        blocked_at=lazy_core.utc_now_iso(),
+                        retry_count=0,
+                        body=body,
+                    )
+                _diag(
+                    f"plan-structural-invalid: {plan} fails structural "
+                    f"validation with zero ticked WUs (fresh) — wrote "
+                    f"BLOCKED.md (blocker_kind: plan-structural-invalid)."
+                )
+                return _state(
+                    feature_id=feature_id,
+                    feature_name=feature_name,
+                    spec_path=spec_path_str,
+                    current_step="Step 7a: blocked (plan structurally invalid)",
+                    terminal_reason="blocked",
+                    notify_message=(
+                        f"BLOCKED: {feature_name} — plan {plan.name} fails "
+                        f"structural validation (plan-structural-invalid). "
+                        f"Awaiting input."
+                    ),
                 )
             return _state(
                 **common,
@@ -5543,6 +5607,69 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         )
         # No RETRO_DONE.md, no DEFERRED_NON_CLOUD.md.
 
+    elif name == "plan-structural-backstop-refuses-fresh-invalid":
+        # plan-structure-authoring-gate Phase 4 pickup backstop: a FRESH plan
+        # (zero ticked WUs) carrying an unfilled WU-checklist template-row
+        # placeholder must REFUSE the /execute-plan route (BLOCKED.md,
+        # blocker_kind: plan-structural-invalid) rather than dispatch.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-pstruct-fresh", "name": "Feature PStruct Fresh",
+                 "spec_dir": "feat-pstruct-fresh", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        pf = features / "feat-pstruct-fresh"
+        pf.mkdir()
+        (pf / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        (pf / "RESEARCH.md").write_text("# R\n")
+        (pf / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (pf / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] WU1 implement the thing\n"
+        )
+        plans = pf / "plans"
+        plans.mkdir()
+        (plans / "all-phases-pstruct-fresh.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-pstruct-fresh\n"
+            "status: Ready\ncreated: 2026-07-12\nphases: [1]\n---\n\n"
+            "## Work Units\n- [ ] WU-N — <short title>\n"
+        )
+
+    elif name == "plan-structural-backstop-mid-execution-warns":
+        # Same structural defect as above, but the plan already has >=1
+        # ticked WU (mid-execution — already in flight). The backstop must
+        # WARN, never refuse: sub_skill stays execute-plan.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-pstruct-mid", "name": "Feature PStruct Mid",
+                 "spec_dir": "feat-pstruct-mid", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        pm = features / "feat-pstruct-mid"
+        pm.mkdir()
+        (pm / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n"
+        )
+        (pm / "RESEARCH.md").write_text("# R\n")
+        (pm / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (pm / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n"
+            "- [x] WU1 implement the thing\n"
+            "- [ ] WU2 more work\n"
+        )
+        plans = pm / "plans"
+        plans.mkdir()
+        (plans / "all-phases-pstruct-mid.md").write_text(
+            "---\nkind: implementation-plan\nfeature_id: feat-pstruct-mid\n"
+            "status: In-progress\ncreated: 2026-07-12\nphases: [1]\n---\n\n"
+            "## Work Units\n"
+            "- [x] WU-1 — did something real\n"
+            "- [ ] WU-N — <short title>\n"
+        )
+
     elif name == "finalize-plan-verification-rows-only-flips":
         # Phase 8 (lazy-validation-readiness) — close the /execute-plan
         # finalization gap, option (b). The plan's phase scope has all its
@@ -6372,6 +6499,19 @@ def run_smoke_tests() -> int:
             ("ready-plan-unchecked-in-scope-still-executes", False, False, {
                 "sub_skill": "execute-plan",
                 "feature_id": "feat-live",
+                "current_step": "Step 7a: execute plan",
+            }),
+            # plan-structure-authoring-gate Phase 4 pickup backstop: a FRESH
+            # structurally-invalid plan (zero ticked WUs) refuses the route.
+            ("plan-structural-backstop-refuses-fresh-invalid", False, False, {
+                "terminal_reason": "blocked",
+                "feature_id": "feat-pstruct-fresh",
+            }),
+            # Same defect, but mid-execution (>=1 ticked WU) — WARN-only,
+            # falls through to execute-plan as normal.
+            ("plan-structural-backstop-mid-execution-warns", False, False, {
+                "sub_skill": "execute-plan",
+                "feature_id": "feat-pstruct-mid",
                 "current_step": "Step 7a: execute plan",
             }),
             # Phase 8 — finalization gap (option b). The plan's in-scope
@@ -11509,6 +11649,21 @@ def main() -> int:
                             "read paths): a marker bound to a DIFFERENT session id "
                             "reads as absent (non-destructive session isolation)."
                         ))
+    # cycle-prompt-environment-dialect Phase 1: --marker-status — a NEVER-THROWS
+    # read-only presence query replacing the fragile taught
+    # `cat <marker> | python -c "json.load(sys.stdin)"` idiom (cluster e, 94
+    # mined tracebacks). Unlike --marker-present (exit-code-only), this prints
+    # JSON and ALWAYS exits 0 — absent marker, corrupt JSON, and no-state-dir
+    # all resolve to {"present": false} rather than a traceback or a nonzero
+    # exit a shell script must remember to check.
+    parser.add_argument("--marker-status", action="store_true",
+                        help=(
+                            "Read-only, never-throws: print "
+                            "{\"present\": bool} for the current repo's run "
+                            "marker (--repo-root, default cwd). Always exits "
+                            "0 — absent/corrupt/no-state-dir all resolve to "
+                            "present: false."
+                        ))
     # parallel-worktree-batch-execution (D2-A): with --run-start at a WORKTREE
     # root, the /lazy-batch-parallel coordinator stamps the lane marker with the
     # PARENT run's identity so audits / --run-end sweeps can prove the lane
@@ -11840,6 +11995,20 @@ def main() -> int:
     if args.marker_present:
         marker = lazy_core.read_run_marker(session_id=args.session_id)
         return 0 if marker is not None else 1
+
+    # cycle-prompt-environment-dialect Phase 1: --marker-status — a
+    # NEVER-THROWS mirror of --marker-present. read_run_marker() already
+    # never raises (absent/corrupt/stale all resolve to None); this is
+    # belt-and-braces so a future change to that contract can never turn
+    # this probe into a traceback. Always exits 0.
+    if args.marker_status:
+        try:
+            marker = lazy_core.read_run_marker(session_id=args.session_id)
+            present = marker is not None
+        except Exception:  # noqa: BLE001 — never-throws contract
+            present = False
+        sys.stdout.write(json.dumps({"present": present}) + "\n")
+        return 0
 
     # cycle-subagent-fabricates-policy-or-stray-branch Phase 2: --marker-work-
     # branch — a read-only query mirroring --marker-present that ADDITIONALLY

@@ -132,7 +132,7 @@ schema; the `gate_verdict_ok` helper re-derives scope from the item's commit set
 
 ---
 
-### Phase 3: Ship seam + override round  *(SEAM-DEFERRED — other lane)*
+### Phase 3: Ship seam + override round  *(SEAM APPLIED — STATE lane, state-batch-5)*
 
 **Phase kind:** integration
 
@@ -140,28 +140,42 @@ schema; the `gate_verdict_ok` helper re-derives scope from the item's commit set
 missing/failing/unsigned-weakening `GATE_VERDICT.md`, mirrored in both completion handlers
 (parity-audited); the NEEDS_INPUT.md flow for gate-weakening hits and unjustified flags (D7).
 
-> **DEFERRED to the STATE lane.** This phase edits `user/scripts/lazy_core.py` (+ the two state
-> scripts' parity surface) — OTHER LANES tonight. The checker, manifest, component, schema, and
-> tests (Phases 1–2, 4) are landed and self-contained; this seam is documented here with the EXACT
-> wanted diff (Implementation Notes below) for the STATE lane to apply. The feature cannot complete
-> regardless (provisional-block), so deferring the seam costs no completion.
+> **APPLIED by the STATE lane (state-batch-5), verbatim per the recorded diff below.** The
+> checker, manifest, component, schema, and tests (Phases 1–2, 4) were already landed and
+> self-contained; this seam adds `lazy_core.gate_verdict_ok` + its `apply_pseudo` wiring exactly
+> as recorded, with ONE implementation delta from the literal snippet (documented below):
+> `parse_sentinel`'s `_die()`-on-malformed path is caught (`SystemExit`) and degraded to an
+> honest `ok: False` refusal instead of letting the JSON-then-`sys.exit(2)` propagate through
+> `apply_pseudo` — consistent with this repo's "gates refuse, they don't crash" convention and
+> with every other branch of this same function. **The feature is STILL NOT marked Complete** —
+> `NEEDS_INPUT_PROVISIONAL.md` remains unratified (structural divergence), so this seam is LIVE
+> but the feature's own completion stays gated on operator ratification. Per its own honesty
+> rail, the whole seam only ever enforces when `docs/gate/control-surfaces.json` exists (it does,
+> today) — a ratification redirect that removes the manifest disarms the seam with zero code
+> changes.
 
 **Deliverables:**
-- [ ] `lazy_core.gate_verdict_ok(spec_path, repo_root) -> dict` — pure read: re-derive scope from the
+- [x] `lazy_core.gate_verdict_ok(spec_path, repo_root) -> dict` — pure read: re-derive scope from the
   item's commit set against the manifest (deterministic, NOT trusted from the verdict); if in scope,
   require a `GATE_VERDICT.md` whose every `checks.<name>` is not `fail` and whose any `gate_weakening`
   hit carries an `override:` field. Returns `{ok, reason, in_scope}`.
-- [ ] Wire it into `apply_pseudo`'s `__mark_complete__` / `__mark_fixed__` block, right after the
-  existing `NEEDS_INPUT_PROVISIONAL.md` refusal (line ~5110), refusing with zero writes and naming the
+- [x] Wired into `apply_pseudo`'s `__mark_complete__` / `__mark_fixed__` block, right after the
+  existing `NEEDS_INPUT_PROVISIONAL.md` refusal, refusing with zero writes and naming the
   missing/failing check.
-- [ ] Parity: mirrored in both handlers; `lazy_parity_audit.py` exit 0. `test_lazy_core.py` fixtures:
-  scoped item without verdict refuses; signed override completes; out-of-scope byte-identical.
+- [x] Parity: single shared `apply_pseudo` function, invoked identically by both `lazy-state.py` and
+  `bug-state.py` — mirrored by construction, not a separate per-script edit; `lazy_parity_audit.py`
+  exit 0. `test_lazy_core.py` fixtures: scoped item without verdict refuses; signed override
+  completes; out-of-scope byte-identical; failing check named; unsigned gate_weakening refuses;
+  malformed verdict degrades to refuse (not a crash); end-to-end `__mark_complete__`/`__mark_fixed__`
+  fixtures (11 tests total, `test_gate_verdict_ok_*` + `test_apply_pseudo_mark_{complete,fixed}_*`).
 - [ ] The NEEDS_INPUT.md gate-weakening round (`written_by: harness-change-gate`) authored by the
-  cycle agent per the component (D4/D7) — prose, no state-machine change.
+  cycle agent per the component (D4/D7) — prose, no state-machine change. Not exercised this pass
+  (no live gate-weakening hit occurred); the wiring is in place and covered by the unsigned/signed
+  override fixtures above.
 
 **Runtime Verification** *(NOT by the implementation agent):*
-- [ ] Scoped item without a verdict refuses; a signed override completes; out-of-scope byte-identical.
-  *(Evidence: `test_lazy_core.py` gate-verdict fixtures — TO BE ADDED by the STATE lane.)* <!-- verification-only -->
+- [x] Scoped item without a verdict refuses; a signed override completes; out-of-scope byte-identical.
+  *(Evidence: `test_lazy_core.py -k "gate_verdict_ok or mark_complete_refuses_scoped_change_missing_gate_verdict or mark_complete_succeeds_with_clean_gate_verdict or mark_fixed_refuses_scoped_change_missing_gate_verdict"` — 11 passed.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
 
@@ -235,8 +249,13 @@ protocol unchanged); the gate's own KPI rows + intervention record (D6); doc row
   source registered in `kpi-scorecard.py`).
 - [x] Docs: root `CLAUDE.md` (scripts-table row + key-components bullet), `user/scripts/CLAUDE.md`
   (script-table row).
-- [ ] **KPI registry-row residency (DEFERRED — registry concurrently owned tonight).** Insert the four
-  drafted rows into `docs/kpi/registry.json` + wire `harness-gate` selector compute at ratification.
+- [x] **KPI registry-row residency (state-batch-5).** The four drafted rows are inserted into
+  `docs/kpi/registry.json` (`kpi-scorecard.py --lint` exit 0; `test_kpi_scorecard.py`'s row-count
+  pin updated 12 → 16). The `harness-gate` selector COMPUTE itself is still not wired (no collector
+  reads `hit-rate`/`override-rate`/`false-positive-rate`/`verdict-efficacy-disagreement` yet) —
+  the rows render honest NO-DATA (`no computation registered for 'harness-gate'/...`), never a
+  fabricated zero, exactly as this row's own `notes` field records. Wiring the collector remains a
+  follow-up.
 
 **Minimum Verifiable Behavior:** `/harden-harness` Step 3 names the checker; `--lint --spec` on this
 SPEC exits 0; `lint-skills.py` clean after the harden-harness prose edit.

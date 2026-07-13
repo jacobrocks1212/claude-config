@@ -121,12 +121,19 @@ class TestLintGreen:
         # The six D8 rows + harness-change-canary-rollback's trip-precision +
         # skill-config-broken-reference-reads + the three
         # efficacy-signal-integrity intervention-records rows + the
-        # mcp-validation-round-trips-per-feature follow-up row (state batch 2).
-        assert len(registry["kpis"]) == 12
+        # mcp-validation-round-trips-per-feature follow-up row (state batch 2)
+        # + the four anti-overfit-design-gate KPI Declaration rows (SEAM-
+        # DEFERRED ship-seam application, state batch 5 — the feature itself
+        # stays unratified/structurally-provisional; NO-DATA until a
+        # harness-gate collector is built).
+        assert len(registry["kpis"]) == 16
         ids = {r["id"] for r in registry["kpis"]}
         assert "canary-trip-precision" in ids
         assert {"efficacy-verdicts-produced", "confounded-verdict-ratio",
                 "canary-closure-latency-p50"} <= ids
+        assert {"anti-overfit-gate-hit-rate", "anti-overfit-gate-override-rate",
+                "anti-overfit-gate-false-positive-rate",
+                "anti-overfit-gate-verdict-efficacy-disagreement"} <= ids
 
     def test_up_is_good_band_ordering_valid(self):
         row = _row(direction="up-is-good", band={"warn": 90, "breach": 80})

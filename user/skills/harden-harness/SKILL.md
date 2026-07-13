@@ -109,6 +109,24 @@ Root-cause classes (pick the most specific that applies):
 State your classification and cite the evidence (file path + line or field, transcript
 artifact, probe JSON field, or registry entry).
 
+**Triage before dispatching a full round:**
+- **A completion-gate refusal is self-diagnosing — do not launch a second discovery probe.**
+  `verify_ledger`'s refusal payload (`lazy_core.py`) carries a `failing_detail` object naming the
+  offending items directly for every failing check — `clean_tree` (the dirty-file list),
+  `head_matches_origin` (shas + ahead/behind), `plan_complete` (the non-Complete plan filenames +
+  statuses), `deliverables_done` (the first N unchecked row texts with line numbers). Root-cause
+  from that field first; re-running `git status`/re-reading PHASES.md by hand to rediscover what
+  the payload already names is the deviation this fixed (`completion-gate-refusal-opacity`).
+- **A deny-ledger entry whose cause is already handled doesn't need a full round.** If the
+  offending entry's root cause was already fixed by an earlier round THIS run (a redundant
+  re-dispatch of the same cause), or warrants an explicit, recorded no-fix classification, retire
+  it cheaply via `lazy-state.py --ack-deny <selector> --resolution "<audit note>"` instead of a
+  full hardening round — it acks the target entry AND every other unacked entry sharing the same
+  cause key in one pass (`ack_method: manual-ack-dedup`), so one oscillating cause never costs
+  more than one unit of retirement effort (`meta-dispatch-not-by-reference-and-ack-overpriced`).
+  This is not reachable from a cycle subagent (orchestrator-only); it still leaves an audited
+  trail for `/lazy-batch-retro` to grade.
+
 ### Step 2.5: Bug-spec FIRST — investigate + audit trail before implementing (HARD, operator-directed 2026-07-11)
 
 **Before ANY implementation in Step 3, author a bug investigation spec in claude-config.**

@@ -14,7 +14,7 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Runaway containment trip rate | 2138/30d | pending | — | PENDING-BASELINE |
+| Runaway containment trip rate | 2194/30d | pending | — | PENDING-BASELINE |
 
 ## halt-handling
 
@@ -27,6 +27,7 @@
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
 | Cycles per completion | 10.6 (30d) | pending | — | PENDING-BASELINE |
+| MCP-validation round trips per feature | — | pending | — | NO-DATA |
 
 ## harness-canary
 
@@ -39,7 +40,7 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Failed Reads / dangling references on .claude/skill-config/ paths `[all]` | 0 (30d) | pending | — | PENDING-BASELINE |
+| Failed Reads / dangling references on .claude/skill-config/ paths `[all]` | 1 (30d) | pending | — | PENDING-BASELINE |
 
 ## efficacy-loop
 
@@ -47,6 +48,15 @@
 |-----|---------|----------|--------------------|--------|
 | Conclusive efficacy verdicts produced | — | pending | — | NO-DATA |
 | Confounded-verdict ratio | — | pending | — | NO-DATA |
+
+## anti-overfit-gate
+
+| KPI | current | baseline | band (warn/breach) | status |
+|-----|---------|----------|--------------------|--------|
+| Design-gate scoped-change hit rate `[claude-config]` | — | pending | — | NO-DATA |
+| Gate-weakening override rate `[claude-config]` | — | pending | — | NO-DATA |
+| Design-gate false-positive burden `[claude-config]` | — | pending | — | NO-DATA |
+| Verdict-vs-efficacy disagreement `[claude-config]` | — | pending | — | NO-DATA |
 
 ## Regressions
 
@@ -58,13 +68,18 @@
 
 ## Canary health
 
-- 28 canaries open, oldest 7d, 0 will no-data-close within 7d
+- 28 canaries open, oldest 8d, 0 will no-data-close within 7d
 
 ## Notes
 
 - `build-queue-false-green-rate`: build-queue results dir absent (~\.claude\state\build-queue\results) — no build-queue state on this machine
 - `build-queue-wait-time-p50`: build-queue results dir absent (~\.claude\state\build-queue\results) — no build-queue state on this machine
+- `mcp-validation-round-trips-per-feature`: unknown telemetry selector 'mcp-validation-round-trips-per-feature'
 - `canary-trip-precision`: no canary trips in the window — precision is undefined until the canary has tripped (never a fabricated zero)
 - `canary-closure-latency-p50`: no canary closures (excluding no-data) in the window
 - `efficacy-verdicts-produced`: no reviews recorded in the window
 - `confounded-verdict-ratio`: no due reviews in the window — ratio is undefined
+- `anti-overfit-gate-hit-rate`: no computation registered for 'harness-gate'/'hit-rate'
+- `anti-overfit-gate-override-rate`: no computation registered for 'harness-gate'/'override-rate'
+- `anti-overfit-gate-false-positive-rate`: no computation registered for 'harness-gate'/'false-positive-rate'
+- `anti-overfit-gate-verdict-efficacy-disagreement`: no computation registered for 'harness-gate'/'verdict-efficacy-disagreement'

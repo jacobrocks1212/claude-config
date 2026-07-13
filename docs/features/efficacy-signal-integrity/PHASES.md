@@ -30,10 +30,26 @@ merged/deduped/cross-repo-aware telemetry read the fix shipped.
 - **`friction-kpi-registry` (Complete):** owns `docs/kpi/registry.json` + `kpi-scorecard.py`'s
   lint/render/status-engine/`--capture-baseline` machinery this feature extends (`vantage` field,
   `WRONG-VANTAGE` status, the `intervention-records` source, the `## Canary health` section).
-- **Cross-lane (reported, not landed this feature):** `lazy_core.validate_intervention_target_signal`
-  / `_intervention_signal_event` (capture-time vocabulary check — STATE lane) and
-  `user/skills/lazy-batch/SKILL.md` §1c.6 scorecard-regen-point wiring (SKILLS lane). Both named
-  exactly in the completion report.
+- **Cross-lane, STATE half APPLIED (state-batch-5):** `lazy_core.validate_intervention_target_signal`
+  now parses the `event:<type>/<signature>` sub-signal grammar (accepts a KNOWN `<signature>` for
+  an event type that declares a sub-signal vocabulary — v1: `gate-refusal` only, via a
+  `_GATE_REFUSAL_SIGNATURES` set DUPLICATED from `efficacy-eval.py`'s own set of the same name per
+  that module's own comment naming this exact seam; rejects an unknown signature or a signature on
+  a type with no declared vocabulary; bare `event:<type>` targets are byte-unaffected).
+  `_intervention_signal_event` now resolves a sub-signal target to the bare `<type>` (mirroring
+  `efficacy-eval.py`'s `_resolve_target_signal` contract) instead of leaking the `/<signature>`
+  suffix into the ledger event-type counting key. A DELTA beyond the literally-named two functions:
+  the capture-time BASELINE FREEZE in `record_intervention` was ALSO sub-signal-aware-ified (a new
+  `_intervention_signal_signature` helper + a `data.gate`-matching count), since without it a
+  sub-signal record's frozen baseline would have silently counted every bare-type event
+  (`gate-refusal` of ANY signature) rather than just its own signature — a correctness gap the
+  capture-time vocabulary fix alone would not have closed. `test_lazy_core.py`: 6 new fixtures
+  (`test_validate_intervention_target_signal_{accepts_known_sub_signal,rejects_unknown_sub_signal,
+  rejects_sub_signal_on_unsupported_type,still_accepts_bare_event}`,
+  `test_intervention_signal_event_resolves_sub_signal_to_bare_type`,
+  `test_record_intervention_sub_signal_baseline_counts_matching_signature_only`).
+  **Still cross-lane, NOT landed:** `user/skills/lazy-batch/SKILL.md` §1c.6 scorecard-regen-point
+  wiring (SKILLS lane, out of the STATE lane's file ownership).
 
 ---
 

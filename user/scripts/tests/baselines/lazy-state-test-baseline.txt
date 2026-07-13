@@ -70,6 +70,8 @@
   [upstream-substring-collision] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
   [stale-plan-all-refs-checked-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)
   [ready-plan-unchecked-in-scope-still-executes] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
+  [plan-structural-backstop-refuses-fresh-invalid] cloud=False skip_nr=False real_device=True: Step 7a: blocked (plan structurally invalid)
+  [plan-structural-backstop-mid-execution-warns] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
   [finalize-plan-verification-rows-only-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)
   [stale-empty-scope-decomposition-executes] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
   [stale-empty-scope-all-plan-wus-checked-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)

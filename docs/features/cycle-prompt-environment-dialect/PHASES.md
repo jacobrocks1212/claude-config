@@ -40,7 +40,7 @@ active lanes that may NOT both write the same files concurrently (`user/CLAUDE.m
 
 ---
 
-### Phase 1: `--marker-status` (STATE lane — NOT started this session)
+### Phase 1: `--marker-status` (STATE lane — APPLIED, state-batch-5)
 
 **Phase kind:** design
 
@@ -49,29 +49,33 @@ active lanes that may NOT both write the same files concurrently (`user/CLAUDE.m
 "json.load(sys.stdin)"` idiom (cluster e, 94 mined tracebacks) with a single command.
 
 **Deliverables:**
-- [ ] `lazy-state.py --marker-status --repo-root <root>` — prints `{"present": bool, ...}`,
+- [x] `lazy-state.py --marker-status --repo-root <root>` — prints `{"present": bool}`,
   **always** exits 0: absent marker, corrupt JSON, and no-state-dir all resolve to
-  `{"present": false}` rather than raising.
-- [ ] `bug-state.py --marker-status --repo-root <root>` — parity mirror (same contract,
-  bug-pipeline state dir).
-- [ ] Fixture tests (absent / corrupt / no-state-dir / present) in `test_lazy-state.py` +
-  `test_bug-state.py`; `lazy_parity_audit.py --repo-root .` stays exit 0.
+  `{"present": false}` rather than raising (wraps `lazy_core.read_run_marker`, which already
+  never raises, plus a belt-and-braces `except Exception` for future-proofing).
+- [x] `bug-state.py --marker-status --repo-root <root>` — parity mirror (same contract,
+  bug-pipeline state dir; the marker is shared between pipelines).
+- [x] Fixture tests: `test_marker_status_cli_never_throws_lazy_state` /
+  `test_marker_status_cli_never_throws_bug_state` in `test_lazy_core.py` (subprocess-driven,
+  absent/present/corrupt-JSON all exit 0 with the right `present` value; the absent probe is
+  also asserted read-only — no state dir created). `lazy_parity_audit.py --repo-root .` exit 0.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --marker-status
---repo-root <a dir with no .claude/state>` exits 0 and prints `{"present": false, ...}` (not a
-traceback).
+--repo-root <a dir with no .claude/state>` exits 0 and prints `{"present": false}` (not a
+traceback). Verified via the fixture above, including the corrupt-JSON case (not just absent).
 
-**Runtime Verification** *(checked by integration test or manual testing)*:
-- [ ] Never-throws contract holds under all four fixtures, both scripts. *(Evidence: pending
-  — STATE lane not yet engaged this session.)* <!-- verification-only -->
+**Runtime Verification** *(checked by integration test)*:
+- [x] Never-throws contract holds under all three fixtures (absent/present/corrupt), both
+  scripts. *(Evidence: `python -m pytest user/scripts/test_lazy_core.py -k marker_status` — 2
+  passed.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
 
 **Prerequisites:** None (first phase; independent of Phase 2's grammar work).
 
-**Files likely modified:** `user/scripts/lazy-state.py`, `user/scripts/bug-state.py`,
-`user/scripts/test_lazy-state.py` (or nearest lazy-state test module),
-`user/scripts/test_bug-state.py` — **all STATE-lane-owned; NOT touched this session.**
+**Files modified:** `user/scripts/lazy-state.py`, `user/scripts/bug-state.py`,
+`user/scripts/test_lazy_core.py` (fixture tests added there, not a separate `test_lazy-state.py`
+module — matching this repo's actual test-file convention).
 
 **Testing Strategy:** Hermetic pytest fixtures constructing a temp `.claude/state/<repo_key>/`
 in each of the four shapes.
@@ -118,10 +122,10 @@ precedent), and the emitter-side filter that makes `hosts=windows` actually host
 - [x] Ran the REAL-template `emit_cycle_prompt` test suite (`pytest test_lazy_core.py -k
   emit_cycle_prompt`) against the edited file as a read-only sanity check — 28/28 pass,
   confirming no residue/anchor regressions from the new sections.
-- [ ] **Emitter `hosts=` selection filter (STATE lane — NOT done this session):** wire
-  `attrs.get("hosts")` into BOTH selection loops in `lazy_core.emit_cycle_prompt` (base
-  template ~L7397 and the repo-addenda loop ~L7446), mirroring the existing `park=` filter
-  shape at ~L7418 / ~L7462:
+- [x] **Emitter `hosts=` selection filter (STATE lane — APPLIED, state-batch-5):** wired
+  `attrs.get("hosts")` into BOTH selection loops in `lazy_core.emit_cycle_prompt` (the base
+  template loop and the repo-addenda loop), mirroring the existing `park=` filter shape exactly
+  as recorded:
   ```python
   # hosts= filter (cycle-prompt-environment-dialect, SPEC D2): hosts=windows sections
   # are selected ONLY when the emitting host is Windows. Absent -> always selected
@@ -130,29 +134,37 @@ precedent), and the emitter-side filter that makes `hosts=windows` actually host
   if host_attr == "windows" and os.name != "nt":
       continue
   ```
-  (`os` is already imported at module scope — zero new imports.) Add this identically at
-  both selection sites (base + addenda) — the grammar doc comment already documents this as
-  the wanted wiring.
-- [ ] **Size + selection unit tests (STATE lane — NOT done this session):** in
-  `test_lazy_core.py`, mirroring the `test_emit_cycle_prompt_*` naming convention:
-  - `test_emit_cycle_prompt_hosts_windows_selected_on_win32` (mock/force `os.name == "nt"`,
-    assert the Windows-rules anchor text is present)
-  - `test_emit_cycle_prompt_hosts_windows_excluded_on_non_windows` (force `os.name != "nt"`,
-    assert the Windows-rules anchor text is ABSENT, core section still present)
-  - `test_env_dialect_section_byte_budget` (parse the real template via
-    `_parse_cycle_template`, assert both `env-dialect-*` sections' `content.encode("utf-8")`
-    length is `< 2048`)
+  Added identically at both selection sites (base + addenda), byte-identical to the recorded
+  snippet.
+- [x] **Size + selection unit tests (STATE lane — APPLIED, state-batch-5):** all three named
+  tests landed in `test_lazy_core.py`, PLUS a fourth (`test_emit_cycle_prompt_hosts_windows_
+  addenda_excluded_on_non_windows`) proving the filter applies to the repo-addenda loop too, not
+  just the base template:
+  - `test_emit_cycle_prompt_hosts_windows_selected_on_win32`
+  - `test_emit_cycle_prompt_hosts_windows_excluded_on_non_windows`
+  - `test_env_dialect_section_byte_budget`
+  **Delta from the literal recorded technique (documented, not silent):** the tests do NOT
+  monkeypatch the real `os.name` global — doing so flips which `pathlib` class the bare `Path()`
+  factory returns platform-wide, and `emit_cycle_prompt` calls `Path(spec_path) / "PHASES.md"`
+  internally on EVERY invocation (`_read_mcp_runtime_decision`), which raised
+  `NotImplementedError: cannot instantiate 'PosixPath' on your system` when tested live on this
+  Windows machine. Instead, a small `_FakeOsName` proxy (overrides only `.name`, forwards
+  everything else to the real `os` module) is bound to `lazy_core.os` for the duration of the
+  call and restored after — this changes ONLY what `emit_cycle_prompt`'s `os.name` reads resolve
+  to, leaving the real `os` module (and therefore `pathlib`) completely untouched.
 
-**Minimum Verifiable Behavior:** once the STATE-lane filter lands, emitting a cycle prompt
-with a forced non-Windows `os.name` excludes the `env-dialect-windows` section's content from
-the assembled prompt while `env-dialect-core`'s content remains present.
+**Minimum Verifiable Behavior:** emitting a cycle prompt with a forced non-Windows `os.name`
+excludes the `env-dialect-windows` section's content from the assembled prompt while
+`env-dialect-core`'s content remains present. Verified.
 
-**Runtime Verification** *(checked by integration test or manual testing)*:
+**Runtime Verification** *(checked by integration test)*:
 - [x] Budget held (1,110 / 820 bytes < 2,048 each). *(Evidence: this session's one-off byte
   count over `_parse_cycle_template` output — see `RESEARCH_SUMMARY.md`.)* <!-- verification-only -->
-- [ ] Windows block reaches Windows cycles / absent on non-Windows / grammar backward-compat
-  (sections without `hosts=` select byte-identically to pre-feature). *(Evidence: pending —
-  requires the STATE-lane emitter filter above.)* <!-- verification-only -->
+- [x] Windows block reaches Windows cycles / absent on non-Windows / grammar backward-compat
+  (sections without `hosts=` select byte-identically to pre-feature — proven by the full
+  `emit_cycle_prompt` suite staying green, 31/31 passed). *(Evidence: `python -m pytest
+  user/scripts/test_lazy_core.py -k "hosts_windows or env_dialect_section_byte_budget or
+  emit_cycle_prompt"` — 35 passed.)* <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A.
 
@@ -160,8 +172,7 @@ the assembled prompt while `env-dialect-core`'s content remains present.
 the emitter-side half landing first — the section is simply always-selected until the filter
 ships, a strict superset of the target behavior, never a narrower one).
 
-**Files likely modified (remaining):** `user/scripts/lazy_core.py`,
-`user/scripts/test_lazy_core.py` — **STATE-lane-owned; NOT touched this session.**
+**Files modified:** `user/scripts/lazy_core.py`, `user/scripts/test_lazy_core.py`.
 
 **Testing Strategy:** Hermetic pytest against a synthetic template fixture (existing pattern
 in `test_lazy_core.py`) plus the real-template regression already run this session.

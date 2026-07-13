@@ -9928,6 +9928,149 @@ def test_emit_cycle_prompt_addenda_before_loop_block():
 
 
 # ---------------------------------------------------------------------------
+# cycle-prompt-environment-dialect Phase 2 (STATE lane) — `hosts=` selection
+# filter. Both selection loops (base template + repo addenda) must exclude a
+# `hosts=windows` section when the emitting host is not Windows, and always
+# select it (byte-identical to a section with no `hosts=` attribute) when it
+# is.
+#
+# Faking the host CANNOT be done by patching the real `os.name` global: the
+# stdlib `pathlib.Path()` factory itself branches on `os.name` at
+# CONSTRUCTION time to pick WindowsPath/PosixPath, and emit_cycle_prompt
+# calls the bare `Path(...)` factory internally (e.g.
+# `_read_mcp_runtime_decision`'s `Path(spec_path) / "PHASES.md"`) on every
+# invocation — patching the real os.name to the "wrong" platform makes that
+# internal call raise `NotImplementedError: cannot instantiate 'PosixPath'
+# on your system` (or vice versa). Instead, `lazy_core.os` (the module-level
+# name `emit_cycle_prompt`'s `os.name` reads resolve through) is rebound to a
+# transparent proxy that overrides ONLY `.name` and forwards every other
+# attribute to the REAL os module — pathlib's own `os` reference (a separate
+# namespace binding to the same real module) is completely unaffected.
+# ---------------------------------------------------------------------------
+
+class _FakeOsName:
+    """Transparent proxy for the `os` module overriding only `.name`."""
+
+    def __init__(self, name: str):
+        self.name = name
+
+    def __getattr__(self, attr):
+        return getattr(os, attr)
+
+
+def test_emit_cycle_prompt_hosts_windows_selected_on_win32():
+    """A `hosts=windows` section IS selected when the emitting host is
+    Windows (os.name == 'nt')."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        tdir = Path(td) / "tpl"
+        repo = Path("/nonexistent/repo")
+        body = (
+            "<!-- @section core pipelines=feature,bug modes=workstation,cloud skills=all -->\n"
+            "SECTION_CORE universal.\n"
+            "\n"
+            "<!-- @section win pipelines=feature,bug modes=workstation skills=all hosts=windows -->\n"
+            "SECTION_WINDOWS host-conditional.\n"
+        )
+        _write_synth_template(tdir, body)
+        state = _emit_state(sub_skill="/retro")
+        old_os = lazy_core.os
+        lazy_core.os = _FakeOsName("nt")
+        try:
+            r = lazy_core.emit_cycle_prompt(
+                repo, state, pipeline="feature", cloud=False, template_dir=tdir,
+            )
+        finally:
+            lazy_core.os = old_os
+    assert r is not None and r["ok"], r
+    assert "SECTION_WINDOWS" in r["prompt"], (
+        "hosts=windows section must be selected when os.name == 'nt'"
+    )
+    assert "SECTION_CORE" in r["prompt"]
+
+
+def test_emit_cycle_prompt_hosts_windows_excluded_on_non_windows():
+    """A `hosts=windows` section is EXCLUDED when the emitting host is not
+    Windows (os.name != 'nt'); the unconditional core section still selects —
+    the filter is additive, never over-broad."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        tdir = Path(td) / "tpl"
+        repo = Path("/nonexistent/repo")
+        body = (
+            "<!-- @section core pipelines=feature,bug modes=workstation,cloud skills=all -->\n"
+            "SECTION_CORE universal.\n"
+            "\n"
+            "<!-- @section win pipelines=feature,bug modes=workstation skills=all hosts=windows -->\n"
+            "SECTION_WINDOWS host-conditional.\n"
+        )
+        _write_synth_template(tdir, body)
+        state = _emit_state(sub_skill="/retro")
+        old_os = lazy_core.os
+        lazy_core.os = _FakeOsName("posix")
+        try:
+            r = lazy_core.emit_cycle_prompt(
+                repo, state, pipeline="feature", cloud=False, template_dir=tdir,
+            )
+        finally:
+            lazy_core.os = old_os
+    assert r is not None and r["ok"], r
+    assert "SECTION_WINDOWS" not in r["prompt"], (
+        "hosts=windows section must be EXCLUDED when os.name != 'nt'"
+    )
+    assert "SECTION_CORE" in r["prompt"], (
+        "a section without hosts= must still select — the filter is additive"
+    )
+
+
+def test_emit_cycle_prompt_hosts_windows_addenda_excluded_on_non_windows():
+    """The `hosts=` filter applies identically to the repo-addenda selection
+    loop, not just the base-template loop."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        _write_addenda(
+            repo,
+            "<!-- @section addenda-win pipelines=feature modes=workstation "
+            "skills=all hosts=windows -->\n"
+            "ADDENDA_WINDOWS marker.\n",
+        )
+        state = _emit_state(sub_skill="/retro")
+        old_os = lazy_core.os
+        lazy_core.os = _FakeOsName("posix")
+        try:
+            r = lazy_core.emit_cycle_prompt(
+                repo, state, pipeline="feature", cloud=False,
+                template_dir=_REAL_TEMPLATE_DIR,
+            )
+        finally:
+            lazy_core.os = old_os
+    assert r is not None and r["ok"], r
+    assert "ADDENDA_WINDOWS" not in r["prompt"], (
+        "an addenda hosts=windows section must be excluded on a non-Windows host"
+    )
+
+
+def test_env_dialect_section_byte_budget():
+    """The real template's env-dialect-core / env-dialect-windows sections
+    each stay under the D4 2,048-byte budget (parsed via the SAME
+    _parse_cycle_template the emitter uses — not a hand-copy of the text)."""
+    _guard()
+    text = (_REAL_TEMPLATE_DIR / "cycle-base-prompt.md").read_text(encoding="utf-8")
+    sections = {
+        sec["attrs"]["name"]: sec
+        for sec in lazy_core._parse_cycle_template(text)
+    }
+    for name in ("env-dialect-core", "env-dialect-windows"):
+        assert name in sections, f"expected section {name!r} in the real template"
+        size = len(sections[name]["content"].encode("utf-8"))
+        assert size < 2048, (
+            f"{name} is {size} bytes, over the D4 2,048-byte budget"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Phase 11 WU-1a — validation_escalation(): BLOCKED.md escalation predicate
 # Phase 11 WU-5c/d — retro_staleness(): retro-vs-PHASES staleness predicate
 #
@@ -18062,6 +18205,11 @@ _TESTS = [
     ("test_emit_cycle_prompt_addenda_tokens_bound", test_emit_cycle_prompt_addenda_tokens_bound),
     ("test_emit_cycle_prompt_addenda_residue_refuses_naming_file", test_emit_cycle_prompt_addenda_residue_refuses_naming_file),
     ("test_emit_cycle_prompt_addenda_before_loop_block", test_emit_cycle_prompt_addenda_before_loop_block),
+    # emit_cycle_prompt hosts= filter — cycle-prompt-environment-dialect Phase 2
+    ("test_emit_cycle_prompt_hosts_windows_selected_on_win32", test_emit_cycle_prompt_hosts_windows_selected_on_win32),
+    ("test_emit_cycle_prompt_hosts_windows_excluded_on_non_windows", test_emit_cycle_prompt_hosts_windows_excluded_on_non_windows),
+    ("test_emit_cycle_prompt_hosts_windows_addenda_excluded_on_non_windows", test_emit_cycle_prompt_hosts_windows_addenda_excluded_on_non_windows),
+    ("test_env_dialect_section_byte_budget", test_env_dialect_section_byte_budget),
     # validation_escalation — Phase 11 WU-1a shared BLOCKED.md escalation predicate
     ("test_validation_escalation_retry_1_not_escalated", test_validation_escalation_retry_1_not_escalated),
     ("test_validation_escalation_retry_2_escalated", test_validation_escalation_retry_2_escalated),
@@ -19467,6 +19615,64 @@ def test_marker_present_cli_absent_then_present_and_readonly():
         )
 
 
+def _run_marker_status_cli_never_throws(script_name: str):
+    """Shared body for the --marker-status parity fixtures (lazy-state.py /
+    bug-state.py): absent marker, live marker, and corrupt marker JSON all
+    print {"present": bool} and exit 0 — never a traceback, never nonzero."""
+    script = _SCRIPTS_DIR / script_name
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "status-state"
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(script)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        # Absent (no state dir at all yet) → present: false, exit 0, read-only.
+        r_absent = run(["--marker-status"])
+        assert r_absent.returncode == 0, (
+            f"--marker-status must always exit 0, got {r_absent.returncode}: "
+            f"{r_absent.stdout}{r_absent.stderr}"
+        )
+        assert json.loads(r_absent.stdout) == {"present": False}, r_absent.stdout
+        assert not state_dir.exists(), (
+            "--marker-status must be read-only — it must not create the state dir"
+        )
+
+        # Live marker → present: true, exit 0.
+        assert run(["--run-start", "--max-cycles", "5"]).returncode == 0
+        r_present = run(["--marker-status"])
+        assert r_present.returncode == 0
+        assert json.loads(r_present.stdout) == {"present": True}, r_present.stdout
+
+        # Corrupt marker JSON → present: false, exit 0, never a traceback.
+        marker_path = state_dir / "lazy-run-marker.json"
+        marker_path.write_text("{not valid json", encoding="utf-8")
+        r_corrupt = run(["--marker-status"])
+        assert r_corrupt.returncode == 0, (
+            f"corrupt marker must still exit 0, got {r_corrupt.returncode}: "
+            f"{r_corrupt.stdout}{r_corrupt.stderr}"
+        )
+        assert json.loads(r_corrupt.stdout) == {"present": False}, r_corrupt.stdout
+
+
+def test_marker_status_cli_never_throws_lazy_state():
+    """lazy-state.py --marker-status: absent/present/corrupt all resolve to
+    {"present": bool} and exit 0 (cycle-prompt-environment-dialect Phase 1)."""
+    _guard()
+    _run_marker_status_cli_never_throws("lazy-state.py")
+
+
+def test_marker_status_cli_never_throws_bug_state():
+    """bug-state.py --marker-status: parity mirror of the lazy-state.py
+    fixture (the marker is shared between the feature and bug pipelines)."""
+    _guard()
+    _run_marker_status_cli_never_throws("bug-state.py")
+
+
 def test_cross_script_same_repo_refuses_keyed_dir_unset():
     """WU-3.1 cross-script: with LAZY_STATE_DIR UNSET and a temp HOME, a bug
     --run-start in repo A keys its marker into A's subdir, so a feature
@@ -19793,6 +19999,10 @@ _TESTS = _TESTS + [
      test_migrate_legacy_noop_when_absent),
     ("test_marker_present_cli_absent_then_present_and_readonly",
      test_marker_present_cli_absent_then_present_and_readonly),
+    ("test_marker_status_cli_never_throws_lazy_state",
+     test_marker_status_cli_never_throws_lazy_state),
+    ("test_marker_status_cli_never_throws_bug_state",
+     test_marker_status_cli_never_throws_bug_state),
     ("test_cross_script_same_repo_refuses_keyed_dir_unset",
      test_cross_script_same_repo_refuses_keyed_dir_unset),
 ]
@@ -35517,6 +35727,143 @@ _TESTS = _TESTS + [
 ]
 
 
+# ---------------------------------------------------------------------------
+# efficacy-signal-integrity D1 (STATE-lane capture seam) — sub-signal target
+# grammar (event:<type>/<signature>) on the CAPTURE-side validator. The
+# feature's evaluator half (efficacy-eval.py's _target_signature /
+# _event_matches_target / _GATE_REFUSAL_SIGNATURES) already counts these
+# sub-signals correctly at review time; this closes the reported cross-lane
+# gap where a sub-signal target degraded to "undeclared" at CAPTURE because
+# validate_intervention_target_signal / _intervention_signal_event did not
+# parse the '/<signature>' component at all.
+# ---------------------------------------------------------------------------
+
+def test_validate_intervention_target_signal_accepts_known_sub_signal():
+    """A sub-signal target event:<type>/<signature> validates as None when
+    the bare <type> is known AND <signature> is in that type's closed
+    sub-signal vocabulary (v1: gate-refusal only, DUPLICATED from
+    efficacy-eval.py's _GATE_REFUSAL_SIGNATURES — that module is not
+    importable here, capture and evaluation are separate lanes)."""
+    _guard()
+    for sig in sorted(lazy_core._GATE_REFUSAL_SIGNATURES):
+        target = f"event:gate-refusal/{sig}"
+        result = lazy_core.validate_intervention_target_signal(target)
+        assert result is None, f"{target!r} should validate as None; got {result!r}"
+
+
+def test_validate_intervention_target_signal_rejects_unknown_sub_signal():
+    """An unrecognized <signature> on a KNOWN event type still degrades
+    honestly (a named error, never a silent accept)."""
+    _guard()
+    result = lazy_core.validate_intervention_target_signal(
+        "event:gate-refusal/not-a-real-gate")
+    assert result is not None, "an unknown gate-refusal sub-signal must be rejected"
+    assert "not-a-real-gate" in result or "gate-coverage" in result, (
+        f"error message must name the offending/valid sub-signal set; got {result!r}"
+    )
+
+
+def test_validate_intervention_target_signal_rejects_sub_signal_on_unsupported_type():
+    """A sub-signal component on an event type with NO declared sub-signal
+    vocabulary (e.g. run-start) is rejected — only gate-refusal carries a
+    verified sub-signal vocabulary in v1."""
+    _guard()
+    result = lazy_core.validate_intervention_target_signal("event:run-start/foo")
+    assert result is not None, (
+        "event:run-start/foo must be rejected — run-start has no sub-signal vocabulary"
+    )
+
+
+def test_validate_intervention_target_signal_still_accepts_bare_event():
+    """Bare event:<type> targets (no sub-signal) are byte-unaffected by the
+    sub-signal grammar addition."""
+    _guard()
+    assert lazy_core.validate_intervention_target_signal("event:gate-refusal") is None
+    assert lazy_core.validate_intervention_target_signal(
+        "event:containment-refusal") is None
+
+
+def test_intervention_signal_event_resolves_sub_signal_to_bare_type():
+    """_intervention_signal_event resolves a sub-signal target to the SAME
+    bare <type> a bare event:<type> target resolves to (mirrors
+    efficacy-eval.py's _resolve_target_signal contract) — the '/<signature>'
+    suffix must never leak into the ledger event-type counting key."""
+    _guard()
+    assert (lazy_core._intervention_signal_event("event:gate-refusal/gate-coverage")
+            == "gate-refusal")
+    assert (lazy_core._intervention_signal_event("event:gate-refusal")
+            == "gate-refusal")
+
+
+def test_record_intervention_sub_signal_baseline_counts_matching_signature_only():
+    """Capture-time baseline freeze for a sub-signal target counts ONLY
+    ledger events whose data.gate matches the declared signature — a
+    gate-refusal/gate-coverage hypothesis must not absorb unrelated
+    gate-refusal/verify-ledger events into its frozen baseline."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state = Path(td) / "state"
+        state.mkdir()
+        _set_state_dir(state)
+        try:
+            repo = Path(td) / "repo"
+            run_ids: list[str] = []
+            for i in range(3):
+                now = 1_700_100_000.0 + i * 3600.0
+                marker = lazy_core.write_run_marker(
+                    pipeline="feature", cloud=False, repo_root="/r",
+                    max_cycles=5, now=now,
+                )
+                run_ids.append(marker["started_at"])
+                lazy_core.append_telemetry_event(
+                    "gate-refusal", item_id=f"item-{i}",
+                    data={"gate": "gate-coverage"}, now=now + 1.0,
+                )
+                lazy_core.append_telemetry_event(
+                    "gate-refusal", item_id=f"item-{i}",
+                    data={"gate": "verify-ledger"}, now=now + 2.0,
+                )
+            res = lazy_core.record_intervention(
+                repo, "feat-subsig", pipeline="feature",
+                hypothesis_overrides={
+                    "target_signal": "event:gate-refusal/gate-coverage",
+                    "expected_direction": "decrease",
+                },
+                date="2026-07-12",
+            )
+            assert res["recorded"] is True, res
+            meta = lazy_core.parse_sentinel(
+                repo / "docs" / "interventions" / "feat-subsig.md")
+            assert meta["target_signal"] == "event:gate-refusal/gate-coverage", (
+                "the sub-signal target must NOT degrade to undeclared at capture"
+            )
+            base = meta["baseline"]
+            assert base["status"] == "frozen", base
+            assert base["runs"] == 3
+            assert base["events"] == 3, (
+                "baseline must count ONLY the gate-coverage sub-signal events "
+                f"(1/run), not the co-occurring verify-ledger events; got {base}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+_TESTS = _TESTS + [
+    ("test_validate_intervention_target_signal_accepts_known_sub_signal",
+     test_validate_intervention_target_signal_accepts_known_sub_signal),
+    ("test_validate_intervention_target_signal_rejects_unknown_sub_signal",
+     test_validate_intervention_target_signal_rejects_unknown_sub_signal),
+    ("test_validate_intervention_target_signal_rejects_sub_signal_on_unsupported_type",
+     test_validate_intervention_target_signal_rejects_sub_signal_on_unsupported_type),
+    ("test_validate_intervention_target_signal_still_accepts_bare_event",
+     test_validate_intervention_target_signal_still_accepts_bare_event),
+    ("test_intervention_signal_event_resolves_sub_signal_to_bare_type",
+     test_intervention_signal_event_resolves_sub_signal_to_bare_type),
+    ("test_record_intervention_sub_signal_baseline_counts_matching_signature_only",
+     test_record_intervention_sub_signal_baseline_counts_matching_signature_only),
+]
+
+
 def test_record_intervention_degrades_unknown_event_target(tmp_path):
     """Group B (pytest-only, tmp_path — NOT in the manual _TESTS runner):
     serving-path regression for the bug's Verified Symptom (a). An unknown
@@ -35572,6 +35919,569 @@ def test_record_intervention_degrades_unknown_event_target(tmp_path):
         )
     finally:
         _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# plan-structure-authoring-gate Phase 4 — pickup backstop
+# (lazy_core.plan_structural_backstop / format_plan_structural_blocker).
+# In-process import of validate-plan.py's run_structural_checks (never a
+# subprocess, never a rule-function hoist — see the STATE-lane seam docstring
+# on plan_structural_backstop for why).
+# ---------------------------------------------------------------------------
+
+def test_plan_structural_backstop_clean_plan_ok():
+    """A structurally clean, fresh (zero ticked WUs) plan passes."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        plan = Path(td) / "plans" / "all-phases-foo.md"
+        plan.parent.mkdir(parents=True, exist_ok=True)
+        plan.write_text(
+            "---\nkind: implementation-plan\nfeature_id: foo\nstatus: Ready\n"
+            "phases: [1]\n---\n\n## Work Units\n- [ ] WU-1 — do the thing\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.plan_structural_backstop(plan)
+    assert result["ok"] is True, result
+    assert result["mid_execution"] is False, result
+
+
+def test_plan_structural_backstop_fresh_invalid_plan_refuses():
+    """A FRESH plan (zero ticked WUs) carrying a structural ERROR (an
+    unfilled WU template-row placeholder) refuses (ok: False), naming the
+    finding."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        plan = Path(td) / "plans" / "all-phases-foo.md"
+        plan.parent.mkdir(parents=True, exist_ok=True)
+        plan.write_text(
+            "---\nkind: implementation-plan\nfeature_id: foo\nstatus: Ready\n"
+            "phases: [1]\n---\n\n## Work Units\n- [ ] WU-N — <short title>\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.plan_structural_backstop(plan)
+    assert result["ok"] is False, result
+    assert result["mid_execution"] is False, result
+    assert result["findings"], "a refusal must carry findings text"
+    assert any("template-row" in f for f in result["findings"]), result["findings"]
+
+
+def test_plan_structural_backstop_mid_execution_warns_not_refuses():
+    """The SAME structural ERROR on a plan with >= 1 ticked WU (mid-execution
+    — already in flight) does NOT refuse (ok: True) — WARN-only, findings
+    still surfaced for visibility."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        plan = Path(td) / "plans" / "all-phases-foo.md"
+        plan.parent.mkdir(parents=True, exist_ok=True)
+        plan.write_text(
+            "---\nkind: implementation-plan\nfeature_id: foo\nstatus: In-progress\n"
+            "phases: [1]\n---\n\n## Work Units\n"
+            "- [x] WU-1 — did something real\n"
+            "- [ ] WU-N — <short title>\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.plan_structural_backstop(plan)
+    assert result["ok"] is True, (
+        f"a mid-execution plan must WARN, never refuse; got {result}"
+    )
+    assert result["mid_execution"] is True, result
+    assert any("template-row" in f for f in result["findings"]), (
+        "findings must still surface for visibility even when WARN-only"
+    )
+
+
+def test_plan_structural_backstop_missing_file_fails_open():
+    """A nonexistent plan path degrades to ok: True (fail-open — a backstop
+    must never itself become a new failure surface)."""
+    _guard()
+    result = lazy_core.plan_structural_backstop(
+        Path("/definitely/does/not/exist/plan.md"))
+    assert result["ok"] is True, result
+    assert result["findings"] == []
+
+
+def test_format_plan_structural_blocker_names_findings():
+    """The BLOCKED.md body names the plan path, the findings, and the
+    blocker_kind classification."""
+    _guard()
+    body = lazy_core.format_plan_structural_blocker(
+        "/repo/plans/all-phases-foo.md",
+        ["[ERROR] (wu-checklist) missing WU checklist"],
+    )
+    assert "/repo/plans/all-phases-foo.md" in body
+    assert "wu-checklist" in body
+    assert "blocker_kind: plan-structural-invalid" in body
+
+
+_TESTS = _TESTS + [
+    ("test_plan_structural_backstop_clean_plan_ok",
+     test_plan_structural_backstop_clean_plan_ok),
+    ("test_plan_structural_backstop_fresh_invalid_plan_refuses",
+     test_plan_structural_backstop_fresh_invalid_plan_refuses),
+    ("test_plan_structural_backstop_mid_execution_warns_not_refuses",
+     test_plan_structural_backstop_mid_execution_warns_not_refuses),
+    ("test_plan_structural_backstop_missing_file_fails_open",
+     test_plan_structural_backstop_missing_file_fails_open),
+    ("test_format_plan_structural_blocker_names_findings",
+     test_format_plan_structural_blocker_names_findings),
+]
+
+
+# ---------------------------------------------------------------------------
+# anti-overfit-design-gate D3 — completion-gate ship seam
+# (lazy_core.gate_verdict_ok + its apply_pseudo wiring). SEAM-DEFERRED from
+# the authoring feature's PHASES.md Phase 3 (exact recorded diff applied
+# here). Reuses the existing provenance-fixture git helpers
+# (_prov_git_fixture_repo / _prov_git_commit_file / _prov_spec_dir) so the
+# item's touched-file derivation exercises the REAL commit-brackets /
+# message-grep machinery, never a hand-rolled shape.
+# ---------------------------------------------------------------------------
+
+def _gate_write_manifest(repo_root: "Path", globs: "list[str]") -> None:
+    gate_dir = repo_root / "docs" / "gate"
+    gate_dir.mkdir(parents=True, exist_ok=True)
+    (gate_dir / "control-surfaces.json").write_text(
+        json.dumps({"control_surfaces": globs, "gate_own": []}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _gate_write_verdict(spec_dir: "Path", checks: dict, *, override: str | None = None) -> None:
+    body = "---\nkind: gate-verdict\nchecks:\n"
+    for k, v in checks.items():
+        body += f"  {k}: {v}\n"
+    if override:
+        body += f'override: "{override}"\n'
+    body += "---\n\n# Gate Verdict\n"
+    (spec_dir / "GATE_VERDICT.md").write_text(body, encoding="utf-8")
+
+
+def test_gate_verdict_ok_no_manifest_out_of_scope():
+    """No docs/gate/control-surfaces.json at all -> {ok: True, in_scope:
+    False} unconditionally (every repo without the manifest is unaffected,
+    including claude-config itself pre-D1/post-redirect)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        spec_dir = _prov_spec_dir(repo_root, "feat-nogate")
+        _prov_git_commit_file(repo_root, "src/x.py", "work on feat-nogate")
+        result = lazy_core.gate_verdict_ok(spec_dir, repo_root)
+    assert result == {"ok": True, "in_scope": False, "reason": "no control-surface manifest"}
+
+
+def test_gate_verdict_ok_manifest_present_but_change_out_of_scope():
+    """Manifest present, but the item's commits touch no matching glob ->
+    in_scope: False, ok: True (no GATE_VERDICT.md needed)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        _gate_write_manifest(repo_root, ["scoped/**"])
+        spec_dir = _prov_spec_dir(repo_root, "feat-unscoped")
+        _prov_git_commit_file(repo_root, "src/unrelated.py", "fix(feat-unscoped): work")
+        result = lazy_core.gate_verdict_ok(spec_dir, repo_root)
+    assert result["ok"] is True and result["in_scope"] is False, result
+
+
+def test_gate_verdict_ok_scoped_missing_verdict_refuses():
+    """Manifest present + item touches a scoped path + no GATE_VERDICT.md ->
+    refuses, naming the missing file."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        _gate_write_manifest(repo_root, ["scoped/**"])
+        spec_dir = _prov_spec_dir(repo_root, "feat-missingverdict")
+        _prov_git_commit_file(
+            repo_root, "scoped/thing.py", "fix(feat-missingverdict): work")
+        result = lazy_core.gate_verdict_ok(spec_dir, repo_root)
+    assert result["ok"] is False and result["in_scope"] is True, result
+    assert "GATE_VERDICT.md" in result["reason"]
+
+
+def test_gate_verdict_ok_scoped_clean_verdict_ok():
+    """A scoped item with a clean (all-pass) GATE_VERDICT.md completes."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        _gate_write_manifest(repo_root, ["scoped/**"])
+        spec_dir = _prov_spec_dir(repo_root, "feat-cleanverdict")
+        _prov_git_commit_file(
+            repo_root, "scoped/thing.py", "fix(feat-cleanverdict): work")
+        _gate_write_verdict(spec_dir, {"overfit": "pass", "gate_weakening": "pass"})
+        result = lazy_core.gate_verdict_ok(spec_dir, repo_root)
+    assert result == {"ok": True, "in_scope": True, "reason": "gate verdict clean"}
+
+
+def test_gate_verdict_ok_failing_check_refuses():
+    """A GATE_VERDICT.md with any `fail` check refuses, naming it."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        _gate_write_manifest(repo_root, ["scoped/**"])
+        spec_dir = _prov_spec_dir(repo_root, "feat-failcheck")
+        _prov_git_commit_file(
+            repo_root, "scoped/thing.py", "fix(feat-failcheck): work")
+        _gate_write_verdict(spec_dir, {"overfit": "fail", "gate_weakening": "pass"})
+        result = lazy_core.gate_verdict_ok(spec_dir, repo_root)
+    assert result["ok"] is False and result["in_scope"] is True, result
+    assert "overfit" in result["reason"]
+
+
+def test_gate_verdict_ok_unsigned_gate_weakening_refuses():
+    """A `gate_weakening: hit-signed` check with NO `override:` field refuses
+    (D4 — the sign-off round is mandatory)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        _gate_write_manifest(repo_root, ["scoped/**"])
+        spec_dir = _prov_spec_dir(repo_root, "feat-unsigned")
+        _prov_git_commit_file(
+            repo_root, "scoped/thing.py", "fix(feat-unsigned): work")
+        _gate_write_verdict(spec_dir, {"gate_weakening": "hit-signed"})
+        result = lazy_core.gate_verdict_ok(spec_dir, repo_root)
+    assert result["ok"] is False and result["in_scope"] is True, result
+    assert "override" in result["reason"]
+
+
+def test_gate_verdict_ok_signed_gate_weakening_ok():
+    """The SAME hit-signed gate_weakening WITH an `override:` field completes
+    (the D4 operator sign-off round)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        _gate_write_manifest(repo_root, ["scoped/**"])
+        spec_dir = _prov_spec_dir(repo_root, "feat-signed")
+        _prov_git_commit_file(
+            repo_root, "scoped/thing.py", "fix(feat-signed): work")
+        _gate_write_verdict(
+            spec_dir, {"gate_weakening": "hit-signed"},
+            override="operator-approved 2026-07-12 — reviewed and accepted",
+        )
+        result = lazy_core.gate_verdict_ok(spec_dir, repo_root)
+    assert result["ok"] is True, result
+
+
+def test_gate_verdict_ok_malformed_verdict_refuses_not_crashes():
+    """A GATE_VERDICT.md with unparseable frontmatter (parse_sentinel's
+    _die() path) refuses gracefully rather than crashing the ship seam."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        _gate_write_manifest(repo_root, ["scoped/**"])
+        spec_dir = _prov_spec_dir(repo_root, "feat-malformed")
+        _prov_git_commit_file(
+            repo_root, "scoped/thing.py", "fix(feat-malformed): work")
+        (spec_dir / "GATE_VERDICT.md").write_text(
+            "---\nkind: gate-verdict\nchecks: [this is not a mapping\n---\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.gate_verdict_ok(spec_dir, repo_root)
+    assert result["ok"] is False and result["in_scope"] is True, result
+
+
+def test_apply_pseudo_mark_complete_refuses_scoped_change_missing_gate_verdict():
+    """End-to-end: __mark_complete__ on a scoped item with no GATE_VERDICT.md
+    refuses (zero writes beyond what already existed — no receipt)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        _gate_write_manifest(repo_root, ["scoped/**"])
+        spec_dir = _prov_spec_dir(repo_root, "feat-e2e-missing")
+        _write_validated_md(spec_dir)
+        _prov_git_commit_file(
+            repo_root, "scoped/thing.py", "fix(feat-e2e-missing): work")
+        state_dir = repo_root / "state-e2e-missing"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            result = lazy_core.apply_pseudo(
+                repo_root, "__mark_complete__", spec_dir,
+                feature_id="feat-e2e-missing", date="2026-07-12",
+            )
+        finally:
+            _clear_state_dir()
+        assert result["ok"] is False, result
+        assert "harness-change design gate" in result.get("refused", ""), result
+        assert not (spec_dir / "COMPLETED.md").exists(), (
+            "a ship-seam refusal must write ZERO completion artifacts"
+        )
+
+
+def test_apply_pseudo_mark_complete_succeeds_with_clean_gate_verdict():
+    """End-to-end: the SAME scoped item WITH a clean GATE_VERDICT.md
+    completes normally (receipt written, Status flips)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        _gate_write_manifest(repo_root, ["scoped/**"])
+        spec_dir = _prov_spec_dir(repo_root, "feat-e2e-clean")
+        _write_validated_md(spec_dir)
+        _prov_git_commit_file(
+            repo_root, "scoped/thing.py", "fix(feat-e2e-clean): work")
+        _gate_write_verdict(spec_dir, {"overfit": "pass"})
+        state_dir = repo_root / "state-e2e-clean"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            result = lazy_core.apply_pseudo(
+                repo_root, "__mark_complete__", spec_dir,
+                feature_id="feat-e2e-clean", date="2026-07-12",
+            )
+        finally:
+            _clear_state_dir()
+        assert result["ok"] is True, result
+        assert (spec_dir / "COMPLETED.md").exists()
+
+
+def test_apply_pseudo_mark_fixed_refuses_scoped_change_missing_gate_verdict():
+    """Parity: the bug-pipeline __mark_fixed__ arm shares the SAME
+    apply_pseudo branch, so the ship seam applies identically there — a
+    scoped bug fix with no GATE_VERDICT.md refuses."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        _gate_write_manifest(repo_root, ["scoped/**"])
+        spec_dir = repo_root / "docs" / "bugs" / "bug-e2e-missing"
+        spec_dir.mkdir(parents=True)
+        _write_spec_md(spec_dir, status="In-progress")
+        _write_skip_mcp_test(spec_dir)
+        _prov_git_commit_file(
+            repo_root, "scoped/thing.py", "fix(bug-e2e-missing): work")
+        state_dir = repo_root / "state-bug-e2e-missing"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            result = lazy_core.apply_pseudo(
+                repo_root, "__mark_fixed__", spec_dir,
+                feature_id="bug-e2e-missing", date="2026-07-12",
+            )
+        finally:
+            _clear_state_dir()
+        assert result["ok"] is False, result
+        assert "harness-change design gate" in result.get("refused", ""), result
+        assert not (spec_dir / "FIXED.md").exists()
+
+
+_TESTS = _TESTS + [
+    ("test_gate_verdict_ok_no_manifest_out_of_scope",
+     test_gate_verdict_ok_no_manifest_out_of_scope),
+    ("test_gate_verdict_ok_manifest_present_but_change_out_of_scope",
+     test_gate_verdict_ok_manifest_present_but_change_out_of_scope),
+    ("test_gate_verdict_ok_scoped_missing_verdict_refuses",
+     test_gate_verdict_ok_scoped_missing_verdict_refuses),
+    ("test_gate_verdict_ok_scoped_clean_verdict_ok",
+     test_gate_verdict_ok_scoped_clean_verdict_ok),
+    ("test_gate_verdict_ok_failing_check_refuses",
+     test_gate_verdict_ok_failing_check_refuses),
+    ("test_gate_verdict_ok_unsigned_gate_weakening_refuses",
+     test_gate_verdict_ok_unsigned_gate_weakening_refuses),
+    ("test_gate_verdict_ok_signed_gate_weakening_ok",
+     test_gate_verdict_ok_signed_gate_weakening_ok),
+    ("test_gate_verdict_ok_malformed_verdict_refuses_not_crashes",
+     test_gate_verdict_ok_malformed_verdict_refuses_not_crashes),
+    ("test_apply_pseudo_mark_complete_refuses_scoped_change_missing_gate_verdict",
+     test_apply_pseudo_mark_complete_refuses_scoped_change_missing_gate_verdict),
+    ("test_apply_pseudo_mark_complete_succeeds_with_clean_gate_verdict",
+     test_apply_pseudo_mark_complete_succeeds_with_clean_gate_verdict),
+    ("test_apply_pseudo_mark_fixed_refuses_scoped_change_missing_gate_verdict",
+     test_apply_pseudo_mark_fixed_refuses_scoped_change_missing_gate_verdict),
+]
+
+
+# ---------------------------------------------------------------------------
+# guard-fail-open-leaves-no-trace item 4 (STATE-lane descoped residual) —
+# lazy_core.read_hook_events / guard_plane_heartbeat. Report-only advisory;
+# never gates or halts anything.
+# ---------------------------------------------------------------------------
+
+def test_read_hook_events_empty_missing_and_corrupt_tolerant():
+    """read_hook_events: missing file -> []; a torn/corrupt line is skipped,
+    not fatal."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.read_hook_events() == []
+            events_path = state_dir / "hook-events.jsonl"
+            events_path.write_text(
+                '{"ts": 1000.0, "kind": "error", "hook": "h1", "repo_root": "", '
+                '"signature": "", "detail": "boom"}\n'
+                "{not valid json\n"
+                '{"ts": 1001.0, "kind": "deny", "hook": "h2", "repo_root": "", '
+                '"signature": "sig", "detail": "d"}\n',
+                encoding="utf-8",
+            )
+            got = lazy_core.read_hook_events()
+            assert len(got) == 2, got
+            assert got[0]["hook"] == "h1" and got[1]["hook"] == "h2"
+        finally:
+            _clear_state_dir()
+
+
+def test_guard_plane_heartbeat_none_without_marker():
+    """No live run marker -> None (nothing to assess)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.guard_plane_heartbeat() is None
+        finally:
+            _clear_state_dir()
+
+
+def test_guard_plane_heartbeat_none_before_min_cycles():
+    """A live marker with fewer than _GUARD_PLANE_HEARTBEAT_MIN_CYCLES total
+    cycles is too early to assess -> None (a fresh run legitimately has zero
+    guard events)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=20, now=1_700_000_000.0,
+            )
+            marker_path = state_dir / lazy_core._MARKER_FILENAME
+            marker = json.loads(marker_path.read_text(encoding="utf-8"))
+            marker["forward_cycles"] = 1
+            marker["meta_cycles"] = 1
+            marker_path.write_text(json.dumps(marker) + "\n", encoding="utf-8")
+            assert lazy_core.guard_plane_heartbeat(now=1_700_000_010.0) is None
+        finally:
+            _clear_state_dir()
+
+
+def test_guard_plane_heartbeat_quiet_true_when_zero_events():
+    """Past the min-cycle threshold with ZERO hook-events.jsonl entries ->
+    quiet: True, events_this_run: 0 (the literal "guards executed 0 times"
+    surface — advisory, never a halt)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=20, now=1_700_000_000.0,
+            )
+            marker_path = state_dir / lazy_core._MARKER_FILENAME
+            marker = json.loads(marker_path.read_text(encoding="utf-8"))
+            marker["forward_cycles"] = 5
+            marker["meta_cycles"] = 0
+            marker_path.write_text(json.dumps(marker) + "\n", encoding="utf-8")
+            result = lazy_core.guard_plane_heartbeat(now=1_700_000_600.0)
+        finally:
+            _clear_state_dir()
+    assert result == {
+        "events_this_run": 0, "cycles_this_run": 5, "quiet": True,
+    }
+
+
+def test_guard_plane_heartbeat_counts_events_since_run_start_only():
+    """Events BEFORE the run's started_at (a prior run's stale trace) do NOT
+    count; events at-or-after started_at do -> quiet: False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            # A prior-run event BEFORE this run started — must be excluded.
+            (state_dir / "hook-events.jsonl").write_text(
+                '{"ts": 1699999000.0, "kind": "error", "hook": "old", '
+                '"repo_root": "", "signature": "", "detail": "stale"}\n',
+                encoding="utf-8",
+            )
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=20, now=1700000000.0,
+            )
+            marker_path = state_dir / lazy_core._MARKER_FILENAME
+            marker = json.loads(marker_path.read_text(encoding="utf-8"))
+            marker["forward_cycles"] = 5
+            marker["meta_cycles"] = 0
+            marker_path.write_text(json.dumps(marker) + "\n", encoding="utf-8")
+            # An in-run event AFTER started_at — must be counted.
+            with (state_dir / "hook-events.jsonl").open("a", encoding="utf-8") as fh:
+                fh.write(
+                    '{"ts": 1700000500.0, "kind": "deny", "hook": "live", '
+                    '"repo_root": "", "signature": "sig", "detail": "d"}\n'
+                )
+            result = lazy_core.guard_plane_heartbeat(now=1700000600.0)
+        finally:
+            _clear_state_dir()
+    assert result == {
+        "events_this_run": 1, "cycles_this_run": 5, "quiet": False,
+    }
+
+
+def test_compute_state_surfaces_guard_plane_heartbeat_end_to_end():
+    """Integration: lazy-state.py's compute_state() folds
+    guard_plane_heartbeat into the probe output once the run marker has
+    reached the min-cycle threshold (zero hook events -> quiet: True); a
+    fresh marker (below threshold) leaves the key entirely absent."""
+    _guard()
+    ls = _load_state_script("lazy-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        repo = ls._build_fixture(td_path, "fresh-queue")
+        state_dir = td_path / "gph-state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            # Below threshold: key absent (byte-identical default output).
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(repo),
+                max_cycles=20, now=_t.time() - 60,
+            )
+            result_early = ls.compute_state(repo, cloud=False)
+            assert "guard_plane_heartbeat" not in result_early, result_early
+
+            # Past threshold, zero hook events -> quiet: True.
+            marker_path = state_dir / lazy_core._MARKER_FILENAME
+            marker = json.loads(marker_path.read_text(encoding="utf-8"))
+            marker["forward_cycles"] = 6
+            marker["meta_cycles"] = 0
+            marker_path.write_text(json.dumps(marker) + "\n", encoding="utf-8")
+            result = ls.compute_state(repo, cloud=False)
+        finally:
+            _clear_state_dir()
+    assert result.get("guard_plane_heartbeat") == {
+        "events_this_run": 0, "cycles_this_run": 6, "quiet": True,
+    }, result
+
+
+_TESTS = _TESTS + [
+    ("test_read_hook_events_empty_missing_and_corrupt_tolerant",
+     test_read_hook_events_empty_missing_and_corrupt_tolerant),
+    ("test_guard_plane_heartbeat_none_without_marker",
+     test_guard_plane_heartbeat_none_without_marker),
+    ("test_guard_plane_heartbeat_none_before_min_cycles",
+     test_guard_plane_heartbeat_none_before_min_cycles),
+    ("test_guard_plane_heartbeat_quiet_true_when_zero_events",
+     test_guard_plane_heartbeat_quiet_true_when_zero_events),
+    ("test_guard_plane_heartbeat_counts_events_since_run_start_only",
+     test_guard_plane_heartbeat_counts_events_since_run_start_only),
+    ("test_compute_state_surfaces_guard_plane_heartbeat_end_to_end",
+     test_compute_state_surfaces_guard_plane_heartbeat_end_to_end),
+]
 
 
 # ---------------------------------------------------------------------------

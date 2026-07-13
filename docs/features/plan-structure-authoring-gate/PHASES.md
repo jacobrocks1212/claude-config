@@ -210,9 +210,9 @@ same `run_structural_checks`/rule functions (or shells the same CLI) at a differ
 
 ---
 
-### Phase 4: Pickup backstop (in-process validation at first `/execute-plan` routing) — NOT STARTED, cross-lane
+### Phase 4: Pickup backstop (in-process validation at first `/execute-plan` routing) — APPLIED, STATE lane (state-batch-5)
 
-**Phase kind:** cross-lane / not implemented this session
+**Phase kind:** cross-lane / applied this session (STATE lane)
 
 **Scope (as designed, per SPEC D4 — unchanged from the SPEC's recommendation):** the probe that
 first routes `execute-plan` onto a plan part (`lazy-state.py` / `bug-state.py`) runs the same
@@ -220,40 +220,64 @@ structural checks in-process; a structural ERROR refuses the route and surfaces 
 the fix command, before any execution begins; legacy pre-gate plans already mid-execution (some
 `- [x]` WU ticked) are exempted from refusal (WARN only).
 
-**Why this phase is not done:** it requires editing `user/scripts/lazy_core.py` and/or
-`user/scripts/lazy-state.py` / `user/scripts/bug-state.py`, which are explicitly out of the
-SKILLS lane's scope this session (a separate STATE lane is concurrently active on those exact
-files). This is a scope boundary, not a design gap — see `NEEDS_INPUT_PROVISIONAL.md` D4.
+**Reuse shape chosen (D1-RESIDENCY, resolves to option (c)/(b)):** neither a hoist into
+`lazy_core.py` nor a subprocess shell-out — `lazy_core.plan_structural_backstop` imports
+`validate-plan.py` IN-PROCESS via `importlib` (the same reverse-direction pattern
+`validate-plan.py` itself already uses to load `lazy_core.py`), calling
+`run_structural_checks(plan_path)` directly. Zero subprocess spawn cost (satisfying D1's literal
+"in-process" intent) AND zero rule-function hoist (`validate-plan.py` stays byte-untouched, so
+the SKILLS lane's ownership of that file is respected retroactively).
 
-**Deliverables (wanted, for the STATE lane):**
-- [ ] Decide the reuse shape: hoist `validate-plan.py`'s rule functions into `lazy_core.py` (the
-  SPEC's literal D1 recommendation, enabling a true in-process call with zero subprocess cost),
-  OR have `lazy-state.py`/`bug-state.py` shell out to `python3 validate-plan.py --structural
-  <path>` as a subprocess at the plan-pickup probe (simpler, avoids the hoist entirely, and the
-  checks are pure-text so the subprocess cost is negligible — a legitimate alternative
-  satisfying D4's intent without literally following D1's "in-process" phrasing). See
-  `NEEDS_INPUT_PROVISIONAL.md` D1 for the tradeoff.
-- [ ] Wire the chosen check into the plan-pickup probe (parity: both `lazy-state.py` and
-  `bug-state.py`).
-- [ ] The mid-execution exemption (some `- [x]` WU ticked → WARN only, never refuse) — this
-  needs a `lazy_core` helper (or a direct read of `_plan_wu_checkbox_counts`'s `checked` count)
-  to distinguish a fresh invalid plan from an in-flight one.
-- [ ] `lazy-state.py --test` / `bug-state.py --test` fixtures: backstop refuses a fresh
-  structurally-invalid plan at pickup; a mid-execution plan (some ticked WUs) WARN-only
-  proceeds; parity audit (`lazy_parity_audit.py --repo-root .`) stays exit 0.
+**Delta from the literal recorded design (documented, not silent):** the mid-execution
+discriminator is BROADER than "`checked` count only". A plan with ZERO parseable WU checkboxes at
+ALL (`unchecked == checked == 0`) is ALSO exempted from refusal — this repo's OWN pre-existing
+legacy plans (verified via this repo's own `lazy-state.py --test` / `bug-state.py --test` smoke
+fixtures, e.g. `mid-implementation`, `legacy-plan-diagnostics`) have no WU checklist at all, a
+shape `_plan_wu_checkbox_counts`'s own docstring calls "a legacy pre-ISSUE-6 plan" that the rest of
+this codebase has always tolerated (falls back to PHASES-level tracking, never an error).
+Rule 1 (`wu-checklist`) flags EVERY such plan as ERROR regardless of age, so applying the literal
+"checked count only" discriminator would have refused routing on every pre-existing legacy plan —
+verified as a real regression against 8 named smoke fixtures before this exemption was added.
+See `lazy_core.plan_structural_backstop`'s docstring for the full rationale.
 
-**Minimum Verifiable Behavior (wanted):** a fresh plan part with no WU checklist reaching the
-pickup probe refuses the route with the structural findings; the same plan with 1+ ticked WUs
-proceeds with a WARN.
+**Deliverables:**
+- [x] Reuse shape decided: in-process `importlib` load of `validate-plan.py` (see above).
+- [x] Wired into the plan-pickup probe in BOTH `lazy-state.py` (Step 7a, right before the
+  `execute-plan` dispatch) and `bug-state.py` (the mirrored Step 7a site) — a scoped, fresh,
+  structurally-invalid plan writes `BLOCKED.md` (`blocker_kind: plan-structural-invalid`) and
+  refuses the route; a mid-execution/legacy plan WARNs (findings surfaced, findings never block).
+- [x] The mid-execution exemption: `lazy_core.plan_structural_backstop(plan_path)` reads
+  `_plan_wu_checkbox_counts` directly (`checked > 0` OR the legacy-no-checkboxes case above).
+- [x] `lazy-state.py --test` / `bug-state.py --test` fixtures:
+  `plan-structural-backstop-refuses-fresh-invalid` (BLOCKED.md + `terminal_reason: blocked`) and
+  `plan-structural-backstop-mid-execution-warns` (falls through to `execute-plan`) — added to both
+  scripts' in-file smoke harness + the byte-pinned baselines regenerated (2 new lines each, via
+  `_normalize_smoke_output`, no other diff). `lazy_parity_audit.py --repo-root .` exit 0.
+  `test_lazy_core.py`: 5 unit fixtures on `plan_structural_backstop`/`format_plan_structural_blocker`
+  (clean plan / fresh-invalid refuses / mid-execution warns / missing-file fails open / blocker body
+  names findings).
 
-**Runtime Verification:** N/A — not implemented.
+**Minimum Verifiable Behavior:** a fresh plan part with an unfilled WU-checklist template-row
+placeholder reaching the pickup probe refuses the route with the structural findings (verified via
+both the unit fixture and the state-script smoke fixture); the same defect on a plan with 1+
+ticked WUs proceeds with a WARN (findings still surfaced).
+
+**Runtime Verification** *(checked by integration test)*:
+- [x] `python -m pytest user/scripts/test_lazy_core.py -k "plan_structural_backstop or
+  format_plan_structural_blocker"` — 5 passed. `python user/scripts/lazy-state.py --test` /
+  `python user/scripts/bug-state.py --test` — both `All smoke tests passed.`, baselines
+  byte-stable modulo the 2 new named fixture lines each. <!-- verification-only -->
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
 
 **Prerequisites:** Phases 1–3 (the validator + rule set + skill wiring this session delivered).
 
-**Files likely modified (wanted):** `user/scripts/lazy_core.py`, `user/scripts/lazy-state.py`,
-`user/scripts/bug-state.py`, their test files.
+**Files modified:** `user/scripts/lazy_core.py` (`_load_validate_plan_module`,
+`plan_structural_backstop`, `format_plan_structural_blocker`), `user/scripts/lazy-state.py` (Step
+7a pickup wiring + 2 smoke fixtures), `user/scripts/bug-state.py` (mirrored wiring + 2 smoke
+fixtures), `user/scripts/test_lazy_core.py` (5 unit fixtures),
+`user/scripts/tests/baselines/{lazy-state,bug-state}-test-baseline.txt` (regenerated).
 
-**Testing Strategy (wanted):** Hermetic `--test` fixtures on both state scripts (mirroring the
-existing plan-pickup fixture shapes), plus the parity audit.
+**Testing Strategy:** Hermetic `--test` fixtures on both state scripts (mirroring the existing
+plan-pickup fixture shapes), plus hermetic pytest unit fixtures on the shared helper and the
+parity audit.

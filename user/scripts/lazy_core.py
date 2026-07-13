@@ -3122,6 +3122,138 @@ def _evidence_gate_killed() -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# anti-overfit-design-gate D3 — completion-gate ship seam (STATE-lane seam,
+# NEEDS_INPUT_PROVISIONAL.md D3/D4/D7 — feature is STRUCTURALLY PROVISIONAL,
+# unratified; see this module's ``gate_verdict_ok`` docstring for the honesty
+# rail this seam is deliberately keyed under). Reuses harness-gate.py's
+# manifest loader + glob matcher via in-process import (the SAME pattern
+# ``plan_structural_backstop`` uses for validate-plan.py) rather than
+# duplicating the manifest schema/matching logic here.
+# ---------------------------------------------------------------------------
+
+def _load_harness_gate_module():
+    """Import harness-gate.py (this script's sibling) via importlib — the
+    same dash-free-module-name workaround as ``_load_validate_plan_module``.
+    Never raises by itself; callers degrade fail-open/out-of-scope."""
+    import importlib.util
+
+    path = Path(__file__).resolve().parent / "harness-gate.py"
+    spec = importlib.util.spec_from_file_location("harness_gate", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _load_control_surface_globs(repo_root: Path) -> "list[str] | None":
+    """The merged ``control_surfaces`` + ``gate_own`` glob list from
+    ``docs/gate/control-surfaces.json`` (harness-gate.py's own manifest
+    schema/reader — imported, never re-implemented). Returns ``None`` when
+    the manifest is absent or malformed — the caller treats that as
+    out-of-scope (a repo without the manifest, or claude-config before D1
+    ratification removes it, is completely unaffected)."""
+    try:
+        hg = _load_harness_gate_module()
+        manifest = hg.load_manifest(Path(repo_root))
+    except Exception:  # noqa: BLE001 — missing/malformed manifest -> None
+        return None
+    return manifest.get("globs")
+
+
+def _manifest_glob_match(path: str, glob: str) -> bool:
+    """Delegate to harness-gate.py's ``_glob_match`` (imported, never
+    re-implemented). Any import failure degrades to no-match (never crashes
+    the ship seam)."""
+    try:
+        hg = _load_harness_gate_module()
+        return hg._glob_match(path, glob)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def gate_verdict_ok(spec_path: Path, repo_root: Path) -> dict:
+    """anti-overfit-design-gate D3 ship seam. PURE READ.
+
+    Refuses a scoped item whose ``GATE_VERDICT.md`` is missing, has any
+    ``fail``-graded check, or has an unsigned ``gate_weakening`` hit. Scope is
+    RE-DERIVED from the item's own commit set against the committed
+    control-surface manifest (never trusted from the verdict file itself —
+    a verdict cannot self-attest its own applicability). Out-of-scope, or no
+    manifest present at all, is ``{ok: True, in_scope: False}`` — byte-
+    identical to a repo/feature this gate has never touched.
+
+    **HONESTY RAIL (do not remove without a ratification event):** this
+    feature (anti-overfit-design-gate) is itself STRUCTURALLY PROVISIONAL —
+    ``docs/features/anti-overfit-design-gate/NEEDS_INPUT_PROVISIONAL.md``
+    records D1/D3/D4/D7 as auto-accepted-not-ratified, `divergence:
+    structural` (the most severe grade). This function's own enforcement is
+    GATED ENTIRELY on ``docs/gate/control-surfaces.json`` existing (D1's own
+    committed-manifest choice) — with the manifest absent (e.g. removed on a
+    D1 redirect) this function is a pure no-op returning ``in_scope: False``
+    for every caller, so ratification (or a full redirect) reverts cleanly:
+    delete the manifest and this ship seam disarms itself with zero code
+    changes required.
+
+    Returns ``{ok: bool, in_scope: bool, reason: str}``.
+    """
+    manifest_globs = _load_control_surface_globs(repo_root)
+    if manifest_globs is None:
+        return {"ok": True, "in_scope": False, "reason": "no control-surface manifest"}
+    changed = _item_commit_touched_files(spec_path, repo_root)
+    hits = [f for f in changed if any(
+        _manifest_glob_match(f, g) for g in manifest_globs)]
+    if not hits:
+        return {"ok": True, "in_scope": False, "reason": "out of scope"}
+    verdict_path = Path(spec_path) / "GATE_VERDICT.md"
+    if not verdict_path.exists():
+        return {
+            "ok": False, "in_scope": True,
+            "reason": "scoped change missing GATE_VERDICT.md",
+        }
+    try:
+        fm = parse_sentinel(verdict_path)
+    except SystemExit:
+        # parse_sentinel _die()s on malformed frontmatter — a ship seam must
+        # report, never crash the completion process. Treat as a failing
+        # verdict (never a silent pass on a corrupt file).
+        return {
+            "ok": False, "in_scope": True,
+            "reason": "GATE_VERDICT.md frontmatter is malformed/unreadable",
+        }
+    checks = fm.get("checks") or {}
+    if not isinstance(checks, dict):
+        checks = {}
+    failing = [k for k, v in checks.items() if v == "fail"]
+    if failing:
+        return {
+            "ok": False, "in_scope": True,
+            "reason": f"GATE_VERDICT.md failing check(s): {failing}",
+        }
+    if checks.get("gate_weakening") == "hit-signed" and not fm.get("override"):
+        return {
+            "ok": False, "in_scope": True,
+            "reason": "gate_weakening hit lacks operator override",
+        }
+    return {"ok": True, "in_scope": True, "reason": "gate verdict clean"}
+
+
+def _item_commit_touched_files(spec_path: Path, repo_root: Path) -> "list[str]":
+    """The touched-file set for an item's shipped commits, reusing the
+    EXISTING derivation ``write_provenance`` already uses (commit-brackets
+    primary, message-grep fallback via ``derive_touched_from_brackets`` /
+    ``derive_touched_from_grep``) — never re-implemented. ``spec_path`` may
+    be the item's SPEC.md file or its containing dir; the item id is the
+    dir's basename either way."""
+    item_dir = Path(spec_path)
+    if item_dir.name == "SPEC.md":
+        item_dir = item_dir.parent
+    item_id = item_dir.name
+    derived = derive_touched_from_brackets(repo_root, item_id)
+    if derived is None:
+        derived = derive_touched_from_grep(repo_root, item_id)
+    return list((derived or {}).get("files") or [])
+
+
 def evaluate_completion_evidence(feature_dir: Path, repo_root: Path) -> dict:
     """Evaluate a feature's on-disk /mcp-test evidence → completion verdict.
 
@@ -3817,6 +3949,119 @@ def _plan_wu_checkbox_counts(plan_text: str) -> tuple[int, int]:
         else:
             checked += 1
     return unchecked, checked
+
+
+# ---------------------------------------------------------------------------
+# plan-structure-authoring-gate Phase 4 — pickup backstop (STATE-lane seam,
+# NEEDS_INPUT_PROVISIONAL.md D1-RESIDENCY/D4-NOT-DONE). validate-plan.py's
+# `--structural` rule set (rules 1/2/3/4/6, `run_structural_checks`) is
+# authored and owned there — this seam calls it IN-PROCESS via importlib
+# (mirroring validate-plan.py's own `_load_lazy_core`, which loads THIS
+# module the same reverse-shaped way), so `lazy-state.py`/`bug-state.py`
+# get the D4-recommended in-process check with ZERO subprocess spawn cost
+# and WITHOUT hoisting the rule functions into this file (validate-plan.py
+# stays byte-untouched — a third option satisfying D4's intent, distinct
+# from both D1-RESIDENCY options (a) hoist / (b) subprocess shell-out).
+# ---------------------------------------------------------------------------
+
+def _load_validate_plan_module():
+    """Import validate-plan.py (this script's sibling) via importlib — the
+    reverse-direction mirror of validate-plan.py's own ``_load_lazy_core``.
+    Resilient to invocation via the ``~/.claude/scripts`` symlink (resolves
+    relative to THIS file's real parent, not the symlinked path). Never
+    raises on import failure by itself — the caller degrades fail-open."""
+    import importlib.util
+
+    path = Path(__file__).resolve().parent / "validate-plan.py"
+    spec = importlib.util.spec_from_file_location("validate_plan", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def plan_structural_backstop(plan_path) -> dict:
+    """Plan-structure-authoring-gate Phase 4 pickup backstop.
+
+    Validates a plan part STRUCTURALLY (in-process, via validate-plan.py's
+    ``run_structural_checks`` — imported, never re-implemented) at first
+    ``/execute-plan`` routing, per the feature's recorded D4 design.
+
+    Mid-execution exemption (WARN-only, per PHASES.md Phase 4's recorded
+    Minimum Verifiable Behavior): a plan with >= 1 ticked WU
+    (``_plan_wu_checkbox_counts``) is already in flight — a structurally
+    invalid FRESH plan (zero ticked WUs) refuses the route; the SAME
+    findings on an in-flight plan only WARN (never block work already
+    underway).
+
+    **Delta from the literal recorded design (documented, not silent):**
+    a plan with ZERO parseable WU checkboxes at ALL (``unchecked == checked
+    == 0``) is ALSO exempted from refusal (WARN-only), not just a plan with
+    >= 1 ticked box. ``_plan_wu_checkbox_counts``'s own docstring calls this
+    shape "a legacy pre-ISSUE-6 plan" whose caller "falls back to the
+    PHASES-phase-level behavior... rather than vacuously pass" — i.e. the
+    REST of this codebase has always tolerated a plan with no WU checklist
+    at all as a different, valid, pre-existing shape, never an error.
+    validate-plan.py's own rule 1 (``wu-checklist``) flags EVERY such plan
+    as ERROR regardless of age; applying the literal "checked count only"
+    discriminator here would refuse routing on every pre-existing legacy
+    plan this repo already has (verified against this repo's own state-
+    script smoke fixtures — see PHASES.md Implementation Notes). Refusal is
+    reserved for a plan that genuinely HAS unchecked WU rows under the new
+    convention and simply never had one ticked (fresh, badly authored).
+
+    Returns ``{"ok": bool, "findings": [str, ...], "mid_execution": bool}``.
+    ``mid_execution`` reflects the literal checked-count discriminator
+    (checked > 0); the broader legacy exemption above is folded into ``ok``
+    only, so callers reading ``mid_execution`` see the documented signal
+    unchanged. Never raises — this is a backstop, not a new failure surface:
+    any internal error (unreadable plan, a broken validate-plan.py import)
+    degrades to ``ok: True`` with empty findings (fail-open), exactly like
+    every other diagnostic-only gate in this file.
+    """
+    try:
+        plan_text = Path(plan_path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {"ok": True, "findings": [], "mid_execution": False}
+    try:
+        unchecked, checked = _plan_wu_checkbox_counts(plan_text)
+    except Exception:  # noqa: BLE001 — a backstop must never itself halt the pipeline
+        unchecked, checked = 0, 0
+    mid_execution = bool(checked)
+    legacy_no_checkboxes = (unchecked == 0 and checked == 0)
+    exempt = mid_execution or legacy_no_checkboxes
+    try:
+        vp_mod = _load_validate_plan_module()
+        lines, exit_code = vp_mod.run_structural_checks(str(plan_path))
+    except Exception:  # noqa: BLE001
+        return {"ok": True, "findings": [], "mid_execution": mid_execution}
+    has_error = exit_code == 1
+    ok = (not has_error) or exempt
+    return {"ok": ok, "findings": lines, "mid_execution": mid_execution}
+
+
+def format_plan_structural_blocker(plan_path, findings: "list[str]") -> str:
+    """BLOCKED.md body for a FRESH (zero ticked WUs) plan part that fails the
+    plan-structure-authoring-gate structural checks at first ``/execute-plan``
+    routing (Phase 4 pickup backstop). Never fires for a mid-execution plan
+    (>= 1 ticked WU) — that case WARNs and proceeds, never blocking in-flight
+    work (the ``format_unknown_dependency_blocker`` shape, for the same
+    "loud, immediate validation failure instead of silent starvation" reason).
+    """
+    finding_lines = "\n".join(f"  {f}" for f in findings) or "  (no findings text)"
+    return (
+        "# Blocked — plan fails structural validation\n\n"
+        "## Details\n\n"
+        f"`{plan_path}` failed `validate-plan.py --structural` at first "
+        "`/execute-plan` routing (plan-structure-authoring-gate Phase 4 pickup "
+        "backstop). The plan has ZERO ticked work units (a fresh plan, not "
+        "in-flight execution), so this is refused rather than warned.\n\n"
+        f"Findings:\n{finding_lines}\n\n"
+        "Classification: `blocker_kind: plan-structural-invalid`.\n\n"
+        "## Recovery Suggestion\n\n"
+        "Fix the plan part per the findings above (re-run `python3 "
+        "user/scripts/validate-plan.py --structural <plan path>` to confirm "
+        "clean), then neutralize/rename this BLOCKED.md.\n"
+    )
 
 
 def _plan_unchecked_wus_are_verification_only(plan_text: str) -> bool:
@@ -5355,6 +5600,26 @@ def apply_pseudo(
                 "present; ratify or redirect via the provisional-ratification "
                 "affordance before completion"
             )
+
+        # --- anti-overfit-design-gate D3 ship seam (STATE-lane SEAM-DEFERRED
+        # diff, PHASES.md Phase 3 Implementation Notes) — the completion-gate
+        # half of the harness-change design gate. Re-derives whether this
+        # item's shipped commits touch a committed control surface
+        # (docs/gate/control-surfaces.json); a scoped item with a missing,
+        # failing, or unsigned-gate-weakening GATE_VERDICT.md refuses with
+        # ZERO writes. Out-of-scope / no manifest present -> no-op (in_scope:
+        # False), so this is inert everywhere the manifest doesn't exist —
+        # see gate_verdict_ok's own docstring for the honesty rail (this
+        # feature is itself unratified/structurally-provisional; deleting the
+        # manifest reverts this seam cleanly with zero code changes).
+        if not resuming:
+            _gv = gate_verdict_ok(spec_path, repo_root)
+            if not _gv["ok"]:
+                return _refused(
+                    f"harness-change design gate: {_gv['reason']} — author/"
+                    "repair GATE_VERDICT.md (see "
+                    "_components/harness-change-gate.md) before completion"
+                )
 
         # --- Evidence-gated auto-tick of certified verification rows ---
         # (completion-coherence-gate-reconciliation Phase 3). BEFORE the
@@ -7742,6 +8007,12 @@ def emit_cycle_prompt(
         # (or `park=both`) keeps the pre-existing always-selected behavior.
         if attrs.get("park") == "park" and not park_mode:
             continue
+        # hosts= filter (cycle-prompt-environment-dialect, SPEC D2): hosts=windows
+        # sections are selected ONLY when the emitting host is Windows. Absent ->
+        # always selected (grammar-additive, same shape as park=).
+        host_attr = attrs.get("hosts")
+        if host_attr == "windows" and os.name != "nt":
+            continue
         if sec["content"]:
             selected.append(sec["content"])
 
@@ -7785,6 +8056,10 @@ def emit_cycle_prompt(
                     continue
             # park= filter — same rule as the base selection (SPEC D13).
             if attrs.get("park") == "park" and not park_mode:
+                continue
+            # hosts= filter — same rule as the base selection (SPEC D2).
+            host_attr = attrs.get("hosts")
+            if host_attr == "windows" and os.name != "nt":
                 continue
             if sec["content"]:
                 addenda_selected.append(sec["content"])
@@ -15280,6 +15555,111 @@ def append_hook_event(
         return False
 
 
+def read_hook_events() -> list[dict]:
+    """Read all ``hook-events.jsonl`` entries, skipping any unparseable lines.
+
+    Mirrors ``read_deny_ledger``'s corrupt-line-tolerant shape (a torn final
+    append must not brick the whole read). A missing file → empty list
+    (no hook deny/error events recorded yet).
+    """
+    events_path = claude_state_dir(create=False) / _HOOK_EVENTS_FILENAME
+    if not events_path.exists():
+        return []
+    try:
+        raw = events_path.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    entries: list[dict] = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(obj, dict):
+            entries.append(obj)
+    return entries
+
+
+# guard-fail-open-leaves-no-trace item 4 (STATE-lane descoped residual,
+# docs/bugs/_archive/guard-fail-open-leaves-no-trace) — a REPORT-ONLY, never-
+# halting fail-open "dead guard plane" advisory. SPEC D2 left the exact shape
+# genuinely undecided ("decide at planning: inject-banner vs --probe vs
+# both"); FIXED.md recommends "a follow-up STATE-lane bug/enhancement". This
+# is the cheapest state-script-visible proxy without a HOOKS-lane change
+# (out of this seam's scope — no per-invocation heartbeat WRITE exists on
+# the hook side; hook-events.jsonl only fires on a DENY or an ERROR, never a
+# healthy silent ALLOW, by the bug's own Fix Scope item 1 design).
+_GUARD_PLANE_HEARTBEAT_MIN_CYCLES = 5
+
+
+def guard_plane_heartbeat(*, now: float | None = None) -> "dict | None":
+    """Surface the SPEC's literal ask — "guards executed 0 times this run"
+    (Fix Scope item 4) — as a report-only probe diagnostic. PURE READ; never
+    raises; NEVER gates or halts anything.
+
+    Counts ``hook-events.jsonl`` entries (``kind: deny|error`` — the HOOKS-
+    lane fix for this same bug's Verified Symptoms (a)/(b)/(c)) timestamped
+    at-or-after the LIVE run marker's ``started_at``. Returns ``None`` (too
+    early / nothing to assess) when there is no live run marker, or the
+    marker's own ``forward_cycles + meta_cycles`` has not yet reached
+    ``_GUARD_PLANE_HEARTBEAT_MIN_CYCLES`` — a run that just started
+    legitimately has zero guard events regardless of health.
+
+    Returns ``{"events_this_run": int, "cycles_this_run": int, "quiet":
+    bool}`` otherwise (``quiet`` iff ``events_this_run == 0``).
+
+    **HONESTY CAVEAT (documented, not silent):** this is a WEAK, ADVISORY
+    signal, not a reliable dead-plane detector. A genuinely healthy multi-
+    cycle run can legitimately see zero denies/errors for its entire
+    duration — most guard hooks fast-path-ALLOW silently by design, and only
+    a deny or a crash is countable in ``hook-events.jsonl``. ``quiet: True``
+    means "worth a glance", never "confirmed dead". Any read/parse error
+    (corrupt marker, unreadable ledger) degrades to ``None`` — fail-open,
+    exactly like every other diagnostic-only helper in this module.
+    """
+    if now is None:
+        now = time.time()
+    try:
+        marker = read_run_marker(now=now)
+        if marker is None:
+            return None
+        forward = int(marker.get("forward_cycles") or 0)
+        meta = int(marker.get("meta_cycles") or 0)
+    except Exception:  # noqa: BLE001
+        return None
+    cycles_this_run = forward + meta
+    if cycles_this_run < _GUARD_PLANE_HEARTBEAT_MIN_CYCLES:
+        return None
+    started_at_str = marker.get("started_at", "")
+    try:
+        started_dt = datetime.datetime.strptime(started_at_str, "%Y-%m-%dT%H:%M:%SZ")
+        started_epoch = (
+            started_dt - datetime.datetime(1970, 1, 1)
+        ).total_seconds()
+    except (ValueError, TypeError):
+        return None
+    try:
+        events = read_hook_events()
+    except Exception:  # noqa: BLE001
+        return None
+    count = 0
+    for e in events:
+        try:
+            ts = float(e.get("ts"))
+        except (TypeError, ValueError):
+            continue
+        if ts >= started_epoch:
+            count += 1
+    return {
+        "events_this_run": count,
+        "cycles_this_run": cycles_this_run,
+        "quiet": count == 0,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Commit-bracket ledger (code-doc-provenance-linkage Phase 1 / SPEC D4-A)
 #
@@ -17224,9 +17604,36 @@ def _intervention_signal_event(target_signal: str) -> str | None:
     resolve through the friction-kpi-registry (soft dep) at evaluation time —
     this helper deliberately does NOT resolve them (the evaluator owns the
     resolution seam and degrades a miss to ``INCONCLUSIVE (kpi-unresolvable)``).
+
+    A sub-signal target (``event:<type>/<signature>``,
+    efficacy-signal-integrity D1) resolves to the SAME bare ``<type>`` here —
+    mirrors efficacy-eval.py's ``_resolve_target_signal`` contract exactly, so
+    the ledger event-type counting key never carries a ``/<signature>``
+    suffix that could never match a real ``event`` field. The signature
+    component (if any) is read separately via ``_intervention_signal_signature``
+    and folded into the baseline count by the caller.
     """
     if isinstance(target_signal, str) and target_signal.startswith("event:"):
-        return target_signal[len("event:"):] or None
+        ev = target_signal[len("event:"):]
+        if "/" in ev:
+            ev = ev.split("/", 1)[0]
+        return ev or None
+    return None
+
+
+def _intervention_signal_signature(target_signal: str) -> str | None:
+    """Return the ``<signature>`` component of an ``event:<type>/<signature>``
+    sub-signal target, else ``None`` (bare ``event:<type>``, non-event,
+    ``undeclared``, or ``invalid``). Pure string parsing, mirrors
+    efficacy-eval.py's ``_target_signature`` — DUPLICATED rather than
+    imported (efficacy-eval.py imports lazy_core, not the reverse; capture
+    validation and evaluation counting are separate lanes kept in lockstep by
+    hand)."""
+    if isinstance(target_signal, str) and target_signal.startswith("event:"):
+        rest = target_signal[len("event:"):]
+        if "/" in rest:
+            _, sig = rest.split("/", 1)
+            return sig or None
     return None
 
 
@@ -17254,6 +17661,32 @@ _INTERVENTION_EVENT_VOCABULARY: frozenset[str] = frozenset({
 })
 
 
+# The CLOSED set of gate-refusal sub-signal signatures (the `data.gate`
+# values every `append_telemetry_event("gate-refusal", data={"gate": <sig>,
+# ...})` call site passes). DUPLICATED from efficacy-eval.py's
+# `_GATE_REFUSAL_SIGNATURES` (that module imports lazy_core, not the
+# reverse — a capture-side validator cannot import the evaluator without a
+# cycle). Keep both sets in lockstep by hand; efficacy-eval.py's own comment
+# names this exact seam ("the capture-side vocabulary check that would also
+# validate <signature> against this set is a STATE-lane seam").
+_GATE_REFUSAL_SIGNATURES: frozenset[str] = frozenset({
+    "gate-coverage",
+    "unacked-hardening",
+    "efficacy-coverage-missing",
+    "checkpoint-auth",
+    "apply-pseudo",
+    "verify-ledger",
+})
+
+# Per-event-type closed sub-signal vocabulary for `event:<type>/<signature>`
+# targets (efficacy-signal-integrity D1). Only `gate-refusal` has a verified
+# sub-signal vocabulary in v1 (its `data.gate` field); an event type absent
+# from this map accepts no sub-signal component (bare `event:<type>` only).
+_INTERVENTION_SUB_SIGNAL_VOCABULARY: "dict[str, frozenset[str]]" = {
+    "gate-refusal": _GATE_REFUSAL_SIGNATURES,
+}
+
+
 def validate_intervention_target_signal(target_signal: str) -> str | None:
     """Validate an intervention hypothesis ``target_signal`` string. PURE.
 
@@ -17264,16 +17697,40 @@ def validate_intervention_target_signal(target_signal: str) -> str | None:
     is always valid (returns ``None``) — kpi targets resolve later through
     the friction-kpi-registry, and ``undeclared`` is the honest no-hypothesis
     default.
+
+    A sub-signal target (``event:<type>/<signature>``,
+    efficacy-signal-integrity D1) validates the bare ``<type>`` against the
+    same vocabulary AND, when a ``<signature>`` component is present,
+    additionally requires ``<type>`` to declare a sub-signal vocabulary
+    (``_INTERVENTION_SUB_SIGNAL_VOCABULARY``) AND ``<signature>`` to be a
+    member of it. A bare ``event:<type>`` target (no ``/``) is unaffected —
+    byte-identical to pre-D1 behavior.
     """
     if isinstance(target_signal, str) and target_signal.startswith("event:"):
-        ev_type = target_signal[len("event:"):]
-        if ev_type in _INTERVENTION_EVENT_VOCABULARY:
-            return None
-        valid = ", ".join(sorted(_INTERVENTION_EVENT_VOCABULARY))
-        return (
-            f"unknown intervention event type {ev_type!r}; "
-            f"valid event types: {valid}"
-        )
+        rest = target_signal[len("event:"):]
+        ev_type, sep, signature = rest.partition("/")
+        if ev_type not in _INTERVENTION_EVENT_VOCABULARY:
+            valid = ", ".join(sorted(_INTERVENTION_EVENT_VOCABULARY))
+            return (
+                f"unknown intervention event type {ev_type!r}; "
+                f"valid event types: {valid}"
+            )
+        if sep and signature:
+            allowed = _INTERVENTION_SUB_SIGNAL_VOCABULARY.get(ev_type)
+            if not allowed:
+                supported = ", ".join(sorted(_INTERVENTION_SUB_SIGNAL_VOCABULARY))
+                return (
+                    f"event type {ev_type!r} declares no sub-signal vocabulary "
+                    f"(event:{ev_type}/{signature!r} is invalid); event types "
+                    f"with a sub-signal vocabulary: {supported}"
+                )
+            if signature not in allowed:
+                valid_sigs = ", ".join(sorted(allowed))
+                return (
+                    f"unknown {ev_type} sub-signal {signature!r}; "
+                    f"valid {ev_type} sub-signals: {valid_sigs}"
+                )
+        return None
     return None
 
 
@@ -17786,6 +18243,7 @@ def record_intervention(
     })
     last_run_id = run_ids[-1] if run_ids else None
     ev_type = _intervention_signal_event(target_signal)
+    ev_signature = _intervention_signal_signature(target_signal)
     if ev_type is None:
         baseline: dict = {
             "status": "not-computable",
@@ -17805,6 +18263,8 @@ def record_intervention(
         count = sum(
             1 for e in events
             if e.get("run_id") in window_set and e.get("event") == ev_type
+            and (ev_signature is None
+                 or (e.get("data") or {}).get("gate") == ev_signature)
         )
         baseline = {
             "status": "frozen",

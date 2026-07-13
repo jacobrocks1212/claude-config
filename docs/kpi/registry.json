@@ -256,6 +256,94 @@
       "band": null,
       "review_by": "2026-10-01",
       "notes": "Registered per mcp-validation-peels-one-seam-per-loop's Deferred Follow-Up item 1 (docs/bugs/_archive/mcp-validation-peels-one-seam-per-loop/PHASES.md) and picked up by stale-runtime-health-200-false-blocked's STATE-lane close-out. Signal selector NOT YET wired in kpi-scorecard.py's _SOURCES enum as of this row's addition (that file was owned by a concurrent agent when this row was written) -- --lint will report an unregistered-selector error until the paired _SOURCES entry lands. Wanted diff (apply alongside this row): add 'telemetry-ledger': frozenset({..., \"mcp-validation-round-trips-per-feature\"}) to kpi-scorecard.py's existing 'telemetry-ledger' _SOURCES set (do NOT create a second 'telemetry-ledger' key), following the canary-trip-precision precedent (enum registered ahead of computation, NO-DATA until wired). Computation (not yet implemented): count blocker_kind: mcp-validation BLOCKED.md mint events (kind: 'halt' telemetry entries whose dispatched terminal_reason == 'blocked' and whose recorded blocker_kind == 'mcp-validation', keyed by item_id) per feature id in the window; renders NO-DATA until that reader is added to pipeline_visualizer.trends (mirroring halt_dwell/cycles_per_completion's read-the-ledger-never-reinfer discipline)."
+    },
+    {
+      "id": "anti-overfit-gate-hit-rate",
+      "system": "anti-overfit-gate",
+      "title": "Design-gate scoped-change hit rate",
+      "friction": "A rising share of scoped changes tripping the checker signals either genuine risk concentration or false-positive creep -- paired with the false-positive-rate row to disambiguate; tuning the numeric-literal detector to reduce it is itself a sign-off-gated weakening.",
+      "signal": {
+        "source": "harness-gate",
+        "selector": "hit-rate"
+      },
+      "unit": "percent",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "repo_scope": "claude-config",
+      "notes": "Drafted in anti-overfit-design-gate SPEC.md's KPI Declaration; inserted at the STATE-lane ship-seam application (seam-deferred D3, this repo's park-provisional protocol -- the feature itself stays unratified/structurally-provisional, see docs/features/anti-overfit-design-gate/NEEDS_INPUT_PROVISIONAL.md). The harness-gate signal source + this selector are already registered in kpi-scorecard.py's _SOURCES (canary-trip-precision precedent -- enum ahead of computation); NO compute is wired here yet, so this row renders NO-DATA honestly until a harness-gate collector is built. Ratification of the feature can revert this row cleanly (delete it; no downstream coupling)."
+    },
+    {
+      "id": "anti-overfit-gate-override-rate",
+      "system": "anti-overfit-gate",
+      "title": "Gate-weakening override rate",
+      "friction": "Operator sign-offs divided by gate-weakening hits -- a high rate means the gate is routinely asked to bless weakenings rather than fixing the underlying defect (Prohibition #2 erosion).",
+      "signal": {
+        "source": "harness-gate",
+        "selector": "override-rate"
+      },
+      "unit": "percent",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "repo_scope": "claude-config",
+      "notes": "Drafted in anti-overfit-design-gate SPEC.md's KPI Declaration; see the anti-overfit-gate-hit-rate row's notes for the shared seam-deferred/ratification-reversible provenance."
+    },
+    {
+      "id": "anti-overfit-gate-false-positive-rate",
+      "system": "anti-overfit-gate",
+      "title": "Design-gate false-positive burden",
+      "friction": "Flags the verdict judged spurious over total flags -- the row that surfaces the numeric-literal-change detector's tuning debt (RESEARCH pitfall #1); a persistently high burden is the gate becoming friction.",
+      "signal": {
+        "source": "harness-gate",
+        "selector": "false-positive-rate"
+      },
+      "unit": "percent",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "repo_scope": "claude-config",
+      "notes": "Drafted in anti-overfit-design-gate SPEC.md's KPI Declaration; see the anti-overfit-gate-hit-rate row's notes for the shared seam-deferred/ratification-reversible provenance."
+    },
+    {
+      "id": "anti-overfit-gate-verdict-efficacy-disagreement",
+      "system": "anti-overfit-gate",
+      "title": "Verdict-vs-efficacy disagreement",
+      "friction": "Changes the gate PASSED that intervention-efficacy-tracking later REFUTED, plus changes it FLAGGED that were CONFIRMED -- the D6 self-audit signal that makes the gate falsifiable by data it does not control (a mis-tuned gate indicts itself here).",
+      "signal": {
+        "source": "harness-gate",
+        "selector": "verdict-efficacy-disagreement"
+      },
+      "unit": "count",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "repo_scope": "claude-config",
+      "notes": "Drafted in anti-overfit-design-gate SPEC.md's KPI Declaration; see the anti-overfit-gate-hit-rate row's notes for the shared seam-deferred/ratification-reversible provenance."
     }
   ]
 }
