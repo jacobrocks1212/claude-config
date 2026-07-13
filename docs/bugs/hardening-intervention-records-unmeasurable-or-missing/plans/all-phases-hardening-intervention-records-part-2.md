@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: hardening-intervention-records-unmeasurable-or-missing
-status: Ready
+status: In-progress
 created: 2026-07-12
 complexity: mechanical
 phases: [3, 4, 5]
@@ -68,7 +68,7 @@ Where this plan's repo uses non-default gates (this is **claude-config** — Pyt
 
 ## Work Units
 
-- [ ] WU-5 — run-end flush wiring for the coverage lint (`lazy-batch` + `lazy-bug-batch` prose)
+- [x] WU-5 — run-end flush wiring for the coverage lint (`lazy-batch` + `lazy-bug-batch` prose)
 - [ ] WU-6 — data repair: re-declare r5/r7, backfill r1-r3, verify live coverage-clean
 - [ ] WU-7 — harden-harness prose + re-projection + full gate sweep
 
