@@ -67,3 +67,5 @@ No hard deps. Parent spec `build-queue-copy-lock-stale-dll-false-success` (Concl
 ## Review Notes
 
 **Batch 1 (WU-1) — 2026-07-01 — Verdict: PASS.** Ground-truth verified: yes. Helper logic, `Invoke-Main` rewire ordering, WARN de-hardcoding, and 4 discriminating Pester cases all correct; 14/14 green. Propagation check clean (no cross-file consumers — sole caller `Invoke-Main` migrated). Mount-site verified (`Invoke-Main:118`). No actionable items.
+
+**Re-verification — 2026-07-12.** SPEC.md **Status:** had been left at `Concluded` despite the fix being implemented + committed (`3f7a1638`) on 2026-07-01. Re-ran the full Pester gate on the workstation to confirm no regression before flipping to `Fixed`: only Pester 3.4.0 was pre-installed (cannot run this file's top-level `BeforeAll` outside a `Describe` block); bootstrapped `Install-PackageProvider NuGet` + `Install-Module Pester -Scope CurrentUser -MinimumVersion 5.0.0` (landed 6.0.0) and re-ran — **18/18 passed, 0 failed**, including all 4 `Resolve-TestDllPath` cases. No code changes this session. See `FIXED.md` for the full receipt.
