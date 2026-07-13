@@ -5,9 +5,10 @@
 > awaiting a child→parent `SendMessage` that can never arrive (backgrounded children reach only
 > the main thread), deadlocking the cycle. Observed twice in one `/lazy-bug-batch` run.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-12
+**Fixed:** 2026-07-12 (commit `a43808ee`, landed same-evening in-run; receipt: `FIXED.md`)
 **Placement:** docs/bugs/cycle-containment-allows-background-subagent-dispatch-deadlock
 **Related:** `user/hooks/lazy-cycle-containment.sh` (the enforcement point); `docs/bugs/adhoc-containment-denies-mandated-explore-fanout` (the 2026-07-09 decision that recursive *synchronous* dispatch stays allowed — this fix must not regress it); the cycle-subagent synchronous-await execution contract (currently prose-only in the cycle dispatch model).
 

@@ -2,8 +2,8 @@
 
 > `workstation-recursive-subagent-dispatch` (5ff570b) lifted the cycle-worker inline-override ban in *prose only* — `lazy_guard.py` was never taught the matching allow, so under a live run marker the guard denies every `/execute-plan` (and `/spec-phases`, `/plan-feature`, …) worker's mandated test-agent/impl-agent sub-subagent dispatch, booking one FIFO hardening debt per denial.
 
-**Status:** Concluded
-**Fixed:** 2026-07-10 (operator resolved decision 4 same day — see Resolution, below)
+**Status:** Fixed
+**Fixed:** 2026-07-10 (operator resolved decision 4 same day — see Resolution, below; receipt: `FIXED.md`, authored 2026-07-12/13)
 **Severity:** P1
 **Discovered:** 2026-07-10
 **Placement:** docs/bugs/dispatch-guard-denies-workstation-subsubagent-split
