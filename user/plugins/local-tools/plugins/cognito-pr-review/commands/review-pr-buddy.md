@@ -48,8 +48,6 @@ Derive `cacheDir` from the Phase-0 result envelope (its `cacheDir` field — see
 
 Phase 0 executes OUTSIDE your context window. Do NOT read `commands/review-pr.md`, the journey file, triage output, agent outputs, or `processed-findings.json` in this phase — the delegate does all of that. `commands/review-pr.md` remains the single source of pipeline truth; this is delegation, not duplication.
 
-**Nested-dispatch regression probe (cheap, first task):** dispatch a trivial `general-purpose` agent whose only instruction is to dispatch one nested Explore agent and report success. Nesting was probe-confirmed working 2026-07-09; this is a regression check, not a decision gate. If the probe FAILS, fall back to executing `review-pr.md` Steps 1–8.5 yourself with zero-echo discipline (all artifacts file-piped per their self-write contracts; post-process via shell redirect; no body transcription into your context) and tell the reviewer the fallback engaged. Otherwise:
-
 **Dispatch ONE Phase-0 delegate:**
 
 ```
