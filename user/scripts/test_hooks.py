@@ -5221,6 +5221,87 @@ def test_bqe_allows_build_queue_wrapper_with_filtered_exec():
         )
 
 
+# ---------------------------------------------------------------------------
+# long-build-and-build-queue-matcher-bypasses — Fix Scope #2: `_WRAPPER_RE`
+# used to be an UNANCHORED substring match checked BEFORE either deny
+# surface, so any command merely MENTIONING `build-queue.ps1` anywhere (an
+# echo, a grep, a path argument in an unrelated later segment) was fully
+# exempt from the deny surface. Replaced with the anchored
+# `_WRAPPER_DIRECT_RE` / `_WRAPPER_POWERSHELL_RE` pair. These pin the closed
+# bypasses (positive) and confirm the sanctioned invocation still allows
+# (negative) plus the D2 accepted residual.
+# ---------------------------------------------------------------------------
+
+
+def test_bqe_denies_echo_mention_then_real_build():
+    """`echo build-queue.ps1; dotnet build MySln.sln` → deny (the echo segment
+    merely MENTIONS the wrapper filename; the second segment is a real,
+    un-queued build and must still deny — the exact verified bypass row)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = 'echo build-queue.ps1; dotnet build MySln.sln'
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert _containment_decision(result) == "deny", (
+            f"echo-mention of build-queue.ps1 must not exempt a real build in a "
+            f"later segment; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_denies_grep_mention_then_real_build():
+    """`grep foo build-queue.ps1 && dotnet build MySln.sln` → deny (same class,
+    a grep reference rather than an echo)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = 'grep foo build-queue.ps1 && dotnet build MySln.sln'
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert _containment_decision(result) == "deny", (
+            f"grep-mention of build-queue.ps1 must not exempt a real build in a "
+            f"later segment; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_allows_direct_wrapper_invocation_segment_leading():
+    """A direct, segment-leading `build-queue.ps1` invocation (not via
+    `powershell -File`) still allows — the new `_WRAPPER_DIRECT_RE` anchored
+    form."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = f'"{Path.home()}/.claude/scripts/build-queue.ps1" -Op mstest'
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert _containment_decision(result) != "deny", (
+            f"direct segment-leading build-queue.ps1 invocation must allow; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_bash_dash_c_wrapper_reference_accepted_residual():
+    """D2 (documented-limitation, shared across the anchor-pair family, NOT
+    fixed this round): a `bash -c "dotnet build ..."` string-wrap smuggles a
+    real build past `_CMD_START`'s segment-start anchor because the build
+    token sits inside a STRING ARGUMENT. Pinned as a deliberate, documented
+    residual (see `user/hooks/CLAUDE.md`), not a silent regression."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = 'bash -c "dotnet build MySln.sln"'
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert _containment_decision(result) != "deny", (
+            f"bash -c string-wrap is a DOCUMENTED accepted residual (D2), "
+            f"expected ALLOW; stdout={result.stdout!r}"
+        )
+
+
 def test_bqe_allows_bypass_token_with_cd_prefixed_build():
     """`BUILD_QUEUE_BYPASS=1 dotnet build ...` → allow (escape hatch)."""
     with tempfile.TemporaryDirectory() as td:
@@ -5422,6 +5503,117 @@ def test_longbuild_guard_denies_cd_prefixed_npm_run_build():
         )
         assert _containment_decision(result) == "deny", (
             f"cd-prefixed npm run build must deny; stdout={result.stdout!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# long-build-and-build-queue-matcher-bypasses — Fix Scope #1: the ORIGINAL
+# enumeration matched only the raw binary token, walking straight past every
+# runner-prefixed / path-prefixed real-world Tauri/cargo invocation. These
+# pin the closed gaps (positive) plus the negative space that must stay
+# ALLOW (`npm run tauri dev`, `cargo tauri dev`) and the D2 accepted residual.
+# ---------------------------------------------------------------------------
+
+
+def test_longbuild_guard_denies_npx_tauri_build():
+    """`npx tauri build` → deny (a runner-prefixed Tauri invocation)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json("npx tauri build"), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"`npx tauri build` must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_denies_npm_run_tauri_build():
+    """`npm run tauri build` → deny — the CANONICAL Tauri invocation (Tauri
+    docs + AlgoBooth's own scripts route through the `tauri` npm script)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json("npm run tauri build"), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"`npm run tauri build` must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_denies_cargo_tauri_build():
+    """`cargo tauri build` → deny (the cargo-tauri subcommand form)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json("cargo tauri build"), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"`cargo tauri build` must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_denies_path_prefixed_cargo_build_release():
+    """`/abs/path/cargo build --release` → deny (path-qualified binary token)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json("/usr/local/bin/cargo build --release"), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"path-prefixed `cargo build --release` must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_allows_npm_run_tauri_dev():
+    """`npm run tauri dev` → allow (NOT a build; negative space for the new
+    runner-prefixed alternative must not over-match)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json("npm run tauri dev"), state_dir
+        )
+        assert _containment_decision(result) != "deny", (
+            f"`npm run tauri dev` must NOT deny; stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_allows_cargo_tauri_dev():
+    """`cargo tauri dev` → allow (the `cargo\\s+` optional-prefix group is
+    shared with `cargo build --release`; must not swallow `dev`)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json("cargo tauri dev"), state_dir
+        )
+        assert _containment_decision(result) != "deny", (
+            f"`cargo tauri dev` must NOT deny; stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_bash_dash_c_wrap_accepted_residual():
+    """D2 (documented-limitation, NOT fixed this round): a `bash -c "..."`
+    string-wrap smuggles a long build past `_CMD_START` because the build
+    token sits inside a STRING ARGUMENT, one level of indirection this guard
+    deliberately does not unwrap (see the `_LONG_BUILD_RE` docstring in
+    long-build-ownership-guard.sh and `user/hooks/CLAUDE.md`). This test PINS
+    the accepted residual as a deliberate, documented gap — not a silent
+    regression — so a future fix (a real subscan) is a conscious behavior
+    change, not an accidental one."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json('bash -c "cargo build --release"'), state_dir
+        )
+        assert _containment_decision(result) != "deny", (
+            f"bash -c string-wrap is a DOCUMENTED accepted residual (D2), "
+            f"expected ALLOW; stdout={result.stdout!r}"
         )
 
 
@@ -7758,6 +7950,33 @@ _TESTS = _TESTS + [
      test_noncanonical_catch_all_writes_breadcrumb_and_event),
     ("test_straybranch_catch_all_writes_breadcrumb_and_event",
      test_straybranch_catch_all_writes_breadcrumb_and_event),
+]
+
+_TESTS = _TESTS + [
+    # long-build-and-build-queue-matcher-bypasses — long-build-ownership-guard.sh
+    ("test_longbuild_guard_denies_npx_tauri_build",
+     test_longbuild_guard_denies_npx_tauri_build),
+    ("test_longbuild_guard_denies_npm_run_tauri_build",
+     test_longbuild_guard_denies_npm_run_tauri_build),
+    ("test_longbuild_guard_denies_cargo_tauri_build",
+     test_longbuild_guard_denies_cargo_tauri_build),
+    ("test_longbuild_guard_denies_path_prefixed_cargo_build_release",
+     test_longbuild_guard_denies_path_prefixed_cargo_build_release),
+    ("test_longbuild_guard_allows_npm_run_tauri_dev",
+     test_longbuild_guard_allows_npm_run_tauri_dev),
+    ("test_longbuild_guard_allows_cargo_tauri_dev",
+     test_longbuild_guard_allows_cargo_tauri_dev),
+    ("test_longbuild_guard_bash_dash_c_wrap_accepted_residual",
+     test_longbuild_guard_bash_dash_c_wrap_accepted_residual),
+    # long-build-and-build-queue-matcher-bypasses — build-queue-enforce.sh
+    ("test_bqe_denies_echo_mention_then_real_build",
+     test_bqe_denies_echo_mention_then_real_build),
+    ("test_bqe_denies_grep_mention_then_real_build",
+     test_bqe_denies_grep_mention_then_real_build),
+    ("test_bqe_allows_direct_wrapper_invocation_segment_leading",
+     test_bqe_allows_direct_wrapper_invocation_segment_leading),
+    ("test_bqe_bash_dash_c_wrapper_reference_accepted_residual",
+     test_bqe_bash_dash_c_wrapper_reference_accepted_residual),
 ]
 
 

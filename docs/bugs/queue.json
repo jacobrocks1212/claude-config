@@ -20,18 +20,6 @@
       "severity": "P2"
     },
     {
-      "id": "production-sentinel-writes-bypass-atomic-write",
-      "name": "Production sentinel/NEEDS_INPUT/ROADMAP writes bypass lazy_core._atomic_write, violating the contributor contract — Investigation Spec",
-      "spec_dir": "production-sentinel-writes-bypass-atomic-write",
-      "severity": "P2"
-    },
-    {
-      "id": "stale-runtime-health-200-false-blocked",
-      "name": "ensure_runtime's STALE state is unreachable (stale_check never bound; stale_binary.py orphaned) — stale runtimes mint false BLOCKED verdicts — Investigation Spec",
-      "spec_dir": "stale-runtime-health-200-false-blocked",
-      "severity": "P1"
-    },
-    {
       "id": "completion-gate-refusal-opacity",
       "name": "verify_ledger refusals name the failing check but discard the computed offending items — gate probing burns cycles — Investigation Spec",
       "spec_dir": "completion-gate-refusal-opacity",
@@ -54,12 +42,6 @@
       "name": "18 Status:Fixed bug dirs sit outside _archive/ (archive-on-fix only wired in /lazy-bug-batch) — fsck + reconcile — Investigation Spec",
       "spec_dir": "fixed-bugs-unarchived-fsck",
       "severity": "P2"
-    },
-    {
-      "id": "build-queue-outcome-opacity-and-inspect-deny",
-      "name": "Build-Queue Outcome Opacity + Enforce-Hook Over-Blocks Read-Only Inspection — Investigation Spec",
-      "spec_dir": "build-queue-outcome-opacity-and-inspect-deny",
-      "severity": null
     },
     {
       "id": "adhoc-align-cycle-commit-count-with-budget-population",

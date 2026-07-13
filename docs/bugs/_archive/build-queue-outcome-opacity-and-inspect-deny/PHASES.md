@@ -65,7 +65,7 @@ TDD: yes.
 **Minimum Verifiable Behavior:** The new Pester test `Invoke-Pester repos/cognito-forms/.claude/scripts/test-filtered.Tests.ps1` asserts the zero-match case's exit code/signal differs from both the all-pass case and the genuine-zero-output case, and all three assertions pass.
 
 **Runtime Verification** *(checked by integration test or manual testing)*:
-- [ ] <!-- verification-only --> Running `/mstest -Filter "ClassName~DoesNotExist"` on a Cognito worktree produces a `results/<seq>.json` with `hygiene.result_fidelity == "no-tests-matched"` (or the chosen distinct value), not `"verified"`.
+- [ ] <!-- verification-only --> **Deferred-to-work-laptop.** Running `/mstest -Filter "ClassName~DoesNotExist"` on a Cognito worktree produces a `results/<seq>.json` with `hygiene.result_fidelity == "no-tests-matched"` (or the chosen distinct value), not `"verified"`. This requires a live Cognito Forms worktree + the build queue's real dotnet/MSTest toolchain, unavailable in this close-out pass; the Pester coverage above (`Get-TestOutcomeExitCode` unit cases) is the evidence certified this session. Left unticked, not fabricated.
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface in this repo (harness tooling; see MCP runtime header).
 
@@ -98,9 +98,9 @@ TDD: yes.
 **Minimum Verifiable Behavior:** A Pester run of the banner helper's unit tests passes for all three `RESULT` branches, each producing the exact expected one-line string format.
 
 **Runtime Verification** *(checked by integration test or manual testing)*:
-- [ ] <!-- verification-only --> Running `/mstest` (real filter, all-pass) on a Cognito worktree prints a `build-queue: seq=<N> op=mstest RESULT=PASS tests=<T> failed=0 (result_fidelity=verified)` line as the last line of stdout.
-- [ ] <!-- verification-only --> Running `/mstest -Filter "ClassName~DoesNotExist"` on a Cognito worktree prints a banner with `RESULT=NO-TESTS-MATCHED` and a "widen filter" next-action suffix.
-- [ ] <!-- verification-only --> After either run, `results/<seq>.json` still contains the full `hygiene` block (`result_fidelity`, `build_fidelity`, `vbcscompiler_recycled`, etc.) — confirming the Step-5 clobber fix holds.
+- [ ] <!-- verification-only --> **Deferred-to-work-laptop.** Running `/mstest` (real filter, all-pass) on a Cognito worktree prints a `build-queue: seq=<N> op=mstest RESULT=PASS tests=<T> failed=0 (result_fidelity=verified)` line as the last line of stdout. Requires a live Cognito Forms worktree; the Pester unit coverage on `Format-BuildQueueBanner` (all three RESULT branches) is the evidence certified this session.
+- [ ] <!-- verification-only --> **Deferred-to-work-laptop.** Running `/mstest -Filter "ClassName~DoesNotExist"` on a Cognito worktree prints a banner with `RESULT=NO-TESTS-MATCHED` and a "widen filter" next-action suffix. Same deferral as above.
+- [ ] <!-- verification-only --> **Deferred-to-work-laptop.** After either run, `results/<seq>.json` still contains the full `hygiene` block (`result_fidelity`, `build_fidelity`, `vbcscompiler_recycled`, etc.) — confirming the Step-5 clobber fix holds. Same deferral as above.
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface in this repo (harness tooling; see MCP runtime header).
 
@@ -145,6 +145,72 @@ TDD: Pester-unit-testable (banner helper) + manual runtime confirmation; not a r
 **Completion (gate-owned):** the `__mark_fixed__` gate writes FIXED.md and flips SPEC.md **Status** once this phase's runtime verification passes.
 
 TDD: docs-only, not applicable.
+
+---
+
+### Phase 5 (close-out follow-up, 2026-07-12): Surface test-op counts in `build-queue-status.ps1`
+
+**Scope:** `build-queue-runner.ps1` has recorded a test op's Passed/Failed/Total counts into
+`results/<seq>.json`'s `hygiene.counts` field since Phase 3 (WU-3), but `build-queue-status.ps1`'s
+hygiene status line never surfaced it — an agent still had to `cat results/<seq>.json` to see
+pass/fail counts, the exact inspection this bug's outcome-legibility fix exists to make
+unnecessary. This phase closes that residual gap, found during this close-out pass (the original
+4 phases only mention `build-queue-status.ps1` in passing, as an example "later hygiene
+consumer" — this phase makes it an actual consumer of the `counts` field).
+
+**Status:** Complete
+
+**Deliverables:**
+- [x] `user/scripts/build-queue-status.ps1`: extend the per-build `hygiene (seq ...)` line with a
+  new `counts(passed/failed/total)=<P>/<F>/<T>` segment, read from `hygiene.counts` (mirroring the
+  existing `n/a` fallback convention the fidelity fields already use for a non-test op or missing
+  data).
+- [x] New Pester file `user/scripts/build-queue-status.Tests.ps1` (none existed for this script
+  before this pass): 5 cases — counts present (test op), counts absent (`n/a`, build op), counts
+  present but `total` null (`n/a`, malformed), no hygiene block at all (`hygiene: (not recorded)`,
+  no counts segment), and the pre-existing `queue idle` case for a truly empty state root. Each
+  test invokes the real script out-of-process against a fabricated, isolated `$StateRoot`
+  (mirrors `build-queue.Tests.ps1`'s existing convention for this same script).
+
+**Implementation Notes (2026-07-12):** Added a `$counts`/`$countsStr` read alongside the existing
+`$fidelity`/`$buildFidelity` reads in the hygiene-line block (`build-queue-status.ps1`), appending
+`| counts(passed/failed/total)=<value>` to the composed `$line`. `Invoke-Pester
+user/scripts/build-queue-status.Tests.ps1` → 5/5 GREEN. Full regression sweep of every
+build-queue Pester suite this touches (transitively, via the shared `build-queue-hygiene.ps1`
+dot-source and `Format-BuildQueueBanner`, which this phase did NOT modify):
+`build-queue-hygiene.Tests.ps1` 178/178, `build-queue-runner.Tests.ps1` 9/9,
+`build-queue-await.Tests.ps1` 8/8, `build-queue.Tests.ps1` 2/2 — all unaffected. **Files
+modified:** `user/scripts/build-queue-status.ps1`, `user/scripts/build-queue-status.Tests.ps1`
+(new file).
+
+**Minimum Verifiable Behavior:** `Invoke-Pester -Path user/scripts/build-queue-status.Tests.ps1`
+exits with 5/5 passed.
+
+**Runtime Verification** *(checked by integration test or manual testing)*:
+- [ ] <!-- verification-only --> **Deferred-to-work-laptop.** Running `build-queue-status.ps1`
+  against the real `~/.claude/state/build-queue` after a live `/mstest` run on a Cognito worktree
+  shows the new `counts(passed/failed/total)=` segment with real numbers matching the test run.
+  The Pester coverage above (fabricated state root, hand-written `results/<seq>.json`) is the
+  evidence certified this session.
+
+**MCP Integration Test Assertions:** N/A — no MCP-reachable surface in this repo.
+
+**Prerequisites:** Phase 3 (the `hygiene.counts` field this phase surfaces).
+
+**Files likely modified:**
+- `user/scripts/build-queue-status.ps1` — new `counts(passed/failed/total)=` segment on the
+  hygiene line.
+- `user/scripts/build-queue-status.Tests.ps1` — new file, 5 Pester cases.
+
+**Testing Strategy:** Pester, out-of-process invocation against a fabricated `$StateRoot` (no
+live queue/process dependency), mirroring `build-queue.Tests.ps1`'s existing convention for
+invoking this exact script.
+
+**Integration Notes for Next Phase:** None — terminal follow-up phase.
+
+TDD: no (the implementation and the Pester file were authored together in this pass, not in a
+strict red→green order — an honest departure from this bug's own Phase 1–3 TDD discipline; the
+tests are still full behavioral coverage, confirmed green against the real script afterward).
 
 ---
 

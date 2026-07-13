@@ -7,7 +7,7 @@ bug_id: lazy-cycle-containment-false-denies-reference-only-routing-mentions
 
 > Harness-hardening round (observed-friction, 2026-07-12). While a cycle marker is live, `lazy-cycle-containment.sh` DENIED a legitimate `git commit`/`git add` from a cycle subagent whenever a `lazy-state.py`/`bug-state.py` token or a routing flag appeared as INCIDENTAL text — a commit-message body or a staged filename argument — even though the git command invoked no routing op. The token-matching was unanchored (`_STATE_PY_RE.search(command)` + `flag in command`), so it could not distinguish an INVOCATION from a MENTION. The sibling `build-queue-enforce.sh` already solved this exact class via `_CMD_START` segment anchoring.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** Medium
 **Discovered:** 2026-07-12
 **Placement:** docs/bugs/lazy-cycle-containment-false-denies-reference-only-routing-mentions

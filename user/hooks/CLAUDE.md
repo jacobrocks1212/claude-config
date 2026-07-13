@@ -37,6 +37,29 @@ deliberately slow hook against the live harness timeout — outside what a subpr
 exercise) and is documented here as a known limitation per that bug's own D3 fallback, not
 silently dropped.
 
+**Known limitation — `bash -c` / `sh -c` string-wraps evade every `_CMD_START`-anchored matcher
+(`long-build-and-build-queue-matcher-bypasses` D2, accepted, not fixed).** Every anchored matcher
+in this plane (`lazy-cycle-containment.sh`'s recursion/routing/lifecycle denies,
+`long-build-ownership-guard.sh`'s `_LONG_BUILD_RE`, `build-queue-enforce.sh`'s deny surface + the
+`_WRAPPER_DIRECT_RE`/`_WRAPPER_POWERSHELL_RE` wrapper recognizer) requires the token it matches to
+sit at a top-level command-segment start (`_CMD_START`'s separator class: string start, or
+`&& || | ; ( {` / newline). A `bash -c "cargo build --release"` or `sh -c "dotnet build ..."`
+places the denied token inside a **quoted STRING ARGUMENT** to `bash`/`sh` — one level of
+indirection none of these matchers unwraps — so the build is invisible to the anchor and the
+command ALLOWs. This is distinct from (and NOT fixed by) the existing
+`powershell/pwsh -Command "..."` nesting normalization (`_normalize_ps_syntax`), which DOES unwrap
+one level for that specific PowerShell form; no equivalent unwrap exists for `bash -c`/`sh -c`.
+Two fixes were considered when this residual was investigated (`docs/bugs/long-build-and-build-queue-matcher-bypasses`):
+a `bash -c`/`sh -c` nested-command subscan (re-run every anchored matcher against the quoted
+argument as a synthetic segment, mirroring the PowerShell unwrap), or leaving it as a documented
+gap. The subscan was DEFERRED (not attempted) — it is plane-wide (would touch all three hooks'
+shared `_CMD_START` idiom, not one), and a real shell-quote-aware argument extraction is
+meaningfully more failure-prone than the flat string operations every other normalization here
+uses. The gap is pinned as an explicit, intentional residual by
+`test_longbuild_guard_bash_dash_c_wrap_accepted_residual` and
+`test_bqe_bash_dash_c_wrapper_reference_accepted_residual` in `test_hooks.py` — a future fix
+landing here should update BOTH tests (RED→GREEN) rather than leaving them as stale residual pins.
+
 ## Deny is JSON, not an exit code
 
 A PreToolUse non-zero exit is a hard harness error. To block a call, emit

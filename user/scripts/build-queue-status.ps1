@@ -215,7 +215,23 @@ if ($null -ne $hygieneSeq) {
 		$lockersReaped = @(if ($null -ne $lockersReapedRaw) { $lockersReapedRaw })
 		$lockersReapedCount = $lockersReaped.Count
 		$lockersReapedStr = if ($lockersReapedCount -gt 0) { "{0} ({1})" -f $lockersReapedCount, ($lockersReaped -join ',') } else { '0' }
-		$line = "hygiene (seq {0}): recycled={1} | quarantined={2} | fidelity={3} | build_fidelity={4} | lockers_reaped={5}" -f $hygieneSeq, $recycledStr, $quarantinedCount, $fidelityStr, $buildFidelityStr, $lockersReapedStr
+		# build-queue-outcome-opacity-and-inspect-deny (item 2a follow-up): surface
+		# the test-op Passed/Failed/Total counts the runner already records at
+		# hygiene.counts (build-queue-runner.ps1) but this status view never
+		# printed -- an agent had to `cat results/<seq>.json` to see them (the
+		# exact inspection Phase 3's banner was meant to make unnecessary). A
+		# non-test op (counts absent/null) or an unset 'total' renders 'n/a',
+		# mirroring the fidelity fields' own n/a fallback above.
+		$counts = Get-SafeValue { $hygiene.counts } $null
+		$countsTotal = if ($null -ne $counts) { Get-SafeValue { $counts.total } $null } else { $null }
+		$countsStr = if ($null -ne $countsTotal) {
+			$countsPassed = Get-SafeValue { $counts.passed } $null
+			$countsFailed = Get-SafeValue { $counts.failed } $null
+			$countsPassedStr = if ($null -ne $countsPassed) { "$countsPassed" } else { '?' }
+			$countsFailedStr = if ($null -ne $countsFailed) { "$countsFailed" } else { '?' }
+			"{0}/{1}/{2}" -f $countsPassedStr, $countsFailedStr, $countsTotal
+		} else { 'n/a' }
+		$line = "hygiene (seq {0}): recycled={1} | quarantined={2} | fidelity={3} | build_fidelity={4} | lockers_reaped={5} | counts(passed/failed/total)={6}" -f $hygieneSeq, $recycledStr, $quarantinedCount, $fidelityStr, $buildFidelityStr, $lockersReapedStr, $countsStr
 		$hl = Get-SafeValue { Get-HygieneHighlight -BuildFidelity $buildFidelityStr -ResultFidelity $fidelityStr }
 		if ($null -ne $hl -and $hl.Color) {
 			Write-Host ($line + $hl.Suffix) -ForegroundColor $hl.Color

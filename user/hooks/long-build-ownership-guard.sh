@@ -149,9 +149,50 @@ _ENV_PREFIX = (
 # A command-start boundary: string start, or a shell separator, then optional
 # whitespace and optional env-assignment prefix.
 _CMD_START = r"(?:^|[\n;&|({])\s*" + _ENV_PREFIX
+
+# long-build-and-build-queue-matcher-bypasses (Fix Scope #1): an optional path
+# prefix so a path-qualified binary token (`/abs/path/cargo build --release`)
+# still matches — the same idiom `build-queue-enforce.sh` uses for
+# `_FILTERED_SCRIPT_DIRECT_RE` (a run of non-separator characters ending in the
+# final path separator, optionally preceded by a `./`/`.\` relative marker).
+# Purely additive: every existing match position is unaffected because both
+# groups are optional.
+_PATH_PREFIX = r"(?:\.?[\\/])?(?:[^\s;&|]*[\\/])?"
+
+# long-build-and-build-queue-matcher-bypasses (Fix Scope #1): the ORIGINAL
+# enumeration only matched the raw binary token itself (`tauri build`,
+# `cargo build --release`, `npm run build`) — verified live to walk straight
+# past the dominant real-world invocation shapes: a runner-prefixed Tauri
+# build (`npx tauri build`, `npm run tauri build` — the CANONICAL form per the
+# Tauri docs and AlgoBooth's own scripts — `cargo tauri build`), and a
+# path-qualified cargo invocation. The `(?:npx\s+|npm\s+run\s+|cargo\s+)?`
+# optional-prefix group enumerates exactly those three runner forms (D1: an
+# enumerated allowlist, not a generic "any token before tauri" wildcard, per
+# the guard's near-zero false-positive charter) ahead of `tauri\s+build` — this
+# ALSO naturally covers bare `tauri build` (prefix group matches nothing) and
+# `cargo tauri build` (the `cargo\s+` alternative is shared with the
+# `cargo build --release` arm, so no separate `cargo\s+tauri\s+build`
+# alternative is needed). The negative space is unchanged: `npm run tauri dev`
+# and `cargo tauri dev` fail the mandatory literal `build` after `tauri\s+`;
+# `npm run build:docs` fails both the tauri arm (no `tauri` token) and the
+# `npm\s+run\s+build(?:\s|$)` arm (the trailing `:` is neither whitespace nor
+# end-of-string); a plain debug `cargo build` (no `--release`) fails the
+# `cargo\s+build\s+--release` arm outright.
+#
+# bash -c / sh -c STRING-WRAP RESIDUAL (D2, documented-limitation — see
+# `user/hooks/CLAUDE.md` "Known limitation — bash -c / sh -c string-wraps" and
+# the sibling note in `build-queue-enforce.sh`): a quoted-string wrap
+# (`bash -c "cargo build --release"`) smuggles the build past `_CMD_START`
+# because the build token is not a top-level segment start — it sits inside a
+# STRING ARGUMENT to `bash`/`sh`, one level of indirection `_CMD_START`
+# deliberately does not unwrap (unlike the `powershell/pwsh -Command "..."`
+# case, which normalization DOES unwrap — a bash/sh nested-command subscan was
+# considered and deferred; see the CLAUDE.md note for the full rationale).
+# This is an ACCEPTED, DELIBERATE residual, not an oversight — pinned by
+# `test_longbuild_guard_bash_dash_c_wrap_accepted_residual` in test_hooks.py.
 _LONG_BUILD_RE = re.compile(
-    _CMD_START + r"(?:"
-    r"tauri\s+build(?:\s|$)"
+    _CMD_START + _PATH_PREFIX + r"(?:"
+    r"(?:npx\s+|npm\s+run\s+|cargo\s+)?tauri\s+build(?:\s|$)"
     r"|cargo\s+build\s+--release(?:\s|$)"
     r"|npm\s+run\s+build(?:\s|$)"
     r")"

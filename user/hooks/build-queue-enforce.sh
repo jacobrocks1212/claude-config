@@ -157,9 +157,31 @@ _BYPASS_RE = re.compile(r"^\s*" + _ENV_PREFIX_ANY + _BYPASS_TOKEN_RE)
 _SEGMENT_SPLIT_RE = re.compile(r"([\n;&|({])")
 
 # Match the sanctioned wrapper — allow before any deny-check.
-# Matches the wrapper script name anywhere in the command (it may appear inside
-# a quoted path as an argument to powershell.exe -File "...path.../build-queue.ps1").
-_WRAPPER_RE = re.compile(r"build-queue\.ps1", re.IGNORECASE)
+#
+# long-build-and-build-queue-matcher-bypasses (Fix Scope #2): this used to be
+# an UNANCHORED substring match over the whole command
+# (`re.compile(r"build-queue\.ps1")`), checked BEFORE either deny surface —
+# so ANY command merely *mentioning* the wrapper filename anywhere (an echo,
+# a grep, a comment string, a path argument in an unrelated later segment)
+# was fully exempt from the deny surface the rest of this hook painstakingly
+# anchors. Verified live: `echo build-queue.ps1; dotnet build MySln.sln` and
+# `grep foo build-queue.ps1 && dotnet build MySln.sln` both wrongly ALLOWed.
+# Replaced with the SAME invoke-vs-reference discrimination the deny surface
+# already uses (mirrors `_FILTERED_SCRIPT_DIRECT_RE` / `_FILTERED_SCRIPT_POWERSHELL_RE`
+# below) — two anchored forms, either match = allow:
+#   (a) a command-segment-start invocation whose token path ends in
+#       `build-queue.ps1` (`_CMD_START` + the same optional path-prefix idiom).
+#   (b) the `powershell(.exe)?|pwsh ... -File <path>build-queue.ps1` form (this
+#       is the sanctioned skills' real invocation shape — see
+#       `repos/cognito-forms/.claude/skills/{msbuild,mstest,nxbuild,nxtest}/SKILL.md`
+#       — and was ALREADY anchored correctly by construction: `-File` requires
+#       an adjacent path argument, not a bare mention).
+# `echo build-queue.ps1; dotnet build` now correctly DENIES on the second
+# segment (the `echo` segment matches neither form).
+# NOTE: the two compiled regexes (`_WRAPPER_DIRECT_RE` / `_WRAPPER_POWERSHELL_RE`)
+# are defined further below, immediately after `_CMD_START` — they need that
+# name already bound at module-load time (Python compiles this module
+# top-to-bottom; `_CMD_START` is not yet defined at this point in the file).
 
 # Safe dotnet/nx variants that must NEVER count as a heavy build even though
 # they share the "dotnet"/"nx" prefix. These occurrences are blanked out of a
@@ -193,6 +215,20 @@ _ENV_PREFIX = (
     r")*"
 )
 _CMD_START = r"(?:^|[\n;&|({])\s*" + _ENV_PREFIX
+
+# long-build-and-build-queue-matcher-bypasses (Fix Scope #2): the anchored
+# wrapper-recognizer regexes (see the comment above `# Match the sanctioned
+# wrapper` for the full rationale) — defined here, not there, because they
+# need `_CMD_START` already bound.
+_WRAPPER_DIRECT_RE = re.compile(
+    _CMD_START
+    + r"(?:\.?[\\/])?(?:[^\s;&|]*[\\/])?build-queue\.ps1(?:\s|$|\")",
+    re.IGNORECASE,
+)
+_WRAPPER_POWERSHELL_RE = re.compile(
+    r"(?:powershell(?:\.exe)?|pwsh)\b[^\n;&|]*-File\s+\S*build-queue\.ps1",
+    re.IGNORECASE,
+)
 
 # PowerShell backtick line-continuation: the next physical line is part of the
 # SAME logical command — not a segment boundary. Collapsed to a space before
@@ -654,7 +690,7 @@ def main():
     # Allow the sanctioned wrapper before either deny surface — it carries a
     # filtered-script path as its -Exec arg, which would otherwise trip the
     # script-invocation denies.
-    if _WRAPPER_RE.search(command):
+    if _WRAPPER_DIRECT_RE.search(command) or _WRAPPER_POWERSHELL_RE.search(command):
         _allow()
 
     if manifest is not None:

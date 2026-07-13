@@ -2,7 +2,7 @@
 
 > Agents routinely can't tell what a `/msbuild` `/mstest` `/nxbuild` `/nxtest` invocation actually did — pass, fail, zero-match, or broken log capture all surface as the same `exit_code=0` with suppressed output — so they try to inspect the runner script / results JSON / logs to disambiguate. The `build-queue-enforce.sh` hook then DENIES that read-only inspection because its (now unanchored) deny regexes match a `*-filtered.ps1` / `dotnet build` token *anywhere* in the command, including inside a `cat`/`grep`/`tail`/`find`. The two defects compound into a wasted-cycle loop: opaque outcome → inspect to understand → inspection blocked → work around.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-03
 **Placement:** docs/bugs/build-queue-outcome-opacity-and-inspect-deny
