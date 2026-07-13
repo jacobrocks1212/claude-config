@@ -114,7 +114,7 @@ N/A — fully covered by Pester in Deliverables.
 **Minimum Verifiable Behavior:** `Invoke-Pester user/scripts/build-queue-hygiene.Tests.ps1` green for the new classifier `Describe` block (including an It-block asserting a 0-byte log classifies as no-output) plus the banner and status test blocks covering `build_fidelity: no-output`. Note: the runner's inline wiring (the actual `if ($isBuildOp)` forcing of exit code) has no Pester harness — it is validated by the Phase 4 live build instead.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> A live no-output build in a Cognito worktree (via `/msbuild`) reports `RESULT=FAIL` with `build_fidelity: no-output` and the new banner next-action text — confirms the runner's inline wiring end-to-end (deferred to Phase 4's live e2e per the note above).
+- [x] <!-- verification-only --> A live no-output build in a Cognito worktree (via `/msbuild`) reports `RESULT=FAIL` with `build_fidelity: no-output` and the new banner next-action text — confirms the runner's inline wiring end-to-end (deferred to Phase 4's live e2e per the note above). <!-- operator-waived 2026-07-13 (Jacob): live-Cognito runtime observation NOT run this session; code complete + Pester-green. Re-openable on demand. -->
 
 #### Implementation Notes (2026-07-03, Part 2)
 
@@ -157,10 +157,10 @@ N/A — fully covered by Pester in Deliverables.
 **Minimum Verifiable Behavior:** `python user/scripts/test_hooks.py` passes its ~22 `test_bqe_*` deny/allow tests (defined from `:4795`) against the re-enabled hook (they cannot meaningfully pass against the disabled `exit 0` block today); all three Pester suites (`build-queue-hygiene.Tests.ps1`, `test-filtered.Tests.ps1` under `repos/cognito-forms/.claude/scripts/`, plus the new coverage from Phases 1-3) report green in the same run.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> In a Cognito worktree, seed a poisoned per-project DLL (e.g. 0-byte `Cognito/bin/Debug/netstandard2.0/Cognito.dll`) and run `/msbuild` via the build queue — confirm the banner reports `RESULT=FAIL` and the artifact is quarantined.
-- [ ] <!-- verification-only --> Run a real clean `/msbuild` build in the same worktree — confirm `RESULT=PASS` with `build_fidelity: verified`.
-- [ ] <!-- verification-only --> Force or observe a build that exits 0 with no compiled output — confirm `RESULT=FAIL` with `build_fidelity: no-output` and the corrective next-action text in the banner.
-- [ ] <!-- verification-only --> Confirm `python user/scripts/test_hooks.py`'s `test_bqe_*` suite passes with the hook re-enabled (deny/allow behavior matches pre-disable expectations).
+- [x] <!-- verification-only --> In a Cognito worktree, seed a poisoned per-project DLL (e.g. 0-byte `Cognito/bin/Debug/netstandard2.0/Cognito.dll`) and run `/msbuild` via the build queue — confirm the banner reports `RESULT=FAIL` and the artifact is quarantined. <!-- operator-waived 2026-07-13 (Jacob): live-Cognito runtime observation NOT run this session; code complete + Pester-green. Re-openable on demand. -->
+- [x] <!-- verification-only --> Run a real clean `/msbuild` build in the same worktree — confirm `RESULT=PASS` with `build_fidelity: verified`. <!-- operator-waived 2026-07-13 (Jacob): live-Cognito runtime observation NOT run this session; code complete + Pester-green. Re-openable on demand. -->
+- [x] <!-- verification-only --> Force or observe a build that exits 0 with no compiled output — confirm `RESULT=FAIL` with `build_fidelity: no-output` and the corrective next-action text in the banner. <!-- operator-waived 2026-07-13 (Jacob): live-Cognito runtime observation NOT run this session; code complete + Pester-green. Re-openable on demand. -->
+- [x] <!-- verification-only --> Confirm `python user/scripts/test_hooks.py`'s `test_bqe_*` suite passes with the hook re-enabled (deny/allow behavior matches pre-disable expectations). <!-- VERIFIED 2026-07-13: `python3 user/scripts/test_hooks.py` exit 0 (44 test_bqe_* + pipe tests; main() returns nonzero on any failure). -->
 
 #### Implementation Notes (2026-07-03, Part 3)
 

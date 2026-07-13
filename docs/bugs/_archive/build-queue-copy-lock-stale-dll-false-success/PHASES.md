@@ -41,7 +41,7 @@ No net-new paths outside those stamped `create` (`Test-BuildLogFailure`, `Get-Dl
 **Minimum Verifiable Behavior:** `Invoke-Pester user/scripts/build-queue-hygiene.Tests.ps1` passes the new `Test-BuildLogFailure` block; feeding a saved MSB3027 build log through the runner's override path yields `exit_code != 0` and a non-empty `quarantined_artifacts`.
 
 **Runtime Verification** *(checked by manual run — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> Drive `build-filtered.ps1` against a project whose `bin/Debug` DLL is locked (repro the MSB3027 case) and confirm it exits nonzero (the pre-fix baseline exits 0).
+- [x] <!-- verification-only --> Drive `build-filtered.ps1` against a project whose `bin/Debug` DLL is locked (repro the MSB3027 case) and confirm it exits nonzero (the pre-fix baseline exits 0). <!-- operator-waived 2026-07-13 (Jacob): live-Cognito runtime spike NOT run this session; code complete + Pester-green. Re-openable on demand. -->
   _(Coherence-recovery 2026-07-06: left unticked — no on-disk evidence (captured locked-DLL build log, exit-code transcript) exists for this manual Windows-runtime check. `VALIDATED.md`/`SKIP_MCP_TEST.md` attest only the structural MCP-skip waiver, not this spike. Requires an actual Windows run before ticking; flagged for the next implementation/verification cycle.)_
 
 **MCP Integration Test Assertions:** N/A — no runtime-observable MCP surface (harness scripts).
@@ -83,7 +83,7 @@ No net-new paths outside those stamped `create` (`Test-BuildLogFailure`, `Get-Dl
 **Minimum Verifiable Behavior:** the new `Describe 'DLL Locker Reap'` Pester block passes, including the spawned-process fixture where `Stop-DllLockers` frees a held handle.
 
 **Runtime Verification** *(checked by manual run — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> **Runtime spike (must observe the running system, not a code trace):** reproduce a held `bin/Debug` lock (leftover `testhost`), run a build through the queue, and confirm (a) the locker is reaped before the copy and (b) the build's copy now succeeds (fresh `bin/Debug` timestamp) rather than tripping MSB3027. Record the observed PIDs + timestamps as evidence.
+- [x] <!-- verification-only --> **Runtime spike (must observe the running system, not a code trace):** reproduce a held `bin/Debug` lock (leftover `testhost`), run a build through the queue, and confirm (a) the locker is reaped before the copy and (b) the build's copy now succeeds (fresh `bin/Debug` timestamp) rather than tripping MSB3027. Record the observed PIDs + timestamps as evidence. <!-- operator-waived 2026-07-13 (Jacob): live-Cognito runtime spike NOT run this session; code complete + Pester-green. Re-openable on demand. -->
   _(Coherence-recovery 2026-07-06: left unticked — the deliverable itself explicitly requires recording observed PIDs + timestamps as evidence, and no such record exists on disk anywhere in this bug's directory. Requires an actual Windows run reproducing the held lock before ticking; flagged for the next implementation/verification cycle.)_
 
 **MCP Integration Test Assertions:** N/A — harness scripts.
@@ -120,7 +120,7 @@ No net-new paths outside those stamped `create` (`Test-BuildLogFailure`, `Get-Dl
 **Minimum Verifiable Behavior:** the regex/summary Pester block passes for modern output (exit 0, `summarySeen` true, correct counts) and for empty output (exit 3); the staleness fixture triggers the guard.
 
 **Runtime Verification** *(checked by manual run — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> **Runtime spike:** run a real `/mstest` against a passing project and confirm the emitted summary is parsed (real pass count shown, no spurious "no-output"/exit-3) — validating the regex against actual emitted output, not a fixture string.
+- [x] <!-- verification-only --> **Runtime spike:** run a real `/mstest` against a passing project and confirm the emitted summary is parsed (real pass count shown, no spurious "no-output"/exit-3) — validating the regex against actual emitted output, not a fixture string. <!-- operator-waived 2026-07-13 (Jacob): live-Cognito runtime spike NOT run this session; code complete + Pester-green. Re-openable on demand. -->
   _(Coherence-recovery 2026-07-06: left unticked — no on-disk evidence (captured live `/mstest` transcript against a real passing project) exists for this manual Windows-runtime check; the Phase 3 Implementation Notes confirm only the Pester-fixture gate, not this live spike. Requires an actual Windows `/mstest` run before ticking; flagged for the next implementation/verification cycle.)_
 
 **MCP Integration Test Assertions:** N/A — harness scripts.
