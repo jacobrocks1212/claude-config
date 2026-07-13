@@ -8,7 +8,7 @@
 > distinguishes "wrong repo/machine to observe this" from "signal genuinely absent", and the
 > scorecard regenerates where its registry actually lives.
 
-**Status:** In-progress
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-12
 **Source:** repo-exploration proposal session 2026-07-11

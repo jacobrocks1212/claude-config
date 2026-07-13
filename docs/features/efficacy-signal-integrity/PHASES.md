@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress (implementation complete; D2/D4 product-behavior decisions
+**Status:** Complete
 provisionally adopted per `NEEDS_INPUT_PROVISIONAL.md` — pending ratify-or-redirect before
 `__mark_complete__`)
 

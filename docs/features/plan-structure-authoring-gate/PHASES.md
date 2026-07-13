@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Complete
 
 **MCP runtime:** not-required — pure claude-config harness mechanics (a stdlib Python
 validator CLI mode, pytest fixtures, and orchestrator-prose skill wiring). No Tauri app, no

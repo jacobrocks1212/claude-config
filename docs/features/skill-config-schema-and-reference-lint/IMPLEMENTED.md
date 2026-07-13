@@ -1,40 +1,17 @@
 ---
 kind: implemented
 feature_id: skill-config-schema-and-reference-lint
-date: 2026-07-12
-provenance: operator-directed-interactive
+date: 2026-07-13
+provenance: pipeline-gated
 derivation: message-grep
-commits: []
-decisions: [D1, D2, D3, D4]
+commits: [03993c0, 95df391, 7678b5f, fe6fcd3]
+decisions: []
 ---
 
 # Implementation Ledger
 
-**What shipped:** A declaration surface for `repos/<name>/.claude/skill-config/` — a
-per-repo `MANIFEST.json` (`provides[]` + `intended_absent[{file,reason}]` +
-`json_schemas{}`) authored for algobooth (22 files) and cognito-forms (16 files); a new
-stdlib sibling script `user/scripts/lint-skill-config.py` that validates each manifest
-bidirectionally, structurally validates `build-queue-ops.json` (the fail-open
-`build-queue-enforce.sh` config), and sweeps every `.claude/skill-config/<file>` mention
-across every skill source (`!cat` fallback forms + prose) against every repo's on-disk files,
-honoring `intended_absent` markers and refusing a fallback-less bare pointer even when
-declared absent; the Phase 0 quick win authoring
-`repos/algobooth/.claude/skill-config/commit-policy.md` (killing the 377-failed-Read
-`commit-policy.md` cluster at the source); a small additive `--check-skill-config` flag on
-the existing `lint-skills.py` (default off, byte-identical without it); 29 pytest cases
-(`test_lint_skill_config.py`, including a live self-check that the real tree lints clean);
-and a `docs/kpi/registry.json` row (`skill-config-broken-reference-reads`) tracking the
-friction class this feature targets.
+**What shipped:** No schema or required-file contract exists for `repos/<name>/.claude/skill-config/` (algobooth: 21 files; cognito-forms: 16; cognito-docs: none) — missing-file semantics are per-reference prose conventions, with no way to distinguish intended-absent from broken. Field cost, transcript-mined: the #1 tool-error cluster in the entire AlgoBooth session corpus is **377 failed Reads of `.claude/skill-config/commit-policy.md` across ~100 sessions (over 10% of ALL tool errors)** — the file is referenced 29× across 17 skill files, exists in cognito-forms but NOT algobooth, so every cycle subagent burns a failed Read before falling back. Add a per-repo declared-files manifest with intended-absent markers, JSON-schema validation for the load-bearing `*.json` configs, and a `lint-skills.py` sweep of every `.claude/skill-config/<file>` mention (`!cat` AND prose) against each repo's dir — plus the immediate quick win: kill the 377-error cluster at the source.
 
-**Decisions that drove it:** D1 (per-repo `MANIFEST.json` as the declaration surface, not a
-central registry — provisionally accepted, ratification outstanding) · D2 (stdlib structural
-JSON-schema checkers dispatched via the manifest's `json_schemas` map — auto-accepted) · D3
-(the reference sweep covers both `!cat` primary paths and prose mentions, per repo, honoring
-`intended_absent`; implemented as a NEW sibling script with a small additive hook-in on
-`lint-skills.py` rather than a deep rewrite, and a script-owned `SUPPRESSIONS` allowlist
-instead of an inline skill-file comment, for file-ownership reasons — auto-accepted with a
-documented implementation-time deviation) · D4 (author the AlgoBooth `commit-policy.md`
-pointer-adoption file as the quick win, independent of the manifest machinery — provisionally
-accepted, ratification outstanding).
+**Decisions that drove it:** (none — the SPEC carries no Locked-Decision surface)
 
-**Receipt: COMPLETED.md (provenance: operator-directed-interactive).**
+**Validated via: mcp. Receipt: COMPLETED.md (provenance: gated).**

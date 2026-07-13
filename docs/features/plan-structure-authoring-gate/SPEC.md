@@ -9,7 +9,7 @@
 > coherence-recovery meta-dispatch mid-run — the gate moves the refusal to the moment of
 > authorship.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-11
 **Source:** repo-exploration proposal session 2026-07-11 (transcript mining of sessions

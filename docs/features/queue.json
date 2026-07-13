@@ -27,27 +27,9 @@
       "tier": 2
     },
     {
-      "id": "skill-config-schema-and-reference-lint",
-      "name": "skill-config Schema + Reference Lint",
-      "spec_dir": "skill-config-schema-and-reference-lint",
-      "tier": 2
-    },
-    {
       "id": "cycle-prompt-environment-dialect",
       "name": "Cycle-Prompt Environment Dialect Block",
       "spec_dir": "cycle-prompt-environment-dialect",
-      "tier": 2
-    },
-    {
-      "id": "plan-structure-authoring-gate",
-      "name": "Plan-Structure Authoring Gate",
-      "spec_dir": "plan-structure-authoring-gate",
-      "tier": 2
-    },
-    {
-      "id": "efficacy-signal-integrity",
-      "name": "Efficacy Signal Integrity (sub-signals, canary staleness alarm, scorecard vantage)",
-      "spec_dir": "efficacy-signal-integrity",
       "tier": 2
     },
     {

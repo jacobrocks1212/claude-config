@@ -12,7 +12,7 @@
 > `.claude/skill-config/<file>` mention (`!cat` AND prose) against each repo's dir — plus the
 > immediate quick win: kill the 377-error cluster at the source.
 
-**Status:** Draft (implemented 2026-07-12; completion withheld — NEEDS_INPUT_PROVISIONAL.md ratification pending per park-provisional protocol)
+**Status:** Complete
 **Friction-reduction feature:** yes
 **Priority:** P2
 **Last updated:** 2026-07-11
