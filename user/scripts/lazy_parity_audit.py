@@ -27,6 +27,12 @@ import re
 import sys
 from pathlib import Path
 
+# Insert this directory onto sys.path so `import cli_surface` resolves whether
+# this script is run directly or loaded as a module in tests (mirrors the
+# bug-state.py / lazy-state.py sibling-import guard).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cli_surface
+
 
 # ---------------------------------------------------------------------------
 # Manifest loading
@@ -579,7 +585,7 @@ def audit_all_pairs(
 # CLI entry point
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Audit parity between canonical and derived lazy-batch SKILL.md pairs.",
     )
@@ -605,7 +611,17 @@ if __name__ == "__main__":
             "cloud mirror must carry a consistent merged-view dispatch branch."
         ),
     )
+    cli_surface.add_dump_cli_surface_flag(parser)
+    return parser
+
+
+if __name__ == "__main__":
+    parser = build_parser()
     args = parser.parse_args()
+
+    _dump = cli_surface.maybe_handle_dump_cli_surface(args, parser, "lazy_parity_audit.py")
+    if _dump is not None:
+        sys.exit(_dump)
 
     if args.merged_view:
         # Targeted merged-view audit — no manifest needed (audits SKILL.md prose).

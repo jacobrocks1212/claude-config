@@ -20,6 +20,7 @@ from pathlib import Path
 # module in tests (mirrors the bug-state.py / lazy-state.py sibling-import guard).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from skill_repos import iter_config_repos, resolve_internal_repos_root
+import cli_surface
 
 # Matches the literal trigger the runtime looks for anywhere on a line.
 _RUNTIME_TRIGGER = re.compile(r'!`cat\s+')
@@ -350,7 +351,7 @@ def _print_issues(issues: list[dict], base_dir: Path | None = None) -> None:
             print(f"    > {issue['text'].strip()}")
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Validate skill files for broken or dangerous !cat patterns."
     )
@@ -403,7 +404,28 @@ def main() -> None:
             "skill-size-baseline.json. Opt-in per file; a file not listed is unaffected."
         ),
     )
+    parser.add_argument(
+        "--check-cli-surface",
+        action="store_true",
+        help=(
+            "Also run the CLI-surface prose/fence lint (cli-surface-lint.py, "
+            "state-cli-contract-registry): every --flag mention in skills/components/"
+            "user/scripts/CLAUDE.md attributed to a roster script is checked against "
+            "docs/cli/cli-surface.json."
+        ),
+    )
+    cli_surface.add_dump_cli_surface_flag(parser)
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
     args = parser.parse_args()
+
+    _dump = cli_surface.maybe_handle_dump_cli_surface(args, parser, "lint-skills.py")
+    if _dump is not None:
+        sys.exit(_dump)
+
     skills_dir = args.skills_dir.expanduser().resolve()
 
     exit_code = 0
@@ -525,6 +547,24 @@ def main() -> None:
             exit_code = 1
         else:
             print(f"OK — skill-size ratchet: {len(ss_baseline['files'])} file(s) within ceiling.")
+
+    # CLI-surface prose/fence lint (optional; state-cli-contract-registry).
+    if args.check_cli_surface:
+        import importlib.util as _ilu
+        _cs_spec = _ilu.spec_from_file_location(
+            "cli_surface_lint", Path(__file__).resolve().parent / "cli-surface-lint.py"
+        )
+        cli_surface_lint = _ilu.module_from_spec(_cs_spec)
+        _cs_spec.loader.exec_module(cli_surface_lint)
+        cs_repo_root = Path(__file__).resolve().parents[2]
+        cs_findings = cli_surface_lint.lint_repo(cs_repo_root)
+        if cs_findings:
+            for finding in cs_findings:
+                print(finding.render())
+            print(f"\n{len(cs_findings)} CLI-surface lint finding(s) found.")
+            exit_code = 1
+        else:
+            print("OK — CLI-surface lint: no stale --flag mentions.")
 
     sys.exit(exit_code)
 

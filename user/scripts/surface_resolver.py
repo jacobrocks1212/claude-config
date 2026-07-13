@@ -29,10 +29,17 @@ Built-in allowlist (not MCP tools — control pseudo-steps):
   are genuine surface gaps the lint is designed to catch.
 """
 
+import argparse
 import re
 import sys
 from pathlib import Path
 from typing import Optional
+
+# Insert this directory onto sys.path so `import cli_surface` resolves whether
+# this script is run directly or loaded as a module in tests (mirrors the
+# bug-state.py / lazy-state.py sibling-import guard).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cli_surface
 
 # ---------------------------------------------------------------------------
 # Regex constants — authoritative formats per the prompt specification.
@@ -454,26 +461,7 @@ def route_mcp_test_tier(
 # Standalone CLI (informational base mode + --lint mode for F8)
 # ---------------------------------------------------------------------------
 
-def main(argv: Optional[list[str]] = None) -> int:
-    """CLI entry point.
-
-    Base mode (informational, exit 0):
-        python surface_resolver.py --repo-root <root> <scenario.md> [...]
-
-    Lint mode (F8 / Phase 5, exits non-zero on findings):
-        python surface_resolver.py --lint --repo-root <root> <scenario.md> [...]
-        python surface_resolver.py --lint --allow my_pseudo_step --repo-root <root> <scenario.md>
-
-    --allow <name>   Suppress lint findings for <name> (repeatable).  Useful for
-                     project-specific pseudo-steps that are not MCP tool
-                     registrations but appear as ``POST /tools/<name>`` in
-                     scenarios.  The built-in allowlist already covers ``sleep``;
-                     only add genuinely-intentional pseudo-steps here.
-                     DO NOT use --allow to silence real surface gaps like
-                     evaluate_code, read_file, or audio_perceptual_quality.
-    """
-    import argparse
-
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "surface_resolver.py — Check which MCP tools asserted by scenario(s) "
@@ -519,7 +507,34 @@ def main(argv: Optional[list[str]] = None) -> int:
         metavar="SCENARIO",
         help="Path(s) to scenario .md file(s) to check.",
     )
+    cli_surface.add_dump_cli_surface_flag(parser)
+    return parser
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    """CLI entry point.
+
+    Base mode (informational, exit 0):
+        python surface_resolver.py --repo-root <root> <scenario.md> [...]
+
+    Lint mode (F8 / Phase 5, exits non-zero on findings):
+        python surface_resolver.py --lint --repo-root <root> <scenario.md> [...]
+        python surface_resolver.py --lint --allow my_pseudo_step --repo-root <root> <scenario.md>
+
+    --allow <name>   Suppress lint findings for <name> (repeatable).  Useful for
+                     project-specific pseudo-steps that are not MCP tool
+                     registrations but appear as ``POST /tools/<name>`` in
+                     scenarios.  The built-in allowlist already covers ``sleep``;
+                     only add genuinely-intentional pseudo-steps here.
+                     DO NOT use --allow to silence real surface gaps like
+                     evaluate_code, read_file, or audio_perceptual_quality.
+    """
+    parser = build_parser()
     args = parser.parse_args(argv)
+
+    _dump = cli_surface.maybe_handle_dump_cli_surface(args, parser, "surface_resolver.py")
+    if _dump is not None:
+        return _dump
 
     repo_root = Path(args.repo_root).resolve()
 

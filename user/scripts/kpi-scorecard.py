@@ -51,6 +51,8 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
+import cli_surface
+
 # ---------------------------------------------------------------------------
 # Closed enums (D2-B) — an unknown value is a lint ERROR, never silent no-data.
 # ---------------------------------------------------------------------------
@@ -1398,7 +1400,7 @@ def _cmd_capture_baseline(repo_root: Path, kpi_id: str,
     return 0
 
 
-def main(argv=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="kpi-scorecard",
         description="Friction KPI registry lint + pure-read scorecard renderer "
@@ -1429,7 +1431,17 @@ def main(argv=None) -> int:
                         help="Current host classification for the D3 vantage "
                              "check (default: $LAZY_HOST_KIND env, else "
                              "'workstation'). Only affects rendering.")
+    cli_surface.add_dump_cli_surface_flag(parser)
+    return parser
+
+
+def main(argv=None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
+
+    _dump = cli_surface.maybe_handle_dump_cli_surface(args, parser, "kpi-scorecard.py")
+    if _dump is not None:
+        return _dump
 
     repo_root = Path(args.repo_root)
     today = datetime.date.today()

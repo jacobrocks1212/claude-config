@@ -247,6 +247,64 @@ dedicated transcript-mined selector is registered during implementation, see not
   second re-runs the smoke-baseline suite on the merged tree before its first extraction
   commit. No hard dep in either direction.
 
+## Locked Decisions
+
+Resolved 2026-07-13 under the operator's overnight park-provisional blanket directive
+(autonomous single-lane implementation session, STATE lane only — see the dispatching prompt).
+Mechanical-internal decisions are auto-accepted per their own SPEC resolution text; the two
+PRODUCT-classified decisions (D2, D4) are **provisionally accepted** on their stated
+recommendation and recorded in `NEEDS_INPUT_PROVISIONAL.md` — `SPEC.md` **Status stays Draft**,
+and no `COMPLETED.md` is written, per the park-provisional contract. D5 (the higher-risk
+`state_cli.py` extraction, Phase 4) is **deferred, not provisionally accepted** — see below.
+
+1. **D1 — Registry artifact (mechanical, auto-accepted): Option A.** `--dump-cli-surface`
+   introspection subcommand per roster script (shared implementation in the new
+   `user/scripts/cli_surface.py`) + the `user/scripts/cli_surface_gen.py` aggregator writing
+   the committed, key-sorted, byte-stable `docs/cli/cli-surface.json`. Landed exactly as
+   specified; the closed v1 roster (`lazy-state.py`, `bug-state.py`, `surface_resolver.py`,
+   `lazy_parity_audit.py`, `kpi-scorecard.py`, `lint-skills.py`, `doc-drift-lint.py`) all hoist
+   a module-level `build_parser()` (behavior-neutral — smoke baselines byte-identical) and wire
+   `--dump-cli-surface` immediately after `parser.parse_args(...)`, before any other side effect.
+2. **D2 — Skill/prose lint scope + attribution (PRODUCT, provisionally accepted): Option A.**
+   New `user/scripts/cli-surface-lint.py`, scoped to `user/skills/**/SKILL.md`,
+   `user/skills/_components/*.md`, `repos/*/.claude/skills/**`, `repos/*/.claude/skill-config/**`,
+   and `user/scripts/CLAUDE.md`. Attribution rule implemented as SPEC-recommended (same
+   fence/line/sentence co-occurrence — refined to sentence-level splitting on `.`/`;` boundaries
+   within a logical line to control false positives against this repo's dense single-line
+   markdown-table-cell script docs; see the script's own docstring). Exemption marker
+   `<!-- cli-surface: historical -->` implemented verbatim. Runner integration (D2's "B's runner
+   integration" clause) is wired as `lint-skills.py --check-cli-surface` — an opt-in flag
+   alongside the existing `--check-skill-config`/`--check-skill-size` family, matching this
+   repo's existing convention of optional additive lint-skills flags rather than an unconditional
+   default-run gate (this repo has no CI pipeline that force-runs `lint-skills.py`; the flag is
+   reachable on demand exactly like its siblings).
+3. **D3 — Registry freshness (mechanical, auto-accepted): Option A.** `cli_surface_gen.py
+   --check` regenerate-and-diff; exit 1 naming the drifted script + flags. Verified byte-stable
+   across repeated regenerations and a live self-check (`test_cli_surface_gen.py`) that the real
+   committed registry is fresh against the real roster — the regression net for a future roster
+   script's argparse changing without a regen.
+4. **D4 — Runtime "did you mean" (PRODUCT, provisionally accepted): Option A.** The two state
+   scripts only. `cli_surface.DidYouMeanArgumentParser` overrides `error()` to append a
+   `difflib`-suggested near-miss + registry pointer on an "unrecognized arguments" error, with
+   the leading `error:` line and exit code (2) byte-identical to stock argparse (verified via a
+   dedicated smoke-harness fixture in both twins' `--test`, plus unit tests in
+   `test_cli_surface_gen.py`). Wired into both twins' `build_parser()`.
+5. **D5 — `state_cli.py` extraction / Phase 4 (PRODUCT, DEFERRED — not provisionally
+   accepted).** The dispatching session's brief explicitly overrode the SPEC's own Option-A
+   recommendation here: deliverable (a) (D1–D4) lands fully this session; deliverable (b) is
+   deferred to avoid rebase/rework tax against `lazy-core-package-decomposition`'s later
+   `compute_state` phases, which touch the same twins' `main()` plumbing (per D6's own
+   sequencing text — "no hard dep in either direction," "whichever feature's write-path phases
+   run second re-runs the smoke-baseline suite"). This is a scope decision sanctioned by the
+   SPEC's own D6 resolution, not a fork requiring operator ratification — recorded here as an
+   Open Question / vN follow-up (Phase 4 in `PHASES.md` is authored but marked deferred, not
+   attempted), distinct from the D2/D4 provisional-accept shape above.
+6. **D6 — Sequencing (mechanical, auto-accepted): resolution candidate as written.** Honored by
+   construction — this session touches nothing under `lazy_core.py`'s package boundary; the
+   deferred D5/Phase-4 work explicitly inherits the "rerun smoke baselines on the merged tree
+   before the first extraction commit" obligation whenever it is picked up (by this feature or
+   by `lazy-core-package-decomposition`, whichever lands second).
+
 ## User Experience
 
 - **Agent hits a wrong flag (post-D4):**

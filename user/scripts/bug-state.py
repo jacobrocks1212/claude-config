@@ -64,6 +64,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -92,6 +93,7 @@ except ImportError:
 # symlink.
 sys.path.insert(0, str(Path(__file__).parent))
 
+import cli_surface
 import lazy_core
 from lazy_core import (
     _atomic_write,
@@ -7111,6 +7113,38 @@ def run_smoke_tests() -> int:
             ri3_ok = False
     print(f"  {'PASS' if ri3_ok else 'FAIL'} [{fix_ri3}]")
 
+    # state-cli-contract-registry Phase 3 (D4-A): coupled-pair mirror of the
+    # same did-you-mean wiring confirmation on lazy-state.py.
+    dym_name = "did-you-mean-cli-suggestion"
+    dym_ok = True
+    dym_parser = build_parser()
+    if not isinstance(dym_parser, cli_surface.DidYouMeanArgumentParser):
+        failures.append(f"[{dym_name}] build_parser() must return a "
+                         f"DidYouMeanArgumentParser, got {type(dym_parser)!r}")
+        dym_ok = False
+    else:
+        import io as _dym_io
+        dym_buf = _dym_io.StringIO()
+        dym_code = None
+        with contextlib.redirect_stderr(dym_buf):
+            try:
+                dym_parser.parse_args(["--fsk"])  # near-miss of --fsck
+            except SystemExit as exc:
+                dym_code = exc.code
+        dym_stderr = dym_buf.getvalue()
+        if dym_code != 2:
+            failures.append(f"[{dym_name}] expected exit 2, got {dym_code!r}")
+            dym_ok = False
+        if "unrecognized arguments: --fsk" not in dym_stderr:
+            failures.append(f"[{dym_name}] leading error line missing/changed: "
+                             f"{dym_stderr!r}")
+            dym_ok = False
+        if "did you mean: --fsck?" not in dym_stderr:
+            failures.append(f"[{dym_name}] missing did-you-mean suggestion: "
+                             f"{dym_stderr!r}")
+            dym_ok = False
+    print(f"  {'PASS' if dym_ok else 'FAIL'} [{dym_name}]")
+
     # Summary
     if failures:
         print("\nFAILURES:")
@@ -7134,8 +7168,10 @@ def run_smoke_tests() -> int:
 # CLI
 # ---------------------------------------------------------------------------
 
-def main() -> int:
-    parser = argparse.ArgumentParser(
+def build_parser() -> argparse.ArgumentParser:
+    # state-cli-contract-registry Phase 3 (D4-A): coupled-pair mirror of the
+    # same DidYouMeanArgumentParser swap on lazy-state.py.
+    parser = cli_surface.DidYouMeanArgumentParser(
         description="Compute the next /lazy-bug state for autonomous bug triage."
     )
     parser.add_argument(
@@ -7746,7 +7782,17 @@ def main() -> int:
             "lanes). Malformed → exit 2, zero side effects. Omit for serial runs."
         ),
     )
+    cli_surface.add_dump_cli_surface_flag(parser)
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
     args = parser.parse_args()
+
+    _dump = cli_surface.maybe_handle_dump_cli_surface(args, parser, "bug-state.py")
+    if _dump is not None:
+        return _dump
 
     # multi-repo-concurrent-runs: bind the active repo ONCE so claude_state_dir()
     # scopes all run-scoped state to this repo's subdir (parity with lazy-state.py).

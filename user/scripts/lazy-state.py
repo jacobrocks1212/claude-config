@@ -49,6 +49,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -65,6 +66,12 @@ try:
 except ImportError:
     sys.stderr.write("lazy-state.py requires PyYAML. Install with: pip install pyyaml\n")
     sys.exit(2)
+
+# Insert this directory onto sys.path so `import cli_surface` resolves when
+# lazy-state.py is run directly from user/scripts/ OR via the ~/.claude/scripts
+# symlink (mirrors the bug-state.py sibling-import guard).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cli_surface
 
 # Domain-agnostic helpers live in lazy_core (WU-1.2 extraction). Import the
 # module itself so lazy_core._DIAGNOSTICS is the canonical list object and
@@ -11260,6 +11267,41 @@ def run_smoke_tests() -> int:
             ri3_ok = False
     print(f"  {'PASS' if ri3_ok else 'FAIL'} [{fix_ri3}]")
 
+    # state-cli-contract-registry Phase 3 (D4-A): confirms the WIRING itself
+    # (build_parser() returns cli_surface.DidYouMeanArgumentParser and an
+    # unrecognized near-miss flag suggests the real one) — not a re-mock of
+    # cli_surface.DidYouMeanArgumentParser's own unit tests
+    # (test_cli_surface_gen.py), which cover the class in isolation.
+    dym_name = "did-you-mean-cli-suggestion"
+    dym_ok = True
+    dym_parser = build_parser()
+    if not isinstance(dym_parser, cli_surface.DidYouMeanArgumentParser):
+        failures.append(f"[{dym_name}] build_parser() must return a "
+                         f"DidYouMeanArgumentParser, got {type(dym_parser)!r}")
+        dym_ok = False
+    else:
+        import io as _dym_io
+        dym_buf = _dym_io.StringIO()
+        dym_code = None
+        with contextlib.redirect_stderr(dym_buf):
+            try:
+                dym_parser.parse_args(["--emit-prompts"])  # near-miss of --emit-prompt
+            except SystemExit as exc:
+                dym_code = exc.code
+        dym_stderr = dym_buf.getvalue()
+        if dym_code != 2:
+            failures.append(f"[{dym_name}] expected exit 2, got {dym_code!r}")
+            dym_ok = False
+        if "unrecognized arguments: --emit-prompts" not in dym_stderr:
+            failures.append(f"[{dym_name}] leading error line missing/changed: "
+                             f"{dym_stderr!r}")
+            dym_ok = False
+        if "did you mean: --emit-prompt?" not in dym_stderr:
+            failures.append(f"[{dym_name}] missing did-you-mean suggestion: "
+                             f"{dym_stderr!r}")
+            dym_ok = False
+    print(f"  {'PASS' if dym_ok else 'FAIL'} [{dym_name}]")
+
     if failures:
         print("\nFAILURES:")
         for f in failures:
@@ -11305,8 +11347,12 @@ def live_settings_probe(repo_root, live_path=None):
 # CLI
 # ---------------------------------------------------------------------------
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[1])
+def build_parser() -> argparse.ArgumentParser:
+    # state-cli-contract-registry Phase 3 (D4-A): the twins' argparse error()
+    # gains a "did you mean" epilogue on an unrecognized-flag misfire. The
+    # leading `<prog>: error: ...` line + exit code (2) stay byte-identical
+    # to stock argparse — see cli_surface.DidYouMeanArgumentParser.
+    parser = cli_surface.DidYouMeanArgumentParser(description=__doc__.splitlines()[1])
     parser.add_argument("--cloud", action="store_true",
                         help="Use /lazy-cloud state machine variants")
     parser.add_argument("--skip-needs-research", action="store_true",
@@ -11947,7 +11993,17 @@ def main() -> int:
                             "anchor. Use this for `phase_count_at_retro`; never an "
                             "ad-hoc grep. Missing file → 0."
                         ))
+    cli_surface.add_dump_cli_surface_flag(parser)
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
     args = parser.parse_args()
+
+    _dump = cli_surface.maybe_handle_dump_cli_surface(args, parser, "lazy-state.py")
+    if _dump is not None:
+        return _dump
 
     # multi-repo-concurrent-runs: bind the active repo ONCE so claude_state_dir()
     # scopes all run-scoped state (marker/registry/ledger/cycle/checkpoint) to

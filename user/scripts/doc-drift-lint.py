@@ -48,6 +48,12 @@ import re
 import sys
 from pathlib import Path
 
+# Insert this directory onto sys.path so `import cli_surface` resolves whether
+# this script is run directly or loaded as a module in tests (mirrors the
+# bug-state.py / lazy-state.py sibling-import guard).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cli_surface
+
 # SSOT divergence marker (the `<!-- verification-only -->` constant precedent).
 DIVERGENCE_MARKER = "doc-drift:deliberate-divergence"
 
@@ -688,7 +694,7 @@ def run_checks(repo_root):
     return findings
 
 
-def main(argv=None):
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Cross-check CLAUDE.md structured claims against reality "
                     "(hooks/scripts/coupled-pairs/manifest). Pure-read.")
@@ -702,7 +708,18 @@ def main(argv=None):
     parser.add_argument("--live-path", default=None,
                         help="override the live settings path checked by --live "
                              "(default: ~/.claude/settings.json)")
+    cli_surface.add_dump_cli_surface_flag(parser)
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
     args = parser.parse_args(argv)
+
+    _dump = cli_surface.maybe_handle_dump_cli_surface(args, parser, "doc-drift-lint.py")
+    if _dump is not None:
+        return _dump
+
     repo_root = Path(args.repo_root).resolve()
 
     findings = run_checks(repo_root)
