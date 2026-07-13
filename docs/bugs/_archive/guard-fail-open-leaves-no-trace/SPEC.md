@@ -7,9 +7,9 @@
 > the severest failure class (python unavailable) is exactly the one the python-side
 > appenders cannot record. A dead guard plane today is indistinguishable from a quiet one.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P2
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-12
 **Related:** `user/hooks/CLAUDE.md` (the Fail-OPEN + countable-events contracts this bug is
 measured against); `docs/features/shared-hook-lib/SPEC.md` (the natural fix vehicle for the
 shared bash-side fallback writer — authored the same session); `docs/bugs/legacy-tool-input-env-hooks-dead/`

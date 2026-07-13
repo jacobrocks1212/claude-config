@@ -33,7 +33,22 @@ if command -v python3 >/dev/null 2>&1; then
 elif command -v python >/dev/null 2>&1; then
   PYTHON=python
 else
-  # No python at all → fail open (exit 0, no output).
+  # No python at all → fail open (exit 0, no output). guard-fail-open-leaves-no-trace:
+  # this is the severest failure class (the ENTIRE python-bearing guard plane is
+  # dead) and precisely the one no python-side appender can record, so the
+  # breadcrumb is written here in pure bash (no python required). Best-effort —
+  # every write is `2>/dev/null || true` so a breadcrumb failure never turns into
+  # a deny or a non-zero exit. Kept as an identical copied block across every
+  # python-bearing hook (interim per docs/bugs/guard-fail-open-leaves-no-trace D4
+  # — the natural long-term home is a shared hook-prelude, not yet built; keep
+  # the copies in lockstep).
+  _HOOK_NOPY_BASE="${LAZY_STATE_DIR:-$HOME/.claude/state}"
+  _HOOK_NOPY_TS="$(date +%s 2>/dev/null || echo 0)"
+  mkdir -p "$_HOOK_NOPY_BASE" 2>/dev/null
+  printf '{"hook":"block-noncanonical-blocker-write","error":"no python interpreter on PATH","at":"%s"}' \
+    "$_HOOK_NOPY_TS" > "$_HOOK_NOPY_BASE/hook-error.json" 2>/dev/null || true
+  printf '{"ts":%s,"kind":"error","hook":"block-noncanonical-blocker-write","repo_root":"","signature":"","detail":"no python interpreter on PATH"}\n' \
+    "$_HOOK_NOPY_TS" >> "$_HOOK_NOPY_BASE/hook-events.jsonl" 2>/dev/null || true
   exit 0
 fi
 
@@ -57,9 +72,20 @@ BNB_SCRIPTS_DIR="$BNB_SCRIPT_DIR/../scripts"
 # piped into this hook. With `-c`, the hook's real stdin (the payload) flows
 # straight through to python's sys.stdin.
 read -r -d '' _BNB_PY <<'PYEOF'
+import datetime
 import json
 import os
+import re
 import sys
+
+# guard-fail-open-leaves-no-trace (c): this hook previously had NO error-path
+# observability at all (its catch-all was a bare `sys.exit(0)`) — a broken hook
+# was indistinguishable from a quiet one. STATE_DIR + _breadcrumb below mirror
+# the sibling guards (long-build-ownership-guard.sh / build-queue-enforce.sh)
+# that already had this.
+STATE_DIR = os.environ.get("LAZY_STATE_DIR") or os.path.join(
+    os.path.expanduser("~"), ".claude", "state"
+)
 
 
 def _allow():
@@ -121,6 +147,30 @@ def _append_hook_event(kind, signature, detail, cwd=""):
         pass
 
 
+def _breadcrumb(err, cwd=""):
+    """Write a fail-open breadcrumb; never raise. guard-fail-open-leaves-no-trace
+    (c): every python-bearing hook's catch-all must leave a diagnosable trace."""
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(
+            os.path.join(STATE_DIR, "hook-error.json"), "w", encoding="utf-8"
+        ) as fh:
+            json.dump(
+                {
+                    "hook": "block-noncanonical-blocker-write",
+                    "error": str(err),
+                    "at": datetime.datetime.now(tz=datetime.timezone.utc)
+                    .strftime("%Y-%m-%dT%H:%M:%S") + "Z",
+                },
+                fh,
+            )
+    except Exception:
+        pass
+    # D2: the breadcrumb stays byte-identical; the countable history is the
+    # additive hook-events line beside it (fail-open, never raises).
+    _append_hook_event("error", "", str(err), cwd)
+
+
 def _is_noncanonical_blocker(basename):
     """Mirror of lazy_core.detect_noncanonical_blocker's per-name match rule."""
     return (
@@ -129,6 +179,20 @@ def _is_noncanonical_blocker(basename):
         and basename != "BLOCKED.md"
         and "_RESOLVED_" not in basename
     )
+
+
+# adhoc-blocker-write-hook-overbroad-scope: pipeline sentinels live ONLY under
+# docs/features/<slug>/ and docs/bugs/<slug>/ (incl. docs/bugs/_archive/<slug>/,
+# a harmless over-match) — this hook previously matched a BLOCKED*-shaped
+# basename ANYWHERE in the tree with no directory scoping, denying legitimate
+# writes with no connection to the pipeline (observed: the skill component
+# user/skills/_components/blocked-resolution.md). Matched against the full
+# (backslash-normalized) file_path, not just the basename.
+_SENTINEL_SCOPE_RE = re.compile(r"(?:^|/)docs/(?:features|bugs)/")
+
+
+def _is_in_sentinel_scope(norm_path):
+    return bool(_SENTINEL_SCOPE_RE.search(norm_path))
 
 
 def main():
@@ -144,8 +208,9 @@ def main():
         _allow()
     # Match against the BASENAME only (a path's final component). Normalize
     # backslashes first so a Windows path resolves correctly.
-    basename = os.path.basename(file_path.replace("\\", "/"))
-    if _is_noncanonical_blocker(basename):
+    norm_path = file_path.replace("\\", "/")
+    basename = os.path.basename(norm_path)
+    if _is_noncanonical_blocker(basename) and _is_in_sentinel_scope(norm_path):
         # incident-auto-capture D2: countable deny event (fail-open, additive).
         _append_hook_event(
             "deny", "noncanonical-blocker", basename,
@@ -166,7 +231,8 @@ try:
     main()
 except SystemExit:
     raise
-except Exception:  # noqa: BLE001 — fail-OPEN on ANY error.
+except Exception as exc:  # noqa: BLE001 — fail-OPEN on ANY error.
+    _breadcrumb(exc)
     sys.exit(0)
 PYEOF
 

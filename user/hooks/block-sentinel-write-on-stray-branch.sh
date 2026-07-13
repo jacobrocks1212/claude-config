@@ -31,7 +31,22 @@ if command -v python3 >/dev/null 2>&1; then
 elif command -v python >/dev/null 2>&1; then
   PYTHON=python
 else
-  # No python at all → fail open (exit 0, no output).
+  # No python at all → fail open (exit 0, no output). guard-fail-open-leaves-no-trace:
+  # this is the severest failure class (the ENTIRE python-bearing guard plane is
+  # dead) and precisely the one no python-side appender can record, so the
+  # breadcrumb is written here in pure bash (no python required). Best-effort —
+  # every write is `2>/dev/null || true` so a breadcrumb failure never turns into
+  # a deny or a non-zero exit. Kept as an identical copied block across every
+  # python-bearing hook (interim per docs/bugs/guard-fail-open-leaves-no-trace D4
+  # — the natural long-term home is a shared hook-prelude, not yet built; keep
+  # the copies in lockstep).
+  _HOOK_NOPY_BASE="${LAZY_STATE_DIR:-$HOME/.claude/state}"
+  _HOOK_NOPY_TS="$(date +%s 2>/dev/null || echo 0)"
+  mkdir -p "$_HOOK_NOPY_BASE" 2>/dev/null
+  printf '{"hook":"block-sentinel-write-on-stray-branch","error":"no python interpreter on PATH","at":"%s"}' \
+    "$_HOOK_NOPY_TS" > "$_HOOK_NOPY_BASE/hook-error.json" 2>/dev/null || true
+  printf '{"ts":%s,"kind":"error","hook":"block-sentinel-write-on-stray-branch","repo_root":"","signature":"","detail":"no python interpreter on PATH"}\n' \
+    "$_HOOK_NOPY_TS" >> "$_HOOK_NOPY_BASE/hook-events.jsonl" 2>/dev/null || true
   exit 0
 fi
 
@@ -58,6 +73,7 @@ STATE_PY="$SCRIPT_DIR/../scripts/lazy-state.py"
 # through to python's sys.stdin. The resolved STATE_PY path is threaded via the
 # environment (not argv) so the payload remains python's sole stdin.
 read -r -d '' _BSW_PY <<'PYEOF'
+import datetime
 import json
 import os
 import subprocess
@@ -68,6 +84,15 @@ import sys
 _SENTINELS = {
     "NEEDS_INPUT.md", "BLOCKED.md", "FIXED.md", "COMPLETED.md", "VALIDATED.md",
 }
+
+# guard-fail-open-leaves-no-trace (c): this hook previously had NO error-path
+# observability at all (its catch-all was a bare `sys.exit(0)`) — a broken hook
+# was indistinguishable from a quiet one. STATE_DIR + _breadcrumb below mirror
+# the sibling guards (long-build-ownership-guard.sh / build-queue-enforce.sh)
+# that already had this.
+STATE_DIR = os.environ.get("LAZY_STATE_DIR") or os.path.join(
+    os.path.expanduser("~"), ".claude", "state"
+)
 
 
 def _allow():
@@ -139,6 +164,30 @@ def _append_hook_event(kind, signature, detail, cwd=""):
             fh.write(json.dumps(entry) + "\n")
     except Exception:
         pass
+
+
+def _breadcrumb(err, cwd=""):
+    """Write a fail-open breadcrumb; never raise. guard-fail-open-leaves-no-trace
+    (c): every python-bearing hook's catch-all must leave a diagnosable trace."""
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(
+            os.path.join(STATE_DIR, "hook-error.json"), "w", encoding="utf-8"
+        ) as fh:
+            json.dump(
+                {
+                    "hook": "block-sentinel-write-on-stray-branch",
+                    "error": str(err),
+                    "at": datetime.datetime.now(tz=datetime.timezone.utc)
+                    .strftime("%Y-%m-%dT%H:%M:%S") + "Z",
+                },
+                fh,
+            )
+    except Exception:
+        pass
+    # D2: the breadcrumb stays byte-identical; the countable history is the
+    # additive hook-events line beside it (fail-open, never raises).
+    _append_hook_event("error", "", str(err), cwd)
 
 
 def _marker_work_branch(state_py, cwd):
@@ -238,7 +287,8 @@ try:
     main()
 except SystemExit:
     raise
-except Exception:  # noqa: BLE001 — fail-OPEN on ANY error.
+except Exception as exc:  # noqa: BLE001 — fail-OPEN on ANY error.
+    _breadcrumb(exc)
     sys.exit(0)
 PYEOF
 

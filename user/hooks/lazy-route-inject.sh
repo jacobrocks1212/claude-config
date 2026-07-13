@@ -41,7 +41,22 @@ if command -v python3 >/dev/null 2>&1; then
 elif command -v python >/dev/null 2>&1; then
   PYTHON=python
 else
-  # No python at all -- fail open (exit 0, no output).
+  # No python at all -- fail open (exit 0, no output). guard-fail-open-leaves-no-trace:
+  # this is the severest failure class (the ENTIRE python-bearing guard plane is
+  # dead) and precisely the one no python-side appender can record, so the
+  # breadcrumb is written here in pure bash (no python required). Best-effort --
+  # every write is `2>/dev/null || true` so a breadcrumb failure never turns into
+  # a deny or a non-zero exit. Kept as an identical copied block across every
+  # python-bearing hook (interim per docs/bugs/guard-fail-open-leaves-no-trace D4
+  # -- the natural long-term home is a shared hook-prelude, not yet built; keep
+  # the copies in lockstep).
+  _HOOK_NOPY_BASE="${LAZY_STATE_DIR:-$HOME/.claude/state}"
+  _HOOK_NOPY_TS="$(date +%s 2>/dev/null || echo 0)"
+  mkdir -p "$_HOOK_NOPY_BASE" 2>/dev/null
+  printf '{"hook":"lazy-route-inject","error":"no python interpreter on PATH","at":"%s"}' \
+    "$_HOOK_NOPY_TS" > "$_HOOK_NOPY_BASE/hook-error.json" 2>/dev/null || true
+  printf '{"ts":%s,"kind":"error","hook":"lazy-route-inject","repo_root":"","signature":"","detail":"no python interpreter on PATH"}\n' \
+    "$_HOOK_NOPY_TS" >> "$_HOOK_NOPY_BASE/hook-events.jsonl" 2>/dev/null || true
   exit 0
 fi
 

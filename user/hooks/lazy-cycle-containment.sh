@@ -86,9 +86,21 @@ if command -v python3 >/dev/null 2>&1; then
 elif command -v python >/dev/null 2>&1; then
   PYTHON=python
 else
-  # No python at all → fail open (exit 0, no output). Best-effort breadcrumb.
-  printf '{"hook":"lazy-cycle-containment","error":"no python interpreter on PATH","at":""}\n' \
-    > "$STATE_DIR/hook-error.json" 2>/dev/null || true
+  # No python at all → fail open (exit 0, no output). guard-fail-open-leaves-no-trace
+  # CONFIRMED DEFECT (b): this breadcrumb previously targeted the unset $STATE_DIR
+  # — that name exists ONLY inside the inline Python body below; the bash-scope
+  # base dir var is $LCC_BASE_DIR (set above the python resolution). The write
+  # silently landed at the filesystem root (or failed outright) and was swallowed
+  # by `2>/dev/null || true`, so this breadcrumb had never actually worked. Fixed
+  # to use $LCC_BASE_DIR, and extended with the same hook-events.jsonl append the
+  # other python-bearing hooks carry (interim copied block per
+  # docs/bugs/guard-fail-open-leaves-no-trace D4 — keep the copies in lockstep).
+  _HOOK_NOPY_TS="$(date +%s 2>/dev/null || echo 0)"
+  mkdir -p "$LCC_BASE_DIR" 2>/dev/null
+  printf '{"hook":"lazy-cycle-containment","error":"no python interpreter on PATH","at":"%s"}' \
+    "$_HOOK_NOPY_TS" > "$LCC_BASE_DIR/hook-error.json" 2>/dev/null || true
+  printf '{"ts":%s,"kind":"error","hook":"lazy-cycle-containment","repo_root":"","signature":"","detail":"no python interpreter on PATH"}\n' \
+    "$_HOOK_NOPY_TS" >> "$LCC_BASE_DIR/hook-events.jsonl" 2>/dev/null || true
   exit 0
 fi
 
@@ -211,6 +223,19 @@ LIFECYCLE_PATTERNS = (
     "dev:kill", "dev:restart", "kill-port 3333", "kill-port 1420",
 )
 
+# lazy-cycle-containment-lifecycle-patterns-still-unanchored: LIFECYCLE_PATTERNS
+# used to be matched via unanchored `pat in command` — a subagent commit whose
+# MESSAGE BODY merely mentions e.g. `dev:kill` as prose (`git commit -m "docs:
+# explain the npm run dev:kill teardown behavior"`) was wrongly denied, the
+# same reference-only-mention false-deny class already fixed for
+# _LAZY_BATCH_*_RE / _STATE_PY_INVOKE_RE above. A genuine INVOCATION is either
+# segment-leading (a bare `dev:kill` / `kill-port 3333` command) OR immediately
+# after a recognized task-runner verb (`npm run` / `pnpm run` / `yarn run`) —
+# the form the two pinned tests (`npm run dev:kill`, bare `dev:kill`) require
+# to keep denying. The trailing lookahead requires whitespace/end/separator
+# right after the token so a longer script name (`dev:kill-all`) cannot
+# partial-match.
+
 # Command-position anchor (mirrors build-queue-enforce.sh / long-build-ownership-guard.sh):
 # a nested batch is a runaway only when the token INVOKES a command — either the
 # start of the string, or immediately after a shell separator (`&&`, `||`, `|`,
@@ -314,6 +339,20 @@ _STATE_PY_INVOKE_RE = re.compile(_CMD_START + _STATE_PY_TAIL)
 _STATE_PY_INVOKE_SEG_RE = re.compile(r"^\s*" + _ENV_PREFIX + _STATE_PY_TAIL)
 _SEGMENT_SPLIT_RE = re.compile(r"[\n;&|({]")
 _FEATURE_DIR_RE = re.compile(r"docs/(?:features|bugs)/([^/]+)/")
+
+# lazy-cycle-containment-lifecycle-patterns-still-unanchored: an anchored
+# invocation form for LIFECYCLE_PATTERNS, mirroring _STATE_PY_INVOKE_RE's
+# _CMD_START anchoring. Matches either a bare segment-leading token
+# (`dev:kill`, `kill-port 3333`) or the token immediately after a recognized
+# task-runner verb (`npm run` / `pnpm run` / `yarn run`) — never a mention
+# elsewhere in the command (e.g. inside a quoted commit-message body).
+_LIFECYCLE_TAIL = (
+    r"(?:" + "|".join(re.escape(p) for p in LIFECYCLE_PATTERNS) + r")"
+    r"(?=$|[\s;&|)}])"
+)
+_LIFECYCLE_INVOKE_RE = re.compile(
+    _CMD_START + r"(?:(?:npm|pnpm|yarn)\s+run\s+)?" + _LIFECYCLE_TAIL
+)
 
 
 # incident-auto-capture Phase 1 (D2): the tool-call cwd, captured in main() so
@@ -567,9 +606,12 @@ def main():
             _allow()
 
         # --- Runtime-lifecycle commands. ---
-        for pat in LIFECYCLE_PATTERNS:
-            if pat in command:
-                _deny(CORRECTIVE, "lifecycle-command")
+        # lazy-cycle-containment-lifecycle-patterns-still-unanchored: anchored
+        # invocation match (segment-leading, or after a task-runner verb) —
+        # NOT the old unanchored `pat in command` substring scan, which
+        # false-denied a commit message merely mentioning one of these tokens.
+        if _LIFECYCLE_INVOKE_RE.search(command):
+            _deny(CORRECTIVE, "lifecycle-command")
 
     # --- git commit: 2nd-feature tripwire + commit-count backstop. ---
     # Retained marker-gated (feature_id/commit_tally live on the marker); skip

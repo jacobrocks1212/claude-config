@@ -7,7 +7,7 @@ bug_id: lazy-cycle-containment-lifecycle-patterns-still-unanchored
 
 > Over-fit spin-off from the harden-harness round that segment-anchored the state-script invocation deny (`lazy-cycle-containment-false-denies-reference-only-routing-mentions`, hardening-log 2026-07 Round 33). The reference-only-mention false-deny CLASS has now been closed twice in THIS hook (the `_LAZY_BATCH_DIRECT_RE` anchoring in `adhoc-incident-hook-deny-4b767b`, then the `_STATE_PY` anchoring in Round 33) — signal-2 recurrence. `LIFECYCLE_PATTERNS` is the remaining unanchored substring check.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** Low
 **Discovered:** 2026-07-12
 **Concluded:** 2026-07-12

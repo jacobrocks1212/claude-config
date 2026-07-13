@@ -3213,6 +3213,32 @@ def test_containment_denies_lifecycle_commands():
             )
 
 
+def test_containment_allows_lifecycle_reference_only_mention():
+    """lazy-cycle-containment-lifecycle-patterns-still-unanchored: a subagent
+    commit whose MESSAGE BODY merely MENTIONS a lifecycle token as prose must
+    ALLOW — the same reference-only-mention false-deny class already fixed
+    for the state-script check. RED against the pre-fix unanchored
+    `pat in command` scan (mechanically reproduced in the bug's
+    investigation: both commands below denied at HEAD)."""
+    _guard()
+    benign = (
+        'git commit -m "docs: explain the npm run dev:kill teardown '
+        'behavior in README"',
+        'git commit -m "note: our docs mention kill-port 3333 as an example"',
+    )
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for cmd in benign:
+            result = _run_containment(
+                _bash_preToolUse_json(cmd, agent_id=_SUBAGENT_AGENT_ID), state_dir
+            )
+            assert _containment_decision(result) != "deny", (
+                f"reference-only mention {cmd!r} must NOT deny; "
+                f"stdout: {result.stdout!r}"
+            )
+
+
 def test_containment_allows_narrow_ops():
     """Allow-listed ops (--neutralize-sentinel, --verify-ledger) → ALLOW."""
     _guard()
@@ -5736,6 +5762,49 @@ def test_events_noncanonical_allow_appends_nothing():
         )
 
 
+# ---------------------------------------------------------------------------
+# adhoc-blocker-write-hook-overbroad-scope: the deny is scoped to
+# docs/features/**|docs/bugs/** — the only places pipeline sentinels live.
+# ---------------------------------------------------------------------------
+
+def test_noncanonical_denies_misnamed_blocker_under_docs_features():
+    """A misnamed blocker under docs/features/<slug>/ still denies — the
+    scope fix must not regress the load-bearing in-scope case."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        payload = _straybranch_payload(
+            "C:/repo/docs/features/x/BLOCKED_foo.md", "C:/repo"
+        )
+        result = _run_bash(_NONCANON_HOOK_SH, payload, _base_env(state_dir))
+        assert _containment_decision(result) == "deny", result.stdout
+
+
+def test_noncanonical_allows_blocker_shaped_name_outside_docs_scope():
+    """adhoc-blocker-write-hook-overbroad-scope: a blocker-SHAPED basename
+    written OUTSIDE docs/features/**|docs/bugs/** must ALLOW — pipeline
+    sentinels only ever live under those two trees. RED against the pre-fix
+    hook (no directory scoping): the observed real-world false positive was a
+    Write to the skill component user/skills/_components/blocked-resolution.md,
+    denied purely because its basename starts with 'BLOCKED' (case-insensitive)
+    and doesn't contain '_RESOLVED_'."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        for file_path in (
+            "C:/repo/user/skills/_components/blocked-resolution.md",
+            "C:/repo/BLOCKED_NOTES.md",
+            "C:/repo/plans/BLOCKED_2026-06-09.md",
+        ):
+            payload = _straybranch_payload(file_path, "C:/repo")
+            result = _run_bash(_NONCANON_HOOK_SH, payload, env)
+            assert _containment_decision(result) != "deny", (
+                f"blocker-shaped name outside docs scope must ALLOW: "
+                f"{file_path!r}; stdout={result.stdout!r}"
+            )
+
+
 def test_events_straybranch_deny_appends_event():
     """Stray-branch sentinel deny → one kind:deny event
     (signature: stray-branch-sentinel)."""
@@ -5839,6 +5908,158 @@ def test_events_guard_deny_appends_no_event():
         assert _read_hook_events(state_dir) == [], (
             "guard denies must NOT append hook-events (already deny-ledgered)"
         )
+
+
+# ===========================================================================
+# guard-fail-open-leaves-no-trace — every python-bearing hook's no-python
+# fail-open path must leave a breadcrumb (hook-error.json + hook-events.jsonl),
+# and the two sentinel hooks' generic catch-all must carry the same
+# _breadcrumb(exc) tail their siblings already had.
+#
+# _no_python_env forces the bash-side "neither python3 nor python is on PATH"
+# branch by emptying PATH entirely. This ONLY works because _run_bash invokes
+# the fully-resolved _BASH_EXE (Git Bash) directly rather than a bare "bash"
+# token — Windows CreateProcess resolves a bare "bash" via System32 (the WSL
+# launcher) REGARDLESS of the PATH passed to the child, which would spawn a
+# WSL shell with its OWN independent PATH/python3 and silently defeat the
+# no-python simulation. Do not "simplify" this to `subprocess.run(["bash", ...])`.
+# ===========================================================================
+
+_ALL_PYTHON_BEARING_HOOKS = [
+    _CONTAINMENT_SH,
+    _NONCANON_HOOK_SH,
+    _STRAYBRANCH_HOOK_SH,
+    _LONGBUILD_GUARD_SH,
+    _BQE_HOOK_SH,
+    _GUARD_SH,
+    _INJECT_SH,
+]
+
+
+def _no_python_env(state_dir: Path) -> dict:
+    """Subprocess env with PATH emptied (no python3/python resolvable) and
+    LAZY_STATE_DIR pointed at *state_dir*."""
+    env = dict(os.environ)
+    env["PATH"] = ""
+    env["LAZY_STATE_DIR"] = str(state_dir)
+    return env
+
+
+def test_all_python_bearing_hooks_breadcrumb_on_no_python():
+    """Every python-bearing hook's no-python fail-open branch must: exit 0,
+    emit no deny, and write BOTH hook-error.json (hook field matches) and a
+    single kind:error hook-events.jsonl line — closing guard-fail-open-leaves
+    -no-trace symptom (a) (silent total disarm of the entire guard plane) for
+    all 7 hooks in one sweep."""
+    minimal_payload = json.dumps({
+        "tool_name": "Bash",
+        "tool_input": {"command": "echo hi"},
+        "cwd": "C:/repo",
+    })
+    for hook_sh in _ALL_PYTHON_BEARING_HOOKS:
+        with tempfile.TemporaryDirectory() as td:
+            state_dir = Path(td) / "state"
+            state_dir.mkdir()
+            env = _no_python_env(state_dir)
+            result = _run_bash(hook_sh, minimal_payload, env)
+            assert result.returncode == 0, (
+                f"{hook_sh.name}: no-python path must exit 0; "
+                f"stderr={result.stderr!r}"
+            )
+            assert _containment_decision(result) != "deny", (
+                f"{hook_sh.name}: no-python path must never deny; "
+                f"stdout={result.stdout!r}"
+            )
+            err_path = state_dir / "hook-error.json"
+            assert err_path.exists(), (
+                f"{hook_sh.name}: no-python path must write a hook-error.json "
+                "breadcrumb in the (overridden) state dir"
+            )
+            crumb = json.loads(err_path.read_text(encoding="utf-8"))
+            assert crumb.get("hook") == hook_sh.stem, (
+                f"{hook_sh.name}: breadcrumb 'hook' field mismatch: {crumb!r}"
+            )
+            events = _read_hook_events(state_dir)
+            assert len(events) == 1, (
+                f"{hook_sh.name}: expected exactly one hook-events line; "
+                f"got {events!r}"
+            )
+            assert events[0]["kind"] == "error", events
+            assert events[0]["hook"] == hook_sh.stem, events
+
+
+def test_containment_no_python_breadcrumb_lands_in_override_dir_not_root():
+    """CONFIRMED DEFECT regression (guard-fail-open-leaves-no-trace symptom b):
+    lazy-cycle-containment.sh's no-python breadcrumb previously targeted the
+    unset bash-scope $STATE_DIR (only defined inside the inline Python body),
+    so the write silently mis-landed (or failed) instead of the LAZY_STATE_DIR
+    override dir. Pin: the crumb lands EXACTLY in the override dir."""
+    minimal_payload = json.dumps({
+        "tool_name": "Bash",
+        "tool_input": {"command": "echo hi"},
+        "cwd": "C:/repo",
+    })
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _no_python_env(state_dir)
+        result = _run_bash(_CONTAINMENT_SH, minimal_payload, env)
+        assert result.returncode == 0
+        crumb_path = state_dir / "hook-error.json"
+        assert crumb_path.exists(), (
+            "the no-python breadcrumb must land in $LCC_BASE_DIR (the "
+            "LAZY_STATE_DIR override), not an unset $STATE_DIR"
+        )
+        crumb = json.loads(crumb_path.read_text(encoding="utf-8"))
+        assert crumb["hook"] == "lazy-cycle-containment"
+        assert "no python" in crumb["error"]
+
+
+def test_noncanonical_catch_all_writes_breadcrumb_and_event():
+    """guard-fail-open-leaves-no-trace symptom (c): block-noncanonical-blocker
+    -write.sh's generic catch-all previously had NO breadcrumb/event at all
+    (a bare `sys.exit(0)`). Malformed payload → fail-open allow + a
+    hook-error.json breadcrumb + one kind:error hook-events.jsonl line,
+    mirroring long-build-ownership-guard.sh's existing sibling behavior."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_bash(_NONCANON_HOOK_SH, "{ not json", _base_env(state_dir))
+        assert result.returncode == 0
+        assert _containment_decision(result) != "deny"
+        assert (state_dir / "hook-error.json").exists(), (
+            "the catch-all must now write a hook-error.json breadcrumb"
+        )
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, events
+        assert events[0]["kind"] == "error", events
+        assert events[0]["hook"] == "block-noncanonical-blocker-write", events
+
+
+def test_straybranch_catch_all_writes_breadcrumb_and_event():
+    """guard-fail-open-leaves-no-trace symptom (c): block-sentinel-write-on
+    -stray-branch.sh's generic catch-all previously had NO breadcrumb/event at
+    all. Malformed payload → fail-open allow + hook-error.json + one
+    kind:error hook-events.jsonl line."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_bash(_STRAYBRANCH_HOOK_SH, "{ not json", _base_env(state_dir))
+        assert result.returncode == 0
+        assert _containment_decision(result) != "deny"
+        assert (state_dir / "hook-error.json").exists(), (
+            "the catch-all must now write a hook-error.json breadcrumb"
+        )
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, events
+        assert events[0]["kind"] == "error", events
+        assert events[0]["hook"] == "block-sentinel-write-on-stray-branch", events
+
+
+# NOTE: registered into _TESTS (for the standalone `python test_hooks.py`
+# runner) at the BOTTOM of this file, alongside the other late-added suites —
+# _TESTS itself isn't defined yet at this point in the file (pytest doesn't
+# need this; it auto-collects every top-level test_* function regardless).
 
 
 # ===========================================================================
@@ -6307,6 +6528,8 @@ _TESTS = [
      test_containment_denies_loop_formation_flags),
     ("test_containment_denies_lifecycle_commands",
      test_containment_denies_lifecycle_commands),
+    ("test_containment_allows_lifecycle_reference_only_mention",
+     test_containment_allows_lifecycle_reference_only_mention),
     ("test_containment_allows_narrow_ops",        test_containment_allows_narrow_ops),
     ("test_containment_allows_unrelated_bash",    test_containment_allows_unrelated_bash),
     ("test_containment_allows_recursive_agent_dispatch",
@@ -6519,6 +6742,10 @@ _TESTS = [
      test_events_noncanonical_deny_appends_event),
     ("test_events_noncanonical_allow_appends_nothing",
      test_events_noncanonical_allow_appends_nothing),
+    ("test_noncanonical_denies_misnamed_blocker_under_docs_features",
+     test_noncanonical_denies_misnamed_blocker_under_docs_features),
+    ("test_noncanonical_allows_blocker_shaped_name_outside_docs_scope",
+     test_noncanonical_allows_blocker_shaped_name_outside_docs_scope),
     ("test_events_straybranch_deny_appends_event",
      test_events_straybranch_deny_appends_event),
     ("test_events_containment_deny_appends_event",
@@ -7519,6 +7746,18 @@ _TESTS = _TESTS + [
     # cross-guard registration meta-test
     ("test_all_command_guards_registered_with_widened_matcher",
      test_all_command_guards_registered_with_widened_matcher),
+]
+
+_TESTS = _TESTS + [
+    # guard-fail-open-leaves-no-trace
+    ("test_all_python_bearing_hooks_breadcrumb_on_no_python",
+     test_all_python_bearing_hooks_breadcrumb_on_no_python),
+    ("test_containment_no_python_breadcrumb_lands_in_override_dir_not_root",
+     test_containment_no_python_breadcrumb_lands_in_override_dir_not_root),
+    ("test_noncanonical_catch_all_writes_breadcrumb_and_event",
+     test_noncanonical_catch_all_writes_breadcrumb_and_event),
+    ("test_straybranch_catch_all_writes_breadcrumb_and_event",
+     test_straybranch_catch_all_writes_breadcrumb_and_event),
 ]
 
 
