@@ -32,15 +32,26 @@ import importlib
 from ._ctx import _DIAGNOSTICS
 
 # Explicit name -> submodule overrides. WU-2 of lazy-core-package-decomposition
-# moves the shared kernel (_DIAGNOSTICS / _diag / clear_diagnostics /
-# _atomic_write) into _ctx; later decomposition phases append entries here as
-# more names move out of `_monolith` into dedicated submodules.
+# moved the shared kernel (_DIAGNOSTICS / _diag / clear_diagnostics /
+# _atomic_write) into _ctx. Phase 2 WU-1 moves the queue dependency-DAG plane
+# into `depdag`; later decomposition phases append entries here as more names
+# move out of `_monolith` into dedicated submodules.
 _SUBMODULE_BY_NAME: dict[str, str] = {
     "_DIAGNOSTICS": "_ctx",
     "_diag": "_ctx",
     "clear_diagnostics": "_ctx",
     "_atomic_write": "_ctx",
     "_SCRIPTS_DIR": "_ctx",
+    "_DEP_ID_RE": "depdag",
+    "_RESERVED_DEP_PREFIXES": "depdag",
+    "parse_dep_block": "depdag",
+    "dep_ids": "depdag",
+    "detect_dep_cycle": "depdag",
+    "validate_dep_id_list": "depdag",
+    "validate_queue_deps": "depdag",
+    "sync_deps": "depdag",
+    "dep_completion_status": "depdag",
+    "format_unknown_dependency_blocker": "depdag",
 }
 
 # Submodule consulted when a name has no explicit entry in
@@ -48,7 +59,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
 _FALLBACK_SUBMODULE = "_monolith"
 
 # All submodules that make up this package, in no particular order.
-_ALL_SUBMODULES = ("_ctx", "_monolith")
+_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag")
 
 
 def __getattr__(name):

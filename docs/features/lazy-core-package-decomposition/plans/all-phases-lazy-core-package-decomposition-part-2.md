@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-core-package-decomposition
-status: Ready
+status: In-progress
 created: 2026-07-13
 phases: [2]
 complexity: complex
@@ -83,7 +83,7 @@ Where this plan's repo uses non-default gates or component paths (this is claude
 
 ## Work Units
 
-- [ ] WU-1 — Extract `depdag.py` (queue dependency DAG)
+- [x] WU-1 — Extract `depdag.py` (queue dependency DAG)
 - [ ] WU-2 — Extract `docmodel.py` (sentinel/SPEC/plan/PHASES parsing)
 - [ ] WU-3 — Extract `hostcaps.py` (host capabilities)
 - [ ] WU-4 — Extract `notifyplane.py` (halt notifier) + retire the `_resolve_ntfy_send` shim (ratified Option C)
