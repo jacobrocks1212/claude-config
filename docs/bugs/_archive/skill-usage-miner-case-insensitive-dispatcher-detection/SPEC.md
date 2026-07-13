@@ -12,6 +12,8 @@
 **Status:** Fixed
 **Severity:** P3
 **Discovered:** 2026-07-13
+**Fixed:** 2026-07-13
+**Fix commit:** 0637655a
 **Placement:** docs/bugs/skill-usage-miner-case-insensitive-dispatcher-detection
 **Related:** `docs/features/skill-usage-miner/` (the feature that introduced `hygiene_sweep`)
 
