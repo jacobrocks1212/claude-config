@@ -6020,6 +6020,28 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/execute-plan-skill-diet/SPEC.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/feature-budget-guard-and-skip-ahead/COMPLETED.md": [
     {
       "id": "feature-budget-guard-and-skip-ahead",
@@ -6730,9 +6752,29 @@
   ],
   "docs/features/lazy-cycle-containment/SPEC.md": [
     {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/lazy-cycle-containment/VALIDATED.md": [
@@ -6889,6 +6931,28 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/lean-plan-files/SPEC.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/long-build-and-runtime-ownership/COMPLETED.md": [
     {
       "id": "long-build-and-runtime-ownership",
@@ -6945,9 +7009,29 @@
   ],
   "docs/features/long-build-and-runtime-ownership/SPEC.md": [
     {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "long-build-and-runtime-ownership",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "unified-pipeline-orchestrator",
@@ -7379,6 +7463,28 @@
   "docs/features/park-provisional-acceptance/SPEC.md": [
     {
       "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/phases-slice-scoped-reads/SPEC.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -7998,6 +8104,28 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/spec-excerpt-scoped-plans/SPEC.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/state-cli-contract-registry/PHASES.md": [
     {
       "id": "state-cli-contract-registry",
@@ -8285,6 +8413,28 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/git-identity.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/interventions/CLAUDE.md": [
     {
       "id": "efficacy-signal-integrity",
@@ -8293,6 +8443,72 @@
     },
     {
       "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/interventions/adhoc-containment-denies-mandated-explore-fanout.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/interventions/adhoc-lane-plan-single-lane-seam-classification.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/interventions/adhoc-write-plan-cognito-planner-contract-read.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -8490,6 +8706,28 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "repos/algobooth/.claude/skill-config/execute-plan-repo-gates.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "repos/algobooth/.claude/skill-config/long-build-ownership.md": [
     {
       "id": "long-build-and-runtime-ownership",
@@ -8534,6 +8772,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
@@ -8564,6 +8807,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "long-build-and-runtime-ownership",
       "type": "feature",
       "provenance": "backfilled"
@@ -8575,6 +8823,16 @@
     },
     {
       "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -8613,9 +8871,295 @@
       "provenance": "backfilled"
     }
   ],
+  "repos/cognito-forms/.claude/settings.local.json": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "repos/cognito-forms/.claude/skill-config/MANIFEST.json": [
     {
       "id": "skill-config-schema-and-reference-lint",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "repos/cognito-forms/.claude/skill-config/spec-evidence-gathering.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "repos/cognito-forms/Cognito.Core/CLAUDE.local.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "repos/cognito-forms/Cognito.QueueJob/CLAUDE.local.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "repos/cognito-forms/Cognito.Services/CLAUDE.local.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "repos/cognito-forms/Cognito.UnitTests/CLAUDE.local.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "repos/cognito-forms/Cognito.Web.Client/CLAUDE.local.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "repos/cognito-forms/Cognito.Web.Client/apps/client/CLAUDE.local.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "repos/cognito-forms/Cognito.Web.Client/apps/spa/CLAUDE.local.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "repos/cognito-forms/Cognito.Web.Client/libs/model.js/CLAUDE.local.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "repos/cognito-forms/Cognito.Web.Client/libs/types/CLAUDE.local.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "repos/cognito-forms/Cognito.Web.Client/libs/vuemodel/CLAUDE.local.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "repos/cognito-forms/Cognito/CLAUDE.local.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -8632,6 +9176,28 @@
       "id": "cross-platform-setup",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "sh.exe.stackdump": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/hooks/CLAUDE.md": [
@@ -8684,6 +9250,28 @@
       "provenance": "backfilled"
     }
   ],
+  "user/hooks/execute-plan-compact-reorient.sh": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/hooks/lazy-cycle-containment.sh": [
     {
       "id": "adhoc-incident-hook-deny-4b767b",
@@ -8693,6 +9281,11 @@
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -8706,9 +9299,24 @@
       "provenance": "backfilled"
     },
     {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "multi-repo-concurrent-runs",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/hooks/lazy-dispatch-guard.sh": [
@@ -8834,6 +9442,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
@@ -8864,6 +9477,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "long-build-and-runtime-ownership",
       "type": "feature",
       "provenance": "backfilled"
@@ -8884,6 +9502,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
@@ -8892,6 +9515,11 @@
       "id": "skill-usage-miner",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "toolify-auto-promotion",
@@ -9144,6 +9772,26 @@
     },
     {
       "id": "efficacy-signal-integrity",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -9436,6 +10084,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
@@ -9466,6 +10119,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "long-build-and-runtime-ownership",
       "type": "feature",
       "provenance": "backfilled"
@@ -9491,9 +10149,19 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "state-cli-contract-registry",
@@ -9580,6 +10248,28 @@
     },
     {
       "id": "skill-config-schema-and-reference-lint",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/phases-slice.py": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -10164,6 +10854,28 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/scripts/test_phases_slice.py": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/scripts/test_pipeline_visualizer.py": [
     {
       "id": "cross-repo-fleet-view",
@@ -10486,6 +11198,28 @@
       "provenance": "backfilled"
     }
   ],
+  "user/skills/_components/execution-completion-summary.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/skills/_components/harness-change-gate.md": [
     {
       "id": "anti-overfit-design-gate",
@@ -10515,12 +11249,32 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
     },
     {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -10650,6 +11404,292 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/skills/_components/source-reread.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/_components/spec-evidence-gathering.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/_components/touchpoint-audit-gate.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/architecture-patterns/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/atomic-thinking/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/babysit/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/code-review-excellence/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/disk-cleanup/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/dispatching-parallel-agents/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/execute-plan/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/fabric/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/gemini/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/har-analysis/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/skills/harden-harness/SKILL.md": [
     {
       "id": "hardening-intervention-records-unmeasurable-or-missing",
@@ -10662,12 +11702,54 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "harness-hardening-retro-fixes",
       "type": "feature",
       "provenance": "backfilled"
     },
     {
       "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/human-writing/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -10679,9 +11761,73 @@
       "provenance": "backfilled"
     }
   ],
+  "user/skills/ingest-research/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/investigate/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/skills/lazy-batch-parallel/SKILL.md": [
     {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -10692,6 +11838,11 @@
     }
   ],
   "user/skills/lazy-batch-retro/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "harness-telemetry-ledger",
       "type": "feature",
@@ -10706,6 +11857,21 @@
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "toolify-auto-promotion",
@@ -10775,6 +11941,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
@@ -10800,6 +11971,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "long-build-and-runtime-ownership",
       "type": "feature",
       "provenance": "backfilled"
@@ -10816,6 +11992,16 @@
     },
     {
       "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -10862,6 +12048,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
@@ -10877,12 +12068,27 @@
       "provenance": "backfilled"
     },
     {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
       "id": "park-provisional-acceptance",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -10897,11 +12103,53 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/skills/lazy-bug-status/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/skills/lazy-bug/SKILL.md": [
     {
       "id": "probe-full-read-before-dispatch",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/lazy/SKILL.md": [
@@ -10916,14 +12164,274 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/link-provenance/SKILL.md": [
     {
       "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/machine-perf/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/mcp-builder/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/mermaid-diagrams/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/mine-sessions/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/mine-sessions/scripts/attribute_predispatch.py": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/mixmi-mixer-architecture/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/monorepo-management/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/onboard/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/performance-optimization-advisor/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/plan-bug/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -10935,6 +12443,50 @@
       "provenance": "backfilled"
     }
   ],
+  "user/skills/plugin-structure/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/realign-spec/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/skills/restart-windows-claude/SKILL.md": [
     {
       "id": "stub-origin-provisional-exclusion",
@@ -10943,6 +12495,72 @@
     },
     {
       "id": "workstation-recursive-subagent-dispatch",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/retro-feature/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/retro/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/spec-buddy/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -10985,7 +12603,159 @@
       "provenance": "backfilled"
     },
     {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "stub-origin-provisional-exclusion",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/systematic-debugging/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/tailwind-design-system/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/three-best-practices/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/ts-library/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/typescript-advanced-types/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/web-audio/SKILL.md": [
+    {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -10999,9 +12769,29 @@
   ],
   "workspace/CLAUDE.md": [
     {
+      "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "scheduled-autonomous-runs",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ]
 }
