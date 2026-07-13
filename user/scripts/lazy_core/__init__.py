@@ -129,6 +129,29 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "host_present_capabilities": "hostcaps",
     "utc_now_iso": "hostcaps",
     "format_unknown_host_capability_blocker": "hostcaps",
+    # Phase 2 WU-4 (Batch 4): the operator-halt notify plane (shim retired).
+    "_NOTIFY_CONFIG_FILENAME": "notifyplane",
+    "_NOTIFY_LEDGER_FILENAME": "notifyplane",
+    "_NOTIFY_ERROR_FILENAME": "notifyplane",
+    "_NOTIFY_SEND_TIMEOUT_SECONDS": "notifyplane",
+    "_NOTIFY_LEDGER_MAX_AGE_SECONDS": "notifyplane",
+    "_NOTIFY_ATTENTION_TERMINALS": "notifyplane",
+    "_NOTIFY_CLEAN_STOP_TERMINALS": "notifyplane",
+    "_NOTIFY_SENTINEL_CANDIDATES": "notifyplane",
+    "_load_notify_config": "notifyplane",
+    "_notify_sentinel_path": "notifyplane",
+    "_notify_identity": "notifyplane",
+    "_load_notify_ledger": "notifyplane",
+    "_record_notify_send": "notifyplane",
+    "_write_notify_error": "notifyplane",
+    "_notify_decisions": "notifyplane",
+    "_normalize_git_remote_url": "notifyplane",
+    "_github_remote_url": "notifyplane",
+    "_compose_notify_payload": "notifyplane",
+    "_rfc2047_header": "notifyplane",
+    "_ntfy_send": "notifyplane",
+    "notify_halt": "notifyplane",
+    "notify_event": "notifyplane",
 }
 
 # Submodule consulted when a name has no explicit entry in
@@ -136,7 +159,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
 _FALLBACK_SUBMODULE = "_monolith"
 
 # All submodules that make up this package, in no particular order.
-_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "docmodel", "hostcaps")
+_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "docmodel", "hostcaps", "notifyplane")
 
 
 def __getattr__(name):

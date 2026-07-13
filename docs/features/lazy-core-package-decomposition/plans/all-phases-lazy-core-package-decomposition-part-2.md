@@ -86,7 +86,7 @@ Where this plan's repo uses non-default gates or component paths (this is claude
 - [x] WU-1 — Extract `depdag.py` (queue dependency DAG)
 - [x] WU-2 — Extract `docmodel.py` (sentinel/SPEC/plan/PHASES parsing)
 - [x] WU-3 — Extract `hostcaps.py` (host capabilities)
-- [ ] WU-4 — Extract `notifyplane.py` (halt notifier) + retire the `_resolve_ntfy_send` shim (ratified Option C)
+- [x] WU-4 — Extract `notifyplane.py` (halt notifier) + retire the `_resolve_ntfy_send` shim (ratified Option C)
 - [ ] WU-5 — Extract `statedir.py` (hook surface) + `--hook-surface` benchmark + phase receipt
 
 ---

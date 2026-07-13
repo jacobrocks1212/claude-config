@@ -35413,29 +35413,29 @@ def test_notify_symbols_present():
     ]
     missing = [s for s in expected if not hasattr(lazy_core, s)]
     assert not missing, f"missing notify symbols: {missing}"
-    assert lazy_core._monolith._NOTIFY_ATTENTION_TERMINALS == frozenset({
+    assert lazy_core.notifyplane._NOTIFY_ATTENTION_TERMINALS == frozenset({
         "blocked", "blocked-misnamed", "needs-input", "needs-spec-input",
         "needs-research", "queue-blocked-on-research", "completion-unverified",
         "stale_upstream", "queue-exhausted-all-parked",
         "queue-exhausted-budget-deferred", "queue-missing",
-    }), lazy_core._monolith._NOTIFY_ATTENTION_TERMINALS
-    assert lazy_core._monolith._NOTIFY_CLEAN_STOP_TERMINALS == frozenset({
+    }), lazy_core.notifyplane._NOTIFY_ATTENTION_TERMINALS
+    assert lazy_core.notifyplane._NOTIFY_CLEAN_STOP_TERMINALS == frozenset({
         "all-features-complete", "all-bugs-fixed", "cloud-queue-exhausted",
         "device-queue-exhausted", "host-capability-saturated",
-    }), lazy_core._monolith._NOTIFY_CLEAN_STOP_TERMINALS
+    }), lazy_core.notifyplane._NOTIFY_CLEAN_STOP_TERMINALS
     # Sibling-not-complement (SPEC Technical Design): sanctioned stops that
     # still demand operator action ARE attention terminals.
     for r in ("needs-research", "queue-blocked-on-research", "queue-missing"):
         assert r in lazy_core.SANCTIONED_STOP_TERMINAL
-        assert r in lazy_core._monolith._NOTIFY_ATTENTION_TERMINALS
+        assert r in lazy_core.notifyplane._NOTIFY_ATTENTION_TERMINALS
     # queue-exhausted-dependency-gated is deliberately in NEITHER set (holds
     # re-open by themselves as deps complete).
-    assert "queue-exhausted-dependency-gated" not in lazy_core._monolith._NOTIFY_ATTENTION_TERMINALS
-    assert "queue-exhausted-dependency-gated" not in lazy_core._monolith._NOTIFY_CLEAN_STOP_TERMINALS
-    assert lazy_core._monolith._NOTIFY_SEND_TIMEOUT_SECONDS == 5
-    assert lazy_core._monolith._NOTIFY_CONFIG_FILENAME == "notify.json"
-    assert lazy_core._monolith._NOTIFY_LEDGER_FILENAME == "notify-ledger.json"
-    assert lazy_core._monolith._NOTIFY_ERROR_FILENAME == "notify-error.json"
+    assert "queue-exhausted-dependency-gated" not in lazy_core.notifyplane._NOTIFY_ATTENTION_TERMINALS
+    assert "queue-exhausted-dependency-gated" not in lazy_core.notifyplane._NOTIFY_CLEAN_STOP_TERMINALS
+    assert lazy_core.notifyplane._NOTIFY_SEND_TIMEOUT_SECONDS == 5
+    assert lazy_core.notifyplane._NOTIFY_CONFIG_FILENAME == "notify.json"
+    assert lazy_core.notifyplane._NOTIFY_LEDGER_FILENAME == "notify-ledger.json"
+    assert lazy_core.notifyplane._NOTIFY_ERROR_FILENAME == "notify-error.json"
 
 
 def test_notify_config_precedence():
@@ -35526,7 +35526,7 @@ def test_notify_identity_sentinel_and_dateless():
 
 def test_notify_ledger_roundtrip_prune_and_atomic():
     """D8: the ledger lives at claude_state_dir()/notify-ledger.json, is
-    written via lazy_core._monolith._atomic_write, and drops entries older than 30 days
+    written via lazy_core.notifyplane._atomic_write, and drops entries older than 30 days
     on write; a corrupt ledger reads as empty (fail-open)."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
@@ -35535,14 +35535,14 @@ def test_notify_ledger_roundtrip_prune_and_atomic():
             now = 1751600000.0
             assert lazy_core._load_notify_ledger() == {}
             # Spy on _atomic_write to prove the ledger write goes through it.
-            real_aw = lazy_core._monolith._atomic_write
+            real_aw = lazy_core.notifyplane._atomic_write
             written: list = []
 
             def _spy(path, content):
                 written.append(Path(path).name)
                 real_aw(path, content)
 
-            lazy_core._monolith._atomic_write = _spy
+            lazy_core.notifyplane._atomic_write = _spy
             try:
                 lazy_core._record_notify_send(
                     "feature|a|needs-input|1|2",
@@ -35555,7 +35555,7 @@ def test_notify_ledger_roundtrip_prune_and_atomic():
                     "feature", now=now,
                 )
             finally:
-                lazy_core._monolith._atomic_write = real_aw
+                lazy_core.notifyplane._atomic_write = real_aw
             assert written == ["notify-ledger.json", "notify-ledger.json"], written
             entries = lazy_core._load_notify_ledger()
             # The 40-day-old entry was pruned by the second write.
@@ -38390,7 +38390,7 @@ class _FakeTimeSentinel:
 
 def test_monolith_patch_target_effective():
     """Permanent regression pin (mechanism-3): patching
-    `lazy_core._monolith.time` is the EFFECTIVE way to control the clock a
+    `lazy_core.notifyplane.time` is the EFFECTIVE way to control the clock a
     _monolith function reads via its module-level `time.time()` call.
 
     Reuses the exact patch idiom of the 5 existing
@@ -38416,15 +38416,15 @@ def test_monolith_patch_target_effective():
     _guard()
     sentinel_ts = 946684800.0  # 2000-01-01T00:00:00Z — cross-checked via
     # datetime.datetime.fromtimestamp(946684800.0, tz=timezone.utc)
-    _real_time = lazy_core._monolith.time
-    lazy_core._monolith.time = _FakeTimeSentinel(sentinel_ts)
+    _real_time = lazy_core.notifyplane.time
+    lazy_core.notifyplane.time = _FakeTimeSentinel(sentinel_ts)
     try:
         identity = lazy_core._notify_identity(
             {"terminal_reason": "blocked", "feature_id": "wu2-patch-target-probe"},
             "feature",
         )
     finally:
-        lazy_core._monolith.time = _real_time
+        lazy_core.notifyplane.time = _real_time
 
     assert identity == "feature|wu2-patch-target-probe|blocked|d:2000-01-01", (
         "expected the fake sentinel clock to be consulted for the "

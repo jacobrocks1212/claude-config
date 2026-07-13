@@ -11099,9 +11099,9 @@ def run_smoke_tests() -> int:
             os.environ["LAZY_NOTIFY_URL"] = "https://ntfy.example/fixture-topic"
             os.environ.pop("LAZY_NOTIFY_DISABLE", None)
             nh_sends: list = []
-            nh_real_send = lazy_core._ntfy_send
+            nh_real_send = lazy_core.notifyplane._ntfy_send
             nh_prev_repo = getattr(lazy_core, "_active_repo_root", None)
-            lazy_core._ntfy_send = (
+            lazy_core.notifyplane._ntfy_send = (
                 lambda url, t, b, l=None: nh_sends.append((url, t, b, l))
             )
             nh_argv = sys.argv
@@ -11169,7 +11169,7 @@ def run_smoke_tests() -> int:
                         f"got {len(nh_sends)}")
                     nh_ok = False
             finally:
-                lazy_core._ntfy_send = nh_real_send
+                lazy_core.notifyplane._ntfy_send = nh_real_send
                 lazy_core._active_repo_root = nh_prev_repo
                 for k, v in nh_saved_env.items():
                     if v is None:
