@@ -115,6 +115,20 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "_EVIDENCE_GATE_KILL_SWITCHES": "docmodel",
     "_FALSY_ENV_VALUES": "docmodel",
     "_evidence_gate_killed": "docmodel",
+
+    # Phase 2 WU-3 (Batch 3): the host-capability declaration + probe seam.
+    "_HOST_CAPABILITY_ID_RE": "hostcaps",
+    "_HOST_CAPABILITY_REGISTRY": "hostcaps",
+    "_coerce_capability_ids": "hostcaps",
+    "_REQUIRES_HOST_RE": "hostcaps",
+    "parse_requires_host": "hostcaps",
+    "unknown_capability_ids": "hostcaps",
+    "_HOST_PROBE_CACHE_FILENAME": "hostcaps",
+    "_HOST_CAPABILITY_PROBE_CONFIG": "hostcaps",
+    "_default_host_probes": "hostcaps",
+    "host_present_capabilities": "hostcaps",
+    "utc_now_iso": "hostcaps",
+    "format_unknown_host_capability_blocker": "hostcaps",
 }
 
 # Submodule consulted when a name has no explicit entry in
@@ -122,7 +136,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
 _FALLBACK_SUBMODULE = "_monolith"
 
 # All submodules that make up this package, in no particular order.
-_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "docmodel")
+_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "docmodel", "hostcaps")
 
 
 def __getattr__(name):
