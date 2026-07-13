@@ -385,6 +385,15 @@ def main() -> None:
         default=Path.home() / "source" / "repos",
         help="Directory containing git repos (for capability checks)",
     )
+    parser.add_argument(
+        "--check-skill-config",
+        action="store_true",
+        help=(
+            "Also run the skill-config schema + reference lint (lint-skill-config.py): "
+            "repos/*/.claude/skill-config/ MANIFEST.json validation, build-queue-ops.json "
+            "schema checks, and the cross-repo .claude/skill-config/<file> reference sweep."
+        ),
+    )
     args = parser.parse_args()
     skills_dir = args.skills_dir.expanduser().resolve()
 
@@ -460,6 +469,28 @@ def main() -> None:
             exit_code = 1
         else:
             print("OK — lazy skill-family parity: zero drift across all five pairs.")
+
+    # Skill-config schema + reference lint (optional; skill-config-schema-and-reference-lint).
+    if args.check_skill_config:
+        import importlib.util as _ilu
+        _sc_spec = _ilu.spec_from_file_location(
+            "lint_skill_config", Path(__file__).resolve().parent / "lint-skill-config.py"
+        )
+        lint_skill_config = _ilu.module_from_spec(_sc_spec)
+        _sc_spec.loader.exec_module(lint_skill_config)
+        sc_repo_root = Path(__file__).resolve().parents[2]
+        sc_errors, sc_warnings = lint_skill_config.run(sc_repo_root)
+        for w in sc_warnings:
+            print(w.render(sc_repo_root))
+        if sc_warnings:
+            print(f"\n{len(sc_warnings)} skill-config warning(s).")
+        if sc_errors:
+            for e in sc_errors:
+                print(e.render(sc_repo_root))
+            print(f"\n{len(sc_errors)} skill-config lint error(s) found.")
+            exit_code = 1
+        else:
+            print("OK — skill-config schema + reference lint clean.")
 
     sys.exit(exit_code)
 

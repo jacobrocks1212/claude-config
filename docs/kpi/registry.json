@@ -150,6 +150,91 @@
       "band": null,
       "review_by": "2026-12-01",
       "notes": "Precision = trips whose canary-revert-<id> item was NOT closed-as-noise, over all trips in the window. Signal selector registered in kpi-scorecard.py _SOURCES at spec-finalization (renders NO-DATA until compute wired); computation + this registry row land in the feature's Phase 4. Baseline is unmeasurable until the canary has tripped >=5 times — provenance stays 'pending' (honest, never a fabricated zero) and the band is set with --capture-baseline once real trip data exists."
+    },
+    {
+      "id": "skill-config-broken-reference-reads",
+      "system": "skill-config",
+      "title": "Failed Reads / dangling references on .claude/skill-config/ paths",
+      "friction": "The #1 tool-error cluster in the mined AlgoBooth corpus: 377 failed Reads of .claude/skill-config/commit-policy.md across ~100 sessions (>10% of all tool errors) — referenced 29x across 17 skill files, present in cognito-forms but absent in algobooth, with no way to declare intended-absent; plus dead prose pointers (long-build-ownership.md) and schema-unvalidated load-bearing JSON (build-queue-ops.json) invisible to lint-skills.py.",
+      "signal": {
+        "source": "deny-ledger",
+        "selector": "process-friction-count"
+      },
+      "unit": "failed-reads-per-window",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "repo_scope": "all",
+      "notes": "Manual evidence of record: 377 failed commit-policy.md Reads across ~100 mined AlgoBooth sessions (proposal session 2026-07-11, transcript mining) — a corpus total, not a windowed rate, hence provenance pending. The registered machine signal (deny-ledger process-friction-count) is the coarse channel: incident-scan clusters recurring tool-error friction into the ledger as process-friction entries. The Phase 0 quick win (repos/algobooth/.claude/skill-config/commit-policy.md, authored this feature) should drive the commit-policy component of this signal to ~0 immediately; the MANIFEST.json + lint-skill-config.py sweep (Phases 1-2, also this feature) prevent new clusters of the same class from forming. DEFERRED (documented, not blocking): a dedicated session-log-mining selector (e.g. skill-config-failed-read-count over the session-log corpus, mirroring skill-usage-miner.py's corpus walk) would give a precise windowed count instead of this coarse proxy — implementation SHOULD register that selector and re-point this row, then run --capture-baseline, following the same registry-follow-up pattern as build-queue-wait-time-p50 in this same registry."
+    },
+    {
+      "id": "efficacy-verdicts-produced",
+      "system": "efficacy-loop",
+      "title": "Conclusive efficacy verdicts produced",
+      "friction": "An intervention ledger that never yields a CONFIRMED/REFUTED verdict is measurement theater; every ungraded record is a harness change whose effect is assumed, not observed. Verified 2026-07-11: zero verdicts across 25 records after 22 hardening rounds.",
+      "signal": {
+        "source": "intervention-records",
+        "selector": "conclusive-verdict-count"
+      },
+      "unit": "count/90d",
+      "direction": "up-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "90d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "notes": "Counts ## Review sections whose verdict is CONFIRMED or REFUTED. Baseline pending until the split-brain fix lands and the first reviews come due. Registered at efficacy-signal-integrity finalization (kpi-scorecard.py _SOURCES['intervention-records']); compute reads docs/interventions/*.md ## Review <date> sections directly (a pure-read scan, never a re-implementation of efficacy-eval.py's own verdict arithmetic)."
+    },
+    {
+      "id": "confounded-verdict-ratio",
+      "system": "efficacy-loop",
+      "title": "Confounded-verdict ratio",
+      "friction": "When co-shipped interventions share one target signal, the D6 cap turns every due review into INCONCLUSIVE (confounded) — attribution is impossible by construction, not by data. Verified 2026-07-11: 6 of 8 measurable records share event:gate-refusal with overlapping windows.",
+      "signal": {
+        "source": "intervention-records",
+        "selector": "confounded-verdict-ratio"
+      },
+      "unit": "percent",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "90d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "notes": "Share of due reviews capped INCONCLUSIVE (confounded) over all due reviews in the window. The sub-signal seam (efficacy-signal-integrity Phase 1 — event:<type>/<signature> targets) is the lever that moves it down."
+    },
+    {
+      "id": "canary-closure-latency-p50",
+      "system": "harness-canary",
+      "title": "Canary closure latency p50",
+      "friction": "A canary that cannot close is dead weight that will eventually mass-expire as closed-clean (no-data), laundering unwatched changes as observed. Verified 2026-07-11: 19 canaries open, zero ever closed or tripped.",
+      "signal": {
+        "source": "intervention-records",
+        "selector": "canary-closure-latency-p50-days"
+      },
+      "unit": "days",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "90d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "notes": "Median opened-to-closed days over canaries closed in the window, EXCLUDING closed-clean (no-data) ceiling closes (those are counted separately by the canary-health alarm's projected_no_data_close_count — a no-data close must never improve this KPI)."
     }
   ]
 }

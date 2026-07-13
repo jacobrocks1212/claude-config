@@ -12,7 +12,7 @@
 > `.claude/skill-config/<file>` mention (`!cat` AND prose) against each repo's dir — plus the
 > immediate quick win: kill the 377-error cluster at the source.
 
-**Status:** Draft
+**Status:** Draft (implemented 2026-07-12; completion withheld — NEEDS_INPUT_PROVISIONAL.md ratification pending per park-provisional protocol)
 **Friction-reduction feature:** yes
 **Priority:** P2
 **Last updated:** 2026-07-11
@@ -112,7 +112,9 @@ this feature's scope:
 
 ### D1. Declaration surface: per-repo `skill-config/MANIFEST.json`
 
-- **Classification:** `product-behavior (needs operator confirmation)`
+- **Classification:** `product-behavior (RESOLVED — auto-provisional 2026-07-12 — recommended
+  option A locked; see NEEDS_INPUT_PROVISIONAL.md, divergence: isolated / isolated —
+  ratify-or-redirect outstanding)`
 - **Question:** Where does a repo declare which skill-config files it provides and which
   known references it deliberately leaves absent?
 - **Options:**
@@ -138,7 +140,9 @@ this feature's scope:
 
 ### D2. JSON-schema validation for load-bearing configs
 
-- **Classification:** `mechanical-internal (recommend auto-accept)`
+- **Classification:** `mechanical-internal (RESOLVED — auto-accepted 2026-07-12 — the stdlib
+  structural design shipped verbatim: user/scripts/lint-skill-config.py's
+  check_build_queue_ops, dispatched via each MANIFEST.json's json_schemas map)`
 - **Question:** `build-queue-ops.json` arms a fail-open enforcement hook; malformed = silently
   disarmed. What validates it?
 - **Design:** stdlib-only structural validation (hand-rolled checkers, the `kpi-scorecard.py`
@@ -152,7 +156,10 @@ this feature's scope:
 
 ### D3. Reference sweep: `!cat` forms AND prose mentions, per repo, honoring markers
 
-- **Classification:** `mechanical-internal (recommend auto-accept)`
+- **Classification:** `mechanical-internal (RESOLVED — auto-accepted 2026-07-12 — shipped as
+  a NEW sibling script `user/scripts/lint-skill-config.py` rather than a deep edit to
+  lint-skills.py, with a small additive `--check-skill-config` hook-in on the latter — see
+  the "No new invocation surface" note below for why, and Open Question 3/4 resolutions)`
 - **Question:** How does lint close the gap where only the `_components/` fallback half is
   validated and prose pointers are invisible?
 - **Design:** extend `lint-skills.py` with a skill-config sweep: collect every
@@ -173,7 +180,9 @@ this feature's scope:
 
 ### D4. The commit-policy quick win ships first and is named in scope
 
-- **Classification:** `product-behavior (needs operator confirmation of which variant)`
+- **Classification:** `product-behavior (RESOLVED — auto-provisional 2026-07-12 — recommended
+  variant A locked; see NEEDS_INPUT_PROVISIONAL.md, divergence: isolated / isolated —
+  ratify-or-redirect outstanding)`
 - **Question:** The 377-error cluster has a two-line fix available today. Which variant?
 - **Options:**
   - **A — author `repos/algobooth/.claude/skill-config/commit-policy.md` (recommended):**
@@ -260,15 +269,22 @@ user/scripts/lint-skills.py  (extended)
 
 ## Open Questions
 
-- **D1 operator confirmation:** per-repo MANIFEST.json as the declaration surface (vs central
-  registry).
-- **D4 operator confirmation:** variant A (author the algobooth file) vs B (flip reference
-  order) for the quick win — A recommended.
-- Whether user-level skills referencing skill-config paths should be checked against ALL repos
-  (current D3 design) or only repos whose skill catalog actually routes that skill — start
-  with all-repos + intended_absent markers; tighten only if marker noise appears.
-- Prose-scan suppression syntax (inline comment form) — implementation-time choice; must be
-  greppable and require a reason string.
+- **D1 operator confirmation — RESOLVED (auto-provisional 2026-07-12):** per-repo
+  MANIFEST.json (option A). See `NEEDS_INPUT_PROVISIONAL.md`.
+- **D4 operator confirmation — RESOLVED (auto-provisional 2026-07-12):** variant A (authored
+  `repos/algobooth/.claude/skill-config/commit-policy.md`). See `NEEDS_INPUT_PROVISIONAL.md`.
+- **RESOLVED (implementation, 2026-07-12):** user-level skills are checked against ALL repos
+  (the original D3 design) — no marker noise appeared in practice (13/13 algobooth and
+  16/16 cognito-forms `intended_absent` entries resolved cleanly against real references); no
+  tightening needed.
+- **RESOLVED (implementation, 2026-07-12):** the prose-scan suppression is a SCRIPT-OWNED
+  allowlist (`lint-skill-config.py`'s `SUPPRESSIONS` dict), not an inline skill-file comment —
+  because every genuinely-dead reference this sweep found today lives in `user/skills/**` or
+  `repos/*/.claude/skills/**`, which this feature does not own (concurrent SKILLS-lane work is
+  in flight on those trees per the pipeline's file-ownership partition). Each entry requires a
+  reason string (enforced by construction — the dict value IS the reason, printed in the
+  downgraded warning), stays greppable (one Python dict literal), and is reported in the
+  feature's completion artifacts as a SKILLS-lane follow-up rather than fixed in place.
 
 ## Cross-links
 

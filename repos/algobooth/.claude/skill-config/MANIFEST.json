@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "provides": [
+    "build-queue-ops.json",
+    "capabilities.txt",
+    "commit-policy.md",
+    "cycle-prompt-addenda.md",
+    "docs-consistency-rules-pending.md",
+    "execute-plan-repo-gates.md",
+    "investigation-runtime.md",
+    "lazy-batch-review-frontmatter.md",
+    "lazy-preflight.md",
+    "long-build-ownership.md",
+    "mcp-tool-catalog.md",
+    "onboarding-repo-map.md",
+    "phases-example-output.md",
+    "phases-runtime-validation.md",
+    "phases-runtime-verification.md",
+    "phases-testing-strategy.md",
+    "quality-gates.md",
+    "retro-runtime-evidence.md",
+    "skill-catalog.md",
+    "spec-bug-runtime-evidence.md",
+    "spec-testing-guidance.md",
+    "touchpoint-audit-gate.md"
+  ],
+  "intended_absent": [
+    {
+      "file": "cog-doc-track-open.md",
+      "reason": "AlgoBooth has no ADO-wiki doc-tracking integration; uses the generic _components/cog-doc-track-open.md fallback."
+    },
+    {
+      "file": "cog-doc-track-close.md",
+      "reason": "AlgoBooth has no ADO-wiki doc-tracking integration; uses the generic _components/cog-doc-track-close.md fallback."
+    },
+    {
+      "file": "dirty-tree-check.md",
+      "reason": "No AlgoBooth-specific dirty-tree policy; uses the generic _components/dirty-tree-check.md fallback."
+    },
+    {
+      "file": "spec-friction-kpi-gate.md",
+      "reason": "No AlgoBooth-specific override of the KPI-declaration gate; uses the generic _components/spec-friction-kpi-gate.md fallback."
+    },
+    {
+      "file": "reuse-first-discovery.md",
+      "reason": "No AlgoBooth-specific reuse-discovery override; uses the generic _components/reuse-first-discovery.md fallback."
+    },
+    {
+      "file": "team-architect-stance.md",
+      "reason": "No AlgoBooth-specific team-architect-stance override; uses the generic _components/team-architect-stance.md fallback."
+    },
+    {
+      "file": "spec-evidence-gathering.md",
+      "reason": "No AlgoBooth-specific override; uses the generic _components/spec-evidence-gathering.md fallback."
+    },
+    {
+      "file": "phases-reuse-ledger.md",
+      "reason": "Cognito-specific reuse-ledger convention; AlgoBooth uses the generic _components/phases-reuse-ledger.md fallback."
+    },
+    {
+      "file": "phases-review-guardrails.md",
+      "reason": "Cognito-specific phase-review guardrails; AlgoBooth uses the generic _components/phases-review-guardrails.md fallback."
+    },
+    {
+      "file": "spec-bug-work-item-context.md",
+      "reason": "Cognito-specific ADO work-item context; AlgoBooth uses the generic _components/spec-bug-work-item-context.md fallback."
+    },
+    {
+      "file": "post-phase-code-review-checkpoint.md",
+      "reason": "Cognito-specific per-batch code-review checkpoint; AlgoBooth's /execute-plan falls back to the generic inline no-checkpoint-configured comment."
+    },
+    {
+      "file": "integration-verification.md",
+      "reason": "No AlgoBooth-specific override; uses the generic _components/integration-verification.md fallback."
+    },
+    {
+      "file": "gemini-sprint.md",
+      "reason": "Aspirational future config named in user/skills/ingest-research/SKILL.md ('parameterize the staging path via ... later'); no repo provides it yet."
+    }
+  ],
+  "json_schemas": {
+    "build-queue-ops.json": "build-queue-ops"
+  }
+}

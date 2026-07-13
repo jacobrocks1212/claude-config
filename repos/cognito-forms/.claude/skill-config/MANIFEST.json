@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "provides": [
+    "ado-doc-integration.yml",
+    "build-queue-ops.json",
+    "capabilities.txt",
+    "cog-doc-track-close.md",
+    "cog-doc-track-open.md",
+    "commit-policy.md",
+    "onboarding-repo-map.md",
+    "phases-reuse-ledger.md",
+    "phases-review-guardrails.md",
+    "post-phase-code-review-checkpoint.md",
+    "quality-gates.md",
+    "reuse-first-discovery.md",
+    "skill-catalog.md",
+    "spec-bug-work-item-context.md",
+    "spec-evidence-gathering.md",
+    "team-architect-stance.md"
+  ],
+  "intended_absent": [
+    {
+      "file": "touchpoint-audit-gate.md",
+      "reason": "AlgoBooth-specific touchpoint audit gate; Cognito Forms uses the generic _components/touchpoint-audit-gate.md fallback."
+    },
+    {
+      "file": "dirty-tree-check.md",
+      "reason": "No Cognito-specific dirty-tree policy; uses the generic _components/dirty-tree-check.md fallback."
+    },
+    {
+      "file": "spec-friction-kpi-gate.md",
+      "reason": "No Cognito-specific override of the KPI-declaration gate; uses the generic _components/spec-friction-kpi-gate.md fallback."
+    },
+    {
+      "file": "spec-testing-guidance.md",
+      "reason": "AlgoBooth-specific spec testing guidance; Cognito Forms uses the generic _components/spec-testing-guidance.md fallback."
+    },
+    {
+      "file": "phases-example-output.md",
+      "reason": "AlgoBooth-specific phase-example output; Cognito Forms uses the generic _components/phases-example-output.md fallback."
+    },
+    {
+      "file": "phases-testing-strategy.md",
+      "reason": "AlgoBooth-specific phase testing strategy; Cognito Forms uses the generic _components/phases-testing-strategy.md fallback."
+    },
+    {
+      "file": "phases-runtime-verification.md",
+      "reason": "AlgoBooth-specific runtime verification guidance; Cognito Forms uses the generic _components/phases-runtime-verification.md fallback."
+    },
+    {
+      "file": "phases-runtime-validation.md",
+      "reason": "AlgoBooth-specific runtime validation guidance; Cognito Forms uses the generic _components/phases-runtime-validation.md fallback."
+    },
+    {
+      "file": "mcp-tool-catalog.md",
+      "reason": "Cognito Forms has no MCP-reachable surface; the MCP tool-existence audit in phases-runtime-validation.md documents this as a no-op when the catalog is absent."
+    },
+    {
+      "file": "spec-bug-runtime-evidence.md",
+      "reason": "AlgoBooth-specific spec-bug runtime evidence guidance; Cognito Forms uses the generic _components/spec-bug-runtime-evidence.md fallback."
+    },
+    {
+      "file": "retro-runtime-evidence.md",
+      "reason": "AlgoBooth-specific retro runtime evidence guidance; Cognito Forms uses the generic _components/retro-runtime-evidence.md fallback."
+    },
+    {
+      "file": "investigation-runtime.md",
+      "reason": "AlgoBooth-specific investigation runtime hook; Cognito Forms falls back to the generic inline no-repo-runtime-hook guidance."
+    },
+    {
+      "file": "execute-plan-repo-gates.md",
+      "reason": "No Cognito-specific execute-plan gate policy configured; falls back to the generic inline no-policy-configured comment."
+    },
+    {
+      "file": "integration-verification.md",
+      "reason": "No Cognito-specific override; uses the generic _components/integration-verification.md fallback."
+    },
+    {
+      "file": "gemini-sprint.md",
+      "reason": "Aspirational future config named in user/skills/ingest-research/SKILL.md ('parameterize the staging path via ... later'); no repo provides it yet."
+    },
+    {
+      "file": "long-build-ownership.md",
+      "reason": "AlgoBooth-only build-ownership doc; the user/skills/lazy-batch(-bug-batch) prose pointer is a bare pointer with no fallback form (known gap, tracked — see skill-config-schema-and-reference-lint final report; suppressed in the lint's SUPPRESSIONS allowlist pending a SKILLS-lane fix)."
+    },
+    {
+      "file": "cycle-prompt-addenda.md",
+      "reason": "AlgoBooth-only cycle-prompt addenda doc; the user/skills/lazy-batch prose pointer is a bare pointer with no fallback form (same known-gap class as long-build-ownership.md; suppressed in the lint's SUPPRESSIONS allowlist)."
+    }
+  ],
+  "json_schemas": {
+    "build-queue-ops.json": "build-queue-ops"
+  }
+}
