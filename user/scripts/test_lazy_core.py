@@ -23130,6 +23130,224 @@ def test_boot_spawn_stamp_roundtrip_and_grace_window():
         ) is False
 
 
+# ---------------------------------------------------------------------------
+# stale-runtime-health-200-false-blocked — _default_stale_check (the F7
+# stale_binary.native_source_newer_than wiring) + the production ensure_runtime
+# binding. `stale_check` is on the production-binding guard's ALLOWED-injection
+# list (_PRODUCTION_BINDING_ALLOWED_KWARGS), so these `test_ensure_runtime_
+# production_*`-named tests are free to either derive OR inject it; the two
+# integration tests below deliberately DERIVE (no `stale_check=` kwarg) to
+# actually exercise the new default binding, matching the unit tests' direct
+# `_default_stale_check` coverage.
+# ---------------------------------------------------------------------------
+
+def test_default_stale_check_native_commit_after_boot_stamp_is_stale():
+    """Boot stamp recorded BEFORE a native-source commit → stale (True)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        lazy_core.write_boot_stamp(repo_root, spawn_ts=_t.time() - 3600)
+        (repo_root / "src-tauri").mkdir()
+        (repo_root / "src-tauri" / "main.rs").write_text("// native\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "native change"], check=True, capture_output=True)
+
+        result = lazy_core._default_stale_check(
+            repo_root, dict(lazy_core._ENSURE_RUNTIME_DEFAULT_CONFIG)
+        )
+        assert result is True, "boot BEFORE a native commit must report stale"
+
+
+def test_default_stale_check_native_commit_before_boot_stamp_is_fresh():
+    """Boot stamp recorded AFTER the native-source commit → not stale (False)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        (repo_root / "src-tauri").mkdir()
+        (repo_root / "src-tauri" / "main.rs").write_text("// native\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "native change"], check=True, capture_output=True)
+        lazy_core.write_boot_stamp(repo_root, spawn_ts=_t.time() + 3600)
+
+        result = lazy_core._default_stale_check(
+            repo_root, dict(lazy_core._ENSURE_RUNTIME_DEFAULT_CONFIG)
+        )
+        assert result is False, "boot AFTER the native commit must report fresh"
+
+
+def test_default_stale_check_no_boot_stamp_falls_back_to_lock_start_time():
+    """No `.runtime.boot.json` (e.g. a runtime that booted before this fix, or a
+    legacy/foreign lock) → falls back to `.runtime.lock.json`'s recorded kernel
+    `start_time` (D1's documented fallback signal), not straight to False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        cfg = dict(lazy_core._ENSURE_RUNTIME_DEFAULT_CONFIG)
+        # No write_boot_stamp call — the boot-stamp file is genuinely absent.
+        lazy_core.write_runtime_lock(
+            repo_root, config=cfg, pid=123, start_time=_t.time() - 3600,
+            port=cfg["port"], artifact_hash=None, controller_session_id="s1",
+        )
+        (repo_root / "crates").mkdir()
+        (repo_root / "crates" / "lib.rs").write_text("// native\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "native change"], check=True, capture_output=True)
+
+        result = lazy_core._default_stale_check(repo_root, cfg)
+        assert result is True, (
+            "no boot stamp + a lock start_time BEFORE the native commit must "
+            "still report stale via the lock fallback"
+        )
+
+
+def test_default_stale_check_no_signal_at_all_returns_false():
+    """Neither a boot stamp NOR a runtime lock exists → fail-safe False (D2) —
+    never a spurious STALE with nothing to compare against."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        (repo_root / "src-tauri").mkdir()
+        (repo_root / "src-tauri" / "main.rs").write_text("// native\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "native change"], check=True, capture_output=True)
+
+        result = lazy_core._default_stale_check(
+            repo_root, dict(lazy_core._ENSURE_RUNTIME_DEFAULT_CONFIG)
+        )
+        assert result is False, "no boot signal at all must fail safe to False"
+
+
+def test_default_stale_check_respects_configured_native_globs():
+    """A repo config's `native_globs` override is honored — a commit outside the
+    configured globs is invisible, mirroring stale_binary.py's own glob contract."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        lazy_core.write_boot_stamp(repo_root, spawn_ts=_t.time() - 3600)
+        (repo_root / "src-tauri").mkdir()
+        (repo_root / "src-tauri" / "main.rs").write_text("// native\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "native change"], check=True, capture_output=True)
+
+        cfg = dict(lazy_core._ENSURE_RUNTIME_DEFAULT_CONFIG)
+        cfg["native_globs"] = ["custom-native-only"]
+        result = lazy_core._default_stale_check(repo_root, cfg)
+        assert result is False, (
+            "a custom native_globs list must scope the freshness check — the "
+            "src-tauri commit is outside it and must be invisible"
+        )
+
+
+def test_default_stale_check_bogus_repo_root_never_raises():
+    """A non-git repo_root (or any predicate-level error) must fail safe to
+    False, never raise — the binding's own fail-safe contract."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        non_repo = Path(td) / "not-a-repo"
+        non_repo.mkdir()
+        result = lazy_core._default_stale_check(
+            non_repo, dict(lazy_core._ENSURE_RUNTIME_DEFAULT_CONFIG)
+        )
+        assert result is False
+
+
+def test_ensure_runtime_derived_stale_check_routes_to_stale_rebuild():
+    """PRODUCTION binding, legacy mode (no Identity injected — no `live_session_id`
+    / `read_lock` / `kernel_start_time_fn`): `stale_check` is DERIVED (no kwarg
+    passed) from a REAL boot stamp + a REAL git repo with a native-source commit
+    landing AFTER boot. The previously-orphaned F7 predicate must now route the
+    runtime through the existing STALE→rebuild branch (`restart()` fires) instead
+    of the pre-fix `lambda: False` default that made STALE unreachable.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        lazy_core.write_boot_stamp(repo_root, spawn_ts=_t.time() - 3600)
+        (repo_root / "src-tauri").mkdir()
+        (repo_root / "src-tauri" / "main.rs").write_text("// native\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "native change"], check=True, capture_output=True)
+
+        calls = {"restart": 0}
+        result = lazy_core.ensure_runtime(
+            repo_root,
+            probe=lambda: (200, {"tools": []}),
+            restart=lambda: calls.__setitem__("restart", calls["restart"] + 1) or True,
+            # NO stale_check= kwarg — the production default must DERIVE it from
+            # the real boot stamp + real git repo above.
+        )
+        assert calls["restart"] >= 1, (
+            "a derived-stale runtime must route through restart() — the STALE "
+            "verdict must be REACHABLE in production, not defaulted to False"
+        )
+        # Legacy mode's verdict superset reports the terminal "stale-rebuilt"
+        # status as state STALE (_LEGACY_STATUS_TO_STATE maps "stale-rebuilt"
+        # -> "STALE", distinct from the M4 path's fully-resolved READY after
+        # recovery) — restart() having fired + a healthy 200 re-probe together
+        # PROVE the previously-unreachable STALE verdict is now reachable and
+        # drove a rebuild, which is what this test exists to demonstrate.
+        assert result["state"] == "STALE", result
+        assert result["health_code"] == 200, result
+
+
+def test_ensure_runtime_derived_stale_check_fresh_boot_no_restart():
+    """PRODUCTION binding, legacy mode: boot stamp AFTER the native commit derives
+    NOT stale — `restart()` must never fire on the staleness path (the runtime is
+    demonstrably current; health=200 alone is sufficient)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        (repo_root / "src-tauri").mkdir()
+        (repo_root / "src-tauri" / "main.rs").write_text("// native\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "native change"], check=True, capture_output=True)
+        lazy_core.write_boot_stamp(repo_root, spawn_ts=_t.time() + 3600)
+
+        result = lazy_core.ensure_runtime(
+            repo_root,
+            probe=lambda: (200, {"tools": []}),
+            restart=lambda: (_ for _ in ()).throw(
+                AssertionError("restart must NOT fire for a fresh (derived) runtime")
+            ),
+            # NO stale_check= kwarg — must derive NOT-stale and skip restart.
+        )
+        assert result["state"] == "READY", result
+
+
+_TESTS = _TESTS + [
+    ("test_default_stale_check_native_commit_after_boot_stamp_is_stale",
+     test_default_stale_check_native_commit_after_boot_stamp_is_stale),
+    ("test_default_stale_check_native_commit_before_boot_stamp_is_fresh",
+     test_default_stale_check_native_commit_before_boot_stamp_is_fresh),
+    ("test_default_stale_check_no_boot_stamp_falls_back_to_lock_start_time",
+     test_default_stale_check_no_boot_stamp_falls_back_to_lock_start_time),
+    ("test_default_stale_check_no_signal_at_all_returns_false",
+     test_default_stale_check_no_signal_at_all_returns_false),
+    ("test_default_stale_check_respects_configured_native_globs",
+     test_default_stale_check_respects_configured_native_globs),
+    ("test_default_stale_check_bogus_repo_root_never_raises",
+     test_default_stale_check_bogus_repo_root_never_raises),
+    ("test_ensure_runtime_derived_stale_check_routes_to_stale_rebuild",
+     test_ensure_runtime_derived_stale_check_routes_to_stale_rebuild),
+    ("test_ensure_runtime_derived_stale_check_fresh_boot_no_restart",
+     test_ensure_runtime_derived_stale_check_fresh_boot_no_restart),
+]
+
+
 def test_ensure_runtime_production_wrapper_exits_early_patient_waits_one_spawn():
     """THE production-reproducing test (ensure-runtime-recovery-starves-cold-compile
     -round-2). PRODUCTION binding, EXITED wrapper handle (`.poll()` → exit code, the
@@ -34336,6 +34554,230 @@ def test_clear_state_dir_restores_process_launch_override():
 _TESTS = _TESTS + [
     ("test_clear_state_dir_restores_process_launch_override",
      test_clear_state_dir_restores_process_launch_override),
+]
+
+
+# ---------------------------------------------------------------------------
+# production-sentinel-writes-bypass-atomic-write — mechanical bare-write lint
+# gate (Fix Scope item 2: "a check ... that FAILS on `.write_text(` / `open(...,
+# 'w'` outside the designated test/fixture regions ... so the NEXT bare write
+# cannot land silently"). Pure AST collector + a self-checking meta-test +  a
+# negative-fixture non-vacuity proof, mirroring the `_collect_orphaned_test_names`
+# / `_collect_telemetry_event_literals` idiom already established in this file.
+# ---------------------------------------------------------------------------
+
+# Per-file exempt-region marker: every write AT OR AFTER the line carrying this
+# substring is inside the designated fixture/test region (hermetic temp-dir
+# writers whose mid-write failure has no machine-visible consequence — SPEC
+# D1). `None` means the file has NO exempt region at all (100% production-
+# scoped) — lazy_core.py's own writers already all route through _atomic_write.
+_BARE_WRITE_EXEMPT_REGION_MARKERS: dict = {
+    "lazy-state.py": "# Fixture smoke tests",
+    "bug-state.py": "SMOKE FIXTURES + --test",
+    "lazy_core.py": None,
+}
+
+
+def _bare_write_exempt_line(source: str, filename: str) -> int:
+    """Return the 1-based line number at/after which writes are exempt (the
+    fixture-region banner). A declared-but-missing marker, or a filename with no
+    declared marker, returns 0 (nothing exempt — fail LOUD via over-flagging,
+    never silently under-scope)."""
+    marker = _BARE_WRITE_EXEMPT_REGION_MARKERS.get(filename)
+    if marker is None:
+        return 0
+    for i, line in enumerate(source.splitlines(), start=1):
+        if marker in line:
+            return i
+    return 0
+
+
+def _collect_bare_production_writes(source: str, filename: str) -> list:
+    """Pure AST collector: return a sorted list of ``(lineno, kind)`` for every
+    bare ``<expr>.write_text(...)`` call OR ``open(<path>, "w"/"a"...)`` call
+    that appears BEFORE ``filename``'s fixture-exempt-region marker line (i.e.
+    in production code). ``_atomic_write(...)`` calls are never flagged — that
+    IS the sanctioned primitive. A read-mode/mode-less ``open(...)`` is never
+    flagged (only an explicit write/append mode is the corruption class this
+    guards). Pure (source, filename) — no I/O — so a negative fixture can feed
+    synthetic source under a synthetic filename.
+    """
+    exempt_from = _bare_write_exempt_line(source, filename)
+    tree = ast.parse(source)
+    hits: list = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        lineno = getattr(node, "lineno", 0)
+        if exempt_from and lineno >= exempt_from:
+            continue  # inside the fixture-exempt region
+        func = node.func
+        if isinstance(func, ast.Attribute) and func.attr == "write_text":
+            hits.append((lineno, "write_text"))
+        elif isinstance(func, ast.Name) and func.id == "open":
+            mode_arg = None
+            if len(node.args) >= 2:
+                mode_arg = node.args[1]
+            else:
+                for kw in node.keywords:
+                    if kw.arg == "mode":
+                        mode_arg = kw.value
+            if (isinstance(mode_arg, ast.Constant)
+                    and isinstance(mode_arg.value, str)
+                    and mode_arg.value.strip("bt").startswith(("w", "a"))):
+                hits.append((lineno, "open-write-mode"))
+    return sorted(hits)
+
+
+def test_no_bare_production_sentinel_writes():
+    """Self-checking meta-test: the LIVE production regions of lazy-state.py,
+    bug-state.py, and lazy_core.py carry ZERO bare ``.write_text(``/
+    ``open(..., "w")`` calls — every production sentinel/queue/doc write goes
+    through ``lazy_core._atomic_write`` (production-sentinel-writes-bypass-
+    atomic-write). GREEN today (the sweep this bug performed: `_write_yaml_
+    sentinel`/`_write_yaml_blocked_sentinel` in both state scripts,
+    `_write_step10_needs_input`, the ROADMAP append, the ad-hoc brief/spec
+    writes). FAILS — naming the file + line — if a future production write
+    bypasses `_atomic_write`.
+    """
+    _guard()
+    scripts_dir = Path(__file__).parent
+    for filename in ("lazy-state.py", "bug-state.py", "lazy_core.py"):
+        source = (scripts_dir / filename).read_text(encoding="utf-8")
+        hits = _collect_bare_production_writes(source, filename)
+        assert hits == [], (
+            f"{filename}: bare production write(s) bypassing _atomic_write: "
+            f"{hits} — route through lazy_core._atomic_write instead"
+        )
+
+
+def test_bare_write_lint_guard_detects_planted_violation():
+    """Negative fixture — non-vacuity proof: a synthetic 'lazy-state.py' source
+    with a bare `path.write_text(...)` call BEFORE the fixture-region marker
+    must be CAUGHT (by line), and a sibling call AFTER the marker (inside the
+    designated fixture region) must NOT be — proving the collector is scoped,
+    not a blanket ban."""
+    _guard()
+    synthetic_source = (
+        "def production_writer(path, text):\n"
+        "    path.write_text(text, encoding='utf-8')\n"  # line 2 — production, BAD
+        "\n"
+        "# Fixture smoke tests\n"                          # line 4 — the marker
+        "\n"
+        "def _build_fixture(path, text):\n"
+        "    path.write_text(text, encoding='utf-8')\n"    # line 7 — fixture, OK
+    )
+    hits = _collect_bare_production_writes(synthetic_source, "lazy-state.py")
+    assert hits == [(2, "write_text")], (
+        f"expected exactly the production-region bare write at line 2 to be "
+        f"caught, and the fixture-region one at line 7 to be exempt; got {hits}"
+    )
+
+
+def test_bare_write_lint_guard_catches_open_write_mode_and_ignores_read():
+    """The `open(path, "w"...)` leg of the same guard: a write/append-mode open
+    in production is caught; a read-mode (or mode-less) open is never flagged —
+    proving the collector targets the corruption class (a truncatable write),
+    not every filesystem open."""
+    _guard()
+    synthetic_source = (
+        "def production_writer(path):\n"
+        "    with open(path, 'w', encoding='utf-8') as fh:\n"  # line 2 — BAD
+        "        fh.write('x')\n"
+        "def production_reader(path):\n"
+        "    with open(path, encoding='utf-8') as fh:\n"        # mode-less, OK
+        "        return fh.read()\n"
+    )
+    hits = _collect_bare_production_writes(synthetic_source, "lazy-state.py")
+    assert hits == [(2, "open-write-mode")], (
+        f"expected only the write-mode open at line 2 to be caught; got {hits}"
+    )
+
+
+_TESTS = _TESTS + [
+    ("test_no_bare_production_sentinel_writes", test_no_bare_production_sentinel_writes),
+    ("test_bare_write_lint_guard_detects_planted_violation",
+     test_bare_write_lint_guard_detects_planted_violation),
+    ("test_bare_write_lint_guard_catches_open_write_mode_and_ignores_read",
+     test_bare_write_lint_guard_catches_open_write_mode_and_ignores_read),
+]
+
+
+# ---------------------------------------------------------------------------
+# production-sentinel-writes-bypass-atomic-write — F811-class duplicate
+# top-level-def guard (Fix Scope item 3: "adopt an F811-class gate", substituted
+# here with a stdlib AST duplicate-definition collector rather than adding a
+# ruff dependency — SPEC D2's documented "grep/AST-based check alone still
+# closes the contract gap" latitude). Catches the exact defect class the bug's
+# "bonus finding" identified: `_current_head` was defined twice in lazy_core.py
+# with the second definition silently shadowing the first at module load.
+# ---------------------------------------------------------------------------
+
+def _collect_duplicate_top_level_defs(source: str) -> list:
+    """Pure AST collector: return a sorted list of names defined more than once
+    as a top-level ``def``/``async def``/``class`` in ``source`` (the F811
+    shadowing class — a later definition silently replaces an earlier one at
+    module load, with no import-time signal). Pure (source only, no I/O) so a
+    negative fixture can feed synthetic source.
+    """
+    tree = ast.parse(source)
+    names: list = []
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.append(node.name)
+    from collections import Counter
+    counts = Counter(names)
+    return sorted(name for name, n in counts.items() if n > 1)
+
+
+def test_no_duplicate_top_level_defs_in_state_scripts():
+    """Self-checking meta-test: lazy_core.py, lazy-state.py, and bug-state.py
+    each carry ZERO duplicate top-level def/class names (the `_current_head`
+    defect this bug found and fixed — one definition silently shadowed the
+    other, undetected because this repo has no F811/pyflakes-class lint gate
+    at all). GREEN today. FAILS — naming the file + duplicate names — if a
+    future edit reintroduces a shadowed top-level definition.
+    """
+    _guard()
+    scripts_dir = Path(__file__).parent
+    for filename in ("lazy_core.py", "lazy-state.py", "bug-state.py"):
+        source = (scripts_dir / filename).read_text(encoding="utf-8")
+        dups = _collect_duplicate_top_level_defs(source)
+        assert dups == [], f"{filename}: duplicate top-level definitions: {dups}"
+
+
+def test_duplicate_def_guard_detects_planted_violation():
+    """Negative fixture — non-vacuity proof: a synthetic module defining the
+    same top-level function name twice must be CAUGHT by name; a module with no
+    duplicates must report an empty list."""
+    _guard()
+    synthetic_dup = (
+        "def _current_head(x):\n"
+        "    return 1\n"
+        "\n"
+        "def other(x):\n"
+        "    return 2\n"
+        "\n"
+        "def _current_head(x):\n"  # shadowing duplicate
+        "    return 3\n"
+    )
+    assert _collect_duplicate_top_level_defs(synthetic_dup) == ["_current_head"]
+
+    synthetic_clean = (
+        "def _current_head(x):\n"
+        "    return 1\n"
+        "\n"
+        "def other(x):\n"
+        "    return 2\n"
+    )
+    assert _collect_duplicate_top_level_defs(synthetic_clean) == []
+
+
+_TESTS = _TESTS + [
+    ("test_no_duplicate_top_level_defs_in_state_scripts",
+     test_no_duplicate_top_level_defs_in_state_scripts),
+    ("test_duplicate_def_guard_detects_planted_violation",
+     test_duplicate_def_guard_detects_planted_violation),
 ]
 
 

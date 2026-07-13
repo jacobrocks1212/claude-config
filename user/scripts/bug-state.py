@@ -74,6 +74,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+# production-sentinel-writes-bypass-atomic-write (SPEC D3): explicit hard-exit
+# PyYAML import, mirroring lazy-state.py's own posture — one posture, not two.
+# (`import lazy_core` below already enforces this transitively at import time,
+# since lazy_core.py hard-exits when PyYAML is absent; this explicit import
+# makes bug-state.py self-documenting/self-contained about the same
+# requirement, and gives `_write_yaml_sentinel`/`_write_yaml_blocked_sentinel`
+# a bare module-level `yaml` name to call instead of a dead per-call fallback.)
+try:
+    import yaml
+except ImportError:
+    sys.stderr.write("bug-state.py requires PyYAML. Install with: pip install pyyaml\n")
+    sys.exit(2)
+
 # Insert this directory onto sys.path so `import lazy_core` resolves when
 # bug-state.py is run directly from user/scripts/ OR via the ~/.claude/scripts
 # symlink.
@@ -1900,39 +1913,33 @@ def enqueue_adhoc(
     return {"id": bug_id, "spec_dir": spec_dir, "status": "queued"}
 
 
-# ===========================================================================
-# === SMOKE FIXTURES + --test (WU-2.1 test-agent owns this section) =========
-# ===========================================================================
+# ---------------------------------------------------------------------------
+# Production sentinel writers (production-sentinel-writes-bypass-atomic-write:
+# these two used to sit BELOW the "SMOKE FIXTURES" banner below (a stale
+# WU-2.1/WU-2.2 historical note) even though `_write_yaml_blocked_sentinel` is
+# called from PRODUCTION compute_state fail-fasts (unknown-host-capability,
+# unknown-dependency) far above — the same misclassification lazy-state.py had.
+# Re-bannered in place; `_write_yaml_sentinel` is fixture-only today (every
+# live caller is inside `_build_bug_fixture` below) but is fixed for atomicity
+# alongside its sibling per the SPEC's fix-scope row.
 #
-# DO NOT MODIFY this section during WU-2.2 implementation work.
-# The test-agent (WU-2.1) is the sole author of everything below the banner.
-#
-# Structure:
-#   _write_yaml_sentinel()     — helper to write sentinel files
-#   _build_bug_fixture()       — builds one named fixture under a temp root
-#   run_smoke_tests()          — builds each fixture, calls compute_state(),
-#                                asserts expected outcomes; returns 0/1
-# ===========================================================================
-
+# PyYAML-fallback reconciliation (SPEC D3): the per-call `except ImportError`
+# fallback below was DEAD CODE — `import lazy_core` (module import, above)
+# already hard-exits the process at import time when PyYAML is absent
+# (lazy_core.py's own `try: import yaml / except ImportError: sys.exit(2)`),
+# so this function body can never observe a missing PyYAML. Removed in favor
+# of lazy-state.py's hard-exit posture (this module now also hard-exits at
+# import time, see the `import yaml` block above) — one posture, not two. This
+# ALSO makes the "byte-for-byte mirror of the lazy-state.py helper" docstring
+# claim below true (both are now the same body: build fm, safe_dump,
+# _atomic_write) instead of aspirational.
+# ---------------------------------------------------------------------------
 
 def _write_yaml_sentinel(path: Path, kind: str, **fields: Any) -> None:
     """Write a sentinel file with YAML frontmatter (same helper as lazy-state.py)."""
-    try:
-        import yaml  # type: ignore[import]
-        fm = {"kind": kind, **fields}
-        body = "---\n" + yaml.safe_dump(fm, sort_keys=False).strip() + "\n---\n\n# Sentinel\n"
-    except ImportError:
-        # Fallback: emit minimal frontmatter manually so the harness can run even
-        # if PyYAML is missing. Colon-bearing scalar VALUES are single-quoted via
-        # lazy_core._yaml_fallback_scalar so the emitted `key: value` line is valid
-        # YAML (parity with safe_dump) and re-reads through parse_sentinel without
-        # hard-halting (skip-mcp-test-frontmatter-unquoted-colon — quote-on-write).
-        pairs = "\n".join(
-            f"{k}: {lazy_core._yaml_fallback_scalar(v)}"
-            for k, v in {"kind": kind, **fields}.items()
-        )
-        body = f"---\n{pairs}\n---\n\n# Sentinel\n"
-    path.write_text(body, encoding="utf-8")
+    fm = {"kind": kind, **fields}
+    body = "---\n" + yaml.safe_dump(fm, sort_keys=False).strip() + "\n---\n\n# Sentinel\n"
+    _atomic_write(path, body)
 
 
 def _write_yaml_blocked_sentinel(
@@ -1950,39 +1957,35 @@ def _write_yaml_blocked_sentinel(
     context required by the BLOCKED.md schema. The filename is exactly
     `BLOCKED.md`, so the noncanonical-blocker + stray-branch hooks are satisfied.
     """
-    try:
-        import yaml  # type: ignore[import]
-        fm = {
-            "kind": "blocked",
-            "feature_id": feature_id,
-            "phase": phase,
-            "blocker_kind": blocker_kind,
-            "blocked_at": blocked_at,
-            "retry_count": retry_count,
-        }
-        text = (
-            "---\n"
-            + yaml.safe_dump(fm, sort_keys=False).strip()
-            + "\n---\n\n"
-            + (body if body else "# Blocked\n")
-        )
-    except ImportError:
-        # Colon-bearing scalar values are single-quoted (parity with safe_dump)
-        # via lazy_core._yaml_fallback_scalar so the manual fallback emits valid
-        # YAML on the no-PyYAML path (skip-mcp-test-frontmatter-unquoted-colon —
-        # quote-on-write; sibling of the _write_yaml_sentinel fallback above).
-        pairs = "\n".join(
-            f"{k}: {lazy_core._yaml_fallback_scalar(v)}" for k, v in {
-                "kind": "blocked",
-                "feature_id": feature_id,
-                "phase": phase,
-                "blocker_kind": blocker_kind,
-                "blocked_at": blocked_at,
-                "retry_count": retry_count,
-            }.items()
-        )
-        text = f"---\n{pairs}\n---\n\n" + (body if body else "# Blocked\n")
-    path.write_text(text, encoding="utf-8")
+    fm = {
+        "kind": "blocked",
+        "feature_id": feature_id,
+        "phase": phase,
+        "blocker_kind": blocker_kind,
+        "blocked_at": blocked_at,
+        "retry_count": retry_count,
+    }
+    text = (
+        "---\n"
+        + yaml.safe_dump(fm, sort_keys=False).strip()
+        + "\n---\n\n"
+        + (body if body else "# Blocked\n")
+    )
+    _atomic_write(path, text)
+
+
+# ===========================================================================
+# === SMOKE FIXTURES + --test (WU-2.1 test-agent owns this section) =========
+# ===========================================================================
+#
+# DO NOT MODIFY this section during WU-2.2 implementation work.
+# The test-agent (WU-2.1) is the sole author of everything below the banner.
+#
+# Structure:
+#   _build_bug_fixture()       — builds one named fixture under a temp root
+#   run_smoke_tests()          — builds each fixture, calls compute_state(),
+#                                asserts expected outcomes; returns 0/1
+# ===========================================================================
 
 
 def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
@@ -7517,7 +7520,7 @@ def main() -> int:
             # first re-probe of the re-probed next_route HOLDS instead of inflating
             # to a false LOOP DETECTED. Shared helper; no-op + fail-open otherwise.
             lazy_core.rebaseline_loop_signature_after_registry_reset(
-                lazy_core.active_repo_root(), pipeline="bug"
+                Path(lazy_core.active_repo_root()), pipeline="bug"
             )
         # harness-telemetry-ledger Phase 2 (D4-B) — coupled-pair mirror of
         # lazy-state.py: run-bracket emission AFTER write_run_marker (the fresh

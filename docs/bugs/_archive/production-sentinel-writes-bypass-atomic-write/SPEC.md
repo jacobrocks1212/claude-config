@@ -8,9 +8,9 @@
 > and `user/scripts/` has no Python lint gate at all (proven by an undetected duplicate
 > function definition in `lazy_core.py`).
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P2
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-12
 **Related:** `docs/bugs/mark-complete-partial-apply-noop-unrecoverable/` + `docs/bugs/coord-lock-no-stale-reclaim/` (siblings — shared theme: crash-consistency of script-owned state); `user/scripts/CLAUDE.md` (the violated contract, lines ~53–54); `docs/features/host-capability-declaration-for-gated-features/` (introduced the two `_write_yaml_blocked_sentinel` production writers, Phases 4/6); `docs/features/doc-drift-linter/` (precedent for a mechanical prose-to-code enforcement gate in this repo).
 
 ## Verified Defect

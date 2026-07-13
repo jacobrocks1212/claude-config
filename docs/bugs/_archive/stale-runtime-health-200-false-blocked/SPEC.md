@@ -8,9 +8,9 @@
 > call never binds a `stale_check`, so the STALE verdict state is unreachable, while the
 > lazy-batch SKILL prose claims it works.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P1
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-12
 **Related:** `docs/features/long-build-and-runtime-ownership/` (Complete — owns `ensure_runtime` M4 ownership verdicts + the long-build ownership contract the fix routes rebuilds through); `docs/specs/lazy-validation-readiness/` (F7 — authored `stale_binary.py`, the never-wired predicate); `docs/bugs/_archive/ensure-runtime-recovery-starves-cold-compile/` + `docs/bugs/_archive/ensure-runtime-starves-pre-vite-sidecar-build/` (prior ensure-runtime liveness fixes — all liveness, none freshness); `docs/bugs/mcp-validation-peels-one-seam-per-loop/` (sibling — stale-runtime confounds inflate its `retry_count` escalation on non-defects); AlgoBooth memory notes `hijacked-runtime-after-mcp-test-cycle`, `ensure-runtime-corrupted-incremental-relink`.
 
 ## Verified Symptom

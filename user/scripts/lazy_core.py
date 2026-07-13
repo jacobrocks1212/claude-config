@@ -75,6 +75,12 @@ except ImportError:
     sys.stderr.write("lazy_core.py requires PyYAML. Install with: pip install pyyaml\n")
     sys.exit(2)
 
+# stale-runtime-health-200-false-blocked: the F7 freshness predicate
+# (lazy-validation-readiness) — a sibling module in this same directory, always
+# importable via the sys.path insertion both scripts + test_lazy_core.py already
+# perform. Was previously orphaned (imported nowhere); see _default_stale_check.
+import stale_binary
+
 
 # ---------------------------------------------------------------------------
 # Diagnostics
@@ -1080,9 +1086,25 @@ def skip_waiver_refusal(
 # escalation fires. Defined HERE (not in the state scripts) so lazy-state.py
 # and bug-state.py emit the byte-identical message — the orchestrators key
 # corrective-phase drafting discipline on this exact text.
+#
+# REWORDED (mcp-validation-peels-one-seam-per-loop Deferred Follow-Up item 2,
+# closed by stale-runtime-health-200-false-blocked's STATE-lane pass): the
+# full-chain seam-audit mandate was RE-SCOPED by that bug's SKILLS-lane fix to
+# apply at EVERY mcp-validation retry_count (starting at the first failure,
+# authored into BLOCKED.md's own body), not only here at retry_count >= 2. This
+# predicate's THRESHOLD is unchanged (still exactly `retry_count >= 2` — see
+# below); only the WORDING is corrected so `retry_count >= 2` reads as the
+# ADDITIONAL /investigate-mandatory backstop tier layered on top of the
+# standing seam-audit requirement, not as the sole trigger for seam enumeration
+# (a documentation-accuracy edit only — no test asserts this string's exact
+# wording, only that the notify_message carries the constant verbatim; see
+# test_lazy_state_blocked_escalation_payload / test_bug_state_blocked_
+# escalation_payload in test_lazy_core.py).
 VALIDATION_ESCALATION_SUFFIX = (
-    " ESCALATION: 2+ validation failures — corrective phase requires a "
-    "full-chain seam audit, not a single-layer fix."
+    " ESCALATION: 2+ validation failures — /investigate is now MANDATORY "
+    "before the next corrective phase (the full-chain seam audit itself is "
+    "required starting at the FIRST mcp-validation failure, not gated on "
+    "this threshold)."
 )
 
 
@@ -1093,9 +1115,16 @@ def validation_escalation(meta: dict[str, Any] | None) -> bool:
     by BOTH state scripts' Step-3 blocked terminals: ``blocker_kind ==
     "mcp-validation"`` AND ``retry_count >= 2``. The threshold is 2 because the
     d8-live-looping pattern showed each BLOCKED→add-phase round discovering
-    exactly ONE more broken layer — by the second failure a single-layer
-    corrective fix is presumptively insufficient and the corrective phase needs
-    a full-chain seam audit.
+    exactly ONE more broken layer.
+
+    REWORDED (mcp-validation-peels-one-seam-per-loop): this predicate's
+    BEHAVIOR is unchanged — still exactly ``retry_count >= 2``. What changed is
+    what firing MEANS: the full-chain seam-audit requirement itself now applies
+    at every ``mcp-validation`` retry_count (the SKILLS-lane prose mandate,
+    authored starting at the first failure); this predicate firing True marks
+    the point past which ``/investigate`` is ADDITIONALLY mandatory before the
+    next corrective phase — the backstop tier, not the sole seam-enumeration
+    trigger.
 
     Tolerances (backward compatibility — pre-Phase-11 sentinels must never
     escalate or crash):
@@ -4001,23 +4030,13 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
 # Pseudo-skill dispatcher — deterministic sentinel / receipt writes
 # ---------------------------------------------------------------------------
 
-def _current_head(repo_root: Path) -> str | None:
-    """Resolve repo_root's HEAD commit sha, or None when repo_root is not a
-    git repo / git is unavailable.  Best-effort — mirrors the identically
-    named helpers in lazy-state.py and bug-state.py (which gate Step-9
-    routing on the same sha); consumed here by apply_pseudo's
-    ``__write_validated_from_results__`` freshness backstop.
-    """
-    try:
-        r = subprocess.run(
-            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if r.returncode == 0:
-            return r.stdout.strip() or None
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return None
+# _current_head is defined once, further below (WU-4 "Persisted probe
+# signature / loop detection" section) — it used to be defined a second time
+# here with an identical body, an undetected F811 duplicate (silently shadowed
+# at module level; production-sentinel-writes-bypass-atomic-write's "bonus
+# finding," the proof this file had zero lint coverage). Consumed here by
+# apply_pseudo's ``__write_validated_from_results__`` freshness backstop —
+# same function, no behavior change.
 
 
 def _resolve_under_repo(repo_root: Path, value) -> str:
@@ -8479,6 +8498,72 @@ def _default_runtime_probe(health_url: str):
         return (0, None)
 
 
+def _default_stale_check(repo_root, cfg: dict) -> bool:
+    """Production default binding for ``ensure_runtime``'s ``stale_check`` seam —
+    wires the previously-orphaned F7 freshness predicate
+    (``stale_binary.native_source_newer_than``) so the STALE verdict is REACHABLE
+    in production (``docs/bugs/stale-runtime-health-200-false-blocked``).
+
+    Boot signal (D1 — reuses what already exists, no new state):
+      1. ``read_boot_stamp(repo_root)`` — the persisted ``dev:restart`` spawn
+         epoch (``.runtime.boot.json``), written by ``ensure_runtime``'s own
+         default ``restart()`` closure.
+      2. Fallback: the ``.runtime.lock.json`` recorded kernel ``start_time`` (the
+         owning process's boot time) via ``read_runtime_lock`` — covers a
+         runtime that booted before a boot stamp existed (legacy-booted /
+         foreign-adopted lock) so a genuinely stale binary is still caught.
+      3. No signal at all → **not stale** (fail-safe; D2 below).
+
+    The native-source glob list is ``cfg["native_globs"]`` (per-repo
+    configurable via ``_ENSURE_RUNTIME_DEFAULT_CONFIG`` / a repo's ``config``
+    override — AlgoBooth: ``src-tauri``, ``crates``, plus sidecar-bundle globs
+    the repo config adds), never hard-coded here.
+
+    Fail-safe direction (D2, unchanged from ``stale_binary.py``'s own contract):
+    ANY missing/unreadable boot signal, unparseable epoch, or predicate error
+    reports **False** (not stale) — the health=200 gate stays the primary guard.
+    A spurious False costs nothing further; a spurious True would force a
+    gratuitous multi-minute rebuild every cycle. Never raises.
+
+    Only invoked when ``ensure_runtime`` is called WITHOUT an injected
+    ``stale_check`` (production); ``--test`` always injects one directly (a
+    legitimate allow-listed seam — see test_lazy_core.py's production-binding
+    discipline note, ``_PRODUCTION_BINDING_ALLOWED_KWARGS``).
+    """
+    boot_epoch = None
+    try:
+        boot_epoch = read_boot_stamp(repo_root)
+    except Exception:  # noqa: BLE001 — fail-safe: fall through to the lock
+        boot_epoch = None
+    if boot_epoch is None:
+        lock = None
+        try:
+            lock = read_runtime_lock(repo_root, config=cfg)
+        except Exception:  # noqa: BLE001 — fail-safe: no fallback signal
+            lock = None
+        if isinstance(lock, dict):
+            boot_epoch = lock.get("start_time")
+    if boot_epoch is None:
+        return False
+    try:
+        boot_iso = datetime.datetime.fromtimestamp(
+            float(boot_epoch), tz=datetime.timezone.utc
+        ).isoformat()
+    except (TypeError, ValueError, OSError, OverflowError):
+        return False
+    globs = cfg.get("native_globs") or _ENSURE_RUNTIME_DEFAULT_CONFIG["native_globs"]
+    try:
+        return bool(
+            stale_binary.native_source_newer_than(
+                boot_iso, Path(repo_root), globs=list(globs)
+            )
+        )
+    except Exception:  # noqa: BLE001 — native_source_newer_than never raises by
+        # its own contract, but a defensive guard keeps this binding fail-safe
+        # even against a future change to that contract.
+        return False
+
+
 def _mcp_tool_in_payload(payload: dict | None, tool_name: str) -> bool:
     """True iff ``tool_name`` appears in the health payload's tool listing.
 
@@ -8776,8 +8861,9 @@ def ensure_runtime(
              ``None``) ⇒ ``DEAD``. No lock + ``/health`` answering ⇒ ``HIJACKED``
              (health=200 is NOT proof of ownership — LD1); no lock + nothing
              answering ⇒ ``DEAD``.
-          2. **Staleness** — for an owned runtime, injected
-             ``stale_check(artifact_hash)`` True ⇒ ``STALE``.
+          2. **Staleness** — for an owned runtime, ``stale_check()`` True ⇒
+             ``STALE`` (default binding: ``_default_stale_check`` — the boot
+             stamp vs. native-source-commit freshness predicate; see below).
           3. **Health** — for an owned, current runtime, ``probe()`` 200 ⇒
              ``READY``; a refused ``/health`` despite a live owned PID ⇒
              ``DEAD``.
@@ -8899,11 +8985,14 @@ def ensure_runtime(
                 time.sleep(5)
             return False
     if stale_check is None:
-        # Without an injected stale_check the safe default is NOT stale (the
-        # health=200 gate remains the primary guard — fail-safe direction from
-        # stale_binary.py). The orchestrator binds a real stale_check when it
-        # knows the boot stamp.
-        stale_check = lambda: False
+        # stale-runtime-health-200-false-blocked: bind the REAL freshness
+        # predicate (previously this defaulted to `lambda: False`, making the
+        # STALE verdict UNREACHABLE in production — stale_binary.py shipped as
+        # an orphaned predicate with no production caller). The fail-safe
+        # direction (missing signal / any error → not stale) is preserved
+        # INSIDE `_default_stale_check` itself, so the health=200 gate stays
+        # the primary guard exactly as before whenever no boot signal exists.
+        stale_check = lambda: _default_stale_check(repo_root, cfg)
     if sidecar_check is None:
         # Sidecar-pipe readiness (Leg A,
         # env-transient-counts-against-validation-retry-budget). When the config
@@ -17957,6 +18046,13 @@ def rebaseline_loop_signature_after_registry_reset(
     is present (the debounce is marker-gated — with no marker the next probe never
     engages it, so re-baselining would be meaningless). NEVER raises.
     """
+    # Defensive coercion (checkpoint-resume-rebaseline-crashes-on-str-repo-root):
+    # a real caller passed lazy_core.active_repo_root() here directly — that
+    # helper returns str, not Path, and `.resolve()` below raised AttributeError
+    # on it, breaking the documented "NEVER raises" contract. Path(Path(x)) is a
+    # no-op for an already-Path caller, so this is byte-identical for every
+    # existing correct call site.
+    repo_root = Path(repo_root)
     if signature_path is None:
         repo_hash = hashlib.sha1(
             str(repo_root.resolve()).encode("utf-8")

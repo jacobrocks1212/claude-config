@@ -713,7 +713,8 @@ def enqueue_adhoc(
     today = datetime.now().strftime("%Y-%m-%d")
     brief_file = spec_path / "ADHOC_BRIEF.md"
     if not brief_file.exists():
-        brief_file.write_text(
+        _atomic_write(
+            brief_file,
             "---\n"
             "kind: adhoc-brief\n"
             f"feature_id: {feature_id}\n"
@@ -722,7 +723,6 @@ def enqueue_adhoc(
             "---\n\n"
             f"# Ad-hoc task: {name}\n\n"
             f"{brief.strip() or '(brief not supplied — infer from context during /spec)'}\n",
-            encoding="utf-8",
         )
 
     roadmap = features / "ROADMAP.md"
@@ -732,9 +732,9 @@ def enqueue_adhoc(
         if name not in text:
             if text and not text.endswith("\n"):
                 text += "\n"
-            roadmap.write_text(text + row, encoding="utf-8")
+            _atomic_write(roadmap, text + row)
     else:
-        roadmap.write_text("# Roadmap\n\n" + row, encoding="utf-8")
+        _atomic_write(roadmap, "# Roadmap\n\n" + row)
 
     return {
         "enqueued": True,
@@ -810,7 +810,8 @@ def enqueue_adhoc_bug(
     today = datetime.now().strftime("%Y-%m-%d")
     brief_file = item_dir / "ADHOC_BRIEF.md"
     if not brief_file.exists():
-        brief_file.write_text(
+        _atomic_write(
+            brief_file,
             "---\n"
             "kind: adhoc-brief\n"
             f"bug_id: {bug_id}\n"
@@ -819,7 +820,6 @@ def enqueue_adhoc_bug(
             "---\n\n"
             f"# Ad-hoc bug: {name}\n\n"
             f"{brief.strip() or '(brief not supplied — infer from context during /spec-bug)'}\n",
-            encoding="utf-8",
         )
 
     return {
@@ -906,13 +906,13 @@ def materialize_wi(repo_root: Path, wi_id, type_pipeline_map: dict) -> dict:
         brief_file = features_dir / slug / "ADHOC_BRIEF.md"
         brief_file.parent.mkdir(parents=True, exist_ok=True)
         if not brief_file.exists():
-            brief_file.write_text(f"# Ad-hoc task: {title}\n\n{brief}", encoding="utf-8")
+            _atomic_write(brief_file, f"# Ad-hoc task: {title}\n\n{brief}")
         else:
             existing = brief_file.read_text(encoding="utf-8")
             missing = [s for s in [title, description, ac] if s and s not in existing]
             if missing:
                 augmented = existing.rstrip("\n") + "\n\n" + "\n".join(missing) + "\n"
-                brief_file.write_text(augmented, encoding="utf-8")
+                _atomic_write(brief_file, augmented)
         item_dir = features_dir / slug
 
     else:  # bug route
@@ -949,15 +949,12 @@ def materialize_wi(repo_root: Path, wi_id, type_pipeline_map: dict) -> dict:
         # Write ADHOC_BRIEF.md (idempotent — only if absent)
         brief_file = item_dir / "ADHOC_BRIEF.md"
         if not brief_file.exists():
-            brief_file.write_text(f"# Ad-hoc task: {title}\n\n{brief}", encoding="utf-8")
+            _atomic_write(brief_file, f"# Ad-hoc task: {title}\n\n{brief}")
 
     # Both routes: write stub SPEC.md (idempotent — only if absent)
     spec_file = item_dir / "SPEC.md"
     if not spec_file.exists():
-        spec_file.write_text(
-            f"**Work Item:** AB#{wi_id} ({url})\n",
-            encoding="utf-8",
-        )
+        _atomic_write(spec_file, f"**Work Item:** AB#{wi_id} ({url})\n")
 
     # Both routes: record in materialized.json (idempotent on wi_id)
     work_dir = repo_root / "docs" / "work"
@@ -1573,7 +1570,7 @@ def _write_step10_needs_input(spec_dir: Path, feature_name: str) -> None:
         "because it forces a confirmed validation pass before `Complete` is written.\n"
     )
     needs_input_path = spec_dir / "NEEDS_INPUT.md"
-    needs_input_path.write_text(content, encoding="utf-8")
+    _atomic_write(needs_input_path, content)
 
 
 def _phases_effectively_complete(spec_path: Path) -> bool:
@@ -3658,13 +3655,22 @@ def compute_state(
 
 
 # ---------------------------------------------------------------------------
-# Fixture smoke tests
+# Production sentinel writers (production-sentinel-writes-bypass-atomic-write:
+# these two were previously misclassified — sitting BELOW the fixture-section
+# banner below while `_write_yaml_blocked_sentinel` is called from Step-3
+# compute_state production fail-fasts (unknown-host-capability,
+# unknown-dependency) 1700+ lines earlier. Re-bannered in place per the SPEC's
+# "move or re-banner" fix scope — moving them physically would touch every
+# intervening fixture-builder line for no behavioral gain.
+# `_write_yaml_sentinel` is fixture-only today (every live caller is inside
+# `_build_fixture` below) but is fixed for atomicity alongside its sibling per
+# the SPEC's explicit fix-scope row.
 # ---------------------------------------------------------------------------
 
 def _write_yaml_sentinel(path: Path, kind: str, **fields: Any) -> None:
     fm = {"kind": kind, **fields}
     body = "---\n" + yaml.safe_dump(fm, sort_keys=False).strip() + "\n---\n\n# Sentinel\n"
-    path.write_text(body, encoding="utf-8")
+    _atomic_write(path, body)
 
 
 def _write_yaml_blocked_sentinel(
@@ -3695,8 +3701,12 @@ def _write_yaml_blocked_sentinel(
         + "\n---\n\n"
         + (body if body else "# Blocked\n")
     )
-    path.write_text(text, encoding="utf-8")
+    _atomic_write(path, text)
 
+
+# ---------------------------------------------------------------------------
+# Fixture smoke tests
+# ---------------------------------------------------------------------------
 
 def _build_fixture(tmpdir: Path, name: str) -> Path:
     """Build one of the named fixtures under tmpdir/<name>/ and return its repo root."""
@@ -12112,7 +12122,7 @@ def main() -> int:
             # inflating repeat_count to 2 (false LOOP DETECTED). Preserves a genuine
             # pre-pause streak; no-op + fail-open when no signature file / no marker.
             lazy_core.rebaseline_loop_signature_after_registry_reset(
-                lazy_core.active_repo_root(), pipeline="feature"
+                Path(lazy_core.active_repo_root()), pipeline="feature"
             )
         # harness-telemetry-ledger Phase 2 (D4-B): run-bracket emission —
         # fires AFTER write_run_marker so the fresh marker supplies the run

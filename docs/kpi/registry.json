@@ -235,6 +235,27 @@
       "band": null,
       "review_by": "2026-10-01",
       "notes": "Median opened-to-closed days over canaries closed in the window, EXCLUDING closed-clean (no-data) ceiling closes (those are counted separately by the canary-health alarm's projected_no_data_close_count — a no-data close must never improve this KPI)."
+    },
+    {
+      "id": "mcp-validation-round-trips-per-feature",
+      "system": "pipeline-efficiency",
+      "title": "MCP-validation round trips per feature",
+      "friction": "Step-9 MCP validation peeling one defect seam per full pipeline loop (mcp-validation-peels-one-seam-per-loop) burned repeated BLOCKED->add-phase round trips per feature before the seam-batching fix landed; this KPI is the deferred follow-up that would prove the fix actually reduced round trips instead of only reasoning about it from the fixed prose.",
+      "signal": {
+        "source": "telemetry-ledger",
+        "selector": "mcp-validation-round-trips-per-feature"
+      },
+      "unit": "count/30d",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "notes": "Registered per mcp-validation-peels-one-seam-per-loop's Deferred Follow-Up item 1 (docs/bugs/_archive/mcp-validation-peels-one-seam-per-loop/PHASES.md) and picked up by stale-runtime-health-200-false-blocked's STATE-lane close-out. Signal selector NOT YET wired in kpi-scorecard.py's _SOURCES enum as of this row's addition (that file was owned by a concurrent agent when this row was written) -- --lint will report an unregistered-selector error until the paired _SOURCES entry lands. Wanted diff (apply alongside this row): add 'telemetry-ledger': frozenset({..., \"mcp-validation-round-trips-per-feature\"}) to kpi-scorecard.py's existing 'telemetry-ledger' _SOURCES set (do NOT create a second 'telemetry-ledger' key), following the canary-trip-precision precedent (enum registered ahead of computation, NO-DATA until wired). Computation (not yet implemented): count blocker_kind: mcp-validation BLOCKED.md mint events (kind: 'halt' telemetry entries whose dispatched terminal_reason == 'blocked' and whose recorded blocker_kind == 'mcp-validation', keyed by item_id) per feature id in the window; renders NO-DATA until that reader is added to pipeline_visualizer.trends (mirroring halt_dwell/cycles_per_completion's read-the-ledger-never-reinfer discipline)."
     }
   ]
 }
