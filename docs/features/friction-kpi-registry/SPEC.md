@@ -9,12 +9,17 @@
 > friction-reduction feature cannot lock its baseline without declaring how its success will be
 > measured — un-measurable friction claims become a planning-time halt, not a retro finding.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P1
 **Last updated:** 2026-07-04
 **Source:** repo-exploration proposal session 2026-07-04 (operator-requested; self-evolution
 batch); fleshed out via internal desk research 2026-07-04 (Gemini research skipped by operator
 directive — see RESEARCH.md)
+
+**Friction-reduction feature:** yes — it is the measurement plane itself: the harness certifies
+feature *completion* with receipts but certified harness *efficacy* with nothing until this
+registry existed; the seed KPI rows below are its own first output and its own scoreboard for
+maturation (`pending` → `measured`/`retro-derived` baselines as history accrues on the workstation).
 
 **Depends on:**
 
@@ -412,6 +417,19 @@ docs/kpi/registry.json  (committed; schema_version; the ONLY declaration surface
   retro-derived baseline capture for rows with history. Proven done: a fixture friction-SPEC
   without a declaration halts at finalization; an ordinary SPEC passes untouched; captured
   baselines carry correct provenance.
+
+## KPI Declaration
+
+Existing registry rows this feature directly produced and continues to serve as their sole
+declaration, computation, and rendering surface — their maturation (honest `pending` today,
+`measured`/`retro-derived` as history accrues) **is** this feature's own success measure:
+
+- kpi: build-queue-false-green-rate
+- kpi: build-queue-wait-time-p50
+- kpi: build-queue-raw-invocation-deny-recurrence
+- kpi: containment-runaway-trip-rate
+- kpi: halt-dwell-p50
+- kpi: cycles-per-completion
 
 ## Validation Criteria
 

@@ -8,25 +8,31 @@
 |-----|---------|----------|--------------------|--------|
 | False-green build rate `[cognito-forms]` | — | pending | — | NO-DATA |
 | Queue wait time p50 `[cognito-forms]` | — | pending | — | NO-DATA |
-| Raw-invocation deny recurrence `[cognito-forms]` | — | pending | — | NO-DATA |
+| Raw-invocation deny recurrence `[cognito-forms]` | 0/30d | pending | — | PENDING-BASELINE |
 
 ## containment
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Runaway containment trip rate | — | pending | — | NO-DATA |
+| Runaway containment trip rate | 2119/30d | pending | — | PENDING-BASELINE |
 
 ## halt-handling
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Halt dwell time p50 | — | pending | — | NO-DATA |
+| Halt dwell time p50 | 240.75s (30d) | pending | — | PENDING-BASELINE |
 
 ## pipeline-efficiency
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Cycles per completion | — | pending | — | NO-DATA |
+| Cycles per completion | 10.6 (30d) | pending | — | PENDING-BASELINE |
+
+## harness-canary
+
+| KPI | current | baseline | band (warn/breach) | status |
+|-----|---------|----------|--------------------|--------|
+| Canary trip precision | — | pending | — | NO-DATA |
 
 ## Regressions
 
@@ -38,9 +44,6 @@
 
 ## Notes
 
-- `build-queue-false-green-rate`: build-queue results dir absent (~/.claude/state/build-queue/results) — no build-queue state on this machine
-- `build-queue-wait-time-p50`: build-queue results dir absent (~/.claude/state/build-queue/results) — no build-queue state on this machine
-- `build-queue-raw-invocation-deny-recurrence`: deny ledger absent — no denies recorded for this repo
-- `containment-runaway-trip-rate`: telemetry ledger absent — no run has emitted events for this repo yet
-- `halt-dwell-p50`: telemetry ledger absent — no run has emitted events for this repo yet
-- `cycles-per-completion`: telemetry ledger absent — no run has emitted events for this repo yet
+- `build-queue-false-green-rate`: build-queue results dir absent (~\.claude\state\build-queue\results) — no build-queue state on this machine
+- `build-queue-wait-time-p50`: build-queue results dir absent (~\.claude\state\build-queue\results) — no build-queue state on this machine
+- `canary-trip-precision`: no canary trips in the window — precision is undefined until the canary has tripped (never a fabricated zero)

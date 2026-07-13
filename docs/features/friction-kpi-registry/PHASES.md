@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In Progress
+**Status:** Complete
 
 **MCP runtime:** not-required — pure claude-config harness mechanics (a committed JSON registry,
 a stdlib Python renderer/linter, a `/spec`-injected gate component, and orchestrator-prose regen
