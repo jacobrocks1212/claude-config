@@ -20497,6 +20497,371 @@ _TESTS = _TESTS + [
 ]
 
 
+def test_age_escalated_rank_quantum_and_floor():
+    """bug-queue-aging-backpressure D1-A/D3-A: one notch toward 0 per 7-day
+    quantum since `discovered`, floored at rank 1 (P1-equivalent — never
+    past a genuine P0)."""
+    _guard()
+    import datetime
+    today = datetime.date(2026, 7, 13)
+    # P2 (rank 2), discovered 21 days ago -> 3 notches -> 2-3=-1 -> floor 1.
+    assert lazy_core.age_escalated_rank(2, "2026-06-22", today) == 1
+    # P2, discovered 6 days ago -> 0 notches (age_days // 7 == 0) -> unchanged.
+    assert lazy_core.age_escalated_rank(2, "2026-07-07", today) == 2
+    # P2, discovered exactly 7 days ago -> 1 notch -> 1.
+    assert lazy_core.age_escalated_rank(2, "2026-07-06", today) == 1
+    # A "Low" bug (rank 3) ages toward the floor but never past it, even after
+    # a very long time.
+    assert lazy_core.age_escalated_rank(3, "2020-01-01", today) == 1
+    # P0/P1 (rank <= floor) never escalate — trivially unchanged.
+    assert lazy_core.age_escalated_rank(0, "2020-01-01", today) == 0
+    assert lazy_core.age_escalated_rank(1, "2020-01-01", today) == 1
+
+
+def test_age_escalated_rank_fail_open_cases():
+    """Absent/unparseable/future-dated `discovered` all fail open (unchanged
+    base_rank) — never a fabricated age, never a crash."""
+    _guard()
+    import datetime
+    today = datetime.date(2026, 7, 13)
+    assert lazy_core.age_escalated_rank(2, None, today) == 2
+    assert lazy_core.age_escalated_rank(2, "", today) == 2
+    assert lazy_core.age_escalated_rank(2, "not-a-date", today) == 2
+    # Future-dated discovery -> negative age -> fail open, unchanged.
+    assert lazy_core.age_escalated_rank(2, "2026-08-01", today) == 2
+    # today omitted -> uses real date.today() without raising.
+    assert isinstance(lazy_core.age_escalated_rank(2, None), int)
+
+
+def test_pin_is_active_variants():
+    """bug-queue-aging-backpressure D2-A: pin_is_active's five branches —
+    never-pinned, active-until-future, expired-until-past,
+    active-default-age (no pinned_until), expired-default-age, and
+    fail-open on a malformed date."""
+    _guard()
+    import datetime
+    today = datetime.date(2026, 7, 13)
+    # Never pinned (no pinned_at) -> not active.
+    assert lazy_core.pin_is_active(None, None, today) is False
+    # Active: pinned_until in the future.
+    assert lazy_core.pin_is_active("2026-07-01", "2026-08-01", today) is True
+    # Expired: pinned_until in the past.
+    assert lazy_core.pin_is_active("2026-06-01", "2026-06-15", today) is False
+    # pinned_until == today -> still active (inclusive).
+    assert lazy_core.pin_is_active("2026-07-01", "2026-07-13", today) is True
+    # No pinned_until -> default max age (90 days). 10 days old -> active.
+    assert lazy_core.pin_is_active("2026-07-03", None, today) is True
+    # No pinned_until, 100 days old -> expired (past the 90-day default).
+    assert lazy_core.pin_is_active("2026-04-01", None, today) is False
+    # Malformed pinned_until -> fail open (treated as expired).
+    assert lazy_core.pin_is_active("2026-07-01", "not-a-date", today) is False
+    # Malformed pinned_at -> fail open (treated as never-pinned/not active).
+    assert lazy_core.pin_is_active("not-a-date", None, today) is False
+
+
+def test_merged_priority_bug_explicit_severity_ages():
+    """An explicit recognized severity ALWAYS age-escalates (independent of
+    any pin field)."""
+    _guard()
+    import datetime
+    today = datetime.date(2026, 7, 13)
+    raw = {"severity": "P2", "discovered": "2026-06-22"}
+    assert lazy_core.merged_priority("bug", raw, today=today) == 1
+
+
+def test_merged_priority_bug_active_pin_suppressed():
+    """A null-severity bug with an ACTIVE pin stays suppressed at
+    MERGED_PRIORITY_DEFAULT — no fallback, no escalation, honoring the
+    deliberate deprioritization."""
+    _guard()
+    import datetime
+    today = datetime.date(2026, 7, 13)
+    raw = {
+        "severity": None, "pinned_at": "2026-07-10", "pinned_until": "2026-08-01",
+        "spec_severity": "P1", "discovered": "2026-06-01",
+    }
+    assert lazy_core.merged_priority("bug", raw, today=today) == lazy_core.MERGED_PRIORITY_DEFAULT
+
+
+def test_merged_priority_bug_expired_pin_falls_back_to_spec_severity():
+    """Past pin expiry, the merged view falls back to the SPEC's own declared
+    severity and resumes age-escalating from there (D2-A)."""
+    _guard()
+    import datetime
+    today = datetime.date(2026, 7, 13)
+    raw = {
+        "severity": None, "pinned_at": "2026-06-01", "pinned_until": "2026-06-15",
+        "spec_severity": "P2", "discovered": "2026-06-22",
+    }
+    # Expired pin -> falls back to spec_severity P2 (rank 2), then ages by
+    # discovered (21 days -> 3 notches -> floor 1).
+    assert lazy_core.merged_priority("bug", raw, today=today) == 1
+
+
+def test_merged_priority_bug_legacy_null_no_pin_unchanged():
+    """A bare `severity: null` with NO `pinned_at` (every real queue entry
+    committed before this feature shipped) is byte-identical to before —
+    MERGED_PRIORITY_DEFAULT, no fallback, no escalation."""
+    _guard()
+    import datetime
+    today = datetime.date(2026, 7, 13)
+    raw = {"severity": None, "spec_severity": "P1", "discovered": "2020-01-01"}
+    assert lazy_core.merged_priority("bug", raw, today=today) == lazy_core.MERGED_PRIORITY_DEFAULT
+
+
+def test_merged_priority_aged_bug_outranks_tier2_feature_not_p0():
+    """SPEC Phase-1 "proven done" fixture: a 3-week-old, expired-pin bug
+    whose SPEC declares P2 outranks a tier-2 feature in the merged worklist,
+    but a genuine P0 bug still comes first."""
+    _guard()
+    import datetime
+    today = datetime.date(2026, 7, 13)
+    feats = [{"id": "feat-t2", "tier": 2}]
+    bugs = [
+        {
+            "id": "aged-bug", "severity": None, "pinned_at": "2026-06-01",
+            "pinned_until": "2026-06-15", "spec_severity": "P2",
+            "discovered": "2026-06-22",
+        },
+        {"id": "real-p0", "severity": "P0", "discovered": "2026-07-12"},
+    ]
+    wl = lazy_core.merged_worklist(feats, bugs, "/r", today=today)
+    ids = [e["item_id"] for e in wl]
+    assert ids == ["real-p0", "aged-bug", "feat-t2"], ids
+
+
+def test_bug_priority_marker_pinned():
+    """bug_priority_marker renders the 📌 pinned marker while a pin is active."""
+    _guard()
+    import datetime
+    today = datetime.date(2026, 7, 13)
+    marker = lazy_core.bug_priority_marker(
+        severity=None, spec_severity="P1", discovered="2026-06-01",
+        pinned_at="2026-07-10", pinned_until="2026-08-01", today=today,
+    )
+    assert "pinned" in marker and "2026-07-10" in marker
+
+
+def test_bug_priority_marker_escalated():
+    """bug_priority_marker renders the ⏫ escalated marker when the effective
+    priority has moved past the declared severity."""
+    _guard()
+    import datetime
+    today = datetime.date(2026, 7, 13)
+    marker = lazy_core.bug_priority_marker(
+        severity="P2", spec_severity=None, discovered="2026-06-22",
+        pinned_at=None, pinned_until=None, today=today,
+    )
+    assert "escalated" in marker
+
+
+def test_bug_priority_marker_none_when_no_pin_no_escalation():
+    """bug_priority_marker renders empty when there's no active pin and no
+    escalation has occurred yet (a fresh, unescalated bug)."""
+    _guard()
+    import datetime
+    today = datetime.date(2026, 7, 13)
+    marker = lazy_core.bug_priority_marker(
+        severity="P2", spec_severity=None, discovered="2026-07-10",
+        pinned_at=None, pinned_until=None, today=today,
+    )
+    assert marker == ""
+
+
+def test_pin_bug_severity_creates_new_entry():
+    """bug-queue-aging-backpressure D2-A: bug-state.py --pin creates a queue
+    entry (appended) for a not-yet-queued on-disk bug, stamping
+    pinned_at/pinned_until/pin_reason and nulling severity."""
+    _guard()
+    import datetime
+    bs = _load_state_script("bug-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        bug_dir = root / "docs" / "bugs" / "my-bug"
+        bug_dir.mkdir(parents=True)
+        (bug_dir / "SPEC.md").write_text(
+            "# My Bug\n\n**Status:** Concluded\n**Severity:** P2\n"
+            "**Discovered:** 2026-06-22\n", encoding="utf-8",
+        )
+        result = bs.pin_bug_severity(
+            root, "my-bug", until="2026-08-01", reason="host-capability: windows",
+            today=datetime.date(2026, 7, 13),
+        )
+        assert result["status"] == "pinned"
+        assert result["pinned_at"] == "2026-07-13"
+        queue = json.loads((root / "docs" / "bugs" / "queue.json").read_text())
+        entry = queue["queue"][0]
+        assert entry["id"] == "my-bug"
+        assert entry["severity"] is None
+        assert entry["pinned_until"] == "2026-08-01"
+        assert entry["pin_reason"] == "host-capability: windows"
+
+
+def test_pin_bug_severity_updates_existing_entry():
+    """--pin on an ALREADY-queued bug overwrites its pin fields in place
+    (re-pinning is not additive — the latest call is authoritative)."""
+    _guard()
+    import datetime
+    bs = _load_state_script("bug-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        bug_dir = root / "docs" / "bugs" / "existing-bug"
+        bug_dir.mkdir(parents=True)
+        (bug_dir / "SPEC.md").write_text(
+            "# Existing Bug\n\n**Status:** Concluded\n**Severity:** P1\n",
+            encoding="utf-8",
+        )
+        queue_path = root / "docs" / "bugs" / "queue.json"
+        queue_path.write_text(json.dumps({
+            "queue": [{"id": "existing-bug", "name": "Existing Bug",
+                       "spec_dir": "existing-bug", "severity": "P1"}]
+        }), encoding="utf-8")
+        result = bs.pin_bug_severity(
+            root, "existing-bug", until="2026-09-01", reason="re-pin",
+            today=datetime.date(2026, 7, 13),
+        )
+        assert result["status"] == "updated"
+        queue = json.loads(queue_path.read_text())
+        assert len(queue["queue"]) == 1
+        entry = queue["queue"][0]
+        assert entry["severity"] is None
+        assert entry["pinned_until"] == "2026-09-01"
+        assert entry["pin_reason"] == "re-pin"
+
+
+def test_pin_bug_severity_malformed_until_refuses():
+    """A malformed --until date refuses (_die, exit 2 semantics) with ZERO
+    mutation — the queue.json is untouched."""
+    _guard()
+    import pytest as _pytest
+    bs = _load_state_script("bug-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        bug_dir = root / "docs" / "bugs" / "some-bug"
+        bug_dir.mkdir(parents=True)
+        (bug_dir / "SPEC.md").write_text("# Some Bug\n", encoding="utf-8")
+        with _pytest.raises(SystemExit):
+            bs.pin_bug_severity(root, "some-bug", until="not-a-date")
+        assert not (root / "docs" / "bugs" / "queue.json").exists()
+
+
+def test_pin_bug_severity_unknown_bug_refuses():
+    """--pin against a bug id with no on-disk dir refuses (_die) rather than
+    fabricating a queue entry for a bug that doesn't exist."""
+    _guard()
+    import pytest as _pytest
+    bs = _load_state_script("bug-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "docs" / "bugs").mkdir(parents=True)
+        with _pytest.raises(SystemExit):
+            bs.pin_bug_severity(root, "ghost-bug")
+
+
+def test_load_bug_queue_populates_aging_fields():
+    """load_bug_queue populates discovered/spec_severity/pinned_at/
+    pinned_until on BOTH queued and on-disk (auto-discovered) bug entries, so
+    merged_priority's fallback-past-expired-pin branch has what it needs."""
+    _guard()
+    bs = _load_state_script("bug-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        queued_dir = root / "docs" / "bugs" / "queued-bug"
+        queued_dir.mkdir(parents=True)
+        (queued_dir / "SPEC.md").write_text(
+            "# Queued Bug\n\n**Status:** Concluded\n**Severity:** P2\n"
+            "**Discovered:** 2026-06-22\n", encoding="utf-8",
+        )
+        (root / "docs" / "bugs" / "queue.json").write_text(json.dumps({
+            "queue": [{"id": "queued-bug", "name": "Queued Bug",
+                       "spec_dir": "queued-bug", "severity": None,
+                       "pinned_at": "2026-07-01", "pinned_until": "2026-07-20"}]
+        }), encoding="utf-8")
+        ondisk_dir = root / "docs" / "bugs" / "ondisk-bug"
+        ondisk_dir.mkdir(parents=True)
+        (ondisk_dir / "SPEC.md").write_text(
+            "# Ondisk Bug\n\n**Status:** Concluded\n**Severity:** P1\n"
+            "**Discovered:** 2026-05-01\n", encoding="utf-8",
+        )
+        queue = bs.load_bug_queue(root)
+        by_id = {e["id"]: e for e in queue}
+        assert by_id["queued-bug"]["discovered"] == "2026-06-22"
+        assert by_id["queued-bug"]["spec_severity"] == "P2"
+        assert by_id["queued-bug"]["pinned_at"] == "2026-07-01"
+        assert by_id["queued-bug"]["pinned_until"] == "2026-07-20"
+        assert by_id["ondisk-bug"]["discovered"] == "2026-05-01"
+        assert by_id["ondisk-bug"]["spec_severity"] == "P1"
+        assert by_id["ondisk-bug"]["pinned_at"] is None
+
+
+def test_find_open_bug_dirs_age_escalates_sort_order():
+    """_find_open_bug_dirs's sort key mirrors merged_priority's age
+    escalation — an old P2 bug sorts AHEAD of a fresh P1 bug once escalated
+    past it (bug-side mirror of the merged view)."""
+    _guard()
+    import datetime
+    bs = _load_state_script("bug-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        bugs_dir = root / "docs" / "bugs"
+        old_p2 = bugs_dir / "old-p2-bug"
+        old_p2.mkdir(parents=True)
+        (old_p2 / "SPEC.md").write_text(
+            "# Old P2 Bug\n\n**Status:** Concluded\n**Severity:** P2\n"
+            "**Discovered:** 2026-05-01\n", encoding="utf-8",
+        )
+        fresh_p1 = bugs_dir / "fresh-p1-bug"
+        fresh_p1.mkdir(parents=True)
+        (fresh_p1 / "SPEC.md").write_text(
+            "# Fresh P1 Bug\n\n**Status:** Concluded\n**Severity:** P1\n"
+            "**Discovered:** 2026-07-12\n", encoding="utf-8",
+        )
+        today = datetime.date(2026, 7, 13)
+        dirs = bs._find_open_bug_dirs(bugs_dir, set(), today=today)
+        names = [d.name for d in dirs]
+        # old-p2-bug: rank 2, ~73 days old -> 10 notches -> floor 1 (beats
+        # fresh-p1-bug's unescalated rank 1? No -- P1 is ALREADY at the floor
+        # (rank 1 <= _AGE_ESCALATION_FLOOR_RANK), so it never escalates past
+        # rank 1 either. Both land at effective rank 1; Discovered date is
+        # the tiebreaker (ascending) -> old-p2-bug (older) sorts first.
+        assert names == ["old-p2-bug", "fresh-p1-bug"], names
+
+
+_TESTS = _TESTS + [
+    ("test_age_escalated_rank_quantum_and_floor",
+     test_age_escalated_rank_quantum_and_floor),
+    ("test_age_escalated_rank_fail_open_cases",
+     test_age_escalated_rank_fail_open_cases),
+    ("test_pin_is_active_variants", test_pin_is_active_variants),
+    ("test_merged_priority_bug_explicit_severity_ages",
+     test_merged_priority_bug_explicit_severity_ages),
+    ("test_merged_priority_bug_active_pin_suppressed",
+     test_merged_priority_bug_active_pin_suppressed),
+    ("test_merged_priority_bug_expired_pin_falls_back_to_spec_severity",
+     test_merged_priority_bug_expired_pin_falls_back_to_spec_severity),
+    ("test_merged_priority_bug_legacy_null_no_pin_unchanged",
+     test_merged_priority_bug_legacy_null_no_pin_unchanged),
+    ("test_merged_priority_aged_bug_outranks_tier2_feature_not_p0",
+     test_merged_priority_aged_bug_outranks_tier2_feature_not_p0),
+    ("test_bug_priority_marker_pinned", test_bug_priority_marker_pinned),
+    ("test_bug_priority_marker_escalated", test_bug_priority_marker_escalated),
+    ("test_bug_priority_marker_none_when_no_pin_no_escalation",
+     test_bug_priority_marker_none_when_no_pin_no_escalation),
+    ("test_pin_bug_severity_creates_new_entry",
+     test_pin_bug_severity_creates_new_entry),
+    ("test_pin_bug_severity_updates_existing_entry",
+     test_pin_bug_severity_updates_existing_entry),
+    ("test_pin_bug_severity_malformed_until_refuses",
+     test_pin_bug_severity_malformed_until_refuses),
+    ("test_pin_bug_severity_unknown_bug_refuses",
+     test_pin_bug_severity_unknown_bug_refuses),
+    ("test_load_bug_queue_populates_aging_fields",
+     test_load_bug_queue_populates_aging_fields),
+    ("test_find_open_bug_dirs_age_escalates_sort_order",
+     test_find_open_bug_dirs_age_escalates_sort_order),
+]
+
+
 _TESTS = _TESTS + [
     ("test_repo_key_present_and_normalization_invariant",
      test_repo_key_present_and_normalization_invariant),

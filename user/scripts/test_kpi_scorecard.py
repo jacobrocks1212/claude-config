@@ -125,8 +125,10 @@ class TestLintGreen:
         # + the four anti-overfit-design-gate KPI Declaration rows (SEAM-
         # DEFERRED ship-seam application, state batch 5 — the feature itself
         # stays unratified/structurally-provisional; NO-DATA until a
-        # harness-gate collector is built).
-        assert len(registry["kpis"]) == 16
+        # harness-gate collector is built) + the two
+        # bug-queue-aging-backpressure Phase 3 rows (promoted from the SPEC's
+        # jsonc drafts once their sentinel-scan selectors were registered).
+        assert len(registry["kpis"]) == 18
         ids = {r["id"] for r in registry["kpis"]}
         assert "canary-trip-precision" in ids
         assert {"efficacy-verdicts-produced", "confounded-verdict-ratio",
@@ -134,6 +136,8 @@ class TestLintGreen:
         assert {"anti-overfit-gate-hit-rate", "anti-overfit-gate-override-rate",
                 "anti-overfit-gate-false-positive-rate",
                 "anti-overfit-gate-verdict-efficacy-disagreement"} <= ids
+        assert {"bug-backlog-oldest-open-age-days",
+                "bug-backlog-concluded-unfixed-count"} <= ids
 
     def test_up_is_good_band_ordering_valid(self):
         row = _row(direction="up-is-good", band={"warn": 90, "breach": 80})
@@ -424,6 +428,102 @@ class TestSentinelScanSelector:
         value, note = ksc.compute_reading(row, repo_root=tmp_path, now=_NOW)
         assert value is None
         assert note
+
+
+class TestBugBacklogSelectors:
+    """bug-queue-aging-backpressure Phase 3: the two docs/bugs/-scan selectors
+    (oldest-open-bug-age-days, concluded-unfixed-count)."""
+
+    def _bug_dir(self, tmp_path, slug, *, status, discovered=None, severity="P2"):
+        d = tmp_path / "docs" / "bugs" / slug
+        d.mkdir(parents=True)
+        lines = [f"# {slug}", "", f"**Status:** {status}", f"**Severity:** {severity}"]
+        if discovered:
+            lines.append(f"**Discovered:** {discovered}")
+        (d / "SPEC.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return d
+
+    def test_oldest_open_bug_age_days_basic(self, tmp_path):
+        self._bug_dir(tmp_path, "old-bug", status="Concluded",
+                      discovered="2026-06-22")
+        self._bug_dir(tmp_path, "newer-bug", status="Concluded",
+                      discovered="2026-07-06")
+        value, note = ksc._sel_oldest_open_bug_age_days(
+            tmp_path, today=datetime.date(2026, 7, 13))
+        assert value == 21.0, note
+
+    def test_oldest_open_bug_age_days_excludes_fixed_and_wontfix(self, tmp_path):
+        # A Fixed dir carrying an OLDER Discovered date must not count.
+        self._bug_dir(tmp_path, "fixed-old", status="Fixed",
+                      discovered="2020-01-01")
+        self._bug_dir(tmp_path, "wontfix-old", status="Won't-fix",
+                      discovered="2020-01-01")
+        self._bug_dir(tmp_path, "open-recent", status="Concluded",
+                      discovered="2026-07-10")
+        value, note = ksc._sel_oldest_open_bug_age_days(
+            tmp_path, today=datetime.date(2026, 7, 13))
+        assert value == 3.0, note
+
+    def test_oldest_open_bug_age_days_no_discovered_excluded_not_fabricated(self, tmp_path):
+        # Open bug with NO Discovered line at all — excluded, never a
+        # fabricated age (not even 0).
+        self._bug_dir(tmp_path, "no-date-bug", status="Concluded")
+        value, note = ksc._sel_oldest_open_bug_age_days(
+            tmp_path, today=datetime.date(2026, 7, 13))
+        assert value is None
+        assert "Discovered" in note
+
+    def test_oldest_open_bug_age_days_no_open_bugs(self, tmp_path):
+        self._bug_dir(tmp_path, "all-fixed", status="Fixed",
+                      discovered="2026-01-01")
+        value, note = ksc._sel_oldest_open_bug_age_days(
+            tmp_path, today=datetime.date(2026, 7, 13))
+        assert value is None
+        assert note
+
+    def test_oldest_open_bug_age_days_missing_docs_bugs_is_no_data(self, tmp_path):
+        value, note = ksc._sel_oldest_open_bug_age_days(tmp_path)
+        assert value is None
+        assert note
+
+    def test_concluded_unfixed_count_basic(self, tmp_path):
+        self._bug_dir(tmp_path, "c1", status="Concluded")
+        self._bug_dir(tmp_path, "c2", status="Concluded")
+        self._bug_dir(tmp_path, "fixed", status="Fixed")
+        self._bug_dir(tmp_path, "investigating", status="Investigating")
+        value, note = ksc._sel_concluded_unfixed_count(tmp_path)
+        assert value == 2.0, note
+
+    def test_concluded_unfixed_count_excludes_archive_dirs(self, tmp_path):
+        self._bug_dir(tmp_path, "c1", status="Concluded")
+        archived = tmp_path / "docs" / "bugs" / "_archive" / "c-old"
+        archived.mkdir(parents=True)
+        (archived / "SPEC.md").write_text(
+            "# c-old\n\n**Status:** Concluded\n", encoding="utf-8")
+        value, note = ksc._sel_concluded_unfixed_count(tmp_path)
+        assert value == 1.0, note
+
+    def test_concluded_unfixed_count_missing_docs_bugs_is_no_data(self, tmp_path):
+        value, note = ksc._sel_concluded_unfixed_count(tmp_path)
+        assert value is None
+        assert note
+
+    def test_compute_reading_dispatches_both_new_selectors(self, tmp_path):
+        """The dispatcher (compute_reading) routes both new selectors under
+        source == 'sentinel-scan', not just open-halt-count."""
+        self._bug_dir(tmp_path, "b1", status="Concluded", discovered="2026-07-01")
+        row_age = _row(id="oldest-age", system="bug-pipeline",
+                       signal={"source": "sentinel-scan",
+                               "selector": "oldest-open-bug-age-days"},
+                       unit="days")
+        row_count = _row(id="concluded-count", system="bug-pipeline",
+                         signal={"source": "sentinel-scan",
+                                 "selector": "concluded-unfixed-count"},
+                         unit="count")
+        value_age, _ = ksc.compute_reading(row_age, repo_root=tmp_path, now=_NOW)
+        value_count, _ = ksc.compute_reading(row_count, repo_root=tmp_path, now=_NOW)
+        assert value_age is not None
+        assert value_count == 1.0
 
 
 class TestStatusEngine:

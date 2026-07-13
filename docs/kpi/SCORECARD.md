@@ -58,6 +58,13 @@
 | Design-gate false-positive burden `[claude-config]` | — | pending | — | NO-DATA |
 | Verdict-vs-efficacy disagreement `[claude-config]` | — | pending | — | NO-DATA |
 
+## bug-pipeline
+
+| KPI | current | baseline | band (warn/breach) | status |
+|-----|---------|----------|--------------------|--------|
+| Age in days of the oldest open docs/bugs/ item `[claude-config]` | 13 (1d) | 17 (measured 2026-07-11) | — | PENDING-BASELINE |
+| Count of docs/bugs/ items at Status: Concluded (investigated, never fixed) `[claude-config]` | 5 (1d) | 23 (measured 2026-07-11) | — | PENDING-BASELINE |
+
 ## Regressions
 
 - (none)

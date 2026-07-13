@@ -88,6 +88,12 @@ _SOURCES: dict[str, frozenset] = {
     }),
     "sentinel-scan": frozenset({
         "open-halt-count",
+        # bug-queue-aging-backpressure Phase 3: registered so the feature's
+        # drafted `## KPI Declaration` rows lint clean; compute IS wired
+        # (_sel_oldest_open_bug_age_days / _sel_concluded_unfixed_count), a
+        # point-in-time scan of docs/bugs/ SPEC.md header lines.
+        "oldest-open-bug-age-days",
+        "concluded-unfixed-count",
     }),
     # Offline session-log corpus, mined on demand by mine-sessions'
     # attribute_predispatch.py (pre-first-dispatch context attribution). No
@@ -881,6 +887,93 @@ def _sel_open_halt_count(repo_root) -> Tuple[Optional[float], Optional[str]]:
     return (float(n), None)
 
 
+# -- bug-queue-aging-backpressure Phase 3: docs/bugs/ backlog-age selectors ------
+#
+# Point-in-time scan of docs/bugs/ (non-_archive dirs whose SPEC.md exists) —
+# the SAME scan shape bug-state.py::_find_open_bug_dirs does (non-underscore
+# dirs, one level deep), duplicated here rather than imported: bug-state.py is
+# a hyphenated module, and this is a cheap regex read, not a re-implementation
+# of pipeline state inference (these two selectors never touch queue.json /
+# ordering — only SPEC.md's own **Status:**/**Discovered:** header lines).
+
+_BUG_STATUS_LINE_RE = re.compile(r"^\*\*Status:\*\*\s*(.+?)\s*$", re.MULTILINE)
+_BUG_DISCOVERED_LINE_RE = re.compile(r"^\*\*Discovered:\*\*\s*(.+?)\s*$", re.MULTILINE)
+_BUG_DONE_STATUSES = frozenset({"Fixed", "Won't-fix"})
+
+
+def _iter_open_bug_dirs(repo_root):
+    """Yield (dir_path, status, discovered) for every non-_archive
+    docs/bugs/<slug>/ dir carrying a SPEC.md. A dir whose SPEC.md can't be
+    read is silently skipped (never crashes the scorecard render)."""
+    bugs_dir = Path(repo_root) / "docs" / "bugs"
+    if not bugs_dir.is_dir():
+        return
+    for child in sorted(bugs_dir.iterdir()):
+        if not child.is_dir() or child.name.startswith("_"):
+            continue
+        spec_md = child / "SPEC.md"
+        if not spec_md.exists():
+            continue
+        try:
+            text = spec_md.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        m_status = _BUG_STATUS_LINE_RE.search(text)
+        status = m_status.group(1).strip() if m_status else None
+        m_disc = _BUG_DISCOVERED_LINE_RE.search(text)
+        discovered = m_disc.group(1).strip() if m_disc else None
+        yield (child, status, discovered)
+
+
+def _sel_oldest_open_bug_age_days(
+    repo_root, *, today: Optional[datetime.date] = None
+) -> Tuple[Optional[float], Optional[str]]:
+    """Age in days of the oldest OPEN (non-Fixed/Won't-fix) docs/bugs/ item,
+    per its SPEC's **Discovered:** date. Dirs without a parseable Discovered
+    are excluded (never a fabricated age); ``today`` is caller-supplied for
+    determinism (tests inject a fixed date; production omits it)."""
+    bugs_dir = Path(repo_root) / "docs" / "bugs"
+    if not bugs_dir.is_dir():
+        return (None, "docs/bugs tree absent — nothing to scan")
+    ref_today = today if today is not None else datetime.date.today()
+    oldest_days: Optional[int] = None
+    any_open = False
+    for _child, status, discovered in _iter_open_bug_dirs(repo_root):
+        if status in _BUG_DONE_STATUSES:
+            continue
+        any_open = True
+        if not discovered:
+            continue
+        try:
+            d = datetime.date.fromisoformat(discovered)
+        except ValueError:
+            continue
+        age = (ref_today - d).days
+        if age < 0:
+            continue
+        if oldest_days is None or age > oldest_days:
+            oldest_days = age
+    if oldest_days is None:
+        if any_open:
+            return (None, "open bugs exist but none carry a parseable "
+                          "**Discovered:** date — no fabricated age")
+        return (None, "no open (non-Fixed/Won't-fix) docs/bugs/ dirs")
+    return (float(oldest_days), None)
+
+
+def _sel_concluded_unfixed_count(repo_root) -> Tuple[Optional[float], Optional[str]]:
+    """Count of docs/bugs/ items at **Status:** Concluded (investigated,
+    root-caused, never fixed) — the roach-motel signal."""
+    bugs_dir = Path(repo_root) / "docs" / "bugs"
+    if not bugs_dir.is_dir():
+        return (None, "docs/bugs tree absent — nothing to scan")
+    n = sum(
+        1 for _c, status, _d in _iter_open_bug_dirs(repo_root)
+        if status == "Concluded"
+    )
+    return (float(n), None)
+
+
 # -- dispatcher -------------------------------------------------------------------
 
 def compute_reading(row, *, repo_root,
@@ -915,6 +1008,10 @@ def compute_reading(row, *, repo_root,
         elif source == "sentinel-scan":
             if selector == "open-halt-count":
                 return _sel_open_halt_count(repo_root)
+            if selector == "oldest-open-bug-age-days":
+                return _sel_oldest_open_bug_age_days(repo_root)
+            if selector == "concluded-unfixed-count":
+                return _sel_concluded_unfixed_count(repo_root)
         return (None, f"no computation registered for "
                       f"{source!r}/{selector!r}")
     except Exception as exc:  # noqa: BLE001 — honest NO-DATA, never a crash

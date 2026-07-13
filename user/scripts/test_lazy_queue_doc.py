@@ -137,6 +137,64 @@ class TestRenderTables:
         assert "Research" in doc
 
 
+class TestBugAgingColumn:
+    """bug-queue-aging-backpressure D4-A: the bug table's "aging" column
+    (Discovered date + pin/escalation marker). Features table is unchanged
+    (no "aging" column, no Discovered analog)."""
+
+    def _write_bug_spec(self, tmp_path, bid, *, severity="P2", discovered=None):
+        d = tmp_path / "docs" / "bugs" / bid
+        d.mkdir(parents=True, exist_ok=True)
+        lines = [f"# {bid}", "", "**Status:** Concluded", f"**Severity:** {severity}"]
+        if discovered:
+            lines.append(f"**Discovered:** {discovered}")
+        (d / "SPEC.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def test_bugs_table_has_aging_column_header(self, tmp_path):
+        state = _state(bugs=[_bug("b1", "Step 7a: execute plan", "Implement")])
+        doc = lqd.render_doc(state, tmp_path, run_active=False)
+        assert "| aging |" in doc
+
+    def test_features_table_has_no_aging_column(self, tmp_path):
+        state = _state(features=[_feature("f1", "Step 5", "Research")])
+        doc = lqd.render_doc(state, tmp_path, run_active=False)
+        # Features header row is exactly the 4-column shape (no aging).
+        assert "| # | item | state | tier |" in doc
+        assert "| # | item | state | tier | aging |" not in doc
+
+    def test_bug_row_renders_discovered_date(self, tmp_path):
+        self._write_bug_spec(tmp_path, "aged-bug", discovered="2026-06-22")
+        state = _state(bugs=[_bug("aged-bug", "Step 7a: execute plan", "Implement",
+                                   severity="P2")])
+        doc = lqd.render_doc(state, tmp_path, run_active=False)
+        assert "2026-06-22" in doc
+
+    def test_bug_row_renders_pin_marker_when_active(self, tmp_path):
+        self._write_bug_spec(tmp_path, "pinned-bug", discovered="2026-06-01",
+                            severity="P1")
+        bug = _bug("pinned-bug", "Step 7a: execute plan", "Implement", severity=None)
+        bug["queue_meta"]["pinned_at"] = "2026-07-10"
+        bug["queue_meta"]["pinned_until"] = "2099-01-01"  # far future — always active
+        state = _state(bugs=[bug])
+        doc = lqd.render_doc(state, tmp_path, run_active=False)
+        assert "pinned" in doc
+
+    def test_bug_row_no_discovered_renders_empty_aging_cell_not_crash(self, tmp_path):
+        # No SPEC.md written at all — the aging cell must render empty, never crash.
+        state = _state(bugs=[_bug("no-spec-bug", "Step 1", "Pending")])
+        doc = lqd.render_doc(state, tmp_path, run_active=False)
+        assert "## Bugs (1)" in doc
+
+    def test_aging_render_byte_stable_across_same_day_runs(self, tmp_path):
+        self._write_bug_spec(tmp_path, "stable-bug", discovered="2026-06-22",
+                            severity="P2")
+        state = _state(bugs=[_bug("stable-bug", "Step 7a: execute plan",
+                                   "Implement", severity="P2")])
+        doc1 = lqd.render_doc(state, tmp_path, run_active=False)
+        doc2 = lqd.render_doc(state, tmp_path, run_active=False)
+        assert doc1 == doc2
+
+
 class TestByteStability:
     def test_two_renders_identical(self, tmp_path):
         state = _state(

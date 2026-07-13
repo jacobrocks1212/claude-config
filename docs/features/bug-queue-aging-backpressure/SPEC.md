@@ -11,7 +11,7 @@
 
 **Status:** Draft
 **Priority:** P2
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-13
 **Source:** repo-exploration proposal session 2026-07-11
 **Friction-reduction feature:** yes
 
@@ -19,9 +19,46 @@
 
 - friction-kpi-registry — soft — the KPI rows below register two new `sentinel-scan` selectors in
   `kpi-scorecard.py`'s closed `_SOURCES` enum (Phase 3); the registry/lint/scorecard machinery this
-  rides on is Complete, so this is a follow-the-precedent edit, not a blocker.
+  rides on is Complete, so this is a follow-the-precedent edit, not a blocker. (Complete — soft dep
+  satisfied.)
 
 ---
+
+## Locked Decisions
+
+Research integrated (`RESEARCH_SUMMARY.md` — inline recon of `bug-state.py`'s ordering + the merged
+comparator against HEAD at implementation time, 2026-07-13). Per SPEC recommendations:
+
+- **D2 — Expiry on hand-pinned null-severity entries** (`mechanical-internal`): **LOCKED as
+  recommended** — Option A. Queue entries gain optional `pinned_at`/`pinned_until`/`pin_reason`
+  fields, script-stamped ONLY by the new sanctioned `bug-state.py --pin --id <id> --until <date>
+  --reason <text>` mutation (never hand-edited). Past `pinned_until` (or, absent it, past a
+  90-day default max pin age from `pinned_at`), the merged view falls back to the SPEC's own
+  `**Severity:**` line. Implemented (`lazy_core.pin_is_active`, `bug-state.py::pin_bug_severity`).
+- **D3 — Age signal** (`mechanical-internal`): **LOCKED as recommended** — Option A,
+  `**Discovered:**` wall-clock age, 7-day quantum per notch. Implemented
+  (`lazy_core.age_escalated_rank`).
+- **D4 — Queue-age surfacing in `LAZY_QUEUE.md`** (`mechanical-internal`): **LOCKED as
+  recommended** — Option A, render the Discovered date + a pin/escalation marker (stable facts,
+  not a computed age-in-days). The byte-stability contract is restated as "byte-identical for
+  unchanged (state, date)" per the SPEC's own honest wrinkle. Implemented
+  (`lazy_core.bug_priority_marker`, `lazy-queue-doc.py::_bug_aging_cell`).
+- **D1 — Backpressure mechanism: comparator escalation vs run quota** (`product-behavior`):
+  implemented against the recommended Option A (age-escalation in the merged comparator) under the
+  operator's park-provisional protocol — **PROVISIONALLY accepted, not ratified**. See
+  `NEEDS_INPUT_PROVISIONAL.md`. SPEC Status stays Draft; no `COMPLETED.md` until the operator
+  ratifies or redirects.
+
+**V1 scope narrowing (implementation-time, non-redirecting):** age-escalation is **bug-axis only**
+— `lazy_core.merged_priority`'s `feature` branch is untouched (feature `tier` has no `**Discovered:**`
+analog). A bare `"severity": null` queue entry with **no** `pinned_at` (every entry committed before
+this feature shipped) is **byte-identical to before** — `MERGED_PRIORITY_DEFAULT`, no fallback, no
+escalation — so shipping this feature does not retroactively re-prioritize any already-committed
+queue entry (notably the two Windows-only build-queue bugs the 2026-07-04 pin was protecting from
+dispatch on a non-Windows host — Open Question 3, below). Only bugs newly pinned via the sanctioned
+`--pin` mutation age out. This is the safe default; migrating the real queue's legacy null-severity
+rows to explicit pins (with a host-capability `pin_reason`) is a deliberate follow-up operator action,
+not automated here.
 
 ## Executive Summary
 
@@ -165,13 +202,14 @@ no new orchestrator prose obligations in the recommended shape (D1-A); coupled-p
 
 ## KPI Declaration
 
-Primary KPIs are the two drafted rows below. Their `sentinel-scan` selectors are NOT yet in
-`kpi-scorecard.py`'s closed `_SOURCES` enum — registering them is a Phase 3 deliverable, following
-the documented precedent of registering selectors so drafted rows lint clean (see the
-`canary-trip-precision` and `session-log-mining` comments inside `_SOURCES` itself). This authoring
-session may not edit `kpi-scorecard.py`, so the drafts are fenced `jsonc` (deliberately invisible
-to `--lint --spec`, which parses only json-fenced blocks) until Phase 3 registers the selectors and
-promotes them into `docs/kpi/registry.json`.
+Primary KPIs are the two rows below. **Phase 3 shipped** — both `sentinel-scan` selectors
+(`oldest-open-bug-age-days`, `concluded-unfixed-count`) are registered in `kpi-scorecard.py`'s
+closed `_SOURCES` enum with live compute (`_sel_oldest_open_bug_age_days`,
+`_sel_concluded_unfixed_count`), and both rows are promoted into `docs/kpi/registry.json` (fences
+flipped `jsonc` → `json` below, matching the promoted rows verbatim). `kpi-scorecard.py --lint` and
+`--lint --spec docs/features/bug-queue-aging-backpressure/SPEC.md` both exit 0; the live scorecard
+renders both PENDING-BASELINE with current values (13d oldest-open, 5 concluded-unfixed as of
+2026-07-13 — down from the 2026-07-11 baselines below, consistent with same-day bug-fix throughput).
 
 Machine-visible declaration — the existing registry row this feature must NOT regress (the quota /
 escalation spends pipeline cycles on bugs; success is backlog drain without wrecking pipeline
@@ -179,10 +217,12 @@ efficiency):
 
 - kpi: cycles-per-completion
 
-Drafted rows (full D2 schema; baselines hand-measured this session over the committed tree at
-`7d49490`, excluding the same-day untracked spec inflow):
+Promoted rows (full D2 schema; baselines hand-measured 2026-07-11 over the committed tree at
+`7d49490`, excluding the same-day untracked spec inflow — `provenance: measured`, not re-captured at
+Phase-3 implementation time, so the registry's baseline is honestly dated to its ORIGINAL
+measurement):
 
-```jsonc
+```json
 {
   "id": "bug-backlog-oldest-open-age-days",
   "system": "bug-pipeline",
@@ -199,7 +239,7 @@ Drafted rows (full D2 schema; baselines hand-measured this session over the comm
 }
 ```
 
-```jsonc
+```json
 {
   "id": "bug-backlog-concluded-unfixed-count",
   "system": "bug-pipeline",
@@ -252,7 +292,14 @@ Drafted rows (full D2 schema; baselines hand-measured this session over the comm
   measurement).
 - **Does D1-A alone drain Concluded specs?** Escalation surfaces them to the merged head, but a
   Concluded bug still needs `/plan-bug` → fix cycles; if measured drain stalls, revisit D1-C (quota).
-- **Interaction with `deferred-device-vs-host-capability-loop`:** pinned PowerShell/Pester bugs
-  escalating on a non-workstation host would loop; the pin's `pin_reason`/host-capability encoding
-  (D2-A) must gate escalation on host capability — verify against the host-capability registry at
-  implementation.
+- **Interaction with `deferred-device-vs-host-capability-loop` (RESOLVED for v1, see Locked
+  Decisions):** pinned PowerShell/Pester bugs escalating on a non-workstation host would loop.
+  Resolved at implementation time by the V1 scope narrowing: a bare `"severity": null` entry with
+  no `pinned_at` (the CURRENT state of both real Windows-only build-queue bugs) never falls back
+  to SPEC severity or ages — byte-identical to today, so the loop risk does not materialize for
+  the entries that actually carry it. The risk would resurface ONLY if an operator explicitly
+  `--pin`s a genuinely host-gated bug with a `pinned_until` date (the pin's `pin_reason` records
+  the host-capability statement, but nothing YET gates escalation on the live host-capability
+  registry post-expiry) — flagged as a vN follow-up, not solved here: a future revision should
+  either wire the host-capability registry into `pin_is_active`/`merged_priority`, or teach
+  `--pin` to accept `--until never` for a genuinely-indefinite host-gated pin.

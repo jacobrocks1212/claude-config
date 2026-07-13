@@ -41,6 +41,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from pipeline_visualizer.probe import probe_state  # noqa: E402
+import lazy_core  # noqa: E402 — bug-queue-aging-backpressure D4-A marker helper
 
 _LAZY_STATE = _SCRIPTS_DIR / "lazy-state.py"
 
@@ -173,6 +174,25 @@ def phase_progress(phases_md_path) -> Tuple[Optional[int], Optional[int]]:
     return (checked, total)
 
 
+_DISCOVERED_RE = re.compile(r"^\*\*Discovered:\*\*\s*(.+?)\s*$", re.MULTILINE)
+_SEVERITY_LINE_RE = re.compile(r"^\*\*Severity:\*\*\s*(.+?)\s*$", re.MULTILINE)
+
+
+def _bug_spec_field(spec_md_path, pattern: re.Pattern) -> Optional[str]:
+    """Read a `**Field:**` header line from a bug SPEC.md (display-only;
+    mirrors bug-state.py's bug_discovered()/bug_severity() parsing — duplicated
+    here rather than imported since bug-state.py is a hyphenated module).
+    Missing/unreadable file or absent field → None."""
+    p = Path(spec_md_path)
+    if not p.exists():
+        return None
+    try:
+        m = pattern.search(p.read_text(encoding="utf-8"))
+    except OSError:
+        return None
+    return m.group(1).strip() if m else None
+
+
 def _first_sentence(text: str) -> str:
     """Extract the first sentence from a blob of prose (period-terminated)."""
     text = text.strip()
@@ -267,6 +287,30 @@ def _inline_summary(item: dict, queue_dir: str, repo_root: Path) -> str:
     return " · ".join(parts)
 
 
+def _bug_aging_cell(item: dict, queue_dir: str, repo_root: Path) -> str:
+    """Render the bug-queue-aging-backpressure D4-A "aging" cell: the SPEC's
+    ``**Discovered:**`` date plus a pin/escalation marker (from
+    ``lazy_core.bug_priority_marker``). Renders stable on-disk FACTS, not a
+    computed age-in-days, so the table stays byte-stable for unchanged state
+    (D4-A) — save the marker, which is itself a function of ``today`` (an
+    honest, documented exception: it can change day-to-day with no state
+    change). Empty string when Discovered is absent (never fabricated)."""
+    spec_md = _spec_md_abspath(item, queue_dir, repo_root)
+    discovered = _bug_spec_field(spec_md, _DISCOVERED_RE)
+    meta = item.get("queue_meta") or {}
+    marker = lazy_core.bug_priority_marker(
+        severity=meta.get("severity"),
+        spec_severity=_bug_spec_field(spec_md, _SEVERITY_LINE_RE),
+        discovered=discovered,
+        pinned_at=meta.get("pinned_at"),
+        pinned_until=meta.get("pinned_until"),
+    )
+    if not discovered and not marker:
+        return ""
+    parts = [p for p in (discovered, marker) if p]
+    return " ".join(parts)
+
+
 def _render_table(items: list, *, queue_dir: str, repo_root: Path, is_bug: bool,
                   link_mode: str, remote_url: Optional[str], branch: str) -> list:
     """Render one queue's table + inline summaries as a list of markdown lines."""
@@ -276,8 +320,12 @@ def _render_table(items: list, *, queue_dir: str, repo_root: Path, is_bug: bool,
     if not items:
         lines.append("")
         return lines
-    lines.append(f"| # | item | state | {badge_col} |")
-    lines.append("|---|------|-------|------|")
+    if is_bug:
+        lines.append(f"| # | item | state | {badge_col} | aging |")
+        lines.append("|---|------|-------|------|------|")
+    else:
+        lines.append(f"| # | item | state | {badge_col} |")
+        lines.append("|---|------|-------|------|")
     for idx, item in enumerate(items, start=1):
         iid = _item_id(item)
         target = _link_target(item, queue_dir, repo_root, link_mode=link_mode,
@@ -286,9 +334,14 @@ def _render_table(items: list, *, queue_dir: str, repo_root: Path, is_bug: bool,
         glyph = _STAGE_GLYPH.get(stage)
         state_cell = f"{glyph} {stage}" if glyph else stage
         badge = _badge(item, is_bug=is_bug)
-        lines.append(f"| {idx} | [{iid}]({target}) | {state_cell} | {badge} |")
         summary = _inline_summary(item, queue_dir, repo_root)
-        lines.append(f"| | {summary} | | |")
+        if is_bug:
+            aging = _bug_aging_cell(item, queue_dir, repo_root)
+            lines.append(f"| {idx} | [{iid}]({target}) | {state_cell} | {badge} | {aging} |")
+            lines.append(f"| | {summary} | | | |")
+        else:
+            lines.append(f"| {idx} | [{iid}]({target}) | {state_cell} | {badge} |")
+            lines.append(f"| | {summary} | | |")
     lines.append("")
     return lines
 

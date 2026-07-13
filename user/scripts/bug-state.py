@@ -71,7 +71,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -439,17 +439,21 @@ def _current_head(repo_root: Path) -> str | None:
     return None
 
 
-def load_bug_queue(repo_root: Path) -> list[dict[str, Any]]:
+def load_bug_queue(
+    repo_root: Path, *, today: "date | None" = None
+) -> list[dict[str, Any]]:
     """Load docs/bugs/queue.json.  Returns [] if the file is absent.
 
     Hybrid ordering contract:
       1. Entries listed in queue.json appear first (in listed order).
-      2. On-disk open bug dirs not in the queue follow, sorted by severity
-         rank (P0→P1→P2→Low) then **Discovered:** date ascending.
+      2. On-disk open bug dirs not in the queue follow, sorted by
+         age-escalated severity rank (P0→P1→P2→Low, bug-queue-aging-backpressure
+         D1-A/D3-A) then **Discovered:** date ascending.
       3. _archive/ is always skipped.
 
     The queue is OPTIONAL — no queue.json + no open bugs → all-bugs-fixed.
     Each returned entry is a dict with at minimum: id, name, spec_path (Path).
+    ``today`` is caller-supplied for determinism (production omits it).
     """
     bugs_dir = repo_root / "docs" / "bugs"
     queue_path = bugs_dir / "queue.json"
@@ -513,10 +517,20 @@ def load_bug_queue(repo_root: Path) -> list[dict[str, Any]]:
                 "spec_path": spec_path,
                 "severity": entry.get("severity"),
                 "queue_entry": entry,
+                # bug-queue-aging-backpressure D1-A/D2-A/D3-A: the merged-view
+                # comparator (lazy_core.merged_priority) reads these three to
+                # age-escalate and to fall back past an expired severity pin.
+                # `spec_severity` is the SPEC's OWN **Severity:** line — distinct
+                # from `severity` above (the queue.json OVERRIDE, which may be
+                # a deliberate null pin) — see merged_priority's docstring.
+                "discovered": bug_discovered(spec_path / "SPEC.md"),
+                "spec_severity": bug_severity(spec_path / "SPEC.md"),
+                "pinned_at": entry.get("pinned_at"),
+                "pinned_until": entry.get("pinned_until"),
             })
 
     # On-disk open bug dirs not in queue, sorted by severity rank then Discovered date
-    on_disk = _find_open_bug_dirs(bugs_dir, queued_ids)
+    on_disk = _find_open_bug_dirs(bugs_dir, queued_ids, today=today)
     on_disk_entries: list[dict[str, Any]] = []
     for bug_dir in on_disk:
         spec_path = bug_dir / "SPEC.md"
@@ -532,12 +546,20 @@ def load_bug_queue(repo_root: Path) -> list[dict[str, Any]]:
                         break
             except OSError:
                 pass
+        _on_disk_severity = bug_severity(bug_dir / "SPEC.md")
         on_disk_entries.append({
             "id": bug_id,
             "name": name,
             "spec_path": bug_dir.resolve(),
-            "severity": bug_severity(bug_dir / "SPEC.md"),
+            "severity": _on_disk_severity,
             "queue_entry": None,
+            # An unqueued dir has no queue-level pin — `spec_severity` mirrors
+            # `severity` (both read the SPEC directly) so merged_priority's
+            # bug branch treats it uniformly.
+            "discovered": bug_discovered(bug_dir / "SPEC.md"),
+            "spec_severity": _on_disk_severity,
+            "pinned_at": None,
+            "pinned_until": None,
         })
 
     return queued_entries + on_disk_entries
@@ -579,12 +601,17 @@ def bug_discovered(spec_path: Path) -> str | None:
     return None
 
 
-def _find_open_bug_dirs(bugs_dir: Path, queued_ids: set[str]) -> list[Path]:
+def _find_open_bug_dirs(
+    bugs_dir: Path, queued_ids: set[str], *, today: "date | None" = None
+) -> list[Path]:
     """Return on-disk open bug dirs NOT already in queued_ids.
 
     Searches bugs_dir (one level deep), skips _archive/, and skips any dir
     whose SPEC.md **Status:** is a genuinely-done terminal state.  Returns
-    dirs sorted by severity rank then Discovered date ascending.
+    dirs sorted by AGE-ESCALATED severity rank (bug-queue-aging-backpressure
+    D1-A/D3-A — mirrors lazy_core.merged_priority's bug branch so autodiscovered
+    ordering agrees with the merged view) then Discovered date ascending.
+    ``today`` is caller-supplied for determinism (production omits it).
 
     Done-status semantics:
       - Won't-fix → always skipped (receipt-exempt, retired without fix).
@@ -629,11 +656,16 @@ def _find_open_bug_dirs(bugs_dir: Path, queued_ids: set[str]) -> list[Path]:
                 "Routing to completion gate (completion-unverified)."
             )
             # Fall through to append into candidates below.
-        # Sort key: severity rank (ascending priority) + discovered date string (ascending)
+        # Sort key: age-escalated severity rank (ascending priority) + discovered
+        # date string (ascending). age_escalated_rank no-ops when there's no
+        # real severity signal (sev_rank == _SEVERITY_DEFAULT) or no parseable
+        # Discovered date — fail-open, matches lazy_core.merged_priority.
         sev = bug_severity(spec_md)
         sev_rank = _SEVERITY_RANK.get(sev, _SEVERITY_DEFAULT) if sev else _SEVERITY_DEFAULT
-        disc = bug_discovered(spec_md) or "9999-99-99"
-        candidates.append((sev_rank, disc, child))
+        disc = bug_discovered(spec_md)
+        if sev_rank != _SEVERITY_DEFAULT:
+            sev_rank = lazy_core.age_escalated_rank(sev_rank, disc, today)
+        candidates.append((sev_rank, disc or "9999-99-99", child))
 
     candidates.sort(key=lambda t: (t[0], t[1]))
     return [c[2] for c in candidates]
@@ -2113,6 +2145,110 @@ def enqueue_adhoc(
     data["queue"] = items
     _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
     return {"id": bug_id, "spec_dir": spec_dir, "status": "queued"}
+
+
+def pin_bug_severity(
+    repo_root: Path,
+    bug_id: str,
+    *,
+    until: str | None = None,
+    reason: str | None = None,
+    today: "date | None" = None,
+) -> dict[str, Any]:
+    """Deprioritize a bug via a REVIEWABLE, expiring pin (bug-queue-aging-
+    backpressure D2-A) — the sanctioned replacement for hand-editing
+    ``docs/bugs/queue.json`` to ``"severity": null``.
+
+    Sets ``severity: null`` + ``pinned_at`` (today, script-stamped) +
+    ``pinned_until`` (optional, validated ISO date) + ``pin_reason`` on the
+    bug's queue entry, creating one (appended, not prepended — a
+    deprioritization should not jump the queue) if the bug is not already
+    queued. ``lazy_core.merged_priority``/``pin_is_active`` consult these
+    fields: the pin suppresses the bug's effective priority
+    (``MERGED_PRIORITY_DEFAULT``) until ``pinned_until`` passes (or, absent
+    it, ``_PIN_DEFAULT_MAX_AGE_DAYS`` from ``pinned_at``), after which the
+    merged view falls back to the SPEC's own ``**Severity:**`` line and
+    resumes age-escalating.
+
+    A malformed ``until`` (`_die`, exit 2, zero mutation) or a ``bug_id`` that
+    resolves to no on-disk dir under ``docs/bugs/`` (`_die`) refuse cleanly.
+    Re-pinning an already-pinned entry OVERWRITES its pin fields (the latest
+    ``--pin`` call is authoritative — not additive).
+    """
+    repo_root = repo_root.resolve()
+    if until:
+        try:
+            date.fromisoformat(until.strip())
+        except (ValueError, AttributeError):
+            _die(f"invalid --until date: {until!r} (expected YYYY-MM-DD)")
+            return {}  # pragma: no cover
+
+    bugs_dir = repo_root / "docs" / "bugs"
+    bugs_dir.mkdir(parents=True, exist_ok=True)
+    queue_path = bugs_dir / "queue.json"
+
+    if queue_path.exists():
+        try:
+            data = json.loads(queue_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            _die(f"invalid bugs/queue.json: {exc}", queue_path)
+            return {}  # pragma: no cover
+    else:
+        data = {"queue": []}
+
+    items = data.get("queue", [])
+    if not isinstance(items, list):
+        _die("bugs/queue.json 'queue' field must be an array", queue_path)
+        return {}  # pragma: no cover
+
+    ref_today = today if today is not None else date.today()
+    pinned_at = ref_today.isoformat()
+
+    existing = next(
+        (e for e in items if isinstance(e, dict) and e.get("id") == bug_id), None
+    )
+    if existing is not None:
+        existing["severity"] = None
+        existing["pinned_at"] = pinned_at
+        existing["pinned_until"] = until
+        existing["pin_reason"] = reason
+        status = "updated"
+    else:
+        bug_dir = bugs_dir / bug_id
+        if not bug_dir.is_dir():
+            _die(f"cannot pin unknown bug: {bug_id!r} (no docs/bugs/{bug_id}/ dir)")
+            return {}  # pragma: no cover
+        name = bug_id
+        spec_md = bug_dir / "SPEC.md"
+        if spec_md.exists():
+            try:
+                for line in spec_md.read_text(encoding="utf-8").splitlines():
+                    m = re.match(r"^#\s+(.+?)\s*$", line)
+                    if m:
+                        name = m.group(1)
+                        break
+            except OSError:
+                pass
+        items.append({
+            "id": bug_id,
+            "name": name,
+            "spec_dir": bug_id,
+            "severity": None,
+            "pinned_at": pinned_at,
+            "pinned_until": until,
+            "pin_reason": reason,
+        })
+        status = "pinned"
+
+    data["queue"] = items
+    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+    return {
+        "id": bug_id,
+        "status": status,
+        "pinned_at": pinned_at,
+        "pinned_until": until,
+        "pin_reason": reason,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -7361,6 +7497,23 @@ def build_parser() -> argparse.ArgumentParser:
               "tail | head | remove | <integer index>."),
     )
     parser.add_argument(
+        "--pin", dest="pin", action="store_true",
+        help=("bug-queue-aging-backpressure D2-A: deprioritize a bug via a "
+              "reviewable, expiring pin — the sanctioned replacement for "
+              "hand-editing docs/bugs/queue.json to `\"severity\": null`. "
+              "Requires --id; optional --until <YYYY-MM-DD> (default: expires "
+              "after a fixed max pin age) and --reason <text>. Creates the "
+              "queue entry (appended) if the bug is not already queued. "
+              "Gated by refuse_if_cycle_active like --enqueue-adhoc "
+              "(exit 3 for a cycle subagent). Bug-pipeline-only — no "
+              "lazy-state.py mirror (feature tier has no analogous "
+              "null-severity pin concept)."),
+    )
+    parser.add_argument(
+        "--until", dest="pin_until", default=None, metavar="YYYY-MM-DD",
+        help="Pin expiry date for --pin (optional — omit for the default max pin age).",
+    )
+    parser.add_argument(
         "--reassert-owner", dest="reassert_owner", action="store_true",
         help=("Orchestrator-only / out-of-cycle: re-claim a live foreign-stamped "
               "run marker for the owning session (requires --session-id). Gated "
@@ -8552,6 +8705,20 @@ def main() -> int:
             args.id,
             to=to_arg,
             queue_label="bugs/queue.json",
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.pin:
+        # bug-queue-aging-backpressure D2-A. Orchestrator-only / out-of-cycle —
+        # refuse FIRST so a cycle subagent gets exit 3 with zero side effects
+        # (same contract as --reorder-queue / --enqueue-adhoc).
+        lazy_core.refuse_if_cycle_active("--pin")
+        if not args.id:
+            _die("--pin requires --id")
+        result = pin_bug_severity(
+            Path(args.repo_root), args.id,
+            until=args.pin_until, reason=args.reason,
         )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0

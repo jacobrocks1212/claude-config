@@ -344,6 +344,50 @@
       "review_by": "2026-10-01",
       "repo_scope": "claude-config",
       "notes": "Drafted in anti-overfit-design-gate SPEC.md's KPI Declaration; see the anti-overfit-gate-hit-rate row's notes for the shared seam-deferred/ratification-reversible provenance."
+    },
+    {
+      "id": "bug-backlog-oldest-open-age-days",
+      "system": "bug-pipeline",
+      "title": "Age in days of the oldest open docs/bugs/ item",
+      "friction": "Null-severity pins and priority-99 defaults make the bug backlog accumulate-only; the oldest open bug ages without bound because no outflow forcing function exists.",
+      "signal": {
+        "source": "sentinel-scan",
+        "selector": "oldest-open-bug-age-days"
+      },
+      "unit": "days",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": 17,
+        "captured_at": "2026-07-11",
+        "window": "1d",
+        "provenance": "measured"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "repo_scope": "claude-config",
+      "notes": "Point-in-time scan of docs/bugs/ (non-_archive dirs whose Status is not Fixed/Wont-fix), age = today - min(**Discovered:**). Baseline: build-queue-orphaned-result-on-wrapper-kill, Discovered 2026-06-24, 17d on 2026-07-11. Dirs without a parseable Discovered are excluded. Compute wired 2026-07-13 (bug-queue-aging-backpressure Phase 3, kpi-scorecard.py::_sel_oldest_open_bug_age_days)."
+    },
+    {
+      "id": "bug-backlog-concluded-unfixed-count",
+      "system": "bug-pipeline",
+      "title": "Count of docs/bugs/ items at Status: Concluded (investigated, never fixed)",
+      "friction": "Investigations conclude with root cause + fix scope and then sit forever; 23 Concluded-but-unfixed specs on capture day while same-day outflow was zero.",
+      "signal": {
+        "source": "sentinel-scan",
+        "selector": "concluded-unfixed-count"
+      },
+      "unit": "count",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": 23,
+        "captured_at": "2026-07-11",
+        "window": "1d",
+        "provenance": "measured"
+      },
+      "band": null,
+      "review_by": "2026-10-01",
+      "repo_scope": "claude-config",
+      "notes": "Point-in-time count of non-_archive docs/bugs/ dirs with **Status:** Concluded (11 committed at 7d49490 + 12 same-day untracked at capture; more inflow was arriving during the session). Deliberately counts the untracked inflow -- the KPI measures backlog reality, not commit state. Success shape: this number goes DOWN over runs (fix outflow) or at minimum stops being monotonic. Compute wired 2026-07-13 (bug-queue-aging-backpressure Phase 3, kpi-scorecard.py::_sel_concluded_unfixed_count)."
     }
   ]
 }

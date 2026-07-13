@@ -198,6 +198,11 @@ def probe_state(repo_root) -> dict:
             "tier": entry.get("tier"),
             "adhoc": entry.get("adhoc", entry.get("ad_hoc")),
             "severity": entry.get("severity"),
+            # bug-queue-aging-backpressure D4-A: carried through so
+            # lazy-queue-doc.py can render the Discovered date + pin/
+            # escalation marker without re-reading queue.json itself.
+            "pinned_at": entry.get("pinned_at"),
+            "pinned_until": entry.get("pinned_until"),
         })
         item["receipt_present"] = receipt_present(
             _item_dir(item, entry, bugs_dir), "FIXED.md"

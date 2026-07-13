@@ -8752,16 +8752,153 @@ MERGED_PRIORITY_DEFAULT = 99
 # Tie-break on equal effective priority: bugs sort before features.
 _MERGED_TYPE_ORDER: dict[str, int] = {"bug": 0, "feature": 1}
 
+# ---------------------------------------------------------------------------
+# bug-queue-aging-backpressure D1-A/D2-A/D3-A: age-escalation + severity-pin
+# expiry over the bug axis of the merged comparator. Feature `tier` carries no
+# analogous aging signal (no `**Discovered:**` concept), so this is BUG-ONLY —
+# a deliberate v1 scope narrowing (see the feature's Locked Decisions).
+# ---------------------------------------------------------------------------
 
-def merged_priority(item_type: str, raw_item: dict) -> int:
+# One escalation notch per this many days at tail (D3-A: **Discovered:**
+# wall-clock age, zero new durable state).
+_AGE_ESCALATION_QUANTUM_DAYS = 7
+# Escalation never passes this rank (P1-equivalent) — a genuine P0 (rank 0)
+# always outranks a merely-aged bug.
+_AGE_ESCALATION_FLOOR_RANK = 1
+# A pin with only `pinned_at` (no explicit `pinned_until`) expires after this
+# many days — the D2-A "default max pin age" fallback.
+_PIN_DEFAULT_MAX_AGE_DAYS = 90
+
+
+def age_escalated_rank(
+    base_rank: int, discovered: "str | None", today: "datetime.date | None" = None
+) -> int:
+    """Age-escalate an effective priority rank toward 0 (bug-queue-aging-
+    backpressure D1-A/D3-A).
+
+    Each ``_AGE_ESCALATION_QUANTUM_DAYS``-day quantum since ``discovered``
+    bumps ``base_rank`` one notch toward 0, capped at
+    ``_AGE_ESCALATION_FLOOR_RANK`` — a genuine P0 always outranks escalation.
+    Pure function of (base_rank, discovered, today); callers supply ``today``
+    for determinism (tests inject a fixed date; production omits it).
+
+    Fail-open: an absent/unparseable ``discovered``, a rank already at or
+    past the floor, or a future-dated discovery all return ``base_rank``
+    unchanged — no fabricated age, never a crash.
+    """
+    if base_rank <= _AGE_ESCALATION_FLOOR_RANK:
+        return base_rank
+    if not discovered:
+        return base_rank
+    try:
+        discovered_date = datetime.date.fromisoformat(str(discovered).strip())
+    except (ValueError, TypeError):
+        return base_rank
+    ref_today = today if today is not None else datetime.date.today()
+    age_days = (ref_today - discovered_date).days
+    if age_days < 0:
+        return base_rank
+    notches = age_days // _AGE_ESCALATION_QUANTUM_DAYS
+    return max(base_rank - notches, _AGE_ESCALATION_FLOOR_RANK)
+
+
+def pin_is_active(
+    pinned_at: "str | None",
+    pinned_until: "str | None",
+    today: "datetime.date | None" = None,
+) -> bool:
+    """True iff a bug-queue severity pin (bug-queue-aging-backpressure D2-A)
+    is still suppressing the entry's severity.
+
+    False when never pinned (``pinned_at`` absent) OR the pin has expired —
+    past ``pinned_until`` when present, else past ``_PIN_DEFAULT_MAX_AGE_DAYS``
+    days from ``pinned_at``. Once expired, the merged view falls back to the
+    SPEC's own declared severity (D2-A). Fail-open: an unparseable date is
+    treated as expired — never a silently-permanent suppression from a typo.
+    """
+    if not pinned_at:
+        return False
+    ref_today = today if today is not None else datetime.date.today()
+    try:
+        at = datetime.date.fromisoformat(str(pinned_at).strip())
+    except (ValueError, TypeError):
+        return False
+    if pinned_until:
+        try:
+            until = datetime.date.fromisoformat(str(pinned_until).strip())
+        except (ValueError, TypeError):
+            return False
+        return ref_today <= until
+    return (ref_today - at).days < _PIN_DEFAULT_MAX_AGE_DAYS
+
+
+def bug_priority_marker(
+    *,
+    severity: "str | None",
+    spec_severity: "str | None",
+    discovered: "str | None",
+    pinned_at: "str | None",
+    pinned_until: "str | None",
+    today: "datetime.date | None" = None,
+) -> str:
+    """Render the queue-doc pin/escalation marker for one bug row
+    (bug-queue-aging-backpressure D4-A).
+
+    ``"📌 pinned <date>"`` while an active pin suppresses the bug's severity;
+    ``"⏫ escalated"`` when age-escalation has moved the EFFECTIVE priority
+    (``merged_priority``) past the declared severity (queue override, or the
+    SPEC's own after an expired pin); ``""`` otherwise. Honest wrinkle
+    (documented in the SPEC): this is a function of ``today`` in addition to
+    on-disk state, so a render CAN legitimately change across days with no
+    state change — byte-stability holds for unchanged (state, date).
+    """
+    raw = {
+        "severity": severity,
+        "discovered": discovered,
+        "spec_severity": spec_severity,
+        "pinned_at": pinned_at,
+        "pinned_until": pinned_until,
+    }
+    if pinned_at and pin_is_active(pinned_at, pinned_until, today):
+        return f"\U0001F4CC pinned {pinned_at}"  # 📌
+    declared = severity if (
+        isinstance(severity, str) and severity.strip() in _MERGED_SEVERITY_RANK
+    ) else spec_severity
+    if not (isinstance(declared, str) and declared.strip() in _MERGED_SEVERITY_RANK):
+        return ""
+    declared_rank = _MERGED_SEVERITY_RANK[declared.strip()]
+    effective = merged_priority("bug", raw, today=today)
+    if effective < declared_rank:
+        return "⏫ escalated"  # ⏫
+    return ""
+
+
+def merged_priority(
+    item_type: str, raw_item: dict, *, today: "datetime.date | None" = None
+) -> int:
     """Normalize a queue item's ordering field to a single numeric effective
     priority (lower = higher priority), bridging the two queues' divergent
     field names/scales.
 
-    feature → ``tier`` (int); bug → ``severity`` (P0/P1/P2/Low → rank). A
+    feature → ``tier`` (int); bug → ``severity`` (P0/P1/P2/Low → rank),
+    age-escalated (D1-A/D3-A) via the item's ``discovered`` field. A
     missing / unrecognized field yields ``MERGED_PRIORITY_DEFAULT`` (sorts
     last) rather than raising — a malformed queue entry must not crash the
-    merged view.
+    merged view. ``today`` is caller-supplied for determinism (tests inject a
+    fixed date; production omits it).
+
+    Bug null-severity handling (D2-A): a bug carrying an EXPLICIT recognized
+    ``severity`` always age-escalates. A bug with ``severity: null`` and an
+    active pin (``pinned_at`` set, not yet expired per ``pin_is_active``)
+    stays suppressed at ``MERGED_PRIORITY_DEFAULT`` — the deliberate,
+    reviewable deprioritization holds. Once the pin EXPIRES, the merged view
+    falls back to the item's ``spec_severity`` (the SPEC's own
+    ``**Severity:**`` line) and resumes age-escalating from there. A bare
+    ``severity: null`` with NO ``pinned_at`` (legacy / never explicitly
+    pinned via the sanctioned mutation) is byte-identical to before —
+    ``MERGED_PRIORITY_DEFAULT``, no fallback, no escalation — so shipping
+    this does not retroactively change any already-committed queue entry's
+    behavior; only bugs newly pinned via the sanctioned mutation age out.
     """
     if item_type == "feature":
         tier = raw_item.get("tier")
@@ -8777,8 +8914,17 @@ def merged_priority(item_type: str, raw_item: dict) -> int:
         return MERGED_PRIORITY_DEFAULT
     if item_type == "bug":
         sev = raw_item.get("severity")
-        if isinstance(sev, str):
-            return _MERGED_SEVERITY_RANK.get(sev.strip(), MERGED_PRIORITY_DEFAULT)
+        if isinstance(sev, str) and sev.strip() in _MERGED_SEVERITY_RANK:
+            base = _MERGED_SEVERITY_RANK[sev.strip()]
+            return age_escalated_rank(base, raw_item.get("discovered"), today)
+        pinned_at = raw_item.get("pinned_at")
+        if pinned_at and not pin_is_active(
+            pinned_at, raw_item.get("pinned_until"), today
+        ):
+            spec_sev = raw_item.get("spec_severity")
+            if isinstance(spec_sev, str) and spec_sev.strip() in _MERGED_SEVERITY_RANK:
+                base = _MERGED_SEVERITY_RANK[spec_sev.strip()]
+                return age_escalated_rank(base, raw_item.get("discovered"), today)
         return MERGED_PRIORITY_DEFAULT
     return MERGED_PRIORITY_DEFAULT
 
@@ -8787,6 +8933,8 @@ def merged_worklist(
     feature_items: list[dict],
     bug_items: list[dict],
     repo_root: str,
+    *,
+    today: "datetime.date | None" = None,
 ) -> list[dict]:
     """Order both queues into a single work-list and return it as a list of
     ``{"item_id", "type", "repo_root"}`` dicts (head first).
@@ -8822,7 +8970,7 @@ def merged_worklist(
         if not item_id:
             continue
         annotated.append(
-            (merged_priority("bug", raw), _MERGED_TYPE_ORDER["bug"], seq,
+            (merged_priority("bug", raw, today=today), _MERGED_TYPE_ORDER["bug"], seq,
              {"item_id": item_id, "type": "bug", "repo_root": repo_root})
         )
         seq += 1
@@ -8831,7 +8979,7 @@ def merged_worklist(
         if not item_id:
             continue
         annotated.append(
-            (merged_priority("feature", raw), _MERGED_TYPE_ORDER["feature"], seq,
+            (merged_priority("feature", raw, today=today), _MERGED_TYPE_ORDER["feature"], seq,
              {"item_id": item_id, "type": "feature", "repo_root": repo_root})
         )
         seq += 1
@@ -8846,10 +8994,13 @@ def next_merged(
     feature_items: list[dict],
     bug_items: list[dict],
     repo_root: str,
+    *,
+    today: "datetime.date | None" = None,
 ) -> dict | None:
     """Return the head of the merged work-list (``{item_id, type, repo_root}``)
-    or ``None`` when both queues are empty. Thin head-of ``merged_worklist``."""
-    worklist = merged_worklist(feature_items, bug_items, repo_root)
+    or ``None`` when both queues are empty. Thin head-of ``merged_worklist``.
+    ``today`` is caller-supplied for determinism (bug-queue-aging-backpressure)."""
+    worklist = merged_worklist(feature_items, bug_items, repo_root, today=today)
     return worklist[0] if worklist else None
 
 

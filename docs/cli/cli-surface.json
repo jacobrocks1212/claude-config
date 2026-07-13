@@ -614,6 +614,19 @@
           "required": false
         },
         {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "bug-queue-aging-backpressure D2-A: deprioritize a bug via a reviewable, expiring pin \u2014 the sanctioned replacement for hand-editing docs/bugs/queue.json to `\"severity\": null`.",
+          "metavar": null,
+          "name": "--pin",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
           "action": "_StoreAction",
           "aliases": [],
           "choices": [
@@ -1114,6 +1127,19 @@
           "metavar": null,
           "name": "--unattended",
           "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Pin expiry date for --pin (optional \u2014 omit for the default max pin age).",
+          "metavar": "YYYY-MM-DD",
+          "name": "--until",
+          "nargs": null,
           "positional": false,
           "required": false
         },
