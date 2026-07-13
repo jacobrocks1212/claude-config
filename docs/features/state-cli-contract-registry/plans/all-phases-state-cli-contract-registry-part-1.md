@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: state-cli-contract-registry
-status: In-progress
+status: Complete
 created: 2026-07-13
 complexity: complex
 phases: [1, 2, 3]

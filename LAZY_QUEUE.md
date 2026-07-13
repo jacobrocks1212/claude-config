@@ -4,8 +4,8 @@
 
 | # | item | state | tier |
 |---|------|-------|------|
-| 1 | [state-cli-contract-registry](docs/features/state-cli-contract-registry/SPEC.md) | Pending | T1 |
-| | status: Pending · phase 3/4 · next: queue · The state-script CLI surface (86 flags on `lazy-state.py`, 75 on `bug-state.py`, plus the smaller pipeline tools) has no machine-readable contract: nothing lints skill/component prose against the real argparse surface, so agents invoke flags that don't exist (~46 transcript-mined argparse usage errors across ~25 sessions, including 10 invocations of a `surface_resolver.py --route-mcp-test-tier` flag that exists nowhere in the tree), and the only defenses are prose Gotcha blocks in `user/scripts/CLAUDE.md`. | | |
+| 1 | [state-cli-contract-registry](docs/features/state-cli-contract-registry/SPEC.md) | Plan | T1 |
+| | status: Plan · phase 3/4 · next: plan · The state-script CLI surface (86 flags on `lazy-state.py`, 75 on `bug-state.py`, plus the smaller pipeline tools) has no machine-readable contract: nothing lints skill/component prose against the real argparse surface, so agents invoke flags that don't exist (~46 transcript-mined argparse usage errors across ~25 sessions, including 10 invocations of a `surface_resolver.py --route-mcp-test-tier` flag that exists nowhere in the tree), and the only defenses are prose Gotcha blocks in `user/scripts/CLAUDE.md`. | | |
 | 2 | [mechanize-prose-only-orchestrator-contracts](docs/features/mechanize-prose-only-orchestrator-contracts/SPEC.md) | Pending | T1 |
 | | status: Pending · phase 5/5 · next: queue · Convert the four highest-risk `/lazy-batch` contracts that exist only as SKILL.md prose into mechanical enforcement points: (a) the guard pins the script-selected `model` tier onto every registered Agent dispatch instead of trusting the orchestrator to copy `cycle_model`; (b) the §1d.5 post-cycle input-audit becomes a state-recorded obligation that withholds the next cycle until discharged; (c) mid-run AskUserQuestion answers become a script-owned decision record that the emitted apply-resolution prompt embeds mechanically; (d) script-side push notification extends beyond halts to parks, budget events, and flushes. | | |
 | 3 | [coupled-pair-generation](docs/features/coupled-pair-generation/SPEC.md) | Pending | T1 |
@@ -33,7 +33,7 @@
 | 14 | [native-android-pipeline-steering](docs/features/native-android-pipeline-steering/SPEC.md) | Research | T3 |
 | | status: Research · next: research · A real mobile client on the `mobile-queue-control` foundation: browse every lazy-enabled repo's queues, drill into SPECs and halt sentinels, and — the point — **write back** from the phone: answer `NEEDS_INPUT.md` decisions, resolve `BLOCKED.md` halts, and reorder/enqueue the queue. | | |
 
-## Bugs (4)
+## Bugs (5)
 
 | # | item | state | sev | aging |
 |---|------|-------|------|------|
@@ -45,6 +45,8 @@
 | | status: Blocked · phase 0/5 · next: resolve blocker · A crashed or killed build leaves orphaned compiler/test child processes and a truncated 0-byte output artifact behind. | | | |
 | 4 | [build-queue-copy-lock-stale-dll-false-success](docs/bugs/build-queue-copy-lock-stale-dll-false-success/SPEC.md) | ⛔ Blocked | — | 2026-07-01 |
 | | status: Blocked · phase 1/4 · next: resolve blocker · An MSB3027 copy-lock failure (obj/ rebuilt fresh, copy to bin/Debug blocked by a leftover locker) makes MSBuild log "Build FAILED" while still exiting 0. | | | |
+| 5 | [build-queue-timeout-kill-reaps-detached-runner](docs/bugs/build-queue-timeout-kill-reaps-detached-runner/SPEC.md) | Plan | — | 2026-07-10 |
+| | status: Plan · next: plan · A foreground `build-queue.ps1` call that hits its Bash-tool timeout is tree-killed (exit 143), and the kill takes the supposedly-detached runner with it. | | | |
 
 ## Needs attention
 
