@@ -41,6 +41,7 @@ Known v1 limitations (documented, deliberate):
 """
 
 import argparse
+import datetime
 import json
 import os
 import re
@@ -50,7 +51,7 @@ from pathlib import Path
 # SSOT divergence marker (the `<!-- verification-only -->` constant precedent).
 DIVERGENCE_MARKER = "doc-drift:deliberate-divergence"
 
-CHECK_NAMES = ("hooks", "scripts", "coupled-pairs", "manifest")
+CHECK_NAMES = ("hooks", "scripts", "coupled-pairs", "manifest", "intervention-coverage")
 
 _HOOK_PATH_RE = re.compile(r"[/\\]hooks[/\\]([A-Za-z0-9._-]+\.(?:sh|ps1))")
 _NOT_REGISTERED_RE = re.compile(r"not\s+registered", re.IGNORECASE)
@@ -617,13 +618,71 @@ def live_settings_status(repo_root, live_path=None):
 
 
 # ---------------------------------------------------------------------------
+# intervention coverage (hardening-log rounds <-> docs/interventions/ records)
+# ---------------------------------------------------------------------------
+
+_ROUND_HEADING_RE = re.compile(r"^##\s+Round\s+(\d+)\s+—.*$", re.MULTILINE)
+
+
+def check_intervention_coverage(repo_root):
+    """Cross-check the CURRENT month's `/harden-harness` hardening-log rounds against
+    docs/interventions/ hypothesis records.
+
+    A round whose body contains the literal `Mechanical fix applied:` is a coverage
+    subject. It is COVERED iff any of: (a) a matching
+    docs/interventions/harden-<ym>-r<N>.md record exists; (b) the round body contains
+    the literal `**Intervention record:** none` (a no-harness-change round's explicit
+    exemption); (c) the round body carries DIVERGENCE_MARKER (a known, tracked hole).
+    A round with none of the three is a genuine coverage hole.
+
+    Absent the current month's hardening-log file, there is nothing to check (returns
+    []) — this check never fails on a repo/month with no hardening activity."""
+    ym = datetime.date.today().strftime("%Y-%m")
+    log_path = (repo_root / "docs" / "specs" / "turn-routing-enforcement" /
+                "hardening-log" / ("%s.md" % ym))
+    try:
+        text = _read_text(log_path)
+    except OSError:
+        return []
+
+    findings = []
+    matches = list(_ROUND_HEADING_RE.finditer(text))
+    for i, m in enumerate(matches):
+        round_num = int(m.group(1))
+        body_start = m.end()
+        body_end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        body = text[body_start:body_end]
+
+        if "Mechanical fix applied:" not in body:
+            continue  # not a coverage subject — nothing was mechanically shipped
+
+        record_name = "harden-%s-r%d.md" % (ym, round_num)
+        record_path = repo_root / "docs" / "interventions" / record_name
+        covered = (
+            record_path.is_file()
+            or "**Intervention record:** none" in body
+            or DIVERGENCE_MARKER in body
+        )
+        if not covered:
+            findings.append(Finding(
+                "intervention-coverage", "drift",
+                "docs/specs/turn-routing-enforcement/hardening-log/%s.md" % ym,
+                "Round %d" % round_num,
+                "Mechanical fix applied but no intervention record found "
+                "(expected docs/interventions/%s, a `**Intervention record:** none` "
+                "exemption, or a %s marker)" % (record_name, DIVERGENCE_MARKER)))
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 
 def run_checks(repo_root):
     findings = []
-    for fn in (check_hooks, check_scripts, check_coupled_pairs, check_manifest):
+    for fn in (check_hooks, check_scripts, check_coupled_pairs, check_manifest,
+               check_intervention_coverage):
         findings.extend(fn(repo_root))
     findings.sort(key=Finding.sort_key)
     return findings

@@ -75,7 +75,7 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 - [x] WU-1 — lazy_core vocabulary SSOT + validator + `record_intervention` degrade
 - [x] WU-2 — `lazy-state.py` `--record-intervention` CLI reject + hardening hard-fail
 - [x] WU-3 — `bug-state.py` coupled-pair mirror + parity audit
-- [ ] WU-4 — `doc-drift-lint.py` `check_intervention_coverage` + fixture
+- [x] WU-4 — `doc-drift-lint.py` `check_intervention_coverage` + fixture
 
 ---
 

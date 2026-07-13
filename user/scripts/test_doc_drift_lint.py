@@ -5,6 +5,7 @@ divergence-marker exemption, malformed-input exit 2, plus a self-check that
 THIS repo is clean.
 """
 
+import datetime
 import importlib.util
 import json
 import os
@@ -238,10 +239,10 @@ def test_output_is_byte_stable(tmp_path):
     assert a.returncode == b.returncode
 
 
-def test_summary_names_four_checks(tmp_path):
+def test_summary_names_all_checks(tmp_path):
     repo = make_repo(tmp_path)
     res = run_lint(repo)
-    assert "4 checks" in res.stdout
+    assert "5 checks" in res.stdout
 
 
 # ---------------------------------------------------------------------------
@@ -835,6 +836,71 @@ def test_default_run_checks_never_emits_live_finding(ddl):
     )
     findings = ddl.run_checks(REPO_ROOT)
     assert not any(f.check == "live" for f in findings)
+
+
+# ---------------------------------------------------------------------------
+# Intervention coverage (WU-4): hardening-log rounds ↔ docs/interventions/ records
+# ---------------------------------------------------------------------------
+
+
+def test_intervention_coverage_hole_flags_uncovered_round_only(ddl, tmp_path):
+    """Hermetic fixture (no live-repo reads) pinning check_intervention_coverage's
+    HOLE detection over the CURRENT month's hardening-log.
+
+    Three rounds, same month, same shape (`Mechanical fix applied:` present in
+    every round's body so the "never a hole without this literal" rule can't
+    accidentally pass all three trivially):
+
+      Round 1 — a matching docs/interventions/harden-<ym>-r1.md exists  -> covered.
+      Round 2 — carries a `**Intervention record:** none` line, no record file -> exempt.
+      Round 3 — no record file, no exemption line, no divergence marker -> HOLE.
+
+    check_intervention_coverage does not exist yet (WU-4 implementation half) —
+    this call is expected to raise AttributeError, which IS the correct RED here.
+    """
+    ym = datetime.date.today().strftime("%Y-%m")
+    repo = tmp_path / "repo"
+    log_dir = repo / "docs" / "specs" / "turn-routing-enforcement" / "hardening-log"
+    log_dir.mkdir(parents=True)
+    interventions_dir = repo / "docs" / "interventions"
+    interventions_dir.mkdir(parents=True)
+
+    date = "2026-07-03"
+    log_text = f"""# Hardening Log — {ym}
+
+## Round 1 — {date} — manual
+
+- Some context bullet.
+  - Mechanical fix applied: did thing one, closing the gap. Commit: aaaaaaa.
+
+**Intervention record:** captured as `harden-{ym}-r1` (target-signal event:gate-refusal).
+
+## Round 2 — {date} — validate-deny
+
+- Some context bullet.
+  - Mechanical fix applied: did thing two, closing the gap. Commit: bbbbbbb.
+
+**Intervention record:** none — a no-harness-change round ships no intervention to measure.
+
+## Round 3 — {date} — manual
+
+- Some context bullet.
+  - Mechanical fix applied: did thing three, closing the gap. Commit: ccccccc.
+"""
+    (log_dir / f"{ym}.md").write_text(log_text, encoding="utf-8")
+    (interventions_dir / f"harden-{ym}-r1.md").write_text(
+        "kind: intervention\n", encoding="utf-8"
+    )
+
+    findings = ddl.check_intervention_coverage(repo)
+
+    assert len(findings) == 1, [f.line() for f in findings]
+    finding = findings[0]
+    haystack = " ".join(
+        str(x) for x in (finding.check, finding.kind, finding.doc, finding.subject, finding.message)
+    )
+    assert "Round 3" in haystack, haystack
+    assert f"harden-{ym}-r3.md" in haystack, haystack
 
 
 # ---------------------------------------------------------------------------
