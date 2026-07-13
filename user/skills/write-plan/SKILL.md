@@ -410,6 +410,10 @@ Before writing any plan file to disk, verify every `[VERIFY: …]` annotation yo
 - `complexity: mechanical | complex` — the per-part cost tier from Step 2.5's mechanical-vs-complex test (Phase 9). Default `complex` (Opus). Emit `mechanical` ONLY when every WU in the part passed the test above. This field is REQUIRED on every part — write `complexity: complex` explicitly even for complex parts so the tier is auditable and never inferred from absence.
 - `phases:` — YAML list of every PHASES.md phase number this plan implements. **Multi-element lists are normal and expected** when Step 2.5 packed multiple phases into one part — e.g. `phases: [1, 2]`, `phases: [3, 4]`, `phases: [5, 6, 7]`. A singleton `phases: [N]` is correct ONLY when that one phase saturates the 8-WU cap on its own (or it's the last part and no other phase remained to pack). For a multi-feature plan, list every phase across every feature this part covers. For partitioned multi-part output (Step 2.5), each part's `phases:` lists every phase assigned to that part — not just the lowest.
 
+### Step 4.5: Structural Gate (MANDATORY — BEFORE reporting done)
+
+!`cat .claude/skill-config/plan-structural-gate.md 2>/dev/null || cat ~/.claude/skills/_components/plan-structural-gate.md`
+
 ### Multi-part Output Reporting
 
 If Step 2.5 produced **multiple parts**, the standard plan-file-output protocol still applies for path resolution and writing — but the final report changes:

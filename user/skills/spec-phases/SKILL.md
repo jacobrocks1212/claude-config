@@ -376,6 +376,10 @@ Phase-level dependencies on completed upstream features, extracted from each ups
 
 !`cat ~/.claude/skills/_components/subagent-review.md`
 
+### Step 6.5: Structural Gate (MANDATORY — BEFORE reporting done)
+
+!`cat .claude/skill-config/plan-structural-gate.md 2>/dev/null || cat ~/.claude/skills/_components/plan-structural-gate.md`
+
 ### Step 7: Cross-link and Update Spec
 
 1. If the spec previously had an inline `## Implementation Phases` section, **replace** it with a link:

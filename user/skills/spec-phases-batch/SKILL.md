@@ -256,6 +256,13 @@ After ALL individual PHASES.md files are written and individually reviewed, perf
 
 Fix all issues found. Document fixes in a brief "Cross-Feature Review Notes" comment at the bottom of each affected PHASES.md.
 
+### Step E.3.5: Structural Gate (MANDATORY — BEFORE reporting done)
+
+Run the structural validator against every PHASES.md this batch wrote or updated (see the
+Decomposition Schedule for the full output-path list):
+
+!`cat .claude/skill-config/plan-structural-gate.md 2>/dev/null || cat ~/.claude/skills/_components/plan-structural-gate.md`
+
 ### Step E.4: Commit and Push (MANDATORY — DO NOT SKIP, use "Spec decomposition" message format)
 
 !`cat .claude/skill-config/commit-policy.md 2>/dev/null || cat ~/.claude/skills/_components/commit-and-push.md`

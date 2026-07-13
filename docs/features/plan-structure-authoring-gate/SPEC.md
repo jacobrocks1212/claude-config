@@ -110,6 +110,14 @@ audit at planning time what used to fail at pipeline end), never a mid-run recov
   `lazy_core` (so `bug-state.py`/`lazy-state.py` can call the same checks in-process for the D4
   backstop without shelling out). Honors "extend, don't fork" while keeping one source of
   truth for parsing.
+- **Locked (provisional — see `NEEDS_INPUT_PROVISIONAL.md`):** adopted A's surface exactly —
+  `validate-plan.py --structural <file>` is the one new entry point, the legacy Cognito
+  rules-mode is byte-untouched. The rule FUNCTIONS themselves live in `validate-plan.py` this
+  round (importing, never editing, `lazy_core`'s existing exception-free parsers/constants),
+  not hoisted into `lazy_core.py` — that hoist is a `lazy_core.py` edit and this implementation
+  lane's scope is explicitly SKILLS-only (`user/scripts/lazy_core.py` + the state scripts are a
+  separate active lane tonight). D4's in-process reuse therefore isn't available yet; see
+  `NEEDS_INPUT_PROVISIONAL.md` D1 for the two follow-up options (hoist vs. subprocess shell-out).
 
 ### D2. Check set (v1)
 
@@ -144,6 +152,24 @@ audit at planning time what used to fail at pipeline end), never a mid-run recov
   6. **Frontmatter sanity (WARN):** parseable frontmatter, `phases:` values numeric-ish (the
      `_plan_phase_set` leniency), duplicate WU numbers.
 - ERRORs refuse (exit 1, named findings with line numbers); WARNs print and pass.
+- **Locked:** the six-rule set as recommended, implemented and tuned against a full
+  corpus run (252 real committed plan-part/PHASES.md files) rather than only synthetic
+  fixtures. Two rules needed narrowing beyond the recommendation's literal wording to avoid
+  false positives the corpus surfaced (both mechanical-internal refinements, not scope
+  changes): rule 2's vocabulary excludes bare "runtime verification"/"VALIDATED.md" mentions
+  (13/13 corpus hits were rows merely cross-referencing the section by name or naming the
+  sentinel filename in unrelated prose, zero true positives) — retained vocabulary is the
+  self-describing tag language the templates actually emit on a verification row ("mcp
+  integration test" / "mcp test assertion" / "mcp assertion" / "reachability smoke"); rule 5's
+  prerequisite extraction requires a completion word ("Phase N complete") or a dependency verb
+  ("requires/depends on/blocked by Phase N") rather than a bare "Phase N" mention, after a real
+  corpus row ("Entry criteria: None; establishes the pattern Phase 4 propagates") showed a
+  bare-mention scan flags a FORWARD reference (this phase feeds a later one) as if it were a
+  dependency in the opposite direction. Also locked: rule 1/rule 5 are N/A (not "failed") for
+  `kind: retro-plan` / `kind: realign-plan` — those carry a deliberately different,
+  checklist-free shape (`plan-frontmatter.md`'s kind taxonomy). Final corpus result: 4 genuine
+  pre-existing violations across 252 files (3 pre-ISSUE-6 legacy plans, 1 historical gate-owned
+  Status-flip row), all enumerated in `test_validate_plan.py`'s allowlist, none newly introduced.
 
 ### D3. Wiring: skill-contract gate at authoring
 
@@ -157,6 +183,23 @@ audit at planning time what used to fail at pipeline end), never a mid-run recov
   `/plan-bug`, and `/spec-phases(-batch)` all inherit it (re-project + `lint-skills.py`
   after). This is a prose trigger shelling a deterministic check — the proven
   `mcp-coverage-audit.md` → `--gate-coverage` two-layer shape.
+- **Locked (with one scope refinement):** the new `_components/plan-structural-gate.md`
+  component is injected into `/write-plan` (Step 4.5), `/spec-phases` (Step 6.5), and
+  `/spec-phases-batch` (Step E.3.5). `/plan-feature` and `/plan-bug` inherit it for free — both
+  are pure dispatch wrappers around `/spec-phases`/`/write-plan` and author no plan/PHASES
+  content of their own (confirmed by reading both SKILL.md files; no separate injection needed
+  or possible there). **`/write-plan-cloud` is deliberately NOT wired** — on inspection its
+  output contract (`plans/cloud-*.md`, a self-contained GitHub-Copilot-cloud briefing for a
+  different repo/consumer) explicitly BANS the checkbox format rules 1/2/3 assume
+  (`write-plan-cloud/SKILL.md` Step 4 item 7: "No progress checkboxes"). Wiring the gate there
+  would force an incompatible format onto a document engineered not to have it — this is the
+  SPEC's own "Failure states" carve-out ("files outside the lazy plan/PHASES shapes... pass
+  untouched") applied to a fifth named skill, not a scope reduction of the gate's actual intent.
+  The validator's own path-convention scope gate excludes `plans/cloud-*.md` for the same reason.
+  `repos/cognito-forms/.claude/skills/write-plan-cognito/` (a sixth, repo-scoped planner not
+  named in D3) is NOT wired this round either — its live behavior is validated only on the work
+  laptop per this lane's operating brief; wiring it is a clean, mechanical follow-up (same
+  component injection) for that session.
 
 ### D4. Mechanical backstop for the prose trigger
 
@@ -177,6 +220,14 @@ audit at planning time what used to fail at pipeline end), never a mid-run recov
 - **Recommendation:** A. Route-refusal precedent already exists (pending-hardening withhold);
   legacy pre-gate plans that are already mid-execution (some `- [x]` WU ticked) are exempted
   from refusal (WARN only) to avoid bricking in-flight features.
+- **Locked (recommendation stands; NOT implemented this round — cross-lane):** D4 requires
+  editing `lazy_core.py` / `lazy-state.py` / `bug-state.py` (the probe that routes
+  `/execute-plan`), which is outside this implementation lane's scope tonight (a separate STATE
+  lane is active on those files). Recommendation A stands as the intended design. See
+  `NEEDS_INPUT_PROVISIONAL.md` D4 and the feature's `PHASES.md` Phase 4 for the wanted diff.
+  This feature is therefore **NOT marked Complete** — Phases 1–3 (the SKILLS-lane scope: the
+  validator, its rule set, and skill wiring) are done and gate-green; Phase 4 (the backstop)
+  remains open.
 
 ## User Experience
 
