@@ -501,22 +501,28 @@ try {
 Write-Output "build-queue: build started (pid=$buildPid, seq=$seq, log=$logPath)"
 
 # ---------------------------------------------------------------------------
-# Tail log file to wrapper stdout while the detached build runs
+# Tail log file to wrapper stdout while the detached build runs, but RETURN
+# PROMPTLY once the runner records its terminal results/<seq>.json — do not
+# block on full runner-process liveness through post-outcome hygiene
+# (docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome).
 # ---------------------------------------------------------------------------
-$logFilePos = 0L
+$script:logFilePos = 0L
 
-while (-not $proc.HasExited) {
+# One incremental tail pass, streaming new log bytes to stdout. Uses a
+# script-scoped position cursor so the wait helper (which invokes this per poll)
+# advances it across calls.
+$streamTail = {
 	if (Test-Path $logPath) {
 		try {
 			$fs = [System.IO.File]::Open($logPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
 			try {
-				$null = $fs.Seek($logFilePos, [System.IO.SeekOrigin]::Begin)
+				$null = $fs.Seek($script:logFilePos, [System.IO.SeekOrigin]::Begin)
 				$buf = New-Object byte[] 4096
 				$read = $fs.Read($buf, 0, $buf.Length)
 				while ($read -gt 0) {
 					$chunk = [System.Text.Encoding]::UTF8.GetString($buf, 0, $read)
 					Write-Host $chunk -NoNewline
-					$logFilePos += $read
+					$script:logFilePos += $read
 					$read = $fs.Read($buf, 0, $buf.Length)
 				}
 			} finally {
@@ -524,15 +530,28 @@ while (-not $proc.HasExited) {
 			}
 		} catch {}
 	}
-	Start-Sleep -Milliseconds 500
 }
+
+$resultPath = Join-Path $resultsDir "$seq.json"
+
+# Terminal-aware wait: streams the log each poll and breaks the moment the
+# runner's authoritative results/<seq>.json (early write, BEFORE hygiene) is
+# recorded — or the runner process exits first, whichever comes first. The
+# detached runner independently finalizes the FINAL result write, the
+# active.lock release, and the VBCSCompiler recycle, so returning early never
+# orphans them (mirrors the proven background build-queue-await.ps1 poll).
+$waitOutcome = Wait-ForRecordedOutcome `
+	-ResultPath $resultPath `
+	-IsProcessAlive { -not $proc.HasExited } `
+	-TailAction $streamTail `
+	-PollIntervalMs 500
 
 foreach ($tailFile in @($logPath, $errPath)) {
 	if (Test-Path $tailFile) {
 		try {
 			$fs = [System.IO.File]::Open($tailFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
 			try {
-				$seekPos = if ($tailFile -eq $logPath) { $logFilePos } else { 0L }
+				$seekPos = if ($tailFile -eq $logPath) { $script:logFilePos } else { 0L }
 				$null = $fs.Seek($seekPos, [System.IO.SeekOrigin]::Begin)
 				$buf = New-Object byte[] 4096
 				$read = $fs.Read($buf, 0, $buf.Length)
@@ -548,6 +567,42 @@ foreach ($tailFile in @($logPath, $errPath)) {
 	}
 }
 
+# ---------------------------------------------------------------------------
+# EARLY-RETURN PATH: the runner recorded its terminal outcome. Compose the
+# authoritative banner from the recorded (early) result and RETURN PROMPTLY —
+# the detached runner owns the FINAL result write, the active.lock release, and
+# the VBCSCompiler recycle, so the wrapper must NOT run its own release/recycle
+# here (that would race the still-live runner). Residual hygiene finishes
+# detached without holding the agent's turn.
+# ---------------------------------------------------------------------------
+if ($waitOutcome.Outcome -eq 'result-recorded') {
+	$recorded = $waitOutcome.Result
+	$exitCode = [int]$waitOutcome.ExitCode
+
+	$resultFidelity = Get-SafeValue { [string]$recorded.hygiene.result_fidelity } $null
+	$buildFidelity  = Get-SafeValue { [string]$recorded.hygiene.build_fidelity } $null
+
+	$bannerCounts = $null
+	$parsedCounts = Get-SafeValue { $recorded.counts } $null
+	if ($null -ne $parsedCounts) {
+		$bannerCounts = @{
+			passed = Get-SafeValue { $parsedCounts.passed } $null
+			failed = Get-SafeValue { $parsedCounts.failed } $null
+			total  = Get-SafeValue { $parsedCounts.total } $null
+		}
+	}
+
+	$banner = Format-BuildQueueBanner -Seq $seq -Op $Op -ExitCode $exitCode -ResultFidelity $resultFidelity -BuildFidelity $buildFidelity -Counts $bannerCounts
+	Write-Output $banner
+	exit $exitCode
+}
+
+# ---------------------------------------------------------------------------
+# FALLBACK PATH: the runner process exited WITHOUT recording a readable result
+# (a hard runner crash — the common paths all record a result). Preserve the
+# legacy wrapper release: write the result from the process exit code, release
+# active.lock, recycle the compiler server, and compose the banner.
+# ---------------------------------------------------------------------------
 $exitCode = $proc.ExitCode
 
 # ---------------------------------------------------------------------------

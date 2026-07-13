@@ -2395,3 +2395,208 @@ function Format-BuildQueueBanner {
 
 	return [string]$result
 }
+
+function Wait-ForRecordedOutcome {
+	<#
+	.SYNOPSIS
+	  Terminal-outcome-aware foreground wait: return as soon as the detached
+	  runner records a terminal results/<seq>.json, rather than blocking on full
+	  runner-process liveness (which spans post-outcome hygiene).
+
+	.DESCRIPTION
+	  The foreground build-queue.ps1 wrapper used to tail the log until
+	  $proc.HasExited — so after the build's terminal outcome was recorded EARLY
+	  (build-queue-runner.ps1 crash-safe early write, BEFORE hygiene), the wrapper
+	  still blocked through the runner's post-outcome hygiene (compiler recycle +
+	  poison-DLL sweep) before returning, stalling the agent's foreground Bash
+	  toward the tool timeout (docs/bugs/build-queue-foreground-wait-blocks-past-
+	  terminal-outcome).
+
+	  This helper converges the foreground path onto the SAME result-file-aware
+	  model the background build-queue-await.ps1 already uses: on each poll it runs
+	  the caller's -TailAction (to keep streaming the log live), then reads the
+	  result file; the moment a terminal result with a readable exit_code is
+	  present it returns 'result-recorded'. If the runner process dies first
+	  WITHOUT a readable result (a hard runner crash), it returns 'process-exited'
+	  so the caller can fall back to its legacy release path. A readable result
+	  ALWAYS wins over process-liveness (checked FIRST), so an early-recorded
+	  outcome returns promptly even while the runner is still doing hygiene.
+
+	  SAFETY: returning on 'result-recorded' is only sound because the DETACHED
+	  runner independently finalizes the FINAL result write, the active.lock
+	  release, and the VBCSCompiler recycle on its own — the caller MUST NOT run
+	  its own release/recycle on that path (it would race the still-live runner).
+
+	  A null exit_code (the runner's degraded build-spawn-exception final write)
+	  is treated as NOT-yet-ready, so the caller's fallback path handles it via
+	  the real process exit code instead of a false green.
+
+	  Pure control flow around injected seams (probe / tail / sleep / clock) so it
+	  is hermetically Pester-testable; never throws.
+
+	.PARAMETER ResultPath
+	  Absolute path to results/<seq>.json.
+
+	.PARAMETER IsProcessAlive
+	  Scriptblock returning $true while the detached runner process is alive.
+
+	.PARAMETER TailAction
+	  Optional scriptblock invoked once per poll BEFORE the result read (streams
+	  the log to stdout). Defaults to a no-op.
+
+	.PARAMETER PollIntervalMs
+	  Sleep between polls (default 500).
+
+	.PARAMETER Sleep
+	  Optional scriptblock taking a single [int] milliseconds arg; defaults to
+	  Start-Sleep. Injected so tests run without real delay.
+
+	.PARAMETER TimeoutSeconds
+	  Optional safety ceiling (default 0 = unbounded — production waits until the
+	  result appears or the process exits). >0 arms a deadline via -Now.
+
+	.PARAMETER Now
+	  Optional scriptblock returning the current [DateTime]; used only when
+	  TimeoutSeconds > 0. Defaults to [DateTime]::UtcNow.
+
+	.OUTPUTS
+	  [hashtable] @{ Outcome = 'result-recorded' | 'process-exited' | 'timeout';
+	                 Result = <parsed result object or $null>;
+	                 ExitCode = <int or $null> }. Never throws.
+	#>
+	[CmdletBinding()]
+	[OutputType([hashtable])]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$ResultPath,
+
+		[Parameter(Mandatory = $true)]
+		[scriptblock]$IsProcessAlive,
+
+		[scriptblock]$TailAction = { },
+
+		[int]$PollIntervalMs = 500,
+
+		[scriptblock]$Sleep = { param($ms) Start-Sleep -Milliseconds $ms },
+
+		[int]$TimeoutSeconds = 0,
+
+		[scriptblock]$Now = { [DateTime]::UtcNow }
+	)
+
+	# Read + validate the recorded result. A missing file, an empty/partial read,
+	# or a null exit_code all return $null ("not ready — keep waiting"); a
+	# readable object with a non-null, numeric exit_code returns that object.
+	$readRecorded = {
+		if (-not (Test-Path -LiteralPath $ResultPath)) { return $null }
+		Read-WithRetry -Parse {
+			Get-SafeValue {
+				$text = [System.IO.File]::ReadAllText($ResultPath)
+				if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+				$obj = $text | ConvertFrom-Json
+				# Require a readable, non-null exit_code — the early-write
+				# guarantee. A null exit_code (the degraded exception final
+				# write) is NOT ready: [int]$null coerces to 0 (a false green),
+				# so reject it BEFORE casting.
+				$ecRaw = Get-SafeValue { $obj.exit_code } $null
+				if ($null -eq $ecRaw) { return $null }
+				$null = [int]$ecRaw
+				$obj
+			} $null
+		} -MaxAttempts 3 -DelayMs 50 -Fallback $null
+	}
+
+	$deadline = $null
+	if ($TimeoutSeconds -gt 0) {
+		$deadline = Get-SafeValue { (& $Now).AddSeconds($TimeoutSeconds) } $null
+	}
+
+	while ($true) {
+		Get-SafeValue { & $TailAction }
+
+		$recorded = & $readRecorded
+		if ($null -ne $recorded) {
+			$ec = Get-SafeValue { [int]$recorded.exit_code } $null
+			return @{ Outcome = 'result-recorded'; Result = $recorded; ExitCode = $ec }
+		}
+
+		$alive = Get-SafeValue { [bool](& $IsProcessAlive) } $false
+		if (-not $alive) {
+			# Process gone — one final read (the result may have landed between
+			# the read above and the liveness check).
+			$recorded = & $readRecorded
+			if ($null -ne $recorded) {
+				$ec = Get-SafeValue { [int]$recorded.exit_code } $null
+				return @{ Outcome = 'result-recorded'; Result = $recorded; ExitCode = $ec }
+			}
+			return @{ Outcome = 'process-exited'; Result = $null; ExitCode = $null }
+		}
+
+		if ($null -ne $deadline -and (& $Now) -ge $deadline) {
+			return @{ Outcome = 'timeout'; Result = $null; ExitCode = $null }
+		}
+
+		Get-SafeValue { & $Sleep $PollIntervalMs }
+	}
+}
+
+function Test-ShouldSweepPoisonedArtifacts {
+	<#
+	.SYNOPSIS
+	  Pure gate deciding whether the runner's post-build poison-DLL sweep
+	  (Remove-PoisonedArtifacts) should run.
+
+	.DESCRIPTION
+	  Fix for docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome
+	  Theory 2: the runner gated the sweep on `$buildFailed = ($exitCode -ne 0)`
+	  ALONE, which is TRUE for a zero-result TEST op (exit 3 no-output / exit 5
+	  zero-match), so it walked the whole worktree's bin/+obj/ for a test op that
+	  compiled nothing — pointless work that inflated the post-outcome hygiene
+	  window.
+
+	  Poisoned DLLs are a BUILD-op concern (a --no-build test op writes no DLLs),
+	  so the sweep now also requires $IsBuildOp. Build-op behavior is byte-
+	  identical (for a build op $IsBuildOp is $true, so the original
+	  buildFailed ∧ dotnet-dll ∧ worktree gate is unchanged).
+
+	  Pure, side-effect-free; never throws.
+
+	.PARAMETER IsBuildOp
+	  Whether this op is a build op (vs a test / other op).
+
+	.PARAMETER ExitCode
+	  The build/test process exit code (may be $null on a build-spawn exception —
+	  a build op with an unknown exit is still swept).
+
+	.PARAMETER PoisonSweep
+	  The hygiene profile's poison_sweep id ('dotnet-dll' arms the sweep).
+
+	.PARAMETER Worktree
+	  The worktree root to sweep (empty/whitespace ⇒ no sweep).
+
+	.OUTPUTS
+	  [bool] $true iff the sweep should run. Never throws.
+	#>
+	[CmdletBinding()]
+	[OutputType([bool])]
+	param(
+		[bool]$IsBuildOp,
+
+		$ExitCode,
+
+		[string]$PoisonSweep,
+
+		[string]$Worktree
+	)
+
+	$result = Get-SafeValue {
+		if (-not $IsBuildOp) { return $false }
+		$buildFailed = ($null -eq $ExitCode) -or ($ExitCode -ne 0)
+		if (-not $buildFailed) { return $false }
+		if ($PoisonSweep -ne 'dotnet-dll') { return $false }
+		if ([string]::IsNullOrWhiteSpace($Worktree)) { return $false }
+		return $true
+	} $false
+
+	return [bool]$result
+}
