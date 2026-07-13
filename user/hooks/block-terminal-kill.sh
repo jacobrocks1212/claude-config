@@ -42,6 +42,43 @@ import json
 import re
 import sys
 
+# operator-observed false-positive (powershell-tool-bypasses-bash-matched-guards
+# item 5): the original `\b(kill|exit|...)\b` word-boundary matches fire on
+# INNOCENT text that merely CONTAINS the word — an awk script body
+# (`awk '{exit}'`) or a pytest `-k` expression (`-k "test and kill"`) — because
+# `\b` only asserts a word/non-word boundary, not "this token invokes a
+# command". Tightened to SEGMENT-START anchoring (mirrors
+# build-queue-enforce.sh / long-build-ownership-guard.sh's _CMD_START): a
+# session-terminating token denies only when it BEGINS a command segment
+# (string start, or immediately after a shell separator, with optional leading
+# env-assignment(s)) — never when it appears as an embedded/quoted argument
+# token. `{` counts as a separator ONLY when followed by whitespace (bash's
+# `{ cmd; }` grouping requires a blank after the reserved word) — this is
+# exactly what keeps `{exit}` (no space; an awk/PowerShell script-block
+# literal) from matching, since real shell grouping never glues `{` directly
+# onto the next token.
+_ENV_PREFIX = (
+    r"(?:"
+    r"[A-Za-z_][A-Za-z0-9_]*=\S+\s+"
+    r"|\$env:[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:'[^']*'|\"[^\"]*\"|\S+)\s*;\s*"
+    r")*"
+)
+_CMD_START = r"(?:^|[\n;&|(]|\{(?=\s))\s*" + _ENV_PREFIX
+
+# PowerShell backtick line-continuation: the next physical line is part of the
+# SAME logical command — collapsed to a space before matching so a continued
+# invocation is not accidentally split into two segments by _CMD_START's `\n`.
+_PS_LINE_CONTINUATION_RE = re.compile(r"`\r?\n")
+
+_TASKKILL_RE = re.compile(_CMD_START + r"(?:taskkill|Stop-Process)\b", re.IGNORECASE)
+_KILL_RE = re.compile(_CMD_START + r"kill\b", re.IGNORECASE)
+_KILL_PORT_RE = re.compile(r"kill-port", re.IGNORECASE)
+_TERMINATE_RE = re.compile(
+    _CMD_START + r"(?:exit|logout|Stop-Computer|Restart-Computer|shutdown)\b",
+    re.IGNORECASE,
+)
+_WT_EXE_RE = re.compile(_CMD_START + r"wt\.exe\b", re.IGNORECASE)
+
 
 def _allow():
     """Fast allow: emit nothing (PreToolUse with no decision = allow)."""
@@ -63,27 +100,23 @@ def main():
     raw = sys.stdin.read()
     payload = json.loads(raw)  # JSONDecodeError → caught below → fail-open
     command = (payload.get("tool_input") or {}).get("command") or ""
+    command = _PS_LINE_CONTINUATION_RE.sub(" ", command)
 
     # (1) Process termination — but allow `npx kill-port` for /mcp-test.
-    if re.search(r"\b(taskkill|Stop-Process)\b", command, re.IGNORECASE):
+    if _TASKKILL_RE.search(command):
         _deny(
             "BLOCKED: process termination (taskkill/Stop-Process) is not allowed "
             "during the mobile/remote workflow — terminating a terminal requires "
             "physical laptop access. Use `npx kill-port <port>` for port cleanup."
         )
-    if re.search(r"\bkill\b", command, re.IGNORECASE) and not re.search(
-        r"kill-port", command, re.IGNORECASE
-    ):
+    if _KILL_RE.search(command) and not _KILL_PORT_RE.search(command):
         _deny(
             "BLOCKED: `kill` is not allowed during the mobile/remote workflow. "
             "Use `npx kill-port <port>` for port cleanup."
         )
 
     # (2) Session/system termination.
-    if re.search(
-        r"\b(exit|logout|Stop-Computer|Restart-Computer|shutdown)\b",
-        command, re.IGNORECASE,
-    ):
+    if _TERMINATE_RE.search(command):
         _deny(
             "BLOCKED: session/system termination (exit/logout/shutdown) is not "
             "allowed during the mobile/remote workflow — it would drop a terminal "
@@ -91,7 +124,7 @@ def main():
         )
 
     # (3) Windows Terminal management.
-    if re.search(r"\bwt\.exe\b", command, re.IGNORECASE):
+    if _WT_EXE_RE.search(command):
         _deny(
             "BLOCKED: Windows Terminal management (wt.exe) is not allowed during "
             "the mobile/remote workflow."

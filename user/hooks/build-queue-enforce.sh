@@ -99,13 +99,40 @@ import re
 import subprocess
 import sys
 
+# powershell-tool-bypasses-bash-matched-guards: the harness exposes more than
+# one command-execution tool (Bash, PowerShell) sharing the same
+# tool_input.command shape. A guard gated on `tool_name == "Bash"` is silently
+# bypassed by an equivalent command run through any OTHER member of this set.
+# Kept as a hook-local literal (not a shared lazy_core import) so this hook's
+# fail-open contract never depends on an external module resolving — the
+# identical literal is embedded in lazy-cycle-containment.sh and
+# long-build-ownership-guard.sh; keep the three in lockstep by inspection (and
+# via the cross-guard registration meta-test in test_hooks.py) if this set
+# ever grows a member.
+COMMAND_TOOL_NAMES = frozenset({"Bash", "PowerShell"})
+
 STATE_DIR = os.environ.get("LAZY_STATE_DIR") or os.path.join(
     os.path.expanduser("~"), ".claude", "state"
 )
 
+# PowerShell-syntax regex audit (powershell-tool-bypasses-bash-matched-guards):
+# env-assignment prefixes differ between shells (`NAME=value` in bash vs
+# `$env:NAME='value';` in PowerShell). The bypass token is recognized in
+# EITHER form, with an optional leading env-prefix (either form, repeated)
+# before it.
+_ENV_PREFIX_ANY = (
+    r"(?:"
+    r"[A-Za-z_][A-Za-z0-9_]*=\S+\s+"
+    r"|\$env:[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:'[^']*'|\"[^\"]*\"|\S+)\s*;\s*"
+    r")*"
+)
+_BYPASS_TOKEN_RE = (
+    r"(?:BUILD_QUEUE_BYPASS=1(?:\s|$)"
+    r"|\$env:BUILD_QUEUE_BYPASS\s*=\s*(?:'1'|\"1\"|1)\s*;?)"
+)
 # Match the bypass token as a leading env assignment. Applied to the whole
 # command (fast-path allow) AND per segment via _suppress_bypassed_segments.
-_BYPASS_RE = re.compile(r"^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*BUILD_QUEUE_BYPASS=1(?:\s|$)")
+_BYPASS_RE = re.compile(r"^\s*" + _ENV_PREFIX_ANY + _BYPASS_TOKEN_RE)
 
 # Shell separators that begin a new command segment (mirrors _CMD_START's
 # character class). Splitting on these yields per-segment strings _BYPASS_RE
@@ -137,8 +164,58 @@ _NX_SAFE_RE = re.compile(
 # build ...`) while a read verb referencing a build token as an ARGUMENT
 # (`grep ... test-filtered.ps1`, `cat build-filtered.ps1 | head`) does not
 # begin a command segment and so does not match.
-_ENV_PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*"
+#
+# PowerShell-syntax regex audit (powershell-tool-bypasses-bash-matched-guards):
+# env-assignment prefixes differ between shells (`NAME=value` in bash vs
+# `$env:NAME='value';` in PowerShell) — mirrors _ENV_PREFIX_ANY above (the
+# bypass-token prefix); kept as a separate literal because it is defined
+# before _ENV_PREFIX_ANY in file order and both must stay in lockstep.
+_ENV_PREFIX = (
+    r"(?:"
+    r"[A-Za-z_][A-Za-z0-9_]*=\S+\s+"
+    r"|\$env:[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:'[^']*'|\"[^\"]*\"|\S+)\s*;\s*"
+    r")*"
+)
 _CMD_START = r"(?:^|[\n;&|({])\s*" + _ENV_PREFIX
+
+# PowerShell backtick line-continuation: the next physical line is part of the
+# SAME logical command — not a segment boundary. Collapsed to a space before
+# the deny scan so a continued invocation (`dotnet build `` + newline +
+# `Cognito.sln`) is not hidden from the anchored patterns below by
+# _CMD_START's `\n` separator.
+_PS_LINE_CONTINUATION_RE = re.compile(r"`\r?\n")
+
+# PowerShell nesting: `powershell(.exe)?|pwsh ... -Command "..."` executes its
+# quoted STRING argument as a command line — a heavy build hidden inside that
+# string is not at a top-level segment-start position under _CMD_START.
+# Purely additive: the tail following the opening quote is reappended as a
+# synthetic newline-prefixed segment so the existing anchored patterns can
+# still find it. (Distinct from _FILTERED_SCRIPT_POWERSHELL_RE below, which
+# already handles the narrower `-File <path>` invocation form.)
+_PS_NESTED_COMMAND_RE = re.compile(
+    r"(?:powershell(?:\.exe)?|pwsh)\b[^\n;&|]*?-[Cc]ommand\s+[\"']"
+)
+
+
+def _normalize_ps_syntax(command):
+    """Collapse backtick line-continuations and unwrap one level of nested
+    `powershell/pwsh -Command "..."` so the deny scan sees a flat,
+    segment-splittable command string. Purely additive/normalizing — never
+    narrows what the existing matchers can already detect.
+
+    Indexes against `original` (not the growing `command`) so multiple
+    nested matches never slice with stale offsets. The appended tail's
+    trailing quote (the -Command string's own closing delimiter) is
+    stripped — otherwise a build that is the LAST token before the closing
+    quote fails a boundary check that requires whitespace-or-end right
+    after the matched invocation."""
+    command = _PS_LINE_CONTINUATION_RE.sub(" ", command)
+    original = command
+    for m in _PS_NESTED_COMMAND_RE.finditer(original):
+        tail = original[m.end():].rstrip("\"'")
+        if tail:
+            command += "\n" + tail
+    return command
 
 # Deny patterns. Run against the SUPPRESSED command (safe variants blanked out).
 _DOTNET_BUILD_RE = re.compile(_CMD_START + r"dotnet\s+build(?:\s|$)", re.IGNORECASE)
@@ -535,11 +612,12 @@ def main():
     payload = json.loads(raw)
     # D2: capture the tool-call cwd for hook-event repo attribution.
     _EVT_CWD = payload.get("cwd") or ""
-    if payload.get("tool_name", "") != "Bash":
+    if payload.get("tool_name", "") not in COMMAND_TOOL_NAMES:
         _allow()
     command = (payload.get("tool_input") or {}).get("command", "")
     if not isinstance(command, str) or not command:
         _allow()
+    command = _normalize_ps_syntax(command)
 
     # L6 bypass token — allow immediately.
     if _BYPASS_RE.match(command):

@@ -5029,11 +5029,18 @@ def test_longbuild_guard_non_bash_tool_allows():
 def test_longbuild_guard_registered_in_settings():
     """Mount-site verification (d8 mount-site failure class): the net-new guard
     must be REGISTERED as a command in user/settings.json's PreToolUse
-    `matcher: Bash` array — a hook on disk but unregistered is dead code."""
+    `matcher: Bash` array — a hook on disk but unregistered is dead code.
+
+    Matcher membership (not exact equality — powershell-tool-bypasses-bash-
+    matched-guards widened this hook's matcher to "Bash|PowerShell"): any
+    block whose pipe-separated matcher tokens include "Bash" qualifies."""
     settings_path = _REPO_ROOT / "user" / "settings.json"
     settings = json.loads(settings_path.read_text(encoding="utf-8"))
     pretooluse = settings.get("hooks", {}).get("PreToolUse", [])
-    bash_blocks = [b for b in pretooluse if b.get("matcher") == "Bash"]
+    bash_blocks = [
+        b for b in pretooluse
+        if "Bash" in (b.get("matcher") or "").split("|")
+    ]
     assert bash_blocks, "no PreToolUse matcher:Bash block found in settings.json"
     commands = [
         h.get("command", "")
@@ -6193,14 +6200,17 @@ def test_longbuild_guard_no_manifest_message_unchanged():
 def test_bq_hook_order_guard_before_enforce():
     """D5 ordering invariant: long-build-ownership-guard.sh is registered
     BEFORE build-queue-enforce.sh in the PreToolUse matcher:Bash chain, so a
-    subagent's raw long build surfaces the takeover signature first."""
+    subagent's raw long build surfaces the takeover signature first.
+
+    Matcher membership (not exact equality — powershell-tool-bypasses-bash-
+    matched-guards widened this block's matcher to "Bash|PowerShell")."""
     settings_path = _REPO_ROOT / "user" / "settings.json"
     settings = json.loads(settings_path.read_text(encoding="utf-8"))
     pretooluse = settings.get("hooks", {}).get("PreToolUse", [])
     commands = [
         h.get("command", "")
         for block in pretooluse
-        if block.get("matcher") == "Bash"
+        if "Bash" in (block.get("matcher") or "").split("|")
         for h in block.get("hooks", [])
     ]
     guard_idx = next(
@@ -7141,6 +7151,374 @@ _TESTS = _TESTS + [
      test_termkill_registered_widened_matcher),
     ("test_push_registered_widened_matcher",
      test_push_registered_widened_matcher),
+]
+
+
+# ===========================================================================
+# powershell-tool-bypasses-bash-matched-guards — full guard widening +
+# PowerShell-syntax regex audit
+#
+# The sibling bug (legacy-tool-input-env-hooks-dead) widened ONLY the revived
+# push/kill hooks. This closes the rest: PowerShell-payload deny/allow legs
+# for lazy-cycle-containment.sh, long-build-ownership-guard.sh, and
+# build-queue-enforce.sh (proving their now tool-name-agnostic bodies), plus
+# regression tests for the PS-syntax regex-audit fixes (backtick
+# line-continuation, nested `pwsh -Command "..."`, `$env:NAME=value`
+# env-assignment recognition), the block-terminal-kill.sh false-positive class
+# (segment-start anchoring — item 5), and the cross-guard registration
+# meta-test (item 4).
+# ===========================================================================
+
+# --- lazy-cycle-containment.sh: PowerShell payload legs --------------------
+
+def test_containment_powershell_loop_formation_flag_denies():
+    """A loop-formation routing flag (`lazy-state.py --run-end`) fired via the
+    PowerShell tool, from a subagent, must still deny (tool-name-agnostic
+    body — proves the widened matcher + inline COMMAND_TOOL_NAMES gate)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        payload = json.loads(
+            _bash_preToolUse_json(
+                "python lazy-state.py --run-end", agent_id=_SUBAGENT_AGENT_ID,
+            )
+        )
+        payload["tool_name"] = "PowerShell"
+        result = _run_containment(json.dumps(payload), state_dir)
+        assert _containment_decision(result) == "deny", (
+            f"PowerShell-tool routing-flag invocation must deny; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_containment_powershell_plain_command_allows():
+    """A non-matching command fired via the PowerShell tool, from a subagent,
+    must still allow (the widened matcher introduces no false positive)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        payload = json.loads(
+            _bash_preToolUse_json("ls -la", agent_id=_SUBAGENT_AGENT_ID)
+        )
+        payload["tool_name"] = "PowerShell"
+        result = _run_containment(json.dumps(payload), state_dir)
+        assert _containment_decision(result) is None, (
+            f"non-matching PowerShell command must allow; stdout={result.stdout!r}"
+        )
+
+
+# --- long-build-ownership-guard.sh: PowerShell + regex-audit legs -----------
+
+def test_longbuild_guard_powershell_denies_cargo_build_release():
+    """`cargo build --release` via the PowerShell tool → deny."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        payload = json.loads(_bash_preToolUse_json("cargo build --release"))
+        payload["tool_name"] = "PowerShell"
+        result = _run_bash(
+            _LONGBUILD_GUARD_SH, json.dumps(payload), _base_env(state_dir)
+        )
+        assert _containment_decision(result) == "deny", (
+            f"PowerShell-tool cargo build --release must deny; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_powershell_allows_non_build_command():
+    """`cargo check --release` via the PowerShell tool → allow (false-positive
+    scope preserved under the widened matcher)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        payload = json.loads(_bash_preToolUse_json("cargo check --release"))
+        payload["tool_name"] = "PowerShell"
+        result = _run_bash(
+            _LONGBUILD_GUARD_SH, json.dumps(payload), _base_env(state_dir)
+        )
+        assert _containment_decision(result) != "deny", (
+            f"cargo check --release via PowerShell must not deny; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_backtick_continuation_denies():
+    """A PowerShell backtick line-continuation (`cargo build `` + newline +
+    `--release`) must not hide the build from the segment scan."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        command = "cargo build `\n--release"
+        result = _run_longbuild_guard(_bash_preToolUse_json(command), state_dir)
+        assert _containment_decision(result) == "deny", (
+            f"backtick-continued cargo build --release must deny; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_nested_pwsh_command_denies():
+    """A build hidden inside `pwsh -Command "cargo build --release"` → deny
+    (the nested -Command string is unwrapped as an additional segment)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        command = 'pwsh -Command "cargo build --release"'
+        result = _run_longbuild_guard(_bash_preToolUse_json(command), state_dir)
+        assert _containment_decision(result) == "deny", (
+            f"nested pwsh -Command build must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_powershell_style_env_prefix_tolerance():
+    """A PowerShell-style env assignment (`$env:FOO='bar'; tauri build`) →
+    still deny (PS env-prefix recognized alongside the bash form)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        command = "$env:FOO='bar'; tauri build"
+        result = _run_longbuild_guard(_bash_preToolUse_json(command), state_dir)
+        assert _containment_decision(result) == "deny", (
+            f"PS env-prefixed tauri build must deny; stdout={result.stdout!r}"
+        )
+
+
+# --- build-queue-enforce.sh: PowerShell + regex-audit legs ------------------
+
+def test_bqe_powershell_denies_dotnet_build():
+    """`dotnet build` via the PowerShell tool, in a Cognito worktree, → deny."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        payload = json.loads(_bqe_payload("dotnet build ./Cognito.sln", str(repo)))
+        payload["tool_name"] = "PowerShell"
+        result = _run_bash(_BQE_HOOK_SH, json.dumps(payload), _base_env(state_dir))
+        assert _containment_decision(result) == "deny", (
+            f"PowerShell-tool dotnet build must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_powershell_allows_dotnet_restore():
+    """`dotnet restore` via the PowerShell tool → allow (safe variant, false
+    positive scope preserved)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        payload = json.loads(_bqe_payload("dotnet restore ./Cognito.sln", str(repo)))
+        payload["tool_name"] = "PowerShell"
+        result = _run_bash(_BQE_HOOK_SH, json.dumps(payload), _base_env(state_dir))
+        assert _containment_decision(result) != "deny", (
+            f"PowerShell-tool dotnet restore must not deny; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_backtick_continuation_denies():
+    """A PowerShell backtick line-continuation splitting `dotnet build` from
+    its argument must not hide the build from the deny scan."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        command = "dotnet build `\n./Cognito.sln"
+        result = _run_bash(
+            _BQE_HOOK_SH, _bqe_payload(command, str(repo)), _base_env(state_dir)
+        )
+        assert _containment_decision(result) == "deny", (
+            f"backtick-continued dotnet build must deny; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_nested_pwsh_command_denies():
+    """A build hidden inside `powershell -Command "dotnet build ..."` → deny
+    (nested -Command string unwrapped as an additional segment)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        command = 'powershell -Command "dotnet build ./Cognito.sln"'
+        result = _run_bash(
+            _BQE_HOOK_SH, _bqe_payload(command, str(repo)), _base_env(state_dir)
+        )
+        assert _containment_decision(result) == "deny", (
+            f"nested powershell -Command dotnet build must deny; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_powershell_style_bypass_token_allows():
+    """`$env:BUILD_QUEUE_BYPASS='1'; dotnet build ...` (PS-style bypass) →
+    allow."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        command = "$env:BUILD_QUEUE_BYPASS='1'; dotnet build ./Cognito.sln"
+        result = _run_bash(
+            _BQE_HOOK_SH, _bqe_payload(command, str(repo)), _base_env(state_dir)
+        )
+        assert _containment_decision(result) is None, (
+            f"PS-style BUILD_QUEUE_BYPASS must allow; stdout={result.stdout!r}"
+        )
+
+
+# --- block-terminal-kill.sh: false-positive class (item 5) ------------------
+
+def test_termkill_allows_awk_exit_block():
+    """`awk '{exit}'` → allow. An awk script-block literal glues `{` directly
+    onto `exit` (no space) — NOT a shell command position (bash's `{ cmd; }`
+    grouping requires a blank after the reserved word), so segment-start
+    anchoring must not flag it."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH, _hook_payload("awk '{exit}' file.txt"),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"awk '{{exit}}' body must allow (not a command-position exit); "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_allows_pytest_dash_k_kill_expression():
+    """`pytest -k "test and kill"` → allow. `kill` inside a `-k` filter
+    expression is an embedded argument token, not an invoked command."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH,
+            _hook_payload('python -m pytest -k "test and kill"'),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"pytest -k kill expression must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_allows_commit_message_mentioning_kill():
+    """A commit message merely mentioning "kill" → allow (embedded text, not
+    an invoked command)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH,
+            _hook_payload('git commit -m "fix: revert accidental kill of worker"'),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"commit message mentioning kill must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_denies_chained_kill_command():
+    """`cd /tmp && kill 1234` → deny. A real kill invocation chained behind a
+    leading command is still caught by the segment-start anchor (true
+    positive preserved alongside the false-positive fix)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH, _hook_payload("cd /tmp && kill 1234"),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) == "deny", (
+            f"chained kill invocation must still deny; stdout={result.stdout!r}"
+        )
+
+
+# --- block-work-repo-git-push.sh: PS-style bypass token ---------------------
+
+def test_push_allows_with_powershell_style_bypass_token():
+    """`$env:CLAUDE_PUSH_APPROVED='1'; git push origin main` (PS-style bypass)
+    in a work repo → allow."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        repo = _init_email_repo(td, "jacob@cognitoforms.com")
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload(
+                "$env:CLAUDE_PUSH_APPROVED='1'; git push origin main",
+                cwd=str(repo),
+            ),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"PS-style bypass-token push must allow; stdout={result.stdout!r}"
+        )
+
+
+# --- cross-guard registration meta-test (item 4) ----------------------------
+
+_COMMAND_GUARD_HOOKS = (
+    "block-work-repo-git-push.sh",
+    "block-terminal-kill.sh",
+    "lazy-cycle-containment.sh",
+    "long-build-ownership-guard.sh",
+    "build-queue-enforce.sh",
+)
+
+
+def test_all_command_guards_registered_with_widened_matcher():
+    """Cross-guard meta-test: every command-execution guard hook must be
+    registered under a matcher covering BOTH Bash and PowerShell — the
+    missing contract named in the bug's Root Cause (enumerated-tool-allowlist
+    drift), made mechanical so a future command-guard hook that forgets to
+    widen its matcher fails this test immediately."""
+    missing = []
+    narrow = []
+    for hook_name in _COMMAND_GUARD_HOOKS:
+        matcher = _matcher_for_hook(hook_name)
+        if matcher is None:
+            missing.append(hook_name)
+            continue
+        tools = matcher.split("|")
+        if "Bash" not in tools or "PowerShell" not in tools:
+            narrow.append((hook_name, matcher))
+    assert not missing, (
+        f"guard(s) not registered in any PreToolUse block: {missing!r}"
+    )
+    assert not narrow, (
+        f"guard(s) registered with a matcher missing Bash or PowerShell: {narrow!r}"
+    )
+
+
+_TESTS = _TESTS + [
+    # lazy-cycle-containment.sh — PowerShell payload legs
+    ("test_containment_powershell_loop_formation_flag_denies",
+     test_containment_powershell_loop_formation_flag_denies),
+    ("test_containment_powershell_plain_command_allows",
+     test_containment_powershell_plain_command_allows),
+    # long-build-ownership-guard.sh — PowerShell + regex-audit legs
+    ("test_longbuild_guard_powershell_denies_cargo_build_release",
+     test_longbuild_guard_powershell_denies_cargo_build_release),
+    ("test_longbuild_guard_powershell_allows_non_build_command",
+     test_longbuild_guard_powershell_allows_non_build_command),
+    ("test_longbuild_guard_backtick_continuation_denies",
+     test_longbuild_guard_backtick_continuation_denies),
+    ("test_longbuild_guard_nested_pwsh_command_denies",
+     test_longbuild_guard_nested_pwsh_command_denies),
+    ("test_longbuild_guard_powershell_style_env_prefix_tolerance",
+     test_longbuild_guard_powershell_style_env_prefix_tolerance),
+    # build-queue-enforce.sh — PowerShell + regex-audit legs
+    ("test_bqe_powershell_denies_dotnet_build",
+     test_bqe_powershell_denies_dotnet_build),
+    ("test_bqe_powershell_allows_dotnet_restore",
+     test_bqe_powershell_allows_dotnet_restore),
+    ("test_bqe_backtick_continuation_denies",
+     test_bqe_backtick_continuation_denies),
+    ("test_bqe_nested_pwsh_command_denies",
+     test_bqe_nested_pwsh_command_denies),
+    ("test_bqe_powershell_style_bypass_token_allows",
+     test_bqe_powershell_style_bypass_token_allows),
+    # block-terminal-kill.sh — false-positive class
+    ("test_termkill_allows_awk_exit_block",
+     test_termkill_allows_awk_exit_block),
+    ("test_termkill_allows_pytest_dash_k_kill_expression",
+     test_termkill_allows_pytest_dash_k_kill_expression),
+    ("test_termkill_allows_commit_message_mentioning_kill",
+     test_termkill_allows_commit_message_mentioning_kill),
+    ("test_termkill_denies_chained_kill_command",
+     test_termkill_denies_chained_kill_command),
+    # block-work-repo-git-push.sh — PS-style bypass token
+    ("test_push_allows_with_powershell_style_bypass_token",
+     test_push_allows_with_powershell_style_bypass_token),
+    # cross-guard registration meta-test
+    ("test_all_command_guards_registered_with_widened_matcher",
+     test_all_command_guards_registered_with_widened_matcher),
 ]
 
 

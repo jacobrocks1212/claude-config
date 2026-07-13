@@ -109,6 +109,18 @@ import re
 import sys
 import datetime
 
+# powershell-tool-bypasses-bash-matched-guards: the harness exposes more than
+# one command-execution tool (Bash, PowerShell) sharing the same
+# tool_input.command shape. A guard gated on `tool_name == "Bash"` is silently
+# bypassed by an equivalent command run through any OTHER member of this set.
+# Kept as a hook-local literal (not a shared lazy_core import) so this hook's
+# fail-open contract never depends on an external module resolving — the
+# identical literal is embedded in long-build-ownership-guard.sh and
+# build-queue-enforce.sh; keep the three in lockstep by inspection (and via
+# the cross-guard registration meta-test in test_hooks.py) if this set ever
+# grows a member.
+COMMAND_TOOL_NAMES = frozenset({"Bash", "PowerShell"})
+
 # Breadcrumb base dir: the un-keyed base (or the LAZY_STATE_DIR override). The
 # breadcrumb is a best-effort diagnostic and stays at the base — it never needs
 # repo-keying. multi-repo-concurrent-runs (Phase 2 / WU-2.3): MARKER, by
@@ -207,8 +219,58 @@ LIFECYCLE_PATTERNS = (
 # (`cat user/skills/lazy-batch/SKILL.md`, `grep ... lazy-bug-batch/`) does NOT
 # begin a command segment and so must NOT trip the recursion deny — this is the
 # false-positive fixed in docs/bugs/adhoc-incident-hook-deny-4b767b.
-_ENV_PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*"
+#
+# PowerShell-syntax regex audit (powershell-tool-bypasses-bash-matched-guards):
+# env-assignment prefixes differ between shells (`NAME=value` in bash vs
+# `$env:NAME='value';` in PowerShell) — _ENV_PREFIX now recognizes both forms
+# so a routing-flag invocation prefixed either way is still scoped correctly.
+_ENV_PREFIX = (
+    r"(?:"
+    r"[A-Za-z_][A-Za-z0-9_]*=\S+\s+"
+    r"|\$env:[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:'[^']*'|\"[^\"]*\"|\S+)\s*;\s*"
+    r")*"
+)
 _CMD_START = r"(?:^|[\n;&|({])\s*" + _ENV_PREFIX
+
+# A PowerShell backtick at end-of-line is a LINE CONTINUATION (the next line is
+# part of the SAME logical command) — not a segment boundary. Left unhandled,
+# the `\n` in _CMD_START's separator class would wrongly split a continued
+# invocation (`cargo build `` + newline + `--release`) into two segments,
+# hiding the build from every anchored pattern below. Normalized once in
+# main() before any matching: a backtick-newline collapses to a single space.
+_PS_LINE_CONTINUATION_RE = re.compile(r"`\r?\n")
+
+# PowerShell nesting: `powershell(.exe)?|pwsh ... -Command "..."` executes its
+# quoted STRING argument as a command line — a token inside that string is not
+# at a top-level segment-start position under the anchors above, so a runaway
+# op hidden inside a nested -Command string would otherwise walk past every
+# deny below. Purely additive: the tail following the opening quote is
+# reappended as a synthetic segment (newline-prefixed, a recognized _CMD_START
+# separator) so the existing anchored patterns can still find it.
+_PS_NESTED_COMMAND_RE = re.compile(
+    r"(?:powershell(?:\.exe)?|pwsh)\b[^\n;&|]*?-[Cc]ommand\s+[\"']"
+)
+
+
+def _normalize_ps_syntax(command):
+    """Collapse backtick line-continuations and unwrap one level of nested
+    `powershell/pwsh -Command "..."` so the anchored patterns below see a
+    flat, segment-splittable command string. Purely additive/normalizing —
+    never narrows what the existing matchers can already detect.
+
+    Indexes against `original` (not the growing `command`) so multiple
+    nested matches never slice with stale offsets. The appended tail's
+    trailing quote (the -Command string's own closing delimiter) is
+    stripped — otherwise an invocation that is the LAST token before the
+    closing quote fails a boundary check requiring whitespace-or-end right
+    after the matched token."""
+    command = _PS_LINE_CONTINUATION_RE.sub(" ", command)
+    original = command
+    for m in _PS_NESTED_COMMAND_RE.finditer(original):
+        tail = original[m.end():].rstrip("\"'")
+        if tail:
+            command += "\n" + tail
+    return command
 
 # Recursive batch invocation: a dispatched cycle subagent must never start a
 # nested /lazy* batch orchestrator (the literal runaway path). Two anchored
@@ -472,12 +534,13 @@ def main():
         # Foreground Agent/Task from a subagent → allow (fall through).
         _allow()
 
-    if tool_name != "Bash":
+    if tool_name not in COMMAND_TOOL_NAMES:
         _allow()
 
     command = (payload.get("tool_input") or {}).get("command", "")
     if not command:
         _allow()
+    command = _normalize_ps_syntax(command)
 
     if is_subagent:
         # --- Recursive batch invocation (the literal runaway path). ---

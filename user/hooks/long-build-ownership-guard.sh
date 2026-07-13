@@ -90,6 +90,18 @@ import os
 import re
 import sys
 
+# powershell-tool-bypasses-bash-matched-guards: the harness exposes more than
+# one command-execution tool (Bash, PowerShell) sharing the same
+# tool_input.command shape. A guard gated on `tool_name == "Bash"` is silently
+# bypassed by an equivalent command run through any OTHER member of this set.
+# Kept as a hook-local literal (not a shared lazy_core import) so this hook's
+# fail-open contract never depends on an external module resolving — the
+# identical literal is embedded in lazy-cycle-containment.sh and
+# build-queue-enforce.sh; keep the three in lockstep by inspection (and via
+# the cross-guard registration meta-test in test_hooks.py) if this set ever
+# grows a member.
+COMMAND_TOOL_NAMES = frozenset({"Bash", "PowerShell"})
+
 # The orchestrator-takeover signature the deny reason MUST name (SSOT; part 5
 # consumes the same literal to deterministically recognize the redirect).
 TAKEOVER_SIGNATURE = "LONG-BUILD-OWNERSHIP-TAKEOVER"
@@ -110,7 +122,15 @@ STATE_DIR = os.environ.get("LAZY_STATE_DIR") or os.path.join(
 # end-of-string or whitespace, so `npm run build:docs` / `npm run build-foo` do
 # NOT match. `cargo build` REQUIRES `--release` (a plain `cargo build` debug build
 # is fast and not redirected; `cargo check --release` is a different verb).
-_ENV_PREFIX = r"(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*"
+# PowerShell-syntax regex audit (powershell-tool-bypasses-bash-matched-guards):
+# env-assignment prefixes differ between shells (`NAME=value` in bash vs
+# `$env:NAME='value';` in PowerShell) — _ENV_PREFIX recognizes both forms.
+_ENV_PREFIX = (
+    r"(?:"
+    r"[A-Za-z_][A-Za-z0-9_]*=\S+\s+"
+    r"|\$env:[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:'[^']*'|\"[^\"]*\"|\S+)\s*;\s*"
+    r")*"
+)
 # A command-start boundary: string start, or a shell separator, then optional
 # whitespace and optional env-assignment prefix.
 _CMD_START = r"(?:^|[\n;&|({])\s*" + _ENV_PREFIX
@@ -121,6 +141,43 @@ _LONG_BUILD_RE = re.compile(
     r"|npm\s+run\s+build(?:\s|$)"
     r")"
 )
+
+# PowerShell backtick line-continuation: the next physical line is part of the
+# SAME logical command — not a segment boundary. Collapsed to a space before
+# matching so a continued invocation (`cargo build `` + newline + `--release`)
+# is not hidden from _LONG_BUILD_RE by _CMD_START's `\n` separator.
+_PS_LINE_CONTINUATION_RE = re.compile(r"`\r?\n")
+
+# PowerShell nesting: `powershell(.exe)?|pwsh ... -Command "..."` executes its
+# quoted STRING argument as a command line — a build hidden inside that string
+# is not at a top-level segment-start position under _CMD_START. Purely
+# additive: the tail following the opening quote is reappended as a synthetic
+# newline-prefixed segment so _LONG_BUILD_RE can still find it.
+_PS_NESTED_COMMAND_RE = re.compile(
+    r"(?:powershell(?:\.exe)?|pwsh)\b[^\n;&|]*?-[Cc]ommand\s+[\"']"
+)
+
+
+def _normalize_ps_syntax(command):
+    """Collapse backtick line-continuations and unwrap one level of nested
+    `powershell/pwsh -Command "..."` so _LONG_BUILD_RE sees a flat,
+    segment-splittable command string. Purely additive/normalizing — never
+    narrows what the existing matcher can already detect.
+
+    Indexes against `original` (not the growing `command`) so multiple
+    nested matches never slice with stale offsets. The appended tail's
+    trailing quote (the -Command string's own closing delimiter) is
+    stripped — otherwise a build that is the LAST token before the closing
+    quote (`pwsh -Command "cargo build --release"`) fails the build
+    pattern's own `(?:\\s|$)` end-of-invocation boundary against a stray
+    trailing `"`."""
+    command = _PS_LINE_CONTINUATION_RE.sub(" ", command)
+    original = command
+    for m in _PS_NESTED_COMMAND_RE.finditer(original):
+        tail = original[m.end():].rstrip("\"'")
+        if tail:
+            command += "\n" + tail
+    return command
 
 
 def _queue_routing_hint(command, cwd):
@@ -266,11 +323,12 @@ def _deny(reason):
 def main():
     raw = sys.stdin.read()
     payload = json.loads(raw)  # JSONDecodeError → caught below → fail-open
-    if payload.get("tool_name", "") != "Bash":
+    if payload.get("tool_name", "") not in COMMAND_TOOL_NAMES:
         _allow()
     command = (payload.get("tool_input") or {}).get("command", "")
     if not isinstance(command, str) or not command:
         _allow()
+    command = _normalize_ps_syntax(command)
     if _LONG_BUILD_RE.search(command):
         # incident-auto-capture D2: countable deny event (fail-open, additive).
         _append_hook_event(

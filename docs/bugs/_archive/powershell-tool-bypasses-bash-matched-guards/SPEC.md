@@ -7,9 +7,9 @@
 > bypass containment, long-build ownership, build-queue enforcement, and the (revived) push/kill
 > blocks when issued through PowerShell instead of Bash.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P1
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-12
 **Related:** `docs/bugs/_archive/live-settings-split-brain-disarms-enforcement-plane/` (the widened matchers must land in the reconciled SSOT `user/settings.json` — sequence after it; on this laptop the Bash chain is currently not registered AT ALL, so the bypass is presently moot here and live on correctly-wired machines); `docs/bugs/legacy-tool-input-env-hooks-dead/` (the rewritten kill/push hooks must ship PowerShell-matched or they are reborn bypassed — `Stop-Process` is a native cmdlet); `docs/specs/turn-routing-enforcement/` (containment design; its `Agent|Task`-matched dispatch guard is NOT affected — PowerShell cannot dispatch agents); `docs/bugs/_archive/build-queue-enforce-cd-prefix-bypass/` (prior art: the same guard family's matcher-coverage failure class); `docs/bugs/_archive/cycle-subagent-runs-orchestrator-work/` (prior art: the Skill-tool bypass of the same enumerated-tool pattern, fixed by widening).
 
 ## Verified Symptom

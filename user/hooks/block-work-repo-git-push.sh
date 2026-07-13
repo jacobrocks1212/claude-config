@@ -35,6 +35,16 @@ import re
 import subprocess
 import sys
 
+# PowerShell-syntax regex audit (powershell-tool-bypasses-bash-matched-guards):
+# the bypass token was recognized only in bash env-assignment form
+# (`CLAUDE_PUSH_APPROVED=1`). PowerShell's equivalent is `$env:NAME=value` —
+# recognized here as an additional leading-token alternative so /push can
+# compose the bypass either way.
+_BYPASS_RE = re.compile(
+    r"^(?:CLAUDE_PUSH_APPROVED=1\b"
+    r"|\$env:CLAUDE_PUSH_APPROVED\s*=\s*(?:'1'|\"1\"|1)\s*;?)"
+)
+
 
 def _allow():
     """Fast allow: emit nothing (PreToolUse with no decision = allow)."""
@@ -62,7 +72,7 @@ def main():
         _allow()
 
     # Allow if the bypass token leads the raw command string (set by /push).
-    if re.match(r"^CLAUDE_PUSH_APPROVED=1\b", command):
+    if _BYPASS_RE.match(command):
         _allow()
 
     # Resolve the work-repo signal from the payload cwd (a git config read from
