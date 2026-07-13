@@ -3,12 +3,6 @@
   "autodiscover": true,
   "queue": [
     {
-      "id": "mechanize-prose-only-orchestrator-contracts",
-      "name": "Mechanize Prose-Only Orchestrator Contracts",
-      "spec_dir": "mechanize-prose-only-orchestrator-contracts",
-      "tier": 1
-    },
-    {
       "id": "coupled-pair-generation",
       "name": "Coupled-Pair Generation (derived skills from canonical + overlays)",
       "spec_dir": "coupled-pair-generation",

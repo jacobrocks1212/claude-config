@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** Complete-pending-ratification (all four phases implemented + tested this session;
+**Status:** Complete
 D1 provisionally accepted per `NEEDS_INPUT_PROVISIONAL.md` — completion is mechanically blocked
 until ratified)
 

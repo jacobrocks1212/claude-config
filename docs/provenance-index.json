@@ -233,6 +233,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mobile-queue-control",
       "type": "feature",
       "provenance": "backfilled"
@@ -2499,6 +2504,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/completion-gate-refusal-opacity/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/concurrent-same-branch-walkers-no-arbitration/PHASES.md": [
     {
       "id": "concurrent-same-branch-walkers-no-arbitration",
@@ -2537,6 +2549,13 @@
       "id": "concurrent-same-branch-walkers-no-arbitration",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/coord-lock-no-stale-reclaim/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/cycle-containment-allows-background-subagent-dispatch-deadlock/SPEC.md": [
@@ -2944,10 +2963,24 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/fixed-bugs-unarchived-fsck/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/format-cycle-header-emits-retired-cycle-fwd-format/SPEC.md": [
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/guard-fail-open-leaves-no-trace/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
@@ -3029,6 +3062,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/hardening-intervention-records-unmeasurable-or-missing/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/hardening-intervention-records-unmeasurable-or-missing/plans/all-phases-hardening-intervention-records-part-1.md": [
     {
       "id": "hardening-intervention-records-unmeasurable-or-missing",
@@ -3047,6 +3087,13 @@
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/interventions-telemetry-repo-scope-split-brain/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
@@ -3106,6 +3153,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/legacy-tool-input-env-hooks-dead/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/live-settings-split-brain-disarms-enforcement-plane/NEEDS_INPUT.md": [
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
@@ -3132,6 +3186,11 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/live-settings-split-brain-disarms-enforcement-plane/plans/fix-settings-split-brain-part-1.md": [
@@ -3145,6 +3204,13 @@
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/long-build-and-build-queue-matcher-bypasses/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
@@ -3181,6 +3247,20 @@
       "id": "loop-detected-false-positives-from-probe-and-reboot-churn",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/loop-detector-false-positives-probes-and-cross-run-state/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/mark-complete-partial-apply-noop-unrecoverable/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/mark-complete-skips-roadmap-strike-and-followups-queue-trim/FIXED.md": [
@@ -3305,6 +3385,20 @@
       "id": "mcp-tooling-not-predetermined-at-planning",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/mcp-validation-peels-one-seam-per-loop/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/meta-dispatch-not-by-reference-and-ack-overpriced/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/no-gemini-sprint-staging-in-claude-config/PHASES.md": [
@@ -3572,6 +3666,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/powershell-tool-bypasses-bash-matched-guards/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/probe-full-read-before-dispatch/PHASES.md": [
     {
       "id": "probe-full-read-before-dispatch",
@@ -3610,6 +3711,13 @@
       "id": "probe-full-read-before-dispatch",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/production-sentinel-writes-bypass-atomic-write/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/queue.json": [
@@ -3767,6 +3875,11 @@
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/recovery-self-certifies-verification-rows-without-evidence/PHASES.md": [
@@ -3950,6 +4063,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/skills-plane-hygiene-debris/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/skip-mcp-test-frontmatter-unquoted-colon/DEFERRED_NON_CLOUD.md": [
     {
       "id": "skip-mcp-test-frontmatter-unquoted-colon",
@@ -4039,6 +4159,13 @@
       "id": "stale-marker-arms-validate-deny-on-unrelated-dispatches",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/stale-runtime-health-200-false-blocked/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/stub-spec-route-loops-until-queue-stub-cleared/PHASES.md": [
@@ -4174,6 +4301,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/cli/cli-surface.json": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/CLAUDE.md": [
     {
       "id": "queue-dependency-dag",
@@ -4248,6 +4382,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mobile-queue-control",
       "type": "feature",
       "provenance": "backfilled"
@@ -4306,6 +4445,13 @@
     },
     {
       "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/bug-queue-aging-backpressure/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -4489,6 +4635,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/coupled-pair-generation/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/cross-platform-setup/COMPLETED.md": [
     {
       "id": "cross-platform-setup",
@@ -4583,6 +4736,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/cycle-prompt-environment-dialect/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/doc-drift-linter/COMPLETED.md": [
     {
       "id": "doc-drift-linter",
@@ -4628,6 +4788,13 @@
       "id": "doc-drift-linter",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/features/efficacy-signal-integrity/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/feature-budget-guard-and-skip-ahead/COMPLETED.md": [
@@ -5121,6 +5288,20 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/lazy-batch-skill-deflation/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/lazy-core-package-decomposition/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/lazy-cycle-containment/COMPLETED.md": [
     {
       "id": "lazy-cycle-containment",
@@ -5432,6 +5613,41 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/mechanize-prose-only-orchestrator-contracts/NEEDS_INPUT_PROVISIONAL.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/mechanize-prose-only-orchestrator-contracts/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/mechanize-prose-only-orchestrator-contracts/PHASES.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/mechanize-prose-only-orchestrator-contracts/RESEARCH_SUMMARY.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/mechanize-prose-only-orchestrator-contracts/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/mobile-queue-control/COMPLETED.md": [
     {
       "id": "mobile-queue-control",
@@ -5709,6 +5925,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/plan-structure-authoring-gate/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/queue-dependency-dag/COMPLETED.md": [
     {
       "id": "queue-dependency-dag",
@@ -5845,6 +6068,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mobile-queue-control",
       "type": "feature",
       "provenance": "backfilled"
@@ -5965,6 +6193,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/shared-hook-lib/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/skill-config-schema-and-reference-lint/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/skill-usage-miner/COMPLETED.md": [
     {
       "id": "skill-usage-miner",
@@ -6032,6 +6274,13 @@
   "docs/features/state-cli-contract-registry/PHASES.md": [
     {
       "id": "state-cli-contract-registry",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/state-cli-contract-registry/SPEC.md": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -6518,6 +6767,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "park-provisional-acceptance",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -6918,6 +7172,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "multi-repo-concurrent-runs",
       "type": "feature",
       "provenance": "backfilled"
@@ -6946,6 +7205,20 @@
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/coupled-overlays/lazy-batch-cloud.overlay.json": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/coupled-overlays/lazy-bug-batch.overlay.json": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/doc-drift-lint.py": [
@@ -7118,6 +7391,11 @@
       "id": "long-build-and-runtime-ownership",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "multi-repo-concurrent-runs",
@@ -7297,6 +7575,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "multi-repo-concurrent-runs",
       "type": "feature",
       "provenance": "backfilled"
@@ -7342,6 +7625,11 @@
       "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/lazy_parity_audit.py": [
@@ -7564,6 +7852,13 @@
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/skill-size-baseline.json": [
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/skill-usage-miner.py": [
@@ -7813,6 +8108,11 @@
       "id": "long-build-and-runtime-ownership",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "multi-repo-concurrent-runs",
@@ -8239,6 +8539,11 @@
   ],
   "user/skills/_components/lazy-batch-prompts/dispatch-apply-resolution.md": [
     {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "park-provisional-acceptance",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -8475,6 +8780,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mobile-queue-control",
       "type": "feature",
       "provenance": "backfilled"
@@ -8535,6 +8845,11 @@
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "park-provisional-acceptance",
