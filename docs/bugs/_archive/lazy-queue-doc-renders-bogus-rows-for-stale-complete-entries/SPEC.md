@@ -9,6 +9,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-13
+**Fixed:** 2026-07-13
+**Fix commit:** 30f9d5ae
 **Placement:** docs/bugs/lazy-queue-doc-renders-bogus-rows-for-stale-complete-entries
 **Related:** `docs/features/mobile-queue-control/` (introduced `lazy-queue-doc.py` +
 `pipeline_visualizer.probe`)
