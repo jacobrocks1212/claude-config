@@ -44,25 +44,30 @@ For each subagent report that DID produce a block:
    - `git status --short`
    - `wc -l <file>` for every file the subagent listed
    - `grep -n '<symbol>' <file>` for every new symbol the subagent listed
-   - **Do NOT re-run the test suite at this step by default** — that is conditional (item 4 below).
-2. **Diff your output against the subagent's pasted block.** Compare line by line.
-3. **Read each test's assertion against its name/intent (MANDATORY — always, even when integrity checks are clean).** This is the assertion-vs-intent read: a green test whose assertion contradicts the behavior its name claims (e.g. a `..._ReturnsTrue` test that asserts `False`/`Unknown`) is **defective** → `NEEDS-REWORK`. Ground-truth diffing cannot catch this because the test genuinely passes — so this read is the load-bearing default check, not a fallback. It is the only mechanism that caught the single real defect in the corpus; never skip it.
-4. **Conditional full-suite re-run — only on integrity mismatch.** If (and only if) a cheap integrity check in item 1/2 disagrees with the subagent's report — a `wc -l`/`grep -n`/`git status` mismatch, a missing block, or an "already complete" claim contradicted by `git log` — re-run the same test runner one-liner the subagent used and diff its PASS/FAIL counts. A clean integrity diff + a clean assertion-vs-intent read needs no test re-run.
-5. **"Already complete" sanity check.** If the subagent claimed any deliverable was "already complete before my work" or "done in a prior session," run:
+   - **Do NOT re-run the test suite at this step by default** — that is conditional (item 5 below).
+2. **Dirty-tree assertion against the WU's DECLARED files (MANDATORY, independent of the subagent's report — closes the git-stash false-green gap).** Self-report-vs-fresh-run parity (item 3 below) only proves the two readings *agree with each other* — it says nothing if both readings agree on a **wrong** ground truth, e.g. because the working tree was silently reverted (an un-popped `git stash`, a background job that ran `git checkout --`, etc.) before either reading was taken. Close that blind spot with a check that does not depend on the subagent's report at all:
+   - Pull this WU's **plan-declared** `Files to create/modify:` list (the WU's plan-body definition — see `~/.claude/skills/write-plan/SKILL.md`'s per-WU template) — or, if the plan doesn't enumerate the WU that granularly, the subagent's own prose `Files created\modified:` line.
+   - For every file on that list, confirm from your fresh `git status --short` (item 1) that it shows as a change (modified/added/staged) — OR, if this WU's work already landed in its own commit, confirm via `git show --stat HEAD -- <file>` that the file appears in that commit.
+   - **A declared file showing byte-identical to the pre-batch baseline — clean in `git status --short` AND absent from the WU's own commit — is an automatic `Ground-truth verified: no`, even when the subagent's self-report agrees the file is unchanged.** A tree that reflects nothing is not "verified" merely because two readings of the same nothing match each other. This is the check that would have caught the git-stash false-green: a subagent that stashed its edit and never popped it produces a self-consistent (both readings clean) but substantively empty report — this item is the only one that asserts *something landed*, not just that two reports of a possibly-empty tree agree.
+3. **Diff your output against the subagent's pasted block.** Compare line by line.
+4. **Read each test's assertion against its name/intent (MANDATORY — always, even when integrity checks are clean).** This is the assertion-vs-intent read: a green test whose assertion contradicts the behavior its name claims (e.g. a `..._ReturnsTrue` test that asserts `False`/`Unknown`) is **defective** → `NEEDS-REWORK`. Ground-truth diffing cannot catch this because the test genuinely passes — so this read is the load-bearing default check, not a fallback. It is the only mechanism that caught the single real defect in the corpus; never skip it.
+5. **Conditional full-suite re-run — only on integrity mismatch.** If (and only if) a cheap integrity check in item 1/2/3 disagrees with the subagent's report — a `wc -l`/`grep -n`/`git status` mismatch, a missing block, an unmet dirty-tree assertion (item 2), or an "already complete" claim contradicted by `git log` — re-run the same test runner one-liner the subagent used and diff its PASS/FAIL counts. A clean integrity diff + a clean dirty-tree assertion + a clean assertion-vs-intent read needs no test re-run.
+6. **"Already complete" sanity check.** If the subagent claimed any deliverable was "already complete before my work" or "done in a prior session," run:
    ```
    git log -1 --format='%H %cI %s' -- <file>
    ```
    for each file involved. If the most recent commit is from the current session (e.g., within the last hour, or after the session start timestamp), the "already complete" claim is almost certainly the subagent misreading its own diff. Treat the claim as falsified and the verdict as `NEEDS-REWORK`.
-6. **Any mismatch is a falsified report.** Mismatches include:
+7. **Any mismatch is a falsified report.** Mismatches include:
    - Off-by-one (or larger) LOC counts in `wc -l`
    - Missing grep matches (subagent claimed `grep -n` returned a hit; your fresh run returns nothing or a different line number)
    - Test counts that don't match (passed/failed/ignored differ from the subagent's paste)
    - `git status --short` entries that don't match (extra files, missing files, different status flags)
+   - A WU-declared file that fails the item 2 dirty-tree assertion (no diff against the pre-batch baseline and not present in the WU's own commit) — a **false-empty match**, not a mismatch between reports, but equally disqualifying
 
 Record the gate outcome explicitly. One of:
 
-- `Ground-truth verified: yes` — every command's fresh output matched the subagent's pasted block exactly, and no "already complete" claims survived the sanity check.
-- `Ground-truth verified: no` — the subagent omitted the `GROUND-TRUTH OUTPUT` block or the block is incomplete.
+- `Ground-truth verified: yes` — every command's fresh output matched the subagent's pasted block exactly, every WU-declared file passed the item 2 dirty-tree assertion, and no "already complete" claims survived the sanity check.
+- `Ground-truth verified: no` — the subagent omitted the `GROUND-TRUTH OUTPUT` block or the block is incomplete, OR a WU-declared file failed the item 2 dirty-tree assertion (present on the plan's file list but absent from both `git status --short` and the WU's own commit).
 - `Ground-truth verified: mismatch` — the block is present but at least one command's fresh output differs from the pasted output, OR an "already complete" claim was contradicted by `git log`.
 
 **If the outcome is `no` or `mismatch`, the verdict for that work unit is `NEEDS-REWORK`** regardless of how good the prose review looks. Note the specific mismatches in the actionable items. Do not proceed to substantive review of that work unit until the subagent re-produces a verified block — but do continue to substantive review of OTHER work units in the batch whose blocks verified cleanly.
