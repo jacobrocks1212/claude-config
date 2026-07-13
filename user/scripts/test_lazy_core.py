@@ -6762,6 +6762,138 @@ def test_apply_pseudo_coherence_no_status_phase_with_unchecked_still_refuses():
         assert not (spec_dir / "COMPLETED.md").exists(), "COMPLETED.md written despite refusal"
 
 
+# --- descoped-marker-blind-completion-coherence-gate ------------------------
+# The completion-coherence gate must honor the canonical _DESCOPED_MARKER (row-
+# AND header-scope) exactly as remaining_unchecked_are_verification_only does
+# mid-feature — a deliberately-DEFERRED phase must not deadlock the receipt.
+
+# A DEFERRED-not-attempted phase carrying header-scope + row-scope descope markers
+# and NO Status line — the state-cli-contract-registry Phase 4 repro shape.
+_DESCOPED_PHASE_4 = (
+    "### Phase 4: state_cli extraction — DEFERRED, not attempted\n"
+    "\n"
+    "**Deliverables:** none attempted (all descoped-in-place). <!-- descoped -->\n"
+    "- [ ] `state_cli.py` — NOT created. <!-- descoped -->\n"
+    "- [ ] Shared-flag/helper hoist — NOT performed. <!-- descoped -->\n"
+)
+
+
+def test_parse_phases_counts_unchecked_descoped():
+    """parse_phases exposes an additive `unchecked_descoped` sub-count of
+    `unchecked` — row-scope marker, header-scope marker, and legacy struck-through
+    shim all count; `unchecked` itself stays a full tally for existing callers."""
+    text = (
+        "## Phase 1 — done\n\n**Status:** Complete\n\n- [x] real\n\n"
+        + _DESCOPED_PHASE_4
+    )
+    parsed = lazy_core.parse_phases(text)
+    p4 = parsed[1]
+    assert p4["unchecked"] == 2, f"unchecked must tally every box, got {p4['unchecked']}"
+    assert p4["unchecked_descoped"] == 2, (
+        f"both rows are descoped (row+header scope), got {p4['unchecked_descoped']}"
+    )
+    # Existing callers unaffected: Phase 1 has no descoped rows.
+    assert parsed[0]["unchecked_descoped"] == 0
+
+
+def test_phase_completion_plan_descoped_phase_not_refused():
+    """The repro: a fully-descoped phase (row+header scope, no Status) produces
+    ZERO refusals — the deadlock class this bug fixes."""
+    parsed = lazy_core.parse_phases(_DESCOPED_PHASE_4)
+    _flip, refusals = lazy_core._phase_completion_plan(parsed)
+    assert refusals == [], f"a fully-descoped phase must not refuse, got {refusals!r}"
+
+
+def test_phase_completion_plan_header_scope_descope_exempts():
+    """Header-scope only: the rows lack the row marker but sit under a bold header
+    carrying `<!-- descoped -->` — still exempt."""
+    text = (
+        "### Phase 6: deferred\n\n**Descoped:** <!-- descoped -->\n"
+        "- [ ] a\n- [ ] b\n"
+    )
+    parsed = lazy_core.parse_phases(text)
+    assert parsed[0]["unchecked_descoped"] == 2
+    _flip, refusals = lazy_core._phase_completion_plan(parsed)
+    assert refusals == [], f"header-scope descope must exempt all rows, got {refusals!r}"
+
+
+def test_phase_completion_plan_mixed_descoped_and_genuine_still_refuses():
+    """OVER-EXEMPTION GUARD: a phase with a genuine unchecked row alongside a
+    descoped one still refuses — and names ONLY the genuine (blocking) count."""
+    text = (
+        "### Phase 5: mixed\n\n**Deliverables:**\n"
+        "- [ ] genuine work not done\n"
+        "- [ ] dropped one <!-- descoped -->\n"
+    )
+    parsed = lazy_core.parse_phases(text)
+    assert parsed[0]["unchecked"] == 2 and parsed[0]["unchecked_descoped"] == 1
+    _flip, refusals = lazy_core._phase_completion_plan(parsed)
+    assert len(refusals) == 1 and "1 unchecked box(es)" in refusals[0], (
+        f"must refuse the 1 genuine box (not 2), got {refusals!r}"
+    )
+
+
+def test_phase_completion_plan_descoped_phase_with_status_flips():
+    """A descoped-only phase carrying a non-terminal Status line auto-flips to
+    Complete (like an all-ticked phase) instead of tripping the status-straggler
+    refusal."""
+    text = (
+        "### Phase 7: deferred with status\n\n**Status:** In-progress\n\n"
+        "**Deliverables:** all dropped <!-- descoped -->\n"
+        "- [ ] a <!-- descoped -->\n"
+    )
+    parsed = lazy_core.parse_phases(text)
+    flip, refusals = lazy_core._phase_completion_plan(parsed)
+    assert refusals == [], f"expected no refusal, got {refusals!r}"
+    assert flip and flip[0]["heading"].startswith("### Phase 7"), (
+        f"the descoped phase should flip to Complete, got flip={flip!r}"
+    )
+
+
+def test_apply_pseudo_coherence_descoped_phase_completes():
+    """End-to-end: __mark_complete__ writes the receipt for a feature whose only
+    remaining unchecked rows are descoped (the deadlock is broken at the ship
+    seam, not just in the unit predicate)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        _write_phases_md(
+            spec_dir,
+            "## Phase 1 — done\n\n**Status:** Complete\n\n- [x] real\n\n"
+            + _DESCOPED_PHASE_4,
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_complete__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, f"expected ok=True (descoped exempt), got {result}"
+        assert result["refused"] is None, f"expected no refusal, got {result!r}"
+        assert (spec_dir / "COMPLETED.md").exists(), "COMPLETED.md not written"
+
+
+def test_apply_pseudo_coherence_mark_fixed_descoped_phase_completes():
+    """Bug-pipeline mirror: __mark_fixed__ likewise completes a descoped-phase
+    PHASES.md (the fix lives in shared lazy_core, so both pipelines inherit it)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="Investigating")
+        _write_phases_md(
+            spec_dir,
+            "## Phase 1 — repro+fix\n\n**Status:** Complete\n\n- [x] fixed\n\n"
+            + _DESCOPED_PHASE_4,
+        )
+        result = lazy_core.apply_pseudo(
+            Path(td), "__mark_fixed__", spec_dir, date="2026-06-10"
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        assert (spec_dir / "FIXED.md").exists(), "FIXED.md not written"
+
+
 def test_apply_pseudo_coherence_idempotent_skips_check_when_receipted():
     """Idempotency takes precedence over the coherence check: a receipted dir
     NEVER re-refuses on an incoherent PHASES.md. mark-complete-partial-apply-
@@ -18628,6 +18760,14 @@ _TESTS = [
     ("test_apply_pseudo_coherence_no_phases_md_preserves_behavior", test_apply_pseudo_coherence_no_phases_md_preserves_behavior),
     ("test_apply_pseudo_coherence_no_status_phase_all_checked_proceeds", test_apply_pseudo_coherence_no_status_phase_all_checked_proceeds),
     ("test_apply_pseudo_coherence_no_status_phase_with_unchecked_still_refuses", test_apply_pseudo_coherence_no_status_phase_with_unchecked_still_refuses),
+    # descoped-marker-blind-completion-coherence-gate
+    ("test_parse_phases_counts_unchecked_descoped", test_parse_phases_counts_unchecked_descoped),
+    ("test_phase_completion_plan_descoped_phase_not_refused", test_phase_completion_plan_descoped_phase_not_refused),
+    ("test_phase_completion_plan_header_scope_descope_exempts", test_phase_completion_plan_header_scope_descope_exempts),
+    ("test_phase_completion_plan_mixed_descoped_and_genuine_still_refuses", test_phase_completion_plan_mixed_descoped_and_genuine_still_refuses),
+    ("test_phase_completion_plan_descoped_phase_with_status_flips", test_phase_completion_plan_descoped_phase_with_status_flips),
+    ("test_apply_pseudo_coherence_descoped_phase_completes", test_apply_pseudo_coherence_descoped_phase_completes),
+    ("test_apply_pseudo_coherence_mark_fixed_descoped_phase_completes", test_apply_pseudo_coherence_mark_fixed_descoped_phase_completes),
     ("test_apply_pseudo_coherence_idempotent_skips_check_when_receipted", test_apply_pseudo_coherence_idempotent_skips_check_when_receipted),
     # neutralize_sentinel — WU-3 rename-to-resolved helper
     ("test_neutralize_sentinel_basic_rename", test_neutralize_sentinel_basic_rename),

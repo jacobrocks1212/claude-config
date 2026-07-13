@@ -2721,6 +2721,12 @@ def parse_phases(phases_text: str) -> list[dict]:
     phases: list[dict] = []
     current: dict | None = None
     in_fence = False
+    # Header-scope descope tracking (descoped-marker-blind-completion-coherence-gate):
+    # a non-phase heading or bold subsection header carrying _DESCOPED_MARKER exempts
+    # every plain unchecked row beneath it until the next phase / named-subsection
+    # boundary — the descope axis of the scope machinery proven in
+    # remaining_unchecked_are_verification_only. Reset at each phase heading.
+    section_has_descope_marker = False
     for line in phases_text.splitlines():
         stripped = line.strip()
         # Fence markers are never headings, status lines, or deliverables.
@@ -2735,10 +2741,17 @@ def parse_phases(phases_text: str) -> list[dict]:
             continue
         # A phase heading starts a new section (and closes the previous one).
         if _PHASE_HEADING_RE.match(line):
+            section_has_descope_marker = False
             current = {
                 "heading": stripped,
                 "status": None,
                 "unchecked": 0,
+                # Count of the ``unchecked`` rows above that are deliberately-DROPPED
+                # (descoped-in-place) deliverables — a strict subset of ``unchecked``,
+                # consulted ONLY by _phase_completion_plan so a fully-descoped phase
+                # is not counted as a genuine incomplete deliverable at completion time
+                # (descoped-marker-blind-completion-coherence-gate).
+                "unchecked_descoped": 0,
                 "checked": 0,
                 # Tracks whether a **Phase kind:** line has been consumed yet
                 # (first-wins, like status). The public ``phase_kind`` value is
@@ -2754,6 +2767,26 @@ def parse_phases(phases_text: str) -> list[dict]:
         # stray checkboxes) is intentionally ignored.
         if current is None:
             continue
+        # Descope header-scope tracking (mirror of
+        # remaining_unchecked_are_verification_only, descope axis only). A non-phase
+        # heading (phase headings were handled + continued above) or a bold
+        # subsection header carrying _DESCOPED_MARKER opens header-scope descope;
+        # a verification/deliverables header WITHOUT the marker closes it. Other
+        # bold prose (**Status:**, **Assessment:**) preserves the current scope.
+        # This block only updates the flag and falls through — the Status /
+        # phase-kind / checkbox handling below is unchanged.
+        if re.match(r"^#{1,6}\s+", stripped):
+            section_has_descope_marker = _DESCOPED_MARKER in line
+        elif stripped.startswith("**"):
+            if _DESCOPED_MARKER in line:
+                section_has_descope_marker = True
+            else:
+                _bold = re.match(r"^\*\*(.+?)\*\*", stripped)
+                if _bold and (
+                    _VERIFICATION_SECTION_RE.search(_bold.group(1))
+                    or _DELIVERABLES_SECTION_RE.search(_bold.group(1))
+                ):
+                    section_has_descope_marker = False
         # First **Status:** line inside the section wins; later ones (e.g. inside
         # an Implementation Notes block describing prior state) are ignored.
         if current["status"] is None:
@@ -2775,6 +2808,16 @@ def parse_phases(phases_text: str) -> list[dict]:
         # Checkbox accounting (fence-aware — fenced rows already skipped above).
         if re.match(r"^-\s*\[\s*\]", stripped):
             current["unchecked"] += 1
+            # A deliberately-DROPPED-in-place unchecked row is exempt at completion
+            # time exactly as remaining_unchecked_are_verification_only exempts it
+            # mid-feature: canonical row-scope _DESCOPED_MARKER, an enclosing
+            # header-scope descope marker, OR the legacy struck-through descope shim.
+            if (
+                _DESCOPED_MARKER in line
+                or section_has_descope_marker
+                or _row_is_descoped_in_place(stripped)
+            ):
+                current["unchecked_descoped"] += 1
         elif re.match(r"^-\s*\[[xX]\]", stripped):
             current["checked"] += 1
     # Drop the private bookkeeping key so the returned records expose only the
@@ -3012,10 +3055,22 @@ def _phase_completion_plan(phases: list[dict]) -> tuple[list[dict], list[str]]:
         is_superseded = status_norm == "superseded"
         is_terminal = status_norm in _TERMINAL_PHASE_STATUSES
         has_boxes = (ph["checked"] + ph["unchecked"]) > 0
-        all_checked = has_boxes and ph["unchecked"] == 0
+        # Deliberately-DROPPED-in-place (descoped) unchecked rows are not owed
+        # deliverables — they are exempt at completion time exactly as
+        # remaining_unchecked_are_verification_only exempts them mid-feature (a
+        # whole phase deferred by SPEC decision via row-/header-scope
+        # _DESCOPED_MARKER, e.g. a "DEFERRED, not attempted" phase). Discount them
+        # from the blocking count so a fully-descoped phase is coherent for
+        # completion instead of deadlocking the receipt
+        # (descoped-marker-blind-completion-coherence-gate). ``unchecked`` still
+        # tallies every box; only the BLOCKING (non-descoped) remainder gates.
+        effective_unchecked = ph["unchecked"] - ph.get("unchecked_descoped", 0)
+        all_checked = has_boxes and effective_unchecked == 0
 
         # --- (a) auto-flip candidates ---
-        # A present, non-terminal status whose every box is checked → flip.
+        # A present, non-terminal status whose every non-descoped box is checked
+        # → flip (a phase whose only remaining rows are descoped is done-for-
+        # completion just like an all-ticked phase).
         will_flip = (
             status is not None
             and not is_terminal
@@ -3029,11 +3084,12 @@ def _phase_completion_plan(phases: list[dict]) -> tuple[list[dict], list[str]]:
         if is_superseded:
             continue
 
-        # Unchecked boxes in a non-Superseded phase always block completion —
-        # the verification carve-out does not apply at completion time.
-        if ph["unchecked"] > 0:
+        # Genuine (non-descoped) unchecked boxes in a non-Superseded phase always
+        # block completion — the verification carve-out does not apply at
+        # completion time, but a deliberately-descoped row is not a deliverable.
+        if effective_unchecked > 0:
             refusals.append(
-                f'{ph["heading"]}: {ph["unchecked"]} unchecked box(es)'
+                f'{ph["heading"]}: {effective_unchecked} unchecked box(es)'
             )
             continue
 
