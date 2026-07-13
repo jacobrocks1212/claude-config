@@ -11658,10 +11658,41 @@ def _seed_efficacy_breadcrumb(state_dir):
     override key).  Must be called AFTER the run-start that wrote the marker and
     BEFORE the success ``--run-end`` (run-scoped: keyed to the live marker's
     started_at).
+
+    adhoc-run-end-tests-leak-real-repo-state: the gate ALSO requires the
+    breadcrumb's ``interventions_covered`` flag (interventions-telemetry-repo-
+    scope-split-brain WU-2), which ``lazy_core.drop_efficacy_breadcrumb`` derives
+    from ``_repo_is_interventions_bearing(covered_repo_root)`` — a REAL
+    ``docs/interventions/*.md`` presence check.  The bare no-arg call this
+    helper used to make only satisfied that check *by accident*: these
+    hermetic --run-end subprocess tests never passed ``--repo-root`` to their
+    own ``--run-start``, so the live marker's ``repo_root`` field silently
+    defaulted to ``os.getcwd()`` — the REAL claude-config checkout, which
+    genuinely IS interventions-bearing — and ``drop_efficacy_breadcrumb``'s
+    fallback read that REAL directory to compute the flag.  Now that the
+    sibling fixture-repo isolation fix means these tests' markers carry a
+    hermetic (non-interventions-bearing) temp ``repo_root``, this helper seeds
+    its OWN disposable interventions-bearing fixture directory (a sibling of
+    ``state_dir``, NEVER the real checkout) and passes it EXPLICITLY as
+    ``covered_repo_root`` — so the crumb's coverage flag no longer depends on
+    the marker's repo_root, or on the real repo, at all.
     """
     _set_state_dir(state_dir)
     try:
-        lazy_core.drop_efficacy_breadcrumb()
+        fixture_repo = state_dir.parent / f"{state_dir.name}-efficacy-fixture"
+        interventions_dir = fixture_repo / "docs" / "interventions"
+        interventions_dir.mkdir(parents=True, exist_ok=True)
+        marker_md = interventions_dir / "adhoc-test-fixture.md"
+        if not marker_md.exists():
+            marker_md.write_text(
+                "# adhoc-test-fixture\n\n"
+                "Disposable interventions-bearing marker for hermetic "
+                "--run-end subprocess tests (adhoc-run-end-tests-leak-real-"
+                "repo-state). Never read by production; satisfies "
+                "_repo_is_interventions_bearing's *.md presence check only.\n",
+                encoding="utf-8",
+            )
+        lazy_core.drop_efficacy_breadcrumb(covered_repo_root=str(fixture_repo))
     finally:
         _clear_state_dir()
 
@@ -19235,18 +19266,33 @@ def test_p7_run_end_checkpoint_attended_no_auth_refuses():
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "p7-ckpt-attended"
         state_dir.mkdir()
+        # adhoc-run-end-tests-leak-real-repo-state: a hermetic fixture repo
+        # root — NEVER the default os.getcwd() (the real claude-config
+        # checkout) — so notify_event/flush_cloud_telemetry_segment and any
+        # other --repo-root consumer this subprocess reaches never touch the
+        # real repo.
+        repo_dir = Path(td) / "p7-ckpt-attended-repo"
+        repo_dir.mkdir()
         env = dict(_os_env_p7.environ)
         env["LAZY_STATE_DIR"] = str(state_dir)
 
         def run(args):
             return subprocess.run(
-                [sys.executable, str(lazy_state)] + args,
+                [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
                 capture_output=True, text=True, env=env,
             )
 
         # --run-start WITHOUT --unattended → attended=True marker.
         r_start = run(["--run-start", "--max-cycles", "10"])
         assert r_start.returncode == 0, f"run-start failed: {r_start.stderr}"
+
+        # adhoc-run-end-tests-leak-real-repo-state: seed the efficacy-flush
+        # breadcrumb FIRST so this --run-end reaches the STOP-AUTHORIZATION
+        # (checkpoint) gate under test, not the earlier-positioned efficacy
+        # gate (which would otherwise refuse first and mask the assertion
+        # below — a distinct refusal reason that happened to satisfy the same
+        # loose {exit 1, run_marker_deleted: False, "refused" present} shape).
+        _seed_efficacy_breadcrumb(state_dir)
 
         # --run-end --reason checkpoint WITHOUT --operator-authorized → REFUSE.
         r = run(["--run-end", "--reason", "checkpoint",
@@ -19260,6 +19306,15 @@ def test_p7_run_end_checkpoint_attended_no_auth_refuses():
             f"refused run-end must NOT delete the marker; got {out!r}"
         )
         assert "refused" in out, f"refused output must contain 'refused' key; got {out!r}"
+        # Pin the refusal to the STOP-AUTHORIZATION (checkpoint) gate
+        # specifically — not an incidental earlier gate (e.g. the efficacy
+        # breadcrumb gate) that happens to share the same output shape.
+        assert "Stop-authorization gate" in out["refused"], (
+            f"expected the checkpoint stop-authorization gate to refuse; got {out!r}"
+        )
+        assert out.get("attended") is True, (
+            f"the checkpoint-gate refusal must echo attended=True; got {out!r}"
+        )
         # The marker file must still exist on disk (the whole point).
         marker_file = state_dir / "lazy-run-marker.json"
         assert marker_file.exists(), (
@@ -19278,12 +19333,15 @@ def test_p7_run_end_checkpoint_attended_with_auth_succeeds():
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "p7-ckpt-auth"
         state_dir.mkdir()
+        # adhoc-run-end-tests-leak-real-repo-state: hermetic fixture repo root.
+        repo_dir = Path(td) / "p7-ckpt-auth-repo"
+        repo_dir.mkdir()
         env = dict(_os_env_p7.environ)
         env["LAZY_STATE_DIR"] = str(state_dir)
 
         def run(args):
             return subprocess.run(
-                [sys.executable, str(lazy_state)] + args,
+                [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
                 capture_output=True, text=True, env=env,
             )
 
@@ -19320,12 +19378,15 @@ def test_p7_run_end_checkpoint_unattended_no_auth_allowed():
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "p7-ckpt-unattended"
         state_dir.mkdir()
+        # adhoc-run-end-tests-leak-real-repo-state: hermetic fixture repo root.
+        repo_dir = Path(td) / "p7-ckpt-unattended-repo"
+        repo_dir.mkdir()
         env = dict(_os_env_p7.environ)
         env["LAZY_STATE_DIR"] = str(state_dir)
 
         def run(args):
             return subprocess.run(
-                [sys.executable, str(lazy_state)] + args,
+                [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
                 capture_output=True, text=True, env=env,
             )
 
@@ -19362,12 +19423,15 @@ def test_p7_run_end_terminal_sanctioned_reason_allowed():
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "p7-term-sanctioned"
         state_dir.mkdir()
+        # adhoc-run-end-tests-leak-real-repo-state: hermetic fixture repo root.
+        repo_dir = Path(td) / "p7-term-sanctioned-repo"
+        repo_dir.mkdir()
         env = dict(_os_env_p7.environ)
         env["LAZY_STATE_DIR"] = str(state_dir)
 
         def run(args):
             return subprocess.run(
-                [sys.executable, str(lazy_state)] + args,
+                [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
                 capture_output=True, text=True, env=env,
             )
 
@@ -19397,17 +19461,26 @@ def test_p7_run_end_terminal_nonsanctioned_reason_refuses_without_auth():
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "p7-term-bogus"
         state_dir.mkdir()
+        # adhoc-run-end-tests-leak-real-repo-state: hermetic fixture repo root.
+        repo_dir = Path(td) / "p7-term-bogus-repo"
+        repo_dir.mkdir()
         env = dict(_os_env_p7.environ)
         env["LAZY_STATE_DIR"] = str(state_dir)
 
         def run(args):
             return subprocess.run(
-                [sys.executable, str(lazy_state)] + args,
+                [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
                 capture_output=True, text=True, env=env,
             )
 
         r_start = run(["--run-start", "--max-cycles", "10"])
         assert r_start.returncode == 0
+
+        # adhoc-run-end-tests-leak-real-repo-state: seed the efficacy-flush
+        # breadcrumb so this --run-end reaches the TERMINAL-REASON gate under
+        # test, not the earlier-positioned efficacy gate (a distinct refusal
+        # that happened to satisfy the same loose output shape).
+        _seed_efficacy_breadcrumb(state_dir)
 
         r = run(["--run-end", "--reason", "terminal",
                  "--terminal-reason", "bogus-reason"])
@@ -19420,6 +19493,13 @@ def test_p7_run_end_terminal_nonsanctioned_reason_refuses_without_auth():
             f"refused terminal run-end must NOT delete the marker; got {out!r}"
         )
         assert "refused" in out, f"refused output must contain 'refused' key; got {out!r}"
+        # Pin the refusal to the TERMINAL-REASON gate specifically.
+        assert "Stop-authorization gate" in out["refused"], (
+            f"expected the terminal-reason stop-authorization gate to refuse; got {out!r}"
+        )
+        assert "bogus-reason" in out["refused"], (
+            f"refusal must name the non-sanctioned reason; got {out!r}"
+        )
         # Marker must still exist.
         assert (state_dir / "lazy-run-marker.json").exists(), (
             "marker must remain on disk after non-sanctioned terminal refusal"
@@ -19438,12 +19518,15 @@ def test_p7_run_end_terminal_nonsanctioned_reason_with_auth_allowed():
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "p7-term-bogus-auth"
         state_dir.mkdir()
+        # adhoc-run-end-tests-leak-real-repo-state: hermetic fixture repo root.
+        repo_dir = Path(td) / "p7-term-bogus-auth-repo"
+        repo_dir.mkdir()
         env = dict(_os_env_p7.environ)
         env["LAZY_STATE_DIR"] = str(state_dir)
 
         def run(args):
             return subprocess.run(
-                [sys.executable, str(lazy_state)] + args,
+                [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
                 capture_output=True, text=True, env=env,
             )
 
@@ -19476,12 +19559,15 @@ def test_p7_run_end_terminal_no_terminal_reason_adds_deprecation():
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "p7-term-legacy"
         state_dir.mkdir()
+        # adhoc-run-end-tests-leak-real-repo-state: hermetic fixture repo root.
+        repo_dir = Path(td) / "p7-term-legacy-repo"
+        repo_dir.mkdir()
         env = dict(_os_env_p7.environ)
         env["LAZY_STATE_DIR"] = str(state_dir)
 
         def run(args):
             return subprocess.run(
-                [sys.executable, str(lazy_state)] + args,
+                [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
                 capture_output=True, text=True, env=env,
             )
 
@@ -20095,12 +20181,16 @@ def test_marker_present_cli_absent_then_present_and_readonly():
         # Point LAZY_STATE_DIR at a path that does NOT yet exist so the read-only
         # contract (no dir creation) is observable.
         state_dir = Path(td) / "absent-state"
+        # adhoc-run-end-tests-leak-real-repo-state: hermetic fixture repo root
+        # — never the default os.getcwd() (the real claude-config checkout).
+        repo_dir = Path(td) / "absent-state-repo"
+        repo_dir.mkdir()
         env = dict(_os_env.environ)
         env["LAZY_STATE_DIR"] = str(state_dir)
 
         def run(args):
             return subprocess.run(
-                [sys.executable, str(lazy_state)] + args,
+                [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
                 capture_output=True, text=True, env=env,
             )
 
