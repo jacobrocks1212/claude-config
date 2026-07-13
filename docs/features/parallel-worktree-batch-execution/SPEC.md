@@ -12,9 +12,13 @@
 > existing arbitration model; it never bypasses or weakens `refuse_run_start_clobber`, and the
 > containment hook family governs every lane cycle unchanged. High ambition — multi-phase.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-04
+**Friction-reduction feature:** yes — the friction is serial-only queue execution: independent
+items wait behind each other even when nothing shared blocks them, and every existing arbitration
+layer was built to PREVENT concurrency, not provide it (Executive Summary). Declared against the
+existing registry row below.
 **Source:** repo-exploration proposal session 2026-07-04; fleshed out via internal desk research
 2026-07-04 (Gemini research skipped by operator directive — see RESEARCH.md)
 
@@ -511,6 +515,27 @@ Estimate: ~6 sessions (one per phase; Phases 4 and 5 are the risk-dense ones).
 | Single-writer trio | Full run | Every `queue.json`/ROADMAP/LAZY_QUEUE.md write is coordinator-at-main-root under lock | Ledger audit + git blame of run commits |
 | Coordinator death recovery | Kill coordinator mid-run; re-invoke later | TTL reclaim scrubs slots; stale lane markers age out; no manual queue repair needed | Reclaim fixture + live check |
 | Heavy-build serialization | Lane triggers an exact long-build token | `LONG-BUILD-OWNERSHIP-TAKEOVER` deny; coordinator runs it serially | Hook fixture + session log |
+
+## KPI Declaration
+
+Existing registry row (`docs/kpi/registry.json`) — `pipeline-efficiency` system:
+
+- kpi: cycles-per-completion
+
+**Honesty note on fit:** this feature's currency is explicitly the forward-cycle budget, not a
+wall-clock timer — D6 makes the operator-authorized `max_cycles` the aggregate SSOT and every
+lane cycle, merge, and demoted re-run debits the SAME parent budget (Technical Design; D6). A
+parallel wave that lands N independent items by sharing the coordinator's one claim/merge/tail
+overhead across them, instead of each item paying its own serial overhead in turn, should show up
+as a lower `cycles-per-completion` for the run — that is the nearest existing lens on this
+feature's orchestration-efficiency effect. It does NOT directly measure wall-clock speedup (no
+signal source in this repo captures wall-clock parallelism today), and a demotion-heavy run
+(false-`independent` markers, D4) would blunt or reverse the improvement — which is itself the
+correct, honest signal that lane sharding is mis-tuned. A dedicated lane-throughput /
+demotion-rate metric is a documented vN gap (`/lazy-batch-retro`'s Step 6f demotion audit feed is
+today's qualitative substitute; see "Concurrency plane" in `user/scripts/CLAUDE.md`), not drafted
+here because its selector would need new computation wiring this feature has no remaining phase
+to carry.
 
 ## Open Questions
 

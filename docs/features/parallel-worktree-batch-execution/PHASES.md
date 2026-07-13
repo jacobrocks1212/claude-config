@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In Progress
+**Status:** Complete
 
 **MCP runtime:** not-required — pure claude-config harness mechanics (Python concurrency plane +
 state scripts + skill prose + docs). No Tauri app, no MCP-reachable surface; validation is
@@ -334,8 +334,8 @@ false-`independent` audit feed; docs (`user/scripts/CLAUDE.md` concurrency-plane
 parity audit exit 0; the full gate suite passes with only the two sanctioned skips.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] Docs/lint consistency: projection + `lint-skills.py` clean over the new skill and edited components' consumers. *(Evidence: `project-skills.py --output-dir /tmp/proj-parallel-worktree-batch-execution` + `lint-skills.py` clean.)* <!-- verification-only -->
-- [ ] Single-writer trio (contract half): the skill's HARD CONSTRAINTS bind every `queue.json`/ROADMAP/LAZY_QUEUE.md write to coordinator-at-main-root under lock after `verify_fencing`; lanes never invoke `__mark_complete__`/`__mark_fixed__`. *(Evidence: SKILL.md hard-constraint text + lazy_coord fencing fixtures.)* <!-- verification-only -->
+- [x] Docs/lint consistency: projection + `lint-skills.py` clean over the new skill and edited components' consumers. *(Evidence: `project-skills.py` — 88 skills / 100 components, 0 errors, all 3 repo projections incl. claude-config; `lint-skills.py --check-projected --check-capabilities` — clean, re-verified 2026-07-12 finalization cycle.)* <!-- verification-only -->
+- [x] Single-writer trio (contract half): the skill's HARD CONSTRAINTS bind every `queue.json`/ROADMAP/LAZY_QUEUE.md write to coordinator-at-main-root under lock after `verify_fencing`; lanes never invoke `__mark_complete__`/`__mark_fixed__`. *(Evidence: `user/skills/lazy-batch-parallel/SKILL.md` P1 "Single-writer trio (D7)" hard-constraint text, verified on disk 2026-07-12; `lazy_coord.py --test` fencing fixtures `zombie-lane-fenced` + `queue-order-merge-determinism` + `conflict-demotes-preserves-lane-branch` all PASS.)* <!-- verification-only -->
 - **DEFERRED (workstation-only, not a completion blocker):** a full live `/lazy-batch-parallel 24 --lanes 3` run on claude-config/AlgoBooth (shard report, concurrent lanes, queue-order landing, flush report, git-blame single-writer audit of run commits) — the SPEC validation table's live rows; needs a workstation + real Claude Code session.
 - **DEFERRED (workstation-only, not a completion blocker):** heavy-build serialization observed live (`LONG-BUILD-OWNERSHIP-TAKEOVER` deny bubbling from a lane; coordinator running the build serially) — the hook's deny path is already covered by `test_hooks.py`; the lane-context live observation needs a workstation run (D8 adds no new machinery by decision).
 
@@ -350,10 +350,11 @@ parity audit exit 0; the full gate suite passes with only the two sanctioned ski
 **Testing Strategy:** Docs/skills phase — projection + lint + full gate suite as acceptance;
 no state-machine changes here.
 
-**Status:** Implementation complete (validation gate pending). Deliverable rows 307–330 ticked;
-the two `<!-- verification-only -->` Runtime-Verification rows (337–338) remain for the state
-machine's verification gate; the two DEFERRED workstation-only live-run rows (339–340) are
-explicitly not completion blockers.
+**Status:** Complete. Deliverable rows 307–330 ticked; the two `<!-- verification-only -->`
+Runtime-Verification rows are now `[x]` (evidence above, re-verified in the 2026-07-12
+finalization cycle); the two DEFERRED workstation-only live-run rows remain explicitly
+non-blocking (a genuine live `/lazy-batch-parallel` multi-lane run is the honest verification
+vehicle for those two rows — see COMPLETED.md).
 
 #### Implementation Notes (Phase 6 / WU-6.5 — cloud finalization cycle)
 

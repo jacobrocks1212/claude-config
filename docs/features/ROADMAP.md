@@ -73,7 +73,7 @@ the historical / manually-authored spec archive (not under pipeline management).
 
 ## Tier 3 — proposed (repo-exploration stubs 2026-07-04, high-ambition)
 
-- Sanctioned Parallel-Worktree Batch Execution (`parallel-worktree-batch-execution`) — a coordinator that shards dependency-independent queue items across worktrees (per-item branch + marker arbitration extending the ownership model, containment unchanged); the biggest throughput multiplier available.
+~~- Sanctioned Parallel-Worktree Batch Execution (`parallel-worktree-batch-execution`) — a coordinator that shards dependency-independent queue items across worktrees (per-item branch + marker arbitration extending the ownership model, containment unchanged); the biggest throughput multiplier available.~~ ✅ COMPLETE
 - Native Android App for Pipeline Steering (`native-android-pipeline-steering`) — mobile client over the `mobile-queue-control`/fleet-view foundations with a sanctioned write path (resolve NEEDS_INPUT, reorder, enqueue) via committed files the pipeline already understands; PWA-vs-native is an open decision.
 
 ## Proposed (harness deep-dive + session-mining specs 2026-07-11)
