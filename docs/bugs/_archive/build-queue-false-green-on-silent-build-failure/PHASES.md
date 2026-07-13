@@ -18,7 +18,7 @@
 
 #### Implementation Notes (2026-07-03)
 
-**Status:** Complete (Pester-green; runtime e2e deferred to Phase 4/Part 3 per plan).
+**Status:** Fixed
 **Review verdict:** PASS.
 
 - Added shared `Get-ProjectDlls -WorktreeRoot <r> [-PathSegmentFilter 'bin/Debug']` (`build-queue-hygiene.ps1:576`): recurses the whole worktree for `*.dll`, restricts to paths containing a `[\\/](bin|obj)[\\/]` segment, then optionally applies a consecutive-segment filter (e.g. `bin/Debug` → `[\\/]bin[\\/]Debug[\\/]`). Fail-open to `@()` via `Get-SafeValue`.
@@ -118,7 +118,7 @@ N/A — fully covered by Pester in Deliverables.
 
 #### Implementation Notes (2026-07-03, Part 2)
 
-**Status:** Complete (Pester-green; runner-body + status-wiring by parse-check/code-inspection; live e2e deferred to Phase 4/Part 3 per plan).
+**Status:** Complete
 **Review verdict:** PASS.
 
 - Added `Test-BuildProducedNoOutput -LogText <s> [-MinChars 40]` (`build-queue-hygiene.ps1`, after `Read-WithRetry`): pure classifier — `$true` (no-output) for a `$null`/empty/whitespace-only/near-empty log (trimmed length `< MinChars`), `$false` for a real build log. The stronger expected-output-DLL check is documented in the doc-comment as a follow-on knob, NOT implemented.
@@ -164,7 +164,7 @@ N/A — fully covered by Pester in Deliverables.
 
 #### Implementation Notes (2026-07-03, Part 3)
 
-**Status:** Complete (hook re-enabled + docs updated; static gates green; live Cognito-worktree e2e — the 4 Runtime Verification rows — deferred to the gate-owned `__mark_fixed__` / manual step, NOT closed by `/execute-plan`).
+**Status:** Complete
 **Review verdict:** PASS.
 
 - **WU-1 — re-enable enforcement (`user/hooks/build-queue-enforce.sh`):** the temporary disable was an *uncommitted working-tree modification* (HEAD 2241bb5 already carried the enforcing hook). Removing the `>>> TEMPORARILY DISABLED <<<` banner (`# ====` border + 3 comment lines + `exit 0` + `# <<< END TEMPORARY DISABLE >>>`) reverted the file to an **exact byte match of HEAD** (`git diff --stat` empty). `bash -n` clean. Net effect: the hook now runs its real deny/allow logic instead of the early `exit 0`.

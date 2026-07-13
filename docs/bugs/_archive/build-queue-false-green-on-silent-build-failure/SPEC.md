@@ -2,9 +2,11 @@
 
 > The build queue reports `RESULT=PASS` for a backend build that never compiled — a per-project 0-byte DLL evades the quarantine sweep and an exit-0 empty-log build has no output-fidelity gate — eroding agent trust to the point of `BUILD_QUEUE_BYPASS=1` + manual process kills.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P0
 **Discovered:** 2026-07-03
+**Fixed:** 2026-07-13
+**Fix commit:** 544c41e
 **Placement:** docs/bugs/build-queue-false-green-on-silent-build-failure
 **Related:** docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash (origin of `Remove-PoisonedArtifacts` + `result_fidelity`), docs/bugs/build-queue-copy-lock-stale-dll-false-success (origin of `build_fidelity` + `Test-BuildLogFailure`), docs/bugs/build-queue-outcome-opacity-and-inspect-deny (just-completed banner/inspect-deny fix — adjacent, non-overlapping)
 
