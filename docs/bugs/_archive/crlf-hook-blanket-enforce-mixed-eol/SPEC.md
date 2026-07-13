@@ -2,7 +2,7 @@
 
 > `normalize-crlf.ps1` enforces a single blanket convention (CRLF on every non-`.sh` file) on the Cognito Forms repo, but the repo's *committed* EOL is mixed: `.cs` is CRLF, `NotificationTemplates/**/*.html` is LF. The hook therefore force-CRLFs LF-committed files (inflating their diffs), and its Bash branch silently reverts manual `perl -i`/`sed -i` LF normalization by re-CRLFing **every** git-modified file. `.gitattributes` (`* -crlf`) tells git to ignore EOL entirely, so nothing authoritative declares per-type EOL and every actor — the hook, agents, `.editorconfig` — guesses, and each guess breaks the other file type.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-06-25
 **Placement:** docs/bugs/crlf-hook-blanket-enforce-mixed-eol
