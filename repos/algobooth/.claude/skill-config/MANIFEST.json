@@ -76,6 +76,10 @@
     {
       "file": "gemini-sprint.md",
       "reason": "Aspirational future config named in user/skills/ingest-research/SKILL.md ('parameterize the staging path via ... later'); no repo provides it yet."
+    },
+    {
+      "file": "plan-structural-gate.md",
+      "reason": "optional per-repo override of the generic plan-structural gate; absent = generic component applies (plan-structure-authoring-gate D3)"
     }
   ],
   "json_schemas": {

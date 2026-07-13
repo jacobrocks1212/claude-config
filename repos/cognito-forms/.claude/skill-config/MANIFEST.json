@@ -86,6 +86,10 @@
     {
       "file": "cycle-prompt-addenda.md",
       "reason": "AlgoBooth-only cycle-prompt addenda doc; the user/skills/lazy-batch prose pointer is a bare pointer with no fallback form (same known-gap class as long-build-ownership.md; suppressed in the lint's SUPPRESSIONS allowlist)."
+    },
+    {
+      "file": "plan-structural-gate.md",
+      "reason": "optional per-repo override of the generic plan-structural gate; absent = generic component applies (plan-structure-authoring-gate D3)"
     }
   ],
   "json_schemas": {
