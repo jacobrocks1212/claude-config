@@ -6,9 +6,9 @@
 > empty, every regex misses, and the hooks exit 0 on all inputs. The mobile-workflow terminal-kill
 > protection and the work-repo push protection have been illusory since introduction (May 2026).
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P1
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-12
 **Related:** `docs/bugs/_archive/live-settings-split-brain-disarms-enforcement-plane/` (on this laptop these hooks are additionally NOT REGISTERED at all — the live file lacks the whole Bash chain; fixing the split-brain alone would arm two hooks that still do nothing); `docs/bugs/powershell-tool-bypasses-bash-matched-guards/` (a rewritten kill-block matched only on `Bash` is instantly bypassable via the PowerShell tool, where `Stop-Process` is a native cmdlet — the rewrite must land with the widened matcher); `docs/specs/turn-routing-enforcement/` (owns the deny-via-JSON fail-OPEN hook contract these predate).
 
 ## Verified Symptom
