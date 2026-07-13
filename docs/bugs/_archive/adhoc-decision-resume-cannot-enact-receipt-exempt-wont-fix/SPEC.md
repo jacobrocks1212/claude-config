@@ -7,7 +7,7 @@ bug_id: adhoc-decision-resume-cannot-enact-receipt-exempt-wont-fix
 
 > Harness-hardening round 31 (observed-friction). When the operator resolves a bug's `NEEDS_INPUT.md` by choosing a "close as working-as-designed → Won't-fix" disposition, the apply-resolution subagent had no path to set `**Status:** Won't-fix`. It neutralized the sentinel only, so the next probe re-routed the bug into the pipeline (spec-bug → root-cause-trace gate), which re-halted on needs-input — an infinite loop for ANY operator-chosen receipt-exempt close.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** Medium
 **Discovered:** 2026-07-12
 **Placement:** docs/bugs/adhoc-decision-resume-cannot-enact-receipt-exempt-wont-fix
