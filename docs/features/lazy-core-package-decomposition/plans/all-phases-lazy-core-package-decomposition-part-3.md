@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-core-package-decomposition
-status: Ready
+status: Complete
 created: 2026-07-13
 phases: [3]
 complexity: complex
@@ -72,9 +72,9 @@ Where this plan's repo uses non-default gates or component paths (this is claude
 
 ## Work Units
 
-- [ ] WU-1 — Split mapping + `conftest.py` (`tmp_repo` fixture) + guard-generalization design
-- [ ] WU-2 — Scripted split: per-seam test files, registries preserved, 1135 receipt
-- [ ] WU-3 — Doc sweep + collection-time delta + phase receipt + commit
+- [x] WU-1 — Split mapping + `conftest.py` (`tmp_repo` fixture) + guard-generalization design
+- [x] WU-2 — Scripted split: per-seam test files, registries preserved, 1135 receipt
+- [x] WU-3 — Doc sweep + collection-time delta + phase receipt + commit
 
 ---
 

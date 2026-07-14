@@ -151,3 +151,91 @@ statedir-resolved hook surface. Monolith LoC: 20,289 (post-P1) -> 16,784 (post-P
 - `user/scripts/lazy-state.py`, `user/scripts/bug-state.py` (WU-4 fixture lines only)
 - `user/scripts/benchmark_lazy_core_import.py` (WU-5 `--hook-surface`)
 - plan part 2 (WU ticks + status), `PHASES.md` (P2 rows + receipt), this file
+
+## Phase 3 — Test split (tests/test_lazy_core/ package)
+
+#### Implementation Notes (Phase 3)
+**Completed:** 2026-07-13 (plan part 3 of 6, `/execute-plan`, 3 WUs, ONE atomic commit)
+**Work completed:**
+- `user/scripts/test_lazy_core.py` (38,476 lines / 1142 pytest-collected tests) split into the
+  package `user/scripts/tests/test_lazy_core/`: 12 per-seam files + shared `_util.py` +
+  `conftest.py` (sys.path bootstrap + the new `tmp_repo` fixture) + empty `__init__.py`. Old flat
+  file deleted in the same commit (atomic — both present would double-collect / package-shadow).
+- Line counts: docmodel 3586 / depdag 600 / hostcaps 527 / notifyplane 922 / statedir 803 /
+  gates 2793 / dispatch 5575 / runtimeplane 4290 / markers 7640 / pseudo 4237 / ledgers 4045 /
+  misc ~4838 / _util ~1830. Tests per file: docmodel 155, markers 198, dispatch 129, pseudo 128,
+  misc 130, ledgers 124, runtimeplane 123, gates 92, hostcaps 17, statedir 16, depdag 15,
+  notifyplane 15 (= 1142).
+- **Scripted transform honored (plan note 2):** WU-1 built a 1408-block gapless total partition
+  (`split-map.json`, AST top-level blocks incl. preceding comments; coverage assertion 1..38476)
+  + scratchpad analyzer; WU-2's scratchpad splitter (`build_split.py`) distributed VERBATIM line
+  ranges — no test body retyped. Sanctioned non-verbatim edits: per-file headers
+  (`_SCRIPTS_DIR = Path(__file__).resolve().parents[2]` + own-dir sys.path insert for `import
+  _util`), per-file regenerated `_TESTS` registries + verbatim `main()` runner copies
+  (runner state `_IMPORT_ERROR`/`_PASSES`/`_FAILURES`/`_guard`/`_run_test` duplicated per file
+  by design — mutable runner state is per-file, plan risk note b), ~14 mapped `__file__`
+  hop-count rewrites (constants → `parents[3]`, repo-root → `parents[4]`, scripts-dir →
+  `parents[2]`), and the 3 self-auditing meta-guards generalized to iterate every
+  `test_*.py` in the split dir (orphan guard now statically AST-extracts each sibling's
+  `_TESTS` names; pure collectors unchanged).
+- **Receipts (the phase gate, plan note 3):** pre-split capture 1142 collected; post-split
+  `pytest user/scripts/tests/test_lazy_core/ --collect-only -q` = **1142 collected, 0 errors**;
+  bare-name (`::`-suffix) multiset diff = **EMPTY** (scripted Counter diff, both sides 1142).
+  NOTE: plan said "1135" and PHASES said "1125" — both stale literals; the live baseline (1142,
+  = Phase 2's 1141 + its sanctioned TDD pin) was captured pre-change and used as the receipt.
+- **Both runners verified:** full package `pytest` run **1142 passed** (212s); manual per-file
+  runners green (`python tests/test_lazy_core/test_docmodel.py` 155/155 exit 0;
+  `test_statedir.py` all pass exit 0); per-seam selection works
+  (`pytest tests/test_lazy_core/test_markers.py -q` green). Full battery green pre-commit
+  (pytest user/scripts/ + both state-script byte-pinned `--test` baselines with ZERO baseline
+  regeneration + parity audit + cli-surface `--check` + doc-drift + lint-skills).
+- **Collection-time delta (honest):** pre-split 0.29–0.36 s (single flat file); post-split
+  0.79 s via `benchmark_lazy_core_import.py` fallback target `tests/` (package walk + conftest
+  import). A small wall-time regression — the phase's value was editor ergonomics + per-seam
+  selection (PHASES de-prioritization rationale), both realized.
+- **tmp_repo fixture: defined, 0 adopters** — adoption is incremental per SPEC D5; no existing
+  test was rewritten onto it (the 726 hand-rolled `TemporaryDirectory` sites are unchanged).
+
+**Review verdicts (batch audit trail):**
+- Batch 1 (WU-1, split map + conftest): PASS after one orchestrator-found map defect was fixed
+  mid-flight (runner-state blocks `_IMPORT_ERROR`/`_FAILURES`/`_PASSES` initially mapped to
+  test_misc.py only while their per-file consumers were ALL-duplicated — AnnAssign nodes missed
+  by the ALL-classifier; fixed + coverage re-asserted). Ground-truth verified fresh.
+- Batch 2 (WU-2, the split): agent's intermediate full-suite run showed 40 failures with 3
+  self-diagnosed root causes; orchestrator (coordinator-directed takeover) applied the three
+  designed fixes inline and re-verified: (1) `_util.py`'s `_REAL_TEMPLATE_DIR` never got its
+  hop rewrite AND its `if not …exists()` fallback block was split away into test_misc.py —
+  primary re-anchored `parents[2]`, fallback co-located back (`parents[3]`), stray block
+  removed from test_misc.py (~37 failures); (2) `test_misc.py` missing
+  `_collect_registered_test_names` in its `from _util import` (1 failure — orphan guard);
+  (3) `test_statedir.py::test_clear_state_dir_restores_process_launch_override` patched its own
+  module's `globals()` while the reader `_clear_state_dir` now lives in `_util` — repointed to
+  `import _util` + `_util._ORIGINAL_LAZY_STATE_DIR` (1 failure). Post-fix: 1142/1142 green.
+- Batch 3 (WU-3, docs + receipt + commit): inline (doc sweep rows in `user/scripts/CLAUDE.md`;
+  root CLAUDE.md clean — doc-drift-lint 0 findings).
+
+**Deviations & findings (for the retro):**
+1. Task tools (TaskCreate/TaskUpdate) unavailable in the executing environment — plan-part WU
+   checkboxes + PHASES.md served as the persistent ledger (same as Phase 2).
+2. WU-2 fix-up + WU-3 executed inline by the orchestrator on coordinator directive (contract
+   deviation recorded: the turn-end gate forbade idling on inner agents; WU-1 and the bulk of
+   WU-2 were Sonnet-subagent-executed with ground-truth review; the WU-2 agent was killed by a
+   transient API 529-class error mid-verification and its 3 designed fixes were applied inline).
+3. Transitional collection error (KNOWN, unavoidable): between WU-1 and WU-2's delete, the old
+   flat module shadowed the new package name (`'test_lazy_core' is not a package`) — the plan's
+   WU-1 "collection unchanged" check is unsatisfiable while both exist; resolved by the atomic
+   delete (0 collection errors after).
+4. Plan drift: count literals stale (1135/1125 vs live 1142); `_TESTS` extension blocks were 18
+   `_TESTS =` assignment sites (map found 71 registry blocks incl. list-literal continuation
+   segments), not the plan's "7".
+5. `pytest user/scripts/` total is now 2221 (concurrent hardening round added 1 test mid-phase);
+   foreign-agent churn (docs/bugs/*, docs/interventions/*, user/skills/*) was excluded from this
+   phase's commit via explicit pathspecs — `git add -A` would have swept another writer's
+   uncommitted work.
+
+**Files modified (net, Phase 3):**
+- `user/scripts/tests/test_lazy_core/` (NEW: `__init__.py`, `conftest.py`, `_util.py`,
+  12 `test_*.py`)
+- `user/scripts/test_lazy_core.py` (DELETED)
+- `user/scripts/CLAUDE.md` (7 live-path rows → `tests/test_lazy_core/`)
+- plan part 3 (WU ticks + status Complete), `PHASES.md` (P3 rows + heading + Status line), this file

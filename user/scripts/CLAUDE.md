@@ -102,8 +102,9 @@ each time (they are the most-re-read facts in this directory):
 Both `lazy-state.py` and `bug-state.py` carry their own smoke-test harness run with `--test`
 (**not** pytest). To add a fixture: write `def test_<name>():` and register it in the script's
 test-list block so the `--test` runner collects it. Mirror marker/queue setup from a recent
-nearby test rather than inventing scaffolding. `lazy_core.py` is tested separately via
-`test_lazy_core.py` (pytest).
+nearby test rather than inventing scaffolding. `lazy_core` is tested separately via
+the per-seam package `tests/test_lazy_core/` (pytest; each `test_<seam>.py` is also
+directly runnable via its own `_TESTS` manual runner).
 
 ### CLI quick reference — the easy-to-miss ones
 
@@ -405,7 +406,7 @@ way production does, and is **mechanically guarded** against faking it:
   live-BLOCKED runtime). A liveness/timing test that only counts `.spawns`
   (not `shell_spawns`) may still use `_FakeSubprocess` — it is not spawn-binding.
 
-**Enforcer:** the `--test` meta-tests in `test_lazy_core.py` —
+**Enforcer:** the meta-tests in `tests/test_lazy_core/test_runtimeplane.py` —
 `test_ensure_runtime_production_tests_derive_not_inject_signal` (signal-injection
 guard) and `test_spawn_binding_production_tests_use_faithful_double` (faithful-double
 guard), each with a negative-fixture twin proving non-vacuity. Pure AST collectors
@@ -725,7 +726,7 @@ present in BOTH scripts; `test_lazy_parity.py`'s lockstep stubs carry the token)
   pattern) and appends a "why no page" line to `state["diagnostics"]` (the dict's own list — a
   post-compute `_diag()` never reaches the printed JSON). Environment-agnostic (D10): no
   `--cloud` branch.
-- **Tests.** `test_lazy_core.py` notify suite (11 cases, `_TESTS`-registered) + a
+- **Tests.** the `tests/test_lazy_core/` notify suite (11 cases, `_TESTS`-registered) + a
   `[notify-halt-call-site]` in-file `--test` fixture in EACH script (drives `main()` in-process:
   one page, dedup on re-probe, kill switch byte-inert — the wiring itself, not a re-mock).
 
@@ -905,7 +906,7 @@ otherwise — including zero resolvable candidates or any enumeration error — 
 the Phase-4 intent (tier routing "by default — not by a per-run orchestrator override") on the batch
 path; `bug-state.py` inherits it via the shared `lazy_core`. Tests:
 `test_surface_resolver.py::TestRouteMcpTestTier`;
-`test_lazy_core.py::test_emit_cycle_prompt_mcp_test_legacy_md_escalates_sonnet` +
+`tests/test_lazy_core/test_dispatch.py::test_emit_cycle_prompt_mcp_test_legacy_md_escalates_sonnet` +
 `..._ready_yaml_stays_haiku` + `..._cycle_model_haiku` (reshaped to a ready-YAML happy path).
 
 ## Concurrency plane (Phase 4 — `lazy_coord.py` + scoping flags)
@@ -939,7 +940,7 @@ global lock** — this is the load-bearing invariant; violating it corrupts `lea
   `reset --hard` → `clean -fdx` → `checkout -b p/<wi_id>-<slug>`; **no submodule step**).
 - **Gate:** `python lazy_coord.py --test` (21 fixtures). Because the scoping flags touch both state
   machines' shared import surface, run the FULL set after any change here: `lazy_coord.py --test`,
-  `lazy-state.py --test`, `bug-state.py --test`, `test_lazy_core.py`.
+  `lazy-state.py --test`, `bug-state.py --test`, `pytest tests/test_lazy_core/`.
 
 > **PR shepherding (Phase 5) is DEFERRED.** `lazy-worker` opens the PR and stops — it never polls
 > CI, auto-replies to comments, or auto-merges.
@@ -966,10 +967,10 @@ refactor that keeps `--test` green has preserved behavior.** Because both script
 `lazy_core.py`, any change there MUST keep BOTH suites green. Each `--test` output is
 byte-pinned: `lazy-state.py --test` to `tests/baselines/lazy-state-test-baseline.txt` and
 `bug-state.py --test` to `tests/baselines/bug-state-test-baseline.txt`, compared via the
-shared **cross-platform** `_normalize_smoke_output` helper in `test_lazy_core.py` — it
+shared **cross-platform** `_normalize_smoke_output` helper in `tests/test_lazy_core/_util.py` — it
 canonicalizes the per-run `tempfile` suffix, the OS temp-root, and `\`-vs-`/` separators, so
 the committed baselines are platform-neutral across Windows and WSL (regenerate a baseline ONLY
-by piping live `--test` output through that helper, never by hand). `test_lazy_core.py`
+by piping live `--test` output through that helper, never by hand). `tests/test_lazy_core/`
 characterizes the shared helpers directly. Green smoke tests are the acceptance gate before
 touching anything downstream.
 

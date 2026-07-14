@@ -1,6 +1,6 @@
 # PHASES — lazy-core-package-decomposition
 
-**Status:** In-progress (Phases 0–2 Complete; L1 ratified 2026-07-13 → mechanism 3 redirect-the-patches; Phases 3–6 remain)
+**Status:** In-progress (Phases 0–3 Complete; L1 ratified 2026-07-13 → mechanism 3 redirect-the-patches; Phases 4–6 remain)
 **MCP runtime:** not-required (pure state-plane refactor; SKIP_MCP_TEST class)
 **Friction-reduction feature:** yes (KPI row `lazy-core-monolith-intervention-drag`)
 **Last updated:** 2026-07-13
@@ -78,11 +78,13 @@ Proven done: 5 move-only commits, each with the full battery green (pytest `user
 2219→2220 passed, both byte baselines untouched, parity/cli-surface/doc-drift/lint-skills exit 0);
 suite 1141→1142 (one sanctioned TDD pin added); monolith 20,289 → 16,784 LoC.
 
-## Phase 3 — Test split ⛔ after Phase 2 (de-prioritized — collection already 0.30 s)
+## Phase 3 — Test split ✅ COMPLETE (green)
 
-- [ ] `tests/` per-seam files + `conftest.py` `tmp_repo` fixture (726 hand-rolled `TemporaryDirectory`
+- [x] `tests/` per-seam files + `conftest.py` `tmp_repo` fixture (726 hand-rolled `TemporaryDirectory`
       sites today). Value here is editor ergonomics + per-seam selection, not collection time.
-- [ ] 1125-test count receipt-checked per move commit; names preserved.
+- [x] 1125-test count receipt-checked per move commit; names preserved. (Live count at execution:
+      **1142** — the plan/PHASES literals were stale; receipt = 1142 pre == 1142 post, bare-name
+      multiset identical. See Implementation Notes Phase 3.)
 
 ## Phase 4 — Medium seams (gates, ledgers, dispatch, runtime) ⛔ write-path; Phase-0 re-check
 
