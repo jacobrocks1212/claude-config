@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: generalized-build-test-runner-skills
-status: In-progress
+status: Complete
 created: 2026-07-13
 phases: [0, 1]
 complexity: complex

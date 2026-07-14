@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: generalized-build-test-runner-skills
-status: Ready
+status: Complete
 created: 2026-07-13
 phases: [2]
 complexity: mechanical
