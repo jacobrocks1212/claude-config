@@ -388,6 +388,28 @@
       "review_by": "2026-10-01",
       "repo_scope": "claude-config",
       "notes": "Point-in-time count of non-_archive docs/bugs/ dirs with **Status:** Concluded (11 committed at 7d49490 + 12 same-day untracked at capture; more inflow was arriving during the session). Deliberately counts the untracked inflow -- the KPI measures backlog reality, not commit state. Success shape: this number goes DOWN over runs (fix outflow) or at minimum stops being monotonic. Compute wired 2026-07-13 (bug-queue-aging-backpressure Phase 3, kpi-scorecard.py::_sel_concluded_unfixed_count)."
+    },
+    {
+      "id": "lazy-core-monolith-intervention-drag",
+      "system": "lazy-core",
+      "title": "Monolith-induced drag on lazy_core interventions",
+      "friction": "Every harness intervention lands in one 17,686-line module imported wholesale by PreToolUse hooks (~107ms warm import per fire) and tested from one 32,675-line file (8.6s collection, 973 tests), so review scope, canary scope, hook latency, and test drag are all paid at whole-state-machine size for one-plane changes.",
+      "signal": {
+        "source": "deny-ledger",
+        "selector": "process-friction-count"
+      },
+      "unit": "count",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-11-01",
+      "repo_scope": "claude-config",
+      "notes": "v1 rides the registered process-friction-count selector (lazy-core-attributable process-friction incidents in the deny ledger); a dedicated selector is registered at implementation if incident attribution proves too coarse. The load-bearing success measures are deterministic proxies captured in this spec and re-measured at each phase gate: (1) hook import: python3 -c 'import lazy_core' wall ms, 107ms warm at baseline -> target <15ms for the hook-touched surface via the lazy facade; (2) test collection: pytest test_lazy_core.py --collect-only 8.60s at baseline; (3) largest-module size: lazy_core.py 17,686 LoC at baseline -> no post-split module >4K LoC; (4) F811/pyflakes findings on user/scripts/: >=1 known at baseline (_current_head x2) -> 0 with the gate on. Provenance stays pending until the Phase-1 benchmark harness stamps a measured baseline."
     }
   ]
 }

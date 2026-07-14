@@ -127,8 +127,13 @@ class TestLintGreen:
         # stays unratified/structurally-provisional; NO-DATA until a
         # harness-gate collector is built) + the two
         # bug-queue-aging-backpressure Phase 3 rows (promoted from the SPEC's
-        # jsonc drafts once their sentinel-scan selectors were registered).
-        assert len(registry["kpis"]) == 18
+        # jsonc drafts once their sentinel-scan selectors were registered)
+        # + lazy-core-monolith-intervention-drag (kpi-drafted-row-never-
+        # promoted-to-registry: promoted via the new `--promote-drafted-rows`
+        # subcommand from lazy-core-package-decomposition's SPEC.md draft;
+        # provenance stays pending until that feature's own Phase-1 benchmark
+        # harness captures a real baseline).
+        assert len(registry["kpis"]) == 19
         ids = {r["id"] for r in registry["kpis"]}
         assert "canary-trip-precision" in ids
         assert {"efficacy-verdicts-produced", "confounded-verdict-ratio",
@@ -138,6 +143,7 @@ class TestLintGreen:
                 "anti-overfit-gate-verdict-efficacy-disagreement"} <= ids
         assert {"bug-backlog-oldest-open-age-days",
                 "bug-backlog-concluded-unfixed-count"} <= ids
+        assert "lazy-core-monolith-intervention-drag" in ids
 
     def test_up_is_good_band_ordering_valid(self):
         row = _row(direction="up-is-good", band={"warn": 90, "breach": 80})
@@ -1362,4 +1368,152 @@ class TestCaptureBaseline:
         _write_registry(tmp_path, _registry(_row()))
         env = dict(os.environ, LAZY_STATE_DIR=str(tmp_path / "state"))
         proc = self._capture(tmp_path, "no-such-kpi", env)
+        assert proc.returncode == 1
+
+
+# ---------------------------------------------------------------------------
+# kpi-drafted-row-never-promoted-to-registry — `--promote-drafted-rows`
+# ---------------------------------------------------------------------------
+
+class TestPromoteDraftedRows:
+    """Pure-function tests for `promote_drafted_rows` (no I/O)."""
+
+    def test_promotes_a_new_drafted_row(self):
+        draft = _row(id="drafted-new-kpi")
+        spec_text = _spec(classification="yes",
+                          declaration=f"```json\n{json.dumps(draft, indent=2)}\n```")
+        registry = _registry()
+        promoted, skipped, errors = ksc.promote_drafted_rows(
+            spec_text, registry, kpi_id=None, today=_TODAY)
+        assert promoted == ["drafted-new-kpi"]
+        assert skipped == []
+        assert errors == []
+        assert registry["kpis"][0]["id"] == "drafted-new-kpi"
+
+    def test_already_present_id_is_skipped_never_overwritten(self):
+        existing = _row(id="already-there", title="Original title")
+        draft = _row(id="already-there", title="A DIFFERENT drafted title")
+        spec_text = _spec(classification="yes",
+                          declaration=f"```json\n{json.dumps(draft, indent=2)}\n```")
+        registry = _registry(existing)
+        promoted, skipped, errors = ksc.promote_drafted_rows(
+            spec_text, registry, kpi_id=None, today=_TODAY)
+        assert promoted == []
+        assert skipped == ["already-there"]
+        assert errors == []
+        assert registry["kpis"][0]["title"] == "Original title"  # untouched
+
+    def test_no_declaration_section_is_an_error(self):
+        spec_text = _spec(classification="no")
+        registry = _registry()
+        promoted, skipped, errors = ksc.promote_drafted_rows(
+            spec_text, registry, kpi_id=None, today=_TODAY)
+        assert promoted == []
+        assert any("KPI Declaration" in e for e in errors)
+
+    def test_invalid_draft_row_is_refused_not_appended(self):
+        bad = _row(id="Bad_ID!")  # fails the id regex
+        spec_text = _spec(classification="yes",
+                          declaration=f"```json\n{json.dumps(bad, indent=2)}\n```")
+        registry = _registry()
+        promoted, skipped, errors = ksc.promote_drafted_rows(
+            spec_text, registry, kpi_id=None, today=_TODAY)
+        assert promoted == []
+        assert errors
+        assert registry["kpis"] == []  # never appended
+
+    def test_kpi_id_filters_to_one_row_among_several_drafts(self):
+        draft_a = _row(id="draft-a")
+        draft_b = _row(id="draft-b")
+        declaration = (f"```json\n{json.dumps(draft_a, indent=2)}\n```\n\n"
+                       f"```json\n{json.dumps(draft_b, indent=2)}\n```")
+        spec_text = _spec(classification="yes", declaration=declaration)
+        registry = _registry()
+        promoted, skipped, errors = ksc.promote_drafted_rows(
+            spec_text, registry, kpi_id="draft-b", today=_TODAY)
+        assert promoted == ["draft-b"]
+        assert errors == []
+        assert [r["id"] for r in registry["kpis"]] == ["draft-b"]
+
+    def test_kpi_id_not_found_among_drafts_is_an_error(self):
+        draft = _row(id="draft-a")
+        spec_text = _spec(classification="yes",
+                          declaration=f"```json\n{json.dumps(draft, indent=2)}\n```")
+        registry = _registry()
+        promoted, skipped, errors = ksc.promote_drafted_rows(
+            spec_text, registry, kpi_id="no-such-draft", today=_TODAY)
+        assert promoted == []
+        assert any("no-such-draft" in e for e in errors)
+
+    def test_multiple_drafts_promotes_all_by_default(self):
+        draft_a = _row(id="draft-a")
+        draft_b = _row(id="draft-b")
+        declaration = (f"```json\n{json.dumps(draft_a, indent=2)}\n```\n\n"
+                       f"```json\n{json.dumps(draft_b, indent=2)}\n```")
+        spec_text = _spec(classification="yes", declaration=declaration)
+        registry = _registry()
+        promoted, skipped, errors = ksc.promote_drafted_rows(
+            spec_text, registry, kpi_id=None, today=_TODAY)
+        assert sorted(promoted) == ["draft-a", "draft-b"]
+        assert errors == []
+
+
+class TestPromoteDraftedRowsCli:
+    def _run(self, tmp_path, spec_text, registry=None, kpi_id=None):
+        if registry is None:
+            registry = _registry()
+        _write_registry(tmp_path, registry)
+        spec = tmp_path / "SPEC.md"
+        spec.write_text(spec_text, encoding="utf-8")
+        env = dict(os.environ, LAZY_STATE_DIR=str(tmp_path / "state"))
+        cmd = [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
+              "--promote-drafted-rows", str(spec), "--repo-root", str(tmp_path)]
+        if kpi_id:
+            cmd += ["--kpi-id", kpi_id]
+        return subprocess.run(cmd, capture_output=True, text=True, env=env)
+
+    def test_promotes_and_persists_to_registry(self, tmp_path):
+        draft = _row(id="cli-drafted-kpi")
+        spec_text = _spec(classification="yes",
+                          declaration=f"```json\n{json.dumps(draft, indent=2)}\n```")
+        proc = self._run(tmp_path, spec_text)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        reg = ksc.load_registry(tmp_path / "docs" / "kpi" / "registry.json")
+        assert reg["kpis"][0]["id"] == "cli-drafted-kpi"
+        errors, _ = ksc.lint_registry(reg, today=datetime.date.today())
+        assert errors == []
+
+    def test_idempotent_second_run_skips_without_error(self, tmp_path):
+        draft = _row(id="idempotent-kpi")
+        spec_text = _spec(classification="yes",
+                          declaration=f"```json\n{json.dumps(draft, indent=2)}\n```")
+        first = self._run(tmp_path, spec_text)
+        assert first.returncode == 0, first.stdout + first.stderr
+        reg_after_first = ksc.load_registry(
+            tmp_path / "docs" / "kpi" / "registry.json")
+        second = self._run(tmp_path, spec_text, registry=reg_after_first)
+        assert second.returncode == 0, second.stdout + second.stderr
+        assert "SKIP" in second.stdout
+        reg_after_second = ksc.load_registry(
+            tmp_path / "docs" / "kpi" / "registry.json")
+        assert len(reg_after_second["kpis"]) == 1  # never duplicated
+
+    def test_concrete_instance_lazy_core_monolith_intervention_drag(self, tmp_path):
+        """The real feature dir's regression fixture — proves the promoted row
+        matches what the concrete-instance fix landed in the real registry."""
+        spec_path = (_REPO_ROOT / "docs" / "features" /
+                    "lazy-core-package-decomposition" / "SPEC.md")
+        spec_text = spec_path.read_text(encoding="utf-8")
+        proc = self._run(tmp_path, spec_text,
+                         kpi_id="lazy-core-monolith-intervention-drag")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        reg = ksc.load_registry(tmp_path / "docs" / "kpi" / "registry.json")
+        ids = [r["id"] for r in reg["kpis"]]
+        assert "lazy-core-monolith-intervention-drag" in ids
+        row = next(r for r in reg["kpis"]
+                  if r["id"] == "lazy-core-monolith-intervention-drag")
+        assert row["baseline"]["provenance"] == "pending"
+
+    def test_missing_declaration_section_exits_one(self, tmp_path):
+        proc = self._run(tmp_path, _spec(classification="no"))
         assert proc.returncode == 1

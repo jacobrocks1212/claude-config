@@ -1289,6 +1289,19 @@
           "required": false
         },
         {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "With --promote-drafted-rows, restrict promotion to a single drafted row id (default: promote every drafted row in the SPEC's declaration).",
+          "metavar": null,
+          "name": "--kpi-id",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
           "action": "_StoreTrueAction",
           "aliases": [],
           "choices": null,
@@ -1307,7 +1320,20 @@
           "choices": null,
           "default_kind": "none",
           "group": null,
-          "help_head": "Explicit registry path for --lint --spec id resolution (default: <repo-root>/docs/kpi/registry.json).",
+          "help_head": "Read a SPEC's '## KPI Declaration' fenced-json drafted row(s) and append any not-yet-present row(s) to the registry verbatim (idempotent; never overwrites an existing id).",
+          "metavar": "SPEC_PATH",
+          "name": "--promote-drafted-rows",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Explicit registry path for --lint --spec id resolution or --promote-drafted-rows (default: <repo-root>/docs/kpi/registry.json).",
           "metavar": null,
           "name": "--registry",
           "nargs": null,

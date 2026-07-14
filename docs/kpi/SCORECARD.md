@@ -26,7 +26,7 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Cycles per completion | 11 (30d) | pending | — | PENDING-BASELINE |
+| Cycles per completion | 9.17 (30d) | pending | — | PENDING-BASELINE |
 | MCP-validation round trips per feature | — | pending | — | NO-DATA |
 
 ## harness-canary
@@ -63,7 +63,13 @@
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
 | Age in days of the oldest open docs/bugs/ item `[claude-config]` | 13 (1d) | 17 (measured 2026-07-11) | — | PENDING-BASELINE |
-| Count of docs/bugs/ items at Status: Concluded (investigated, never fixed) `[claude-config]` | 17 (1d) | 23 (measured 2026-07-11) | — | PENDING-BASELINE |
+| Count of docs/bugs/ items at Status: Concluded (investigated, never fixed) `[claude-config]` | 21 (1d) | 23 (measured 2026-07-11) | — | PENDING-BASELINE |
+
+## lazy-core
+
+| KPI | current | baseline | band (warn/breach) | status |
+|-----|---------|----------|--------------------|--------|
+| Monolith-induced drag on lazy_core interventions `[claude-config]` | 1 (30d) | pending | — | PENDING-BASELINE |
 
 ## Regressions
 
@@ -75,7 +81,7 @@
 
 ## Canary health
 
-- 29 canaries open, oldest 8d, 0 will no-data-close within 7d
+- 41 canaries open, oldest 8d, 0 will no-data-close within 7d
 
 ## Notes
 

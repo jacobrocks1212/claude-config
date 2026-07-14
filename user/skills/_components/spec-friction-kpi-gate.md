@@ -41,8 +41,9 @@ Tauri / no MCP / no runtime). It runs identically in cloud and workstation.
    - **New drafted rows** — a fenced ```json block per row carrying the FULL D2 schema
      (`id`/`system`/`title`/`friction`/`signal{source,selector}`/`unit`/`direction`/
      `baseline{value,captured_at,window,provenance}`/`band`/`review_by`, optional
-     `repo_scope`/`notes`). A brand-new friction system drafts its rows here; a real registry row
-     is then added in the feature's own implementation.
+     `repo_scope`/`notes`). A brand-new friction system drafts its rows here; the row is
+     PROMOTED into `docs/kpi/registry.json` automatically at Step 4 below (never a manual
+     copy-paste at implementation time — see `kpi-drafted-row-never-promoted-to-registry`).
 
 3. **Shell the deterministic backstop.** Run the validator (the prose-gate-points-at-subcommand
    promotion `mcp-coverage-audit.md` → `--gate-coverage` established):
@@ -58,11 +59,25 @@ Tauri / no MCP / no runtime). It runs identically in cloud and workstation.
    error; every `- kpi: <id>` must resolve; every drafted json row must pass row-level lint.
 
 4. **Route on the verdict.**
-   - **exit 0** — the declaration is valid (or the feature is legitimately `no`). Proceed to
-     finalize SPEC.md. If the validator printed an advisory `WARNING` (a `no` classification that
-     nonetheless carries friction vocabulary), surface the contradiction — under `--batch`, add it
-     to the `NEEDS_INPUT.md` round rather than silently proceeding; interactively, confirm the `no`
-     with the user. It is advisory, never a hard block.
+   - **exit 0** — the declaration is valid (or the feature is legitimately `no`). If the SPEC
+     drafted any NEW rows (fenced json blocks — a `yes` classification with `## KPI Declaration`
+     content), promote them into `docs/kpi/registry.json` NOW, before finalizing SPEC.md:
+
+     ```bash
+     python3 ~/.claude/scripts/kpi-scorecard.py --promote-drafted-rows {spec_path}/SPEC.md \
+       [--registry <path>]      # same default as --lint --spec
+     # exit 0 = promoted (or nothing new to promote — an id-only declaration is a no-op here);
+     # exit 1 = a row-level lint failure (should not happen — --lint --spec already passed)
+     ```
+
+     This is what makes a drafted row reachable by a LATER `kpi-scorecard.py --capture-baseline
+     <id>` call — without it, a drafted-only row satisfies this planning-time gate but can never
+     be measured (the two-halves-don't-connect gap `kpi-drafted-row-never-promoted-to-registry`
+     fixed). Idempotent — a re-run (e.g. re-finalizing after an edit) skips already-promoted ids
+     rather than erroring. Then proceed to finalize SPEC.md. If the validator printed an advisory
+     `WARNING` (a `no` classification that nonetheless carries friction vocabulary), surface the
+     contradiction — under `--batch`, add it to the `NEEDS_INPUT.md` round rather than silently
+     proceeding; interactively, confirm the `no` with the user. It is advisory, never a hard block.
    - **exit 1** — the declaration is missing or invalid. Treat it as an **unresolved
      product-behavior decision**, exactly like the Step 8 dep-block checkpoint's fail path:
      - **Under `--batch`:** write `{spec_path}/NEEDS_INPUT.md` with a `## Decision Context` entry
@@ -97,6 +112,10 @@ This component is injected into `user/skills/spec/SKILL.md` at the Phase 3 final
 (the new **Step 8.5**, beside the Step 8 dep-block checkpoint), with a Phase 1 `--batch` contract
 reference for the classification line and the `**Friction-reduction feature:** {yes|no}` line added
 to the Phase 3 SPEC template. The deterministic backstop is `kpi-scorecard.py --lint --spec`
-(`lint_spec`). When editing this component, run
+(`lint_spec`); the drafted-row promotion step on the exit-0 route is
+`kpi-scorecard.py --promote-drafted-rows` (`promote_drafted_rows` — reuses the same
+`_extract_declaration_section`/`_parse_declaration`/`lint_row` parse+lint the validator uses, then
+appends via `lazy_core._atomic_write`, mirroring `--capture-baseline`'s re-lint-before-write
+discipline). When editing this component, run
 `grep -rl "spec-friction-kpi-gate.md" ~/.claude/skills/ ~/.claude/skills/_components/` and re-project
 (`project-skills.py`) + `lint-skills.py` per house rule.

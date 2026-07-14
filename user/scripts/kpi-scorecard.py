@@ -17,6 +17,15 @@ the registry's deterministic tooling — a stdlib-only sibling of `lazy-queue-do
                          (`provenance: measured`) via `lazy_core._atomic_write`;
                          REFUSES when the signal has no data (a baseline is never
                          fabricated).
+  - `--promote-drafted-rows <spec_path>`: the drafted-row registry writer —
+                         reads a SPEC's `## KPI Declaration` fenced-json draft
+                         row(s) (the same "full-schema drafted row" allowance
+                         `--lint --spec` validates) and appends any not-yet-present
+                         row(s) to the registry VERBATIM (never overwrites an
+                         existing id). Read-only against the SPEC; closes the gap
+                         where a drafted row satisfies the planning-time
+                         measurability gate but was never reachable by
+                         `--capture-baseline` (kpi-drafted-row-never-promoted-to-registry).
 
 Rendering discipline (mobile-queue-control precedent): a PURE function of
 (registry, signal readings, today) — NO embedded wall-clock, fixed rounding,
@@ -1497,6 +1506,115 @@ def _cmd_capture_baseline(repo_root: Path, kpi_id: str,
     return 0
 
 
+# ---------------------------------------------------------------------------
+# `--promote-drafted-rows` (kpi-drafted-row-never-promoted-to-registry) — the
+# drafted-row registry writer. `--lint --spec` sanctions a fenced-json "full
+# schema drafted row" as satisfying the Step 8.5 measurability gate, but never
+# writes it anywhere; `--capture-baseline` only ever looks up ids already IN
+# the registry. This closes that gap: read-only against the SPEC, idempotent
+# against the registry (never overwrites an existing id).
+# ---------------------------------------------------------------------------
+
+def promote_drafted_rows(spec_text: str, registry: dict, *, kpi_id: Optional[str],
+                         today: datetime.date) -> Tuple[list, list, list]:
+    """Promote drafted `## KPI Declaration` json row(s) from `spec_text` into
+    `registry` (mutated in place when there is anything to add).
+
+    Returns (promoted_ids, skipped_ids, errors) — `skipped_ids` are drafts
+    whose id already exists in the registry (never overwritten); `errors` are
+    row-level lint failures (that row is NOT appended) or a `--kpi-id` that
+    resolved to nothing. Pure aside from the in-place `registry` mutation —
+    no I/O; the caller re-lints + writes."""
+    promoted: list = []
+    skipped: list = []
+    errors: list = []
+    section, present = _extract_declaration_section(spec_text)
+    if not present:
+        errors.append("SPEC has no '## KPI Declaration' section — nothing to "
+                      "promote")
+        return (promoted, skipped, errors)
+    _ids, drafts, json_errors = _parse_declaration(section)
+    for je in json_errors:
+        errors.append(f"malformed JSON draft row ({je})")
+    if kpi_id is not None:
+        drafts = [d for d in drafts
+                 if isinstance(d, dict) and d.get("id") == kpi_id]
+        if not drafts and not json_errors:
+            errors.append(f"no drafted row with id {kpi_id!r} in the SPEC's "
+                          f"KPI Declaration section")
+    known = {r.get("id") for r in registry.get("kpis", [])
+             if isinstance(r, dict)}
+    for draft in drafts:
+        if not isinstance(draft, dict):
+            errors.append("drafted row is not an object")
+            continue
+        rid = draft.get("id")
+        if not isinstance(rid, str) or not rid:
+            errors.append("drafted row missing a valid 'id'")
+            continue
+        if rid in known:
+            skipped.append(rid)
+            continue
+        row_errors: list = []
+        row_warnings: list = []
+        lint_row(draft, row_errors, row_warnings, today)
+        if row_errors:
+            errors.extend(f"{rid}: {e}" for e in row_errors)
+            continue
+        registry.setdefault("kpis", []).append(draft)
+        known.add(rid)
+        promoted.append(rid)
+    return (promoted, skipped, errors)
+
+
+def _cmd_promote_drafted_rows(repo_root: Path, spec_path: Path, kpi_id: Optional[str],
+                              registry_arg: Optional[Path],
+                              today: datetime.date) -> int:
+    try:
+        spec_text = Path(spec_path).read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"kpi-scorecard --promote-drafted-rows: cannot read spec "
+              f"{spec_path}: {exc}")
+        return 1
+    reg_path = registry_arg if registry_arg else registry_path(repo_root)
+    try:
+        registry = load_registry(reg_path)
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        print(f"kpi-scorecard --promote-drafted-rows: cannot read registry "
+              f"{reg_path}: {exc}")
+        return 1
+    promoted, skipped, errors = promote_drafted_rows(
+        spec_text, registry, kpi_id=kpi_id, today=today)
+    for rid in skipped:
+        print(f"SKIP    {rid}: already present in the registry (never "
+              f"overwritten)")
+    for e in errors:
+        print(f"ERROR   {e}")
+    if errors:
+        print(f"kpi-scorecard --promote-drafted-rows: {len(errors)} error(s), "
+              f"0 row(s) promoted")
+        return 1
+    if not promoted:
+        print("kpi-scorecard --promote-drafted-rows: nothing new to promote "
+              "(0 row(s) promoted)")
+        return 0
+    # Re-lint the mutated registry BEFORE writing — never persist a row the
+    # linter would reject (same discipline as --capture-baseline).
+    lint_errors, _ = lint_registry(registry, today=today)
+    if lint_errors:
+        print("kpi-scorecard --promote-drafted-rows: ABORTED — promoting "
+              "would make the registry lint-dirty:")
+        for e in lint_errors:
+            print(f"ERROR   {e}")
+        return 1
+    lazy_core = _bind_lazy_core(repo_root)
+    lazy_core._atomic_write(
+        reg_path, json.dumps(registry, indent=2, ensure_ascii=False) + "\n")
+    print(f"kpi-scorecard --promote-drafted-rows: promoted {len(promoted)} "
+          f"row(s): {', '.join(promoted)}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="kpi-scorecard",
@@ -1518,12 +1636,21 @@ def build_parser() -> argparse.ArgumentParser:
                              "to validate (requires --lint).")
     parser.add_argument("--registry", default=None,
                         help="Explicit registry path for --lint --spec id "
-                             "resolution (default: <repo-root>/docs/kpi/"
-                             "registry.json).")
+                             "resolution or --promote-drafted-rows (default: "
+                             "<repo-root>/docs/kpi/registry.json).")
     parser.add_argument("--capture-baseline", default=None, metavar="KPI_ID",
                         help="Stamp the row's baseline from the current window "
                              "(provenance: measured). Refuses when the signal "
                              "has no data.")
+    parser.add_argument("--promote-drafted-rows", default=None, metavar="SPEC_PATH",
+                        help="Read a SPEC's '## KPI Declaration' fenced-json "
+                             "drafted row(s) and append any not-yet-present "
+                             "row(s) to the registry verbatim (idempotent; "
+                             "never overwrites an existing id).")
+    parser.add_argument("--kpi-id", default=None,
+                        help="With --promote-drafted-rows, restrict promotion "
+                             "to a single drafted row id (default: promote "
+                             "every drafted row in the SPEC's declaration).")
     parser.add_argument("--host", default=None, choices=sorted(_VANTAGE_HOSTS - {"any"}),
                         help="Current host classification for the D3 vantage "
                              "check (default: $LAZY_HOST_KIND env, else "
@@ -1545,6 +1672,10 @@ def main(argv=None) -> int:
 
     if args.capture_baseline:
         return _cmd_capture_baseline(repo_root, args.capture_baseline, today)
+    if args.promote_drafted_rows:
+        return _cmd_promote_drafted_rows(
+            repo_root, Path(args.promote_drafted_rows), args.kpi_id,
+            Path(args.registry) if args.registry else None, today)
     if args.lint and args.spec:
         return _cmd_lint_spec(repo_root, Path(args.spec),
                               Path(args.registry) if args.registry else None,
