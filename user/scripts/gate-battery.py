@@ -31,9 +31,19 @@ Exit-code vocabulary:
   0   — all gates passed (all-green)
   1   — at least one gate failed, OR an unexpected internal error occurred
   2   — manifest missing or malformed (zero state written on this path)
-  124/125 — RESERVED for a later ``--await`` work unit (WU-3); NOT implemented here.
+  124 — ``--await``: result not yet present (the run may still be going). NEVER success —
+        do not treat 124 as a pass; re-await or check status.
+  125 — ``--await``: result file present but malformed/unreadable after bounded retries.
 
-``--await`` is explicitly out of scope for this work unit.
+``--await RUN_ID`` (WU-3) is the followable-await entrypoint required by the Runner-Outcome
+Contract SSOT (Leg 2):
+
+    ~/.claude/skills/_components/runner-outcome-contract.md
+
+It re-emits the recorded run's Leg-1 banner VERBATIM as the last stdout line and exits with
+that run's own recorded exit code — mirroring ``user/scripts/build-queue-await.ps1`` byte-for-byte
+on the 124/125 semantics. ``--await`` never requires or touches the manifest (a manifest-less
+repo can still be awaited) and never touches ``.claude/skill-config/``.
 """
 from __future__ import annotations
 
@@ -74,6 +84,23 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Base state directory (default: ~/.claude/state). Results are written under "
         "<state-root>/gate-battery/<repo-key>/results/<run-id>.json.",
+    )
+    parser.add_argument(
+        "--await",
+        dest="await_run_id",
+        default=None,
+        metavar="RUN_ID",
+        help="Followable-await entrypoint (Runner-Outcome Contract Leg 2): re-emit the "
+        "recorded run's banner and exit with its recorded exit code. 124 = result not yet "
+        "present (never success); 125 = result present but malformed/unreadable. Never "
+        "touches the manifest.",
+    )
+    parser.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=0,
+        help="With --await: how long to keep polling for the result before giving up with "
+        "exit 124 (default: 0 = single-shot, immediate 124 if the result isn't already there).",
     )
     return parser
 
@@ -215,12 +242,95 @@ def _write_results(results_path: Path, payload: dict):
 
 
 # ---------------------------------------------------------------------------
+# --await (WU-3) — Runner-Outcome Contract Leg 2 (see module docstring + the SSOT
+# component at user/skills/_components/runner-outcome-contract.md)
+# ---------------------------------------------------------------------------
+
+_AWAIT_MALFORMED_READ_ATTEMPTS = 3
+_AWAIT_MALFORMED_RETRY_SECONDS = 0.05
+_AWAIT_POLL_INTERVAL_SECONDS = 0.5
+
+
+def _read_await_payload(results_path: Path):
+    """Attempt to read+parse the results JSON with a couple of quick bounded retries
+    (mirrors build-queue-await.ps1's Read-WithRetry). Returns (payload, error) — payload is
+    None on any failure, with error holding the last exception for the caller's message."""
+    last_error = None
+    for _ in range(_AWAIT_MALFORMED_READ_ATTEMPTS):
+        try:
+            text = results_path.read_text(encoding="utf-8")
+            payload = json.loads(text)
+            return payload, None
+        except (OSError, json.JSONDecodeError) as exc:
+            last_error = exc
+            time.sleep(_AWAIT_MALFORMED_RETRY_SECONDS)
+    return None, last_error
+
+
+def _run_await(args) -> int:
+    """The --await entrypoint. Deliberately does NOT resolve a git toplevel or load the
+    manifest — an await must work in a manifest-less repo. Keyed on the same
+    _results_path(state_root, repo_root, run_id) a run itself writes to."""
+    run_id = args.await_run_id
+    repo_root = args.repo_root
+    state_root = args.state_root or str(Path.home() / ".claude" / "state")
+    timeout_seconds = args.timeout_seconds
+
+    results_path = _results_path(state_root, repo_root, run_id)
+    started = time.time()
+
+    while True:
+        if results_path.is_file():
+            payload, error = _read_await_payload(results_path)
+            if not isinstance(payload, dict):
+                sys.stdout.flush()
+                print(
+                    f"gate-battery: await run={run_id} result present but "
+                    f"unreadable/malformed at {results_path}"
+                    + (f": {error}" if error is not None else "")
+                )
+                sys.stdout.flush()
+                return 125
+
+            exit_code = payload.get("exit_code")
+            banner = payload.get("banner")
+            if not isinstance(exit_code, int) or isinstance(exit_code, bool) or not isinstance(banner, str):
+                sys.stdout.flush()
+                print(
+                    f"gate-battery: await run={run_id} result present but malformed "
+                    f"(missing/invalid exit_code or banner) at {results_path}"
+                )
+                sys.stdout.flush()
+                return 125
+
+            sys.stdout.flush()
+            print(banner)
+            sys.stdout.flush()
+            return exit_code
+
+        elapsed = time.time() - started
+        if elapsed >= timeout_seconds:
+            sys.stdout.flush()
+            print(
+                f"gate-battery: await run={run_id} result not yet present after "
+                f"{elapsed:.1f}s (do NOT treat this as success — re-await or check status)"
+            )
+            sys.stdout.flush()
+            return 124
+
+        time.sleep(_AWAIT_POLL_INTERVAL_SECONDS)
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 
 def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.await_run_id is not None:
+        return _run_await(args)
 
     repo_root = args.repo_root
     state_root = args.state_root or str(Path.home() / ".claude" / "state")

@@ -353,3 +353,201 @@ def test_runner_source_contains_no_powershell_or_pwsh_tokens():
     lowered = source_text.lower()
     assert "powershell" not in lowered, "gate-battery.py source must not mention 'powershell'"
     assert "pwsh" not in lowered, "gate-battery.py source must not mention 'pwsh'"
+
+
+# ---------------------------------------------------------------------------
+# --await (WU-3) — TDD RED: gate-battery.py has no --await flag yet, so every
+# test below fails against argparse's own "unrecognized arguments" exit 2.
+# Locked contract (SPEC D1 item 2; mirrors user/scripts/build-queue-await.ps1):
+#   - result present  -> re-emit the recorded run's banner VERBATIM as the LAST
+#     stdout line; process exit = the recorded run's own exit_code.
+#   - result absent (in-flight / unknown run-id / missing results dir / unknown
+#     repo key) -> exit 124. 124 is NEVER success (no "RESULT=PASS" anywhere).
+#   - result file present but corrupted/truncated JSON -> exit 125.
+#   - --timeout-seconds (optional, default 0 = single-shot): with 0 and no
+#     result, returns 124 immediately.
+#   - --await must NOT require a manifest (no .claude/skill-config/ needed).
+# ---------------------------------------------------------------------------
+
+def _await_battery(repo_root: Path, state_root: Path, run_id: str, extra_args=None):
+    cmd = [
+        sys.executable,
+        str(RUNNER_PATH),
+        "--await",
+        run_id,
+        "--repo-root",
+        str(repo_root),
+        "--state-root",
+        str(state_root),
+    ]
+    if extra_args:
+        cmd += extra_args
+    return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def _write_results_file(state_root: Path, repo_root: Path, run_id: str, payload: dict) -> Path:
+    results_dir = _results_dir(state_root, repo_root)
+    results_dir.mkdir(parents=True, exist_ok=True)
+    results_path = results_dir / f"{run_id}.json"
+    results_path.write_text(json.dumps(payload), encoding="utf-8")
+    return results_path
+
+
+def test_await_with_result_present_recording_exit_0_reemits_banner_verbatim_and_exits_0(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    run_id = "20260714-abcd"
+    banner = (
+        f"gate-battery: run={run_id} op=battery RESULT=PASS cmds=2 failed=0 (elapsed=3s)"
+    )
+    _write_results_file(
+        state_root,
+        repo,
+        run_id,
+        {
+            "run_id": run_id,
+            "banner": banner,
+            "exit_code": 0,
+            "gates": [
+                {"id": "gate-a", "exit_code": 0, "duration_seconds": 1.0},
+                {"id": "gate-b", "exit_code": 0, "duration_seconds": 2.0},
+            ],
+        },
+    )
+
+    result = _await_battery(repo, state_root, run_id)
+
+    last_line = _last_stdout_line(result)
+    assert last_line == banner, f"await must re-emit the recorded banner verbatim: {last_line!r}"
+    assert result.returncode == 0, f"await must exit with the recorded run's own exit_code: {result!r}"
+
+
+def test_await_with_result_present_recording_exit_1_reemits_banner_and_exits_1(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    run_id = "20260714-beef"
+    banner = (
+        f"gate-battery: run={run_id} op=battery RESULT=FAIL cmds=2 failed=1 "
+        "(elapsed=4s) -> first failing gate: gate-red"
+    )
+    _write_results_file(
+        state_root,
+        repo,
+        run_id,
+        {
+            "run_id": run_id,
+            "banner": banner,
+            "exit_code": 1,
+            "gates": [
+                {"id": "gate-green", "exit_code": 0, "duration_seconds": 1.0},
+                {"id": "gate-red", "exit_code": 1, "duration_seconds": 1.5},
+            ],
+        },
+    )
+
+    result = _await_battery(repo, state_root, run_id)
+
+    last_line = _last_stdout_line(result)
+    assert last_line == banner, f"await must re-emit the recorded banner verbatim: {last_line!r}"
+    assert result.returncode == 1, f"await must exit with the recorded run's own exit_code: {result!r}"
+
+
+def test_await_with_result_absent_exits_124_with_no_pass_vocabulary(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    # Results dir exists (a battery has run for this repo before) but this specific
+    # run-id has never been written -- the in-flight / unknown-run-id case.
+    _results_dir(state_root, repo).mkdir(parents=True, exist_ok=True)
+
+    result = _await_battery(repo, state_root, "20260714-0000")
+
+    combined = result.stdout + result.stderr
+    assert result.returncode == 124, f"result-absent await must exit 124: {result!r}"
+    assert "RESULT=PASS" not in combined, (
+        f"124 must never carry success vocabulary: stdout={result.stdout!r} stderr={result.stderr!r}"
+    )
+
+
+def test_await_with_unknown_repo_key_or_missing_results_dir_exits_124_not_2_or_crash(tmp_path):
+    # A repo that has never had a battery run at all -- no gate-battery/<repo-key>/ dir
+    # under the state root whatsoever. Must be treated as "not yet", not its own error class.
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    assert not (state_root / "gate-battery").exists()
+
+    result = _await_battery(repo, state_root, "20260714-1234")
+
+    assert result.returncode == 124, (
+        f"missing results dir / unknown repo key must exit 124 (not 2, not a crash): {result!r}"
+    )
+    combined = result.stdout + result.stderr
+    assert "RESULT=PASS" not in combined
+
+
+def test_await_with_corrupted_json_exits_125(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    run_id = "20260714-dead"
+    results_dir = _results_dir(state_root, repo)
+    results_dir.mkdir(parents=True, exist_ok=True)
+    (results_dir / f"{run_id}.json").write_text('{"run_id": "x", trunc', encoding="utf-8")
+
+    result = _await_battery(repo, state_root, run_id)
+
+    assert result.returncode == 125, f"corrupted/truncated results JSON must exit 125: {result!r}"
+
+
+def test_await_timeout_seconds_zero_with_no_result_returns_124_immediately(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+
+    result = _await_battery(repo, state_root, "20260714-9999", extra_args=["--timeout-seconds", "0"])
+
+    assert result.returncode == 124, f"--timeout-seconds 0 with no result must exit 124: {result!r}"
+    combined = result.stdout + result.stderr
+    assert "RESULT=PASS" not in combined
+
+
+def test_await_does_not_require_a_manifest_in_a_manifest_less_repo(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    # Deliberately NO .claude/skill-config/gate-battery.json anywhere under repo --
+    # await must never route through the manifest-load refusal path.
+    assert not (repo / ".claude").exists()
+    state_root = tmp_path / "state"
+    state_root.mkdir()
+    run_id = "20260714-cafe"
+    banner = (
+        f"gate-battery: run={run_id} op=battery RESULT=PASS cmds=1 failed=0 (elapsed=1s)"
+    )
+    _write_results_file(
+        state_root,
+        repo,
+        run_id,
+        {
+            "run_id": run_id,
+            "banner": banner,
+            "exit_code": 0,
+            "gates": [{"id": "gate-a", "exit_code": 0, "duration_seconds": 0.5}],
+        },
+    )
+
+    result = _await_battery(repo, state_root, run_id)
+
+    last_line = _last_stdout_line(result)
+    assert last_line == banner, (
+        f"await must work in a manifest-less repo (never require gate-battery.json): {last_line!r}"
+    )
+    assert result.returncode == 0
