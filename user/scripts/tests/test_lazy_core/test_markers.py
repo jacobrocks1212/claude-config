@@ -2634,7 +2634,7 @@ def test_fold_and_advance_run_counters():
     def _simulate_dispatch_consume():
         """Bump the registry consume-count by one (mimics a guard ALLOW)."""
         entry = lazy_core.register_emission("dispatch prompt", "cycle")
-        lazy_core._monolith.consume_nonce(entry["nonce"])
+        lazy_core.dispatch.consume_nonce(entry["nonce"])
 
     # --- fold_run_counters ---
     # (1) Explicit flag wins over marker value
@@ -2756,7 +2756,7 @@ def test_advance_run_counters_consume_gated():
             # (2) One dispatch consume → exactly ONE advance, no matter how many
             #     probe firings happen between dispatches.
             entry = lazy_core.register_emission("p", "cycle")
-            lazy_core._monolith.consume_nonce(entry["nonce"])
+            lazy_core.dispatch.consume_nonce(entry["nonce"])
             m1 = lazy_core.advance_run_counters(state)
             assert m1["forward_cycles"] == 1, (
                 f"one dispatch → forward_cycles 1, got {m1['forward_cycles']!r}"
@@ -2771,7 +2771,7 @@ def test_advance_run_counters_consume_gated():
 
             # (3) A second dispatch consume → advances again (to 2).
             entry2 = lazy_core.register_emission("p2", "cycle")
-            lazy_core._monolith.consume_nonce(entry2["nonce"])
+            lazy_core.dispatch.consume_nonce(entry2["nonce"])
             m2 = lazy_core.advance_run_counters(state)
             assert m2["forward_cycles"] == 2, (
                 f"second dispatch → forward_cycles 2, got {m2['forward_cycles']!r}"
@@ -2810,7 +2810,7 @@ def test_advance_meta_cycle_increments_meta():
             # forthcoming consume. Simulate that consume; a forward probe must NOT
             # advance off it (it belonged to the meta dispatch).
             entry = lazy_core.register_emission("recovery prompt", "recovery")
-            lazy_core._monolith.consume_nonce(entry["nonce"])
+            lazy_core.dispatch.consume_nonce(entry["nonce"])
             m2 = lazy_core.advance_run_counters(
                 {"sub_skill": "/execute-plan", "feature_id": "feat-x"}
             )

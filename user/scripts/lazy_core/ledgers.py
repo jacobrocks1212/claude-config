@@ -23,7 +23,7 @@ marker/registry-plane names (``read_run_marker`` / ``read_cycle_marker`` /
 ``head_sha_snapshot`` / ``_MARKER_STALE_SECONDS`` / ``REGISTRY_ENTRY_TTL_SECONDS``,
 Phase-5 re-point), ``_parse_locked_decisions`` (gate-coverage plane, Phase-5),
 and ``normalize_prompt_for_hash`` (dispatch/registry plane — re-pointed to
-``.dispatch`` at Phase 4 WU-3). ``build_hardening_emit_command``'s
+``.dispatch`` at Phase 4 WU-3, done). ``build_hardening_emit_command``'s
 ``registry_summary`` is a PARAMETER (caller-supplied summary string), not the
 module-level registry function — no import.
 """
@@ -1283,7 +1283,7 @@ def find_auto_readmit_entry(
         The matching entry dict, or None.
     """
     from ._monolith import REGISTRY_ENTRY_TTL_SECONDS, read_run_marker  # Phase-5 re-point (marker plane still monolith-resident)
-    from ._monolith import normalize_prompt_for_hash  # Phase-4 WU-3 re-point (dispatch/registry plane)
+    from .dispatch import normalize_prompt_for_hash  # dispatch/registry plane (re-pointed at Phase-4 WU-3)
     if now is None:
         now = time.time()
     dispatched_norm = normalize_prompt_for_hash(prompt)
@@ -1388,7 +1388,7 @@ def find_transcription_slip_entry(
     """
     # Fail-safe: all errors return None (never raise from a guard sub-path).
     from ._monolith import REGISTRY_ENTRY_TTL_SECONDS, read_run_marker  # Phase-5 re-point (marker plane still monolith-resident)
-    from ._monolith import normalize_prompt_for_hash  # Phase-4 WU-3 re-point (dispatch/registry plane)
+    from .dispatch import normalize_prompt_for_hash  # dispatch/registry plane (re-pointed at Phase-4 WU-3)
     try:
         if now is None:
             now = time.time()

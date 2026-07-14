@@ -2347,7 +2347,7 @@ def test_forward_cycles_survive_ring_cap_crossing_with_meta_interleave():
                 meta_entry = lazy_core.register_emission(
                     f"meta dispatch {i}", "recovery", now=now + t
                 )
-                lazy_core._monolith.consume_nonce(meta_entry["nonce"])
+                lazy_core.dispatch.consume_nonce(meta_entry["nonce"])
                 t += 1
                 lazy_core.advance_meta_cycle()
 
@@ -2355,7 +2355,7 @@ def test_forward_cycles_survive_ring_cap_crossing_with_meta_interleave():
                 real_entry = lazy_core.register_emission(
                     f"real dispatch {i}", "cycle", now=now + t
                 )
-                lazy_core._monolith.consume_nonce(real_entry["nonce"])
+                lazy_core.dispatch.consume_nonce(real_entry["nonce"])
                 t += 1
 
                 # --- the Phase-1 forward authority: advance on a DISTINCT state tuple ---
@@ -2417,7 +2417,7 @@ def test_forward_cycles_survive_ring_cap_crossing_with_meta_interleave():
                 f"longer freezes"
             )
             post_entry = lazy_core.register_emission("post-crossing dispatch", "cycle")
-            lazy_core._monolith.consume_nonce(post_entry["nonce"])
+            lazy_core.dispatch.consume_nonce(post_entry["nonce"])
             m_post = lazy_core.advance_run_counters(
                 {"feature_id": "feat-post", "current_step": "execute-plan",
                  "sub_skill": "/execute-plan"}
@@ -3289,7 +3289,7 @@ def test_advance_run_counters_increments_per_feature():
             )
             # Register one consumed dispatch so the consume oracle advances.
             _entry = lazy_core.register_emission("pf", "cycle")
-            lazy_core._monolith.consume_nonce(_entry["nonce"])
+            lazy_core.dispatch.consume_nonce(_entry["nonce"])
             m = lazy_core.advance_run_counters({
                 "sub_skill": "/execute-plan", "feature_id": "feat-C",
                 "current_step": "execute-plan",

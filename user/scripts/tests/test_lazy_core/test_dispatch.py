@@ -389,7 +389,7 @@ def _record_meta_consume(state_dir: "Path", cls: str = "hardening") -> None:
     _set_state_dir(state_dir)
     try:
         entry = lazy_core.register_emission("meta dispatch prompt", cls)
-        consumed = lazy_core._monolith.consume_nonce(entry["nonce"])
+        consumed = lazy_core.dispatch.consume_nonce(entry["nonce"])
         assert consumed, "pre-condition: the fresh nonce must consume cleanly"
     finally:
         _clear_state_dir()
@@ -1555,7 +1555,7 @@ def test_emit_cycle_prompt_addenda_before_loop_block():
 # `_read_mcp_runtime_decision`'s `Path(spec_path) / "PHASES.md"`) on every
 # invocation — patching the real os.name to the "wrong" platform makes that
 # internal call raise `NotImplementedError: cannot instantiate 'PosixPath'
-# on your system` (or vice versa). Instead, `lazy_core._monolith.os` (the module-level
+# on your system` (or vice versa). Instead, `lazy_core.dispatch.os` (the module-level
 # name `emit_cycle_prompt`'s `os.name` reads resolve through) is rebound to a
 # transparent proxy that overrides ONLY `.name` and forwards every other
 # attribute to the REAL os module — pathlib's own `os` reference (a separate
@@ -1590,14 +1590,14 @@ def test_emit_cycle_prompt_hosts_windows_selected_on_win32():
         )
         _write_synth_template(tdir, body)
         state = _emit_state(sub_skill="/retro")
-        old_os = lazy_core._monolith.os
-        lazy_core._monolith.os = _FakeOsName("nt")
+        old_os = lazy_core.dispatch.os
+        lazy_core.dispatch.os = _FakeOsName("nt")
         try:
             r = lazy_core.emit_cycle_prompt(
                 repo, state, pipeline="feature", cloud=False, template_dir=tdir,
             )
         finally:
-            lazy_core._monolith.os = old_os
+            lazy_core.dispatch.os = old_os
     assert r is not None and r["ok"], r
     assert "SECTION_WINDOWS" in r["prompt"], (
         "hosts=windows section must be selected when os.name == 'nt'"
@@ -1624,14 +1624,14 @@ def test_emit_cycle_prompt_hosts_windows_excluded_on_non_windows():
         )
         _write_synth_template(tdir, body)
         state = _emit_state(sub_skill="/retro")
-        old_os = lazy_core._monolith.os
-        lazy_core._monolith.os = _FakeOsName("posix")
+        old_os = lazy_core.dispatch.os
+        lazy_core.dispatch.os = _FakeOsName("posix")
         try:
             r = lazy_core.emit_cycle_prompt(
                 repo, state, pipeline="feature", cloud=False, template_dir=tdir,
             )
         finally:
-            lazy_core._monolith.os = old_os
+            lazy_core.dispatch.os = old_os
     assert r is not None and r["ok"], r
     assert "SECTION_WINDOWS" not in r["prompt"], (
         "hosts=windows section must be EXCLUDED when os.name != 'nt'"
@@ -1657,15 +1657,15 @@ def test_emit_cycle_prompt_hosts_windows_addenda_excluded_on_non_windows():
             "ADDENDA_WINDOWS marker.\n",
         )
         state = _emit_state(sub_skill="/retro")
-        old_os = lazy_core._monolith.os
-        lazy_core._monolith.os = _FakeOsName("posix")
+        old_os = lazy_core.dispatch.os
+        lazy_core.dispatch.os = _FakeOsName("posix")
         try:
             r = lazy_core.emit_cycle_prompt(
                 repo, state, pipeline="feature", cloud=False,
                 template_dir=_REAL_TEMPLATE_DIR,
             )
         finally:
-            lazy_core._monolith.os = old_os
+            lazy_core.dispatch.os = old_os
     assert r is not None and r["ok"], r
     assert "ADDENDA_WINDOWS" not in r["prompt"], (
         "an addenda hosts=windows section must be excluded on a non-Windows host"
@@ -2234,14 +2234,14 @@ def test_f1b_auto_readmit_error_falls_through_to_deny():
             lazy_core.register_emission(base, cls="cycle")
             dispatched = base + "\n\nORCHESTRATOR NOTE: appended."
 
-            original = lazy_core._monolith.consume_nonce
+            original = lazy_core.dispatch.consume_nonce
             def _boom(*a, **k):
                 raise RuntimeError("consume exploded")
-            lazy_core._monolith.consume_nonce = _boom  # type: ignore[assignment]
+            lazy_core.dispatch.consume_nonce = _boom  # type: ignore[assignment]
             try:
                 out = lazy_guard.guard(_f1_hook_input(dispatched, "tu-boom"))
             finally:
-                lazy_core._monolith.consume_nonce = original  # type: ignore[assignment]
+                lazy_core.dispatch.consume_nonce = original  # type: ignore[assignment]
 
             assert out is not None
             payload = json.loads(out)
@@ -2313,7 +2313,7 @@ def test_registry_register_lookup_consume():
 
             # consume_nonce: first call True, then lookup returns None
             nonce = entry["nonce"]
-            consumed_ok = lazy_core._monolith.consume_nonce(nonce)
+            consumed_ok = lazy_core.dispatch.consume_nonce(nonce)
             assert consumed_ok is True, (
                 f"consume_nonce must return True on first consumption, got {consumed_ok!r}"
             )
@@ -2323,7 +2323,7 @@ def test_registry_register_lookup_consume():
             )
 
             # second consume → False
-            second = lazy_core._monolith.consume_nonce(nonce)
+            second = lazy_core.dispatch.consume_nonce(nonce)
             assert second is False, (
                 f"consume_nonce must return False when already consumed, got {second!r}"
             )
@@ -2461,7 +2461,7 @@ def test_advance_run_counters_census_regression_does_not_strand():
                 entry = lazy_core.register_emission(
                     f"dispatch prompt {i}", "cycle", now=now + i
                 )
-                lazy_core._monolith.consume_nonce(entry["nonce"])
+                lazy_core.dispatch.consume_nonce(entry["nonce"])
             census_plateau = lazy_core.consumed_emission_count()
             assert census_plateau == lazy_core._REGISTRY_RING_CAP, (
                 f"after 80 consumed registrations the census plateaus at the ring "
@@ -2497,7 +2497,7 @@ def test_advance_run_counters_census_regression_does_not_strand():
             # stranded watermark of 64) would NOT advance — a permanent freeze.
             # Post-clamp the watermark re-arms on the census drop, so this advances.
             entry = lazy_core.register_emission("post-eviction dispatch", "cycle")
-            lazy_core._monolith.consume_nonce(entry["nonce"])
+            lazy_core.dispatch.consume_nonce(entry["nonce"])
             m2 = lazy_core.advance_run_counters(state)
             assert m2["forward_cycles"] == 2, (
                 f"a census drop below the watermark must NOT permanently strand the "
@@ -4276,7 +4276,7 @@ def test_f2a_resolve_emission_consumed_nonce_returns_none():
             raw = "Execute the planned step — consumed nonce test."
             entry = lazy_core.register_emission(raw, cls="cycle")
             nonce = entry["nonce"]
-            lazy_core._monolith.consume_nonce(nonce, consumer="toolu_abc123")
+            lazy_core.dispatch.consume_nonce(nonce, consumer="toolu_abc123")
 
             resolved = lazy_core.resolve_emission_by_nonce(nonce)
             assert resolved is None, (
@@ -4752,8 +4752,8 @@ def test_skill_declares_multi_commit_user_level_and_pseudo():
     assert not hasattr(lazy_core, "_MULTI_COMMIT_DISPATCH_SKILLS")
     # The uniform multi-commit ceiling + single-commit default are still named
     # constants (unchanged by the derivation-mechanism swap).
-    assert lazy_core._monolith._CYCLE_COMMIT_MULTI == 3
-    assert lazy_core._monolith._CYCLE_COMMIT_BUDGET_DEFAULT == 1
+    assert lazy_core.dispatch._CYCLE_COMMIT_MULTI == 3
+    assert lazy_core.dispatch._CYCLE_COMMIT_BUDGET_DEFAULT == 1
 
 
 
@@ -5246,7 +5246,7 @@ def test_emission_consumed_by_nonce_fence():
             nonce = entry["nonce"]
             # Registered but NOT yet dispatched → fence closed.
             assert lazy_core.emission_consumed_by_nonce(nonce) is False
-            assert lazy_core._monolith.consume_nonce(nonce, consumer="toolu_x") is True
+            assert lazy_core.dispatch.consume_nonce(nonce, consumer="toolu_x") is True
             # Dispatch landed → fence open.
             assert lazy_core.emission_consumed_by_nonce(nonce) is True
             # Unknown / falsy nonces fail closed.
@@ -5283,7 +5283,7 @@ def test_resolve_cycle_worker_nonce_rebinds_fresh_hex():
             # Once consumed there is no UNCONSUMED cycle emission to bind to →
             # a fresh hex degrades to itself (fence stays closed — the safe
             # pre-fix behavior; in production the rebind happens BEFORE consume).
-            lazy_core._monolith.consume_nonce(emission_nonce, consumer="toolu_w")
+            lazy_core.dispatch.consume_nonce(emission_nonce, consumer="toolu_w")
             assert lazy_core.resolve_cycle_worker_nonce("freshhex01") == "freshhex01"
         finally:
             _clear_state_dir()

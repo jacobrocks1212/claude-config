@@ -294,6 +294,50 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "record_intervention": "ledgers",
     "validate_intervention_target_signal": "ledgers",
     "write_provenance": "ledgers",
+    # Phase 4: the dispatch seam (dispatch plane: cycle/dispatch prompt emission, skill-frontmatter readers, prompt registry).
+    "DISPATCH_CLASSES": "dispatch",
+    "DISPATCH_MODELS": "dispatch",
+    "DISPATCH_STEP_NAMES": "dispatch",
+    "_COMMIT_CADENCE_MULTI_FLAG_RE": "dispatch",
+    "_CYCLE_COMMIT_BUDGET_DEFAULT": "dispatch",
+    "_CYCLE_COMMIT_MULTI": "dispatch",
+    "_CYCLE_COMMIT_NOISE_ALLOWANCE": "dispatch",
+    "_CYCLE_TEMPLATE_DIRNAME": "dispatch",
+    "_DISPATCH_REQUIRES_RE": "dispatch",
+    "_MULTI_COMMIT_CEILING_OVERRIDE": "dispatch",
+    "_MULTI_COMMIT_PSEUDO_SKILLS": "dispatch",
+    "_NORM_FOLD_TABLE": "dispatch",
+    "_PROMPT_RESIDUE_RE": "dispatch",
+    "_SECTION_MARKER_RE": "dispatch",
+    "_SUBAGENT_MODEL_FLAG_RE": "dispatch",
+    "_csv_set": "dispatch",
+    "_dedup_residue": "dispatch",
+    "_default_cycle_template_dir": "dispatch",
+    "_emit_work_branch": "dispatch",
+    "_mcp_test_cycle_model": "dispatch",
+    "_parse_cycle_template": "dispatch",
+    "_parse_section_attrs": "dispatch",
+    "_read_mcp_runtime_decision": "dispatch",
+    "_save_registry": "dispatch",
+    "_standard_dispatch_bindings": "dispatch",
+    "_strip_loop_fence": "dispatch",
+    "append_dispatch_by_reference_event": "dispatch",
+    "append_worker_subdispatch_event": "dispatch",
+    "consume_nonce": "dispatch",
+    "consumed_emission_count": "dispatch",
+    "emission_consumed_by_nonce": "dispatch",
+    "emit_cycle_prompt": "dispatch",
+    "emit_dispatch_prompt": "dispatch",
+    "load_context_json": "dispatch",
+    "lookup_emission": "dispatch",
+    "normalize_prompt_for_hash": "dispatch",
+    "prompt_sha256": "dispatch",
+    "register_emission": "dispatch",
+    "register_emission_if_marked": "dispatch",
+    "registry_summary": "dispatch",
+    "resolve_emission_by_nonce": "dispatch",
+    "skill_declares_multi_commit": "dispatch",
+    "skill_declares_subagent_model": "dispatch",
 }
 
 # Submodule consulted when a name has no explicit entry in
@@ -301,7 +345,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
 _FALLBACK_SUBMODULE = "_monolith"
 
 # All submodules that make up this package, in no particular order.
-_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "docmodel", "gates", "hostcaps", "ledgers", "notifyplane", "statedir")
+_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "dispatch", "docmodel", "gates", "hostcaps", "ledgers", "notifyplane", "statedir")
 
 
 def __getattr__(name):

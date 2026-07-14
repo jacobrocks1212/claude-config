@@ -560,7 +560,7 @@ def _record_consume(state_dir: "Path") -> None:
     _set_state_dir(state_dir)
     try:
         entry = lazy_core.register_emission("dispatch prompt", "cycle")
-        consumed = lazy_core._monolith.consume_nonce(entry["nonce"])
+        consumed = lazy_core.dispatch.consume_nonce(entry["nonce"])
         assert consumed, "pre-condition: the fresh nonce must consume cleanly"
     finally:
         _clear_state_dir()
