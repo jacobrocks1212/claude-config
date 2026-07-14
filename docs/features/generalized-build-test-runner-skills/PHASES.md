@@ -256,35 +256,35 @@ queue-on-AlgoBooth path.
   armed seam).
 
 **Deliverables:**
-- [ ] Hygiene re-check (SPEC Open Question 4) BEFORE the manifest rows: inspect
+- [x] Hygiene re-check (SPEC Open Question 4) BEFORE the manifest rows: inspect
       `scripts/quality-gate.sh rust|sidecar` for cargo target-dir writes; record `hygiene: none`
       confirmation (or the escalation to `rust-tauri`) in Implementation Notes.
-- [ ] Manifest rows in `repos/algobooth/.claude/skill-config/build-queue-ops.json`: `qg-rust` +
+- [x] Manifest rows in `repos/algobooth/.claude/skill-config/build-queue-ops.json`: `qg-rust` +
       `qg-sidecar` — `kind: "test"`, `hygiene:` per the re-check, `lane: "heavy"`,
       `skill: "/qg-rust"|"/qg-sidecar"`, `exec: ".claude/scripts/qg-rust-filtered.ps1"|"…sidecar…"`,
       `deny`: **EXACT heavy forms only** (D3-precision): `npm run qg -- rust`,
       `npm run qg -- sidecar`, `npm run quality-gate -- rust`, `npm run quality-gate -- sidecar`.
       Bare `npm run qg` is NOT denied (provisional; see `NEEDS_INPUT_PROVISIONAL.md` D3-precision).
-- [ ] Hook fixture tests (TDD) in `user/scripts/test_hooks.py`: with a tmp-repo manifest carrying
+- [x] Hook fixture tests (TDD) in `user/scripts/test_hooks.py`: with a tmp-repo manifest carrying
       the new ops — DENY `npm run qg -- rust`, `npm run qg -- sidecar` (incl. a chained
       `cd … && npm run qg -- rust` segment) with the redirect naming the op's skill; ALLOW
       `npm run qg -- ts`, `npm run qg -- docs`, **bare `npm run qg`** (the pinned documented
       residual), and `BUILD_QUEUE_BYPASS=1 npm run qg -- rust`.
-- [ ] Exec wrappers `C:\Users\Jacob\repos\AlgoBooth\.claude\scripts\qg-rust-filtered.ps1` +
+- [x] Exec wrappers `C:\Users\Jacob\repos\AlgoBooth\.claude\scripts\qg-rust-filtered.ps1` +
       `qg-sidecar-filtered.ps1` (new, thin): run `npm run qg -- rust|sidecar` from the repo root,
       stream output, exit with the underlying exit code (the runner records it; the qg wrapper's
       own `QG_VERDICT:` line rides the log).
-- [ ] Repo-scoped skills `repos/algobooth/.claude/skills/qg-rust/SKILL.md` +
+- [x] Repo-scoped skills `repos/algobooth/.claude/skills/qg-rust/SKILL.md` +
       `qg-sidecar/SKILL.md`, same shape as `/tauri-build`: enqueue via
       `build-queue.ps1 -Op qg-rust|qg-sidecar`, trust the `build-queue:` banner, follow
       backgrounded runs via `build-queue-await.ps1 -Seq <N>`, turn-end gate by reference.
       Update `repos/algobooth/.claude/skill-config/skill-catalog.md`.
-- [ ] Live-fire validation spike (runtime evidence REQUIRED — a static trace does NOT satisfy
+- [x] Live-fire validation spike (runtime evidence REQUIRED — a static trace does NOT satisfy
       this): on the workstation, `build-queue.ps1 -Op qg-rust` in AlgoBooth → record the
       authoritative `build-queue: seq=<N> op=qg-rust RESULT=…` last line +
       `results/<seq>.json`; `build-queue-await.ps1 -Seq <N>` re-emits the banner; live hook
       check — raw `npm run qg -- rust` denied naming `/qg-rust`, raw `npm run qg -- ts` allowed.
-- [ ] Tests: full 7-command battery green on every claude-config commit; `lint-skill-config.py
+- [x] Tests: full 7-command battery green on every claude-config commit; `lint-skill-config.py
       --repo-root .` exit 0; `lint-skills.py` + projection green (new repo-scoped skills).
 
 **Minimum Verifiable Behavior:** `build-queue.ps1 -Op qg-rust` in AlgoBooth prints

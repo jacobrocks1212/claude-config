@@ -69,10 +69,10 @@ Where this plan's repo uses non-default gates or component paths (this is claude
 
 ## Work Units
 
-- [ ] WU-1 — Hygiene re-check + manifest rows (`qg-rust`, `qg-sidecar`) + TDD hook fixture tests
-- [ ] WU-2 — Exec wrappers in the live AlgoBooth repo (`.claude/scripts/qg-*-filtered.ps1`)
-- [ ] WU-3 — Thin skills `/qg-rust` + `/qg-sidecar` + skill-catalog row + lint sweep
-- [ ] WU-4 — Live-fire validation spike (first queue-on-AlgoBooth run) + deny live check
+- [x] WU-1 — Hygiene re-check + manifest rows (`qg-rust`, `qg-sidecar`) + TDD hook fixture tests
+- [x] WU-2 — Exec wrappers in the live AlgoBooth repo (`.claude/scripts/qg-*-filtered.ps1`)
+- [x] WU-3 — Thin skills `/qg-rust` + `/qg-sidecar` + skill-catalog row + lint sweep
+- [x] WU-4 — Live-fire validation spike (first queue-on-AlgoBooth run) + deny live check
 
 ---
 
