@@ -264,6 +264,11 @@ _PROSE_FALLBACK_HINTS = re.compile(
 SUPPRESSIONS: dict[tuple[str, str], str] = {
     ("user/skills/ingest-research/SKILL.md", "gemini-sprint.md"):
         "aspirational: \"parameterize ... later\" — not a live reference to any repo today.",
+    ("user/skills/gate-battery/SKILL.md", "gate-battery.json"):
+        "opt-in gate-battery runner manifest (generalized-build-test-runner-skills); "
+        "cognito-forms is off-limits to this feature (Cognito byte-untouched guard, SPEC L6) "
+        "so a repo-side intended_absent declaration cannot be authored there — a script-owned "
+        "suppression is the sanctioned out-of-lane-write avoidance (see the module docstring).",
 }
 
 

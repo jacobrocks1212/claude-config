@@ -80,6 +80,10 @@
     {
       "file": "plan-structural-gate.md",
       "reason": "optional per-repo override of the generic plan-structural gate; absent = generic component applies (plan-structure-authoring-gate D3)"
+    },
+    {
+      "file": "gate-battery.json",
+      "reason": "Opt-in gate-battery runner manifest (generalized-build-test-runner-skills); if absent the runner refuses cleanly with exit 2 — AlgoBooth has not opted in this phase (only claude-config is seeded)."
     }
   ],
   "json_schemas": {
