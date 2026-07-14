@@ -4542,6 +4542,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/plan-skills-lack-targeted-phase-scoped-read/SPEC.md": [
+    {
+      "id": "plan-skills-lack-targeted-phase-scoped-read",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/plan-structural-backstop-silent-disarm-on-infrastructure-failure/SPEC.md": [
     {
       "id": "lazy-core-package-decomposition",
@@ -9878,6 +9885,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "repos/cognito-forms/.claude/skills/write-plan-cognito/SKILL.md": [
+    {
+      "id": "plan-skills-lack-targeted-phase-scoped-read",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "repos/cognito-forms/Cognito.Core/CLAUDE.local.md": [
     {
       "id": "execute-plan-skill-diet",
@@ -13882,7 +13896,19 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/skills/write-plan-cloud/SKILL.md": [
+    {
+      "id": "plan-skills-lack-targeted-phase-scoped-read",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/skills/write-plan/SKILL.md": [
+    {
+      "id": "plan-skills-lack-targeted-phase-scoped-read",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "plan-structure-authoring-gate",
       "type": "feature",
