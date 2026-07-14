@@ -1,6 +1,6 @@
 # PHASES — lazy-core-package-decomposition
 
-**Status:** In-progress (Phases 0–5 Complete; L1 ratified 2026-07-13 → mechanism 3 redirect-the-patches; Phase 6 remains)
+**Status:** In-progress (Phases 0–6 Complete; L1 ratified 2026-07-13 → mechanism 3 redirect-the-patches; all phases green — remaining lifecycle is gate-owned: retro / MCP-gate skip class / `__mark_complete__` receipt)
 **MCP runtime:** not-required (pure state-plane refactor; SKIP_MCP_TEST class)
 **Friction-reduction feature:** yes (KPI row `lazy-core-monolith-intervention-drag`)
 **Last updated:** 2026-07-13
@@ -106,7 +106,7 @@ suite 1141→1142 (one sanctioned TDD pin added); monolith 20,289 → 16,784 LoC
       (= 2230 + the one sanctioned TDD pin `test_facade_map_total_and_collision_free`);
       ZERO baseline regeneration. See IMPLEMENTATION_NOTES.md Phase 5.)
 
-## Phase 6 — Lint gate + follow-up hooks ⛔
+## Phase 6 — Lint gate + follow-up hooks ✅ COMPLETE (green)
 
 - [x] Ruff F-rules on `user/scripts/`, advisory → enforcing. Note: headline F811 (`_current_head`)
       already fixed, so this is a forward guard, not a baseline-fix.
@@ -121,7 +121,31 @@ suite 1141→1142 (one sanctioned TDD pin added); monolith 20,289 → 16,784 LoC
       Baseline: **145 findings** (F401 101 / F841 24 / F541 19 / F811 1) — advisory only, zero
       `lazy_core/` production edits. Documented in `user/scripts/CLAUDE.md` + root `CLAUDE.md`
       Lint Commands.)
-- [ ] Per-function-size measurement hook for the D7 compute_state follow-up.
+- [x] Per-function-size measurement hook for the D7 compute_state follow-up.
+      (`benchmark_lazy_core_import.py --function-sizes`: `ast`-based top-level function LoC
+      census of `lazy-state.py` / `bug-state.py`, flagging each file's `compute_state` explicitly.
+      Baseline: `lazy-state.py::compute_state` **2,144 ln** (line 1642), `bug-state.py::compute_state`
+      **1,239 ln** (line 709) — measurement only, neither function refactored. TDD:
+      `test_benchmark_function_sizes_reports_compute_state_monoliths` (`tests/test_lazy_core/test_misc.py`)
+      asserts both entries present by name with plausible (>500) LoC.
+      **Final KPI proxy re-measure (feature closing receipt, 2026-07-13):**
+      (a) cold `import lazy_core`: best 39.30 / median 43.38 ms — vs the 88.7/93.7 ms Phase-0
+      baseline (a real cut) but the <15 ms D4 aspiration is NOT met (interpreter+facade floor
+      dominates, as every phase since Phase 2 has honestly recorded); hook surface: best 45.44 /
+      median 48.39 ms, `monolith_loaded_samples=0` (structural since Phase 5's deletion, not merely
+      observed). (b) collection: **1144** tests in the `test_lazy_core` suite (0.87s) — 1143 live
+      pre-WU-2 + this WU's one sanctioned TDD pin; full `user/scripts/` suite **2232** (2231 pre +
+      the same +1). (c) largest module: **3,921 LoC** (`lazy_core/ledgers.py`), `over_4k_ceiling: []`
+      — target MET. (d) F-findings (WU-1): **145** (F401 101 / F841 24 / F541 19 / F811 1) —
+      advisory baseline, not a target (D6 is advisory-first; enforcing-flip is future work).
+      **KPI registry capture attempted and REFUSED (recorded verbatim, not fabricated):**
+      `kpi-scorecard.py --capture-baseline lazy-core-monolith-intervention-drag --repo-root .` →
+      `"no KPI row with id 'lazy-core-monolith-intervention-drag' in docs/kpi/registry.json"`
+      (exit 1). The SPEC's `## KPI Declaration` drafted this row full-schema INLINE (per the
+      friction-kpi-gate's sanctioned "full-schema drafted row" allowance) but it was never
+      appended to the committed `docs/kpi/registry.json` — a gap in the drafted-row-to-registry
+      promotion path, not a WU-2 defect; out of this phase's file-set to fix (registry.json is not
+      an allowed WU-2 edit target). Flagged to `/harden-harness` (see Implementation Notes).)
 
 ## Implementation Notes
 

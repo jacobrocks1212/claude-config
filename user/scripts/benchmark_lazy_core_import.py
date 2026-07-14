@@ -16,14 +16,24 @@ promised at Phase 0): best-of-N fresh-subprocess timing of ``import lazy_core``
 PLUS touching exactly the three hook-touched names (``claude_state_dir``,
 ``_load_registry``, ``append_hook_event``) through the facade — the D4
 hook-latency cut, printed beside the full-import number. The sample also
-records whether ``lazy_core._monolith`` got imported (it must not; the honest
-caveat: the guard's marker-reading paths still load ``_monolith`` — this mode
-measures ONLY the statedir-resolved hook surface).
+records whether ``lazy_core._monolith`` got imported. As of Phase 5,
+``_monolith.py`` is DELETED — the probe always reports 0 (the module no
+longer exists to import); the hook-surface guarantee is now structural, not
+merely observed (this caveat was stale from Phase 2 through Phase 5 and is
+fixed here — doc-accuracy only, zero behavior change).
+
+``--function-sizes`` (Phase 6, the D7 follow-up measurement baseline): an
+``ast``-based top-level function LoC census of ``lazy-state.py`` and
+``bug-state.py`` (NOT lazy_core/, which the earlier phases already
+decomposed) — flags each file's ``compute_state`` explicitly so its size is
+re-measurable in one command without hand-deriving line ranges. SPEC D7:
+measurement ONLY; neither monolith function is refactored by this feature.
 
 Usage:
   python3 user/scripts/benchmark_lazy_core_import.py [--repo-root .] [--iters 5]
                                                      [--json] [--no-collect]
                                                      [--hook-surface]
+                                                     [--function-sizes]
 
 Exit 0 always (a benchmark never gates); malformed --repo-root -> exit 2.
 """
@@ -170,8 +180,58 @@ def _count_lines(path: Path) -> int:
         return -1
 
 
+# The two D7 follow-up targets this mode's baseline exists to measure — the
+# state scripts' own compute_state() monoliths (NOT lazy_core/, which the
+# earlier phases already decomposed to <=4K-LoC seams). SPEC D7: measurement
+# ONLY — neither function is refactored by this feature.
+_FUNCTION_SIZE_TARGETS = ("lazy-state.py", "bug-state.py")
+
+
+def measure_function_sizes(scripts_dir: Path) -> dict:
+    """Per-file top-level function LoC census via ``ast`` — the D7 follow-up
+    baseline for the two ``compute_state`` monoliths (``lazy-state.py`` /
+    ``bug-state.py``, unaffected by the lazy_core/ package split). Reports
+    every top-level function per target file, sorted desc by LoC, and flags
+    each ``compute_state`` explicitly so the ceiling is re-measurable in one
+    command without re-deriving line numbers by hand each time."""
+    import ast
+
+    files: dict[str, dict] = {}
+    compute_state_functions: list[dict] = []
+    for fname in _FUNCTION_SIZE_TARGETS:
+        path = scripts_dir / fname
+        if not path.exists():
+            files[fname] = {"error": "missing", "functions": []}
+            continue
+        try:
+            source = path.read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(source, filename=str(path))
+        except (OSError, SyntaxError) as exc:
+            files[fname] = {"error": str(exc), "functions": []}
+            continue
+        functions = []
+        for node in tree.body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                end_lineno = getattr(node, "end_lineno", None) or node.lineno
+                loc = end_lineno - node.lineno + 1
+                entry = {"name": node.name, "lineno": node.lineno, "loc": loc}
+                functions.append(entry)
+                if node.name == "compute_state":
+                    compute_state_functions.append({"file": fname, **entry})
+        functions.sort(key=lambda e: -e["loc"])
+        files[fname] = {"functions": functions}
+    return {
+        "files": files,
+        "compute_state": compute_state_functions,
+    }
+
+
 def build_report(
-    repo_root: Path, iters: int, do_collect: bool, hook_surface: bool = False
+    repo_root: Path,
+    iters: int,
+    do_collect: bool,
+    hook_surface: bool = False,
+    function_sizes: bool = False,
 ) -> dict:
     scripts_dir = _scripts_dir(repo_root)
     report = {
@@ -183,6 +243,8 @@ def build_report(
         report["hook_surface"] = measure_hook_surface_ms(scripts_dir, iters)
     if do_collect:
         report["collection"] = measure_collection(scripts_dir)
+    if function_sizes:
+        report["function_sizes"] = measure_function_sizes(scripts_dir)
     return report
 
 
@@ -212,6 +274,19 @@ def render(report: dict) -> str:
         lines.append("  OVER 4K CEILING: " + ", ".join(loc["over_4k_ceiling"]))
     for name, n in sorted(loc["modules"].items(), key=lambda kv: -kv[1]):
         lines.append(f"    {n:>7} {name}")
+    if "function_sizes" in report:
+        fs = report["function_sizes"]
+        lines.append("function sizes (D7 compute_state follow-up baseline):")
+        for cs in fs["compute_state"]:
+            lines.append(f"    {cs['loc']:>7} {cs['file']}::{cs['name']} (line {cs['lineno']})")
+        for fname, entry in fs["files"].items():
+            if entry.get("error"):
+                lines.append(f"    {fname}: ERROR {entry['error']}")
+                continue
+            top5 = entry["functions"][:5]
+            lines.append(f"    {fname} top functions by LoC:")
+            for fn in top5:
+                lines.append(f"      {fn['loc']:>7} {fn['name']} (line {fn['lineno']})")
     return "\n".join(lines)
 
 
@@ -222,6 +297,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--no-collect", action="store_true")
     ap.add_argument("--hook-surface", action="store_true")
+    ap.add_argument("--function-sizes", action="store_true")
     args = ap.parse_args(argv)
 
     repo_root = Path(args.repo_root).resolve()
@@ -235,6 +311,7 @@ def main(argv: list[str] | None = None) -> int:
         repo_root, args.iters,
         do_collect=not args.no_collect,
         hook_surface=args.hook_surface,
+        function_sizes=args.function_sizes,
     )
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))

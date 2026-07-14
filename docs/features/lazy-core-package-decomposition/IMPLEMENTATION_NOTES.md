@@ -466,3 +466,95 @@ the guard marker paths' residual monolith load noted at Phase 2 is eliminated by
 - `user/scripts/lazy_core/{__init__,_ctx,depdag,dispatch,docmodel,gates,hostcaps,ledgers,notifyplane,runtimeplane,statedir}.py` (residue appends, import re-points, facade explicit-total)
 - `user/scripts/tests/test_lazy_core/{test_markers,test_misc,test_ledgers,test_gates,test_notifyplane,test_statedir,test_runtimeplane}.py` (mechanism-3 redirects + WU-4 pin + prose lockstep)
 - `user/scripts/CLAUDE.md` (lazy_core row -> 12-seam roster), `docs/features/lazy-core-package-decomposition/{PHASES.md,GATE_VERDICT.md,NEEDS_INPUT_PROVISIONAL.md}`, plan part 5 (WU ticks + status Complete), this file
+
+## Phase 6 — Lint gate + follow-up hooks (FINAL PHASE)
+
+#### Implementation Notes (Phase 6)
+**Completed:** 2026-07-13 (plan part 6 of 6, `/execute-plan`, 2 WUs / 2 commits)
+**Work completed:**
+- WU-1 `ruff.toml` (commit 57645f03): advisory-only F-rules gate at the repo root
+  (`include = ["user/scripts/**/*.py"]`, `lint.select = ["F"]`). `ruff` was absent on the
+  execution host (`ruff --version` / `python -m ruff --version` both failed) — installed via
+  `pip install --user ruff` (0.15.21) per the plan's fallback ladder; landed anyway even had
+  install failed (config is inert without the tool). **Fixture red-check finding (mechanical
+  decision, recorded here):** ruff's *default* `dummy-variable-rgx` treats a leading-underscore
+  name as an intentionally-unused "dummy" and silently exempts it from F811 — the isolated
+  planted-duplicate-def fixture for `_current_head` (the exact headline motivating case) did
+  NOT trigger F811 until `dummy-variable-rgx = "^$"` was added to the config. Adopted the
+  override (+3 findings on the live tree, 142 -> 145) since a gate that cannot catch its own
+  stated forward-guard case is a real gap, not a style nit — this is the underscore-prefixed
+  naming convention `user/scripts/CLAUDE.md` documents as dominant throughout this codebase.
+  Scoping verified two ways: an isolated single-file tool-capability check (`--isolated
+  --config`) and an in-tree untracked probe file (`user/scripts/_ruff_fixture_probe.py`,
+  deleted before commit — confirmed `ruff check .` resolves `ruff.toml` and flags F811 in
+  place). **Caveat (recorded, not fixed):** `ruff check .` from the repo root also surfaces 2
+  out-of-scope `E501` findings from a pre-existing, unrelated nested
+  `user/plugins/local-tools/plugins/work-logging-plugin/pyproject.toml` — ruff's own
+  hierarchical config discovery lets that subtree's independent `[tool.ruff]` win for its own
+  files; not this gate's defect. `ruff check user/scripts` is the strictly-scoped invocation
+  (145 findings, F-only). Baseline: F401 101 / F841 24 / F541 19 / F811 1 — advisory only, zero
+  `lazy_core/` production edits (findings are follow-up fodder for a later enforcing session).
+  Documented in `user/scripts/CLAUDE.md` (new subsection) + root `CLAUDE.md` Lint Commands.
+- WU-2 `benchmark_lazy_core_import.py --function-sizes` (commit — this phase's second commit):
+  additive `ast`-based top-level function LoC census of `lazy-state.py` / `bug-state.py`
+  (`measure_function_sizes`), flagging each file's `compute_state` explicitly — the D7
+  follow-up's re-measurable baseline (measurement only; neither monolith refactored). TDD:
+  `test_benchmark_function_sizes_reports_compute_state_monoliths`
+  (`tests/test_lazy_core/test_misc.py`) asserts both entries present by name with plausible
+  (>500) LoC — registered in the file's `_TESTS` list per convention. **Sanctioned extra (flagged
+  by Phase 5, fixed here):** the module docstring's stale "guard marker paths still load
+  `_monolith`" caveat (dead since Phase 5 deleted `_monolith.py`) rewritten to state the
+  guarantee is now structural — doc-accuracy only, zero behavior change.
+  **Final KPI proxy re-measure** (feature closing receipt): cold import best 39.30 / median
+  43.38 ms (vs 88.7/93.7 ms Phase-0 baseline — real cut, <15ms D4 aspiration still NOT met,
+  consistent with every phase since Phase 2); hook surface best 45.44 / median 48.39 ms,
+  `monolith_loaded_samples=0` (structural post-Phase-5); collection 1144 tests / 0.87s
+  (`test_lazy_core` subset: 1143 live pre-WU-2 + this WU's 1 sanctioned pin); largest module
+  3,921 LoC (`lazy_core/ledgers.py`), `over_4k_ceiling: []` — MET; F-findings 145 (WU-1
+  baseline, advisory, not a target). **KPI registry capture attempted and REFUSED (recorded
+  verbatim):** `kpi-scorecard.py --capture-baseline lazy-core-monolith-intervention-drag
+  --repo-root .` → exit 1, `"no KPI row with id 'lazy-core-monolith-intervention-drag' in
+  docs/kpi/registry.json"`. The SPEC's `## KPI Declaration` drafted this row full-schema INLINE
+  (the friction-kpi-gate's sanctioned "full-schema drafted row" allowance) but nothing ever
+  promoted it into the committed registry — a gap in the drafted-row-to-registry path, not a
+  WU-2 defect, and `docs/kpi/registry.json` is outside this WU's file set. **Dispatched to
+  `/harden-harness`** (off-context subagent, no live run marker this session) as a harness gap:
+  the spec-friction-kpi-gate's "drafted row" allowance has no follow-up step that ever appends
+  the row to the registry, so `kpi-scorecard.py --capture-baseline` structurally can never
+  succeed for such a feature without a manual operator edit first.
+
+**Receipts (per-commit invariant battery, both commits):** pytest `user/scripts/` **2231**
+(WU-1, unchanged — doc/config-only) **-> 2232** (WU-2, the +1 sanctioned TDD pin); `lazy-state.py
+--test` + `bug-state.py --test` byte-pinned baselines pass with ZERO baseline regeneration;
+`lazy_parity_audit.py` exit 0; `cli_surface_gen.py --check` OK; `doc-drift-lint.py` 0 findings;
+`lint-skills.py` OK. `harness-gate.py --staged`: `in_scope: false` both commits (no control-surface
+glob hit — doc/config/benchmark-tool/test-file diffs only).
+
+**Deviations & findings (for the retro):**
+1. The plan's importer-diff guard enumerated WU-1/WU-2 file sets that did not literally include
+   the plan-part file itself, `IMPLEMENTATION_NOTES.md`, or the Phase-6 heading/status-line
+   flip — same documented deviation as every prior phase (Phase 2 finding 2): ledger/receipt
+   housekeeping travels with the phase's commits even where the guard's enumeration omitted it.
+2. `ruff` was not preinstalled on this execution host — installed via `pip install --user ruff`
+   per the plan's own fallback ladder (step 1); no environment assumption was violated.
+3. The fixture red-check surfaced a REAL config gap (default `dummy-variable-rgx` exempting
+   underscore-prefixed names from F811) before the config was trusted — exactly what a red-check
+   is for. Recorded as a mechanical decision (fully within WU-1's fully-specified F-rules scope;
+   not a product fork) rather than a NEEDS_INPUT.
+4. The KPI registry capture-baseline attempt failed differently than the plan anticipated ("no
+   data window" vs. "row doesn't exist at all") — recorded verbatim per the plan's own
+   never-fabricate instruction; the underlying gap (drafted-row promotion has no owner) was
+   dispatched to `/harden-harness` rather than silently patched by hand-authoring a registry row
+   this WU has no mandate to author.
+5. Plan literals (`compute_state` ~2,047/~1,099 ln) were stale vs. the live re-derivation
+   (2,144/1,239 ln) — same "trust disk over plan literals" pattern as every prior phase.
+
+**Files modified (net, Phase 6):**
+- `ruff.toml` (NEW, repo root)
+- `user/scripts/benchmark_lazy_core_import.py` (`--function-sizes` mode + stale-caveat fix)
+- `user/scripts/tests/test_lazy_core/test_misc.py` (+1 TDD test, `_TESTS`-registered)
+- `user/scripts/CLAUDE.md` (new Ruff subsection + benchmark row extension), root `CLAUDE.md`
+  (Lint Commands line + benchmark row extension)
+- `docs/features/lazy-core-package-decomposition/{PHASES.md,IMPLEMENTATION_NOTES.md}` (both
+  bullets ticked + receipts, Phase 6 heading -> COMPLETE, top Status line -> Phases 0-6 Complete),
+  plan part 6 (both WU ticks + `status: Complete`)

@@ -4739,6 +4739,36 @@ def test_facade_map_total_and_collision_free():
         pass
 
 
+# ---------------------------------------------------------------------------
+# lazy-core-package-decomposition Phase 6 WU-2 — per-function-size
+# measurement hook (the D7 compute_state follow-up baseline)
+# ---------------------------------------------------------------------------
+
+def test_benchmark_function_sizes_reports_compute_state_monoliths():
+    """benchmark_lazy_core_import.py's --function-sizes mode (measure_function_sizes)
+    must report a plausible LoC figure for BOTH state scripts' compute_state()
+    and include them by name — the D7 follow-up's re-measurable baseline.
+    Runs against the REAL repo tree (not a synthetic fixture): the target is
+    specifically the two named production functions, not a hermetic double."""
+    import benchmark_lazy_core_import as _bench
+
+    report = _bench.measure_function_sizes(_SCRIPTS_DIR)
+    cs_by_file = {entry["file"]: entry for entry in report["compute_state"]}
+    assert set(cs_by_file) == {"lazy-state.py", "bug-state.py"}, (
+        f"expected compute_state entries for both state scripts, got {sorted(cs_by_file)}"
+    )
+    for fname, entry in cs_by_file.items():
+        assert entry["name"] == "compute_state"
+        assert entry["loc"] > 500, (
+            f"{fname}::compute_state implausibly small: {entry['loc']} LoC"
+        )
+    # Each file's own per-file function listing must also carry compute_state
+    # by name (the per-file top-N census the render() output prints).
+    for fname in ("lazy-state.py", "bug-state.py"):
+        names = {fn["name"] for fn in report["files"][fname]["functions"]}
+        assert "compute_state" in names
+
+
 _TESTS = [
     ("test_atomic_write_creates_file", test_atomic_write_creates_file),
     ("test_atomic_write_creates_parent_dirs", test_atomic_write_creates_parent_dirs),
@@ -4869,6 +4899,7 @@ _TESTS = [
     ("test_duplicate_def_guard_detects_planted_violation", test_duplicate_def_guard_detects_planted_violation),
     ("test_ctx_diagnostics_identity", test_ctx_diagnostics_identity),
     ("test_facade_map_total_and_collision_free", test_facade_map_total_and_collision_free),
+    ("test_benchmark_function_sizes_reports_compute_state_monoliths", test_benchmark_function_sizes_reports_compute_state_monoliths),
 ]
 
 

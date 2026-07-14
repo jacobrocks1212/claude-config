@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-core-package-decomposition
-status: Ready
+status: Complete
 created: 2026-07-13
 phases: [6]
 complexity: mechanical
@@ -72,7 +72,7 @@ Where this plan's repo uses non-default gates or component paths (this is claude
 ## Work Units
 
 - [x] WU-1 — Ruff F-rules advisory config + fixture red-check + baseline report
-- [ ] WU-2 — Per-function-size measurement hook + final KPI re-measure + feature receipt notes
+- [x] WU-2 — Per-function-size measurement hook + final KPI re-measure + feature receipt notes
 
 ---
 
