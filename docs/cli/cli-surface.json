@@ -1229,6 +1229,90 @@
         }
       ]
     },
+    "gate-battery.py": {
+      "flags": [
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Followable-await entrypoint (Runner-Outcome Contract Leg 2): re-emit the recorded run's banner and exit with its recorded exit code.",
+          "metavar": "RUN_ID",
+          "name": "--await",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "Introspect this script's live ArgumentParser and print its CLI-surface projection as JSON (schema_version 1), then exit 0.",
+          "metavar": null,
+          "name": "--dump-cli-surface",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_HelpAction",
+          "aliases": [
+            "-h"
+          ],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "show this help message and exit",
+          "metavar": null,
+          "name": "--help",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "value",
+          "group": null,
+          "help_head": "Repo root to resolve the git toplevel + manifest from (default: cwd).",
+          "metavar": null,
+          "name": "--repo-root",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Base state directory (default: ~/.claude/state).",
+          "metavar": null,
+          "name": "--state-root",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "value",
+          "group": null,
+          "help_head": "With --await: how long to keep polling for the result before giving up with exit 124 (default: 0 = single-shot, immediate 124 if the result isn't already there).",
+          "metavar": null,
+          "name": "--timeout-seconds",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        }
+      ]
+    },
     "kpi-scorecard.py": {
       "flags": [
         {

@@ -39,6 +39,7 @@ ROSTER: tuple[dict, ...] = (
     {"file": "kpi-scorecard.py", "needs_repo_root": False},
     {"file": "lint-skills.py", "needs_repo_root": False},
     {"file": "doc-drift-lint.py", "needs_repo_root": False},
+    {"file": "gate-battery.py", "needs_repo_root": False},
 )
 
 REGISTRY_REL_PATH = Path("docs") / "cli" / "cli-surface.json"

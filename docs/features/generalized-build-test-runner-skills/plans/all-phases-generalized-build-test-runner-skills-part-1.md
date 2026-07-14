@@ -82,7 +82,7 @@ Upstream plans and PHASES.md files this plan was authored against. The executing
 - [x] WU-1 — Author `runner-outcome-contract.md` + `user/scripts/CLAUDE.md` prose pointer (Phase 0)
 - [x] WU-2 — TDD: `gate-battery.py` core — manifest, sequential gates, banner, results file
 - [x] WU-3 — TDD: `--await <run-id>` with 124/125 semantics
-- [ ] WU-4 — Seed `gate-battery.json` + CLI-surface roster + CLAUDE.md row + dogfood run
+- [x] WU-4 — Seed `gate-battery.json` + CLI-surface roster + CLAUDE.md row + dogfood run
 
 ---
 

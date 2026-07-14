@@ -57,6 +57,12 @@ import sys
 import time
 from pathlib import Path
 
+# Insert this directory onto sys.path so `import cli_surface` resolves when
+# gate-battery.py is run directly from user/scripts/ OR via the ~/.claude/scripts
+# symlink (mirrors the bug-state.py / lazy-state.py sibling-import guard).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import cli_surface
+
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -65,11 +71,12 @@ from pathlib import Path
 def build_parser() -> argparse.ArgumentParser:
     """Build the argparse parser for gate-battery.py.
 
-    A plain ``argparse.ArgumentParser`` built in this module-level function — a later work
-    unit swaps in a shared parser class (state-cli-contract-registry style), so the shape
-    is kept simple and isolated here on purpose.
+    Uses the shared ``cli_surface.DidYouMeanArgumentParser`` (state-cli-contract-registry
+    Phase 3) so an unrecognized flag gets a near-miss suggestion, and registers itself
+    with the CLI-surface registry via ``add_dump_cli_surface_flag`` (state-cli-contract-
+    registry Phase 1).
     """
-    parser = argparse.ArgumentParser(
+    parser = cli_surface.DidYouMeanArgumentParser(
         prog="gate-battery.py",
         description="Run the manifest-declared gate battery for a repo and report a "
         "single last-line outcome banner.",
@@ -102,6 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="With --await: how long to keep polling for the result before giving up with "
         "exit 124 (default: 0 = single-shot, immediate 124 if the result isn't already there).",
     )
+    cli_surface.add_dump_cli_surface_flag(parser)
     return parser
 
 
@@ -328,6 +336,10 @@ def _run_await(args) -> int:
 def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    _dump = cli_surface.maybe_handle_dump_cli_surface(args, parser, "gate-battery.py")
+    if _dump is not None:
+        return _dump
 
     if args.await_run_id is not None:
         return _run_await(args)
