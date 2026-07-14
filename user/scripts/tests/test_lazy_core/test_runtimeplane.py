@@ -1908,7 +1908,7 @@ def test_ensure_runtime_m4_genuine_dead_no_boot_unchanged_recovery():
 # dead seam: with `boot_liveness` enabled (the base default) and NO injected
 # `boot_alive`, `ensure_runtime` must derive the signal from the liveness of the
 # `restart()`-spawned `Popen` handle (`.poll()` None ⇒ alive). Driven through the
-# REAL default `restart` closure by swapping `lazy_core._monolith.subprocess`/`lazy_core._monolith.time`
+# REAL default `restart` closure by swapping `lazy_core.runtimeplane.subprocess`/`lazy_core.runtimeplane.time`
 # for fakes — the only way to reach the closure-shared boot-handle holder, which is
 # private to `ensure_runtime` (no injection seam, by design).
 # ---------------------------------------------------------------------------
@@ -1930,7 +1930,7 @@ class _FakeBootPopen:
 
 
 class _FakeSubprocess:
-    """Module stand-in for `lazy_core._monolith.subprocess` — `Popen(...)` returns the given
+    """Module stand-in for `lazy_core.runtimeplane.subprocess` — `Popen(...)` returns the given
     fake handle and records the spawn; carries the DEVNULL sentinel the default
     `restart` references."""
 
@@ -1948,7 +1948,7 @@ class _FakeSubprocess:
 
 
 class _FakeTime:
-    """Module stand-in for `lazy_core._monolith.time` — `sleep` is a no-op so the default
+    """Module stand-in for `lazy_core.runtimeplane.time` — `sleep` is a no-op so the default
     `restart`'s ~7.5-min poll loop and the patient wait run instantly; `time()` is
     a real monotonic-ish counter in case anything reads it."""
 
@@ -1987,8 +1987,8 @@ def test_ensure_runtime_production_boot_alive_live_handle_patient_waits():
         probe_calls["n"] += 1
         return (200, {"tools": ["render_chart"]}) if probe_calls["n"] >= 95 else (0, None)
 
-    _real_sub, _real_time = lazy_core._monolith.subprocess, lazy_core._monolith.time
-    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time
+    _real_sub, _real_time = lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time
+    lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time = fake_sub, fake_time
     try:
         with tempfile.TemporaryDirectory() as td:
             result = lazy_core.ensure_runtime(
@@ -2002,7 +2002,7 @@ def test_ensure_runtime_production_boot_alive_live_handle_patient_waits():
                 # the exact production-call shape (lazy-state.py passes neither).
             )
     finally:
-        lazy_core._monolith.subprocess, lazy_core._monolith.time = _real_sub, _real_time
+        lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time = _real_sub, _real_time
 
     assert result["state"] == "READY", result
     # Exactly ONE boot spawn (the default restart) — the patient wait added none.
@@ -2033,8 +2033,8 @@ def test_ensure_runtime_production_boot_alive_dead_handle_recovers():
     fake_sub = _FakeSubprocess(dead)
     fake_time = _FakeTime()
 
-    _real_sub, _real_time = lazy_core._monolith.subprocess, lazy_core._monolith.time
-    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time
+    _real_sub, _real_time = lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time
+    lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time = fake_sub, fake_time
     try:
         with tempfile.TemporaryDirectory() as td:
             result = lazy_core.ensure_runtime(
@@ -2049,7 +2049,7 @@ def test_ensure_runtime_production_boot_alive_dead_handle_recovers():
                 # progress (the Windows wrapper-exits-early case).
             )
     finally:
-        lazy_core._monolith.subprocess, lazy_core._monolith.time = _real_sub, _real_time
+        lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time = _real_sub, _real_time
 
     assert result["state"] == "BLOCKED", result
     # Patient-wait timeout (cold-compile text), NOT the 5×-crash-recovery generic —
@@ -2174,7 +2174,7 @@ def test_default_stale_check_no_boot_stamp_falls_back_to_lock_start_time():
         repo_root, _origin = _make_git_repo_with_origin(td)
         cfg = dict(lazy_core._ENSURE_RUNTIME_DEFAULT_CONFIG)
         # No write_boot_stamp call — the boot-stamp file is genuinely absent.
-        lazy_core._monolith.write_runtime_lock(
+        lazy_core.runtimeplane.write_runtime_lock(
             repo_root, config=cfg, pid=123, start_time=_t.time() - 3600,
             port=cfg["port"], artifact_hash=None, controller_session_id="s1",
         )
@@ -2350,8 +2350,8 @@ def test_ensure_runtime_production_wrapper_exits_early_patient_waits_one_spawn()
         probe_calls["n"] += 1
         return (200, {"tools": ["render_chart"]}) if probe_calls["n"] >= 50 else (0, None)
 
-    _real_sub, _real_time = lazy_core._monolith.subprocess, lazy_core._monolith.time
-    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time
+    _real_sub, _real_time = lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time
+    lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time = fake_sub, fake_time
     try:
         with tempfile.TemporaryDirectory() as td:
             result = lazy_core.ensure_runtime(
@@ -2366,7 +2366,7 @@ def test_ensure_runtime_production_wrapper_exits_early_patient_waits_one_spawn()
                 # Round-32 test never exercised.
             )
     finally:
-        lazy_core._monolith.subprocess, lazy_core._monolith.time = _real_sub, _real_time
+        lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time = _real_sub, _real_time
 
     assert result["state"] == "READY", result
     # THE starvation guard: exactly ONE spawn. The Round-32 bug would re-`restart()`
@@ -2400,8 +2400,8 @@ def test_ensure_runtime_m4_wrapper_exits_early_patient_waits_one_spawn():
         probe_calls["n"] += 1
         return (200, {"tools": ["render_chart"]}) if probe_calls["n"] >= 50 else (0, None)
 
-    _real_sub, _real_time = lazy_core._monolith.subprocess, lazy_core._monolith.time
-    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time
+    _real_sub, _real_time = lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time
+    lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time = fake_sub, fake_time
     try:
         with tempfile.TemporaryDirectory() as td:
             lock = _owned_lock(start_time=111.0)
@@ -2419,7 +2419,7 @@ def test_ensure_runtime_m4_wrapper_exits_early_patient_waits_one_spawn():
                 # handle + fresh stamp is the wrapper-exits-early case).
             )
     finally:
-        lazy_core._monolith.subprocess, lazy_core._monolith.time = _real_sub, _real_time
+        lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time = _real_sub, _real_time
 
     assert result["state"] == "READY", result
     assert fake_sub.spawns == 1, (
@@ -2484,7 +2484,7 @@ def test_ensure_runtime_no_boot_ever_spawned_still_blocks_generic():
 
 
 class _WindowsSpawnSemanticsSubprocess:
-    """Module stand-in for `lazy_core._monolith.subprocess` that emulates Windows
+    """Module stand-in for `lazy_core.runtimeplane.subprocess` that emulates Windows
     `CreateProcess` resolution (ensure-runtime-cold-boot-starvation-round-3).
 
     The two prior fixes' tests used `_FakeSubprocess`, whose `.Popen(*a, **kw)`
@@ -2563,8 +2563,8 @@ def test_ensure_runtime_production_restart_spawns_via_shell_on_windows_cold_boot
         probe_calls["n"] += 1
         return (200, {"tools": ["render_chart"]}) if probe_calls["n"] >= 50 else (0, None)
 
-    _real_sub, _real_time = lazy_core._monolith.subprocess, lazy_core._monolith.time
-    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time
+    _real_sub, _real_time = lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time
+    lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time = fake_sub, fake_time
     try:
         with tempfile.TemporaryDirectory() as td:
             result = lazy_core.ensure_runtime(
@@ -2581,7 +2581,7 @@ def test_ensure_runtime_production_restart_spawns_via_shell_on_windows_cold_boot
                 # binds and must spawn `npm run dev:restart` through the shell on nt.
             )
     finally:
-        lazy_core._monolith.subprocess, lazy_core._monolith.time = _real_sub, _real_time
+        lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time = _real_sub, _real_time
 
     assert result["state"] == "READY", (
         "the production restart() must launch the cold boot via the shell so the "
@@ -2861,7 +2861,7 @@ def test_ensure_runtime_handler_no_marker_falls_back_to_legacy_superset():
 # ---------------------------------------------------------------------------
 #
 # A `test_ensure_runtime_production_*` test must reach the OS signal under test
-# by swapping `lazy_core._monolith.subprocess` / `lazy_core._monolith.time` and letting the DEFAULT
+# by swapping `lazy_core.runtimeplane.subprocess` / `lazy_core.runtimeplane.time` and letting the DEFAULT
 # `restart` / `boot_alive` closures DERIVE the signal — it must NOT inject the
 # derivation itself as a keyword (`boot_alive=` / `restart=`), and a spawn-binding
 # production test must drive a FAITHFUL subprocess double with real Windows
@@ -2876,7 +2876,7 @@ def test_ensure_runtime_handler_no_marker_falls_back_to_legacy_superset():
 
 # The signal-under-test derivations that a production-binding test must NEVER
 # inject as keywords (the default closures must derive them from the swapped
-# `lazy_core._monolith.subprocess`/`lazy_core._monolith.time`).
+# `lazy_core.runtimeplane.subprocess`/`lazy_core.runtimeplane.time`).
 _PRODUCTION_BINDING_SIGNAL_KWARGS = frozenset({"boot_alive", "restart"})
 
 
@@ -2973,19 +2973,20 @@ def _names_used_in(node: "ast.AST") -> set:
 
 
 def _assigns_lazy_core_subprocess_double(node: "ast.AST"):
-    """If the function body assigns ``lazy_core._monolith.subprocess`` (directly, or as part
-    of a tuple ``lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time``),
+    """If the function body assigns ``lazy_core.runtimeplane.subprocess`` (directly, or as part
+    of a tuple ``lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time = fake_sub, fake_time``),
     return the set of ``ast.Name`` ids used anywhere in the function (the double's
     class name appears among them where it is constructed). Returns None when the
-    function never swaps ``lazy_core._monolith.subprocess`` (not a spawn/subprocess-binding
+    function never swaps ``lazy_core.runtimeplane.subprocess`` (not a spawn/subprocess-binding
     test at all).
     """
     def _is_lazy_core_chain(value: "ast.AST") -> bool:
         # Accept BOTH the legacy `lazy_core.subprocess` form (value is the bare
-        # Name) and the post-decomposition `lazy_core._monolith.subprocess`
-        # form (value is Attribute(_monolith) over Name(lazy_core)) —
-        # lazy-core-package-decomposition WU-1 moved every real patch site to
-        # the submodule form; the collector must recognize it or the enforcer
+        # Name) and the post-decomposition `lazy_core.<submodule>.subprocess`
+        # form (value is Attribute(<submodule>) over Name(lazy_core), for ANY
+        # submodule — Phase-1 WU-1 moved the patch sites to `_monolith`;
+        # Phase-4 WU-4 re-pointed them to `runtimeplane` with the plane) —
+        # the collector must recognize the chain shape or the enforcer
         # meta-tests go silently vacuous.
         if isinstance(value, ast.Name) and value.id == "lazy_core":
             return True
@@ -2998,7 +2999,7 @@ def _assigns_lazy_core_subprocess_double(node: "ast.AST"):
         if not isinstance(sub, ast.Assign):
             continue
         for target in sub.targets:
-            # Direct: lazy_core._monolith.subprocess = ...   AND tuple: (lazy_core._monolith.subprocess, ...) = ...
+            # Direct: lazy_core.runtimeplane.subprocess = ...   AND tuple: (lazy_core.runtimeplane.subprocess, ...) = ...
             elts = target.elts if isinstance(target, ast.Tuple) else [target]
             for elt in elts:
                 if (isinstance(elt, ast.Attribute) and elt.attr == "subprocess"
@@ -3018,7 +3019,7 @@ def _collect_spawn_double_smells(module_source: str) -> list:
 
     Shares the AST walk with Phase 1 (``_iter_production_binding_test_defs``).
     A test is flagged iff ALL of:
-      (a) it swaps ``lazy_core._monolith.subprocess`` with a double (subprocess-binding);
+      (a) it swaps ``lazy_core.runtimeplane.subprocess`` with a double (subprocess-binding);
       (b) it does NOT inject ``restart=`` (an injected restart bypasses the real
           spawn closure, so spawn-resolution semantics are moot — and that case is
           already the Phase-1 signal-injection smell);
@@ -3078,7 +3079,7 @@ def test_ensure_runtime_production_tests_derive_not_inject_signal():
     """Phase 1 positive self-checking meta-test + WU-2 split generalization:
     every sibling test_*.py's ``test_ensure_runtime_production_*`` tests all
     reach the OS signal through the default closures (swapping
-    ``lazy_core._monolith.subprocess``/``time``) and inject NEITHER
+    ``lazy_core.runtimeplane.subprocess``/``time``) and inject NEITHER
     ``boot_alive=`` NOR ``restart=``, so the collector reports ``[]`` across
     the whole split package.
 
@@ -3098,7 +3099,7 @@ def test_ensure_runtime_production_tests_derive_not_inject_signal():
         "production-binding guard: the following test_ensure_runtime_production_* "
         "test(s) INJECT the signal under test as an ensure_runtime keyword instead "
         "of deriving it through the default closure — fix by swapping "
-        f"lazy_core._monolith.subprocess/time and passing neither boot_alive= nor restart=: {all_smells}"
+        f"lazy_core.runtimeplane.subprocess/time and passing neither boot_alive= nor restart=: {all_smells}"
     )
 
 
@@ -3174,19 +3175,19 @@ def test_spawn_double_guard_detects_always_succeeds_double():
     synthetic_source = (
         "def test_ensure_runtime_production_spawn_bad():\n"
         "    fake_sub = _FakeSubprocess(handle)\n"
-        "    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time\n"
+        "    lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time = fake_sub, fake_time\n"
         "    lazy_core.ensure_runtime(Path(td), probe=probe)\n"
         "    assert fake_sub.shell_spawns >= 1\n"
         "\n"
         "def test_ensure_runtime_production_spawn_good():\n"
         "    fake_sub = _WindowsSpawnSemanticsSubprocess(handle)\n"
-        "    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time\n"
+        "    lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time = fake_sub, fake_time\n"
         "    lazy_core.ensure_runtime(Path(td), probe=probe)\n"
         "    assert fake_sub.shell_spawns >= 1\n"
         "\n"
         "def test_ensure_runtime_production_liveness_ok():\n"
         "    fake_sub = _FakeSubprocess(handle)\n"
-        "    lazy_core._monolith.subprocess, lazy_core._monolith.time = fake_sub, fake_time\n"
+        "    lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time = fake_sub, fake_time\n"
         "    lazy_core.ensure_runtime(Path(td), probe=probe)\n"
         "    assert result['state'] == 'READY'\n"
     )
@@ -3545,7 +3546,7 @@ def test_runtime_lock_round_trip_all_five_fields():
     _guard()
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
-        lazy_core._monolith.write_runtime_lock(
+        lazy_core.runtimeplane.write_runtime_lock(
             repo, pid=123, start_time=456.5, port=3333,
             artifact_hash="deadbeef", controller_session_id="sess-uuid",
         )
@@ -3569,7 +3570,7 @@ def test_runtime_lock_written_at_repo_root_with_config_filename():
     assert "port" in cfg, "config must carry port"
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
-        lazy_core._monolith.write_runtime_lock(
+        lazy_core.runtimeplane.write_runtime_lock(
             repo, pid=1, start_time=1.0, port=cfg["port"],
             artifact_hash="h", controller_session_id="s",
         )
@@ -3583,7 +3584,7 @@ def test_runtime_lock_atomic_write_no_partial_on_failure():
     """The write uses a temp file + os.replace (no partial production file when
     the replace fails mid-write)."""
     _guard()
-    src = inspect.getsource(lazy_core._monolith.write_runtime_lock)
+    src = inspect.getsource(lazy_core.runtimeplane.write_runtime_lock)
     # Atomicity via the shared _atomic_write helper (temp + os.replace) OR a
     # direct os.replace — assert one of those is present, not a naive open(w).
     assert ("_atomic_write" in src) or ("os.replace" in src), \
@@ -3694,7 +3695,7 @@ def test_runtime_ownership_round_trip_compose():
             which=lambda name: None,
             kernel_start_time_fn=lambda pid, **k: 77.0,
         )
-        lazy_core._monolith.write_runtime_lock(
+        lazy_core.runtimeplane.write_runtime_lock(
             repo, pid=spawned["pid"], start_time=spawned["start_time"],
             port=3333, artifact_hash="abc", controller_session_id="S1",
         )
@@ -3859,13 +3860,13 @@ def test_run_transient_build_does_not_call_lock_writer(monkeypatch=None):
     invoked by run_transient_build (the persistent path is structurally absent)."""
     _guard()
     called = {"n": 0}
-    original = lazy_core._monolith.write_runtime_lock
+    original = lazy_core.runtimeplane.write_runtime_lock
 
     def spy(*args, **kwargs):
         called["n"] += 1
         return original(*args, **kwargs)
 
-    lazy_core._monolith.write_runtime_lock = spy
+    lazy_core.runtimeplane.write_runtime_lock = spy
     try:
         lazy_core.run_transient_build(
             ["tauri", "build"], cwd="/tmp",
@@ -3874,7 +3875,7 @@ def test_run_transient_build_does_not_call_lock_writer(monkeypatch=None):
             platform="linux", which=lambda name: None,
         )
     finally:
-        lazy_core._monolith.write_runtime_lock = original
+        lazy_core.runtimeplane.write_runtime_lock = original
     assert called["n"] == 0, (
         "run_transient_build must never call write_runtime_lock — the lock writer "
         "belongs to the Persistent Service contract only"

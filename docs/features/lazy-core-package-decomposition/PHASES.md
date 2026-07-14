@@ -86,10 +86,13 @@ suite 1141→1142 (one sanctioned TDD pin added); monolith 20,289 → 16,784 LoC
       **1142** — the plan/PHASES literals were stale; receipt = 1142 pre == 1142 post, bare-name
       multiset identical. See Implementation Notes Phase 3.)
 
-## Phase 4 — Medium seams (gates, ledgers, dispatch, runtime) ⛔ write-path; Phase-0 re-check
+## Phase 4 — Medium seams (gates, ledgers, dispatch, runtime) ✅ COMPLETE (green)
 
-- [ ] `gates.py` / `ledgers.py` / `dispatch.py` / `runtimeplane.py`. Re-verify both bug receipts at the
-      gate. Smoke byte-baselines byte-identical.
+- [x] `gates.py` / `ledgers.py` / `dispatch.py` / `runtimeplane.py`. Re-verify both bug receipts at the
+      gate. Smoke byte-baselines byte-identical. (Receipts re-verified pre-edit; 4 move-only commits
+      4d0988b5 / 26ce9313 / 27a592ed / <this> — battery 7/7 green per commit, ZERO baseline
+      regeneration; collect-only 2230 pre == 2230 post per commit, bare-name multiset identical.
+      `_monolith.py` 16,784 -> 7,858 LoC. See Implementation Notes Phase 4.)
 
 ## Phase 5 — Marker plane + pseudo (riskiest, last) ⛔
 

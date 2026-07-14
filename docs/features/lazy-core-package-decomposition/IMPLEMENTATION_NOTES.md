@@ -239,3 +239,110 @@ statedir-resolved hook surface. Monolith LoC: 20,289 (post-P1) -> 16,784 (post-P
 - `user/scripts/test_lazy_core.py` (DELETED)
 - `user/scripts/CLAUDE.md` (7 live-path rows → `tests/test_lazy_core/`)
 - plan part 3 (WU ticks + status Complete), `PHASES.md` (P3 rows + heading + Status line), this file
+
+## Phase 4 — Medium seams (gates, ledgers, dispatch, runtimeplane)
+
+#### Implementation Notes (Phase 4)
+**Completed:** 2026-07-13 (plan part 4 of 6, `/execute-plan`, 4 WUs / 4 move-only commits)
+**Work completed:**
+- WU-1 `gates.py` (commit 4d0988b5): completion-gate plane — 29 names, ONE contiguous 1,478-line
+  slice (gate_verdict_ok ship-seam plumbing, foreign-harden helpers, evaluate_completion_evidence
+  + observation-gap/commit-drift verdicts, autotick (+`_UNCHECKED_ROW_RE`/`_AUTOTICK_COMMENT_PREFIX`),
+  plan checkbox detail helpers, structural backstop, verify_ledger, summarize_failing_detail).
+  Import-back 6 names. Redirects: 2 `import lazy_core._monolith as _mono` lines in test_gates.py
+  (the 6 `_mono._load_validate_plan_module` patch sites resolve through them). WRITE-PATH GATE
+  executed first: both archived receipts present.
+- WU-2 `ledgers.py` (commit 26ce9313): 98 names, 2 slices (5-line `_DENY_LEDGER_FILENAME` block
+  sliced out of the marker-constants region + the contiguous 3,376-line ledger tail: deny/friction
+  ledger + acks + hardening emit-command, hook-events reader, guard-plane heartbeat, commit
+  brackets, provenance plane, auto-readmit/transcription-slip, efficacy breadcrumbs, telemetry,
+  interventions, canary). Import-back 10. Redirects: 37 test lines (ack_oldest_deny x11,
+  `_TELEMETRY_*` x21, INTERVENTION_* x4, `_INTERVENTIONS_DIRNAME` x1). gates.py's 3 WU-1 deferred
+  imports re-pointed `._monolith` -> `.ledgers`.
+- WU-3 `dispatch.py` (commit 27a592ed): 43 names, 4 slices (cycle-template/emit_cycle_prompt/
+  emit_dispatch_prompt 884 ln; skill-frontmatter readers 174 ln; `_CYCLE_COMMIT_*`/`_MULTI_COMMIT_*`
+  constants 109 ln; prompt registry 672 ln) sliced AROUND the marker/ownership plane. Boundary
+  verified: `consume_nonce` is registry read/write (moves); `resolve_cycle_worker_nonce`/
+  `write_cycle_marker`/`refuse_*`/`REGISTRY_ENTRY_TTL_SECONDS`/`_REGISTRY_RING_CAP` stay for
+  Phase 5. Import-back 8. Redirects: 32 test lines (consume_nonce x20 incl. `_util.py`,
+  `_monolith.os` x10 — the `_FakeOsName` sites, consumer emit_cycle_prompt, -> `dispatch.os`;
+  test_dispatch's 2 `_CYCLE_COMMIT_*` value asserts). test_markers' 2 `_CYCLE_COMMIT_MULTI` reads
+  DELIBERATELY kept at `_monolith` (consumer detect_cycle_bracket_friction is monolith-resident and
+  reads its own import-backed global — patching/reading `_monolith` is the correct resolution
+  module there). ledgers.py's 2 `normalize_prompt_for_hash` deferred imports re-pointed to
+  `.dispatch`; dispatch imports `_DENY_LEDGER_FILENAME` from `.ledgers` top-level (no cycle:
+  ledgers reaches dispatch only via deferred function-local imports).
+- WU-4 `runtimeplane.py` (this commit): 54 names, 2 slices (1,330 + 926 ln): ensure_runtime + M4
+  evaluation/recovery + patient-waits, runtime/sidecar/frontend/stale probes, spawn_detached +
+  Transient Build (run_transient_build/promote_artifact_atomically), reconcile_cycle_begin_git_
+  consistency, kernel_start_time, runtime lock + boot stamp, verify_runtime_ownership, and the
+  host-capability ACTIVE probe primitives (probe_binary/env/platform_capability — hostcaps'
+  deferred import re-pointed `._monolith` -> `.runtimeplane`, closing Phase 2's partial-plane
+  note). Import-back ZERO (remaining monolith references no runtime name — unresolved-globals
+  scan green). Redirects: 63 test_runtimeplane lines (`subprocess` x32, `time` x23,
+  write_runtime_lock x8 — code, docstrings, AND the meta-guard negative-fixture strings rewritten
+  in lockstep). Meta-guards needed NO collector code change: `_is_lazy_core_chain` structurally
+  accepts `lazy_core.<any-submodule>.subprocess`; post-redirect population verified NON-EMPTY
+  (5 production-binding tests, 10 swap sites); one collector comment updated for accuracy
+  (the sanctioned RETARGET edit — no assertion weakened).
+
+**Receipts (per-commit invariant battery, all 4 commits):** pytest `user/scripts/` **2230 passed**
+per commit; `lazy-state.py --test` + `bug-state.py --test` byte-pinned baselines pass with **ZERO
+baseline regeneration** (`tests/baselines/` untouched all phase); `lazy_parity_audit.py` exit 0;
+`cli_surface_gen.py --check` OK; `doc-drift-lint.py` 0 findings; `lint-skills.py` OK. Collect-only
+count **2230 pre == 2230 post** per commit (full `user/scripts/` scope; the test_lazy_core subset
+is 1142 — plan literals 1125/1135 stale as documented in Phase 3); bare-name multiset diff EMPTY
+per commit (scripted sort+diff against the live pre-capture).
+
+**Benchmark census (2026-07-13, post-WU-4):** `_monolith.py` **16,784 -> 7,858 LoC** (gates 1,533 +
+ledgers 3,451 + dispatch 1,895 + runtimeplane 2,312; facade `__init__.py` 436). Cold `import
+lazy_core` best 33.52 / median 38.08 ms (unchanged band vs Phase 2 — expected: bare import defers
+everything). `_monolith.py` is the only module over the 4K ceiling (Phase 5 shrinks it further).
+
+**Deferred `# Phase-5 re-point` inventory (function-local imports of monolith-resident names):**
+- gates.py: `_current_head` (evaluate_completion_evidence).
+- ledgers.py: `read_run_marker` (guard_plane_heartbeat, find_auto_readmit_entry,
+  find_transcription_slip_entry), `head_sha_snapshot` + `read_cycle_marker`
+  (record_cycle_commit_bracket), `head_sha_snapshot` (record_intervention),
+  `_parse_locked_decisions` (write_provenance), `REGISTRY_ENTRY_TTL_SECONDS` (both find_* helpers),
+  `_MARKER_STALE_SECONDS` (_run_marker_state_dir, _telemetry_run_marker,
+  _originating_telemetry_paths).
+- dispatch.py: `read_run_marker` (emit_dispatch_prompt, lookup_emission, resolve_emission_by_nonce,
+  register_emission_if_marked), `_REGISTRY_RING_CAP` (register_emission),
+  `REGISTRY_ENTRY_TTL_SECONDS` (lookup_emission, resolve_emission_by_nonce).
+- runtimeplane.py: `_git` (_default_git_clean_staging).
+- Pre-existing (Phase 2, unchanged): docmodel `_die`; statedir `_git`; notifyplane
+  `detect_noncanonical_blocker`; hostcaps `read_run_marker`.
+
+**Deviations & findings (for the retro):**
+1. Plan's "Verified ground truth" line anchors were pre-Phase-1 and fully stale (expected; plan
+   itself says "re-locate by pattern") — all four seams re-located by AST block map.
+2. Plan said "collected count 1135" (note 5) — stale literal; the live capture (2230 full /
+   1142 test_lazy_core) was the receipt baseline, per the Phase-3 precedent.
+3. ONE analyzer misclassification caught before any battery: the seam analyzer's naive Name-load
+   scan flagged `build_hardening_emit_command`'s `registry_summary` PARAMETER as a monolith-global
+   reference; the injected deferred import shadowed the parameter (caught by 2 red tests in the
+   WU-2 seam smoke). Fixed by symtable-auditing ALL 20 Phase-4 deferred injections (19 genuine
+   globals, 1 removed). Lesson for Phase 5: symtable-audit deferred-import targets BEFORE apply.
+4. `harness-gate.py --staged` flagged the WU-1 diff in-scope (overfit flag + tautology flag +
+   complexity declaration-required; gate_weakening PASS) — GATE_VERDICT.md extended with a
+   Phase-4 entry covering all four identically-shaped seam commits (risk note d).
+5. Executed inline by the phase-execution agent with scripted transforms (scratchpad
+   seam_move.py: AST block map -> verbatim run slices -> header + deferred-import injection ->
+   recomputed import-backs -> facade-map append -> per-module unresolved-globals scan via
+   symtable) + per-commit difflib verbatim receipts (every seam byte-identical to its slice
+   modulo ONLY the enumerated sanctioned insertions) — no hand-retyped bodies (plan note 3).
+6. WU-4's plan-anticipated "update the collectors' matched token patterns" turned out to be a
+   no-op for collector CODE (the chain matcher is submodule-agnostic by design since Phase 1);
+   only comments/docstrings/negative-fixture strings carried the old tokens and were rewritten
+   in lockstep with the real patch sites.
+
+**Files modified (net, Phase 4):**
+- `user/scripts/lazy_core/{gates,ledgers,dispatch,runtimeplane}.py` (new seam modules)
+- `user/scripts/lazy_core/{__init__,_monolith}.py` (facade map +224 entries; pure seam deletions
+  + import-backs 6/10/8/0)
+- `user/scripts/lazy_core/hostcaps.py` (probe-primitive deferred import re-pointed)
+- `user/scripts/tests/test_lazy_core/{test_gates,test_ledgers,test_misc,test_dispatch,
+  test_markers,_util,test_runtimeplane}.py` (mechanism-3 redirects: 2 + 37 + 32 + 63 lines)
+- `docs/features/lazy-core-package-decomposition/GATE_VERDICT.md` (Phase-4 entry)
+- plan part 4 (WU ticks + status Complete), `PHASES.md` (P4 row + heading), this file

@@ -276,12 +276,11 @@ def _default_host_probes() -> dict:
     crash). Real defaults are bound ONLY here (the resolver passes ``probes=None``
     through to this), mirroring ``ensure_runtime``'s injected-callable contract.
     """
-    # Phase-5 re-point: the Phase-2 active-invocation probe primitives are a
-    # separate, non-contiguous section of _monolith.py (~line 7200) that this
-    # WU deliberately did not chase into this slice (partial-plane move; see
-    # module docstring). Deferred import avoids a top-level circular import
-    # (_monolith imports FROM this module).
-    from ._monolith import (
+    # Phase-4 WU-4 re-point (was Phase-2's deferred _monolith import): the
+    # active-invocation probe primitives moved to lazy_core.runtimeplane with
+    # the runtime/spawn plane. Deferred import avoids paying the probe plane's
+    # import on the hook-surface path (this module stays _monolith-free).
+    from .runtimeplane import (
         probe_binary_capability,
         probe_env_capability,
         probe_platform_capability,

@@ -338,6 +338,61 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "resolve_emission_by_nonce": "dispatch",
     "skill_declares_multi_commit": "dispatch",
     "skill_declares_subagent_model": "dispatch",
+    # Phase 4: the runtimeplane seam (runtime plane: ensure_runtime/M4, spawn, transient build, runtime lock, capability probes).
+    "_BINARY_PROBE_TIMEOUT_SECONDS": "runtimeplane",
+    "_BOOT_SPAWN_GRACE_SECONDS": "runtimeplane",
+    "_BOOT_STAMP_FILENAME": "runtimeplane",
+    "_COLD_COMPILE_WAIT_INTERVAL": "runtimeplane",
+    "_COLD_COMPILE_WAIT_MAX_POLLS": "runtimeplane",
+    "_COMPILE_WENT_DEAD": "runtimeplane",
+    "_CREATE_BREAKAWAY_FROM_JOB": "runtimeplane",
+    "_CREATE_NEW_PROCESS_GROUP": "runtimeplane",
+    "_DETACHED_PROCESS": "runtimeplane",
+    "_ENSURE_RUNTIME_DEFAULT_CONFIG": "runtimeplane",
+    "_FILETIME_EPOCH_OFFSET": "runtimeplane",
+    "_FILETIME_TICKS_PER_SEC": "runtimeplane",
+    "_LEGACY_STATUS_TO_STATE": "runtimeplane",
+    "_PLATFORM_PREDICATES": "runtimeplane",
+    "_RUNTIME_RECOVERY_BACKOFF_BASE": "runtimeplane",
+    "_RUNTIME_RECOVERY_MAX_ATTEMPTS": "runtimeplane",
+    "_RUNTIME_STATES": "runtimeplane",
+    "_await_compile_serving": "runtimeplane",
+    "_blocked_blocker": "runtimeplane",
+    "_boot_stamp_path": "runtimeplane",
+    "_classify_compile_state": "runtimeplane",
+    "_cold_compile_timeout_blocker": "runtimeplane",
+    "_default_build_wait": "runtimeplane",
+    "_default_frontend_probe": "runtimeplane",
+    "_default_git_clean_staging": "runtimeplane",
+    "_default_runtime_probe": "runtimeplane",
+    "_default_sidecar_probe": "runtimeplane",
+    "_default_stale_check": "runtimeplane",
+    "_ensure_runtime_m4": "runtimeplane",
+    "_hijacked_blocker": "runtimeplane",
+    "_mcp_tool_in_payload": "runtimeplane",
+    "_mcp_tools_present_honest": "runtimeplane",
+    "_posix_boot_time": "runtimeplane",
+    "_recover_runtime": "runtimeplane",
+    "_route_legacy_non_serving": "runtimeplane",
+    "_runtime_lock_path": "runtimeplane",
+    "_runtime_verdict": "runtimeplane",
+    "_sidecar_is_connected": "runtimeplane",
+    "_win_process_creation_filetime": "runtimeplane",
+    "boot_recently_spawned": "runtimeplane",
+    "ensure_runtime": "runtimeplane",
+    "kernel_start_time": "runtimeplane",
+    "probe_binary_capability": "runtimeplane",
+    "probe_env_capability": "runtimeplane",
+    "probe_platform_capability": "runtimeplane",
+    "promote_artifact_atomically": "runtimeplane",
+    "read_boot_stamp": "runtimeplane",
+    "read_runtime_lock": "runtimeplane",
+    "reconcile_cycle_begin_git_consistency": "runtimeplane",
+    "run_transient_build": "runtimeplane",
+    "spawn_detached": "runtimeplane",
+    "verify_runtime_ownership": "runtimeplane",
+    "write_boot_stamp": "runtimeplane",
+    "write_runtime_lock": "runtimeplane",
 }
 
 # Submodule consulted when a name has no explicit entry in
@@ -345,7 +400,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
 _FALLBACK_SUBMODULE = "_monolith"
 
 # All submodules that make up this package, in no particular order.
-_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "dispatch", "docmodel", "gates", "hostcaps", "ledgers", "notifyplane", "statedir")
+_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "dispatch", "docmodel", "gates", "hostcaps", "ledgers", "notifyplane", "runtimeplane", "statedir")
 
 
 def __getattr__(name):
