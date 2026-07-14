@@ -9,7 +9,7 @@ origin: /harden-harness manual invocation (operator-directed, 2026-07-14)
 
 # Completion gate deadlocks a legitimately-DEFERRED verification-only row in a no-MCP / structural-skip repo
 
-**Status:** Concluded
+**Status:** Fixed
 
 ## Symptom (verified — reproduced 2026-07-14)
 

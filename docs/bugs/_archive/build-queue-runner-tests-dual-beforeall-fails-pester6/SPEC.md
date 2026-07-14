@@ -6,9 +6,11 @@
 > five `build-queue*.Tests.ps1` suites that constitute the build-queue L6 completion gate —
 > fails to be discovered or run. A completion-integrity suite is silently un-runnable here.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** Medium
 **Discovered:** 2026-07-14
+**Fixed:** 2026-07-14
+**Fix commit:** 9abe05ee
 **Placement:** docs/bugs/build-queue-runner-tests-dual-beforeall-fails-pester6
 **Related:** docs/features/generalized-build-test-runner-skills (its Phase 4 validation sweep surfaced this; could not fix — the file matches its L6 `build-queue*.ps1` byte-untouched guard), the other four `build-queue*.Tests.ps1` suites (pass 193/0), `user/scripts/build-queue-runner.ps1` (the code under test)
 
