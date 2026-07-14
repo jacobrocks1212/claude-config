@@ -19,8 +19,10 @@ since ``_monolith`` imports FROM this module for the names below).
 
 from __future__ import annotations
 
+import datetime
 import os
 import re
+import subprocess
 import sys
 
 import yaml
@@ -28,7 +30,7 @@ import yaml
 from pathlib import Path
 from typing import Any
 
-from ._ctx import _diag
+from ._ctx import _atomic_write, _diag
 
 
 # ---------------------------------------------------------------------------
@@ -103,7 +105,7 @@ def _yaml_fallback_scalar(value: Any) -> str:
 
 def parse_sentinel(path: Path) -> dict[str, Any] | None:
     """Parse a sentinel file's YAML frontmatter. Returns dict or None if absent."""
-    from ._monolith import _die  # Phase-5 re-point
+    from ._ctx import _die  # deferred kernel import (kept function-local — hot parse path)
     if not path.exists():
         return None
     try:
@@ -1933,4 +1935,510 @@ def _evidence_gate_killed() -> bool:
         val = os.environ.get(var)
         if val is not None and val.strip().lower() not in _FALSY_ENV_VALUES:
             return True
+    return False
+
+
+# lazy-core-package-decomposition Phase 5 WU-3 (residue sweep): the sentinel
+# lifecycle plane — detect_noncanonical_blocker, neutralize_sentinel, the
+# PROVISIONAL eligibility/transform (provisional_eligibility /
+# provisionalize_sentinel), and the independent-marker parse
+# (parse_independent_marker) — moved here from _monolith.py — verbatim.
+
+# ---------------------------------------------------------------------------
+# detect_noncanonical_blocker — read-time stray-blocker detector
+#   (noncanonical-blocker-filename-invisible-to-state-machine). Single writer of
+#   the detection logic; lazy-state.py / bug-state.py Step 3 only CALL it.
+# ---------------------------------------------------------------------------
+
+def detect_noncanonical_blocker(spec_dir: Path) -> Path | None:
+    """Return the first blocker-shaped *stray* file in ``spec_dir``, or None.
+
+    A *stray* is a mis-named blocker sentinel that the literal ``BLOCKED.md``
+    Step-3 check is blind to — e.g. ``BLOCKED_2026-06-09-foo.md`` or a
+    lowercase ``blocked.md``. Such a file silently loops the pipeline (the
+    state machine re-routes straight back into the same wall). This detector
+    surfaces it so the caller can emit a distinct ``blocked-misnamed`` terminal.
+
+    A directory entry's basename ``name`` is a stray iff ALL hold:
+      * ``name.upper().startswith("BLOCKED")`` — blocker-shaped (case-insensitive).
+      * ``name.lower().endswith(".md")``       — markdown sentinel.
+      * ``name != "BLOCKED.md"``                — NOT the exact canonical name
+        (canonical is owned by the caller's literal check; precise, case-sensitive).
+      * ``"_RESOLVED_" not in name``            — NOT an already-neutralized
+        blocker. Reuses ``neutralize_sentinel``'s literal ``_RESOLVED_`` guard
+        so a renamed ``BLOCKED_RESOLVED_<date>.md`` never re-halts.
+
+    Entries are scanned in ``sorted(spec_dir.iterdir())`` order so the "first
+    offending path" is deterministic across platforms — the byte-pinned
+    ``--test`` baselines depend on it.
+
+    Robustness: returns None (never raises) when ``spec_dir`` does not exist or
+    holds no stray.
+    """
+    if not spec_dir.exists():
+        return None
+    try:
+        entries = sorted(spec_dir.iterdir())
+    except OSError:
+        return None
+    # Canonical precedence (belt-and-suspenders): when the EXACT canonical
+    # BLOCKED.md is present, the caller's literal Step-3 check owns the halt —
+    # never surface a stray alongside it (would double-emit / shadow the
+    # canonical `blocked` terminal). The state machines also wire this detector
+    # AFTER their canonical check, so this is a second line of defense.
+    # The check is case-SENSITIVE against the listed basenames (NOT
+    # ``(spec_dir / "BLOCKED.md").exists()``, which is case-insensitive on
+    # Windows/macOS and would wrongly treat a lowercase ``blocked.md`` stray as
+    # the canonical file).
+    names = [e.name for e in entries]
+    if "BLOCKED.md" in names:
+        return None
+    for entry in entries:
+        name = entry.name
+        if (
+            name.upper().startswith("BLOCKED")
+            and name.lower().endswith(".md")
+            and name != "BLOCKED.md"
+            and "_RESOLVED_" not in name
+        ):
+            return entry
+    return None
+
+
+# ---------------------------------------------------------------------------
+# neutralize_sentinel — WU-3: rename a resolved sentinel to the canonical
+#   *_RESOLVED_<date> form (collision-safe, git-mv-aware).
+# ---------------------------------------------------------------------------
+
+def neutralize_sentinel(path: Path, date: str | None = None) -> dict:
+    """Rename a sentinel file to its canonical RESOLVED form.
+
+    Given a sentinel like NEEDS_INPUT.md or BLOCKED.md that has been acted on,
+    this function renames it to ``<stem>_RESOLVED_<date><ext>`` in the same
+    directory. The rename is collision-safe: if the canonical target already
+    exists, a numeric suffix is appended (``_2``, ``_3``, …) until a free name
+    is found. The original file is never clobbered.
+
+    When the file lives inside a git repo and is tracked, ``git mv`` is used to
+    preserve history. If ``git mv`` returns non-zero (plain temp dir, untracked
+    file, or git unavailable) the function falls back to a plain filesystem
+    rename via ``Path.rename()``.
+
+    Args:
+        path: Absolute (or relative) path to the sentinel file to neutralize.
+        date: ISO date string (YYYY-MM-DD) to embed in the resolved name.
+              Defaults to today's date (``datetime.date.today().isoformat()``).
+
+    Returns:
+        A dict with keys:
+          ok              – True on success, False on any refusal/error.
+          renamed_from    – Basename of the source file (str), or None on refusal.
+          renamed_to      – Basename of the target file (str), or None on refusal.
+          refused         – Human-readable refusal reason (str), or None on success.
+          collision_suffix – Integer n (≥2) when a collision suffix was required,
+                             or None when the base target name was free.
+    """
+    # Default to today when no date is provided by the caller.
+    if date is None:
+        date = datetime.date.today().isoformat()
+
+    # Guard 1: source must exist — never create anything for a missing path.
+    if not path.exists():
+        return {
+            "ok": False,
+            "renamed_from": None,
+            "renamed_to": None,
+            "refused": "sentinel not found",
+            "collision_suffix": None,
+        }
+
+    # Guard 2: refuse to double-neutralize a file that already contains _RESOLVED_.
+    # The literal substring check is intentional — it catches any variant like
+    # NEEDS_INPUT_RESOLVED_2026-06-09.md regardless of the date.
+    if "_RESOLVED_" in path.name:
+        return {
+            "ok": False,
+            "renamed_from": None,
+            "renamed_to": None,
+            "refused": "already neutralized",
+            "collision_suffix": None,
+        }
+
+    # Compute the canonical base target name: <stem>_RESOLVED_<date><ext>.
+    # path.stem is the filename without its final extension; path.suffix is the
+    # extension including the leading dot (e.g. ".md").
+    stem = path.stem
+    ext = path.suffix
+    base_target_name = f"{stem}_RESOLVED_{date}{ext}"
+    target = path.parent / base_target_name
+
+    # Collision-safe name selection: if the base target exists, increment a
+    # numeric suffix starting at 2 until a free slot is found. Never clobber.
+    collision_suffix: int | None = None
+    if target.exists():
+        n = 2
+        while True:
+            candidate_name = f"{stem}_RESOLVED_{date}_{n}{ext}"
+            candidate = path.parent / candidate_name
+            if not candidate.exists():
+                target = candidate
+                collision_suffix = n
+                break
+            n += 1
+
+    # Attempt rename via git mv to preserve history when the file is tracked.
+    # ``git -C <dir> mv <src_basename> <dst_basename>`` keeps the operation
+    # within the directory; we pass basenames so git doesn't need absolute paths.
+    # Modelled after _current_head in lazy-state.py (capture_output, text, timeout,
+    # OSError/SubprocessError guard).
+    renamed = False
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(path.parent), "mv", path.name, target.name],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if r.returncode == 0:
+            # git mv succeeded: source is gone, target is present.
+            renamed = True
+    except (OSError, subprocess.SubprocessError):
+        # git unavailable or some other OS-level failure — fall through to
+        # the plain filesystem move below.
+        pass
+
+    if not renamed:
+        # Fallback: plain filesystem rename. Use Path.rename() which is atomic
+        # on POSIX and behaves correctly on Windows for in-directory renames.
+        path.rename(target)
+
+    return {
+        "ok": True,
+        "renamed_from": path.name,
+        "renamed_to": target.name,
+        "refused": None,
+        "collision_suffix": collision_suffix,
+    }
+
+
+# ---------------------------------------------------------------------------
+# park-provisional-acceptance — provisional acceptance of low-divergence
+# product-class NEEDS_INPUT.md decisions (`--park-provisional`).
+# ---------------------------------------------------------------------------
+
+def _split_decision_context_h3s(body: str) -> list[str]:
+    """Return the H3 subsection texts under the ``## Decision Context`` H2.
+
+    Empty list when the H2 is absent. Each returned string starts at its
+    ``### `` heading line and runs to the next H3/H2 boundary. Pure text
+    helper shared by provisional_eligibility / provisionalize_sentinel.
+    """
+    m = re.search(r"^## Decision Context\s*$", body, re.MULTILINE)
+    if not m:
+        return []
+    # Section runs to the next H2 (or EOF).
+    tail = body[m.end():]
+    next_h2 = re.search(r"^## \S", tail, re.MULTILINE)
+    section = tail[: next_h2.start()] if next_h2 else tail
+    parts = re.split(r"(?=^### )", section, flags=re.MULTILINE)
+    return [p for p in parts if p.startswith("### ")]
+
+
+def _extract_recommended_label(h3_text: str) -> str | None:
+    """Extract the recommended option label from one Decision-Context H3.
+
+    Primary source: the first ``- **<label> (Recommended)**`` options bullet
+    (the schema mandates recommendation-first with the ``(Recommended)``
+    suffix inside or right after the bold label). Fallback: the
+    ``**Recommendation:** <label> — justification`` line's leading label.
+    Returns None when neither yields a non-empty label (caller refuses).
+    """
+    # Options bullet carrying the (Recommended) marker — bold label with the
+    # marker either inside the bold (`**X (Recommended)**`) or right after.
+    for bm in re.finditer(r"^\s*-\s*\*\*(.+?)\*\*", h3_text, re.MULTILINE):
+        label = bm.group(1).strip()
+        rest = h3_text[bm.end(): bm.end() + 40]
+        if "(Recommended)" in label or rest.lstrip().startswith("(Recommended)"):
+            return label.replace("(Recommended)", "").strip() or None
+    # Fallback: the Recommendation line — label runs to the em/double dash.
+    rm = re.search(r"\*\*Recommendation:\*\*\s*(.+)", h3_text)
+    if rm:
+        line = rm.group(1).strip()
+        label = re.split(r"\s+—\s+|\s+--\s+|\s+-\s+", line, maxsplit=1)[0]
+        label = label.strip().strip("*").strip()
+        if label:
+            return label
+    return None
+
+
+def provisional_eligibility(sentinel_path: Path) -> tuple[bool, str]:
+    """Deterministic, FAIL-CLOSED provisional-acceptance predicate (SPEC D3/D4/D8).
+
+    Returns ``(eligible, reason)`` — ``reason`` names the first failed check
+    (for the probe's ``_diag`` breadcrumb) or ``"eligible"``.
+
+    A ``NEEDS_INPUT.md`` is provisional-eligible iff ALL of:
+      - the frontmatter parses with ``kind: needs-input`` and a non-empty
+        ``decisions:`` list of ≤4 entries;
+      - it is NOT two-key mechanical (``class: mechanical`` AND
+        ``audit_concurs: true``) — the existing flush auto-accept is the
+        stronger path for those (full resolution, no ratification debt);
+      - ``written_by`` is not ``completion-integrity-gate`` (integrity gaps
+        are never recommendations);
+      - ``stub_origin`` is absent or explicitly false (stub-origin-provisional-
+        exclusion: baseline-shaping decisions from a stub-spec /spec Phase-1
+        round or a /spec-bug pre-conclusion halt are never provisional);
+      - the divergence two-key holds: ``divergence`` (producer, Key 1) AND
+        ``audit_divergence`` (input-audit, Key 2) are BOTH in
+        {isolated, contained} — absence, ``structural``, or any unknown value
+        fails closed;
+      - the body carries ``## Decision Context`` with one H3 per decision
+        (1:1) and every H3 carries a ``**Recommendation:**`` block;
+      - no ``## Resolution`` section exists yet (a mid-resolution file is
+        owned by another path).
+
+    Structurally corrupt frontmatter routes through ``parse_sentinel``'s
+    ``_die`` like every other sentinel read.
+    """
+    if sentinel_path.name != "NEEDS_INPUT.md":
+        return (False, f"not a NEEDS_INPUT.md ({sentinel_path.name})")
+    meta = parse_sentinel(sentinel_path)
+    if meta is None:
+        return (False, "sentinel missing or without frontmatter")
+    if meta.get("kind") != "needs-input":
+        return (False, f"kind is {meta.get('kind')!r}, not needs-input")
+    decisions = meta.get("decisions")
+    if not isinstance(decisions, list) or not decisions:
+        return (False, "decisions: absent or empty")
+    if len(decisions) > 4:
+        return (False, f"{len(decisions)} decisions exceeds the 4-decision cap")
+    if str(meta.get("written_by", "")).strip() == "completion-integrity-gate":
+        return (False, "written_by completion-integrity-gate — never provisional")
+    # stub-origin-provisional-exclusion: decisions that shaped a baseline the
+    # operator never saw (park-mode stub-spec /spec Phase-1 round, /spec-bug
+    # pre-conclusion halt) are NEVER provisionally accepted, regardless of
+    # divergence grades — jointly they define the item's foundation.
+    # FAIL-CLOSED on malformed values: any present value that is not an
+    # explicit false excludes.
+    if "stub_origin" in meta:
+        _so = meta.get("stub_origin")
+        if not (_so is False or str(_so).strip().lower() in ("false", "no")):
+            return (False, "stub_origin baseline decision — never provisional "
+                           "(fail-closed)")
+    if meta.get("class") == "mechanical" and meta.get("audit_concurs") is True:
+        return (False, "two-key mechanical — flush auto-accept path wins (D4)")
+    divergence = str(meta.get("divergence", "")).strip().lower()
+    audit_divergence = str(meta.get("audit_divergence", "")).strip().lower()
+    if divergence not in _PROVISIONAL_ELIGIBLE_GRADES:
+        return (False, f"divergence {divergence or 'absent'!s} not in "
+                       "{isolated, contained} (fail-closed)")
+    if audit_divergence not in _PROVISIONAL_ELIGIBLE_GRADES:
+        return (False, f"audit_divergence {audit_divergence or 'absent'!s} not in "
+                       "{isolated, contained} (fail-closed)")
+    try:
+        text = sentinel_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return (False, f"unreadable sentinel: {exc}")
+    if re.search(r"^## Resolution\s*$", text, re.MULTILINE):
+        return (False, "already carries a ## Resolution section")
+    h3s = _split_decision_context_h3s(text)
+    if not h3s:
+        return (False, "body missing ## Decision Context")
+    if len(h3s) != len(decisions):
+        return (False, f"{len(h3s)} H3 subsection(s) != {len(decisions)} "
+                       "decisions (1:1 schema violation)")
+    for i, h3 in enumerate(h3s):
+        if "**Recommendation:**" not in h3:
+            return (False, f"decision {i + 1} lacks a **Recommendation:** block")
+    return (True, "eligible")
+
+
+def provisionalize_sentinel(path: Path, repo_root: Path,
+                            date: str | None = None) -> dict:
+    """Provisionally accept a NEEDS_INPUT.md on its recommendations (SPEC D2).
+
+    Re-validates the FULL eligibility predicate (fail-closed — the CLI action
+    must never trust a stale probe), extracts each decision's recommended
+    option label, appends a ``## Resolution`` block carrying
+    ``resolved_by: auto-provisional`` + the HEAD ``decision_commit``, and
+    renames the file to ``NEEDS_INPUT_PROVISIONAL.md`` (git-mv-aware,
+    refusing — zero writes — when the target already exists).
+
+    Returns::
+
+        {ok, refused, choices: [{title, choice}], divergence,
+         audit_divergence, decision_commit, renamed_to}
+    """
+    from .runtimeplane import _current_head  # deferred — runtimeplane imports docmodel at top level (genuine cycle)
+    def _refuse(reason: str) -> dict:
+        return {
+            "ok": False, "refused": reason, "choices": [],
+            "divergence": None, "audit_divergence": None,
+            "decision_commit": None, "renamed_to": None,
+        }
+
+    eligible, reason = provisional_eligibility(path)
+    if not eligible:
+        return _refuse(reason)
+    target = path.parent / PROVISIONAL_SENTINEL
+    if target.exists():
+        return _refuse(f"{PROVISIONAL_SENTINEL} already exists — refusing to clobber")
+
+    meta = parse_sentinel(path) or {}
+    decisions = [str(d) for d in meta.get("decisions", [])]
+    text = path.read_text(encoding="utf-8")
+    h3s = _split_decision_context_h3s(text)
+    choices: list[dict] = []
+    for i, h3 in enumerate(h3s):
+        label = _extract_recommended_label(h3)
+        if not label:
+            return _refuse(
+                f"decision {i + 1}: could not extract a recommended option "
+                "label (no (Recommended) bullet and no parsable "
+                "**Recommendation:** line)"
+            )
+        title = h3.splitlines()[0].lstrip("#").strip()
+        choices.append({"title": title, "choice": label})
+
+    # decision_commit anchors any later redirect's blast-radius diff
+    # (`git diff <decision_commit>..HEAD`). Best-effort: a non-git dir (test
+    # fixtures) records "unknown" rather than blocking the acceptance — the
+    # sha is audit metadata, not a gate.
+    decision_commit = _current_head(repo_root) or "unknown"
+    if date is None:
+        date = datetime.date.today().isoformat()
+    divergence = str(meta.get("divergence")).strip().lower()
+    audit_divergence = str(meta.get("audit_divergence")).strip().lower()
+
+    lines = [
+        "",
+        "## Resolution",
+        "",
+        f"*Recorded on {date}. Provisionally auto-accepted on recommendation "
+        "(`--park-provisional` divergence two-key). Ratify or redirect via "
+        "the provisional-ratification affordance before completion.*",
+        "",
+        "resolved_by: auto-provisional",
+        f"decision_commit: {decision_commit}",
+        "",
+    ]
+    for i, ch in enumerate(choices, start=1):
+        lines += [
+            f"### {i}. {ch['title']}",
+            "",
+            f"**Choice:** {ch['choice']}",
+            f"**Notes:** Provisionally accepted — divergence graded "
+            f"{divergence} (producer) / {audit_divergence} (input-audit); "
+            "pending operator ratification.",
+            "",
+        ]
+    new_text = text.rstrip("\n") + "\n" + "\n".join(lines)
+    _atomic_write(path, new_text)
+
+    # Rename via git mv (history-preserving) with plain-rename fallback —
+    # same pattern as neutralize_sentinel.
+    renamed = False
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(path.parent), "mv", path.name, target.name],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            renamed = True
+    except (OSError, subprocess.SubprocessError):
+        pass
+    if not renamed:
+        path.rename(target)
+
+    return {
+        "ok": True, "refused": None, "choices": choices,
+        "divergence": divergence, "audit_divergence": audit_divergence,
+        "decision_commit": decision_commit, "renamed_to": target.name,
+    }
+
+# ---------------------------------------------------------------------------
+# feature-budget-guard-and-skip-ahead Phase 3 — two-key skip-ahead predicates
+#   (Locked Decision 5). Both are pure/near-pure and deterministic (no LLM
+#   judgment): parse_independent_marker reads on-disk markers; skip_ahead_ready
+#   combines a (caller-parsed) dep list with the gated-id set + the marker.
+# ---------------------------------------------------------------------------
+
+# The affirmative shared-state-isolation markers. `independent: true` is the
+# primary; `no_shared_state: true` is a documented alias (SPEC Locked Decision 5).
+_INDEPENDENT_MARKER_KEYS = ("independent", "no_shared_state")
+# Matches a frontmatter line `independent: true` / `no_shared_state: true`
+# (case-insensitive value; leading whitespace tolerated). Truthy ONLY for an
+# explicit `true` — `false`/absent default to NOT-independent (the safe rail).
+_INDEPENDENT_MARKER_RE = re.compile(
+    r"^\s*(independent|no_shared_state)\s*:\s*true\s*$",
+    re.IGNORECASE,
+)
+
+
+def _coerce_marker_truthy(value: object) -> bool:
+    """True iff `value` is an explicit affirmative (bool True or a 'true' string).
+
+    Deliberately strict: only ``True`` or a case-insensitive ``"true"`` count.
+    A queue.json entry can carry either a JSON bool or a string; anything else
+    (False, None, 0, "false", "") is NOT independent — the safe default.
+    """
+    if value is True:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() == "true"
+    return False
+
+
+def parse_independent_marker(spec_text: str, queue_entry: dict | None) -> bool:
+    """Deterministic two-source read of the `independent: true` isolation marker
+    (feature-budget-guard-and-skip-ahead Phase 3, Locked Decision 5).
+
+    Returns ``True`` iff an explicit ``independent: true`` (or its
+    ``no_shared_state: true`` alias) is present in EITHER the SPEC.md frontmatter
+    OR the ``queue.json`` entry. Default (marker absent, or explicitly ``false``)
+    is ``False`` — the shared-state-isolation rail that makes default-on
+    skip-ahead safe (absent-flag items degrade to today's strict halt). On-disk,
+    deterministic — no LLM judgment.
+
+    Args:
+        spec_text: the raw SPEC.md text (its frontmatter is scanned line-by-line;
+            only the leading ``---`` fenced block is consulted when present, else
+            the whole head of the file — a leading marker before any heading).
+        queue_entry: the feature's ``queue.json`` entry (may be ``None``/empty).
+
+    Returns:
+        ``True`` if the affirmative marker is present in either source, else
+        ``False``.
+    """
+    # Source 1: the queue entry (a JSON bool or string under either key).
+    if isinstance(queue_entry, dict):
+        for key in _INDEPENDENT_MARKER_KEYS:
+            if _coerce_marker_truthy(queue_entry.get(key)):
+                return True
+    # Source 2: the SPEC.md frontmatter. Scan the leading `---` fenced block if
+    # present; otherwise scan the head of the file up to the first markdown
+    # heading (a bare leading `independent: true` line). The regex matches ONLY
+    # an explicit `: true`, so a `: false` line is never a false positive.
+    if isinstance(spec_text, str) and spec_text:
+        lines = spec_text.splitlines()
+        in_fence = False
+        fence_seen = False
+        for line in lines:
+            stripped = line.strip()
+            if stripped == "---":
+                if not fence_seen and not in_fence:
+                    in_fence = True
+                    fence_seen = True
+                    continue
+                if in_fence:
+                    # Closing fence — stop scanning the frontmatter block.
+                    break
+            if fence_seen and not in_fence:
+                # We have already consumed a fenced block; don't scan the body.
+                break
+            if not fence_seen and stripped.startswith("#"):
+                # No frontmatter fence and we hit a heading → no leading marker.
+                break
+            if _INDEPENDENT_MARKER_RE.match(line):
+                return True
     return False

@@ -73,10 +73,8 @@ from .ledgers import (
     write_provenance,
 )
 from .markers import refuse_if_cycle_active
-from ._monolith import (  # Phase-5 WU-3 re-point (write-path helpers still monolith-resident)
-    _current_head,
-    write_completed_receipt,
-)
+from .gates import write_completed_receipt
+from .runtimeplane import _current_head
 
 
 # ---------------------------------------------------------------------------

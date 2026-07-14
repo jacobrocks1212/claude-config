@@ -47,6 +47,10 @@ import json
 import re
 import time
 
+import yaml
+
+from pathlib import Path
+
 from ._ctx import _atomic_write
 
 
@@ -439,3 +443,67 @@ def format_unknown_host_capability_blocker(
         "`lazy_core._HOST_CAPABILITY_REGISTRY` (+ a binding in "
         "`_HOST_CAPABILITY_PROBE_CONFIG`). Then rename/neutralize this BLOCKED.md.\n"
     )
+
+
+# lazy-core-package-decomposition Phase 5 WU-3 (residue sweep): the host-plane
+# sentinel writer write_deferred_requires_host moved here from _monolith.py —
+# verbatim (completes the host-capability plane this module owns).
+
+def write_deferred_requires_host(
+    path: Path,
+    *,
+    feature_id: str,
+    missing_capabilities: list[str],
+    deferred_by: str = "lazy",
+    date: str | None = None,
+) -> None:
+    """Write a capability-keyed ``DEFERRED_REQUIRES_HOST.md`` sentinel
+    (host-capability-declaration Phase 5).
+
+    The host-axis generalization of ``DEFERRED_REQUIRES_DEVICE.md``: it records
+    that the feature is testable, just NOT on THIS host (≥1 required capability
+    absent), so it re-opens on a host that provides the capability rather than
+    being permanently waived or back-of-queued. ``missing_capabilities`` is
+    LOAD-BEARING and MUST be non-empty — it is the self-limiting scope a
+    capability-bearing host re-opens. Atomic write; the body keeps the
+    human-readable re-open context.
+
+    Args:
+        path: destination ``DEFERRED_REQUIRES_HOST.md`` path.
+        feature_id: the deferred feature's id.
+        missing_capabilities: the absent required capability ids (non-empty).
+        deferred_by: ``lazy`` | ``lazy-batch`` (the writer).
+        date: ``YYYY-MM-DD`` (default: today).
+    """
+    if not missing_capabilities:
+        raise ValueError(
+            "write_deferred_requires_host: missing_capabilities MUST be non-empty "
+            "(it is the self-limiting scope a capability-host re-opens)."
+        )
+    if date is None:
+        date = datetime.date.today().isoformat()
+    missing_sorted = sorted(set(missing_capabilities))
+    fm = {
+        "kind": "deferred-requires-host",
+        "feature_id": feature_id,
+        "missing_capabilities": missing_sorted,
+        "deferred_by": deferred_by,
+        "date": date,
+    }
+    body = (
+        "---\n"
+        + yaml.safe_dump(fm, sort_keys=False).strip()
+        + "\n---\n\n"
+        "# Deferred — requires host capability\n\n"
+        "## What was deferred and why\n\n"
+        f"Feature `{feature_id}`'s runtime validation requires host "
+        f"capability/ies {', '.join(f'`{m}`' for m in missing_sorted)}, which "
+        "is absent on this host. The feature is testable — just not HERE — so it "
+        "is deferred (not skipped/waived) and re-opens automatically on a host "
+        "that provides the capability.\n\n"
+        "## How to resume\n\n"
+        "Run `/lazy` (or `/lazy-batch`) on a host that provides the missing "
+        "capability/ies above. The capability-match re-opens this feature into "
+        "runtime validation and deletes this sentinel on success.\n"
+    )
+    _atomic_write(path, body)

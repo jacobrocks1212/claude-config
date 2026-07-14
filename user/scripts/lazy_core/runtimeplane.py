@@ -1381,6 +1381,10 @@ def _ensure_runtime_m4(
 
 
 _COMPILE_WENT_DEAD = object()
+"""Sentinel returned by ``_await_compile_serving`` when the runtime crossed from
+``compiling`` to ``dead`` mid-wait (Vite went down) — the M4 caller routes this
+into the bounded ``_recover_runtime`` crash path. NOT a verdict dict, so a caller
+must check identity before treating the return as a verdict."""
 
 
 def _await_compile_serving(
@@ -2037,7 +2041,6 @@ def _default_git_clean_staging(repo_root: Path, staging_dir: str) -> bool:
 
     Best-effort — returns True on a clean exit, False otherwise; never raises
     (the caller wraps it, but keep this defensive too)."""
-    from ._monolith import _git  # Phase-5 re-point (git helper still monolith-resident)
     try:
         proc = _git(repo_root, "clean", "-fdx", str(staging_dir))
         return proc.returncode == 0
@@ -2310,3 +2313,284 @@ def verify_runtime_ownership(lock, *, live_session_id, kernel_start_time_fn):
     if live is None:
         return False
     return live == recorded
+
+
+# lazy-core-package-decomposition Phase 5 WU-3 (residue sweep): the git helpers
+# (_git / _current_head / git_head_short_sha / git_guard_status) and the
+# self-edit detection plane (GOVERNING_FILE_SET / self_edit_mode /
+# governing_files_touched) moved here from _monolith.py — verbatim.
+
+# ---------------------------------------------------------------------------
+# Persisted probe signature / loop detection — WU-4
+# ---------------------------------------------------------------------------
+
+def _current_head(repo_root: Path) -> str | None:
+    """Resolve repo_root's HEAD commit sha, or None when repo_root is not a git
+    repo / git is unavailable.
+
+    Best-effort and never raises: a missing git binary, a non-repo path, or any
+    subprocess error all map to None. update_repeat_count uses this for the
+    Phase 9 WU-2 HEAD-aware streak — None on both sides (e.g. a non-git
+    repo_root) preserves the pre-Phase-9 same-tuple-increments behavior.
+
+    This mirrors lazy-state.py's own _current_head (which lazy-state keeps for
+    its Step-9 MCP-results freshness gate); the duplication is deliberate — the
+    two scripts are independently importable and lazy_core must not depend on a
+    sibling script. Both share the same best-effort contract.
+    """
+    try:
+        r = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode == 0:
+            return r.stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
+# ---------------------------------------------------------------------------
+# WU-5: Single-probe payload helpers
+# ---------------------------------------------------------------------------
+
+def _git(repo_root: Path, *args: str, timeout: int = 60) -> subprocess.CompletedProcess:
+    """Run a git command against repo_root, capturing output. Never raises on
+    non-zero exit (callers check .returncode); raises only on OS-level failure,
+    which callers wrap."""
+    return subprocess.run(
+        ["git", "-C", str(repo_root), *args],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def git_head_short_sha(repo_root: Path) -> str | None:
+    """Return the short SHA of ``git rev-parse --short HEAD`` for ``repo_root``,
+    or ``None`` on any failure (non-git tree, OS error, non-zero exit).
+
+    Fail-open by design (feature-budget-guard-and-skip-ahead Phase 2): the budget
+    guard's ``budget_guard.commit_hash`` audit field is best-effort context, never
+    a gate — a degraded snapshot must not break trip evaluation.
+    """
+    try:
+        proc = _git(repo_root, "rev-parse", "--short", "HEAD")
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    sha = proc.stdout.strip()
+    return sha or None
+
+def git_guard_status(repo_root: Path) -> dict:
+    """Return a three-key git status snapshot for the probe payload.
+
+    Runs three lightweight git commands against ``repo_root`` and returns a
+    dict with the following keys:
+
+    ``clean_tree`` (bool)
+        True when ``git status --short`` produces no output (no staged,
+        unstaged, or untracked changes).
+
+    ``head_matches_origin`` (bool)
+        True when ``git rev-parse HEAD`` equals ``git rev-parse @{u}``.
+        False when the repo has no upstream configured or any git command
+        fails.
+
+    ``unpushed`` (bool)
+        True when ``git rev-list --count @{u}..HEAD`` returns an integer > 0
+        (local commits are ahead of the upstream tracking ref).  False on any
+        git failure or when no upstream is configured.
+
+    Error-handling contract (best-effort, mirrors verify_ledger / _current_head):
+    - Each of the three checks is independent; a failure in one does not
+      prevent the others from running.
+    - Any ``OSError`` or ``subprocess.SubprocessError`` (including timeout)
+      silently produces the safe-default value for that check.
+    - When ``@{u}`` does not resolve (no upstream), both ``head_matches_origin``
+      and ``unpushed`` are False; ``clean_tree`` still reflects the status
+      command result if it succeeded.
+    """
+    # --- check 1: clean working tree -----------------------------------------
+    # Mirror the subprocess style used in verify_ledger: capture_output + text
+    # + explicit timeout + catch OSError/SubprocessError.
+    try:
+        status_result = subprocess.run(
+            ["git", "-C", str(repo_root), "status", "--short"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        # Require a zero returncode in addition to empty stdout.  When
+        # repo_root is not a git repo, `git status --short` exits 128 with
+        # empty stdout — without the returncode guard that would produce a
+        # false-positive clean_tree=True (contradicting the docstring contract
+        # that an invalid repo → safe-dirty False, matching checks 2 and 3).
+        clean_tree = (status_result.returncode == 0 and status_result.stdout.strip() == "")
+    except (OSError, subprocess.SubprocessError):
+        # Git unavailable or repo_root invalid — assume dirty so callers don't
+        # proceed with a false-positive clean signal.
+        clean_tree = False
+
+    # --- check 2: HEAD matches upstream tracking ref -------------------------
+    # Both rev-parse commands must succeed and return identical SHA strings.
+    # @{u} fails with a non-zero returncode when no upstream is configured.
+    try:
+        head_result = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        upstream_result = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "@{u}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if head_result.returncode == 0 and upstream_result.returncode == 0:
+            head_sha = head_result.stdout.strip()
+            upstream_sha = upstream_result.stdout.strip()
+            # Require both SHAs to be non-empty before comparing.
+            head_matches_origin = bool(head_sha and upstream_sha and head_sha == upstream_sha)
+        else:
+            # @{u} can fail when no upstream is configured; treat as mismatch.
+            head_matches_origin = False
+    except (OSError, subprocess.SubprocessError):
+        head_matches_origin = False
+
+    # --- check 3: unpushed local commits -------------------------------------
+    # rev-list --count @{u}..HEAD returns the number of commits ahead of the
+    # upstream.  A non-zero integer means at least one local commit is unpushed.
+    try:
+        revlist_result = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-list", "--count", "@{u}..HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if revlist_result.returncode == 0:
+            unpushed = int(revlist_result.stdout.strip()) > 0
+        else:
+            # No upstream or other git error — cannot determine ahead-count.
+            unpushed = False
+    except (OSError, subprocess.SubprocessError, ValueError):
+        # ValueError covers int() failing on unexpected output.
+        unpushed = False
+
+    return {
+        "clean_tree": clean_tree,
+        "head_matches_origin": head_matches_origin,
+        "unpushed": unpushed,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 (lazy-cycle-containment, C8) — Self-edit reload discipline.
+#
+# When a /lazy-batch run executes *inside* claude-config it is editing the very
+# harness it runs from. Most of that harness self-refreshes mid-run and needs NO
+# reload — the AUTO-REFRESH BOUNDARY below. The ONLY surfaces that go stale are
+# the orchestrator's own in-context governing prose: GOVERNING_FILE_SET.
+#
+# AUTO-REFRESH BOUNDARY (documented no-ops — MUST NOT be flagged for reload;
+# they were never stale):
+#   * lazy_core.py / lazy-state.py / bug-state.py — a fresh `python3` subprocess
+#     runs on every probe, so an edit is live on the next probe.
+#   * lazy-batch-prompts/cycle-base-prompt.md (+ addenda + loop-block.md) —
+#     re-read by emit_cycle_prompt() from disk on every probe.
+#   * hook .sh bodies — `bash ~/.claude/hooks/X.sh` reads the file each
+#     invocation, so a body edit is live on the next tool call.
+#   * downstream skill prose (SKILL.md a dispatched subagent loads) — each
+#     dispatched subagent loads its skill fresh, so the edit is live next dispatch.
+# These are EXCLUDED from GOVERNING_FILE_SET by construction.
+#
+# The governing-file set MUST stay in lockstep with the orchestrator's
+# compaction re-read list (lazy-dispatch-template.md + orchestrator-voice.md +
+# completeness-policy.md + the orchestrator's own SKILL.md) — the self-edit
+# reload is the SAME re-read, triggered by a self-edit commit instead of a
+# compaction boundary. Paths are repo-root-relative POSIX strings (the form
+# `git diff --name-only` emits).
+# ---------------------------------------------------------------------------
+GOVERNING_FILE_SET: frozenset[str] = frozenset({
+    # Orchestrator SKILLs the running orchestrator holds in-context (coupled trio).
+    "user/skills/lazy-batch/SKILL.md",
+    "user/skills/lazy-bug-batch/SKILL.md",
+    "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md",
+    # Components the orchestrator holds in-context (the compaction re-read list).
+    "user/skills/_components/orchestrator-voice.md",
+    "user/skills/_components/completeness-policy.md",
+    "user/skills/_components/lazy-dispatch-template.md",
+})
+
+
+def self_edit_mode(repo_root: "str | Path") -> bool:
+    """True iff this run is editing the harness it executes from.
+
+    Returns True when ``~/.claude/skills``, ``~/.claude/scripts``, AND
+    ``~/.claude/hooks`` ALL resolve (after ``os.path.realpath`` symlink
+    resolution) to a path UNDER the run's ``git rev-parse --show-toplevel``.
+
+    This is the semantically-correct predicate — robust to the repo being cloned
+    to any path (it compares resolved real paths, NOT a brittle cwd-basename
+    match). ``~`` is resolved via ``os.path.expanduser``.
+
+    Returns False (never raises) when:
+      * ``repo_root`` is not a git repo (``--show-toplevel`` fails);
+      * any of the three ``~/.claude/*`` paths is missing or resolves OUTSIDE
+        the toplevel;
+      * any OS/subprocess error occurs.
+    """
+    # Resolve the run's git toplevel; non-git repo or any git failure → False.
+    try:
+        proc = _git(Path(repo_root), "rev-parse", "--show-toplevel", timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if proc.returncode != 0:
+        return False
+    toplevel_raw = proc.stdout.strip()
+    if not toplevel_raw:
+        return False
+    toplevel = os.path.realpath(toplevel_raw)
+
+    for name in ("skills", "scripts", "hooks"):
+        candidate = os.path.join(os.path.expanduser("~"), ".claude", name)
+        if not os.path.exists(candidate):
+            return False
+        resolved = os.path.realpath(candidate)
+        # Membership test on the resolved real paths: resolved must be the
+        # toplevel itself or a descendant of it.
+        try:
+            common = os.path.commonpath([toplevel, resolved])
+        except ValueError:
+            # Different drives (Windows) or otherwise incomparable → not under.
+            return False
+        if common != toplevel:
+            return False
+    return True
+
+
+def governing_files_touched(repo_root: "str | Path") -> list[str]:
+    """Return the GOVERNING_FILE_SET members touched by the last commit.
+
+    Intersects the last commit's changed files (``git diff --name-only HEAD~1
+    HEAD``; falls back to the root-commit file list when there is no parent)
+    with GOVERNING_FILE_SET. Auto-refresh surfaces never appear (they are not in
+    the set). Best-effort: any git failure returns ``[]`` (the orchestrator's
+    reload check then simply finds nothing to reload).
+    """
+    try:
+        proc = _git(repo_root if isinstance(repo_root, Path) else Path(repo_root),
+                    "diff", "--name-only", "HEAD~1", "HEAD", timeout=30)
+        if proc.returncode != 0:
+            # No parent commit (root commit): list the commit's own files.
+            proc = _git(repo_root if isinstance(repo_root, Path) else Path(repo_root),
+                        "show", "--name-only", "--pretty=format:", "HEAD",
+                        timeout=30)
+            if proc.returncode != 0:
+                return []
+    except (OSError, subprocess.SubprocessError):
+        return []
+    changed = {line.strip() for line in proc.stdout.splitlines() if line.strip()}
+    return sorted(changed & GOVERNING_FILE_SET)

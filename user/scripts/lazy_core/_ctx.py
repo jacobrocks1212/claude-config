@@ -14,7 +14,9 @@ sibling) — that asymmetry is what keeps the package's import graph acyclic:
 
 from __future__ import annotations
 
+import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 
@@ -96,3 +98,16 @@ def legacy_state_migrated() -> bool:
 def set_legacy_state_migrated(value: bool) -> None:
     global _legacy_state_migrated
     _legacy_state_migrated = bool(value)
+
+
+# lazy-core-package-decomposition Phase 5 WU-3: `_die` (the CLI error-exit
+# kernel helper) moved here from _monolith.py — verbatim.
+
+def _die(msg: str, path: Path | None = None) -> None:
+    """Emit error JSON to stdout and exit 2."""
+    out = {
+        "error": msg,
+        "path": str(path) if path else None,
+    }
+    sys.stdout.write(json.dumps(out, indent=2) + "\n")
+    sys.exit(2)

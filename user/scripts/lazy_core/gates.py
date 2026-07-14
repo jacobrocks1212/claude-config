@@ -24,15 +24,21 @@ re-pointed to ``.ledgers`` at Phase 4 WU-2, done).
 
 from __future__ import annotations
 
+import datetime
+import json
+import os
 import re
 import subprocess
+import time
 
 from pathlib import Path
+from typing import Any
 
 from ._ctx import _SCRIPTS_DIR, _atomic_write, _diag
 from . import docmodel
 from .docmodel import (
     _FAIL_CLOSED_EVIDENCE_SENTINELS,
+    spec_status,
     _coerce_evidence_count,
     _has_any_complete_plan,
     _implementation_plans_exist,
@@ -44,6 +50,7 @@ from .docmodel import (
     parse_sentinel,
     remaining_unchecked_are_verification_only,
 )
+from .runtimeplane import _current_head, _git
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +278,6 @@ def evaluate_completion_evidence(feature_dir: Path, repo_root: Path) -> dict:
       * validated_commit != HEAD, any source/script/config    → refuse (TOCTOU)
       * neither file                                          → refuse (no evidence)
     """
-    from ._monolith import _current_head  # Phase-5 re-point (loop-detection plane still monolith-resident)
     def _refuse(reason: str, *, pass_count=None, validated_commit=None) -> dict:
         return {
             "verdict": "refuse",
@@ -1531,3 +1537,816 @@ def summarize_failing_detail(result: dict) -> str:
     except (KeyError, IndexError, TypeError):
         return ""
     return ""
+
+
+# lazy-core-package-decomposition Phase 5 WU-3 (residue sweep): the validation
+# escalation ladder, the completion receipt writers (has_completion_receipt /
+# write_completed_receipt), archive_fixed (the bug archive-on-fix write path),
+# and the Gate-1 MCP-coverage plane (gate_coverage + _parse_locked_decisions)
+# moved here from _monolith.py — verbatim (the completion write-path plane).
+
+# ---------------------------------------------------------------------------
+# Validation-escalation predicate (Phase 11 WU-1a)
+# ---------------------------------------------------------------------------
+
+# Suffix the Step-3 blocked terminal appends to notify_message when the
+# escalation fires. Defined HERE (not in the state scripts) so lazy-state.py
+# and bug-state.py emit the byte-identical message — the orchestrators key
+# corrective-phase drafting discipline on this exact text.
+#
+# REWORDED (mcp-validation-peels-one-seam-per-loop Deferred Follow-Up item 2,
+# closed by stale-runtime-health-200-false-blocked's STATE-lane pass): the
+# full-chain seam-audit mandate was RE-SCOPED by that bug's SKILLS-lane fix to
+# apply at EVERY mcp-validation retry_count (starting at the first failure,
+# authored into BLOCKED.md's own body), not only here at retry_count >= 2. This
+# predicate's THRESHOLD is unchanged (still exactly `retry_count >= 2` — see
+# below); only the WORDING is corrected so `retry_count >= 2` reads as the
+# ADDITIONAL /investigate-mandatory backstop tier layered on top of the
+# standing seam-audit requirement, not as the sole trigger for seam enumeration
+# (a documentation-accuracy edit only — no test asserts this string's exact
+# wording, only that the notify_message carries the constant verbatim; see
+# test_lazy_state_blocked_escalation_payload / test_bug_state_blocked_
+# escalation_payload in test_lazy_core.py).
+VALIDATION_ESCALATION_SUFFIX = (
+    " ESCALATION: 2+ validation failures — /investigate is now MANDATORY "
+    "before the next corrective phase (the full-chain seam audit itself is "
+    "required starting at the FIRST mcp-validation failure, not gated on "
+    "this threshold)."
+)
+
+
+def validation_escalation(meta: dict[str, Any] | None) -> bool:
+    """Return True when a BLOCKED.md sentinel shows repeated MCP-validation failure.
+
+    Single source of truth for the Phase 11 WU-1a escalation policy, consumed
+    by BOTH state scripts' Step-3 blocked terminals: ``blocker_kind ==
+    "mcp-validation"`` AND ``retry_count >= 2``. The threshold is 2 because the
+    d8-live-looping pattern showed each BLOCKED→add-phase round discovering
+    exactly ONE more broken layer.
+
+    REWORDED (mcp-validation-peels-one-seam-per-loop): this predicate's
+    BEHAVIOR is unchanged — still exactly ``retry_count >= 2``. What changed is
+    what firing MEANS: the full-chain seam-audit requirement itself now applies
+    at every ``mcp-validation`` retry_count (the SKILLS-lane prose mandate,
+    authored starting at the first failure); this predicate firing True marks
+    the point past which ``/investigate`` is ADDITIONALLY mandatory before the
+    next corrective phase — the backstop tier, not the sole seam-enumeration
+    trigger.
+
+    Tolerances (backward compatibility — pre-Phase-11 sentinels must never
+    escalate or crash):
+      - ``retry_count`` as an int is used directly.
+      - ``retry_count`` as a string of digits (quoted YAML) is coerced.
+      - Missing/malformed ``retry_count``, missing ``blocker_kind``, a non-
+        mcp-validation ``blocker_kind``, or a None/empty meta → False.
+      - YAML booleans are ints in Python (``True == 1``); they are NOT counts,
+        so bool values are explicitly rejected rather than coerced.
+    """
+    meta = meta or {}
+    if meta.get("blocker_kind") != "mcp-validation":
+        return False
+    raw = meta.get("retry_count")
+    # bool is an int subclass — `retry_count: true` must not coerce to 1.
+    if isinstance(raw, bool):
+        return False
+    if isinstance(raw, int):
+        return raw >= 2
+    if isinstance(raw, str) and raw.strip().isdigit():
+        return int(raw.strip()) >= 2
+    # Missing or malformed → no escalation (never crash the blocked terminal).
+    return False
+
+
+# ---------------------------------------------------------------------------
+# SPEC parsing helpers
+# ---------------------------------------------------------------------------
+
+def has_completion_receipt(spec_path: Path | None, filename: str = "COMPLETED.md") -> bool:
+    """True iff a durable, content-valid completion receipt exists in the feature/bug dir.
+
+    The receipt is written ONLY by ``__mark_complete__``'s completion-integrity
+    gate (or backfilled with ``provenance: backfilled-unverified``). Its presence
+    AND content validity are the structural proof that a feature reached
+    ``Complete`` THROUGH the pipeline gate rather than via an out-of-band
+    SPEC/ROADMAP edit. See _components/completion-integrity-gate.md.
+
+    Content-validation contract:
+    - ``spec_path is None`` → ``False`` (silently; no directory to check).
+    - Receipt file absent → ``False`` (silently; normal not-yet-complete case).
+    - Receipt file present but MALFORMED → ``False`` + emit a ``_diag()``
+      diagnostic naming the path and the specific defect. Malformed means any of:
+        * empty file / no YAML frontmatter (``parse_sentinel`` returns ``{}``)
+        * ``kind`` key absent from frontmatter
+        * ``kind`` value not in ``{"completed", "fixed"}``
+        * ``provenance`` key absent or its value is empty/whitespace
+      These cases count as "completion-unverified" and halt the gate just as if
+      the file were absent, while producing a loud diagnostic so the issue can
+      be investigated.
+    - Receipt file present and valid → ``True``.
+
+    Generalized from lazy-state.py for reuse in bug-state.py (Phase 2).
+    Default receipt filename is ``COMPLETED.md`` — matches current behavior.
+    Bug-state.py passes ``filename="FIXED.md"`` for the bug receipt convention.
+    """
+    if spec_path is None:
+        return False
+
+    receipt_path = spec_path / filename
+    if not receipt_path.exists():
+        # Normal not-yet-complete case — absence is silent, not a diagnostic.
+        return False
+
+    # Receipt file exists — validate its content before trusting it.
+    meta = parse_sentinel(receipt_path)
+
+    if meta is None:
+        # parse_sentinel calls _die() internally for fatal parse errors; this
+        # branch is a safety net in case it ever returns None without dying.
+        _diag(
+            f"completion receipt at {receipt_path} could not be parsed"
+            " (parse_sentinel returned None) — treating as missing"
+        )
+        return False
+
+    # Empty dict means the file existed but had no YAML frontmatter fence at all.
+    if not meta:
+        _diag(
+            f"completion receipt at {receipt_path} has no YAML frontmatter"
+            " — treating as missing (expected '---' fence with kind + provenance)"
+        )
+        return False
+
+    # Validate 'kind' field.
+    kind = meta.get("kind")
+    if kind not in {"completed", "fixed"}:
+        _diag(
+            f"completion receipt at {receipt_path} has invalid or missing 'kind'"
+            f" (got {kind!r}; expected 'completed' or 'fixed')"
+            " — treating as missing"
+        )
+        return False
+
+    # Validate 'provenance' field — must be present and non-empty.
+    provenance = meta.get("provenance")
+    if not provenance or not str(provenance).strip():
+        _diag(
+            f"completion receipt at {receipt_path} is missing or has empty 'provenance'"
+            f" (got {provenance!r})"
+            " — treating as missing (provenance is required to trust the receipt)"
+        )
+        return False
+
+    return True
+
+
+def write_completed_receipt(
+    path: Path,
+    feature_id: str,
+    date: str,
+    *,
+    provenance: str,
+    kind: str = "completed",
+    completed_commit: str | None = None,
+    validated_via: str | None = None,
+    mcp_pass_count: int | None = None,
+    mcp_total_count: int | None = None,
+    auto_ticked_rows: int | None = None,
+    body_note: str = "",
+) -> None:
+    """Write a completion receipt (kind: completed by default) per sentinel-frontmatter.md.
+
+    ``provenance: gated`` is written by the completion-integrity gate at flip
+    time; ``provenance: backfilled-unverified`` is written by --backfill-receipts
+    for features grandfathered in during the receipt-gating rollout.
+
+    Generalized from lazy-state.py for reuse in bug-state.py (Phase 2).
+    The ``kind: completed`` value and the ``# Completion Receipt`` title are
+    the defaults that preserve byte-for-byte behavior at all existing call sites.
+
+    ``kind`` is keyword-only and defaults to ``"completed"`` so that lazy-state.py's
+    feature pipeline behavior is unchanged.  bug-state.py passes ``kind="fixed"``
+    so that FIXED.md receipts carry the correct ``kind: fixed`` frontmatter value
+    required by the Phase-5 consistency checker.
+    """
+    lines = [
+        "---",
+        f"kind: {kind}",
+        f"feature_id: {feature_id}",
+        f"date: {date}",
+        f"provenance: {provenance}",
+    ]
+    if completed_commit:
+        lines.append(f"completed_commit: {completed_commit}")
+    if validated_via:
+        lines.append(f"validated_via: {validated_via}")
+    if mcp_pass_count is not None and mcp_total_count is not None:
+        lines.append(f"mcp_pass_count: {mcp_pass_count}")
+        lines.append(f"mcp_total_count: {mcp_total_count}")
+    # auto_ticked_rows: how many unchecked verification rows the evidence-gated
+    # completion gate auto-ticked this completion (completion-coherence-gate-
+    # reconciliation Phase 3). Omitted when None (legacy / --backfill callers);
+    # 0 is recorded explicitly so an auditor can tell "gate ran, ticked nothing"
+    # from "gate did not run".
+    if auto_ticked_rows is not None:
+        lines.append(f"auto_ticked_rows: {auto_ticked_rows}")
+    lines.append("---")
+    lines.append("")
+    lines.append("# Completion Receipt")
+    lines.append("")
+    if body_note:
+        lines.append(body_note)
+        lines.append("")
+    _atomic_write(path, "\n".join(lines))
+
+def archive_fixed(
+    repo_root: Path,
+    spec_path: Path,
+    *,
+    date: str | None = None,
+) -> dict:
+    """Archive a Fixed bug directory: the deterministic successor to the prose
+    archive mechanics in mark-fixed-archive.md Steps 1–5.
+
+    Why this is script-owned (2026-06-10 incident): the orchestrator performing
+    these steps as prose improvised through three consecutive failures — a
+    `git mv` refused because apply_pseudo's sentinel deletions were unstaged
+    (tracked-but-missing files inside the dir), a transient Windows
+    "Permission denied" on the directory rename, and a repo-wide `grep -r`
+    crawling node_modules. Each is handled deterministically here.
+
+    Steps (all best-effort idempotent; safe to re-run after a partial failure):
+      1. Gate: FIXED.md receipt present (kind: fixed) — or SPEC ``**Status:**
+         Won't-fix`` (receipt-exempt). If spec_path is already gone and the
+         archive destination exists, treat as a RESUME: skip to step 5.
+      2. SPEC.md evidence header lines: ensure ``**Fixed:** <date>`` and
+         ``**Fix commit:** <short sha>`` after ``**Discovered:**`` (fallback:
+         after ``**Status:**``), updating them if already present.
+      3. ``git add -A <spec_path>`` — stages the receipt, status flips, AND the
+         sentinel deletions so the index is coherent before the move (the exact
+         precondition the prose flow missed).
+      4. ``git mv <spec_path> docs/bugs/_archive/<bug_id>`` with retry/backoff
+         (1s/2s/4s — Windows transient handle locks), then a per-file
+         ``git mv`` fallback if the directory rename never succeeds. A name
+         collision in _archive/ gets a ``-archived-<date>`` suffix.
+      5. Repoint inbound references: ``git grep -l`` (tracked files only — never
+         node_modules/target) for ``docs/bugs/<bug_id>/`` across ``*.md``,
+         replacing with ``docs/bugs/_archive/<bug_id>/``.
+      6. Remove the bug's entry from docs/bugs/queue.json (matched on
+         ``spec_dir`` or ``id``).
+      7. Stage the touched paths and commit:
+         ``fix(<bug_id>): mark fixed and archive — FIXED.md receipt gated``.
+
+    Return shape (callers may JSON-dump unconditionally)::
+
+        {
+            "name": "archive_fixed",
+            "ok": bool,
+            "refused": str | None,   # non-None → nothing irreversible was done,
+                                     #   OR a partial-state diagnostic (see note)
+            "noop": bool,            # True iff there was nothing left to do
+            "archived_to": str | None,   # repo-relative destination
+            "fix_commit": str | None,    # short sha recorded in SPEC.md
+            "repointed": [str, ...],     # repo-relative files whose refs moved
+            "queue_removed": bool,
+            "fallback_used": bool,       # per-file git mv fallback engaged
+            "committed": str | None,     # short sha of the archive commit
+        }
+
+    Partial-state note: a refusal AFTER the move (e.g. commit failure) names
+    the completed steps so the consumer can surface an accurate BLOCKED.md;
+    re-running resumes from the archive destination rather than redoing the
+    move.
+    """
+    if date is None:
+        date = datetime.date.today().isoformat()
+    repo_root = repo_root.resolve()
+    bug_id = spec_path.name
+    result: dict[str, Any] = {
+        "name": "archive_fixed",
+        "ok": False,
+        "refused": None,
+        "noop": False,
+        "archived_to": None,
+        "fix_commit": None,
+        "repointed": [],
+        "queue_removed": False,
+        "fallback_used": False,
+        "committed": None,
+    }
+
+    def _refuse(msg: str) -> dict:
+        result["refused"] = msg
+        return result
+
+    archive_parent = repo_root / "docs" / "bugs" / "_archive"
+    dest = archive_parent / bug_id
+
+    try:
+        # --- step 1: gate / resume detection --------------------------------
+        resume = False
+        if not spec_path.exists():
+            if dest.exists():
+                # Prior run moved the directory but died before repoint/commit.
+                resume = True
+            else:
+                return _refuse(
+                    f"spec_path does not exist and no archive at "
+                    f"{dest.relative_to(repo_root).as_posix()} — nothing to archive"
+                )
+        if not resume:
+            receipt_ok = has_completion_receipt(spec_path, "FIXED.md")
+            wont_fix = (spec_status(spec_path) or "").startswith("Won't-fix")
+            if not receipt_ok and not wont_fix:
+                return _refuse(
+                    "no FIXED.md receipt (kind: fixed) and SPEC is not "
+                    "Won't-fix — run `--apply-pseudo __mark_fixed__` first; "
+                    "archive_fixed never writes the receipt itself"
+                )
+
+            # --- step 2: SPEC.md evidence header lines -----------------------
+            # Short sha of the last work commit BEFORE the archive commit — the
+            # load-bearing evidence of when the fix landed (mark-fixed-archive
+            # Step 1). Skipped for Won't-fix (no receipt → no fix commit).
+            if receipt_ok:
+                sha_proc = _git(repo_root, "rev-parse", "--short", "HEAD")
+                fix_sha = sha_proc.stdout.strip() if sha_proc.returncode == 0 else None
+                if fix_sha:
+                    result["fix_commit"] = fix_sha
+                    spec_md = spec_path / "SPEC.md"
+                    if spec_md.exists():
+                        text = spec_md.read_text(encoding="utf-8")
+                        # Update-in-place when the lines already exist…
+                        text = re.sub(
+                            r"^\*\*Fixed:\*\*.*$", f"**Fixed:** {date}",
+                            text, count=1, flags=re.MULTILINE,
+                        )
+                        text = re.sub(
+                            r"^\*\*Fix commit:\*\*.*$", f"**Fix commit:** {fix_sha}",
+                            text, count=1, flags=re.MULTILINE,
+                        )
+                        # …then insert any that are still missing, after
+                        # **Discovered:** (canonical field order per
+                        # docs/bugs/CLAUDE.md: Status → Severity → Discovered →
+                        # Fixed → Fix commit), falling back to **Status:**.
+                        missing = []
+                        if not re.search(r"^\*\*Fixed:\*\*", text, flags=re.MULTILINE):
+                            missing.append(f"**Fixed:** {date}")
+                        if not re.search(r"^\*\*Fix commit:\*\*", text, flags=re.MULTILINE):
+                            missing.append(f"**Fix commit:** {fix_sha}")
+                        if missing:
+                            anchor = re.search(
+                                r"^\*\*Discovered:\*\*.*$", text, flags=re.MULTILINE
+                            ) or re.search(
+                                r"^\*\*Status:\*\*.*$", text, flags=re.MULTILINE
+                            )
+                            if anchor:
+                                insert_at = anchor.end()
+                                text = (
+                                    text[:insert_at]
+                                    + "".join("\n" + line for line in missing)
+                                    + text[insert_at:]
+                                )
+                            else:
+                                # No header block at all — append (degenerate
+                                # SPEC; keep the evidence rather than dropping it).
+                                text = text.rstrip("\n") + "\n\n" + "\n".join(missing) + "\n"
+                        _atomic_write(spec_md, text)
+
+            # --- step 3: stage the bug dir (deletions included) --------------
+            add_proc = _git(repo_root, "add", "-A", "--", str(spec_path))
+            if add_proc.returncode != 0:
+                return _refuse(
+                    f"git add -A {spec_path.name} failed: {add_proc.stderr.strip()}"
+                )
+
+            # --- step 4: git mv with retry + per-file fallback ---------------
+            archive_parent.mkdir(parents=True, exist_ok=True)
+            if dest.exists():
+                dest = archive_parent / f"{bug_id}-archived-{date}"
+                if dest.exists():
+                    return _refuse(
+                        f"archive collision: both {bug_id} and "
+                        f"{dest.name} already exist under _archive/"
+                    )
+            mv_err = ""
+            moved = False
+            for attempt, delay in enumerate((0, 1, 2, 4)):
+                if delay:
+                    time.sleep(delay)  # transient Windows handle/lock backoff
+                mv_proc = _git(repo_root, "mv", str(spec_path), str(dest))
+                if mv_proc.returncode == 0:
+                    moved = True
+                    break
+                mv_err = mv_proc.stderr.strip()
+            if not moved:
+                # Per-file fallback: move every tracked file individually so a
+                # single locked file is isolated instead of failing the whole
+                # directory rename.
+                ls_proc = _git(
+                    repo_root, "ls-files", "--", str(spec_path)
+                )
+                if ls_proc.returncode != 0:
+                    return _refuse(
+                        f"git mv failed after retries ({mv_err}) and ls-files "
+                        f"fallback failed: {ls_proc.stderr.strip()}"
+                    )
+                rel_spec = spec_path.relative_to(repo_root).as_posix()
+                failed_files = []
+                for rel in ls_proc.stdout.splitlines():
+                    rel = rel.strip()
+                    if not rel:
+                        continue
+                    suffix = rel[len(rel_spec):].lstrip("/")
+                    target = dest / suffix
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    f_proc = _git(repo_root, "mv", rel, str(target))
+                    if f_proc.returncode != 0:
+                        failed_files.append(f"{rel}: {f_proc.stderr.strip()}")
+                if failed_files:
+                    return _refuse(
+                        "per-file git mv fallback left files behind — "
+                        "PARTIAL STATE, resolve the locks and re-run: "
+                        + "; ".join(failed_files)
+                    )
+                result["fallback_used"] = True
+                # Remove the now-empty source tree (best-effort).
+                for dirpath, dirnames, filenames in os.walk(spec_path, topdown=False):
+                    if not filenames and not dirnames:
+                        try:
+                            os.rmdir(dirpath)
+                        except OSError:
+                            pass
+                moved = True
+
+        result["archived_to"] = dest.relative_to(repo_root).as_posix()
+
+        # --- step 5: repoint inbound references (tracked *.md only) ----------
+        old_ref = f"docs/bugs/{bug_id}/"
+        # NOTE: dest may carry the -archived-<date> suffix; repoint to the
+        # actual destination, not the canonical name.
+        new_ref = dest.relative_to(repo_root).as_posix() + "/"
+        grep_proc = _git(repo_root, "grep", "-l", "-F", old_ref, "--", "*.md")
+        # returncode 1 = no matches (fine); >1 = real error.
+        if grep_proc.returncode > 1:
+            return _refuse(
+                f"archived to {result['archived_to']} but inbound-reference "
+                f"scan failed: {grep_proc.stderr.strip()} — PARTIAL STATE, "
+                "re-run to resume"
+            )
+        for rel in grep_proc.stdout.splitlines():
+            rel = rel.strip()
+            if not rel:
+                continue
+            ref_path = repo_root / rel
+            try:
+                content = ref_path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if old_ref in content:
+                _atomic_write(ref_path, content.replace(old_ref, new_ref))
+                result["repointed"].append(rel)
+
+        # --- step 6: trim queue.json ------------------------------------------
+        queue_path = repo_root / "docs" / "bugs" / "queue.json"
+        if queue_path.exists():
+            try:
+                data = json.loads(queue_path.read_text(encoding="utf-8"))
+                items = data.get("queue", [])
+                kept = [
+                    e for e in items
+                    if not (
+                        isinstance(e, dict)
+                        and (e.get("spec_dir") == bug_id or e.get("id") == bug_id)
+                    )
+                ]
+                if len(kept) != len(items):
+                    data["queue"] = kept
+                    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+                    result["queue_removed"] = True
+            except (json.JSONDecodeError, AttributeError) as exc:
+                return _refuse(
+                    f"archived to {result['archived_to']} but queue.json is "
+                    f"malformed ({exc}) — PARTIAL STATE, fix queue.json and re-run"
+                )
+
+        # --- step 7: stage + commit -------------------------------------------
+        to_stage = ["docs/bugs"] + result["repointed"]
+        add_proc = _git(repo_root, "add", "-A", "--", *to_stage)
+        if add_proc.returncode != 0:
+            return _refuse(
+                f"archived to {result['archived_to']} but final staging "
+                f"failed: {add_proc.stderr.strip()} — PARTIAL STATE, re-run"
+            )
+        diff_proc = _git(repo_root, "diff", "--cached", "--quiet")
+        if diff_proc.returncode == 0:
+            # Nothing staged — a re-run after a fully-completed prior pass.
+            result["ok"] = True
+            result["noop"] = True
+            return result
+        commit_proc = _git(
+            repo_root, "commit", "-m",
+            f"fix({bug_id}): mark fixed and archive — FIXED.md receipt gated",
+        )
+        if commit_proc.returncode != 0:
+            return _refuse(
+                f"archived to {result['archived_to']} but commit failed: "
+                f"{commit_proc.stderr.strip()} — PARTIAL STATE (changes are "
+                "staged), commit manually or re-run"
+            )
+        sha_proc = _git(repo_root, "rev-parse", "--short", "HEAD")
+        result["committed"] = (
+            sha_proc.stdout.strip() if sha_proc.returncode == 0 else "unknown"
+        )
+        result["ok"] = True
+        return result
+    except (OSError, subprocess.SubprocessError) as exc:
+        return _refuse(f"git unavailable or I/O failure: {exc}")
+
+# ---------------------------------------------------------------------------
+# gate_coverage — WU-2: deterministic, symlink-resolving Gate-1 verdict.
+#
+# Promotes the mcp-coverage-audit.md algorithm to code: enumerate the SPEC's
+# Locked-Decision surface, grep mcp-tests/*.md (RESOLVING symlink / 64-byte
+# pointer targets — the Windows blindspot), return covered/uncovered per
+# decision.
+# ---------------------------------------------------------------------------
+
+# Words dropped when deriving keyword anchors from a decision title.
+_GATE_COVERAGE_STOPWORDS: frozenset[str] = frozenset({
+    "the", "a", "an", "of", "to", "in", "on", "for", "and", "or", "is", "are",
+    "be", "by", "with", "from", "as", "at", "via", "uses", "use", "only",
+    "decision", "must", "should", "will", "that", "this", "it",
+})
+
+
+def _gate_coverage_keywords(title: str) -> list[str]:
+    """Extract the distinctive content words from a decision title (lowercased,
+    stopwords dropped, deduped, order-preserved)."""
+    words = re.findall(r"[A-Za-z][A-Za-z0-9_-]+", title.lower())
+    out: list[str] = []
+    seen: set[str] = set()
+    for w in words:
+        if w in _GATE_COVERAGE_STOPWORDS or len(w) < 3:
+            continue
+        if w not in seen:
+            seen.add(w)
+            out.append(w)
+    return out
+
+
+def _parse_locked_decisions(spec_md: str) -> list[dict]:
+    """Parse the SPEC.md Locked-Decision surface into [{id, title, keywords}].
+
+    Priority order (first surface that yields rows wins):
+      1. ``## Locked Decisions`` H2 with a table whose first column is the id.
+      2. ``## Resolved by Research`` H2 with ``- [x]`` bullets.
+      3. ``## Key Decisions`` / ``## Design Decisions`` numbered block.
+    Returns [] when no surface exists (caller passes vacuously).
+    """
+    lines = spec_md.splitlines()
+
+    def _section_body(heading_res: list[str]) -> list[str] | None:
+        for i, ln in enumerate(lines):
+            for pat in heading_res:
+                if re.match(pat, ln.strip(), re.IGNORECASE):
+                    body: list[str] = []
+                    for nxt in lines[i + 1:]:
+                        if re.match(r"^##\s", nxt.strip()):
+                            break
+                        body.append(nxt)
+                    return body
+        return None
+
+    decisions: list[dict] = []
+
+    # --- Surface 1: ## Locked Decisions table ---
+    body = _section_body([r"^##\s+Locked Decisions\b"])
+    if body is not None:
+        for ln in body:
+            s = ln.strip()
+            if not s.startswith("|"):
+                continue
+            cells = [c.strip() for c in s.strip("|").split("|")]
+            if len(cells) < 2:
+                continue
+            first = cells[0]
+            title = cells[1]
+            # Skip the header row and the |---|---| separator row. The header's
+            # id column may be labelled 'id' / 'decision' / '#' / 'no' / 'num',
+            # and its SECOND (Decision/title) column literally reads "Decision" —
+            # key on the title-column header for robustness, not only the id
+            # label. The observed canonical header '| # | Decision | Choice |
+            # Source |' slipped the id-only skip (first == '#', not in the set)
+            # and became a PHANTOM decision id='#', title='Decision' that could
+            # never be covered → Gate 1 unsatisfiable (harden 2026-07).
+            if (
+                not first
+                or set(first) <= set("-: ")
+                or first.lower() in ("id", "decision", "#", "no", "num", "idx")
+                or title.strip().lower() == "decision"
+            ):
+                continue
+            did = first
+            decisions.append(
+                {"id": did, "title": title, "keywords": _gate_coverage_keywords(title)}
+            )
+        if decisions:
+            return decisions
+
+    # --- Surface 2: ## Resolved by Research checked bullets ---
+    body = _section_body([r"^##\s+Resolved by Research\b"])
+    if body is not None:
+        idx = 0
+        for ln in body:
+            m = re.match(r"^\s*-\s*\[x\]\s+(.*)$", ln, re.IGNORECASE)
+            if m:
+                idx += 1
+                title = m.group(1).strip()
+                # Try to lift a leading id token (R1:, L2 —, etc.).
+                idm = re.match(r"^([A-Z]\d+)\b[:\.\)\-\s]", title)
+                did = idm.group(1) if idm else f"R{idx}"
+                decisions.append(
+                    {"id": did, "title": title,
+                     "keywords": _gate_coverage_keywords(title)}
+                )
+        if decisions:
+            return decisions
+
+    # --- Surface 3: ## Key/Design Decisions numbered block ---
+    body = _section_body([r"^##\s+Key Decisions\b", r"^##\s+Design Decisions\b"])
+    if body is not None:
+        idx = 0
+        for ln in body:
+            m = re.match(r"^\s*\d+[\.\)]\s+(.*)$", ln)
+            if m:
+                idx += 1
+                title = m.group(1).strip()
+                decisions.append(
+                    {"id": f"K{idx}", "title": title,
+                     "keywords": _gate_coverage_keywords(title)}
+                )
+        if decisions:
+            return decisions
+
+    return []
+
+
+def _resolve_scenario_text(path: Path) -> str:
+    """Read an mcp-tests/*.md scenario, RESOLVING symlink / 64-byte pointer
+    targets (the Windows blindspot).
+
+    On a real symlink, ``read_text`` already follows it. But git on Windows
+    without symlink privilege writes a tiny TEXT file whose CONTENT is the
+    relative target path (the "64-byte pointer file"). We detect that case: a
+    small file whose entire content is a single relative path that resolves to
+    an existing file → read the TARGET instead. Best-effort; never raises.
+    """
+    try:
+        raw = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    # Pointer-file heuristic: short, single-line, no newline-y markdown, and the
+    # content resolves to an existing sibling file.
+    stripped = raw.strip()
+    if stripped and "\n" not in stripped and len(stripped) <= 260:
+        # Looks path-like (has a separator or ends in .md) and is not prose.
+        looks_pathish = (
+            stripped.endswith(".md")
+            and ("/" in stripped or "\\" in stripped or stripped == path.name)
+            and " " not in stripped
+        )
+        if looks_pathish:
+            candidate = (path.parent / stripped).resolve()
+            if candidate.exists() and candidate.is_file() and candidate != path.resolve():
+                try:
+                    return candidate.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    return raw
+    return raw
+
+
+def _parse_mcp_coverage_exemptions(spec_md: str) -> dict:
+    """Parse a ``## MCP Coverage Exemptions`` SPEC section → {id: rationale}.
+
+    This is the DETERMINISTIC home for the mcp-coverage-audit.md D7 disposition
+    "documented-MCP-untestable decisions get an inline SPEC test-exempt note".
+    Before this parser existed, ``gate_coverage`` had NO exemption path — a
+    decision was coverable ONLY by an ``mcp-tests/*.md`` scenario reference — so
+    the component's prescribed inline SPEC exempt note could not actually satisfy
+    the gate (a backend/miniflare-verified Locked Decision, which has no Tauri
+    MCP surface to drive, was permanently ``uncovered``). harden 2026-07.
+
+    Recognized surface — an H2 ``## MCP Coverage Exemptions`` whose body carries
+    bullets of the shape ``- <ID>: <rationale>`` (or ``- <ID> — <rationale>``).
+    An entry counts ONLY when BOTH the id token and a NON-EMPTY rationale are
+    present (mirroring the ``observation_gap_exemptions`` ``spec_class``-required
+    discipline: the citation is what distinguishes a verified untestable-class
+    assessment from a convenience skip). A bare ``- D4`` with no rationale is
+    IGNORED (not exempt) so an empty stub cannot launder the gate.
+
+    Returns ``{}`` when the section is absent (the gate is unchanged for every
+    SPEC that does not opt in).
+    """
+    lines = spec_md.splitlines()
+    exemptions: dict = {}
+    in_section = False
+    for ln in lines:
+        s = ln.strip()
+        if re.match(r"^##\s+MCP Coverage Exemptions\b", s, re.IGNORECASE):
+            in_section = True
+            continue
+        if in_section and re.match(r"^##\s", s):
+            break  # next H2 ends the section
+        if not in_section:
+            continue
+        # ``- <ID>: <rationale>`` or ``- <ID> — <rationale>`` (id = leading
+        # alnum token; rationale = the remainder after the : / — / - separator).
+        m = re.match(r"^-\s+([A-Za-z]?\d+|[A-Za-z]{1,4}\d*)\s*[:—\-]\s*(.+\S)\s*$", s)
+        if m:
+            did = m.group(1).strip()
+            rationale = m.group(2).strip()
+            if did and rationale:
+                exemptions[did] = rationale
+    return exemptions
+
+
+def gate_coverage(spec_path: Path) -> dict:
+    """Deterministic Gate-1 MCP-coverage verdict for a feature/bug spec dir.
+
+    Reads ``spec_path/SPEC.md``'s Locked-Decision surface, greps
+    ``spec_path/mcp-tests/*.md`` (RESOLVING symlink / pointer targets), and
+    returns per-decision covered/uncovered.
+
+    A decision is **covered** iff at least one scenario file contains the
+    decision ``id`` as a literal OR contains at least 2 of the decision's
+    keywords (case-insensitive) — OR it is **exempt**: listed in a
+    ``## MCP Coverage Exemptions`` SPEC section with a non-empty rationale (the
+    mcp-coverage-audit.md D7 disposition for documented-MCP-untestable decisions,
+    e.g. backend/miniflare-verified Locked Decisions with no Tauri MCP surface).
+    An exempt decision is NOT added to ``uncovered``; its entry carries
+    ``exempt: True`` + the ``rationale`` so the disposition is auditable. This
+    mirrors mcp-coverage-audit.md Step 3.
+
+    Return shape::
+
+        {"ok": True,
+         "decisions": [{"id", "title", "keywords", "covered"}, ...],
+         "uncovered": [id, ...],
+         "scenario_count": int}
+
+    A SPEC with no Locked-Decision surface passes vacuously (empty lists). An
+    empty/absent mcp-tests dir → every decision uncovered.
+    """
+    spec_md_path = spec_path / "SPEC.md"
+    spec_md = ""
+    if spec_md_path.exists():
+        try:
+            spec_md = spec_md_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            spec_md = ""
+
+    decisions = _parse_locked_decisions(spec_md)
+    exemptions = _parse_mcp_coverage_exemptions(spec_md)
+
+    # Gather (resolved) scenario texts.
+    mcp_dir = spec_path / "mcp-tests"
+    scenario_texts: list[str] = []
+    if mcp_dir.exists() and mcp_dir.is_dir():
+        for p in sorted(mcp_dir.glob("*.md")):
+            scenario_texts.append(_resolve_scenario_text(p))
+
+    result_decisions: list[dict] = []
+    uncovered: list[str] = []
+    for d in decisions:
+        did = d["id"]
+        kws = d["keywords"]
+        covered = False
+        for text in scenario_texts:
+            if did and re.search(rf"\b{re.escape(did)}\b", text):
+                covered = True
+                break
+            low = text.lower()
+            if kws and sum(1 for k in kws if k in low) >= 2:
+                covered = True
+                break
+        # Exemption path (D7): a decision documented as MCP-untestable in the
+        # ``## MCP Coverage Exemptions`` section with a non-empty rationale is
+        # NOT uncovered — it is a sanctioned disposition, not a gap. Scenario
+        # coverage still wins (a decision that is BOTH scenario-covered and
+        # listed stays covered=True, exempt=False).
+        exempt_rationale = exemptions.get(did)
+        exempt = (not covered) and bool(exempt_rationale)
+        entry = {"id": did, "title": d["title"], "keywords": kws, "covered": covered}
+        if exempt:
+            entry["exempt"] = True
+            entry["rationale"] = exempt_rationale
+        result_decisions.append(entry)
+        if not covered and not exempt:
+            uncovered.append(did)
+
+    return {
+        "ok": True,
+        "decisions": result_decisions,
+        "uncovered": uncovered,
+        "scenario_count": len(scenario_texts),
+    }

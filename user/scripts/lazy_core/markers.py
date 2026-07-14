@@ -166,7 +166,7 @@ def update_repeat_counts(
     # --- Derive default path from a stable hash of the resolved repo root ----
     # The hash keeps per-repo state separate even when multiple repos live on
     # the same machine, while keeping the filename deterministic across runs.
-    from ._monolith import _current_head  # Phase-5 WU-3 re-point (git helper still monolith-resident)
+    from .runtimeplane import _current_head  # deferred (runtime/git plane; function-local avoids import cycle)
     if signature_path is None:
         repo_hash = hashlib.sha1(
             str(repo_root.resolve()).encode("utf-8")
@@ -804,7 +804,7 @@ def parse_parent_run_arg(raw: "str | None") -> "dict | None":
     Extra keys are dropped: the marker stores exactly the two-identity stamp.
     Shared by BOTH state scripts (coupled pair — the marker is shared).
     """
-    from ._monolith import _die  # Phase-5 WU-3 re-point (kernel helper still monolith-resident)
+    from ._ctx import _die  # deferred kernel import (kept function-local — parity with sibling call sites)
     if not raw:
         return None
     shape_msg = (
@@ -1761,7 +1761,7 @@ def head_sha_snapshot(repo_root: Path | None = None) -> str | None:
     unexpected-commits signal disables, never a false positive). Used by
     --cycle-begin to snapshot the begin HEAD into the cycle marker.
     """
-    from ._monolith import _git  # Phase-5 WU-3 re-point (git helper still monolith-resident)
+    from .runtimeplane import _git  # deferred (runtime/git plane; function-local avoids import cycle)
     root = repo_root or Path.cwd()
     try:
         proc = _git(root, "rev-parse", "HEAD")
@@ -1784,7 +1784,7 @@ def current_branch_snapshot(repo_root: Path | None = None) -> str | None:
     None instead, so it uses this helper. Used by --cycle-end to resolve the live
     branch for the branch-divergence signal (harden Round 43).
     """
-    from ._monolith import _git  # Phase-5 WU-3 re-point (git helper still monolith-resident)
+    from .runtimeplane import _git  # deferred (runtime/git plane; function-local avoids import cycle)
     root = repo_root or Path.cwd()
     try:
         proc = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
@@ -1835,7 +1835,7 @@ def _count_authored_commits_since(
     never a crash). Mirrors the pre-existing best-effort contract of the inline
     count it replaces.
     """
-    from ._monolith import _git  # Phase-5 WU-3 re-point (git helper still monolith-resident)
+    from .runtimeplane import _git  # deferred (runtime/git plane; function-local avoids import cycle)
     if not begin_head_sha:
         return None
     try:

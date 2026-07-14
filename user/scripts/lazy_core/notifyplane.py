@@ -168,7 +168,7 @@ def _notify_sentinel_path(state: dict, terminal_reason: str) -> Path | None:
     blocked-misnamed), or None for sentinel-less terminals (queue-missing,
     exhaustion terminals, needs-spec-input's empty dir, …).  Never raises.
     """
-    from ._monolith import detect_noncanonical_blocker  # Phase-5 re-point (blocker detection still monolith-resident)
+    from .docmodel import detect_noncanonical_blocker  # deferred (docmodel plane; function-local avoids import cycle)
     spec = state.get("spec_path")
     if not spec:
         return None

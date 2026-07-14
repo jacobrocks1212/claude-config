@@ -71,7 +71,7 @@ def set_active_repo_root(repo_root: str | None) -> None:
 def active_repo_root() -> str:
     """Return the active repo root: the explicit binding, else the cwd's git
     toplevel, else the cwd itself.  Always returns a non-empty string."""
-    from ._monolith import _git  # Phase-5 re-point (git helper still monolith-resident)
+    from .runtimeplane import _git  # deferred (runtime/git plane; function-local keeps the hook surface light)
     bound = _ctx.get_active_repo_root()
     if bound:
         return bound

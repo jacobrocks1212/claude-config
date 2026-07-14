@@ -46,6 +46,7 @@ from pathlib import Path
 
 from ._ctx import _atomic_write, _diag
 from .docmodel import parse_sentinel
+from .gates import has_completion_receipt
 from .statedir import (
     _HOOK_EVENTS_FILENAME,
     _LEDGER_HEAD_CHARS,
@@ -626,7 +627,7 @@ def write_provenance(
     ok: False with the refusal text — callers inside the completion gate fold
     that into warnings[]; the manual CLI surfaces it verbatim.
     """
-    from ._monolith import _parse_locked_decisions  # Phase-5 re-point (gate-coverage plane still monolith-resident)
+    from .gates import _parse_locked_decisions  # deferred (gate-coverage plane; function-local avoids import cycle)
     if date is None:
         date = datetime.date.today().isoformat()
     if kind not in _PROVENANCE_KINDS:
@@ -1285,7 +1286,7 @@ def find_auto_readmit_entry(
         The matching entry dict, or None.
     """
     from .markers import read_run_marker  # deferred (marker plane; function-local avoids import cycle)
-    from ._monolith import REGISTRY_ENTRY_TTL_SECONDS  # Phase-5 WU-3 re-point (registry constant still monolith-resident)
+    from .dispatch import REGISTRY_ENTRY_TTL_SECONDS  # deferred (registry plane; function-local avoids import cycle)
     from .dispatch import normalize_prompt_for_hash  # dispatch/registry plane (re-pointed at Phase-4 WU-3)
     if now is None:
         now = time.time()
@@ -1391,7 +1392,7 @@ def find_transcription_slip_entry(
     """
     # Fail-safe: all errors return None (never raise from a guard sub-path).
     from .markers import read_run_marker  # deferred (marker plane; function-local avoids import cycle)
-    from ._monolith import REGISTRY_ENTRY_TTL_SECONDS  # Phase-5 WU-3 re-point (registry constant still monolith-resident)
+    from .dispatch import REGISTRY_ENTRY_TTL_SECONDS  # deferred (registry plane; function-local avoids import cycle)
     from .dispatch import normalize_prompt_for_hash  # dispatch/registry plane (re-pointed at Phase-4 WU-3)
     try:
         if now is None:
@@ -3453,3 +3454,469 @@ def ack_deny_by_selector(
             "error": "ledger rewrite failed",
         }
     return {"ok": True, "acked": target, "deduped": deduped, "error": None}
+
+
+# lazy-core-package-decomposition Phase 5 WU-3 (residue sweep): the feature-dir
+# state ledgers — stale-upstream + materialized trackers, the WIP/stage tracking
+# plane (derive_stage / track_*), the decision-record ledger (record_decision /
+# read_decision_record / bind_decision_record_context), and
+# build_input_audit_emit_command (sibling of build_hardening_emit_command) —
+# moved here from _monolith.py — verbatim.
+
+# ---------------------------------------------------------------------------
+# Stale-upstream helpers
+# ---------------------------------------------------------------------------
+
+_STALE_UPSTREAM_FILENAME = "STALE_UPSTREAM.md"
+
+
+def read_stale_upstream(item_dir: Path) -> str | None:
+    """Return the full text of <item_dir>/STALE_UPSTREAM.md, or None if absent."""
+    path = item_dir / _STALE_UPSTREAM_FILENAME
+    if not path.exists():
+        return None
+    return path.read_text(encoding="utf-8")
+
+
+def write_stale_upstream(item_dir: Path, diff: str) -> None:
+    """Write <item_dir>/STALE_UPSTREAM.md with diff as its content (atomic)."""
+    path = item_dir / _STALE_UPSTREAM_FILENAME
+    _atomic_write(path, diff)
+
+
+def clear_stale_upstream(item_dir: Path) -> None:
+    """Remove <item_dir>/STALE_UPSTREAM.md; no-op if absent."""
+    path = item_dir / _STALE_UPSTREAM_FILENAME
+    path.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Materialized-list helpers
+# ---------------------------------------------------------------------------
+
+_MATERIALIZED_FILENAME = "materialized.json"
+
+
+def read_materialized(work_dir: Path) -> list[dict]:
+    """Read <work_dir>/materialized.json and return the list of records.
+
+    Returns an empty list if the file is absent.
+    """
+    path = work_dir / _MATERIALIZED_FILENAME
+    if not path.exists():
+        return []
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def append_materialized(work_dir: Path, wi_id, feature_id, changed_date) -> None:
+    """Append a record to <work_dir>/materialized.json (atomic, idempotent on wi_id).
+
+    If a record with the given wi_id already exists, this is a no-op — the
+    existing record's values are preserved and no duplicate is written.
+    """
+    records = read_materialized(work_dir)
+    for record in records:
+        if record.get("wi_id") == wi_id:
+            return
+    records.append({
+        "wi_id": wi_id,
+        "feature_id": feature_id,
+        "materialized_changedDate": changed_date,
+    })
+    path = work_dir / _MATERIALIZED_FILENAME
+    _atomic_write(path, json.dumps(records, indent=2))
+
+
+def update_materialized_changeddate(work_dir: Path, wi_id, new_changed_date) -> None:
+    """Update the materialized_changedDate for the record matching wi_id (atomic).
+
+    If no record with the given wi_id is found, this is a no-op (no exception).
+    """
+    records = read_materialized(work_dir)
+    found = False
+    for record in records:
+        if record.get("wi_id") == wi_id:
+            record["materialized_changedDate"] = new_changed_date
+            found = True
+            break
+    if not found:
+        return
+    path = work_dir / _MATERIALIZED_FILENAME
+    _atomic_write(path, json.dumps(records, indent=2))
+
+
+# ---------------------------------------------------------------------------
+# Stage derivation
+# ---------------------------------------------------------------------------
+
+_WIP_FILENAME = "WIP.md"
+_REVIEWED_FILENAME = "REVIEWED.md"
+
+
+def derive_stage(item_dir) -> str:
+    """Derive the current workflow stage of an item directory from its artifact set.
+
+    Stage is DERIVED from filesystem artifacts (never asserted by a skill directly).
+    Accepts any path-like object; coerces to Path internally. Never raises on a
+    missing directory — returns "spec" as the documented default.
+
+    Precedence (first match wins):
+      1. done          — COMPLETED.md or FIXED.md receipt present (terminal; intentionally
+                         wins over halt sentinels because receipts are permanent, irreversible).
+      2. stale-upstream — STALE_UPSTREAM.md present (read_stale_upstream is not None).
+      3. blocked       — BLOCKED.md present.
+      4. needs-input   — NEEDS_INPUT.md present.
+      5. reviewed      — REVIEWED.md present.
+      6. review        — PR.md present AND PHASES.md present.  If PR.md is absent, this
+                         rung is skipped and the artifact-ladder result (implement or lower)
+                         stands — "omit PR.md and let implement stand" fallback.
+      Artifact ladder:
+      7. implement     — plans/ subdir with ≥1 *.md file AND PHASES.md has ≥1 checked
+                         deliverable (line matching r"^\\s*-\\s*\\[[xX]\\]").
+      8. plan          — plans/ subdir with ≥1 *.md file (but zero checked deliverables).
+      9. phases        — PHASES.md exists (but no plans/).
+     10. research      — RESEARCH.md or RESEARCH_SUMMARY.md exists.
+     11. spec          — default / fallback.
+
+    Returns one of: spec | research | phases | plan | implement | review |
+                    reviewed | blocked | needs-input | stale-upstream | done
+    """
+    item_dir = Path(item_dir)
+    if not item_dir.exists():
+        return "spec"
+
+    # 1. done — receipt files are terminal
+    if has_completion_receipt(item_dir, "COMPLETED.md") or has_completion_receipt(item_dir, "FIXED.md"):
+        return "done"
+
+    # 2. stale-upstream
+    if read_stale_upstream(item_dir) is not None:
+        return "stale-upstream"
+
+    # 3. blocked
+    if (item_dir / "BLOCKED.md").exists():
+        return "blocked"
+
+    # 4. needs-input
+    if (item_dir / "NEEDS_INPUT.md").exists():
+        return "needs-input"
+
+    # 5. reviewed
+    if (item_dir / _REVIEWED_FILENAME).exists():
+        return "reviewed"
+
+    # 6. review — PR.md + PHASES.md both present
+    if (item_dir / "PR.md").exists() and (item_dir / "PHASES.md").exists():
+        return "review"
+
+    # 7-8. Artifact ladder: plans/ subdir with ≥1 *.md
+    plans_dir = item_dir / "plans"
+    if plans_dir.exists() and any(plans_dir.glob("*.md")):
+        # Determine implement vs plan by checking for ≥1 checked deliverable in PHASES.md
+        phases_path = item_dir / "PHASES.md"
+        if phases_path.exists():
+            phases_text = phases_path.read_text(encoding="utf-8")
+            for line in phases_text.splitlines():
+                if re.match(r"^\s*-\s*\[[xX]\]", line):
+                    return "implement"
+        return "plan"
+
+    # 9. phases
+    if (item_dir / "PHASES.md").exists():
+        return "phases"
+
+    # 10. research
+    if (item_dir / "RESEARCH.md").exists() or (item_dir / "RESEARCH_SUMMARY.md").exists():
+        return "research"
+
+    # 11. spec (default)
+    return "spec"
+
+
+# ---------------------------------------------------------------------------
+# WIP liveness sentinel helpers
+# ---------------------------------------------------------------------------
+
+def _write_wip(item_dir: Path, fields: dict) -> None:
+    """Serialize WIP frontmatter and atomically write <item_dir>/WIP.md.
+
+    Unknown values serialize as empty (never the literal "None").
+    """
+    def _fmt(value):
+        return "" if value is None or value == "None" else value
+
+    lines = [
+        "---",
+        f"kind: {fields['kind']}",
+        f"wi_id: {_fmt(fields['wi_id'])}",
+        f"slug: {_fmt(fields['slug'])}",
+        f"branch: {_fmt(fields['branch'])}",
+        f"host: {_fmt(fields['host'])}",
+        f"started_at: \"{fields['started_at']}\"",
+        f"last_touched: \"{fields['last_touched']}\"",
+        "---",
+        "",
+        "# Work in progress",
+    ]
+    _atomic_write(item_dir / _WIP_FILENAME, "\n".join(lines))
+
+
+def track_open(item_dir, wi_id, slug, branch, host, now: str) -> None:
+    """Create or refresh <item_dir>/WIP.md as the liveness sentinel for an active work item.
+
+    Idempotent: if WIP.md already exists, ``started_at`` is preserved from the
+    existing file and only ``last_touched`` is advanced to ``now``.  A refresh
+    never degrades known fields: when ``wi_id``/``branch``/``host`` are missing
+    (None/empty, or a stale literal "None" from a prior bad write), the existing
+    values are kept.  Time is injected via ``now`` (ISO-8601 string) for
+    determinism — no ``datetime.now()`` call occurs here.
+    """
+    item_dir = Path(item_dir)
+    item_dir.mkdir(parents=True, exist_ok=True)
+
+    def _keep(new, old):
+        return new if new not in (None, "", "None") else old
+
+    wip_path = item_dir / _WIP_FILENAME
+    existing = parse_sentinel(wip_path) or {}
+    started_at = existing.get("started_at") or now
+    wi_id = _keep(wi_id, _keep(existing.get("wi_id"), None))
+    branch = _keep(branch, _keep(existing.get("branch"), None))
+    host = _keep(host, _keep(existing.get("host"), None))
+
+    _write_wip(item_dir, {
+        "kind": "wip",
+        "wi_id": wi_id,
+        "slug": slug,
+        "branch": branch,
+        "host": host,
+        "started_at": started_at,
+        "last_touched": now,
+    })
+
+
+def track_touch(item_dir, now: str) -> None:
+    """Advance ``last_touched`` in an existing <item_dir>/WIP.md to ``now``.
+
+    If WIP.md is absent, this is a no-op — the file is never created here.
+    All other fields are preserved unchanged.  Time is injected via ``now``
+    for determinism.
+    """
+    item_dir = Path(item_dir)
+    wip_path = item_dir / _WIP_FILENAME
+    existing = parse_sentinel(wip_path)
+    if not existing:
+        return
+    existing["last_touched"] = now
+    _write_wip(item_dir, existing)
+
+
+def track_close(item_dir) -> None:
+    """Remove <item_dir>/WIP.md, marking the work item as no longer active.
+
+    No-op if WIP.md is absent.
+    """
+    item_dir = Path(item_dir)
+    (item_dir / _WIP_FILENAME).unlink(missing_ok=True)
+
+def build_input_audit_emit_command(
+    state_script_name: str,
+    *,
+    item_id: str,
+    item_name: str,
+    spec_path: str,
+    cycle_kind: str,
+    cwd: str,
+) -> str:
+    """Pre-compose the single-line shell command that discharges the D2-A
+    audit obligation (mirrors ``build_hardening_emit_command``'s shape for
+    the pending-hardening-debt withhold).
+
+    ``cycle_summary`` and ``cycle_commit_sha`` are NOT script-derivable
+    narrative fields per se, but a mechanical proxy is available and used so
+    the command is genuinely ready-to-run (never a hand-fill placeholder):
+    ``cycle_commit_sha`` defaults to the SKILL.md-sanctioned fallback
+    ``"HEAD~1"``; ``cycle_summary`` defaults to the subject line of the most
+    recent commit at ``cwd`` (``git log -1 --format=%s``) when resolvable,
+    else an empty string (never fabricated prose).
+
+    Returns:
+        A single shell command string, safe to paste into bash.
+    """
+    def _ctx(key: str, value: str) -> str:
+        return f"--context {key}={shlex.quote(value)}"
+
+    cycle_summary = ""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(cwd), "log", "-1", "--format=%s"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if proc.returncode == 0:
+            cycle_summary = proc.stdout.strip()
+    except Exception:  # noqa: BLE001 — best-effort proxy, never fatal
+        pass
+
+    parts = [
+        f"python3 ~/.claude/scripts/{state_script_name}",
+        "--emit-dispatch input-audit",
+        _ctx("item_name", item_name or ""),
+        _ctx("spec_path", spec_path or ""),
+        _ctx("cycle_kind", cycle_kind or ""),
+        _ctx("cycle_summary", cycle_summary),
+        _ctx("cycle_commit_sha", "HEAD~1"),
+        _ctx("item_id", item_id or ""),
+        _ctx("cwd", cwd or ""),
+    ]
+    return " ".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# mechanize-prose-only-orchestrator-contracts (c): decision write-back.
+#
+# Mid-run AskUserQuestion answers previously evaporated between the answer
+# and the apply-resolution dispatch — the orchestrator hand-typed
+# chosen_path/resolution_summary into the --emit-dispatch apply-resolution
+# --context args from probe output + the operator's spoken answer, a
+# hand-carry across a compaction-prone context (SPEC field evidence: "Why
+# was the plan not updated after my decision?" / "My answers didn't go
+# through").
+#
+# --record-decision writes an atomic, on-disk record keyed to the sentinel
+# path; --emit-dispatch apply-resolution then READS chosen_path /
+# resolution_summary from the record instead of accepting them as
+# orchestrator-typed context — absent a record it refuses, naming the exact
+# --record-decision command to run.  The record lives in a SIBLING state-dir
+# file (lazy-decisions.json), NOT the run marker — deliberately: it must
+# survive --run-end (which deletes the marker + registry) so the
+# answered-decisions ledger outlives the run for retro evidence (SPEC Open
+# Question 2, resolved toward the sibling-file option).
+# ---------------------------------------------------------------------------
+
+_DECISIONS_FILENAME = "lazy-decisions.json"
+
+
+def _normalize_sentinel_key(sentinel_path: str | Path) -> str:
+    """Normalize a sentinel path into a stable dict key (D3-A).
+
+    Uses os.path.normpath + forward slashes so the SAME sentinel recorded
+    and looked up via slightly different path spellings (relative vs
+    absolute, backslash vs forward slash) still round-trips. Does NOT
+    require the file to exist (recording happens against a real, existing
+    sentinel in practice, but the key derivation itself is pure string
+    normalization — no filesystem I/O, no resolve()).
+    """
+    return os.path.normpath(str(sentinel_path)).replace("\\", "/")
+
+
+def _load_decisions() -> dict:
+    """Read lazy-decisions.json entries ({sentinel_key: record}).
+
+    Read-only (create=False — a lookup must never create the state dir).
+    Corrupt/absent ⇒ {} (fail-open, mirroring _load_notify_ledger).
+    """
+    try:
+        path = claude_state_dir(create=False) / _DECISIONS_FILENAME
+        data = json.loads(path.read_text(encoding="utf-8"))
+        entries = data.get("entries") if isinstance(data, dict) else None
+        return entries if isinstance(entries, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def record_decision(
+    sentinel_path: str | Path,
+    chosen: str,
+    *,
+    summary: str | None = None,
+    now: float | None = None,
+) -> dict:
+    """Write an atomic decision record keyed to ``sentinel_path`` (D3-A).
+
+    Overwrites any PRIOR record for the SAME sentinel (a re-recorded answer
+    supersedes — the orchestrator re-running --record-decision after a
+    correction is the sanctioned override path, not a second record).
+
+    NOT marker-gated — a decision can be recorded even between runs (a
+    resumed session answering a question from a prior, now-ended run), and
+    the record is deliberately independent of run-marker lifecycle (it must
+    survive --run-end).
+
+    Returns:
+        The written record dict.
+    """
+    ts = time.time() if now is None else float(now)
+    key = _normalize_sentinel_key(sentinel_path)
+    record = {
+        "sentinel_path": str(sentinel_path),
+        "chosen_path": chosen,
+        "resolution_summary": summary or "",
+        "recorded_at": ts,
+    }
+    entries = _load_decisions()
+    entries[key] = record
+    payload = {"v": 1, "entries": entries}
+    _atomic_write(
+        claude_state_dir() / _DECISIONS_FILENAME,
+        json.dumps(payload, indent=2) + "\n",
+    )
+    return record
+
+
+def read_decision_record(sentinel_path: str | Path) -> dict | None:
+    """Read-only lookup of the decision record for ``sentinel_path``, or None
+    when no record has been written for it. Never raises."""
+    key = _normalize_sentinel_key(sentinel_path)
+    entries = _load_decisions()
+    record = entries.get(key)
+    return record if isinstance(record, dict) else None
+
+
+def bind_decision_record_context(
+    cls: str, context: dict, state_script_name: str
+) -> dict:
+    """D3-A binding seam: for ``cls == "apply-resolution"`` with a
+    ``sentinel_path`` in context, REPLACE ``chosen_path`` /
+    ``resolution_summary`` with the values from the recorded decision
+    (the record is authoritative — any orchestrator-typed values for those
+    two keys are overridden, closing the hand-carry failure mode).
+
+    Every other class, and an apply-resolution context with NO
+    ``sentinel_path`` key at all, passes through UNCHANGED — the existing
+    ``@requires`` refusal in ``emit_dispatch_prompt`` handles a missing
+    ``sentinel_path`` exactly as before (this seam only engages once a
+    sentinel is named).
+
+    Raises:
+        ValueError: when ``cls == "apply-resolution"``, ``sentinel_path`` is
+            present, but NO decision record exists for it — the message
+            names the exact ``--record-decision`` command to run. The
+            existing ``--emit-dispatch`` handler's catch-all already formats
+            any raised exception into the structured JSON refusal
+            (``dispatch_prompt_refused``, exit 1), so this composes with zero
+            new error-handling paths.
+
+    Returns:
+        The (possibly updated) context dict.
+    """
+    if cls != "apply-resolution":
+        return context
+    sentinel_path = context.get("sentinel_path")
+    if not sentinel_path:
+        return context
+    record = read_decision_record(sentinel_path)
+    if record is None:
+        cmd = (
+            f"python3 ~/.claude/scripts/{state_script_name} --record-decision "
+            f"--sentinel {shlex.quote(str(sentinel_path))} "
+            f'--chosen "<chosen option label(s)>" '
+            f'--summary "<optional resolution summary>"'
+        )
+        raise ValueError(
+            "no recorded decision for sentinel "
+            f"{sentinel_path!r} — record the operator's answer first: {cmd}"
+        )
+    context = dict(context)
+    context["chosen_path"] = record.get("chosen_path", "")
+    context["resolution_summary"] = record.get("resolution_summary", "")
+    return context

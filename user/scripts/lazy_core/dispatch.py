@@ -1445,7 +1445,6 @@ def register_emission(
     Returns:
         The newly created entry dict.
     """
-    from ._monolith import _REGISTRY_RING_CAP  # Phase-5 re-point (marker/registry plane still monolith-resident)
     if now is None:
         now = time.time()
 
@@ -1510,7 +1509,6 @@ def lookup_emission(
         The matching entry dict, or None.
     """
     from .markers import read_run_marker  # deferred (marker plane; function-local avoids import cycle)
-    from ._monolith import REGISTRY_ENTRY_TTL_SECONDS  # Phase-5 WU-3 re-point (registry constant still monolith-resident)
     if now is None:
         now = time.time()
     target_sha = prompt_sha256(prompt)
@@ -1592,7 +1590,6 @@ def resolve_emission_by_nonce(
           - the entry predates the current run's started_at.
     """
     from .markers import read_run_marker  # deferred (marker plane; function-local avoids import cycle)
-    from ._monolith import REGISTRY_ENTRY_TTL_SECONDS  # Phase-5 WU-3 re-point (registry constant still monolith-resident)
     if now is None:
         now = time.time()
 
@@ -1896,3 +1893,113 @@ def register_emission_if_marked(
     if marker is None:
         return None
     return register_emission(prompt, cls=cls, item_id=item_id, now=now, model=model)
+
+
+# lazy-core-package-decomposition Phase 5 WU-3 (residue sweep): the cycle-header
+# formatter (SUB_SKILL_STEP_NAMES / format_cycle_header) and the prompt-registry
+# constants (REGISTRY_ENTRY_TTL_SECONDS / _REGISTRY_RING_CAP) moved here from
+# _monolith.py — verbatim.
+
+# Per-sub_skill Step name for the FORWARD cycle_header (the T2 sibling of
+# DISPATCH_STEP_NAMES, which maps META dispatch classes). Keys are the normalized
+# sub_skill (leading '/' stripped, lowercased). Canonical T2 step names per
+# orchestrator-voice.md; an unmapped sub_skill falls back to itself (mirroring
+# DISPATCH_STEP_NAMES.get(cls, cls)); an absent sub_skill falls back to "Cycle".
+SUB_SKILL_STEP_NAMES: dict[str, str] = {
+    "spec":              "Spec",
+    "spec-bug":          "Investigate",
+    "plan-feature":      "Plan",
+    "plan-bug":          "Plan",
+    "spec-phases":       "Plan",
+    "write-plan":        "Plan",
+    "execute-plan":      "Implement",
+    "retro":             "Retro",
+    "retro-feature":     "Retro",
+    "mcp-test":          "Validate",
+    "realign-spec":      "Realign",
+    "ingest-research":   "Research",
+    "__mark_complete__": "Mark Complete",
+    "__mark_fixed__":    "Mark Fixed",
+}
+
+
+def format_cycle_header(
+    state: dict,
+    *,
+    forward_cycles: "int | None" = None,
+    max_cycles: "int | None" = None,
+    meta_cycles: "int | None" = None,
+) -> str:
+    """Return a formatted FORWARD cycle-header line for the orchestrator probe
+    payload, in the sanctioned T2 shape (em-dash separator is U+2014 ``—``):
+
+        ### {Step} — {summary} [{fwd}/{max}]
+
+    This is the forward-cycle sibling of ``emit_dispatch_prompt``'s META header
+    (``### {Step} — {summary} [meta {m}]``). The prior WU-5 format —
+    ``### Cycle fwd N/M · meta K · {feature} · {sub_skill}`` — was RETIRED by the
+    orchestrator contract (lazy-batch/lazy-bug-batch SKILL.md: "the retired
+    formats … must NOT reappear") and is deliberately NOT emitted here; the probe
+    heading is echoed verbatim by the orchestrator, so a retired-format header
+    would land the forbidden shape on every forward cycle
+    (docs/bugs/format-cycle-header-emits-retired-cycle-fwd-format).
+
+    Rendering:
+    - ``{Step}``    = ``SUB_SKILL_STEP_NAMES`` lookup on the normalized
+      ``state.get("sub_skill")``; unmapped → the normalized sub_skill itself;
+      absent/falsy sub_skill → ``Cycle``.
+    - ``{summary}`` = ``state.get("feature_id")`` if truthy else ``—`` (U+2014).
+    - ``{fwd}``     = ``forward_cycles`` if not None else ``?``.
+    - ``{max}``     = ``max_cycles`` if not None else ``?``.
+
+    ``meta_cycles`` is accepted for signature back-compat but no longer rendered
+    into the forward header (meta cycles carry their own header via
+    ``emit_dispatch_prompt``).
+    """
+    # Render forward counters: value when supplied, else the '?' placeholder.
+    fwd_str = str(forward_cycles) if forward_cycles is not None else "?"
+    max_str = str(max_cycles) if max_cycles is not None else "?"
+
+    # Step name from the sub_skill (normalized: strip a leading '/', lowercase).
+    raw_sub_skill = state.get("sub_skill") or ""
+    norm = str(raw_sub_skill).lstrip("/").strip().lower()
+    if norm:
+        step = SUB_SKILL_STEP_NAMES.get(norm, str(raw_sub_skill).lstrip("/").strip())
+    else:
+        step = "Cycle"
+
+    # Summary: the item id, or the em-dash sentinel.
+    summary = state.get("feature_id") or "—"
+
+    return f"### {step} — {summary} [{fwd_str}/{max_str}]"
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 — Run-state core: claude_state_dir, run marker, prompt registry,
+#            persisted run counters
+#
+# All writes use _atomic_write (defined above) to prevent partial-write
+# corruption across platforms.  All new behavior is gated on an explicit
+# --run-start / marker-present path so the default (no-marker) output of
+# both state scripts remains byte-identical.
+# ---------------------------------------------------------------------------
+
+# Registry TTL: unconsumed entries older than this are not dispatchable.
+# 30 minutes is a deliberate approximation of "current turn window" — hooks
+# have no reliable turn counter, so we use two complementary controls:
+#   1. Single-use nonce + TTL (REGISTRY_ENTRY_TTL_SECONDS): entries expire 30
+#      minutes after emission regardless of run marker state.
+#   2. Run-start freshness gate (belt-and-braces): when a valid run marker is
+#      present, lookup_emission additionally requires emitted_at >= marker's
+#      started_at epoch — entries that predate the current run are never
+#      dispatchable even if they are within the TTL window.  When no marker is
+#      present the gate is skipped and only nonce+TTL semantics apply.
+# SPEC deviation (recorded): the spec §Validate-deny step 2 says "emitted_at
+# within the current turn window"; we approximate that as nonce + TTL +
+# emitted_at-vs-started_at rather than a per-turn counter that hooks cannot
+# observe.
+REGISTRY_ENTRY_TTL_SECONDS: int = 1800  # 30 minutes
+
+# Maximum number of entries kept in the prompt registry (ring cap).
+# When a new entry would exceed the cap, the oldest entry is evicted first.
+_REGISTRY_RING_CAP: int = 64
