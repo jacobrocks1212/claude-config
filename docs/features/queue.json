@@ -19,17 +19,6 @@
       "name": "Native Android App for Pipeline Steering",
       "spec_dir": "native-android-pipeline-steering",
       "tier": 3
-    },
-    {
-      "id": "generalized-build-test-runner-skills",
-      "name": "Generalized build/test runner skill system (claude-config battery + AlgoBooth qg ops; Cognito pattern preserved)",
-      "spec_dir": "generalized-build-test-runner-skills",
-      "tier": 1,
-      "adhoc": true,
-      "deps": [
-        "build-queue-generalization",
-        "lazy-core-package-decomposition"
-      ]
     }
   ],
   "interventions": true

@@ -25,6 +25,13 @@
       "provenance": "backfilled"
     }
   ],
+  ".claude/skill-config/gate-battery.json": [
+    {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   ".claude/skill-config/quality-gates.md": [
     {
       "id": "harness-hardening-retro-fixes",
@@ -5417,6 +5424,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5489,6 +5501,11 @@
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "harness-hardening-retro-fixes",
@@ -6740,6 +6757,83 @@
     },
     {
       "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/generalized-build-test-runner-skills/ADHOC_BRIEF.md": [
+    {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/generalized-build-test-runner-skills/IMPLEMENTATION_NOTES.md": [
+    {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/generalized-build-test-runner-skills/NEEDS_INPUT_PROVISIONAL.md": [
+    {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/generalized-build-test-runner-skills/PHASES.md": [
+    {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/generalized-build-test-runner-skills/RESEARCH_SUMMARY.md": [
+    {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/generalized-build-test-runner-skills/SPEC.md": [
+    {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/generalized-build-test-runner-skills/plans/all-phases-generalized-build-test-runner-skills-part-1.md": [
+    {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/generalized-build-test-runner-skills/plans/all-phases-generalized-build-test-runner-skills-part-2.md": [
+    {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/generalized-build-test-runner-skills/plans/all-phases-generalized-build-test-runner-skills-part-3.md": [
+    {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/generalized-build-test-runner-skills/plans/all-phases-generalized-build-test-runner-skills-part-4.md": [
+    {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/generalized-build-test-runner-skills/plans/realign-2026-07-14.md": [
+    {
+      "id": "generalized-build-test-runner-skills",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -8451,6 +8545,11 @@
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "harness-hardening-retro-fixes",
@@ -10295,6 +10394,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "harness-hardening-retro-fixes",
       "type": "feature",
       "provenance": "backfilled"
@@ -10514,6 +10618,13 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/cli_surface_gen.py": [
+    {
+      "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/scripts/coupled-overlays/lazy-batch-cloud.overlay.json": [
     {
       "id": "coupled-pair-generation",
@@ -10599,6 +10710,13 @@
     },
     {
       "id": "intervention-efficacy-tracking",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/gate-battery.py": [
+    {
+      "id": "generalized-build-test-runner-skills",
       "type": "feature",
       "provenance": "pipeline-gated"
     }

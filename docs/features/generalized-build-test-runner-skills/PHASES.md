@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** Not started — planned 2026-07-13; execution gated on hard dep `lazy-core-package-decomposition` (SPEC L7; machine-enforced via the queue `deps` field, synced 2026-07-13)
+**Status:** Complete
 **MCP runtime:** not-required — docs + CLI/pytest/Pester surfaces only; claude-config has no MCP server (Step 9 exemption via operator-granted `SKIP_MCP_TEST.md` per `.claude/skill-config/quality-gates.md`; SPEC L8)
 **Friction-reduction feature:** yes — KPI rows `generalized-runner-raw-invocation-deny-recurrence` + `runner-turn-end-stall-recurrence` (full-schema drafts in SPEC `## KPI Declaration`; registered into `docs/kpi/registry.json` at Phase 4)
 **Last updated:** 2026-07-13
@@ -79,7 +79,7 @@ catalog-absent rule.
 
 ### Phase 0: Runner-outcome contract (docs-only, cloud-safe)
 
-**Status:** Complete (2026-07-14, commit cd0efba1)
+**Status:** Complete
 
 **Scope:** Author the generalization deliverable — the ONE documented contract
 (`user/skills/_components/runner-outcome-contract.md`, SPEC D1/L1) — plus its
