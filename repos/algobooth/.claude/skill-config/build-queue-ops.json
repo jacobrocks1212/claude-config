@@ -20,6 +20,28 @@
         "cargo build --release"
       ],
       "lane": "heavy"
+    },
+    "qg-rust": {
+      "exec": ".claude/scripts/qg-rust-filtered.ps1",
+      "kind": "test",
+      "hygiene": "none",
+      "skill": "/qg-rust",
+      "deny": [
+        "npm run qg -- rust",
+        "npm run quality-gate -- rust"
+      ],
+      "lane": "heavy"
+    },
+    "qg-sidecar": {
+      "exec": ".claude/scripts/qg-sidecar-filtered.ps1",
+      "kind": "test",
+      "hygiene": "none",
+      "skill": "/qg-sidecar",
+      "deny": [
+        "npm run qg -- sidecar",
+        "npm run quality-gate -- sidecar"
+      ],
+      "lane": "heavy"
     }
   }
 }

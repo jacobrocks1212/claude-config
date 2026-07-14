@@ -8062,6 +8062,251 @@ _TESTS = _TESTS + [
 ]
 
 
+# ===========================================================================
+# generalized-build-test-runner-skills Phase 3 (WU-1) — AlgoBooth heavy qg ops
+# (`qg-rust` / `qg-sidecar`): manifest deny rows proven against the REAL
+# _compile_manifest_deny semantics. The deny entries are EXACT token
+# sequences; _compile_manifest_deny token-escapes + \s+-joins them onto
+# _CMD_START with a trailing (?:\s|$), so `npm run qg -- rust` matches itself
+# (plus trailing args) and can NEVER shadow `-- ts` / `-- docs` / bare
+# `npm run qg`. The hook is armed via the BQE_PLATFORM_OVERRIDE=armed seam so
+# these fixtures pass on any host (nt or otherwise).
+# ===========================================================================
+
+_ALGOBOOTH_QG_OPS = {
+    "qg-rust": {
+        "exec": ".claude/scripts/qg-rust-filtered.ps1",
+        "kind": "test",
+        "hygiene": "none",
+        "skill": "/qg-rust",
+        "deny": ["npm run qg -- rust", "npm run quality-gate -- rust"],
+        "lane": "heavy",
+    },
+    "qg-sidecar": {
+        "exec": ".claude/scripts/qg-sidecar-filtered.ps1",
+        "kind": "test",
+        "hygiene": "none",
+        "skill": "/qg-sidecar",
+        "deny": ["npm run qg -- sidecar", "npm run quality-gate -- sidecar"],
+        "lane": "heavy",
+    },
+}
+
+
+def _qg_armed_env(state_dir: Path) -> dict:
+    """Base env with the enforce hook force-armed (workstation-only gate seam),
+    so the qg fixtures are platform-independent."""
+    env = _base_env(state_dir)
+    env["BQE_PLATFORM_OVERRIDE"] = "armed"
+    return env
+
+
+def _qg_reason(result) -> str:
+    return json.loads(result.stdout.strip())["hookSpecificOutput"][
+        "permissionDecisionReason"
+    ]
+
+
+def test_bqe_qg_denies_npm_run_qg_rust():
+    """`npm run qg -- rust` in the AlgoBooth-qg-manifested repo → deny naming
+    /qg-rust."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, _ALGOBOOTH_QG_OPS)
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("npm run qg -- rust", str(repo)),
+            _qg_armed_env(state_dir),
+        )
+        assert _containment_decision(result) == "deny", (
+            f"npm run qg -- rust must deny; stdout={result.stdout!r}"
+        )
+        assert "/qg-rust" in _qg_reason(result), (
+            f"deny reason must name /qg-rust; got {_qg_reason(result)!r}"
+        )
+
+
+def test_bqe_qg_denies_npm_run_qg_sidecar():
+    """`npm run qg -- sidecar` → deny naming /qg-sidecar."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, _ALGOBOOTH_QG_OPS)
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("npm run qg -- sidecar", str(repo)),
+            _qg_armed_env(state_dir),
+        )
+        assert _containment_decision(result) == "deny", (
+            f"npm run qg -- sidecar must deny; stdout={result.stdout!r}"
+        )
+        assert "/qg-sidecar" in _qg_reason(result), (
+            f"deny reason must name /qg-sidecar; got {_qg_reason(result)!r}"
+        )
+
+
+def test_bqe_qg_denies_npm_run_quality_gate_rust():
+    """The `quality-gate` alias form `npm run quality-gate -- rust` → deny
+    naming /qg-rust (second deny token on the op)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, _ALGOBOOTH_QG_OPS)
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("npm run quality-gate -- rust", str(repo)),
+            _qg_armed_env(state_dir),
+        )
+        assert _containment_decision(result) == "deny", (
+            f"npm run quality-gate -- rust must deny; stdout={result.stdout!r}"
+        )
+        assert "/qg-rust" in _qg_reason(result), (
+            f"deny reason must name /qg-rust; got {_qg_reason(result)!r}"
+        )
+
+
+def test_bqe_qg_denies_cd_prefixed_qg_rust():
+    """A chained `cd "..." && npm run qg -- rust` → deny (the qg deny tokens
+    ride the same _CMD_START segment anchor as every other manifest deny)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, _ALGOBOOTH_QG_OPS)
+        cmd = f'cd "{repo}" && npm run qg -- rust'
+        result = _run_bash(
+            _BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _qg_armed_env(state_dir)
+        )
+        assert _containment_decision(result) == "deny", (
+            f"cd-prefixed npm run qg -- rust must deny; stdout={result.stdout!r}"
+        )
+        assert "/qg-rust" in _qg_reason(result), (
+            f"deny reason must name /qg-rust; got {_qg_reason(result)!r}"
+        )
+
+
+def test_bqe_qg_allows_light_ts_gate():
+    """`npm run qg -- ts` (a LIGHT sibling) → allow. The rust/sidecar deny
+    tokens can never shadow `-- ts` (self-anchored exact sequences)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, _ALGOBOOTH_QG_OPS)
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("npm run qg -- ts", str(repo)),
+            _qg_armed_env(state_dir),
+        )
+        assert _containment_decision(result) != "deny", (
+            f"npm run qg -- ts (light) must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_qg_allows_light_docs_gate():
+    """`npm run qg -- docs` (a LIGHT sibling) → allow."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, _ALGOBOOTH_QG_OPS)
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("npm run qg -- docs", str(repo)),
+            _qg_armed_env(state_dir),
+        )
+        assert _containment_decision(result) != "deny", (
+            f"npm run qg -- docs (light) must allow; stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_qg_allows_bare_npm_run_qg():
+    """Bare `npm run qg` (no gate arg) → allow. This ALLOW is a DELIBERATE
+    pinned residual of the D3-precision provisional decision
+    (docs/features/generalized-build-test-runner-skills/
+    NEEDS_INPUT_PROVISIONAL.md): only the EXACT heavy forms are denied. A
+    bare-`npm run qg` deny row would provably SHADOW `npm run qg -- ts`
+    (which dispatches all gates, incl. light TS) under _compile_manifest_deny's
+    token-escape + trailing `(?:\\s|$)` semantics — and the manifest has NO
+    allow mechanism to carve `-- ts` back out. Do NOT add a bare-qg deny."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, _ALGOBOOTH_QG_OPS)
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("npm run qg", str(repo)),
+            _qg_armed_env(state_dir),
+        )
+        assert _containment_decision(result) != "deny", (
+            f"bare npm run qg must allow (D3-precision pinned residual); "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_qg_allows_bypass_token_on_qg_rust():
+    """`BUILD_QUEUE_BYPASS=1 npm run qg -- rust` → allow (the emergency
+    one-off escape hatch works on the qg deny path too)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, _ALGOBOOTH_QG_OPS)
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("BUILD_QUEUE_BYPASS=1 npm run qg -- rust", str(repo)),
+            _qg_armed_env(state_dir),
+        )
+        assert _containment_decision(result) != "deny", (
+            f"BUILD_QUEUE_BYPASS=1 must allow even the heavy qg form; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_qg_allows_reference_only_mention():
+    """A reference-only mention of the heavy qg form inside a quoted echo
+    argument → allow (the invoke-vs-reference discrimination: `npm` inside the
+    quoted string does not BEGIN a command segment under _CMD_START, which
+    anchors only after `[\\n;&|({]`)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_manifested_repo(td, _ALGOBOOTH_QG_OPS)
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload('echo "npm run qg -- rust"', str(repo)),
+            _qg_armed_env(state_dir),
+        )
+        assert _containment_decision(result) != "deny", (
+            f"reference-only mention must allow; stdout={result.stdout!r}"
+        )
+
+
+_TESTS = _TESTS + [
+    # generalized-build-test-runner-skills Phase 3 WU-1 — AlgoBooth qg deny rows
+    ("test_bqe_qg_denies_npm_run_qg_rust", test_bqe_qg_denies_npm_run_qg_rust),
+    ("test_bqe_qg_denies_npm_run_qg_sidecar",
+     test_bqe_qg_denies_npm_run_qg_sidecar),
+    ("test_bqe_qg_denies_npm_run_quality_gate_rust",
+     test_bqe_qg_denies_npm_run_quality_gate_rust),
+    ("test_bqe_qg_denies_cd_prefixed_qg_rust",
+     test_bqe_qg_denies_cd_prefixed_qg_rust),
+    ("test_bqe_qg_allows_light_ts_gate", test_bqe_qg_allows_light_ts_gate),
+    ("test_bqe_qg_allows_light_docs_gate", test_bqe_qg_allows_light_docs_gate),
+    ("test_bqe_qg_allows_bare_npm_run_qg", test_bqe_qg_allows_bare_npm_run_qg),
+    ("test_bqe_qg_allows_bypass_token_on_qg_rust",
+     test_bqe_qg_allows_bypass_token_on_qg_rust),
+    ("test_bqe_qg_allows_reference_only_mention",
+     test_bqe_qg_allows_reference_only_mention),
+]
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
