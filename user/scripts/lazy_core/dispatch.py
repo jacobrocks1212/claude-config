@@ -10,15 +10,16 @@ skill-frontmatter readers (``skill_declares_subagent_model`` /
 constants, and the prompt registry (hash normalization, emission
 register/lookup/resolve, by-reference events, ``consume_nonce``).
 
-Boundary discipline (SPEC D3 — marker plane LAST): everything in the
-marker/ownership/refusals plane (``read_run_marker``, ``write_cycle_marker``,
-``refuse_*``, ``REGISTRY_ENTRY_TTL_SECONDS``, ``_REGISTRY_RING_CAP``) stays in
-``_monolith`` until Phase 5 — reached here only via deferred function-local
-imports (this module must not import ``_monolith`` at top level — circular,
-since ``_monolith`` imports FROM this module). ``consume_nonce`` itself is
-registry read/write (it sits in the registry block, not the marker plane) and
-moves here; the registry LOADER ``_load_registry`` lives in ``.statedir``
-(Phase 2), and the deny-ledger filename lives in ``.ledgers`` (WU-2).
+Boundary discipline (SPEC D3 — marker plane LAST): the marker/ownership/
+refusals plane (``read_run_marker``, ``write_cycle_marker``, ``refuse_*``)
+lives in ``.markers`` (Phase 5 WU-1) — reached here only via deferred
+function-local imports (``.markers`` imports FROM this module at top level).
+The registry constants ``REGISTRY_ENTRY_TTL_SECONDS`` / ``_REGISTRY_RING_CAP``
+stay in ``_monolith`` until Phase-5 WU-3 (deferred imports, re-pointed there).
+``consume_nonce`` itself is registry read/write (it sits in the registry
+block, not the marker plane) and moves here; the registry LOADER
+``_load_registry`` lives in ``.statedir`` (Phase 2), and the deny-ledger
+filename lives in ``.ledgers`` (WU-2).
 """
 
 from __future__ import annotations
@@ -807,7 +808,7 @@ def emit_dispatch_prompt(
     # --- Unknown-class guard (caller error — must raise, not refuse) -----------
     # Combine DISPATCH_CLASSES + DISPATCH_MODELS keys so Phase 4 can extend
     # DISPATCH_MODELS before or after appending to DISPATCH_CLASSES without a gap.
-    from ._monolith import read_run_marker  # Phase-5 re-point (marker/registry plane still monolith-resident)
+    from .markers import read_run_marker  # deferred (marker plane; function-local avoids import cycle)
     all_known = set(DISPATCH_CLASSES) | set(DISPATCH_MODELS.keys())
     if cls not in all_known:
         raise ValueError(
@@ -1508,7 +1509,8 @@ def lookup_emission(
     Returns:
         The matching entry dict, or None.
     """
-    from ._monolith import REGISTRY_ENTRY_TTL_SECONDS, read_run_marker  # Phase-5 re-point (marker/registry plane still monolith-resident)
+    from .markers import read_run_marker  # deferred (marker plane; function-local avoids import cycle)
+    from ._monolith import REGISTRY_ENTRY_TTL_SECONDS  # Phase-5 WU-3 re-point (registry constant still monolith-resident)
     if now is None:
         now = time.time()
     target_sha = prompt_sha256(prompt)
@@ -1589,7 +1591,8 @@ def resolve_emission_by_nonce(
           - the entry is beyond TTL, OR
           - the entry predates the current run's started_at.
     """
-    from ._monolith import REGISTRY_ENTRY_TTL_SECONDS, read_run_marker  # Phase-5 re-point (marker/registry plane still monolith-resident)
+    from .markers import read_run_marker  # deferred (marker plane; function-local avoids import cycle)
+    from ._monolith import REGISTRY_ENTRY_TTL_SECONDS  # Phase-5 WU-3 re-point (registry constant still monolith-resident)
     if now is None:
         now = time.time()
 
@@ -1884,7 +1887,7 @@ def register_emission_if_marked(
         The registry entry dict if a marker is present and the registration
         succeeded; None otherwise (no marker = no write).
     """
-    from ._monolith import read_run_marker  # Phase-5 re-point (marker/registry plane still monolith-resident)
+    from .markers import read_run_marker  # deferred (marker plane; function-local avoids import cycle)
     if now is None:
         now = time.time()
     # read_run_marker applies all staleness guards — if it returns None there

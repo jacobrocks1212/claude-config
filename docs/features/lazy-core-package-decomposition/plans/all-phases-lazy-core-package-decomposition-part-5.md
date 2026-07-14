@@ -74,7 +74,7 @@ Where this plan's repo uses non-default gates or component paths (this is claude
 
 ## Work Units
 
-- [ ] WU-1 — Extract `markers.py` (run-marker / ownership / refusals / nonce)
+- [x] WU-1 — Extract `markers.py` (run-marker / ownership / refusals / nonce)
 - [ ] WU-2 — Extract `pseudo.py` (`apply_pseudo` moved INTACT)
 - [ ] WU-3 — Residue sweep: distribute the `_monolith` remainder to owning seams
 - [ ] WU-4 — Delete `_monolith.py`; explicit-total facade map; ≤4K LoC census; phase receipt

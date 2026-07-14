@@ -14,8 +14,8 @@ The ONE exception is deliberately deferred, not top-level: `active_repo_root`'s
 cwd-git-toplevel FALLBACK does a function-local `from ._monolith import _git`
 — the fallback only runs when no repo binding was made (`set_active_repo_root`
 at each script's main()), which the hook path always does via `--repo-root`.
-Anything marker-plane (`read_run_marker`, staleness) stays in `_monolith`
-until Phase 5 — the guard's marker-reading paths still pay `_monolith`.
+The marker plane (`read_run_marker`, staleness) lives in `.markers` (Phase-5
+WU-1) — the guard's marker-reading paths no longer load `_monolith`.
 """
 
 from __future__ import annotations

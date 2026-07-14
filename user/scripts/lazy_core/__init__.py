@@ -393,6 +393,63 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "verify_runtime_ownership": "runtimeplane",
     "write_boot_stamp": "runtimeplane",
     "write_runtime_lock": "runtimeplane",
+    # Phase 4: the markers seam (marker plane: run/cycle markers, ownership, refusals, checkpoints, budget counters, friction detector).
+    "AUDITED_CYCLE_KINDS": "markers",
+    "CYCLE_REFUSED_OPS": "markers",
+    "RUN_CONTINUITY_FIELDS": "markers",
+    "RUN_FRESH_FIELDS": "markers",
+    "SANCTIONED_STOP_TERMINAL": "markers",
+    "_CHECKPOINT_FILENAME": "markers",
+    "_CYCLE_MARKER_FILENAME": "markers",
+    "_EXECUTE_PLAN_BOOKEND_COMMITS": "markers",
+    "_EXECUTE_PLAN_PHASE_BUDGET_SLACK": "markers",
+    "_FORWARD_ADVANCING_PSEUDO_SKILLS": "markers",
+    "_MARKER_STALE_SECONDS": "markers",
+    "_bump_per_feature_forward": "markers",
+    "_consume_resolution_signal": "markers",
+    "_count_authored_commits_since": "markers",
+    "_env_truthy": "markers",
+    "_execute_plan_commit_budget": "markers",
+    "_run_marker_scoped_keys": "markers",
+    "advance_forward_cycle": "markers",
+    "advance_meta_cycle": "markers",
+    "advance_run_counters": "markers",
+    "bind_marker_session": "markers",
+    "budget_trip_signals": "markers",
+    "clear_cycle_marker": "markers",
+    "compute_per_feature_ceiling": "markers",
+    "consume_run_checkpoint": "markers",
+    "count_validation_corrective_cycles": "markers",
+    "current_branch_snapshot": "markers",
+    "cycle_end_friction_check": "markers",
+    "delete_run_marker": "markers",
+    "detect_cycle_bracket_friction": "markers",
+    "discharge_audit_obligation": "markers",
+    "feature_is_near_complete": "markers",
+    "fold_run_counters": "markers",
+    "head_sha_snapshot": "markers",
+    "marker_owner_status": "markers",
+    "marker_work_branch": "markers",
+    "parse_parent_run_arg": "markers",
+    "pending_audit_obligation": "markers",
+    "read_cycle_marker": "markers",
+    "read_per_feature_forward_cycles": "markers",
+    "read_run_marker": "markers",
+    "reassert_marker_owner": "markers",
+    "rebaseline_loop_signature_after_registry_reset": "markers",
+    "record_audit_obligation": "markers",
+    "record_corrective_cycle": "markers",
+    "record_resolution_signal": "markers",
+    "refuse_cycle_marker_mutation_if_subagent": "markers",
+    "refuse_if_cycle_active": "markers",
+    "refuse_run_start_clobber": "markers",
+    "resolve_cycle_worker_nonce": "markers",
+    "restore_checkpoint_counters": "markers",
+    "update_repeat_count": "markers",
+    "update_repeat_counts": "markers",
+    "write_cycle_marker": "markers",
+    "write_run_checkpoint": "markers",
+    "write_run_marker": "markers",
 }
 
 # Submodule consulted when a name has no explicit entry in
@@ -400,7 +457,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
 _FALLBACK_SUBMODULE = "_monolith"
 
 # All submodules that make up this package, in no particular order.
-_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "dispatch", "docmodel", "gates", "hostcaps", "ledgers", "notifyplane", "runtimeplane", "statedir")
+_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "dispatch", "docmodel", "gates", "hostcaps", "ledgers", "markers", "notifyplane", "runtimeplane", "statedir")
 
 
 def __getattr__(name):

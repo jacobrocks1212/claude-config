@@ -1956,7 +1956,7 @@ def test_marker_advance_round_trips_counters_under_rmw():
             )
 
             # bind_marker_session: must preserve BOTH counters + watermark.
-            lazy_core._monolith.bind_marker_session("sess-abc")
+            lazy_core.markers.bind_marker_session("sess-abc")
             after_bind = lazy_core.read_run_marker()
             assert after_bind["forward_cycles"] == 9, after_bind
             assert after_bind["meta_cycles"] == 6, after_bind
@@ -2295,10 +2295,10 @@ def test_guard_bind_failure_is_fail_open():
             prompt = "Run the next cycle step with a poisoned bind."
             lazy_core.register_emission(prompt, cls="cycle")
 
-            original = lazy_core._monolith.bind_marker_session
+            original = lazy_core.markers.bind_marker_session
             def _boom(*a, **k):
                 raise RuntimeError("bind exploded")
-            lazy_core._monolith.bind_marker_session = _boom  # type: ignore[assignment]
+            lazy_core.markers.bind_marker_session = _boom  # type: ignore[assignment]
             try:
                 out = lazy_guard.guard(json.dumps({
                     "session_id": "poison-session",
@@ -2306,7 +2306,7 @@ def test_guard_bind_failure_is_fail_open():
                     "tool_input": {"prompt": prompt},
                 }))
             finally:
-                lazy_core._monolith.bind_marker_session = original  # type: ignore[assignment]
+                lazy_core.markers.bind_marker_session = original  # type: ignore[assignment]
 
             decision = json.loads(out)["hookSpecificOutput"]["permissionDecision"]
             assert decision == "allow", (
@@ -4454,7 +4454,7 @@ def test_detect_friction_registry_known_skill_budgeted_without_literal_row():
     # (1) A user-level flagged multi-commit skill is budgeted multi-commit via the
     # DERIVATION, with no literal dict row or frozenset backing it.
     assert _friction("execute-plan", 2) is None
-    assert _friction("execute-plan", lazy_core._monolith._CYCLE_COMMIT_MULTI + allowance) is None
+    assert _friction("execute-plan", lazy_core.markers._CYCLE_COMMIT_MULTI + allowance) is None
 
     # (2) A skill ABSENT from the flagged set still defaults to budget
     # 1 + allowance → a genuine runaway beyond it still trips.
@@ -4480,7 +4480,7 @@ def test_detect_friction_registry_known_skill_budgeted_without_literal_row():
             "---\nname: brand-new-multi-skill\ncommit-cadence: multi\n---\n# X\n",
             encoding="utf-8",
         )
-        ceiling = lazy_core._monolith._CYCLE_COMMIT_MULTI + allowance
+        ceiling = lazy_core.markers._CYCLE_COMMIT_MULTI + allowance
         assert _friction("brand-new-multi-skill", ceiling, repo_root=repo) is None, ceiling
         over = _friction("brand-new-multi-skill", ceiling + 1, repo_root=repo)
         assert over is not None and over["reason"] == "unexpected-commits", over
@@ -6815,7 +6815,7 @@ def test_run_start_owner_bind_closes_repro_a():
             # A concurrent non-owner reaches bind_marker_session BEFORE any
             # owner allow. The slot was never None → first-writer-wins protects
             # the CORRECT owner: the foreign bind is refused.
-            bound = lazy_core._monolith.bind_marker_session("FOREIGN")
+            bound = lazy_core.markers.bind_marker_session("FOREIGN")
             assert bound is False, (
                 "a foreign bind against an owner-bound marker must be refused "
                 "(first-writer-wins now protects the correct owner)"
@@ -6857,7 +6857,7 @@ def test_run_start_legacy_unbound_preserved():
                 "legacy run-start (no session_id) must still write None "
                 "(bind-pending), preserving the documented legacy path"
             )
-            bound = lazy_core._monolith.bind_marker_session("FOREIGN")
+            bound = lazy_core.markers.bind_marker_session("FOREIGN")
             assert bound is True, (
                 "the legacy bind-pending path must still allow the first bind"
             )
@@ -7074,7 +7074,7 @@ def test_legacy_disarm_detected_and_re_armed():
                 pipeline="feature", cloud=False, repo_root="/r", now=now,
             )
             # A foreign session wins the bind in the open window.
-            assert lazy_core._monolith.bind_marker_session("FOREIGN") is True
+            assert lazy_core.markers.bind_marker_session("FOREIGN") is True
             # The true owner can SEE the wrong stamp (not just "absent").
             assert lazy_core.marker_owner_status("OWNER", now=now) == "foreign-stamped"
             # And re-claim it.

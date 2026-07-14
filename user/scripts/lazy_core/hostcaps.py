@@ -29,9 +29,8 @@ be circular, since ``_monolith`` imports FROM this module for the names
 below):
 
 - ``host_present_capabilities`` calls ``read_run_marker()`` (the marker
-  plane — stays in ``_monolith``) and ``claude_state_dir()`` (moves to a
-  dedicated ``statedir.py`` only in a LATER WU — currently still in
-  ``_monolith``).
+  plane — ``.markers`` since Phase-5 WU-1) and ``claude_state_dir()``
+  (``.statedir`` since Phase 2 WU-5).
 - ``_default_host_probes`` calls the Phase-2 active-invocation probe
   primitives ``probe_binary_capability`` / ``probe_env_capability`` /
   ``probe_platform_capability``. These live in a separate, NON-contiguous
@@ -331,10 +330,10 @@ def host_present_capabilities(*, probes=None, cache: bool = True) -> set[str]:
     Returns:
         The set of present capability ids.
     """
-    # Phase-5 re-point: read_run_marker (the marker plane) stays in _monolith.
-    # Deferred import avoids a top-level circular import. claude_state_dir
-    # moved to .statedir in WU-5 (re-pointed).
-    from ._monolith import read_run_marker
+    # Deferred imports avoid a top-level circular import: read_run_marker
+    # moved to .markers (Phase-5 WU-1); claude_state_dir moved to .statedir
+    # in Phase-2 WU-5 (both re-pointed).
+    from .markers import read_run_marker
     from .statedir import claude_state_dir
 
     probe_map = _default_host_probes() if probes is None else probes

@@ -17,11 +17,13 @@ Constraint 3): docs/bugs/_archive/mark-complete-partial-apply-noop-unrecoverable
 FIXED.md and docs/bugs/_archive/production-sentinel-writes-bypass-atomic-write/
 FIXED.md. All writes here go through ``_ctx._atomic_write``.
 
-Deferred function-local imports (this module must not import ``_monolith`` at
-top level — circular, since ``_monolith`` imports FROM this module): the
-marker/registry-plane names (``read_run_marker`` / ``read_cycle_marker`` /
-``head_sha_snapshot`` / ``_MARKER_STALE_SECONDS`` / ``REGISTRY_ENTRY_TTL_SECONDS``,
-Phase-5 re-point), ``_parse_locked_decisions`` (gate-coverage plane, Phase-5),
+Deferred function-local imports (this module must not import ``_monolith``
+or ``.markers`` at top level — circular, since both import FROM this module):
+the marker-plane names (``read_run_marker`` / ``read_cycle_marker`` /
+``head_sha_snapshot`` / ``_MARKER_STALE_SECONDS`` — re-pointed to ``.markers``
+at Phase-5 WU-1), ``REGISTRY_ENTRY_TTL_SECONDS`` (registry constant,
+monolith-resident until Phase-5 WU-3),
+``_parse_locked_decisions`` (gate-coverage plane, Phase-5),
 and ``normalize_prompt_for_hash`` (dispatch/registry plane — re-pointed to
 ``.dispatch`` at Phase 4 WU-3, done). ``build_hardening_emit_command``'s
 ``registry_summary`` is a PARAMETER (caller-supplied summary string), not the
@@ -264,7 +266,7 @@ def guard_plane_heartbeat(*, now: float | None = None) -> "dict | None":
     (corrupt marker, unreadable ledger) degrades to ``None`` — fail-open,
     exactly like every other diagnostic-only helper in this module.
     """
-    from ._monolith import read_run_marker  # Phase-5 re-point (marker plane still monolith-resident)
+    from .markers import read_run_marker  # deferred (marker plane; function-local avoids import cycle)
     if now is None:
         now = time.time()
     try:
@@ -407,7 +409,7 @@ def record_cycle_commit_bracket(
     Returns:
         The recorded bracket dict {feature_id, begin_sha, end_sha}, or None.
     """
-    from ._monolith import head_sha_snapshot, read_cycle_marker  # Phase-5 re-point (marker plane still monolith-resident)
+    from .markers import head_sha_snapshot, read_cycle_marker  # deferred (marker plane; function-local avoids import cycle)
     try:
         marker = read_cycle_marker()
         if not isinstance(marker, dict):
@@ -1282,7 +1284,8 @@ def find_auto_readmit_entry(
     Returns:
         The matching entry dict, or None.
     """
-    from ._monolith import REGISTRY_ENTRY_TTL_SECONDS, read_run_marker  # Phase-5 re-point (marker plane still monolith-resident)
+    from .markers import read_run_marker  # deferred (marker plane; function-local avoids import cycle)
+    from ._monolith import REGISTRY_ENTRY_TTL_SECONDS  # Phase-5 WU-3 re-point (registry constant still monolith-resident)
     from .dispatch import normalize_prompt_for_hash  # dispatch/registry plane (re-pointed at Phase-4 WU-3)
     if now is None:
         now = time.time()
@@ -1387,7 +1390,8 @@ def find_transcription_slip_entry(
         The highest-ratio entry whose ratio >= *threshold*, or None.
     """
     # Fail-safe: all errors return None (never raise from a guard sub-path).
-    from ._monolith import REGISTRY_ENTRY_TTL_SECONDS, read_run_marker  # Phase-5 re-point (marker plane still monolith-resident)
+    from .markers import read_run_marker  # deferred (marker plane; function-local avoids import cycle)
+    from ._monolith import REGISTRY_ENTRY_TTL_SECONDS  # Phase-5 WU-3 re-point (registry constant still monolith-resident)
     from .dispatch import normalize_prompt_for_hash  # dispatch/registry plane (re-pointed at Phase-4 WU-3)
     try:
         if now is None:
@@ -1632,7 +1636,7 @@ def _run_marker_state_dir(*, now: float | None = None) -> "tuple[Path, str] | No
         ``(state_dir, started_at)`` for the most-recent live marker found, or
         None when no live marker exists anywhere.
     """
-    from ._monolith import _MARKER_STALE_SECONDS  # Phase-5 re-point (marker plane still monolith-resident)
+    from .markers import _MARKER_STALE_SECONDS  # deferred (marker plane; function-local avoids import cycle)
     if now is None:
         now = time.time()
     try:
@@ -1907,7 +1911,7 @@ def _telemetry_run_marker(now: float | None = None) -> dict | None:
     Args:
         now: epoch float for the age check (injectable for hermetic tests).
     """
-    from ._monolith import _MARKER_STALE_SECONDS  # Phase-5 re-point (marker plane still monolith-resident)
+    from .markers import _MARKER_STALE_SECONDS  # deferred (marker plane; function-local avoids import cycle)
     if now is None:
         now = time.time()
     try:
@@ -2402,7 +2406,7 @@ def _originating_telemetry_paths(current_repo_root, *, now: float | None = None)
     deletes a stale marker). No state-dir creation on this read path. FAIL-OPEN:
     any error contributes nothing -> returns [].
     """
-    from ._monolith import _MARKER_STALE_SECONDS  # Phase-5 re-point (marker plane still monolith-resident)
+    from .markers import _MARKER_STALE_SECONDS  # deferred (marker plane; function-local avoids import cycle)
     if now is None:
         now = time.time()
     try:
@@ -2824,7 +2828,7 @@ def record_intervention(
         ``{"recorded": bool, "noop": bool, "path": str, "target_signal": str,
         "baseline_status": str}``.
     """
-    from ._monolith import head_sha_snapshot  # Phase-5 re-point (marker plane still monolith-resident)
+    from .markers import head_sha_snapshot  # deferred (marker plane; function-local avoids import cycle)
     repo_root = Path(repo_root)
     if date is None:
         date = datetime.date.today().isoformat()
