@@ -8,6 +8,8 @@ decisions:
     summary: Hook-deny enforcement only for heavy manifested ops; raw light invocations (pytest, qg ts/docs) are never hook-denied — advisory routing only.
   - id: L4
     summary: The claude-config battery runner is stdlib cross-platform Python conforming to the documented banner grammar; the seam with the PowerShell queue plane is the contract, not shared code.
+  - id: D3-precision
+    summary: Bare `npm run qg` is NOT hook-denied (deny rows cover only the exact heavy forms incl. the `quality-gate` alias) — a bare-qg deny row provably shadows `npm run qg -- ts` under the enforce hook's manifest deny compile, and adding an allow mechanism would violate the zero-enforce-hook-diff guard. Appended by spec-phases 2026-07-13.
 divergence: product
 written_by: spec
 date: 2026-07-13
@@ -95,3 +97,40 @@ in cloud sessions (no PowerShell, no queue — locked D7 keeps the queue worksta
 
 **Recommendation:** Stdlib Python with the documented-grammar seam — it is the only option that
 satisfies the cloud constraint without dual-pathing.
+
+### D3-precision — Can bare `npm run qg` be denied without false-denying `qg -- ts|docs`? (appended at planning, /spec-phases 2026-07-13)
+
+**Problem:** SPEC D3 names three deny targets: `npm run qg -- rust`, `npm run qg -- sidecar`,
+"and bare `npm run qg` since it runs the rust gate" — while requiring `npm run qg -- ts` stay
+allowed. The planning-time capability audit verified the enforce hook's manifest deny compile
+(`_compile_manifest_deny`, `user/hooks/build-queue-enforce.sh:488`): a non-`.ps1` deny entry is
+`re.escape`-tokenized, `\s+`-joined, and anchored `_CMD_START … (?:\s|$)`. A `npm run qg` row
+therefore MATCHES `npm run qg -- ts` (the trailing space satisfies `(?:\s|$)`); no negative
+lookahead can be expressed (tokens are escaped), no per-op allow/suppression mechanism exists
+for manifest ops (`_suppress_safe` covers only hard-coded dotnet/nx forms), and pattern order
+cannot rescue it (first deny match wins; there is no allow). So "bare qg denied AND `-- ts`
+allowed AND zero enforce-hook diff" is jointly unsatisfiable. Also discovered: `package.json`
+aliases `quality-gate` ≡ `qg`, widening the raw-invocation surface the rows must cover.
+
+**Options:**
+- **Deny exact heavy forms only (CHOSEN provisionally):** deny rows = `npm run qg -- rust`,
+  `npm run qg -- sidecar`, `npm run quality-gate -- rust`, `npm run quality-gate -- sidecar`.
+  Bare `npm run qg` stays un-denied (advisory routing; pinned by an explicit ALLOW fixture
+  test so the residual is deliberate, not accidental). Pros: zero enforce-hook diff (L6 guard
+  intact); zero false-deny risk (the SPEC's own named risk class); implementable today on the
+  existing machinery. Cons: an agent running bare `npm run qg` still triggers the heavy rust
+  gate outside the queue — the KPI row `generalized-runner-raw-invocation-deny-recurrence`
+  measures whether this residual actually recurs.
+- **Additive hook change (allow-suppression for manifest ops):** grow the manifest schema with a
+  per-op `allow` list suppressed from the scan copy before deny-matching (mirrors the existing
+  `_suppress_safe` architecture); then bare `npm run qg` can be denied precisely. Pros: full D3
+  surface. Cons: violates the zero-enforce-hook-diff guard this feature's plans carry (the hook
+  is live Cognito enforcement; the false-deny bug class is recent and real); expands blast
+  radius far beyond an additive feature.
+- **Reshape AlgoBooth's qg surface** (e.g. bare `qg` stops running the rust gate): out of scope —
+  changes AlgoBooth's own quality-gate UX to serve an enforcement detail.
+
+**Recommendation:** Deny exact heavy forms only — matches the manifest-scoped enforcement
+philosophy and the false-deny evidence; the residual is measured (KPI row) and reversible: if
+ratification wants bare-qg denial, the allow-suppression hook feature is a separate, ordinary
+queue-plane item (enqueue then; do not smuggle it into this additive feature).

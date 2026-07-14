@@ -31,7 +31,11 @@
       "name": "Generalized build/test runner skill system (claude-config battery + AlgoBooth qg ops; Cognito pattern preserved)",
       "spec_dir": "generalized-build-test-runner-skills",
       "tier": 1,
-      "adhoc": true
+      "adhoc": true,
+      "deps": [
+        "build-queue-generalization",
+        "lazy-core-package-decomposition"
+      ]
     }
   ],
   "interventions": true

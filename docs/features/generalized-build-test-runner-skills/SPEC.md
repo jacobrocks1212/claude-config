@@ -5,7 +5,7 @@
 > AlgoBooth's heavy `qg` quality gates, as ONE documented contract instantiated per repo.
 > Additive only: the working Cognito system is byte-untouched.
 
-**Status:** Draft — baseline locked 2026-07-13 (D2/D3/D4 adopted PARK-PROVISIONAL, ratification pending; see `NEEDS_INPUT_PROVISIONAL.md`)
+**Status:** In-progress — baseline locked 2026-07-13; planned 2026-07-13 (`PHASES.md` + 4 plan parts under `plans/` authored; implementation gated on hard dep `lazy-core-package-decomposition` per L7, queue `deps` synced). D2/D3/D4 adopted PARK-PROVISIONAL + planning-time D3-precision addendum, ratification pending; see `NEEDS_INPUT_PROVISIONAL.md`
 **Priority:** P1
 **Last updated:** 2026-07-13
 **Friction-reduction feature:** yes
@@ -231,7 +231,7 @@ the contract component's notes, not implemented here.
 |----|----------|
 | L1 | The generalization deliverable is ONE documented contract — `user/skills/_components/runner-outcome-contract.md` (banner grammar + followable await with 124/125 semantics + turn-end gate BY REFERENCE to `_components/turn-end-gate.md`, never copied) — instantiated per repo; the cross-repo seam is the documented grammar, not shared code. |
 | L2 | **PARK-PROVISIONAL (ratification pending):** light ops (claude-config battery, AlgoBooth `qg -- ts` / `qg -- docs`) get runner+banner+await WITHOUT machine-global queue admission; heavy AlgoBooth gates (`qg -- rust`, `qg -- sidecar`) join the existing queue as manifested ops. The queue manifest gains no "unserialized" lane value. |
-| L3 | **PARK-PROVISIONAL (ratification pending):** hook-deny only for heavy manifested ops (additive AlgoBooth `deny` rows on the existing manifest machinery); raw light invocations (`pytest user/scripts/`, `npm run qg -- ts` / `-- docs`) are NEVER hook-denied — advisory routing only. |
+| L3 | **PARK-PROVISIONAL (ratification pending):** hook-deny only for heavy manifested ops (additive AlgoBooth `deny` rows on the existing manifest machinery); raw light invocations (`pytest user/scripts/`, `npm run qg -- ts` / `-- docs`) are NEVER hook-denied — advisory routing only. **D3-precision addendum (planning-time, 2026-07-13):** deny rows cover ONLY the exact heavy forms (`npm run qg -- rust\|sidecar` + the `quality-gate` alias twins); bare `npm run qg` is NOT denied — the enforce hook's manifest deny compile (`_compile_manifest_deny`) provably shadows `-- ts` under a bare-qg row and carries no allow mechanism, and the hook is diff-frozen by L6's guard. Residual pinned by an ALLOW fixture test + measured by the deny-recurrence KPI row. See `NEEDS_INPUT_PROVISIONAL.md` § D3-precision. |
 | L4 | **PARK-PROVISIONAL (ratification pending):** the claude-config battery runner is stdlib-only cross-platform Python (`user/scripts/gate-battery.py`) conforming to the contract grammar independently of the PowerShell queue plane; it must run in cloud sessions (queue stays workstation-only per locked D7). |
 | L5 | Battery command SSOT is the committed per-repo `.claude/skill-config/gate-battery.json`; the runner refuses without one (manifest-less repo unaffected by construction); claude-config seeds it with the 7-command battery as commands (stable contract), not file paths. |
 | L6 | Cognito Forms is byte-untouched: no edits to its manifests, skills, `build-queue*.ps1` behavior, or the enforce hook's legacy fallback; all 5 Pester suites must stay green as a completion gate. |
@@ -257,21 +257,10 @@ the contract component's notes, not implemented here.
 
 ## Implementation Phases
 
-- **Phase 0 — Contract.** Author `user/skills/_components/runner-outcome-contract.md`
-  (grammar, await semantics, turn-end-gate reference, never-pipe-through-tail, seam statement,
-  AlgoBooth path-discovery note); add the `user/scripts/CLAUDE.md` pointer row. Docs-only;
-  cloud-safe.
-- **Phase 1 — Battery runner.** `user/scripts/gate-battery.py` (stdlib; manifest-driven; banner;
-  results file; `--await` with 124/125; exit-2 refusal without manifest) + seed
-  `.claude/skill-config/gate-battery.json` with the 7 commands + pytest suite under
-  `user/scripts/tests/`. Cloud-safe.
-- **Phase 2 — `/gate-battery` skill.** User-level thin skill wrapping the runner; turn-end gate
-  by reference; `lint-skills.py` + projection green. Cloud-safe.
-- **Phase 3 — AlgoBooth ops.** `qg-rust`/`qg-sidecar` manifest entries + exec wrappers + deny
-  rows (D3 precision risk addressed with fixture tests) + repo-scoped thin skills. Workstation.
-- **Phase 4 — Validation + docs.** Full battery via the new runner (dogfood), all 5 Pester
-  suites, `lint-skills.py`, `doc-drift-lint.py` (CLAUDE.md script/hook tables updated),
-  KPI-note wiring, `SKIP_MCP_TEST.md` per repo policy. Mixed.
+See [`PHASES.md`](./PHASES.md) for the detailed phase breakdown (5 phases, 0–4: contract
+component → battery runner+manifest+pytest → `/gate-battery` skill → AlgoBooth qg ops → validation
++docs), including the planning-time capability-audit ledger and the D3-precision deny-scope
+addendum. Implementation plans: `plans/all-phases-generalized-build-test-runner-skills-part-{1..4}.md`.
 
 ## KPI Declaration
 
