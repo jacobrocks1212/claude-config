@@ -62,14 +62,21 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Age in days of the oldest open docs/bugs/ item `[claude-config]` | 13 (1d) | 17 (measured 2026-07-11) | — | PENDING-BASELINE |
+| Age in days of the oldest open docs/bugs/ item `[claude-config]` | 14 (1d) | 17 (measured 2026-07-11) | — | PENDING-BASELINE |
 | Count of docs/bugs/ items at Status: Concluded (investigated, never fixed) `[claude-config]` | 21 (1d) | 23 (measured 2026-07-11) | — | PENDING-BASELINE |
 
 ## lazy-core
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Monolith-induced drag on lazy_core interventions `[claude-config]` | 1 (30d) | pending | — | PENDING-BASELINE |
+| Monolith-induced drag on lazy_core interventions `[claude-config]` | 1 (30d) | 1 (measured 2026-07-13) | — | PENDING-BASELINE |
+
+## generalized-runner
+
+| KPI | current | baseline | band (warn/breach) | status |
+|-----|---------|----------|--------------------|--------|
+| Raw heavy-gate invocation deny recurrence (AlgoBooth) `[algobooth]` | 0/30d | pending | — | PENDING-BASELINE |
+| Premature turn-end on in-flight gate batteries (non-Cognito) `[claude-config]` | 1/30d | pending | — | PENDING-BASELINE |
 
 ## Regressions
 
@@ -81,12 +88,12 @@
 
 ## Canary health
 
-- 41 canaries open, oldest 8d, 0 will no-data-close within 7d
+- 42 canaries open, oldest 9d, 0 will no-data-close within 7d
 
 ## Notes
 
-- `build-queue-false-green-rate`: build-queue results dir absent (~\.claude\state\build-queue\results) — no build-queue state on this machine
-- `build-queue-wait-time-p50`: build-queue results dir absent (~\.claude\state\build-queue\results) — no build-queue state on this machine
+- `build-queue-false-green-rate`: no build records carrying hygiene.build_fidelity in the window
+- `build-queue-wait-time-p50`: results records carry no queued_at/started_at pair — runner timestamp add is a workstation-deferred follow-up
 - `mcp-validation-round-trips-per-feature`: unknown telemetry selector 'mcp-validation-round-trips-per-feature'
 - `canary-trip-precision`: no canary trips in the window — precision is undefined until the canary has tripped (never a fabricated zero)
 - `canary-closure-latency-p50`: no canary closures (excluding no-data) in the window

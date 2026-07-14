@@ -410,6 +410,34 @@
       "review_by": "2026-11-01",
       "repo_scope": "claude-config",
       "notes": "v1 rides the registered process-friction-count selector (lazy-core-attributable process-friction incidents in the deny ledger); a dedicated selector is registered at implementation if incident attribution proves too coarse. The load-bearing success measures are deterministic proxies captured in this spec and re-measured at each phase gate: (1) hook import: python3 -c 'import lazy_core' wall ms, 107ms warm at baseline -> target <15ms for the hook-touched surface via the lazy facade; (2) test collection: pytest test_lazy_core.py --collect-only 8.60s at baseline; (3) largest-module size: lazy_core.py 17,686 LoC at baseline -> no post-split module >4K LoC; (4) F811/pyflakes findings on user/scripts/: >=1 known at baseline (_current_head x2) -> 0 with the gate on. Provenance stays pending until the Phase-1 benchmark harness stamps a measured baseline."
+    },
+    {
+      "id": "generalized-runner-raw-invocation-deny-recurrence",
+      "system": "generalized-runner",
+      "title": "Raw heavy-gate invocation deny recurrence (AlgoBooth)",
+      "friction": "Agents hand-rolling raw heavy quality gates (npm run qg -- rust|sidecar) instead of the queue-routed skills burn a hook deny plus a redirect turn each time; recurrence measures whether the generalized skill-routing lesson sticks outside Cognito.",
+      "signal": { "source": "deny-ledger", "selector": "build-queue-enforce-deny-count" },
+      "unit": "count/30d",
+      "direction": "down-is-good",
+      "baseline": { "value": null, "captured_at": null, "window": "30d", "provenance": "pending" },
+      "band": null,
+      "review_by": "2026-11-01",
+      "repo_scope": "algobooth",
+      "notes": "Same selector as the cognito-forms row build-queue-raw-invocation-deny-recurrence, scoped to AlgoBooth once the qg deny rows land (this feature's Phase 3). Honest NO-DATA until denies are ledgered (the existing hook-side ledgering follow-up applies here too)."
+    },
+    {
+      "id": "runner-turn-end-stall-recurrence",
+      "system": "generalized-runner",
+      "title": "Premature turn-end on in-flight gate batteries (non-Cognito)",
+      "friction": "Execution subagents hand-roll the claude-config 7-command battery, background it, and end their turn before the result — the exact class the Cognito banner/await/turn-end contract closed; each recurrence costs a manual resume plus a redone verification pass (4 recurrences observed in one orchestrated run, 2026-07-13).",
+      "signal": { "source": "deny-ledger", "selector": "process-friction-count" },
+      "unit": "count/30d",
+      "direction": "down-is-good",
+      "baseline": { "value": null, "captured_at": null, "window": "30d", "provenance": "pending" },
+      "band": null,
+      "review_by": "2026-11-01",
+      "repo_scope": "claude-config",
+      "notes": "Counted from friction-class ledger entries whose signature matches premature-turn-end / hand-rolled-battery incidents (incident-scan clusters these). Honest NO-DATA where no such entries exist. The implementation MAY register a dedicated gate-battery signal source+selector (ordinary selector addition — canary-trip-precision precedent) and re-point this row then."
     }
   ]
 }

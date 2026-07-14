@@ -132,8 +132,14 @@ class TestLintGreen:
         # promoted-to-registry: promoted via the new `--promote-drafted-rows`
         # subcommand from lazy-core-package-decomposition's SPEC.md draft;
         # provenance stays pending until that feature's own Phase-1 benchmark
-        # harness captures a real baseline).
-        assert len(registry["kpis"]) == 19
+        # harness captures a real baseline)
+        # + the two generalized-build-test-runner-skills Phase 4 rows
+        # (generalized-runner-raw-invocation-deny-recurrence,
+        # runner-turn-end-stall-recurrence — appended VERBATIM from that
+        # feature's SPEC `## KPI Declaration`; honest NO-DATA / PENDING-
+        # BASELINE, null baselines by design until denies/friction are
+        # ledgered).
+        assert len(registry["kpis"]) == 21
         ids = {r["id"] for r in registry["kpis"]}
         assert "canary-trip-precision" in ids
         assert {"efficacy-verdicts-produced", "confounded-verdict-ratio",
@@ -144,6 +150,8 @@ class TestLintGreen:
         assert {"bug-backlog-oldest-open-age-days",
                 "bug-backlog-concluded-unfixed-count"} <= ids
         assert "lazy-core-monolith-intervention-drag" in ids
+        assert {"generalized-runner-raw-invocation-deny-recurrence",
+                "runner-turn-end-stall-recurrence"} <= ids
 
     def test_up_is_good_band_ordering_valid(self):
         row = _row(direction="up-is-good", band={"warn": 90, "breach": 80})
