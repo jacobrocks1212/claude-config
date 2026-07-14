@@ -401,10 +401,10 @@
       "unit": "count",
       "direction": "down-is-good",
       "baseline": {
-        "value": null,
-        "captured_at": null,
+        "value": 1.0,
+        "captured_at": "2026-07-13",
         "window": "30d",
-        "provenance": "pending"
+        "provenance": "measured"
       },
       "band": null,
       "review_by": "2026-11-01",
