@@ -134,7 +134,7 @@ pinned by Phase 1's runner tests (both sides cite the contract).
 the seeded claude-config `.claude/skill-config/gate-battery.json` + pytest suite. SPEC D4/D5/L4/L5.
 
 **Deliverables:**
-- [ ] `user/scripts/gate-battery.py` (new, stdlib-only — argparse/subprocess/json/pathlib/hashlib):
+- [x] `user/scripts/gate-battery.py` (new, stdlib-only — argparse/subprocess/json/pathlib/hashlib):
       reads `.claude/skill-config/gate-battery.json` at the INVOKING repo's git toplevel
       (`{version: 1, gates: [{id, cmd, cwd?}]}`); **refuses with exit 2 and a one-line reason,
       zero state written, when no manifest exists** (L5 — manifest-less repo unaffected by
@@ -147,20 +147,20 @@ the seeded claude-config `.claude/skill-config/gate-battery.json` + pytest suite
       `<UTC yyyymmdd>-<4 hex>`); state-dir-unwritable degrades gracefully — banner still prints,
       `-> next-action` notes await unavailable; **zero PowerShell invocations on any code path**
       (cloud-compatible per L4).
-- [ ] `--await <run-id>`: re-emits the run's banner as ITS last stdout line and exits with the
+- [x] `--await <run-id>`: re-emits the run's banner as ITS last stdout line and exits with the
       run's own exit code; exit **124** when the result is not yet present (never success);
       exit **125** on a malformed/unreadable result file. Mirrors `build-queue-await.ps1`
       semantics per the Phase 0 contract.
-- [ ] Seed `.claude/skill-config/gate-battery.json` in claude-config with the 7-command battery
+- [x] Seed `.claude/skill-config/gate-battery.json` in claude-config with the 7-command battery
       **as commands** (pytest `user/scripts/`, `lazy-state.py --test`, `bug-state.py --test`,
       `lazy_parity_audit.py --repo-root .`, `cli_surface_gen.py --check --repo-root .`,
       `doc-drift-lint.py --repo-root .`, `lint-skills.py`), interpreter spelling verified to work
       on BOTH Windows and cloud at the dogfood run.
-- [ ] CLI-surface registration: adopt `cli_surface.py`'s `DidYouMeanArgumentParser` +
+- [x] CLI-surface registration: adopt `cli_surface.py`'s `DidYouMeanArgumentParser` +
       `--dump-cli-surface`, add the one-line `ROSTER` entry in `cli_surface_gen.py`, regenerate
       `docs/cli/cli-surface.json` in the same commit (keeps `cli_surface_gen.py --check` green).
-- [ ] `user/scripts/CLAUDE.md` script-table row for `gate-battery.py` (same commit — doc-drift).
-- [ ] Tests: `user/scripts/tests/test_gate_battery.py` (TDD; fixture manifests + fixture state
+- [x] `user/scripts/CLAUDE.md` script-table row for `gate-battery.py` (same commit — doc-drift).
+- [x] Tests: `user/scripts/tests/test_gate_battery.py` (TDD; fixture manifests + fixture state
       dirs in tmp): manifest-less refusal (exit 2, zero state); banner grammar last-line
       PASS and FAIL(+first-failing-gate); results-file shape; `--await` in-flight → 124 with no
       success language; `--await` done → banner re-emit + run's exit; corrupted result → 125;
@@ -201,7 +201,7 @@ provides for free).
 **Scope:** user-level skill wrapping the runner (SPEC D6), generic across repos.
 
 **Deliverables:**
-- [ ] `user/skills/gate-battery/SKILL.md` (new): announce + run
+- [x] `user/skills/gate-battery/SKILL.md` (new): announce + run
       `python3 ~/.claude/scripts/gate-battery.py --repo-root <repo>`; TRUST the banner (never
       grep gate output or `results/*.json` to disambiguate); backgrounding contract — a long
       battery may run with `run_in_background`, then MUST be followed to the banner via
@@ -209,11 +209,11 @@ provides for free).
       reference** (`!cat ~/.claude/skills/_components/turn-end-gate.md` injection — no copied
       gate text in the source); documents the exit-2 clean refusal in manifest-less repos and the
       opt-in recipe (commit a `gate-battery.json`); cloud note (no PowerShell, no queue).
-- [ ] Skill-config reference hygiene: the skill's `.claude/skill-config/gate-battery.json`
+- [x] Skill-config reference hygiene: the skill's `.claude/skill-config/gate-battery.json`
       mention carries an explicit absent-is-fine fallback form so
       `lint-skill-config.py --repo-root .` stays exit 0 (add `intended_absent` rows to repo
       MANIFESTs only if the lint still flags it).
-- [ ] Tests: `project-skills.py` re-projection clean; `lint-skills.py --check-projected
+- [x] Tests: `project-skills.py` re-projection clean; `lint-skills.py --check-projected
       --check-capabilities` exit 0; grep proves the turn-end gate is injected, not duplicated.
 
 **Minimum Verifiable Behavior:** invoking `/gate-battery` in this repo (workstation, interactive)
