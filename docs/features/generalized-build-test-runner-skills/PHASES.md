@@ -323,25 +323,25 @@ artifact recorded in Implementation Notes); the enforce hook itself is byte-unto
 Criteria closure.
 
 **Deliverables:**
-- [ ] KPI wiring: append the two full-schema rows from SPEC `## KPI Declaration`
+- [x] KPI wiring: append the two full-schema rows from SPEC `## KPI Declaration`
       (`generalized-runner-raw-invocation-deny-recurrence`, `runner-turn-end-stall-recurrence`)
       to `docs/kpi/registry.json`; `python3 user/scripts/kpi-scorecard.py --lint` exit 0;
       re-render `docs/kpi/SCORECARD.md` (rows surface as honest NO-DATA / PENDING-BASELINE).
-- [ ] Docs: root `CLAUDE.md` Scripts-table row for `gate-battery.py` + a build-queue row note for
+- [x] Docs: root `CLAUDE.md` Scripts-table row for `gate-battery.py` + a build-queue row note for
       the two AlgoBooth qg ops; `user/scripts/CLAUDE.md` already carries the runner row (Phase 1)
       — verify; `doc-drift-lint.py --repo-root .` exit 0.
-- [ ] Cognito byte-untouched proof (L6): `git diff <pre-feature-baseline>..HEAD --stat --
+- [x] Cognito byte-untouched proof (L6): `git diff <pre-feature-baseline>..HEAD --stat --
       repos/cognito-forms user/scripts/build-queue.ps1 user/scripts/build-queue-runner.ps1
       user/scripts/build-queue-hygiene.ps1 user/scripts/build-queue-status.ps1
       user/scripts/build-queue-await.ps1 user/hooks/build-queue-enforce.sh` → EMPTY; record the
       baseline commit hash + the empty output in Implementation Notes.
-- [ ] Pester gate (workstation): all 5 `user/scripts/build-queue*.Tests.ps1` suites via
+- [x] Pester gate (workstation): all 5 `user/scripts/build-queue*.Tests.ps1` suites via
       `Invoke-Pester`; 100% pass expected — if any failure reproduces, re-run the SAME suite at
       the pre-feature baseline commit: identical-at-baseline = environmental (record both runs
       verbatim), new-at-HEAD = a real L6 violation → BLOCKED.
-- [ ] Dogfood: one fresh `python3 user/scripts/gate-battery.py --repo-root .` run recorded
+- [x] Dogfood: one fresh `python3 user/scripts/gate-battery.py --repo-root .` run recorded
       (banner `RESULT=PASS cmds=7 failed=0` — this is also the final commit's gate).
-- [ ] Tests: full battery + `lint-skills.py --check-projected --check-capabilities` +
+- [x] Tests: full battery + `lint-skills.py --check-projected --check-capabilities` +
       `lint-skill-config.py` + `kpi-scorecard.py --lint` all exit 0 at HEAD.
 
 **Runtime Verification** *(deferred — closed outside /execute-plan)*:

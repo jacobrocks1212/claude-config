@@ -143,3 +143,81 @@ WU-3 `3f2cbfa9`, WU-4 (this).
   (2) The D3-precision bare-`npm run qg` residual stays PINNED by an ALLOW fixture — Phase 4 must
   not widen deny rows; ratification pending. (3) `hygiene: none` is the locked re-check value
   Phase 4's root-CLAUDE.md build-queue rows must state.
+
+## Phase 4 — Validation + docs + KPI wiring
+
+#### Implementation Notes (Phase 4)
+**Completed:** 2026-07-14 — workstation `DESKTOP-GHTC5K6`. Commits: WU-1 `fc52e868`,
+WU-2 `8916bbcc`, WU-3 (this).
+
+- **WU-1 (KPI wiring, `fc52e868`).** Appended the two full-schema rows VERBATIM from SPEC
+  `## KPI Declaration` (`generalized-runner-raw-invocation-deny-recurrence` scope=algobooth,
+  `runner-turn-end-stall-recurrence` scope=claude-config) to `docs/kpi/registry.json` — existing
+  19 rows byte-untouched (19→21). `kpi-scorecard.py --lint` exit 0. Re-rendered
+  `docs/kpi/SCORECARD.md`: both rows surface under a new `## generalized-runner` section as honest
+  `PENDING-BASELINE` (`0/30d` and `1/30d` current, null baselines by design — NO `--capture-baseline`,
+  no signal data yet). The row-count pin in `user/scripts/test_kpi_scorecard.py` was bumped 19→21
+  with a documenting comment + a positive id assertion for the two new rows (the file's established
+  maintenance pattern — a strengthening, not a gate weakening). SCORECARD churn beyond the two new
+  rows (bug-age 13→14, concluded 23→21, canary ages, monolith baseline text) is date-driven signal
+  recomputation (scorecard is a pure function of registry+signals+today; last rendered 2026-07-13,
+  today 2026-07-14) — the committed `kpi-scorecard.py` was unmodified, so it is expected designed
+  behavior, not a wrong-version render.
+- **WU-2 (docs, `8916bbcc`).** Surgical root `CLAUDE.md` edits (plan note 6): one Scripts-table row
+  for `gate-battery.py` (runner + last-line banner grammar + `--await` 124/125 + manifest opt-in +
+  exit vocab + `/gate-battery` skill pointer), plus a one-sentence addendum to the `build-queue.ps1`
+  row noting the two new AlgoBooth heavy qg ops (`qg-rust`/`qg-sidecar`, `hygiene: none`,
+  `lane: heavy`, exact-heavy-form `deny`; Cognito byte-untouched). `user/scripts/CLAUDE.md` already
+  carries the runner row (part 1, 2 mentions) — verified. `doc-drift-lint.py --repo-root .` exit 0
+  (the new script-table row maps doc→disk cleanly to `user/scripts/gate-battery.py`).
+- **WU-3 validation sweep (this commit) — recorded evidence:**
+  - **Dogfood (also the WU-3 commit gate):** `python3 user/scripts/gate-battery.py --repo-root .`
+    last stdout line `gate-battery: run=20260714-6097 op=battery RESULT=PASS cmds=7 failed=0
+    (elapsed=420s)`, exit 0. (WU-1/WU-2 commit gates recorded PASS banners `run=20260714-abf9`
+    and `run=20260714-a2f4`.) NOTE: one intervening battery run (`run=20260714-06be`) reported
+    `RESULT=FAIL failed=1 -> first failing gate: pytest` from a TRANSIENT `TestFleetServer`
+    server-binding flake (the known-flaky `test_pipeline_visualizer.py::TestFleetServer` class,
+    a port/bind race under full-suite parallel load); an immediate standalone `pytest user/scripts/`
+    re-run passed 2269/2269 and the battery re-ran GREEN — re-run-to-green per the flaky-test
+    protocol, not a real regression.
+  - **Cognito byte-untouched proof (L6) — baseline `1a8fb777`** (parent of this feature's first
+    commit `16366c8a`). `git diff 1a8fb777..HEAD --stat -- repos/cognito-forms
+    user/scripts/build-queue.ps1 user/scripts/build-queue-runner.ps1
+    user/scripts/build-queue-hygiene.ps1 user/scripts/build-queue-status.ps1
+    user/scripts/build-queue-await.ps1 user/hooks/build-queue-enforce.sh` → **EMPTY** (zero lines).
+    Per-commit guard also PASS on every claude-config commit (`git show --name-only HEAD` carries
+    nothing under `repos/cognito-forms/` or `build-queue*.ps1` / `build-queue-enforce.sh`).
+  - **Pester gate (workstation, Pester 6.0.0) — 4 of 5 suites GREEN, 1 environmental.**
+    `build-queue-await.Tests.ps1`, `build-queue-hygiene.Tests.ps1`, `build-queue-status.Tests.ps1`,
+    `build-queue.Tests.ps1` → **193 Passed / 0 Failed** aggregate. The known sandbox-environmental
+    Job-Object warning fired (`Add-ProcessToBuildJob: failed to assign process to Job Object;
+    returning $false`, one of the 3 upstream-documented cases) — its suite still PASSED.
+    `build-queue-runner.Tests.ps1` fails at **DISCOVERY** (Total=0, zero assertions run):
+    `System.Management.Automation.RuntimeException: BeforeAll is already defined in this block.
+    Each block can only have one BeforeAll.` — the file carries two top-level `BeforeAll` blocks
+    (lines 33 + 126), Pester-5 valid but rejected by Pester 6.0.0's stricter parser.
+    **Verdict = ENVIRONMENTAL, proceed (plan WU-3 step 2 protocol).** PROOF of identical-at-baseline:
+    (a) `git diff 1a8fb777..HEAD --stat -- user/scripts/build-queue-runner.Tests.ps1` is **EMPTY**
+    (the test file is byte-untouched by this feature); (b) discovery only PARSES the unchanged file
+    structure (it never executes the byte-untouched `build-queue-runner.ps1` under test — L6 diff
+    also empty); (c) Pester is the same 6.0.0 — so the discovery failure is deterministic and
+    provably identical at baseline `1a8fb777`. This is a **NEW environmental class** (Pester-5→6
+    major-version discovery incompatibility) distinct from the 3 documented Job-Object cases; it is
+    a pre-existing defect in a build-queue `*.Tests.ps1` file that this feature **cannot fix**
+    (the file matches the L6 `build-queue*.ps1` protected glob — editing it would trip the
+    Cognito byte-untouched guard). Flagged as a harness follow-up (harden-harness spin-off:
+    "build-queue-runner.Tests.ps1 has two top-level BeforeAll blocks — fails Pester 6.0.0 discovery").
+  - **Lint sweep — all exit 0.** `lint-skills.py --check-projected --check-capabilities` (clean),
+    `lint-skill-config.py --repo-root .` (exit 0; 3 suppressed warnings incl. the expected
+    script-suppressed `gate-battery.json` cognito-forms dangling-reference — L6 forbids a
+    repo-side `intended_absent` there, so a script-owned suppression is the sanctioned avoidance),
+    `kpi-scorecard.py --lint` (0 warnings).
+- **Completion is gate-owned (plan note c):** SPEC/PHASES `**Status:**` NOT flipped, NO
+  `COMPLETED.md` / `SKIP_MCP_TEST.md` written — left to `__mark_complete__` / the operator
+  (SKIP_MCP_TEST.md is operator-granted per `.claude/skill-config/quality-gates.md`).
+- **Pending manual runtime gate (pending-runtime-gates contract):** the P4 `**Runtime
+  Verification**` row (cloud-compatibility battery run with zero PowerShell invocations) stays
+  UNCHECKED — it is `<!-- verification-only -->`, closed later by the first cloud-session battery
+  run (e.g. the nightly lazy run) citing its session log; mechanically proxied until then by the
+  Phase 1 no-PowerShell pytest. **1 MANUAL RUNTIME GATE PENDING — feature not verified
+  end-to-end in cloud.**
