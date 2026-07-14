@@ -62,8 +62,8 @@ Where this plan's repo uses non-default gates or component paths (this is claude
 
 ## Work Units
 
-- [ ] WU-1 — Author `user/skills/gate-battery/SKILL.md` (thin, contract-conformant)
-- [ ] WU-2 — Projection + lint sweep incl. skill-config reference hygiene
+- [x] WU-1 — Author `user/skills/gate-battery/SKILL.md` (thin, contract-conformant)
+- [x] WU-2 — Projection + lint sweep incl. skill-config reference hygiene
 
 ---
 
