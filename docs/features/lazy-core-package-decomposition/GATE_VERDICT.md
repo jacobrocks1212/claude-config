@@ -39,3 +39,23 @@ Checker: `no ## Intervention Hypothesis block` in the SPEC. **If this change wer
 ### complexity
 
 `retires:` the flat 20,289-line `user/scripts/lazy_core.py` module as a single unsplittable surface, and its single-file manifest glob. Net-new surface added: `lazy_core/__init__.py` (83-line facade) + `lazy_core/_ctx.py` (98-line kernel) — the machinery that makes the remaining decomposition phases possible; the retire is real (the old path no longer exists on disk; `doc-drift-lint.py` and the manifest both track the package form; the old glob stops matching anything).
+
+---
+
+# GATE_VERDICT — lazy-core-package-decomposition Phase 4 (medium seams, 4 move-only commits)
+
+Checker run: `python3 user/scripts/harness-gate.py --repo-root . --staged --feature-dir docs/features/lazy-core-package-decomposition --json` (2026-07-13, staged WU-1 `gates.py` diff). `in_scope: true`, `gate_weakening: pass`, `verdict_required: true` (overfit flag + tautology flag + complexity declaration-required). This entry covers all four Phase-4 seam commits (`gates.py` / `ledgers.py` / `dispatch.py` / `runtimeplane.py`) — identical diff shape: verbatim slice out of `_monolith.py`, facade-map membership adds, by-value import-backs, sanctioned deferred function-local imports, mechanism-3 test patch-target redirects.
+
+## Adversarial answers (Phase 4)
+
+### overfit
+The detector fires on the facade `_SUBMODULE_BY_NAME` membership adds (one entry per moved name) and `_ALL_SUBMODULES` growth. Same partition as the Phase-1 verdict: the map IS the routing mechanism (keyed on submodule ownership), not an incident-fitted allow-list. **Nearest recurrence not caught:** a later phase forgetting a name's entry — structurally covered by the `_monolith` fallback + the 2230-test suite failing loudly on first facade access of a physically-moved unmapped name (this phase moved 224 names; every one is exercised through the facade by the suite and the two byte-pinned `--test` baselines).
+
+### tautology
+Unchanged from Phase 1: the phase's success signals are computed by systems the diff does not control — the live pre-captured collect-only baseline (2230 tests / 1142 lazy_core, count + bare-name multiset preserved per commit), the byte-pinned `--test` baselines (ZERO regeneration), and the parity/cli-surface/doc-drift/lint gates. A broken move cannot render those identical to working (`signal_independence: independent`).
+
+### gate_weakening
+`pass` from the checker on every seam commit. No test deletions; the ONE sanctioned guard-code edit class this phase carries (WU-4: the production-binding meta-guard token comments in `test_runtimeplane.py`) RETARGETS `lazy_core._monolith.subprocess/time` → `lazy_core.runtimeplane.*` — the collectors themselves key on the STRUCTURAL `lazy_core.<any>.subprocess` attribute chain (no code change needed) and their positive meta-tests assert a non-empty matched population, with negative-fixture twins proving non-vacuity.
+
+### complexity
+`retires:` (incrementally, per the Phase-1 declaration) the monolithic residency of the completion-gate / ledger / dispatch / runtime planes inside `_monolith.py` — post-Phase-4 the monolith shrinks from 16,784 to a marker/pseudo core (Phase 5's remaining scope); no new mechanism is added beyond the four seam modules the SPEC's target structure names.

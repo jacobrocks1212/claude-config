@@ -2402,7 +2402,7 @@ def test_plan_structural_backstop_infrastructure_failure_fresh_refuses_loudly():
     lazy_core.py was deleted (docs/bugs/plan-structural-backstop-silent-
     disarm-on-infrastructure-failure)."""
     _guard()
-    import lazy_core._monolith as _mono
+    import lazy_core.gates as _mono  # Phase-4 WU-1: _load_validate_plan_module lives in gates now
 
     def _boom():
         raise FileNotFoundError("validate-plan.py: gone")
@@ -2436,7 +2436,7 @@ def test_plan_structural_backstop_infrastructure_failure_mid_execution_warns():
     keeps the deliberate warns-not-refuses fail-open (ok: True) but is still
     LOUD — findings carry the infrastructure ERROR, never an empty list."""
     _guard()
-    import lazy_core._monolith as _mono
+    import lazy_core.gates as _mono  # Phase-4 WU-1: _load_validate_plan_module lives in gates now
 
     def _boom():
         raise ImportError("lazy_core flat file retired")

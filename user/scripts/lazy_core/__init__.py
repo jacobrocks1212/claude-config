@@ -165,6 +165,36 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "migrate_legacy_state_dir": "statedir",
     "repo_key": "statedir",
     "set_active_repo_root": "statedir",
+    # Phase 4: the gates seam (completion-gate plane: evidence gate, autotick, structural backstop, verify-ledger).
+    "_AUTOTICK_COMMENT_PREFIX": "gates",
+    "_DETAIL_MAX_ITEMS": "gates",
+    "_FOREIGN_HARDEN_SUBJECT_RE": "gates",
+    "_PLAN_WU_CHECKBOX_RE": "gates",
+    "_UNCHECKED_ROW_RE": "gates",
+    "_commit_subject_is_foreign_harden": "gates",
+    "_excerpt": "gates",
+    "_files_from_commits": "gates",
+    "_git_diff_name_only": "gates",
+    "_is_noninvalidating_drift_path": "gates",
+    "_item_commit_touched_files": "gates",
+    "_load_control_surface_globs": "gates",
+    "_load_harness_gate_module": "gates",
+    "_load_validate_plan_module": "gates",
+    "_manifest_glob_match": "gates",
+    "_phases_text_scoped_to": "gates",
+    "_phases_unchecked_row_detail": "gates",
+    "_plan_unchecked_wus_are_verification_only": "gates",
+    "_plan_wu_checkbox_counts": "gates",
+    "_plan_wu_unchecked_row_detail": "gates",
+    "autotick_verification_rows": "gates",
+    "commit_drift_verdict": "gates",
+    "evaluate_completion_evidence": "gates",
+    "format_plan_structural_blocker": "gates",
+    "gate_verdict_ok": "gates",
+    "observation_gap_promotable": "gates",
+    "plan_structural_backstop": "gates",
+    "summarize_failing_detail": "gates",
+    "verify_ledger": "gates",
 }
 
 # Submodule consulted when a name has no explicit entry in
@@ -172,7 +202,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
 _FALLBACK_SUBMODULE = "_monolith"
 
 # All submodules that make up this package, in no particular order.
-_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "docmodel", "hostcaps", "notifyplane", "statedir")
+_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "docmodel", "gates", "hostcaps", "notifyplane", "statedir")
 
 
 def __getattr__(name):
