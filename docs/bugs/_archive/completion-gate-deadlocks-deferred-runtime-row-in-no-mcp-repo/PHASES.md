@@ -45,7 +45,7 @@ route's boundaries before wiring it into `apply_pseudo`.
       (structural-skip re-verify) + `write_runtime_gates_ledger(...)`.
 - [x] `lazy_core/pseudo.py` — exemption wired behind `_evidence_gate_killed()`
       (`LAZY_STRICT_EVIDENCE_GATE` kill-switch); exposes `result["runtime_gates_pending"]`.
-- [x] `docs/bugs/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/GATE_VERDICT.md`
+- [x] `docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/GATE_VERDICT.md`
       — design-gate verdict APPROVED, operator-signed-off (gate-weakening class change).
 
 **Minimum Verifiable Behavior:**
