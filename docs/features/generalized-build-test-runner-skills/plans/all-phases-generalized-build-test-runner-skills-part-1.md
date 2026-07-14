@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: generalized-build-test-runner-skills
-status: Ready
+status: In-progress
 created: 2026-07-13
 phases: [0, 1]
 complexity: complex
@@ -79,8 +79,8 @@ Upstream plans and PHASES.md files this plan was authored against. The executing
 
 ## Work Units
 
-- [ ] WU-1 — Author `runner-outcome-contract.md` + `user/scripts/CLAUDE.md` prose pointer (Phase 0)
-- [ ] WU-2 — TDD: `gate-battery.py` core — manifest, sequential gates, banner, results file
+- [x] WU-1 — Author `runner-outcome-contract.md` + `user/scripts/CLAUDE.md` prose pointer (Phase 0)
+- [x] WU-2 — TDD: `gate-battery.py` core — manifest, sequential gates, banner, results file
 - [ ] WU-3 — TDD: `--await <run-id>` with 124/125 semantics
 - [ ] WU-4 — Seed `gate-battery.json` + CLI-surface roster + CLAUDE.md row + dogfood run
 

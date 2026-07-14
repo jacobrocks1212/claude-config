@@ -79,12 +79,14 @@ catalog-absent rule.
 
 ### Phase 0: Runner-outcome contract (docs-only, cloud-safe)
 
+**Status:** Complete (2026-07-14, commit cd0efba1)
+
 **Scope:** Author the generalization deliverable — the ONE documented contract
 (`user/skills/_components/runner-outcome-contract.md`, SPEC D1/L1) — plus its
 `user/scripts/CLAUDE.md` pointer. No code.
 
 **Deliverables:**
-- [ ] `user/skills/_components/runner-outcome-contract.md` (new component) specifying,
+- [x] `user/skills/_components/runner-outcome-contract.md` (new component) specifying,
       surface-neutrally: (1) the authoritative LAST-stdout-line banner grammar
       (`<runner>: <run-key> [op=<op>] RESULT=<…> [counts] [(fidelity)] [-> next-action]`) with
       the three conforming instances — `build-queue:` (existing), `QG_VERDICT:` (existing,
@@ -96,10 +98,10 @@ catalog-absent rule.
       statement — the cross-repo seam is this documented grammar, not shared code (D4); (6) the
       D8 AlgoBooth path-discovery note incl. the one-line `~/.claude/lazy-repos.json` fleet-pin
       recipe (documented, not implemented).
-- [ ] Pointer to the contract in `user/scripts/CLAUDE.md` as a PROSE paragraph (NOT a script-table
+- [x] Pointer to the contract in `user/scripts/CLAUDE.md` as a PROSE paragraph (NOT a script-table
       row — `doc-drift-lint.py` asserts script-table rows map doc→disk to `user/scripts/` files;
       the component is not a script; the script-table row lands with the runner in Phase 1).
-- [ ] Tests: `python user/scripts/project-skills.py` + `python user/scripts/lint-skills.py`
+- [x] Tests: `python user/scripts/project-skills.py` + `python user/scripts/lint-skills.py`
       clean (no broken/circular includes); `doc-drift-lint.py --repo-root .` exit 0.
 
 **Minimum Verifiable Behavior:** `python user/scripts/lint-skills.py` exits 0 with the new
