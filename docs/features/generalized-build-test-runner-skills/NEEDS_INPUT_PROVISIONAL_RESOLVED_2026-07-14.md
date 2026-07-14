@@ -134,3 +134,39 @@ aliases `quality-gate` ≡ `qg`, widening the raw-invocation surface the rows mu
 philosophy and the false-deny evidence; the residual is measured (KPI row) and reversible: if
 ratification wants bare-qg denial, the allow-suppression hook feature is a separate, ordinary
 queue-plane item (enqueue then; do not smuggle it into this additive feature).
+
+## Ratification
+
+*Recorded on 2026-07-14.*
+
+ratified_by: operator
+outcome: ratified
+
+### 1. L2 — light ops bypass the machine-global build queue
+
+**Choice:** Ratify Bypass — the claude-config battery + AlgoBooth `qg -- ts|docs` are light ops
+served by runner+banner+await with no queue admission; only heavy `qg -- rust|sidecar` join the
+queue. Implemented and validated (Phases 1–3): cloud-compatible stdlib runner, zero queue-plane
+changes. Operator answered "Ratify all as-adopted" via interactive AskUserQuestion, 2026-07-14.
+
+### 2. L3 — hook-deny heavy manifested ops only
+
+**Choice:** Ratify Deny-heavy-only — additive manifest `deny` rows on the AlgoBooth heavy qg ops;
+raw light invocations (pytest, `qg -- ts|docs`) are never hook-denied (advisory routing). Live
+deny check in Phase 3 confirmed heavy forms denied + light forms allowed. Operator ratified via
+AskUserQuestion, 2026-07-14.
+
+### 3. L4 — stdlib-Python runner, documented-grammar seam
+
+**Choice:** Ratify the stdlib-Python runner (`gate-battery.py`) conforming to the documented
+banner grammar (`_components/runner-outcome-contract.md`) — the cross-repo seam is the contract,
+not shared code. Both planes pin the grammar in their own tests. Operator ratified via
+AskUserQuestion, 2026-07-14.
+
+### 4. D3-precision — deny only exact heavy qg forms; bare `npm run qg` stays advisory
+
+**Choice:** Ratify Deny-exact-heavy-forms-only — a bare `npm run qg` deny row provably shadows
+`npm run qg -- ts` under `_compile_manifest_deny`, and an allow-suppression mechanism would
+violate the zero-enforce-hook-diff guard. The residual is pinned by an ALLOW fixture test and
+measured by KPI row `generalized-runner-raw-invocation-deny-recurrence`; bare-qg denial, if ever
+wanted, is a separate queue-plane item. Operator ratified via AskUserQuestion, 2026-07-14.
