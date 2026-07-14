@@ -64,6 +64,7 @@ This contract and the plan it governs reference reusable component files by path
 10. Cross-feature phases may run in parallel when dependencies are satisfied and no file conflicts exist.
 11. The plan is self-contained — follow it exactly as written without relying on external context.
 12. **Before each step, `Read` the component files listed for that step from disk** — do NOT rely on memory.
+13. **No turn ends on in-flight work.** A backgrounded gate/build/commit job, an un-consumed inner-agent dispatch, or a bare queue enqueue is NOT an outcome — drive it to a terminal result first (see the Turn-end gate under "Parallelism & background builds").
 
 ---
 
@@ -164,7 +165,7 @@ The harness runs `Agent` dispatches concurrently **only when they appear in a si
 
 #### Background builds (MANDATORY)
 
-- **Long / Tier-2 / typegen builds run `run_in_background: true`** from the orchestrator session; while the build runs, dispatch the next independent agent (or the next disjoint batch) rather than blocking the turn on the build. Poll the build's result afterward (for the queue skills: read `$HOME/.claude/state/build-queue/results/<seq>.json` and check the `exit_code` field; `seq` is printed in the `build-queue: enqueued as seq=N` line).
+- **Long / Tier-2 / typegen builds run `run_in_background: true`** from the orchestrator session; while the build runs, dispatch the next independent agent (or the next disjoint batch) rather than blocking the turn on the build. Follow the build to its authoritative result afterward (for the queue skills: `powershell.exe -ExecutionPolicy Bypass -File "$HOME/.claude/scripts/build-queue-await.ps1" -Seq <N>` — it blocks until the `RESULT=` banner and exits with the build's own exit code; its exit `124` means the run is still going, NEVER success. `seq` is printed in the `build-queue: enqueued as seq=N` line. Do NOT hand-read `results/<seq>.json` — the await helper is the sanctioned reader).
 - **The long-build signature set (settles OQ4 against the queue skills `/msbuild` `/nxbuild` `/mstest` `/nxtest`):**
   - **Background these (Tier-2 / typegen / long):** full-solution `/msbuild` (no `-Project` — this is also the authoritative server-typegen trigger), `/msbuild -Test`, the typegen step's `Cognito.Services` build, `/nxbuild -All`, and any Nx library build that fans out through the model.js → vuemodel → element-ui dependency chain. These are exactly the builds the `/msbuild` and `/nxbuild` skills themselves flag with "if the build is expected to exceed 10 minutes, run with `run_in_background: true`."
   - **Do NOT background these (fast, in-loop):** single-project `/msbuild -Project "<csproj>"`, targeted `/nxbuild -Project "<one project>"`, and `--no-build` filtered tests (`/mstest -Filter …`, `/nxtest … -NoCoverage`). They return in seconds-to-a-minute; backgrounding them just adds polling overhead.
@@ -176,6 +177,12 @@ A backgrounded build's output must **never** be consumed by a dependent agent be
 
 - Cross-feature phases may run in parallel only when dependencies are satisfied and no file conflicts exist (MANDATORY RULE 10).
 - Within a phase, batches are sequential; work units within a batch run in parallel (same-message) only when the plan's batch table marks them file-disjoint per the rules above.
+
+#### Turn-end gate (MANDATORY — RULE 13's policy home; binds you AND every agent you dispatch)
+
+Backgrounding buys wall-clock overlap WITHIN your turn — it never licenses ending the turn with the job (or an inner agent) still in flight. The canonical statement:
+
+!`cat ~/.claude/skills/_components/turn-end-gate.md`
 
 ### Per-WU verification gate
 

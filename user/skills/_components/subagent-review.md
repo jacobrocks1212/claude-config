@@ -4,7 +4,7 @@
 
 > **Anti-pattern (NEVER do this):** Reading a few files, saying "looks correct", and moving on. That is NOT a review. Every batch must go through the full protocol below — no exceptions, no shortcuts.
 
-Wait for ALL implementation subagents in the current batch to complete before beginning review. Do not review incrementally — the review covers the entire batch as a unit.
+Wait for ALL implementation subagents in the current batch to complete before beginning review. Do not review incrementally — the review covers the entire batch as a unit. "Wait" means dispatch-and-AWAIT each `Agent` call's returned report in-turn — never end your turn "awaiting" a subagent, a watcher, or a backgrounded job (turn-end gate: `~/.claude/skills/_components/turn-end-gate.md`). The same applies to any review or fix subagent this protocol dispatches.
 
 ---
 
