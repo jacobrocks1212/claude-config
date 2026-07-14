@@ -450,6 +450,14 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "write_cycle_marker": "markers",
     "write_run_checkpoint": "markers",
     "write_run_marker": "markers",
+    # Phase 4: the pseudo seam (pseudo-skill apply plane: apply_pseudo (moved INTACT) + completion post-condition audit + ROADMAP strike helpers).
+    "_ROADMAP_COMPLETE_TOKEN": "pseudo",
+    "_completion_postconditions_missing": "pseudo",
+    "_resolve_under_repo": "pseudo",
+    "_roadmap_has_unstruck_row": "pseudo",
+    "_strike_roadmap_row": "pseudo",
+    "_top_status_is": "pseudo",
+    "apply_pseudo": "pseudo",
 }
 
 # Submodule consulted when a name has no explicit entry in
@@ -457,7 +465,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
 _FALLBACK_SUBMODULE = "_monolith"
 
 # All submodules that make up this package, in no particular order.
-_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "dispatch", "docmodel", "gates", "hostcaps", "ledgers", "markers", "notifyplane", "runtimeplane", "statedir")
+_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "dispatch", "docmodel", "gates", "hostcaps", "ledgers", "markers", "notifyplane", "pseudo", "runtimeplane", "statedir")
 
 
 def __getattr__(name):
