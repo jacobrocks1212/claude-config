@@ -24,3 +24,18 @@ so this file records the pending ratification instead of halting the run
 justification (or direct a revert). No code change is expected either way —
 the moved refusals are pinned by the existing exit-3 / zero-side-effect test
 population, which is green. WU-3 (147fd912) and WU-4 pass gate_weakening.
+
+## Ratification
+
+*Recorded on 2026-07-14.*
+
+ratified_by: operator
+outcome: ratified
+
+### 1. P5-GATE-WEAKENING-SIGNOFF
+
+**Choice:** Ratify the move-shape justification — the gate_weakening hit on
+a9e0581a / 4bd51536 is the two sides of a byte-verbatim move (GATE_VERDICT.md
+Phase-5 receipts: string-equality move receipts, zero sanction-set membership
+changes, refusal tests green, suite 2230 → 2231 with no deletions). Operator
+answered "Ratify (Recommended)" via interactive AskUserQuestion, 2026-07-14.
