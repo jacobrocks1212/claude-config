@@ -121,17 +121,15 @@ BeforeAll {
 			-Exec $Exec -Seq $Seq -StateRoot $StateRoot 2>$null
 		return $LASTEXITCODE
 	}
-}
 
-BeforeAll {
+	# --- crash-safe two-phase-write concern group ---------------------------
+	# (Formerly a SECOND top-level BeforeAll; merged into this one because
+	# Pester 6 forbids >1 BeforeAll per block. $RunnerPath/$HygienePath and the
+	# hygiene dot-source are already set above, so only the net-new state +
+	# helpers follow. Helper names are disjoint across the two groups;
+	# Get-SafeValue / Get-ResultJson reuse those defined above.)
 	$script:ScriptsDir  = $PSScriptRoot
-	$script:RunnerPath  = Join-Path $PSScriptRoot 'build-queue-runner.ps1'
-	$script:HygienePath = Join-Path $PSScriptRoot 'build-queue-hygiene.ps1'
 	$script:AwaitPath   = Join-Path $PSScriptRoot 'build-queue-await.ps1'
-
-	# Real module — for Format-BuildQueueBanner parity assertions and the
-	# Write-BuildQueueResult unit tests.
-	. $script:HygienePath
 
 	$script:SpawnedPids = [System.Collections.ArrayList]::new()
 
