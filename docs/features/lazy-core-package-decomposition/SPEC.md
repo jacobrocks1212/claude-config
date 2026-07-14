@@ -14,7 +14,7 @@
 > and a ruff/pyflakes gate on `user/scripts/` (F811 would already catch `lazy_core.py`'s
 > duplicate `_current_head` at lines 3875/5661).
 
-**Status:** In-progress — decisions locked 2026-07-13 (see Decision Ledger); mechanical D2/D3/D5/D7
+**Status:** Complete
 auto-accepted; **product forks D1/D4/D6 RATIFIED by operator 2026-07-13** (interactive session):
 L1 facade mechanism = **3 (redirect-the-patches)**; D4 = **PEP 562 lazy facade**; D6 = **ruff
 F-rules advisory-first**. Phase 0 landed green (preconditions verified + benchmark harness).

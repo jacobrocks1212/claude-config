@@ -111,6 +111,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
@@ -259,6 +264,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -2685,6 +2695,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -2768,6 +2783,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3224,6 +3244,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3274,6 +3299,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3403,6 +3433,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3467,6 +3502,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3574,6 +3614,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3643,6 +3688,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -3760,6 +3810,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3842,6 +3897,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -3885,6 +3945,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -4060,6 +4125,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -4155,6 +4225,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -4432,10 +4507,31 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/phases-slice-heading-regex-sync-unpinned/SPEC.md": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/plan-bug-reuses-investigate-step-inflates-loop-detector/SPEC.md": [
     {
       "id": "descoped-row-recognition-needs-canonical-marker",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/plan-structural-backstop-silent-disarm-on-infrastructure-failure/SPEC.md": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/planning-audit-blind-to-inbound-module-path-loads/SPEC.md": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
@@ -4467,6 +4563,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -4554,6 +4655,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -4761,6 +4867,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -4998,6 +5109,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5137,6 +5253,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -5296,6 +5417,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5391,6 +5517,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -5687,6 +5818,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -6004,6 +6140,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -6225,6 +6366,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -6402,6 +6548,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -7082,6 +7233,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -7100,6 +7256,41 @@
   "docs/features/lazy-batch-skill-deflation/plans/remaining-hotspot-excision-plan.md": [
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/lazy-core-package-decomposition/IMPLEMENTATION_NOTES.md": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/lazy-core-package-decomposition/NEEDS_INPUT.md": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/lazy-core-package-decomposition/NEEDS_INPUT_PROVISIONAL.md": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/lazy-core-package-decomposition/PHASES.md": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/lazy-core-package-decomposition/RESEARCH_SUMMARY.md": [
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -7136,6 +7327,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -7147,6 +7343,48 @@
     },
     {
       "id": "skill-config-schema-and-reference-lint",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-1.md": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-2.md": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-3.md": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-4.md": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-5.md": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-6.md": [
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -7636,6 +7874,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -8062,6 +8305,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -8231,6 +8479,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -8417,6 +8670,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -8551,6 +8809,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -8661,6 +8924,11 @@
   ],
   "docs/features/state-cli-contract-registry/PHASES.md": [
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "state-cli-contract-registry",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -8694,6 +8962,11 @@
     },
     {
       "id": "lazy-batch-skill-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -9126,6 +9399,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -9134,6 +9412,11 @@
   "docs/kpi/registry.json": [
     {
       "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -9717,6 +10000,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "ruff.toml": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "setup.ps1": [
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
@@ -10025,6 +10315,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
@@ -10083,6 +10378,13 @@
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/benchmark_lazy_core_import.py": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/bug-state.py": [
@@ -10340,6 +10642,11 @@
     },
     {
       "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -10752,6 +11059,13 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/lazy_core/docmodel.py": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/scripts/lazy_guard.py": [
     {
       "id": "hardening-blind-to-process-friction",
@@ -10828,6 +11142,11 @@
   "user/scripts/phases-slice.py": [
     {
       "id": "execute-plan-skill-diet",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -11187,6 +11506,11 @@
       "id": "efficacy-signal-integrity",
       "type": "feature",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/test_lazy_core.py": [
@@ -11454,6 +11778,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lean-plan-files",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -11696,6 +12025,13 @@
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/tests/test_lazy_core/test_misc.py": [
+    {
+      "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/toolify-miner.py": [
@@ -12037,6 +12373,13 @@
     },
     {
       "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/_components/spec-friction-kpi-gate.md": [
+    {
+      "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     }

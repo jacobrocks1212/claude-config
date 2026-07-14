@@ -1,6 +1,6 @@
 # PHASES — lazy-core-package-decomposition
 
-**Status:** In-progress (Phases 0–6 Complete; L1 ratified 2026-07-13 → mechanism 3 redirect-the-patches; all phases green — remaining lifecycle is gate-owned: retro / MCP-gate skip class / `__mark_complete__` receipt)
+**Status:** Complete
 **MCP runtime:** not-required (pure state-plane refactor; SKIP_MCP_TEST class)
 **Friction-reduction feature:** yes (KPI row `lazy-core-monolith-intervention-drag`)
 **Last updated:** 2026-07-13
