@@ -19,7 +19,13 @@
         @{ Live = '~\.claude-personal\CLAUDE.md'; Repo = 'personal\CLAUDE.md'; Type = 'File' }
     )
     Workspace = @(
-        @{ Live = '~\source\repos\CLAUDE.md'; Repo = 'workspace\CLAUDE.md'; Type = 'File' }
+        # Machine-keyed workspace doc (docs/specs/machine-keyed-manifest-projection): both
+        # entries share one Live path; on DESKTOP-GHTC5K6 the Machine-matching entry WINS
+        # and the agnostic entry is dropped; every other machine (work laptop) skips the
+        # Machine entry and projects the agnostic workspace\CLAUDE.md. Hostname match is
+        # case-insensitive ($env:COMPUTERNAME / platform.node()).
+        @{ Live = '~\source\repos\CLAUDE.md'; Repo = 'workspace\CLAUDE.md';                 Type = 'File' }
+        @{ Live = '~\source\repos\CLAUDE.md'; Repo = 'workspace\CLAUDE.DESKTOP-GHTC5K6.md'; Type = 'File'; Machine = 'DESKTOP-GHTC5K6' }
     )
     Repos = @{
         # doc-drift:deliberate-divergence: algobooth — repos/algobooth/ has no Repos entry on

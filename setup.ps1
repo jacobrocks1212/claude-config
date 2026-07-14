@@ -39,6 +39,12 @@ function Get-AllMappings([string]$TargetFilter) {
     $manifest = Import-PowerShellDataFile (Join-Path $script:RepoRoot 'manifest.psd1')
     $mappings = [System.Collections.ArrayList]::new()
 
+    # Machine-keyed entries (docs/specs/machine-keyed-manifest-projection): an entry whose
+    # optional Machine key mismatches this hostname is skipped (PowerShell -eq is
+    # case-insensitive; setup.py mirrors via platform.node() + casefold); for the same Live
+    # path a Machine-matching entry WINS over a machine-agnostic one. Repos entries: skip-only.
+    $localMachine = $env:COMPUTERNAME
+
     $sections = [ordered]@{
         User      = $manifest.User
         Personal  = $manifest.Personal
@@ -47,7 +53,16 @@ function Get-AllMappings([string]$TargetFilter) {
 
     foreach ($section in $sections.Keys) {
         if ($TargetFilter -notin 'All', $section) { continue }
-        foreach ($e in $sections[$section]) {
+        $entries = @($sections[$section] | Where-Object {
+            -not $_.Machine -or $_.Machine -eq $localMachine
+        })
+        $machineLives = @($entries | Where-Object { $_.Machine } |
+            ForEach-Object { (Expand-LivePath $_.Live).ToLowerInvariant() })
+        foreach ($e in $entries) {
+            if (-not $e.Machine -and
+                $machineLives -contains (Expand-LivePath $e.Live).ToLowerInvariant()) {
+                continue   # a Machine-matching entry wins this Live path
+            }
             [void]$mappings.Add(@{
                 Live    = Expand-LivePath $e.Live
                 Repo    = Expand-RepoPath $e.Repo
@@ -60,6 +75,7 @@ function Get-AllMappings([string]$TargetFilter) {
     if ($TargetFilter -in 'All', 'Repos') {
         foreach ($name in ($manifest.Repos.Keys | Sort-Object)) {
             $cfg = $manifest.Repos[$name]
+            if ($cfg.Machine -and $cfg.Machine -ne $localMachine) { continue }
             $livePath = $cfg.Path
             $configName = if ($cfg.Alias) { $cfg.Alias } else { $name }
             $srcCfg = if ($cfg.Alias) { $manifest.Repos[$cfg.Alias] } else { $cfg }

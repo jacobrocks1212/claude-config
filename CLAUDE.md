@@ -51,7 +51,8 @@ claude-config/
 ├── personal/              # → ~/.claude-personal/
 │   └── CLAUDE.md          # Desktop app constitution
 ├── workspace/             # → ~/source/repos/CLAUDE.md
-│   └── CLAUDE.md          # Cross-repo workspace documentation
+│   ├── CLAUDE.md          # Cross-repo workspace documentation (work laptop / default)
+│   └── CLAUDE.DESKTOP-GHTC5K6.md  # personal-workstation variant (Machine-keyed entry)
 ├── repos/                 # → per-repo .claude/ directories
 │   ├── algobooth/         # .claude/ contents for algobooth
 │   ├── cognito-forms/     # .claude/ contents for Cognito Forms (most complex)
@@ -94,6 +95,8 @@ Defines four symlink scopes:
 | `Repos` | `<repo>/.claude/{skill-config,skills,settings,...}` | `repos/<name>/.claude/` |
 
 Per-repo entries support: `RootFiles` (at repo root), `DotClaudeFiles` (individual files in `.claude/`), `DotClaudeDirs` (directories in `.claude/`), and `Alias` (share config with another repo).
+
+**Machine-keyed entries** (`docs/specs/machine-keyed-manifest-projection`): any entry — scope-section or `Repos` — may carry an optional `Machine = '<hostname>'` key. `setup.ps1` and `setup.py` skip an entry whose `Machine` doesn't match the local hostname (case-insensitive; `$env:COMPUTERNAME` in PowerShell, `platform.node()` in Python), and for the same `Live` path a Machine-matching entry **wins** over a machine-agnostic one (on `Repos` entries the key is skip-only, never inherited via `Alias`). Used to project a per-machine Workspace doc: `workspace/CLAUDE.DESKTOP-GHTC5K6.md` on the personal workstation, `workspace/CLAUDE.md` everywhere else.
 
 ### Setup Commands
 

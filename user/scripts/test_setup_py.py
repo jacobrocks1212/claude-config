@@ -164,6 +164,16 @@ class TestParsePsd1RealManifest:
         assert manifest["Personal"][0]["Repo"] == "personal\\CLAUDE.md"
         assert manifest["Workspace"][0]["Live"] == "~\\source\\repos\\CLAUDE.md"
 
+    def test_workspace_machine_keyed_entries(self, manifest):
+        """machine-keyed-manifest-projection: two Workspace entries share one
+        Live path; exactly one carries the Machine key."""
+        ws = manifest["Workspace"]
+        assert len(ws) == 2
+        assert {e["Live"] for e in ws} == {"~\\source\\repos\\CLAUDE.md"}
+        assert "Machine" not in ws[0]
+        assert ws[1]["Machine"] == "DESKTOP-GHTC5K6"
+        assert ws[1]["Repo"] == "workspace\\CLAUDE.DESKTOP-GHTC5K6.md"
+
     def test_cognito_alias_chain(self, manifest):
         repos = manifest["Repos"]
         for name in ("cognito-forms-B", "cognito-forms-C", "cognito-forms-D"):
@@ -319,7 +329,94 @@ class TestExpandMappings:
         assert list(first_of) == ["Repo:minimal", "Repo:my-repo", "Repo:my-repo-B"]
 
 
+class TestMachineKeyedEntries:
+    """machine-keyed-manifest-projection: Machine = '<hostname>' entry selection."""
+
+    def _manifest(self):
+        return {
+            "Workspace": [
+                {"Live": "~\\source\\repos\\CLAUDE.md",
+                 "Repo": "workspace\\CLAUDE.md", "Type": "File"},
+                {"Live": "~\\source\\repos\\CLAUDE.md",
+                 "Repo": "workspace\\CLAUDE.BOX-A.md", "Type": "File",
+                 "Machine": "BOX-A"},
+            ],
+        }
+
+    def test_matching_machine_entry_wins_same_live_path(self, tmp_path):
+        maps = setup_mod.expand_mappings(
+            self._manifest(), str(tmp_path), target="Workspace",
+            home=str(tmp_path), machine="BOX-A")
+        assert len(maps) == 1
+        assert maps[0].repo.endswith("CLAUDE.BOX-A.md")
+
+    def test_hostname_match_is_case_insensitive(self, tmp_path):
+        maps = setup_mod.expand_mappings(
+            self._manifest(), str(tmp_path), target="Workspace",
+            home=str(tmp_path), machine="box-a")
+        assert len(maps) == 1
+        assert maps[0].repo.endswith("CLAUDE.BOX-A.md")
+
+    def test_non_matching_machine_entry_skipped_entirely(self, tmp_path):
+        maps = setup_mod.expand_mappings(
+            self._manifest(), str(tmp_path), target="Workspace",
+            home=str(tmp_path), machine="OTHER-BOX")
+        assert len(maps) == 1
+        assert maps[0].repo.endswith(os.path.join("workspace", "CLAUDE.md"))
+
+    def test_machine_only_entry_absent_elsewhere(self, tmp_path):
+        manifest = {"Workspace": [self._manifest()["Workspace"][1]]}
+        maps = setup_mod.expand_mappings(
+            manifest, str(tmp_path), target="Workspace",
+            home=str(tmp_path), machine="OTHER-BOX")
+        assert maps == []
+
+    def test_default_machine_is_local_hostname(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(setup_mod, "_local_machine", lambda: "BOX-A")
+        maps = setup_mod.expand_mappings(
+            self._manifest(), str(tmp_path), target="Workspace",
+            home=str(tmp_path))
+        assert len(maps) == 1
+        assert maps[0].repo.endswith("CLAUDE.BOX-A.md")
+
+    def test_agnostic_entries_without_machine_sibling_unchanged(self, tmp_path):
+        manifest = {"Workspace": [self._manifest()["Workspace"][0]]}
+        maps = setup_mod.expand_mappings(
+            manifest, str(tmp_path), target="Workspace",
+            home=str(tmp_path), machine="ANY")
+        assert len(maps) == 1
+        assert maps[0].repo.endswith(os.path.join("workspace", "CLAUDE.md"))
+
+    def test_repos_entry_machine_is_skip_only(self, tmp_path):
+        (tmp_path / "pinned").mkdir()
+        manifest = {"Repos": {
+            "pinned": {"Path": str(tmp_path / "pinned"),
+                       "RootFiles": ["CLAUDE.md"], "Machine": "BOX-A"},
+        }}
+        gone = setup_mod.expand_mappings(
+            manifest, str(tmp_path), target="Repos", machine="OTHER-BOX")
+        assert gone == []
+        kept = setup_mod.expand_mappings(
+            manifest, str(tmp_path), target="Repos", machine="box-a")
+        assert len(kept) == 1 and kept[0].section == "Repo:pinned"
+
+
 class TestExpandRealManifest:
+    def test_workspace_scope_projects_one_doc_per_machine(self, manifest, tmp_path):
+        """The REAL manifest resolves to exactly ONE Workspace mapping on any
+        machine: the DESKTOP-GHTC5K6 variant there, the default elsewhere."""
+        for mach, tail in (
+            ("DESKTOP-GHTC5K6", "CLAUDE.DESKTOP-GHTC5K6.md"),
+            ("desktop-ghtc5k6", "CLAUDE.DESKTOP-GHTC5K6.md"),
+            ("WORK-LAPTOP", os.path.join("workspace", "CLAUDE.md")),
+        ):
+            maps = setup_mod.expand_mappings(
+                manifest, str(REPO_ROOT), target="Workspace",
+                home=str(tmp_path), machine=mach)
+            assert len(maps) == 1, mach
+            assert maps[0].repo.endswith(tail), mach
+            assert os.path.isfile(maps[0].repo), mach  # both variants tracked
+
     def test_user_scope_of_real_manifest(self, manifest, tmp_path):
         maps = setup_mod.expand_mappings(
             manifest, str(REPO_ROOT), target="User", home=str(tmp_path))

@@ -21,9 +21,17 @@ Deliberate divergences from setup.ps1 (all SPEC-locked):
     materialized into a non-existent worktree;
   - the warn-only advisories (hook registration, Cognito doc drift) and the
     add-repo verb are NOT ported (D6/D2) — setup.ps1 keeps them on Windows.
+
+Machine-keyed entries (docs/specs/machine-keyed-manifest-projection): any
+manifest entry may carry an optional Machine = '<hostname>' key. An entry
+whose Machine does not match the local hostname (case-insensitive;
+platform.node() here, $env:COMPUTERNAME in setup.ps1 — identical on Windows)
+is skipped; for the same Live path a Machine-matching entry WINS over a
+machine-agnostic one. Semantics are mirrored one-for-one in setup.ps1.
 """
 
 import os
+import platform
 import re
 import sys
 from dataclasses import dataclass
@@ -284,7 +292,15 @@ _SCOPE_SECTIONS = ("User", "Personal", "Workspace")
 TARGETS = ("All", "User", "Personal", "Workspace", "Repos")
 
 
-def expand_mappings(manifest, repo_root, target="All", repos_root=None, home=None):
+def _local_machine():
+    """Local hostname for Machine-keyed entry selection. platform.node() is
+    the documented source (matches $env:COMPUTERNAME on the Windows boxes
+    this manifest serves); comparison is always case-insensitive."""
+    return platform.node()
+
+
+def expand_mappings(manifest, repo_root, target="All", repos_root=None, home=None,
+                    machine=None):
     """Flatten the manifest into Mapping records (setup.ps1 Get-AllMappings).
 
     repos_root: optional override — each Repos entry's Path is remapped to
@@ -292,16 +308,34 @@ def expand_mappings(manifest, repo_root, target="All", repos_root=None, home=Non
     living under a different root (SPEC D2/D5).
     A Repos entry whose base Path dir is absent is flagged skip_absent for
     the whole entry — verbs render it as a skip, never broken (SPEC D5).
+
+    machine: local hostname override (tests); default _local_machine().
+    Machine-keyed entries (machine-keyed-manifest-projection): an entry whose
+    Machine key mismatches `machine` (case-insensitive) is skipped; within a
+    scope section, a Machine-matching entry WINS over a machine-agnostic
+    entry for the same Live path. On Repos entries Machine is skip-only
+    (whole entry; read from the entry itself, never inherited via Alias).
     """
     if target not in TARGETS:
         _die(f"unknown target {target!r} (expected one of {', '.join(TARGETS)})")
     repo_root = os.path.abspath(repo_root)
+    if machine is None:
+        machine = _local_machine()
+    machine_cf = (machine or "").casefold()
     mappings = []
 
     for section in _SCOPE_SECTIONS:
         if target not in ("All", section):
             continue
-        for entry in manifest.get(section, []):
+        entries = [e for e in manifest.get(section, [])
+                   if "Machine" not in e
+                   or str(e["Machine"]).casefold() == machine_cf]
+        machine_lives = {_norm_seps(e["Live"]).casefold()
+                         for e in entries if "Machine" in e}
+        for entry in entries:
+            if ("Machine" not in entry
+                    and _norm_seps(entry["Live"]).casefold() in machine_lives):
+                continue  # a Machine-matching entry wins this Live path
             mappings.append(Mapping(
                 live=expand_live_path(entry["Live"], home=home),
                 repo=os.path.join(repo_root, _norm_seps(entry["Repo"])),
@@ -313,6 +347,9 @@ def expand_mappings(manifest, repo_root, target="All", repos_root=None, home=Non
         repos = manifest.get("Repos", {})
         for name in sorted(repos):
             cfg = repos[name]
+            if ("Machine" in cfg
+                    and str(cfg["Machine"]).casefold() != machine_cf):
+                continue  # entry pinned to another machine (skip-only)
             live_base = _norm_seps(cfg["Path"])
             if repos_root is not None:
                 live_base = os.path.join(
