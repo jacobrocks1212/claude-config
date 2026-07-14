@@ -36,7 +36,8 @@ import sys
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-# Canonical phase-heading marker — keep byte-identical to lazy_core._PHASE_HEADING_RE.
+# Canonical phase-heading marker — keep byte-identical to lazy_core._PHASE_HEADING_RE
+# (mechanically pinned by test_phases_slice.py::LockstepTests).
 _PHASE_HEADING_RE = re.compile(
     r"^#{2,3}\s+Phase\s+(?:[A-Za-z.+]*\d[A-Za-z0-9.+]*|[A-Za-z0-9.+]+\s*[:—-])"
 )

@@ -1416,6 +1416,12 @@ def classify_blocking_unchecked_rows(phases_text: str) -> dict:
 # This is the SINGLE counter behind both retro_staleness() and lazy-state.py's
 # ``--count-phases`` (the /retro phase_count_at_retro writer), so the staleness
 # anchor and the recorded count can never disagree.
+#
+# KEEP IN SYNC: user/scripts/phases-slice.py carries a deliberately private
+# byte-identical copy of this pattern (it must not import lazy_core). The
+# lockstep is mechanically pinned by
+# test_phases_slice.py::LockstepTests::test_phase_heading_re_lockstep_with_lazy_core
+# — if you edit this pattern, mirror the edit there or that test fails.
 _PHASE_HEADING_RE = re.compile(
     r"^#{2,3}\s+Phase\s+(?:[A-Za-z.+]*\d[A-Za-z0-9.+]*|[A-Za-z0-9.+]+\s*[:—-])"
 )

@@ -155,5 +155,42 @@ class CliTests(unittest.TestCase):
         self.assertIn("ERROR", err)
 
 
+class LockstepTests(unittest.TestCase):
+    """Mechanical pin for phases-slice.py's private regex copies.
+
+    phases-slice.py deliberately does NOT import lazy_core (standalone pure-read
+    tool), so it carries a private copy of the canonical phase-heading marker under
+    a keep-byte-identical comment contract. This test IS that contract's enforcement
+    (the `test_ruvonly_marker_lockstep_producers_match_ssot` pattern) — comment
+    discipline alone proved insufficient once the canonical started moving between
+    lazy_core submodules (lazy-core-package-decomposition; see
+    docs/bugs/phases-slice-heading-regex-sync-unpinned).
+    """
+
+    def test_phase_heading_re_lockstep_with_lazy_core(self):
+        # Import via the package facade, NOT a submodule path, so this test
+        # survives the remaining decomposition phases wherever the definition
+        # lands (lazy_core/__init__.py re-exports _PHASE_HEADING_RE).
+        sys.path.insert(0, HERE)
+        try:
+            import lazy_core
+        finally:
+            sys.path.remove(HERE)
+        self.assertEqual(
+            ps._PHASE_HEADING_RE.pattern,
+            lazy_core._PHASE_HEADING_RE.pattern,
+            "phases-slice.py's private _PHASE_HEADING_RE has drifted from the "
+            "canonical lazy_core._PHASE_HEADING_RE — keep the two byte-identical "
+            "(see phases-slice.py:39 and the reciprocal comment at the lazy_core "
+            "definition site).",
+        )
+        self.assertEqual(
+            ps._PHASE_HEADING_RE.flags,
+            lazy_core._PHASE_HEADING_RE.flags,
+            "phases-slice.py's private _PHASE_HEADING_RE compiles with different "
+            "flags than the canonical lazy_core._PHASE_HEADING_RE.",
+        )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
