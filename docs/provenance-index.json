@@ -2670,6 +2670,20 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/GATE_VERDICT.md": [
+    {
+      "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/NEEDS_INPUT.md": [
+    {
+      "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/completion-gate-refusal-opacity/SPEC.md": [
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
@@ -9477,6 +9491,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/interventions/harden-2026-07-r43.md": [
+    {
+      "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/interventions/harden-2026-07-r5.md": [
     {
       "id": "hardening-intervention-records-unmeasurable-or-missing",
@@ -11177,10 +11198,36 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/lazy_core/__init__.py": [
+    {
+      "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/scripts/lazy_core/docmodel.py": [
+    {
+      "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/lazy_core/gates.py": [
+    {
+      "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/lazy_core/pseudo.py": [
+    {
+      "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
+      "type": "bug",
       "provenance": "pipeline-gated"
     }
   ],
@@ -12145,10 +12192,31 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/tests/test_lazy_core/test_docmodel.py": [
+    {
+      "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/tests/test_lazy_core/test_gates.py": [
+    {
+      "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/scripts/tests/test_lazy_core/test_misc.py": [
     {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/tests/test_lazy_core/test_pseudo.py": [
+    {
+      "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
+      "type": "bug",
       "provenance": "pipeline-gated"
     }
   ],
