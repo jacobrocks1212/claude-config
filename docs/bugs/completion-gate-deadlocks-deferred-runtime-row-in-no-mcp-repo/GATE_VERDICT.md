@@ -4,7 +4,9 @@ bug_id: completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo
 written_by: harden-harness
 date: 2026-07-14
 mechanical_checker: user/scripts/harness-gate.py --staged --json
-verdict: NEEDS-OPERATOR-SIGNOFF
+verdict: APPROVED
+signed_off_by: operator
+signed_off_date: 2026-07-14
 ---
 
 # Harness-change design-gate verdict
@@ -85,3 +87,13 @@ is a factual misrepresentation of a deferred row.
 Mechanical fix LANDED (harden-harness never blocks; the run is not left broken).
 Because the change relaxes a load-bearing completion gate, this verdict is
 **NEEDS-OPERATOR-SIGNOFF** — the exact question is in `NEEDS_INPUT.md`.
+
+## Operator sign-off (2026-07-14)
+
+**APPROVED** by operator via interactive AskUserQuestion (2026-07-14) — "Approve
+(Recommended)". The disciplined relaxation is accepted as-designed: the route fires
+only when MCP-evidence auto-tick is structurally impossible (`pipeline-structural`
+skip re-verifying no-app-surface), rows stay unchecked, the `RUNTIME_GATES.md` ledger
+is the honest tracker, every real refusal case is preserved, and
+`LAZY_STRICT_EVIDENCE_GATE=1` restores the byte-identical strict path. NEEDS_INPUT.md
+neutralized.
