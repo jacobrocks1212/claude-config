@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-10
+**Fixed:** 2026-07-14
+**Fix commit:** 8fc345dd
 **Placement:** docs/bugs/plan-skills-lack-targeted-phase-scoped-read
 **Related:** `docs/features/phases-slice-scoped-reads/` (the completed feature that shipped `phases-slice.py` + the script-first `source-reread.md`, scoped to execution-time readers only); `user/skills/_components/source-reread.md` (the scoped-read mandate carrier)
 
