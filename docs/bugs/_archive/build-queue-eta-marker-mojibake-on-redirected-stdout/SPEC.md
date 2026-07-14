@@ -7,6 +7,8 @@
 **Status:** Fixed
 **Severity:** Low
 **Discovered:** 2026-07-10
+**Fixed:** 2026-07-14
+**Fix commit:** 985e4457
 **Placement:** docs/bugs/build-queue-eta-marker-mojibake-on-redirected-stdout
 **Related:** docs/features/build-queue-eta-priority-lanes (shipped the marker; SPEC examples show `≈`), docs/bugs/_archive & open build-queue-* siblings, docs/bugs/crlf-hook-blanket-enforce-mixed-eol (prior encoding-boundary defect class)
 
