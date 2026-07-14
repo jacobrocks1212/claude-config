@@ -19,10 +19,9 @@ Constraint 3): docs/bugs/_archive/mark-complete-partial-apply-noop-unrecoverable
 FIXED.md and docs/bugs/_archive/production-sentinel-writes-bypass-atomic-write/
 FIXED.md.
 
-Deferred function-local import (this module must not import ``_monolith`` at
-top level — circular, since ``_monolith`` imports FROM this module):
-``_git`` in ``_default_git_clean_staging`` (git helper still
-monolith-resident, Phase-5 re-point).
+``_git`` / ``_current_head`` / ``git_head_short_sha`` / ``git_guard_status``
+and the self-edit detection plane are module-resident since the Phase-5 WU-3
+residue sweep (this module owns the git-helper plane).
 
 Production-binding test convention (mechanically guarded by the
 ``tests/test_lazy_core/test_runtimeplane.py`` meta-guards): tests reach the OS

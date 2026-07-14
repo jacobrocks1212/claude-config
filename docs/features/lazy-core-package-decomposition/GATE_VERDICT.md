@@ -59,3 +59,28 @@ Unchanged from Phase 1: the phase's success signals are computed by systems the 
 
 ### complexity
 `retires:` (incrementally, per the Phase-1 declaration) the monolithic residency of the completion-gate / ledger / dispatch / runtime planes inside `_monolith.py` — post-Phase-4 the monolith shrinks from 16,784 to a marker/pseudo core (Phase 5's remaining scope); no new mechanism is added beyond the four seam modules the SPEC's target structure names.
+
+---
+
+# GATE_VERDICT — lazy-core-package-decomposition Phase 5 (markers + pseudo + residue + monolith deletion, 4 commits)
+
+Checker runs: `python3 user/scripts/harness-gate.py --repo-root . --staged --json` per commit (2026-07-13). All four commits `in_scope: true`, `verdict_required: true`. WU-1 (markers, a9e0581a) and WU-2 (pseudo, 4bd51536): overfit flag + **gate_weakening: hit** + complexity declaration-required. WU-3 (147fd912) / WU-4: overfit flag, gate_weakening pass.
+
+## Adversarial answers (Phase 5)
+
+### overfit
+Same partition as the Phase-1/Phase-4 verdicts: the detector fires on the facade `_SUBMODULE_BY_NAME` membership adds (one per moved name — the map IS the routing mechanism, keyed on submodule ownership, not an incident allow-list) and on docstring/message literals inside the verbatim-moved code. **Nearest recurrence not caught:** post-WU-4 there is NO fallback — a forgotten map entry now fails LOUDLY (clean AttributeError on first facade access) instead of silently resolving, and `test_facade_map_total_and_collision_free` pins totality + per-name resolution + definition-site uniqueness mechanically. Coverage strictly tightened.
+
+### tautology
+Unchanged from Phases 1/4: success signals are computed by systems the diff does not control — the live pre-captured collect-only baseline (2230 tests, count + bare-name multiset preserved per move commit; 2231 after the one sanctioned RED-first pin), the byte-pinned `--test` baselines (ZERO regeneration), and the parity/cli-surface/doc-drift/lint gates (`signal_independence: independent`).
+
+### gate_weakening
+**WU-1/WU-2 checker result: `hit` — justified as the two sides of a byte-verbatim MOVE, not a weakening; operator sign-off owed and requested (D4 is never judgment-passable):**
+- "gate-refusal construct removed" (`refuse_if_cycle_active` / `refuse_cycle_marker_mutation_if_subagent` / `refuse_run_start_clobber` deleted from `_monolith.py`): each function exists BYTE-IDENTICALLY in `markers.py` in the same commit (scripted verbatim-slice receipts; the refusal test population in `tests/test_lazy_core/test_markers.py` — exit-3 semantics, env-priority order, zero-side-effect contracts — ran green against the moved code in the same commit's battery).
+- "exemption/sanction-set membership added" (`SANCTIONED_STOP_TERMINAL`, `CYCLE_REFUSED_OPS`, `_FORWARD_ADVANCING_PSEUDO_SKILLS`, `AUDITED_CYCLE_KINDS` re-appearing in `markers.py`): ZERO members added or removed — the sets moved verbatim; the facade map rows are routing entries, not sanction grants.
+- No test was deleted (suite 2230 -> 2231); no numeric gate changed; no bypass env-var added; the WU-4 `__getattr__` fallback deletion is facade-mechanics (a STRICTER resolution — unmapped names now hard-fail), explicitly not a gate deletion (plan risk note d).
+- The ONE deliberate assertion CHANGE this phase: `test_hook_surface_imports_without_monolith` re-pointed from the now-vacuous `_monolith not in sys.modules` to the STRICTER loaded-set-within-{facade, `_ctx`, `statedir`} assertion — a strengthening, with the D4 intent preserved.
+Sign-off status: **pending operator ratification** — recorded provisionally per the park-provisional directive in `NEEDS_INPUT_PROVISIONAL.md` (this feature's gate machinery is itself structurally provisional under anti-overfit-design-gate D1/D3/D4/D7).
+
+### complexity
+`retires:` `_monolith.py` itself (the transitional body module — 20,289 LoC at Phase 1, 0 now; `git rm`'d), the facade's `_FALLBACK_SUBMODULE` mechanism, and every `# Phase-5 re-point` deferred-import IOU (24 sites re-pointed to final owners; 2 genuine-cycle function-local imports recorded). Net-new surface: `markers.py` + `pseudo.py` (the final two seam modules the SPEC's target roster names) + one facade-totality test. No new mechanism beyond the SPEC's fixed D1-A roster.

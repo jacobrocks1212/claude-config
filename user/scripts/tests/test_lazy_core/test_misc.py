@@ -111,7 +111,7 @@ def test_atomic_write_creates_file():
     _guard()
     with tempfile.TemporaryDirectory() as td:
         target = Path(td) / "output.txt"
-        lazy_core._monolith._atomic_write(target, "hello world\n")
+        lazy_core._ctx._atomic_write(target, "hello world\n")
         content = target.read_text(encoding="utf-8")
     assert content == "hello world\n", f"unexpected content: {content!r}"
 
@@ -123,7 +123,7 @@ def test_atomic_write_creates_parent_dirs():
     _guard()
     with tempfile.TemporaryDirectory() as td:
         target = Path(td) / "nested" / "deep" / "file.txt"
-        lazy_core._monolith._atomic_write(target, "nested content\n")
+        lazy_core._ctx._atomic_write(target, "nested content\n")
         content = target.read_text(encoding="utf-8")
     assert content == "nested content\n", f"unexpected content: {content!r}"
 
@@ -135,7 +135,7 @@ def test_atomic_write_no_tmp_residue():
     _guard()
     with tempfile.TemporaryDirectory() as td:
         target = Path(td) / "file.txt"
-        lazy_core._monolith._atomic_write(target, "data")
+        lazy_core._ctx._atomic_write(target, "data")
         tmp_files = list(Path(td).glob("*.tmp"))
     assert tmp_files == [], f"temp file(s) not cleaned up: {tmp_files}"
 
@@ -4195,7 +4195,7 @@ def test_record_intervention_canary_window_override():
                 "- canary_window_runs: 5\n"
             )
             repo = _canary_repo_with_change(
-                Path(td), "user/scripts/lazy_core/_monolith.py", item,
+                Path(td), "user/scripts/lazy_core/markers.py", item,
                 spec_body=spec)
             lazy_core.record_intervention(
                 repo, item, pipeline="feature",
@@ -4636,33 +4636,107 @@ def test_duplicate_def_guard_detects_planted_violation():
 # accessor-based storage for the two rebindable globals _active_repo_root and
 # _legacy_state_migrated.
 #
-# These four tests pin that contract BEFORE _ctx.py exists. The first three
-# are RED today — lazy_core._ctx has no submodule yet, so any attribute
-# access on it raises AttributeError via __init__.py's __getattr__ fallback
-# ("module 'lazy_core' has no attribute '_ctx'"), which is the CORRECT red
-# reason (it proves _ctx is the missing piece, not some other regression).
-# The fourth is a permanent regression pin for the module-attribute
-# patch-target mechanism and is expected to already be GREEN — everything
-# still lives in _monolith.py today.
+# These four tests pinned that contract BEFORE _ctx.py existed (RED-first).
+# Phase-5 WU-4 deleted _monolith.py entirely — the identity contract is now
+# facade <-> _ctx (the owner); the _monolith view rows were retired with the
+# module.
 # ---------------------------------------------------------------------------
 
 def test_ctx_diagnostics_identity():
     """Canonical-list-object contract: lazy_core._DIAGNOSTICS,
-    lazy_core._ctx._DIAGNOSTICS, and lazy_core._monolith._DIAGNOSTICS must all
+    and lazy_core._ctx._DIAGNOSTICS must
     be the SAME list object. lazy-state.py / bug-state.py mutate this list IN
     PLACE (append via _diag(), .clear() via clear_diagnostics()); if _ctx.py
-    ever held its own separate list instead of sharing the one _monolith.py
-    (or its eventual successor) owns, a diagnostic appended through one view
-    would be invisible through another."""
+    ever held its own separate list instead of sharing the one the facade
+    re-exports, a diagnostic appended through one view would be invisible
+    through another. (The third view — lazy_core._monolith._DIAGNOSTICS —
+    was retired with the module at Phase-5 WU-4.)"""
     _guard()
     assert lazy_core._DIAGNOSTICS is lazy_core._ctx._DIAGNOSTICS, (
         "lazy_core._DIAGNOSTICS and lazy_core._ctx._DIAGNOSTICS must be the "
         "same list object"
     )
-    assert lazy_core._ctx._DIAGNOSTICS is lazy_core._monolith._DIAGNOSTICS, (
-        "lazy_core._ctx._DIAGNOSTICS and lazy_core._monolith._DIAGNOSTICS must "
-        "be the same list object"
+
+
+def test_facade_map_total_and_collision_free():
+    """lazy-core-package-decomposition Phase 5 WU-4 pin (RED-first): the
+    facade's ``_SUBMODULE_BY_NAME`` map is EXPLICIT-TOTAL and the
+    ``_monolith`` fallback is retired.
+
+    Asserts: (1) ``_FALLBACK_SUBMODULE`` no longer exists on the facade and
+    ``_monolith`` is out of ``_ALL_SUBMODULES``; (2) ``lazy_core._monolith``
+    is no longer importable (the file is deleted); (3) every mapped module
+    imports and every mapped name resolves from its mapped module; (4) no
+    mapped name is DEFINED at top level in two different submodules
+    (ownership is unambiguous — import-by-value re-exports don't count);
+    (5) getattr on a bogus name raises a clean AttributeError.
+
+    RED while ``_monolith.py`` exists as the facade fallback; GREEN after
+    WU-4 deletes it and makes the map explicit-total.
+    """
+    _guard()
+    import ast as _ast
+    import importlib
+
+    # (1) fallback retired
+    assert not hasattr(lazy_core, "_FALLBACK_SUBMODULE"), (
+        "_FALLBACK_SUBMODULE still present — the facade fallback is not retired"
     )
+    assert "_monolith" not in lazy_core._ALL_SUBMODULES, (
+        "_monolith still listed in _ALL_SUBMODULES"
+    )
+
+    # (2) the module itself is gone
+    try:
+        importlib.import_module("lazy_core._monolith")
+        raise AssertionError("lazy_core._monolith is still importable")
+    except ModuleNotFoundError:
+        pass
+
+    # (3) every mapped module imports; every mapped name resolves from it
+    modules = {}
+    for name, modname in lazy_core._SUBMODULE_BY_NAME.items():
+        mod = modules.get(modname)
+        if mod is None:
+            mod = modules[modname] = importlib.import_module(
+                f"lazy_core.{modname}")
+        assert hasattr(mod, name), (
+            f"mapped name {name!r} does not resolve on lazy_core.{modname}"
+        )
+
+    # (4) collision-free ownership: a mapped name's top-level DEFINITION
+    # (def/class/assign — imports excluded) exists in at most one submodule.
+    pkg_dir = Path(lazy_core.__file__).resolve().parent
+    defined_in: dict = {}
+    for sub in lazy_core._ALL_SUBMODULES:
+        tree = _ast.parse((pkg_dir / f"{sub}.py").read_text(encoding="utf-8"))
+        for node in tree.body:
+            names = []
+            if isinstance(node, (_ast.FunctionDef, _ast.AsyncFunctionDef,
+                                 _ast.ClassDef)):
+                names = [node.name]
+            elif isinstance(node, _ast.Assign):
+                names = [t.id for t in node.targets
+                         if isinstance(t, _ast.Name)]
+            elif isinstance(node, _ast.AnnAssign) and isinstance(
+                    node.target, _ast.Name):
+                names = [node.target.id]
+            for n in names:
+                defined_in.setdefault(n, set()).add(sub)
+    collisions = {
+        n: sorted(mods) for n, mods in defined_in.items()
+        if len(mods) > 1 and n in lazy_core._SUBMODULE_BY_NAME
+    }
+    assert collisions == {}, (
+        f"mapped names defined in multiple submodules: {collisions}"
+    )
+
+    # (5) bogus getattr is a clean AttributeError
+    try:
+        getattr(lazy_core, "no_such_facade_name_xyz")
+        raise AssertionError("bogus facade attribute did not raise")
+    except AttributeError:
+        pass
 
 
 _TESTS = [
@@ -4794,6 +4868,7 @@ _TESTS = [
     ("test_bare_write_lint_guard_catches_open_write_mode_and_ignores_read", test_bare_write_lint_guard_catches_open_write_mode_and_ignores_read),
     ("test_duplicate_def_guard_detects_planted_violation", test_duplicate_def_guard_detects_planted_violation),
     ("test_ctx_diagnostics_identity", test_ctx_diagnostics_identity),
+    ("test_facade_map_total_and_collision_free", test_facade_map_total_and_collision_free),
 ]
 
 

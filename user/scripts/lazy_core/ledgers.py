@@ -17,15 +17,14 @@ Constraint 3): docs/bugs/_archive/mark-complete-partial-apply-noop-unrecoverable
 FIXED.md and docs/bugs/_archive/production-sentinel-writes-bypass-atomic-write/
 FIXED.md. All writes here go through ``_ctx._atomic_write``.
 
-Deferred function-local imports (this module must not import ``_monolith``
-or ``.markers`` at top level — circular, since both import FROM this module):
-the marker-plane names (``read_run_marker`` / ``read_cycle_marker`` /
-``head_sha_snapshot`` / ``_MARKER_STALE_SECONDS`` — re-pointed to ``.markers``
-at Phase-5 WU-1), ``REGISTRY_ENTRY_TTL_SECONDS`` (registry constant,
-monolith-resident until Phase-5 WU-3),
-``_parse_locked_decisions`` (gate-coverage plane, Phase-5),
-and ``normalize_prompt_for_hash`` (dispatch/registry plane — re-pointed to
-``.dispatch`` at Phase 4 WU-3, done). ``build_hardening_emit_command``'s
+Deferred function-local imports (this module must not import ``.markers``
+or ``.dispatch`` at top level — circular, since both import FROM this
+module): the marker-plane names (``read_run_marker`` / ``read_cycle_marker``
+/ ``head_sha_snapshot`` / ``_MARKER_STALE_SECONDS`` — ``.markers``),
+``REGISTRY_ENTRY_TTL_SECONDS`` + ``normalize_prompt_for_hash``
+(``.dispatch``), and ``_parse_locked_decisions`` (gate-coverage plane —
+``.gates``, kept function-local at its legacy site; ``has_completion_receipt``
+is imported top-level from ``.gates``, an acyclic edge). ``build_hardening_emit_command``'s
 ``registry_summary`` is a PARAMETER (caller-supplied summary string), not the
 module-level registry function — no import.
 """

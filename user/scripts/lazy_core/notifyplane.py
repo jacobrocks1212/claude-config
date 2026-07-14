@@ -14,10 +14,10 @@ Owns notify config/ledger/error I/O, halt identity + dedup, payload
 composition, the ntfy sender, and the notify_halt/notify_event entry points.
 See the operator-halt-notifications feature docs for the D1-D10 ledger.
 
-Monolith-resident dependencies are resolved via function-local deferred
-imports (this module must not import `_monolith` at top level — circular):
-`claude_state_dir` (moves to `.statedir` in WU-5) and
-`detect_noncanonical_blocker` (Phase-5 re-point).
+Sibling-seam dependencies are resolved via function-local deferred
+imports (kept function-local so this module's import surface stays light):
+`claude_state_dir` (`.statedir`) and `detect_noncanonical_blocker`
+(`.docmodel`).
 """
 
 from __future__ import annotations

@@ -2984,7 +2984,7 @@ def _assigns_lazy_core_subprocess_double(node: "ast.AST"):
         # Accept BOTH the legacy `lazy_core.subprocess` form (value is the bare
         # Name) and the post-decomposition `lazy_core.<submodule>.subprocess`
         # form (value is Attribute(<submodule>) over Name(lazy_core), for ANY
-        # submodule — Phase-1 WU-1 moved the patch sites to `_monolith`;
+        # submodule — Phase-4 WU-4 moved the patch sites to `runtimeplane`;
         # Phase-4 WU-4 re-pointed them to `runtimeplane` with the plane) —
         # the collector must recognize the chain shape or the enforcer
         # meta-tests go silently vacuous.

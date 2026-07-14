@@ -28,13 +28,12 @@ docs/bugs/_archive/mark-complete-partial-apply-noop-unrecoverable/FIXED.md and
 docs/bugs/_archive/production-sentinel-writes-bypass-atomic-write/FIXED.md.
 All writes here go through ``_ctx._atomic_write``.
 
-Deferred function-local imports (this module must not import ``_monolith`` at
-top level — ``_monolith`` imports FROM this module for ``apply_pseudo``'s
-refusal gate until WU-2): ``_die`` in ``parse_parent_run_arg`` (kernel
-helper, re-pointed at WU-3), ``_git`` in ``head_sha_snapshot`` /
-``current_branch_snapshot`` / ``_count_authored_commits_since`` (git helper,
-re-pointed at WU-3), and ``_current_head`` in ``update_repeat_counts``
-(loop-detection git helper, re-pointed at WU-3).
+Deferred function-local imports (this module must not import
+``.runtimeplane`` at top level — kept function-local to keep the guard's
+marker probe surface light): ``_die`` in ``parse_parent_run_arg``
+(``._ctx``), ``_git`` in ``head_sha_snapshot`` / ``current_branch_snapshot``
+/ ``_count_authored_commits_since`` and ``_current_head`` in
+``update_repeat_counts`` (``.runtimeplane``).
 """
 
 from __future__ import annotations

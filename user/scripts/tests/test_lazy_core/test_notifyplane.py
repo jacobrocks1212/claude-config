@@ -802,12 +802,12 @@ def test_notify_ntfy_send_headers_and_rfc2047():
 
 
 class _FakeTimeSentinel:
-    """Minimal module stand-in for `lazy_core._monolith.time` exposing only
-    `.time()` — the smallest double that can prove a _monolith function's
+    """Minimal module stand-in for `lazy_core.notifyplane.time` exposing only
+    `.time()` — the smallest double that can prove a submodule function's
     module-level `time.time()` call actually consults whatever object is
     bound to the module's `time` name (the patch-TARGET-effectiveness
     mechanism the 5 existing `test_ensure_runtime_production_*` sites all
-    rely on via `lazy_core._monolith.subprocess, lazy_core._monolith.time =
+    rely on via `lazy_core.runtimeplane.subprocess, lazy_core.runtimeplane.time =
     fake_sub, fake_time`)."""
 
     def __init__(self, sentinel_ts: float):
@@ -822,25 +822,23 @@ class _FakeTimeSentinel:
 def test_monolith_patch_target_effective():
     """Permanent regression pin (mechanism-3): patching
     `lazy_core.notifyplane.time` is the EFFECTIVE way to control the clock a
-    _monolith function reads via its module-level `time.time()` call.
+    submodule function reads via its module-level `time.time()` call.
 
     Reuses the exact patch idiom of the 5 existing
     `test_ensure_runtime_production_*` sites (e.g.
     test_ensure_runtime_production_boot_alive_dead_handle_recovers at line
-    ~25430, all of which do `lazy_core._monolith.subprocess,
-    lazy_core._monolith.time = fake_sub, fake_time`) but against a much
+    ~25430, all of which do `lazy_core.runtimeplane.subprocess,
+    lazy_core.runtimeplane.time = fake_sub, fake_time`) but against a much
     cheaper function-under-test: `_notify_identity`'s sentinel-less,
     date-keyed identity branch needs no tempfile/subprocess/config fixture at
     all — passing a state dict with no `spec_path` key short-circuits
     `_notify_sentinel_path` to `None` with zero file I/O, landing directly on
     `ts = time.time() if now is None else float(now)`.
 
-    EXPECTED STATUS TODAY: PASS. Everything still lives in
-    lazy_core/_monolith.py (WU-2 hasn't extracted _ctx.py yet), so this
-    assertion is trivially satisfied now. It becomes load-bearing once WU-2
-    (and later decomposition phases) move functions out of _monolith.py: if a
-    moved function stops reading the module `time` object this test patches,
-    a future revision of this pin must patch the NEW owning submodule too —
+    LOAD-BEARING since the decomposition moved `_notify_identity` to
+    `notifyplane` (this pin's own re-point rode Phase-2 WU-4): if a moved
+    function stops reading the module `time` object this test patches, a
+    future revision of this pin must patch the NEW owning submodule too —
     a silent divergence here would mean tests are patching a clock nobody
     reads anymore.
     """

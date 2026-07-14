@@ -346,3 +346,123 @@ everything). `_monolith.py` is the only module over the 4K ceiling (Phase 5 shri
   test_markers,_util,test_runtimeplane}.py` (mechanism-3 redirects: 2 + 37 + 32 + 63 lines)
 - `docs/features/lazy-core-package-decomposition/GATE_VERDICT.md` (Phase-4 entry)
 - plan part 4 (WU ticks + status Complete), `PHASES.md` (P4 row + heading), this file
+
+## Phase 5 — Marker plane + pseudo; `_monolith` deleted
+
+#### Implementation Notes (Phase 5)
+**Completed:** 2026-07-13 (plan part 5 of 6, `/execute-plan`, 4 WUs / 4 commits)
+**Work completed:**
+- WU-1 `markers.py` (commit a9e0581a): the run-marker / ownership / refusals / cycle-bracket
+  plane — 56 names, 5 verbatim runs (3,305 monolith deletions -> 3,394-line module): run-marker
+  lifecycle + born-owner-bound ownership plane, cycle markers + nonce resolution, C3 refusals
+  (refuse_if_cycle_active / refuse_cycle_marker_mutation_if_subagent / refuse_run_start_clobber
+  + CYCLE_REFUSED_OPS / SANCTIONED_STOP_TERMINAL), RUN_CONTINUITY/FRESH partition + checkpoints,
+  budget counters (advance_* / fold / per-feature guard + budget_trip_signals /
+  feature_is_near_complete), cycle-bracket friction detector, repeat counters, resolution signal,
+  audit obligations. Import-back 1 (refuse_if_cycle_active, apply_pseudo's gate — retired at
+  WU-2). Monolith sibling import-backs recomputed: 34 now-unused names pruned (_DIAGNOSTICS
+  deliberately kept — test identity pins scheduled to WU-4). Deferred re-points: ledgers x7 +
+  dispatch x4 + hostcaps x1 marker-plane imports -> `.markers` (the two combined
+  `REGISTRY_ENTRY_TTL_SECONDS, read_run_marker` lines split — the constant stayed
+  monolith-resident until WU-3). Redirects: bind_marker_session x7, _CYCLE_COMMIT_MULTI x2
+  (the Phase-4 deliberate keep — consumer detect_cycle_bracket_friction moved here, so the
+  reads re-pointed per the L1 mechanism-3 rule). **D4 hook cut completed at this WU:** a
+  `read_run_marker` facade touch no longer loads `_monolith` (markers' top-level imports are
+  _ctx/statedir/docmodel/gates/ledgers/dispatch — none reach the monolith).
+- WU-2 `pseudo.py` (commit 4bd51536): ONE contiguous 1,576-line verbatim slice
+  (_resolve_under_repo + ROADMAP strike helpers + _completion_postconditions_missing +
+  apply_pseudo — the roadmap helpers' only consumers are pseudo-internal, so the contiguous
+  867-2444 run moved whole). **apply_pseudo INTACT receipt:** all 6 moved defs BYTE-IDENTICAL
+  to their HEAD monolith blocks (string-equality receipt; apply_pseudo = 1,354 lines,
+  zero internal edits — only the module import header added). Import-back ZERO; the WU-1
+  refuse_if_cycle_active import-back + gates/ledgers blocks + 5 stdlib imports + stale_binary
+  pruned from the monolith (recomputed).
+- WU-3 residue sweep (commit 147fd912): every remaining name (71 names / 90 blocks) distributed
+  in ONE scripted multi-slice pass. **Per-symbol placement decisions (recorded per plan):**
+  `_die` -> `_ctx` (kernel; depdag/docmodel/markers re-point); queue-mutation ops
+  (reorder_queue/clear_queue_stub) + merged ordering plane (merged_priority/merged_worklist/
+  next_merged + severity/age/pin helpers) + skip_ahead_ready -> `depdag` (queue plane, sync_deps
+  proximity); receipt writers + validation_escalation + archive_fixed + the gate-coverage plane
+  (_parse_locked_decisions/gate_coverage) -> `gates` (completion write-path); stale-upstream +
+  materialized + WIP/stage tracking (derive_stage/track_*) + decision records +
+  build_input_audit_emit_command (sibling of build_hardening_emit_command) -> `ledgers`;
+  sentinel lifecycle (detect_noncanonical_blocker/neutralize_sentinel/provisional_*) +
+  independent-marker parse -> `docmodel`; git helpers (_git/_current_head/git_head_short_sha/
+  git_guard_status) + self-edit detection (GOVERNING_FILE_SET/self_edit_mode/
+  governing_files_touched) -> `runtimeplane` (plan rule: git helpers); cycle-header formatter
+  (SUB_SKILL_STEP_NAMES/format_cycle_header) + registry constants (REGISTRY_ENTRY_TTL_SECONDS/
+  _REGISTRY_RING_CAP) -> `dispatch`; write_deferred_requires_host -> `hostcaps` (completes the
+  host plane). The orphan `_COMPILE_WENT_DEAD` trailing-docstring Expr (stranded when Phase 4
+  moved its constant) re-homed under the constant in runtimeplane. **`# Phase-5 re-point`
+  closure: ZERO remain** — all 24 deferred sites re-pointed to final homes; 2 genuine-cycle
+  function-local imports RECORDED: docmodel.provisionalize_sentinel -> runtimeplane._current_head
+  (runtimeplane imports docmodel top-level) and gates' provenance-derivation trio -> .ledgers
+  (ledgers imports gates top-level, new edge). New top-level edges gates->runtimeplane,
+  ledgers->gates, depdag->gates — final import DAG verified acyclic; package-wide symtable
+  unresolved-globals audit CLEAN. `_monolith.py` reduced to a 13-line shell kept ONLY for the
+  WU-4 test identity pins.
+- WU-4 (this commit): TDD pin `test_facade_map_total_and_collision_free` written + verified RED
+  first (failed on `_FALLBACK_SUBMODULE` present), GREEN post-deletion — asserts fallback retired,
+  `lazy_core._monolith` unimportable, every mapped module imports + every mapped name resolves,
+  definition-site uniqueness across submodules (AST), bogus getattr raises clean AttributeError.
+  Facade made EXPLICIT-TOTAL by scripted AST generation: 480 existing entries verified
+  definition-true, ZERO cross-module definition collisions, 6 missing `_ctx` accessor names added
+  (486 total); `_FALLBACK_SUBMODULE` + fallback branch deleted; `_ALL_SUBMODULES` = the 12 seams;
+  `__dir__` rewritten off the fallback module. `git rm _monolith.py`. Test-surface cleanup:
+  kernel `_atomic_write` x3 + `_DIAGNOSTICS` x7 identity pins -> `lazy_core._ctx` (the owner);
+  the `test_hook_surface_imports_without_monolith` pin STRENGTHENED (was `_monolith not in
+  sys.modules` — vacuous post-deletion; now asserts loaded lazy_core modules within {facade, _ctx,
+  statedir}); canary/control-surface fixture paths retargeted `_monolith.py` -> `markers.py`
+  (same glob semantics); stale present-tense "monolith-resident" docstrings across all 12
+  modules + 7 test files updated in lockstep (prose only, no assertion weakened).
+
+**Receipts (per-commit invariant battery, all 4 commits):** pytest `user/scripts/` green
+(2230 passed WU-1..3; 2231 on WU-4 — the +1 sanctioned TDD pin); `lazy-state.py --test` +
+`bug-state.py --test` byte-pinned baselines pass with ZERO baseline regeneration
+(`tests/baselines/` untouched all phase); `lazy_parity_audit.py` exit 0; `cli_surface_gen.py
+--check` OK; `doc-drift-lint.py` 0 findings; `lint-skills.py` OK. Collect-only bare-name
+multiset diff EMPTY per WU-1..3 commit (2230 == 2230); WU-4 diff = exactly the one addition.
+
+**Benchmark census (2026-07-13, post-deletion):** `_monolith.py` GONE (7,858 -> 0). Final
+roster (13 files incl. facade): __init__ 584 / _ctx 113 / depdag 1,049 / dispatch 2,005 /
+docmodel 2,445 / gates 2,352 / hostcaps 503 / ledgers 3,921 / markers 3,393 / notifyplane 585 /
+pseudo 1,654 / runtimeplane 2,595 / statedir 295 — **`over_4k_ceiling: []`** (largest = ledgers
+3,921; the WU-3 placement deliberately routed audit obligations to markers to keep ledgers under
+the ceiling). Cold `import lazy_core` best 36.73 / median 37.26 ms (Phase-2 band preserved).
+Hook surface best **43.28 / median 44.59 ms** vs Phase-2's 42.64/43.98 — same band, but the
+claim is now STRUCTURAL: `monolith_loaded_samples=0` is guaranteed by deletion, and the
+strengthened statedir pin proves the hook probe loads ONLY facade+_ctx+statedir. HONEST caveat
+unchanged: the <15 ms KPI aspiration is NOT met (interpreter+facade baseline ~32 ms dominates);
+the guard marker paths' residual monolith load noted at Phase 2 is eliminated by construction.
+
+**Deviations & findings (for the retro):**
+1. Executed inline by the phase-execution agent with scripted transforms (Phase-4 precedent,
+   recorded deviation from the orchestrator+Sonnet-subagent contract): block_map/analyze ->
+   name-driven seam_move.py (Phase-4 tool reused) -> residue_move.py (append-capable variant) ->
+   per-edit exact-count replacements -> package-wide symtable audit -> byte-equality receipts.
+   Task tools unavailable; plan WU checkboxes + PHASES.md were the persistent ledger.
+2. `harness-gate.py --staged` flagged every Phase-5 commit in-scope; WU-1/WU-2 additionally
+   tripped **gate_weakening: hit** (refuse_* construct "removals" from _monolith + sanction-set
+   "adds" in markers.py — the two sides of a byte-verbatim move diff). Recorded in GATE_VERDICT.md
+   Phase-5 entry with the move receipts; the D4 operator sign-off obligation is surfaced via
+   NEEDS_INPUT_PROVISIONAL.md (park-provisional — run never halted). WU-3/WU-4 gate_weakening: pass.
+3. The plan's WU-1 redirect prediction ("consume_nonce(2), bind_marker_session(2)") was stale:
+   consume_nonce moved to dispatch in Phase 4; live redirect surface was bind_marker_session x7 +
+   _CYCLE_COMMIT_MULTI x2. Plan literals re-derived from disk per the standing instruction.
+4. The Phase-4 symtable-audit lesson applied: every deferred injection audited; zero
+   parameter-shadow collisions this phase (the WU-2 pseudo header needed one iteration — the
+   facade-attribute `docmodel.<name>` rewrites inside apply_pseudo required `from . import
+   docmodel`, caught by the tool's unresolved-globals FATAL before any battery).
+5. Monolith import-back recomputation after each WU pruned 30+ dead imports per commit rather
+   than letting them ride to WU-4 — kept every intermediate tree honest (no unused-import debt).
+6. `benchmark_lazy_core_import.py` was NOT edited (outside the plan's file-set): its
+   `monolith_loaded_samples` probe now trivially reports 0 (the module no longer exists) and its
+   module docstring's "guard marker paths still load _monolith" caveat is stale — a 2-line
+   prose cleanup for Phase 6 / a hardening round.
+
+**Files modified (net, Phase 5):**
+- `user/scripts/lazy_core/markers.py`, `user/scripts/lazy_core/pseudo.py` (new seam modules)
+- `user/scripts/lazy_core/_monolith.py` (DELETED)
+- `user/scripts/lazy_core/{__init__,_ctx,depdag,dispatch,docmodel,gates,hostcaps,ledgers,notifyplane,runtimeplane,statedir}.py` (residue appends, import re-points, facade explicit-total)
+- `user/scripts/tests/test_lazy_core/{test_markers,test_misc,test_ledgers,test_gates,test_notifyplane,test_statedir,test_runtimeplane}.py` (mechanism-3 redirects + WU-4 pin + prose lockstep)
+- `user/scripts/CLAUDE.md` (lazy_core row -> 12-seam roster), `docs/features/lazy-core-package-decomposition/{PHASES.md,GATE_VERDICT.md,NEEDS_INPUT_PROVISIONAL.md}`, plan part 5 (WU ticks + status Complete), this file

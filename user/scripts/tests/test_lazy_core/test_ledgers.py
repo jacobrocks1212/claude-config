@@ -3234,9 +3234,9 @@ def test_canary_intersects_arm_decision():
     surfaces = lazy_core._CANARY_CONTROL_SURFACES_FALLBACK
     # Exact-path match.
     arm, hits = lazy_core._canary_intersects(
-        ["user/scripts/lazy_core/_monolith.py", "docs/foo.md"], surfaces)
+        ["user/scripts/lazy_core/markers.py", "docs/foo.md"], surfaces)
     assert arm is True
-    assert hits == ["user/scripts/lazy_core/_monolith.py"]
+    assert hits == ["user/scripts/lazy_core/markers.py"]
     # ** glob match (segment-crossing).
     arm2, hits2 = lazy_core._canary_intersects(["user/hooks/x.sh"], surfaces)
     assert arm2 is True and hits2 == ["user/hooks/x.sh"]

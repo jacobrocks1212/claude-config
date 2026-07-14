@@ -73,7 +73,7 @@ def _atomic_write(path: Path, content: str) -> None:
 # ---------------------------------------------------------------------------
 
 # The active repo root for this process. None = fall back to the cwd's git
-# toplevel (set via the _monolith public wrapper set_active_repo_root(), which
+# toplevel (set via the statedir public wrapper set_active_repo_root(), which
 # is the precise binding done at main()).
 _active_repo_root: str | None = None
 

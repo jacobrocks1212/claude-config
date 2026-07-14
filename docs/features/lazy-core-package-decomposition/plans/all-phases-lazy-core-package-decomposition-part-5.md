@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: lazy-core-package-decomposition
-status: Ready
+status: Complete
 created: 2026-07-13
 phases: [5]
 complexity: complex
@@ -77,7 +77,7 @@ Where this plan's repo uses non-default gates or component paths (this is claude
 - [x] WU-1 — Extract `markers.py` (run-marker / ownership / refusals / nonce)
 - [x] WU-2 — Extract `pseudo.py` (`apply_pseudo` moved INTACT)
 - [x] WU-3 — Residue sweep: distribute the `_monolith` remainder to owning seams
-- [ ] WU-4 — Delete `_monolith.py`; explicit-total facade map; ≤4K LoC census; phase receipt
+- [x] WU-4 — Delete `_monolith.py`; explicit-total facade map; ≤4K LoC census; phase receipt
 
 ---
 

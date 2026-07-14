@@ -9,12 +9,13 @@ phase parsing).
 
 HARD EXCLUSION (SPEC D2 Constraint 3 ordering): the write-path receipt
 functions ``has_completion_receipt`` / ``write_completed_receipt`` are NOT
-here — they stay in ``_monolith.py`` (this module was sliced AROUND them).
+here — they live in ``.gates`` (the completion write-path plane).
 
-``_die`` is shared kernel-ish infrastructure that stays in ``_monolith.py``;
-``parse_sentinel`` reaches it via a function-local deferred import (this
-module must not import ``_monolith`` at top level — that would be circular,
-since ``_monolith`` imports FROM this module for the names below).
+``_die`` is shared kernel infrastructure owned by ``._ctx``;
+``parse_sentinel`` reaches it via a function-local deferred import (kept
+function-local — hot parse path). ``provisionalize_sentinel`` reaches
+``_current_head`` via a deferred import (genuine cycle: ``.runtimeplane``
+imports this module at top level).
 """
 
 from __future__ import annotations

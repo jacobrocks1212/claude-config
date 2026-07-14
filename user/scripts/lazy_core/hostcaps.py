@@ -9,35 +9,29 @@ unknown-capability BLOCKED.md body formatter. See
 docs/features/host-capability-declaration-for-gated-features and
 user/scripts/CLAUDE.md -> "The host-capability axis" for the full contract.
 
-HARD EXCLUSION (per the WU-3 slice boundary): ``write_deferred_requires_host``
-is a sentinel WRITER (write-path) and stays in ``_monolith.py`` — this module
-was sliced AROUND it, ending at ``format_unknown_host_capability_blocker``.
+``write_deferred_requires_host`` (the host-plane sentinel WRITER) was
+sliced around at Phase 2 and moved here at the Phase-5 WU-3 residue sweep —
+the host-capability plane is complete in this module.
 
 ``utc_now_iso`` sits mid-seam under its own "Phases 4 + 5" mini section header
 in the original monolith (a generic time helper, "one-line reuse" of broader
 infra). It moved here WITH the rest of the contiguous slice rather than being
 sliced back out: a grep of ``_monolith.py`` at extraction time found ZERO
 remaining bare-name (``utc_now_iso(...)``) consumers there (every caller reads
-it via the facade, ``lazy_core.utc_now_iso()``), and ``test_lazy_core.py``
-never patches it by module-attribute assignment (``lazy_core._monolith.utc_now_iso
-= ...``) — only facade-level calls. Smallest blast radius: no import-back, no
-test redirect.
+it via the facade, ``lazy_core.utc_now_iso()``), and the test suite
+never patches it by module-attribute assignment — only facade-level calls.
+Smallest blast radius: no import-back, no test redirect.
 
-Two monolith-resident dependencies are resolved via function-local deferred
-imports (this module must not import ``_monolith`` at top level — that would
-be circular, since ``_monolith`` imports FROM this module for the names
-below):
+Two sibling-seam dependencies are resolved via function-local deferred
+imports (kept function-local so this module's import surface stays light):
 
 - ``host_present_capabilities`` calls ``read_run_marker()`` (the marker
   plane — ``.markers`` since Phase-5 WU-1) and ``claude_state_dir()``
   (``.statedir`` since Phase 2 WU-5).
 - ``_default_host_probes`` calls the Phase-2 active-invocation probe
   primitives ``probe_binary_capability`` / ``probe_env_capability`` /
-  ``probe_platform_capability``. These live in a separate, NON-contiguous
-  section of ``_monolith.py`` (lines ~7180-7300, "host-capability-declaration
-  Phase 2") and were deliberately NOT chased into this slice — the WU scope is
-  the ONE contiguous Phase 1/3/4/5 range; a partial plane is fine (a later
-  Phase-5 residue sweep can move the Phase-2 probes too).
+  ``probe_platform_capability`` — owned by ``.runtimeplane`` since Phase-4
+  WU-4 (deferred import re-pointed there).
 """
 
 from __future__ import annotations

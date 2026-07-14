@@ -1,9 +1,9 @@
 """lazy_core — PEP 562 lazy facade over the decomposed lazy_core package.
 
-Phase 1 of `lazy-core-package-decomposition` moved the entire former
-`user/scripts/lazy_core.py` monolith body into `lazy_core/_monolith.py`
-unmodified. This `__init__.py` is the facade that keeps every existing
-import site working byte-compatibly:
+`lazy-core-package-decomposition` split the former flat
+`user/scripts/lazy_core.py` monolith into the 12 seam submodules below.
+This `__init__.py` is the facade that keeps every existing import site
+working byte-compatibly:
 
     import lazy_core
     from lazy_core import _atomic_write
@@ -11,18 +11,19 @@ import site working byte-compatibly:
     lazy_core.time = fake_time            # module-attribute monkeypatching
 
 Every public AND used-private name that used to live directly on the
-`lazy_core` module is now resolved lazily via `__getattr__` below, forwarding
-to whichever submodule owns it (today: only `_monolith`; later decomposition
-phases will register additional submodules in `_SUBMODULE_BY_NAME`).
+`lazy_core` module is resolved lazily via `__getattr__` below, forwarding to
+whichever submodule owns it. As of Phase-5 WU-4 the `_SUBMODULE_BY_NAME` map
+is EXPLICIT-TOTAL: `_monolith.py` is deleted and there is NO fallback
+submodule — an unmapped name raises a clean AttributeError
+(`test_facade_map_total_and_collision_free` pins totality, per-name
+resolution, and definition-site uniqueness).
 
-This facade is PERMANENT, not a transitional shim slated for removal — later
-decomposition phases split `_monolith` into further submodules, but the
-lazy-forwarding facade shape stays.
+This facade is PERMANENT, not a transitional shim slated for removal.
 
 CRITICAL — patchability contract: a forwarded attribute is NEVER memoized
-into this module's globals. Tests patch `lazy_core._monolith.<name>` (the
+into this module's globals. Tests patch `lazy_core.<submodule>.<name>` (the
 module where the name actually resolves); if `__getattr__` cached the
-forwarded value here, a later `_monolith.X = fake` patch would be invisible
+forwarded value here, a later `<submodule>.X = fake` patch would be invisible
 to the next `lazy_core.X` read. Only the submodule import itself is cached
 (automatically, via `sys.modules`) — never the attribute lookup.
 """
@@ -31,11 +32,10 @@ import importlib
 
 from ._ctx import _DIAGNOSTICS
 
-# Explicit name -> submodule overrides. WU-2 of lazy-core-package-decomposition
-# moved the shared kernel (_DIAGNOSTICS / _diag / clear_diagnostics /
-# _atomic_write) into _ctx. Phase 2 WU-1 moves the queue dependency-DAG plane
-# into `depdag`; later decomposition phases append entries here as more names
-# move out of `_monolith` into dedicated submodules.
+# The EXPLICIT-TOTAL name -> submodule map (Phase-5 WU-4): one entry per
+# top-level name defined in a submodule (scripted AST generation; the
+# collision check in test_facade_map_total_and_collision_free hard-fails a
+# name defined in two submodules). There is no fallback submodule.
 _SUBMODULE_BY_NAME: dict[str, str] = {
     "_DIAGNOSTICS": "_ctx",
     "_diag": "_ctx",
@@ -537,25 +537,30 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "format_cycle_header": "dispatch",
     # Phase 5 WU-3: the host-plane sentinel writer.
     "write_deferred_requires_host": "hostcaps",
+    # Phase 5 WU-4: explicit-total sweep — the _ctx accessor plane (previously
+    # fallback-shadowed; never monolith-resident).
+    "_active_repo_root": "_ctx",
+    "_legacy_state_migrated": "_ctx",
+    "get_active_repo_root": "_ctx",
+    "legacy_state_migrated": "_ctx",
+    "set_active_repo_root_value": "_ctx",
+    "set_legacy_state_migrated": "_ctx",
 }
 
-# Submodule consulted when a name has no explicit entry in
-# _SUBMODULE_BY_NAME above.
-_FALLBACK_SUBMODULE = "_monolith"
-
 # All submodules that make up this package, in no particular order.
-_ALL_SUBMODULES = ("_ctx", "_monolith", "depdag", "dispatch", "docmodel", "gates", "hostcaps", "ledgers", "markers", "notifyplane", "pseudo", "runtimeplane", "statedir")
+_ALL_SUBMODULES = ("_ctx", "depdag", "dispatch", "docmodel", "gates", "hostcaps", "ledgers", "markers", "notifyplane", "pseudo", "runtimeplane", "statedir")
 
 
 def __getattr__(name):
-    # Attribute access to a submodule name itself (e.g. `lazy_core._monolith`)
-    # must return the submodule object — `getattr(submodule, "_monolith")`
-    # would raise AttributeError since a submodule doesn't have itself as an
-    # attribute.
+    # Attribute access to a submodule name itself (e.g. `lazy_core.markers`)
+    # must return the submodule object — a submodule doesn't have itself as
+    # an attribute.
     if name in _ALL_SUBMODULES:
         return importlib.import_module(f".{name}", __name__)
 
-    modname = _SUBMODULE_BY_NAME.get(name, _FALLBACK_SUBMODULE)
+    modname = _SUBMODULE_BY_NAME.get(name)
+    if modname is None:
+        raise AttributeError(f"module 'lazy_core' has no attribute {name!r}")
     mod = importlib.import_module(f".{modname}", __name__)
     try:
         return getattr(mod, name)
@@ -564,8 +569,7 @@ def __getattr__(name):
 
 
 def __dir__():
-    fallback_mod = importlib.import_module(f".{_FALLBACK_SUBMODULE}", __name__)
-    names = set(globals().keys()) | set(_SUBMODULE_BY_NAME.keys()) | set(dir(fallback_mod))
+    names = set(globals().keys()) | set(_SUBMODULE_BY_NAME.keys()) | set(_ALL_SUBMODULES)
     return sorted(names)
 
 

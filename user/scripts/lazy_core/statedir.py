@@ -11,7 +11,7 @@ names never pays the ~17K-line `_monolith` import
 (test_hook_surface_imports_without_monolith is the mechanical pin).
 
 The ONE exception is deliberately deferred, not top-level: `active_repo_root`'s
-cwd-git-toplevel FALLBACK does a function-local `from ._monolith import _git`
+cwd-git-toplevel FALLBACK does a function-local `from .runtimeplane import _git`
 — the fallback only runs when no repo binding was made (`set_active_repo_root`
 at each script's main()), which the hook path always does via `--repo-root`.
 The marker plane (`read_run_marker`, staleness) lives in `.markers` (Phase-5

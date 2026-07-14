@@ -20,10 +20,9 @@ unrecoverable/FIXED.md and docs/bugs/_archive/production-sentinel-writes-
 bypass-atomic-write/FIXED.md. All writes here go through
 ``_ctx._atomic_write``.
 
-Module-top ``from ._monolith import`` is safe here (``_monolith`` never
-imports this module — no cycle): ``_current_head`` and
-``write_completed_receipt`` are monolith-resident until Phase-5 WU-3
-(re-pointed to ``.runtimeplane`` / ``.gates`` there).
+``_current_head`` and ``write_completed_receipt`` resolve top-level from
+``.runtimeplane`` / ``.gates`` (Phase-5 WU-3) — nothing imports this module,
+so both edges are acyclic.
 """
 
 from __future__ import annotations

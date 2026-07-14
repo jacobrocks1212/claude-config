@@ -7317,7 +7317,7 @@ def test_no_bare_production_sentinel_writes():
     """Self-checking meta-test: the LIVE production regions of lazy-state.py,
     bug-state.py, and lazy_core.py carry ZERO bare ``.write_text(``/
     ``open(..., "w")`` calls — every production sentinel/queue/doc write goes
-    through ``lazy_core._monolith._atomic_write`` (production-sentinel-writes-bypass-
+    through ``lazy_core._ctx._atomic_write`` (production-sentinel-writes-bypass-
     atomic-write). GREEN today (the sweep this bug performed: `_write_yaml_
     sentinel`/`_write_yaml_blocked_sentinel` in both state scripts,
     `_write_step10_needs_input`, the ROADMAP append, the ad-hoc brief/spec
@@ -7327,10 +7327,10 @@ def test_no_bare_production_sentinel_writes():
     _guard()
     scripts_dir = Path(__file__).resolve().parents[2]
     lazy_core_dir = scripts_dir / "lazy_core"
-    # lazy-core-package-decomposition WU-1: lazy_core.py moved into the
-    # lazy_core/ package (lazy_core/_monolith.py + lazy_core/__init__.py); every
+    # lazy-core-package-decomposition: lazy_core.py became the lazy_core/
+    # package (12 seam submodules behind the __init__.py facade); every
     # module in that package is checked under the SAME "lazy_core.py" exempt-
-    # region marker key (Phase 1 has no exempt region there — production-scoped).
+    # region marker key (no exempt region there — production-scoped).
     module_paths = [(p, "lazy_core.py") for p in sorted(lazy_core_dir.glob("*.py"))]
     for filename in ("lazy-state.py", "bug-state.py"):
         module_paths.append((scripts_dir / filename, filename))
@@ -7339,7 +7339,7 @@ def test_no_bare_production_sentinel_writes():
         hits = _collect_bare_production_writes(source, marker_key)
         assert hits == [], (
             f"{path.name}: bare production write(s) bypassing _atomic_write: "
-            f"{hits} — route through lazy_core._monolith._atomic_write instead"
+            f"{hits} — route through lazy_core._ctx._atomic_write instead"
         )
 
 
@@ -7383,15 +7383,15 @@ def test_ctx_mutation_visible_through_facade():
             "append via lazy_core._DIAGNOSTICS not visible via "
             "lazy_core._ctx._DIAGNOSTICS"
         )
-        assert marker in lazy_core._monolith._DIAGNOSTICS, (
+        assert marker in lazy_core._ctx._DIAGNOSTICS, (
             "append via lazy_core._DIAGNOSTICS not visible via "
-            "lazy_core._monolith._DIAGNOSTICS"
+            "lazy_core._ctx._DIAGNOSTICS"
         )
         original_id = id(lazy_core._DIAGNOSTICS)
         lazy_core.clear_diagnostics()
         assert lazy_core._DIAGNOSTICS == [], "facade view not cleared"
         assert lazy_core._ctx._DIAGNOSTICS == [], "_ctx view not cleared"
-        assert lazy_core._monolith._DIAGNOSTICS == [], "_monolith view not cleared"
+        assert lazy_core._ctx._DIAGNOSTICS == [], "_ctx-direct view not cleared"
         assert id(lazy_core._DIAGNOSTICS) == original_id, (
             "clear_diagnostics() must clear the list IN PLACE (.clear()), not "
             "rebind a fresh list — the three views would silently diverge on "
@@ -7400,7 +7400,7 @@ def test_ctx_mutation_visible_through_facade():
     finally:
         # Best-effort cleanup regardless of where the assertions above failed
         # (or whether _ctx raised before any assertion ran).
-        lazy_core._monolith._DIAGNOSTICS.clear()
+        lazy_core._ctx._DIAGNOSTICS.clear()
 
 
 _TESTS = [

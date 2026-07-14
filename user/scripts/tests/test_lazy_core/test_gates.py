@@ -2640,7 +2640,7 @@ def test_no_duplicate_top_level_defs_in_state_scripts():
     if a future edit reintroduces a shadowed top-level definition.
 
     Checked PER MODULE (lazy-core-package-decomposition WU-1): lazy_core.py was
-    split into the lazy_core/ package (lazy_core/_monolith.py + lazy_core/__init__.py
+    split into the lazy_core/ package (12 seam submodules + lazy_core/__init__.py
     + any future submodules). A same-named def/class in TWO DIFFERENT modules is
     legal (module scoping); the F811 class this guard pins is a duplicate WITHIN
     one module.

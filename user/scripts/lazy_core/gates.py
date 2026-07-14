@@ -14,12 +14,12 @@ Constraint 3): docs/bugs/_archive/mark-complete-partial-apply-noop-unrecoverable
 FIXED.md and docs/bugs/_archive/production-sentinel-writes-bypass-atomic-write/
 FIXED.md. All writes here go through ``_ctx._atomic_write``.
 
-Deferred function-local imports (this module must not import ``_monolith`` at
-top level — circular, since ``_monolith`` imports FROM this module):
-``_current_head`` (loop-detection plane, monolith-resident until Phase 5) and
-the provenance derivation helpers ``_git_capture_lines`` /
-``derive_touched_from_brackets`` / ``derive_touched_from_grep`` (ledger plane —
-re-pointed to ``.ledgers`` at Phase 4 WU-2, done).
+Deferred function-local imports: the provenance derivation helpers
+``_git_capture_lines`` / ``derive_touched_from_brackets`` /
+``derive_touched_from_grep`` (ledger plane — ``.ledgers``, kept
+function-local: ``.ledgers`` imports this module at top level, a genuine
+cycle). ``_current_head`` / ``_git`` resolve top-level from ``.runtimeplane``
+(Phase-5 WU-3).
 """
 
 from __future__ import annotations

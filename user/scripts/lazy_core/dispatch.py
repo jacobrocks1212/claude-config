@@ -15,9 +15,9 @@ refusals plane (``read_run_marker``, ``write_cycle_marker``, ``refuse_*``)
 lives in ``.markers`` (Phase 5 WU-1) — reached here only via deferred
 function-local imports (``.markers`` imports FROM this module at top level).
 The registry constants ``REGISTRY_ENTRY_TTL_SECONDS`` / ``_REGISTRY_RING_CAP``
-stay in ``_monolith`` until Phase-5 WU-3 (deferred imports, re-pointed there).
+are module-resident since Phase-5 WU-3.
 ``consume_nonce`` itself is registry read/write (it sits in the registry
-block, not the marker plane) and moves here; the registry LOADER
+block, not the marker plane) and lives here; the registry LOADER
 ``_load_registry`` lives in ``.statedir`` (Phase 2), and the deny-ledger
 filename lives in ``.ledgers`` (WU-2).
 """

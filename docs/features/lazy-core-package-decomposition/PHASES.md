@@ -1,6 +1,6 @@
 # PHASES — lazy-core-package-decomposition
 
-**Status:** In-progress (Phases 0–3 Complete; L1 ratified 2026-07-13 → mechanism 3 redirect-the-patches; Phases 4–6 remain)
+**Status:** In-progress (Phases 0–5 Complete; L1 ratified 2026-07-13 → mechanism 3 redirect-the-patches; Phase 6 remains)
 **MCP runtime:** not-required (pure state-plane refactor; SKIP_MCP_TEST class)
 **Friction-reduction feature:** yes (KPI row `lazy-core-monolith-intervention-drag`)
 **Last updated:** 2026-07-13
@@ -94,10 +94,17 @@ suite 1141→1142 (one sanctioned TDD pin added); monolith 20,289 → 16,784 LoC
       regeneration; collect-only 2230 pre == 2230 post per commit, bare-name multiset identical.
       `_monolith.py` 16,784 -> 7,858 LoC. See Implementation Notes Phase 4.)
 
-## Phase 5 — Marker plane + pseudo (riskiest, last) ⛔
+## Phase 5 — Marker plane + pseudo (riskiest, last) ✅ COMPLETE (green)
 
-- [ ] `markers.py`, `pseudo.py` (`apply_pseudo`@4738, ~1,362 ln, moved INTACT — no internal refactor).
-- [ ] Body module deleted; every seam ≤4K LoC (benchmark census asserts).
+- [x] `markers.py`, `pseudo.py` (`apply_pseudo`@4738, ~1,362 ln, moved INTACT — no internal refactor).
+      (Commits a9e0581a / 4bd51536 — markers 56 names / pseudo one contiguous 1,576-line slice;
+      apply_pseudo 1,354 lines BYTE-IDENTICAL by difflib receipt, zero internal edits.)
+- [x] Body module deleted; every seam ≤4K LoC (benchmark census asserts).
+      (Commit 147fd912 residue sweep + the WU-4 phase-receipt commit: `_monolith.py` git rm'd; facade map explicit-total
+      486 entries, no fallback; census `over_4k_ceiling: []`, largest = ledgers 3,921 LoC.
+      Battery 7/7 green per commit; collect 2230 pre == 2230 post (WU-1..3), 2231 post-WU-4
+      (= 2230 + the one sanctioned TDD pin `test_facade_map_total_and_collision_free`);
+      ZERO baseline regeneration. See IMPLEMENTATION_NOTES.md Phase 5.)
 
 ## Phase 6 — Lint gate + follow-up hooks ⛔
 
