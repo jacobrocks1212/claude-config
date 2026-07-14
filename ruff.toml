@@ -1,0 +1,36 @@
+# ruff.toml — advisory F-rules (pyflakes-class) lint gate for user/scripts/
+#
+# Feature: lazy-core-package-decomposition (Phase 6, D6 ratified: advisory-first).
+# Scope: `user/scripts/**` only — the lazy/bug state-machine plane. Every other
+# tree in this repo (user/skills/**, repos/**, etc.) is OUT of scope; a bare
+# `ruff check .` from the repo root reports findings ONLY under user/scripts/.
+#
+# Rule selection: F (pyflakes) ONLY — no style rules (E/W/etc). A style gate
+# would generate a worthless mega-diff across a 20K-line-derived package; F
+# catches real defects (unused imports, undefined names, duplicate defs) with
+# near-zero false positives. The headline motivating case (F811 duplicate
+# `_current_head` def) was already fixed pre-feature — this gate is a FORWARD
+# guard against a regression, not a baseline cleanup.
+#
+# Advisory, NOT enforcing: this config is a documented on-demand command
+# (`python -m ruff check .` / `ruff check .`) producing a report. It is NOT
+# wired into the invariant battery, any hook, or CI. Flipping to enforcing
+# (e.g. wiring into a pre-commit gate) is a LATER, separate operator decision.
+include = ["user/scripts/**/*.py"]
+
+[lint]
+select = ["F"]
+
+# Discovered by the WU-1 fixture red-check (2026-07-13): ruff's default
+# `dummy-variable-rgx` treats a leading-underscore name (e.g. `_current_head`,
+# `_die`, `_atomic_write` — this codebase's dominant private-helper naming
+# convention, per user/scripts/CLAUDE.md) as an intentionally-unused "dummy"
+# and SILENTLY SUPPRESSES F811 (duplicate-definition) on it. Left at ruff's
+# default, this gate would NOT have caught the exact motivating headline case
+# (the fixed duplicate `_current_head` def) had it recurred — a config that
+# can't catch its own stated forward-guard case is a real gap, not a style
+# nit. Disabling the dummy-variable exemption (empty regex = matches nothing)
+# costs +3 findings on the live tree (142 -> 145, verified) in exchange for
+# real F811/F841 coverage on the underscore-prefixed convention this codebase
+# actually uses everywhere.
+dummy-variable-rgx = "^$"

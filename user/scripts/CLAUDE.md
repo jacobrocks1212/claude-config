@@ -126,6 +126,47 @@ cmdlets** (`Get-Content`, `Select-Object`, `Select-String`, `Get-ChildItem`). Cr
 `head`/`grep` are "not recognized" in PowerShell; `Select-Object`/`Get-Content` are "command not
 found" in bash.
 
+### Ruff F-rules advisory lint (`lazy-core-package-decomposition` Phase 6)
+
+An **advisory-only** ruff gate scoped to this directory: `ruff.toml` at the repo root
+(`include = ["user/scripts/**/*.py"]`, `lint.select = ["F"]` — pyflakes-class only, no style
+rules). Run it on demand:
+
+```bash
+ruff check user/scripts --config ruff.toml       # or: python -m ruff check user/scripts (if `ruff` isn't on PATH)
+ruff check .                                      # from repo root — resolves ruff.toml automatically
+```
+
+- **Advisory, not enforcing.** Exit code is informational — this gate is NOT wired into the
+  7-command invariant battery, any hook, or CI. Flipping to enforcing is a later, separate
+  operator decision (D6, ratified).
+- **Why F-only:** a style gate (E/W/etc.) would generate a worthless mega-diff across a
+  20K-line-derived package; F (unused imports, unresolved names, duplicate defs) catches real
+  defects with near-zero false positives.
+- **Forward guard, not a baseline fix:** the headline motivating case — a duplicate top-level
+  `_current_head` def (F811) — was already fixed pre-feature (guarded today by the AST-based
+  `test_no_duplicate_top_level_defs_in_state_scripts`). This gate exists to catch a
+  *regression* of that shape, not to clean up the current tree; findings are reported, never
+  auto-fixed, this phase.
+- **`dummy-variable-rgx = "^$"` override (discovered by the WU-1 fixture red-check):** ruff's
+  *default* dummy-variable convention treats a leading-underscore name (e.g. `_current_head`,
+  `_die`, `_atomic_write` — this codebase's dominant private-helper naming convention) as
+  intentionally-unused and silently exempts it from F811/F841. Left at default, this gate would
+  **not** have caught the exact motivating case had it recurred. The override costs +3 findings
+  on the live tree (142 → 145) in exchange for real coverage on the underscore-prefixed
+  convention used throughout `user/scripts/`.
+- **Scoping caveat:** `ruff check .` from the repo root resolves `ruff.toml`'s `include` for
+  everything EXCEPT a pre-existing, unrelated nested config
+  (`user/plugins/local-tools/plugins/work-logging-plugin/pyproject.toml`, its own independent
+  project) — ruff's hierarchical config discovery lets that subtree's own `[tool.ruff]` win for
+  its own files (2 out-of-scope `E501` findings from that project, not this gate's concern). Run
+  `ruff check user/scripts` directly for a strictly-scoped count.
+- **Baseline (2026-07-13, `ruff check user/scripts`):** **145 findings** — F401 101 (unused
+  imports) · F841 24 (unused locals) · F541 19 (f-string without placeholders) · F811 1
+  (`tests/test_lazy_core/test_pseudo.py` — a genuine pre-existing `_os` re-import shadow, not
+  fixed this phase). These are follow-up fodder for a later enforcing session — the importer-diff
+  guard forbids production `lazy_core/` edits in this phase.
+
 ## The skill family (thin wrappers)
 
 All wrappers run `lazy-state.py`, dispatch the one named sub-skill (or perform a

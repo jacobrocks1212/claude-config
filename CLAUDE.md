@@ -262,6 +262,7 @@ python ~/.claude/scripts/lint-skills.py --check-skill-size         # + the skill
 python ~/.claude/scripts/project-skills.py                        # Expand all skills → projected/
 python ~/.claude/scripts/lint-skill-config.py --repo-root .       # skill-config MANIFEST.json schema + reference sweep
 python ~/.claude/scripts/cli-surface-lint.py --repo-root .        # prose --flag mentions vs. docs/cli/cli-surface.json (informational)
+ruff check user/scripts --config ruff.toml                        # advisory (exit code informational) F-rules gate on user/scripts/ — enforcing flip is a future operator decision; see ruff.toml
 ```
 
 ### Queue dependency DAG (`queue-dependency-dag`)

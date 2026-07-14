@@ -71,7 +71,7 @@ Where this plan's repo uses non-default gates or component paths (this is claude
 
 ## Work Units
 
-- [ ] WU-1 — Ruff F-rules advisory config + fixture red-check + baseline report
+- [x] WU-1 — Ruff F-rules advisory config + fixture red-check + baseline report
 - [ ] WU-2 — Per-function-size measurement hook + final KPI re-measure + feature receipt notes
 
 ---

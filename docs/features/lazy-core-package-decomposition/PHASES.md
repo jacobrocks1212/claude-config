@@ -108,8 +108,19 @@ suite 1141→1142 (one sanctioned TDD pin added); monolith 20,289 → 16,784 LoC
 
 ## Phase 6 — Lint gate + follow-up hooks ⛔
 
-- [ ] Ruff F-rules on `user/scripts/`, advisory → enforcing. Note: headline F811 (`_current_head`)
+- [x] Ruff F-rules on `user/scripts/`, advisory → enforcing. Note: headline F811 (`_current_head`)
       already fixed, so this is a forward guard, not a baseline-fix.
+      (`ruff.toml` at repo root: `include = ["user/scripts/**/*.py"]`, `lint.select = ["F"]`,
+      `dummy-variable-rgx = "^$"` — the last discovered necessary by the fixture red-check: ruff's
+      default underscore-dummy convention silently exempted the exact `_current_head`-shaped
+      motivating case from F811. Fixture red-check: an isolated planted duplicate-def fixture and
+      an in-tree untracked probe both confirmed F811 fires; `ruff check .` from repo root confirmed
+      scope resolution (2 stray out-of-scope `E501` findings come from a pre-existing, unrelated
+      nested `pyproject.toml` in `user/plugins/local-tools/...` — ruff's own hierarchical config
+      discovery, not a gate defect; `ruff check user/scripts` is the strictly-scoped invocation).
+      Baseline: **145 findings** (F401 101 / F841 24 / F541 19 / F811 1) — advisory only, zero
+      `lazy_core/` production edits. Documented in `user/scripts/CLAUDE.md` + root `CLAUDE.md`
+      Lint Commands.)
 - [ ] Per-function-size measurement hook for the D7 compute_state follow-up.
 
 ## Implementation Notes
