@@ -80,7 +80,7 @@ Where this plan's repo uses non-default gates or component paths (this is claude
 ## Work Units
 
 - [x] WU-1 — Receipt re-check + extract `gates.py` (evidence/coherence/ledger-verify)
-- [ ] WU-2 — Extract `ledgers.py` (provenance + deny ledger + telemetry/efficacy + canary)
+- [x] WU-2 — Extract `ledgers.py` (provenance + deny ledger + telemetry/efficacy + canary)
 - [ ] WU-3 — Extract `dispatch.py` (cycle/dispatch prompts + prompt registry)
 - [ ] WU-4 — Extract `runtimeplane.py` (ensure_runtime + transient build) + phase receipt
 

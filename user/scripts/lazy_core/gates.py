@@ -19,7 +19,7 @@ top level — circular, since ``_monolith`` imports FROM this module):
 ``_current_head`` (loop-detection plane, monolith-resident until Phase 5) and
 the provenance derivation helpers ``_git_capture_lines`` /
 ``derive_touched_from_brackets`` / ``derive_touched_from_grep`` (ledger plane —
-re-pointed to ``.ledgers`` at Phase 4 WU-2).
+re-pointed to ``.ledgers`` at Phase 4 WU-2, done).
 """
 
 from __future__ import annotations
@@ -180,7 +180,7 @@ def _commit_subject_is_foreign_harden(repo_root: Path, sha: str) -> bool:
     returns ``False`` — treated as NOT foreign, so a real item commit is never
     silently dropped and the completion gate is never weakened by a read error.
     """
-    from ._monolith import _git_capture_lines  # Phase-4 WU-2 re-point (ledger plane)
+    from .ledgers import _git_capture_lines  # ledger plane (re-pointed at Phase-4 WU-2)
     lines = _git_capture_lines(
         repo_root, ["show", "-s", "--format=%s", str(sha)])
     if not lines:
@@ -192,7 +192,7 @@ def _files_from_commits(repo_root: Path, shas: "list[str]") -> "list[str]":
     """Union the per-commit ``git show --name-only`` file sets for ``shas``
     (each commit's OWN diff, not a range diff). Sorted; empty on any read
     failure per commit (fail-open, never raises)."""
-    from ._monolith import _git_capture_lines  # Phase-4 WU-2 re-point (ledger plane)
+    from .ledgers import _git_capture_lines  # ledger plane (re-pointed at Phase-4 WU-2)
     files: set[str] = set()
     for sha in shas:
         lines = _git_capture_lines(
@@ -223,7 +223,7 @@ def _item_commit_touched_files(spec_path: Path, repo_root: Path) -> "list[str]":
     commit is present (the common case), the pre-existing range-derived file
     set is returned BYTE-IDENTICALLY (no re-derivation, no behavior change).
     """
-    from ._monolith import (  # Phase-4 WU-2 re-point (ledger plane)
+    from .ledgers import (  # ledger plane (re-pointed at Phase-4 WU-2)
         derive_touched_from_brackets,
         derive_touched_from_grep,
     )

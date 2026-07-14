@@ -1652,14 +1652,14 @@ def test_guard_allow_acks_on_hardening_class():
             prompt = "hardening with a poisoned ack"
             lazy_core.register_emission(prompt, cls="hardening")
             # Monkeypatch ack_oldest_deny to raise — _ack_if_hardening must swallow.
-            original = lazy_core._monolith.ack_oldest_deny
+            original = lazy_core.ledgers.ack_oldest_deny
             def _boom(*a, **k):
                 raise RuntimeError("ack exploded")
-            lazy_core._monolith.ack_oldest_deny = _boom  # type: ignore[assignment]
+            lazy_core.ledgers.ack_oldest_deny = _boom  # type: ignore[assignment]
             try:
                 out = lazy_guard.guard(_hook_input(prompt, "tu-boom"))
             finally:
-                lazy_core._monolith.ack_oldest_deny = original  # type: ignore[assignment]
+                lazy_core.ledgers.ack_oldest_deny = original  # type: ignore[assignment]
             decision = json.loads(out)["hookSpecificOutput"]["permissionDecision"]
             assert decision == "allow", (
                 "an ack failure must NEVER change the allow output (fail-open)"
@@ -3616,7 +3616,7 @@ def test_telemetry_emit_nondestructive_on_stale_marker():
             assert marker_path.exists(), (
                 "the emitter must NOT delete a stale marker (non-destructive read)"
             )
-            ledger = Path(td) / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME
+            ledger = Path(td) / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME
             assert not ledger.exists(), "gated emit must write nothing"
         finally:
             _clear_state_dir()

@@ -780,13 +780,13 @@ def test_ack_oldest_deny_fifo():
                     now=float(i),
                 )
             assert lazy_core.pending_hardening() == 3
-            acked = lazy_core._monolith.ack_oldest_deny(now=999.0)
+            acked = lazy_core.ledgers.ack_oldest_deny(now=999.0)
             assert acked is not None, "ack returned None despite pending entries"
             assert acked["tool_use_id"] == "tu-0", "must ack the OLDEST (tu-0)"
             assert acked["acked"] is True and acked["acked_ts"] == 999.0, acked
             assert lazy_core.pending_hardening() == 2, "one acked → 2 remain"
             # Next ack takes tu-1 (the new oldest unacked).
-            acked2 = lazy_core._monolith.ack_oldest_deny(now=1000.0)
+            acked2 = lazy_core.ledgers.ack_oldest_deny(now=1000.0)
             assert acked2["tool_use_id"] == "tu-1", acked2
             assert lazy_core.pending_hardening() == 1
             # The first entry stays acked across re-reads (persisted).
@@ -807,14 +807,14 @@ def test_ack_oldest_deny_empty_is_noop():
         _set_state_dir(Path(td))
         try:
             # No ledger at all.
-            assert lazy_core._monolith.ack_oldest_deny() is None, "empty/absent ledger → None"
+            assert lazy_core.ledgers.ack_oldest_deny() is None, "empty/absent ledger → None"
             # Ledger with a single already-acked entry.
             lazy_core.append_deny_ledger_entry(
                 tool_use_id="tu", denied_sha12="a" * 12,
                 reason_head="r", prompt_head="p", now=1.0,
             )
-            assert lazy_core._monolith.ack_oldest_deny(now=2.0) is not None  # acks it
-            assert lazy_core._monolith.ack_oldest_deny(now=3.0) is None, "all acked → no-op"
+            assert lazy_core.ledgers.ack_oldest_deny(now=2.0) is not None  # acks it
+            assert lazy_core.ledgers.ack_oldest_deny(now=3.0) is None, "all acked → no-op"
         finally:
             _clear_state_dir()
 
@@ -1091,7 +1091,7 @@ def test_run_end_refuses_on_unacked_deny():
     hardening dispatch reaching execution), NOT at --emit-dispatch hardening
     emission time.  The middle leg of this test previously called
     `--emit-dispatch hardening` to drain the ledger; under Phase 8 that emission
-    no longer acks, so the ack is now driven via lazy_core._monolith.ack_oldest_deny()
+    no longer acks, so the ack is now driven via lazy_core.ledgers.ack_oldest_deny()
     in-process — exactly what lazy_guard.py's _ack_if_hardening does on a
     hardening-class allow.  (A separate test, test_emit_dispatch_hardening_no_
     longer_acks, pins that the emission itself does NOT ack.)"""
@@ -1131,10 +1131,10 @@ def test_run_end_refuses_on_unacked_deny():
 
         # Ack via the GUARD-ALLOW path (Phase 8): a hardening dispatch reaching
         # execution acks the oldest unacked deny.  Simulated in-process by the
-        # same lazy_core._monolith.ack_oldest_deny() call lazy_guard.py makes.
+        # same lazy_core.ledgers.ack_oldest_deny() call lazy_guard.py makes.
         _set_state_dir(state_dir)
         try:
-            acked = lazy_core._monolith.ack_oldest_deny()
+            acked = lazy_core.ledgers.ack_oldest_deny()
             assert acked is not None, "guard-allow ack must retire the pending deny"
         finally:
             _clear_state_dir()
@@ -2062,7 +2062,7 @@ def test_telemetry_symbols_present():
     ]
     missing = [s for s in expected if not hasattr(lazy_core, s)]
     assert not missing, f"missing telemetry symbols: {missing}"
-    assert lazy_core._monolith._TELEMETRY_LEDGER_FILENAME == "lazy-telemetry.jsonl"
+    assert lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME == "lazy-telemetry.jsonl"
     # The D4-B halt vocabulary (dispatches whose terminal_reason is a halt).
     for reason in ("blocked", "needs-input", "needs-spec-input", "needs-research",
                    "completion-unverified", "blocked-misnamed"):
@@ -2125,7 +2125,7 @@ def test_telemetry_marker_gated_no_marker_no_emit():
         try:
             ok = lazy_core.append_telemetry_event("run-start", now=1000.0)
             assert ok is False, "no marker must gate the emit (False)"
-            ledger = Path(td) / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME
+            ledger = Path(td) / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME
             assert not ledger.exists(), "no marker → no ledger file created"
             assert lazy_core.read_telemetry_events() == []
         finally:
@@ -2159,7 +2159,7 @@ def test_telemetry_reader_tolerates_torn_and_unknown_v():
     with tempfile.TemporaryDirectory() as td:
         _set_state_dir(Path(td))
         try:
-            ledger = Path(td) / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME
+            ledger = Path(td) / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME
             good = json.dumps({
                 "v": 1, "ts": 1.0, "run_id": "2026-07-04T00:00:00Z",
                 "pipeline": "feature", "event": "run-start",
@@ -2188,7 +2188,7 @@ def test_telemetry_read_with_provenance():
     with tempfile.TemporaryDirectory() as td:
         _set_state_dir(Path(td))
         try:
-            ledger = Path(td) / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME
+            ledger = Path(td) / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME
             line1 = json.dumps({"v": 1, "ts": 1.0, "run_id": "r", "pipeline":
                                 "feature", "event": "run-start", "item_id": None,
                                 "data": {}})
@@ -2202,7 +2202,7 @@ def test_telemetry_read_with_provenance():
             assert len(events) == 2, events
             assert events[0]["_line"] == 1 and events[1]["_line"] == 3, events
             assert events[0]["_source"].endswith(
-                lazy_core._monolith._TELEMETRY_LEDGER_FILENAME), events
+                lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME), events
             # Default read stays provenance-free (envelope purity).
             plain = lazy_core.read_telemetry_events()
             assert all("_line" not in e and "_source" not in e for e in plain)
@@ -2225,7 +2225,7 @@ def test_telemetry_rotation_shift_and_reader_order():
             lazy_core.write_run_marker(
                 pipeline="feature", cloud=False, repo_root="/r", now=now,
             )
-            ledger = Path(td) / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME
+            ledger = Path(td) / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME
             # Pre-seed the full rotated chain so the shift + oldest-drop is
             # observable in one append.
             seg = lambda i: Path(str(ledger) + f".{i}")  # noqa: E731
@@ -2241,13 +2241,13 @@ def test_telemetry_rotation_shift_and_reader_order():
                                       "item_id": None, "data": {}})
             ledger.write_text(active_line + "\n", encoding="utf-8")
             # Shrink the cap so the seeded active file is over it.
-            orig_cap = lazy_core._monolith._TELEMETRY_ROTATE_BYTES
-            lazy_core._monolith._TELEMETRY_ROTATE_BYTES = 8
+            orig_cap = lazy_core.ledgers._TELEMETRY_ROTATE_BYTES
+            lazy_core.ledgers._TELEMETRY_ROTATE_BYTES = 8
             try:
                 ok = lazy_core.append_telemetry_event("cycle-begin",
                                                       item_id="f", now=now + 1)
             finally:
-                lazy_core._monolith._TELEMETRY_ROTATE_BYTES = orig_cap
+                lazy_core.ledgers._TELEMETRY_ROTATE_BYTES = orig_cap
             assert ok is True
             n = lazy_core._TELEMETRY_ROTATED_SEGMENTS
             # active rotated to .1; old .1 shifted to .2; …; old .N dropped.
@@ -2290,7 +2290,7 @@ def test_flush_cloud_telemetry_segment_writes_colon_stripped_segment():
             )
             run_id = marker["started_at"]
             # A foreign (previous-run) line must NOT be flushed.
-            ledger = state / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME
+            ledger = state / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME
             ledger.write_text(
                 json.dumps({"v": 1, "ts": 1.0, "run_id": "2020-01-01T00:00:00Z",
                             "pipeline": "feature", "event": "run-start",
@@ -3043,11 +3043,11 @@ def test_intervention_symbols_present():
     ]
     missing = [s for s in expected if not hasattr(lazy_core, s)]
     assert not missing, f"missing intervention symbols: {missing}"
-    assert lazy_core._monolith.INTERVENTION_BASELINE_RUNS == 20
-    assert lazy_core._monolith.INTERVENTION_REVIEW_AFTER_RUNS == 20
-    assert lazy_core._monolith.INTERVENTION_MIN_SAMPLE == 5
-    assert lazy_core._monolith.INTERVENTION_BAND_PCT == 20
-    assert lazy_core._monolith._INTERVENTIONS_DIRNAME == "interventions"
+    assert lazy_core.ledgers.INTERVENTION_BASELINE_RUNS == 20
+    assert lazy_core.ledgers.INTERVENTION_REVIEW_AFTER_RUNS == 20
+    assert lazy_core.ledgers.INTERVENTION_MIN_SAMPLE == 5
+    assert lazy_core.ledgers.INTERVENTION_BAND_PCT == 20
+    assert lazy_core.ledgers._INTERVENTIONS_DIRNAME == "interventions"
 
 
 
@@ -3392,7 +3392,7 @@ def test_read_intervention_telemetry_merges_originating_target_ledger():
         try:
             # Current repo's flat ledger (today's read path).
             _write_telemetry_line(
-                base / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME,
+                base / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME,
                 run_id="RC", ts=1.0, item_id="cur-item",
             )
             # Target repo's keyed-sibling ledger, behind a LIVE marker.
@@ -3400,7 +3400,7 @@ def test_read_intervention_telemetry_merges_originating_target_ledger():
                 base, target_root, started_at=_fresh_started_at()
             )
             _write_telemetry_line(
-                keyed_dir / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME,
+                keyed_dir / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME,
                 run_id="RT", ts=2.0, item_id="target-item",
             )
 
@@ -3434,17 +3434,17 @@ def test_read_intervention_telemetry_dedups_overlapping_target_event():
         try:
             shared_kwargs = dict(run_id="SHARED", ts=5.0, item_id="dup-item")
             _write_telemetry_line(
-                base / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME, **shared_kwargs
+                base / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME, **shared_kwargs
             )
             keyed_dir = _write_target_marker(
                 base, target_root, started_at=_fresh_started_at()
             )
             _write_telemetry_line(
-                keyed_dir / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME, **shared_kwargs
+                keyed_dir / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME, **shared_kwargs
             )
             # Target-unique event: absent today (no merge) -> proves RED.
             _write_telemetry_line(
-                keyed_dir / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME,
+                keyed_dir / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME,
                 run_id="RT-UNIQUE", ts=6.0, item_id="target-only-item",
             )
 
@@ -3477,14 +3477,14 @@ def test_read_intervention_telemetry_failopen_unreadable_target_ledger():
         _set_state_dir(base)
         try:
             _write_telemetry_line(
-                base / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME,
+                base / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME,
                 run_id="RC", ts=1.0, item_id="cur-item",
             )
             keyed_dir = _write_target_marker(
                 base, target_root, started_at=_fresh_started_at()
             )
             # Ledger path is a DIRECTORY, not a file -> unreadable as JSONL.
-            (keyed_dir / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME).mkdir()
+            (keyed_dir / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME).mkdir()
 
             events = lazy_core.read_intervention_telemetry(current_root)  # must not raise
             run_ids = {e.get("run_id") for e in events}
@@ -3508,7 +3508,7 @@ def test_read_intervention_telemetry_noop_when_no_originating_marker():
         _set_state_dir(base)
         try:
             _write_telemetry_line(
-                base / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME,
+                base / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME,
                 run_id="RC", ts=1.0, item_id="cur-item",
             )
             baseline = list(lazy_core.read_telemetry_events())
@@ -3530,14 +3530,14 @@ def test_read_intervention_telemetry_noop_when_no_originating_marker():
         _set_state_dir(base)
         try:
             _write_telemetry_line(
-                base / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME,
+                base / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME,
                 run_id="RC2", ts=1.0, item_id="cur-item-2",
             )
             keyed_dir = _write_target_marker(
                 base, target_root, started_at=_stale_started_at()
             )
             _write_telemetry_line(
-                keyed_dir / lazy_core._monolith._TELEMETRY_LEDGER_FILENAME,
+                keyed_dir / lazy_core.ledgers._TELEMETRY_LEDGER_FILENAME,
                 run_id="RT-STALE", ts=2.0, item_id="should-not-appear",
             )
 
