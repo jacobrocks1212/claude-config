@@ -47,6 +47,7 @@ from .docmodel import (
     _parse_plan_frontmatter,
     _phase_completion_plan,
     classify_blocking_unchecked_rows,
+    enumerate_deferred_verification_rows,
     find_implementation_plans,
     parse_phases,
     parse_sentinel,
@@ -59,8 +60,10 @@ from .gates import (
     autotick_verification_rows,
     commit_drift_verdict,
     evaluate_completion_evidence,
+    evaluate_deferred_runtime_exemption,
     gate_verdict_ok,
     observation_gap_promotable,
+    write_runtime_gates_ledger,
 )
 from .ledgers import (
     _INTERVENTIONS_DIRNAME,
@@ -1235,11 +1238,39 @@ def apply_pseudo(
         # no-op (preserves the pre-Phase-9 behavior). ``flipped_phases`` records
         # the headings flipped.
         flipped_phases: list[str] = []
+        runtime_gates_pending = 0
         if not resuming and phases_md_path.exists():
             # Re-read: the auto-tick above may have rewritten the file.
             phases_text = phases_md_path.read_text(encoding="utf-8")
             parsed_phases = parse_phases(phases_text)
-            to_flip, refusals = _phase_completion_plan(parsed_phases)
+
+            # --- Deferred-runtime exemption (no-MCP structural-skip + ledger) ---
+            # (completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo).
+            # In a re-verified no-app-surface repo the evidence auto-tick above is
+            # STRUCTURALLY impossible (no MCP_TEST_RESULTS.md can exist), so a
+            # legitimately-DEFERRED verification-only row would deadlock the
+            # coherence gate. When the deferred-runtime disposition authorizes AND
+            # there are unchecked canonical verification-only rows, WRITE the
+            # RUNTIME_GATES.md ledger (the honest tracker — the rows stay `- [ ]`,
+            # NOT ticked) and exempt those rows from the coherence blocking count.
+            # Same kill-switch as the auto-tick relaxation (`strict_gate`) for
+            # frictionless rollback. A genuine unchecked implementation row is
+            # never in this count and still refuses below.
+            verification_only_exempt = False
+            if not strict_gate:
+                defer = evaluate_deferred_runtime_exemption(spec_path, repo_root)
+                if defer.get("ok"):
+                    defer_rows = enumerate_deferred_verification_rows(phases_text)
+                    if defer_rows:
+                        led = write_runtime_gates_ledger(
+                            spec_path, defer_rows, date=date
+                        )
+                        runtime_gates_pending = led.get("count", 0)
+                        verification_only_exempt = True
+
+            to_flip, refusals = _phase_completion_plan(
+                parsed_phases, verification_only_exempt=verification_only_exempt
+            )
             if refusals:
                 # Residual incoherence → refuse with no filesystem writes at all
                 # (no receipt, no status flips, no sentinel deletions). Name each
@@ -1618,6 +1649,12 @@ def apply_pseudo(
         # there were no unchecked verification rows. Orchestrator-visible,
         # matching the flipped_phases surfacing pattern.
         result["auto_ticked_rows"] = auto_ticked_rows
+        # runtime_gates_pending: count of DEFERRED verification-only rows exempted
+        # via the no-MCP structural-skip route this call and recorded in
+        # RUNTIME_GATES.md (they stay `- [ ]`, NOT ticked). 0 on the ordinary
+        # path (kill-switch set, no structural skip, or no such rows).
+        # completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo.
+        result["runtime_gates_pending"] = runtime_gates_pending
         # WU: feature-queue trim — True iff a queue.json entry was removed this
         # call (always False for the bug/fixed path, whose trim lives in
         # archive_fixed). Callers may JSON-dump unconditionally.

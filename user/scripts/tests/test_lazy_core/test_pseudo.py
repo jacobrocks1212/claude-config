@@ -2018,6 +2018,169 @@ def test_apply_pseudo_coherence_mark_fixed_descoped_phase_completes():
 
 
 
+# --- completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo -----------
+# A legitimately-DEFERRED verification-only row in a no-MCP structural-skip repo
+# completes with an honest RUNTIME_GATES.md ledger (the row stays `- [ ]`), while
+# every strict case (genuine row, app repo, kill-switch) still refuses.
+
+def _pseudo_write_structural_skip(spec_dir: Path) -> None:
+    (spec_dir / "SKIP_MCP_TEST.md").write_text(
+        "---\nkind: skip-mcp-test\nfeature_id: test-feature\n"
+        "reason: repo has no MCP-reachable surface\ndate: 2026-07-14\n"
+        "skipped_by: pipeline\ngranted_by: pipeline-structural\n"
+        "spec_class: standalone — no app surface\n---\n\n# Skip (structural)\n",
+        encoding="utf-8",
+    )
+
+
+_DEFERRED_PHASES_BODY = (
+    "# Phases\n\n"
+    "### Phase 1: Impl\n\n**Status:** Complete\n\n- [x] implementation done\n\n"
+    "### Phase 2: Validation\n\n**Status:** In-progress\n\n- [x] validated\n\n"
+    "**Runtime Verification** *(deferred — closed outside /execute-plan)*:\n"
+    "- [ ] <!-- verification-only --> Cloud compatibility run — closed by the "
+    "first cloud-session run\n"
+)
+
+
+def test_apply_pseudo_deferred_runtime_row_completes_on_structural_skip():
+    """The new route: a no-MCP structural-skip feature with a DEFERRED
+    verification-only row completes — receipt written, RUNTIME_GATES.md ledgered,
+    runtime_gates_pending surfaced, and the deferred row is NOT ticked (stays
+    `- [ ]`; the ledger is the honest tracker)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)  # no src-tauri/, no package.json → no app surface
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _pseudo_write_structural_skip(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        (spec_dir / "PHASES.md").write_text(_DEFERRED_PHASES_BODY, encoding="utf-8")
+
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir, date="2026-07-14"
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        assert result["refused"] is None, f"expected no refusal, got {result!r}"
+        assert (spec_dir / "COMPLETED.md").exists(), "COMPLETED.md not written"
+        assert result["runtime_gates_pending"] == 1, (
+            f"expected 1 pending runtime gate, got {result.get('runtime_gates_pending')}"
+        )
+        # The ledger exists and is the honest tracker.
+        ledger = spec_dir / "RUNTIME_GATES.md"
+        assert ledger.exists(), "RUNTIME_GATES.md was not written"
+        assert "MANUAL RUNTIME GATES PENDING" in ledger.read_text(encoding="utf-8")
+        # The deferred row is NOT ticked — it stays `- [ ]` (auto_ticked stayed 0).
+        assert result["auto_ticked_rows"] == 0, (
+            f"deferred rows must NOT be auto-ticked, got {result['auto_ticked_rows']}"
+        )
+        phases_after = (spec_dir / "PHASES.md").read_text(encoding="utf-8")
+        assert "- [ ] <!-- verification-only -->" in phases_after, (
+            "the deferred verification-only row must remain unchecked (deferred, "
+            "not certified)"
+        )
+
+
+def test_apply_pseudo_deferred_runtime_mark_fixed_completes_on_structural_skip():
+    """Bug-pipeline mirror: __mark_fixed__ inherits the exemption via shared
+    lazy_core (no script mirror owed) — a deferred verification-only row in a
+    no-MCP repo completes with FIXED.md + RUNTIME_GATES.md."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _pseudo_write_structural_skip(spec_dir)
+        _write_spec_md(spec_dir, status="Investigating")
+        (spec_dir / "PHASES.md").write_text(_DEFERRED_PHASES_BODY, encoding="utf-8")
+
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_fixed__", spec_dir, date="2026-07-14"
+        )
+        assert result["ok"] is True, f"expected ok=True, got {result}"
+        assert (spec_dir / "FIXED.md").exists(), "FIXED.md not written"
+        assert (spec_dir / "RUNTIME_GATES.md").exists(), "ledger not written"
+
+
+def test_apply_pseudo_deferred_runtime_genuine_impl_row_still_refuses():
+    """NON-REGRESSION: a structural skip does NOT exempt a genuine unchecked
+    implementation row (no verification-only marker) — completion still refuses
+    naming the offending phase."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _pseudo_write_structural_skip(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        (spec_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1: Impl\n\n**Status:** In-progress\n\n"
+            "- [x] one done\n"
+            "- [ ] genuine implementation NOT done\n"
+            "- [ ] <!-- verification-only --> deferred cloud run\n",
+            encoding="utf-8",
+        )
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir, date="2026-07-14"
+        )
+        assert result["ok"] is False, f"expected refusal, got {result}"
+        assert "Phase 1" in (result["refused"] or ""), result
+        assert not (spec_dir / "COMPLETED.md").exists()
+
+
+def test_apply_pseudo_deferred_runtime_no_exemption_in_app_repo():
+    """NON-REGRESSION: a verification-only row in an APP repo (package.json
+    present) does NOT complete on this route — the structural waiver re-verifies
+    False, so the deferred exemption never fires and completion refuses (real MCP
+    evidence is still required there)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        (repo_root / "package.json").write_text("{}\n", encoding="utf-8")
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _pseudo_write_structural_skip(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        (spec_dir / "PHASES.md").write_text(_DEFERRED_PHASES_BODY, encoding="utf-8")
+        result = lazy_core.apply_pseudo(
+            repo_root, "__mark_complete__", spec_dir, date="2026-07-14"
+        )
+        assert result["ok"] is False, f"expected refusal in an app repo, got {result}"
+        assert not (spec_dir / "RUNTIME_GATES.md").exists(), (
+            "the ledger must NOT be written when the exemption does not apply"
+        )
+
+
+def test_apply_pseudo_deferred_runtime_killswitch_restores_strict():
+    """The kill-switch (LAZY_STRICT_EVIDENCE_GATE) disables the deferred-runtime
+    exemption too — frictionless rollback to the strict path: the deferred row
+    blocks and no ledger is written."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _pseudo_write_structural_skip(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        (spec_dir / "PHASES.md").write_text(_DEFERRED_PHASES_BODY, encoding="utf-8")
+        _os.environ["LAZY_STRICT_EVIDENCE_GATE"] = "1"
+        try:
+            result = lazy_core.apply_pseudo(
+                repo_root, "__mark_complete__", spec_dir, date="2026-07-14"
+            )
+        finally:
+            _os.environ.pop("LAZY_STRICT_EVIDENCE_GATE", None)
+        assert result["ok"] is False, f"kill-switch must restore strict, got {result}"
+        assert not (spec_dir / "RUNTIME_GATES.md").exists()
+
+
+
+
 def test_apply_pseudo_coherence_idempotent_skips_check_when_receipted():
     """Idempotency takes precedence over the coherence check: a receipted dir
     NEVER re-refuses on an incoherent PHASES.md. mark-complete-partial-apply-
@@ -4124,6 +4287,11 @@ _TESTS = [
     ("test_apply_pseudo_coherence_no_status_phase_with_unchecked_still_refuses", test_apply_pseudo_coherence_no_status_phase_with_unchecked_still_refuses),
     ("test_apply_pseudo_coherence_descoped_phase_completes", test_apply_pseudo_coherence_descoped_phase_completes),
     ("test_apply_pseudo_coherence_mark_fixed_descoped_phase_completes", test_apply_pseudo_coherence_mark_fixed_descoped_phase_completes),
+    ("test_apply_pseudo_deferred_runtime_row_completes_on_structural_skip", test_apply_pseudo_deferred_runtime_row_completes_on_structural_skip),
+    ("test_apply_pseudo_deferred_runtime_mark_fixed_completes_on_structural_skip", test_apply_pseudo_deferred_runtime_mark_fixed_completes_on_structural_skip),
+    ("test_apply_pseudo_deferred_runtime_genuine_impl_row_still_refuses", test_apply_pseudo_deferred_runtime_genuine_impl_row_still_refuses),
+    ("test_apply_pseudo_deferred_runtime_no_exemption_in_app_repo", test_apply_pseudo_deferred_runtime_no_exemption_in_app_repo),
+    ("test_apply_pseudo_deferred_runtime_killswitch_restores_strict", test_apply_pseudo_deferred_runtime_killswitch_restores_strict),
     ("test_apply_pseudo_coherence_idempotent_skips_check_when_receipted", test_apply_pseudo_coherence_idempotent_skips_check_when_receipted),
     ("test_neutralize_sentinel_basic_rename", test_neutralize_sentinel_basic_rename),
     ("test_neutralize_sentinel_refuses_when_absent", test_neutralize_sentinel_refuses_when_absent),

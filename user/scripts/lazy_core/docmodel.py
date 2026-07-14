@@ -1393,6 +1393,67 @@ def classify_blocking_unchecked_rows(phases_text: str) -> dict:
     return {"shim": shim, "genuine": genuine}
 
 
+def enumerate_deferred_verification_rows(phases_text: str) -> list[dict]:
+    """Enumerate the unchecked CANONICAL verification-only rows for the ledger.
+
+    Used by ``apply_pseudo``'s deferred-runtime exemption
+    (completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo) to populate
+    ``RUNTIME_GATES.md``. Returns one record per unchecked ``- [ ]`` row carrying
+    the CANONICAL ``_VERIFICATION_ONLY_MARKER`` (row-scope) or sitting under a
+    header carrying it (header-scope):
+
+      ``{"phase": <enclosing phase heading | "">, "lineno": <1-based int>,
+         "text": <stripped row text, marker retained>}``
+
+    Deliberately CANONICAL-marker-only (NOT the legacy ``_VERIFICATION_SECTION_RE``
+    shim) and Superseded-phase-aware (rows inside a Superseded phase are skipped —
+    they are descoped, not deferred). Fence-aware. This is the enumeration twin of
+    the per-phase ``unchecked_verification_only`` count ``parse_phases`` records;
+    the two agree by construction on which rows are exempt.
+    """
+    rows: list[dict] = []
+    current_phase = ""
+    section_has_marker = False
+    in_superseded_phase = False
+    in_fence = False
+    for lineno, line in enumerate(phases_text.splitlines(), start=1):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        heading = re.match(r"^#{1,6}\s+(.*)$", stripped)
+        if heading:
+            if _PHASE_HEADING_RE.match(line):
+                current_phase = stripped
+                in_superseded_phase = False
+                section_has_marker = _VERIFICATION_ONLY_MARKER in line
+            else:
+                section_has_marker = _VERIFICATION_ONLY_MARKER in line
+            continue
+        if stripped.startswith("**"):
+            bold = re.match(r"^\*\*(.+?)\*\*", stripped)
+            if bold:
+                bold_text = bold.group(1)
+                if re.match(r"Status\s*:", bold_text) and "Superseded" in stripped:
+                    in_superseded_phase = True
+                    continue
+                if _VERIFICATION_ONLY_MARKER in line:
+                    section_has_marker = True
+                elif _DELIVERABLES_SECTION_RE.search(bold_text):
+                    section_has_marker = False
+                continue
+        if re.match(r"^-\s*\[\s*\]", stripped):
+            if in_superseded_phase:
+                continue
+            if _VERIFICATION_ONLY_MARKER in line or section_has_marker:
+                rows.append(
+                    {"phase": current_phase, "lineno": lineno, "text": stripped}
+                )
+    return rows
+
+
 # A phase heading in PHASES.md: ``## Phase ...`` or ``### Phase ...`` (two or
 # three leading hashes, then the literal word "Phase"). Critically, "Phase" must
 # be followed by an actual phase IDENTIFIER — NOT an English word. This mirrors
@@ -1488,6 +1549,14 @@ def parse_phases(phases_text: str) -> list[dict]:
     # boundary — the descope axis of the scope machinery proven in
     # remaining_unchecked_are_verification_only. Reset at each phase heading.
     section_has_descope_marker = False
+    # Header-scope verification-only tracking (completion-gate-deadlocks-deferred-
+    # runtime-row-in-no-mcp-repo): parallel to section_has_descope_marker but on
+    # the CANONICAL _VERIFICATION_ONLY_MARKER axis only (NOT the legacy free-text
+    # _VERIFICATION_SECTION_RE shim — the completion-time deferred-runtime
+    # exemption is deliberately conservative: only a canonically-marked row, or a
+    # row under a header carrying the canonical marker, counts toward
+    # unchecked_verification_only). Reset at each phase heading.
+    section_has_verification_marker = False
     for line in phases_text.splitlines():
         stripped = line.strip()
         # Fence markers are never headings, status lines, or deliverables.
@@ -1503,6 +1572,7 @@ def parse_phases(phases_text: str) -> list[dict]:
         # A phase heading starts a new section (and closes the previous one).
         if _PHASE_HEADING_RE.match(line):
             section_has_descope_marker = False
+            section_has_verification_marker = False
             current = {
                 "heading": stripped,
                 "status": None,
@@ -1513,6 +1583,16 @@ def parse_phases(phases_text: str) -> list[dict]:
                 # is not counted as a genuine incomplete deliverable at completion time
                 # (descoped-marker-blind-completion-coherence-gate).
                 "unchecked_descoped": 0,
+                # Count of the ``unchecked`` rows above that carry the CANONICAL
+                # _VERIFICATION_ONLY_MARKER (row-scope) or sit under a header
+                # carrying it (header-scope) — a strict subset of ``unchecked``,
+                # consulted ONLY by _phase_completion_plan's opt-in
+                # ``verification_only_exempt`` path so a DEFERRED runtime row in a
+                # no-MCP / structural-skip context can complete with an honest
+                # RUNTIME_GATES.md ledger instead of deadlocking the receipt
+                # (completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo).
+                # NOT discounted by default (the strict gate still blocks these).
+                "unchecked_verification_only": 0,
                 "checked": 0,
                 # Tracks whether a **Phase kind:** line has been consumed yet
                 # (first-wins, like status). The public ``phase_kind`` value is
@@ -1538,16 +1618,30 @@ def parse_phases(phases_text: str) -> list[dict]:
         # phase-kind / checkbox handling below is unchanged.
         if re.match(r"^#{1,6}\s+", stripped):
             section_has_descope_marker = _DESCOPED_MARKER in line
+            section_has_verification_marker = _VERIFICATION_ONLY_MARKER in line
         elif stripped.startswith("**"):
-            if _DESCOPED_MARKER in line:
-                section_has_descope_marker = True
-            else:
-                _bold = re.match(r"^\*\*(.+?)\*\*", stripped)
-                if _bold and (
+            _bold = re.match(r"^\*\*(.+?)\*\*", stripped)
+            # A named verification/deliverables/implementation subsection header
+            # WITHOUT a marker is a scope boundary that closes any header-scope
+            # carried in from a prior marker-bearing header.
+            _named_section = bool(
+                _bold and (
                     _VERIFICATION_SECTION_RE.search(_bold.group(1))
                     or _DELIVERABLES_SECTION_RE.search(_bold.group(1))
-                ):
-                    section_has_descope_marker = False
+                )
+            )
+            if _DESCOPED_MARKER in line:
+                section_has_descope_marker = True
+            elif _named_section:
+                section_has_descope_marker = False
+            # Verification header-scope: CANONICAL marker only (a bare
+            # ``**Runtime Verification**`` header WITHOUT the per-row marker does
+            # NOT open header-scope here — it is the legacy shim path, deliberately
+            # excluded from the conservative completion-time exemption).
+            if _VERIFICATION_ONLY_MARKER in line:
+                section_has_verification_marker = True
+            elif _named_section:
+                section_has_verification_marker = False
         # First **Status:** line inside the section wins; later ones (e.g. inside
         # an Implementation Notes block describing prior state) are ignored.
         if current["status"] is None:
@@ -1579,6 +1673,14 @@ def parse_phases(phases_text: str) -> list[dict]:
                 or _row_is_descoped_in_place(stripped)
             ):
                 current["unchecked_descoped"] += 1
+            # Canonical verification-only rows (row- or header-scope). Counted
+            # unconditionally here; discounted from the blocking tally ONLY when
+            # _phase_completion_plan is called with verification_only_exempt=True.
+            if (
+                _VERIFICATION_ONLY_MARKER in line
+                or section_has_verification_marker
+            ):
+                current["unchecked_verification_only"] += 1
         elif re.match(r"^-\s*\[[xX]\]", stripped):
             current["checked"] += 1
     # Drop the private bookkeeping key so the returned records expose only the
@@ -1773,7 +1875,9 @@ def retro_staleness(spec_path: Path) -> tuple[int, int] | None:
 _TERMINAL_PHASE_STATUSES = frozenset({"complete", "superseded"})
 
 
-def _phase_completion_plan(phases: list[dict]) -> tuple[list[dict], list[str]]:
+def _phase_completion_plan(
+    phases: list[dict], *, verification_only_exempt: bool = False
+) -> tuple[list[dict], list[str]]:
     """Compute the auto-flip set and residual-incoherence refusals for completion.
 
     Given the parsed ``phases`` (from ``parse_phases``), this mirrors the three
@@ -1807,6 +1911,20 @@ def _phase_completion_plan(phases: list[dict]) -> tuple[list[dict], list[str]]:
     Returns ``(flip, refusals)`` where ``flip`` is the list of phase records to
     auto-flip and ``refusals`` is a list of human-readable per-phase reasons
     (empty ⇒ coherent, proceed).
+
+    ``verification_only_exempt`` (default False — byte-identical legacy behavior):
+    when True, the per-phase ``unchecked_verification_only`` count (canonical
+    ``<!-- verification-only -->`` rows) is ADDITIONALLY discounted from the
+    blocking tally, exactly as ``unchecked_descoped`` always is. This is the
+    completion-time DEFERRED-runtime route
+    (completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo): the caller
+    (``apply_pseudo``) sets it True ONLY after ``evaluate_deferred_runtime_exemption``
+    confirms the MCP-evidence auto-tick is structurally impossible (a re-verified
+    ``granted_by: pipeline-structural`` skip in a no-app-surface repo) AND the
+    deferred rows have been recorded in a ``RUNTIME_GATES.md`` ledger. The rows
+    stay ``- [ ]`` (they are NOT ticked — the deferred run genuinely has not
+    happened); the ledger is the honest tracker. A genuine unchecked
+    *implementation* row (no marker) is never in this count and still blocks.
     """
     flip: list[dict] = []
     refusals: list[str] = []
@@ -1826,6 +1944,16 @@ def _phase_completion_plan(phases: list[dict]) -> tuple[list[dict], list[str]]:
         # (descoped-marker-blind-completion-coherence-gate). ``unchecked`` still
         # tallies every box; only the BLOCKING (non-descoped) remainder gates.
         effective_unchecked = ph["unchecked"] - ph.get("unchecked_descoped", 0)
+        # Deferred-runtime exemption (opt-in): a canonically-marked
+        # verification-only row whose MCP auto-tick is structurally impossible is
+        # honestly ledgered in RUNTIME_GATES.md and discounted here so the Complete
+        # flip proceeds. max(0, ...) guards a row carrying BOTH markers from
+        # double-subtracting below zero
+        # (completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo).
+        if verification_only_exempt:
+            effective_unchecked = max(
+                0, effective_unchecked - ph.get("unchecked_verification_only", 0)
+            )
         all_checked = has_boxes and effective_unchecked == 0
 
         # --- (a) auto-flip candidates ---

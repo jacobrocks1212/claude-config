@@ -2707,6 +2707,120 @@ def test_phase_completion_plan_descoped_phase_with_status_flips():
 
 
 
+# --- completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo -----------
+# A DEFERRED canonical verification-only row must be exemptable at completion
+# time (opt-in), parallel to the descoped path above but WITHOUT ticking the row.
+
+_DEFERRED_VERIF_PHASE = (
+    "### Phase 4: Validation — deferred runtime\n\n"
+    "**Status:** In-progress\n\n"
+    "- [x] implemented\n\n"
+    "**Runtime Verification** *(deferred — closed outside /execute-plan)*:\n"
+    "- [ ] <!-- verification-only --> Cloud compatibility run — closed by the "
+    "first cloud-session run\n"
+)
+
+
+def test_parse_phases_counts_unchecked_verification_only():
+    """parse_phases exposes an additive `unchecked_verification_only` sub-count of
+    `unchecked` (canonical row-scope marker). `unchecked` stays a full tally; a
+    plain implementation row is NOT counted."""
+    text = (
+        "### Phase 1 — impl\n\n**Status:** Complete\n\n- [x] real\n\n"
+        + _DEFERRED_VERIF_PHASE
+    )
+    parsed = lazy_core.parse_phases(text)
+    p4 = parsed[1]
+    assert p4["unchecked"] == 1, f"unchecked full tally, got {p4['unchecked']}"
+    assert p4["unchecked_verification_only"] == 1, (
+        f"the canonical verification-only row must count, got "
+        f"{p4['unchecked_verification_only']}"
+    )
+    # A non-verification phase carries a zero sub-count.
+    assert parsed[0]["unchecked_verification_only"] == 0
+
+
+def test_parse_phases_verification_only_header_scope():
+    """A row under a header carrying the CANONICAL marker counts (header-scope);
+    a bare `**Runtime Verification**` header WITHOUT the marker does NOT (the
+    legacy shim path is deliberately excluded from this conservative count)."""
+    header_scope = (
+        "### Phase 2 — header scope\n\n"
+        "**Runtime Verification:** <!-- verification-only -->\n"
+        "- [ ] row a\n- [ ] row b\n"
+    )
+    assert lazy_core.parse_phases(header_scope)[0][
+        "unchecked_verification_only"
+    ] == 2
+    bare = (
+        "### Phase 3 — bare shim header\n\n"
+        "**Runtime Verification:**\n"
+        "- [ ] row a\n"
+    )
+    assert lazy_core.parse_phases(bare)[0]["unchecked_verification_only"] == 0, (
+        "a bare verification header without the canonical marker must NOT open "
+        "header-scope for the completion exemption"
+    )
+
+
+def test_phase_completion_plan_verification_only_exempt_flag():
+    """The opt-in flag discounts unchecked_verification_only exactly as
+    unchecked_descoped is always discounted: default → refuse; exempt → flip."""
+    parsed = lazy_core.parse_phases(_DEFERRED_VERIF_PHASE)
+    # Default (legacy) — the verification-only row still blocks.
+    _f, ref_strict = lazy_core._phase_completion_plan(parsed)
+    assert ref_strict and "1 unchecked box(es)" in ref_strict[0], (
+        f"default must still refuse the deferred row, got {ref_strict!r}"
+    )
+    # Opt-in — the row is exempt and the phase auto-flips to Complete.
+    parsed2 = lazy_core.parse_phases(_DEFERRED_VERIF_PHASE)
+    flip, ref_exempt = lazy_core._phase_completion_plan(
+        parsed2, verification_only_exempt=True
+    )
+    assert ref_exempt == [], f"exempt path must not refuse, got {ref_exempt!r}"
+    assert flip and flip[0]["heading"].startswith("### Phase 4"), (
+        f"the deferred phase should flip to Complete, got flip={flip!r}"
+    )
+
+
+def test_phase_completion_plan_verification_only_exempt_genuine_row_still_refuses():
+    """OVER-EXEMPTION GUARD: even with verification_only_exempt=True, a genuine
+    unchecked implementation row (no marker) alongside a deferred one still
+    refuses on the genuine box only."""
+    text = (
+        "### Phase 5: mixed\n\n**Status:** In-progress\n\n"
+        "- [ ] genuine work not done\n"
+        "- [ ] <!-- verification-only --> deferred cloud run\n"
+    )
+    parsed = lazy_core.parse_phases(text)
+    flip, refusals = lazy_core._phase_completion_plan(
+        parsed, verification_only_exempt=True
+    )
+    assert len(refusals) == 1 and "1 unchecked box(es)" in refusals[0], (
+        f"the genuine box must still block (not the deferred one), got {refusals!r}"
+    )
+
+
+def test_enumerate_deferred_verification_rows_finds_canonical_rows():
+    """enumerate_deferred_verification_rows returns one record per canonical
+    verification-only unchecked row, tagged with its owning phase + line number;
+    Superseded-phase rows and plain rows are excluded."""
+    text = (
+        "### Phase 4: Validation — deferred runtime\n\n"
+        "- [x] done\n"
+        "- [ ] <!-- verification-only --> cloud run deferred\n"
+        "### Phase 5: dropped\n\n**Status:** Superseded\n\n"
+        "- [ ] <!-- verification-only --> not counted (superseded)\n"
+    )
+    rows = lazy_core.enumerate_deferred_verification_rows(text)
+    assert len(rows) == 1, f"exactly one deferred row expected, got {rows!r}"
+    assert rows[0]["phase"].startswith("### Phase 4"), rows[0]
+    assert "cloud run deferred" in rows[0]["text"], rows[0]
+    assert isinstance(rows[0]["lineno"], int) and rows[0]["lineno"] > 0
+
+
+
+
 # ---------------------------------------------------------------------------
 # Tests: skip_waiver_refusal — SKIP_MCP_TEST.md provenance gate (single source
 # of truth for the Step-9 gates in lazy-state.py / bug-state.py and for
@@ -3509,6 +3623,11 @@ _TESTS = [
     ("test_phase_completion_plan_header_scope_descope_exempts", test_phase_completion_plan_header_scope_descope_exempts),
     ("test_phase_completion_plan_mixed_descoped_and_genuine_still_refuses", test_phase_completion_plan_mixed_descoped_and_genuine_still_refuses),
     ("test_phase_completion_plan_descoped_phase_with_status_flips", test_phase_completion_plan_descoped_phase_with_status_flips),
+    ("test_parse_phases_counts_unchecked_verification_only", test_parse_phases_counts_unchecked_verification_only),
+    ("test_parse_phases_verification_only_header_scope", test_parse_phases_verification_only_header_scope),
+    ("test_phase_completion_plan_verification_only_exempt_flag", test_phase_completion_plan_verification_only_exempt_flag),
+    ("test_phase_completion_plan_verification_only_exempt_genuine_row_still_refuses", test_phase_completion_plan_verification_only_exempt_genuine_row_still_refuses),
+    ("test_enumerate_deferred_verification_rows_finds_canonical_rows", test_enumerate_deferred_verification_rows_finds_canonical_rows),
     ("test_skip_waiver_refusal_operator_accepts", test_skip_waiver_refusal_operator_accepts),
     ("test_skip_waiver_refusal_legacy_no_provenance_accepts", test_skip_waiver_refusal_legacy_no_provenance_accepts),
     ("test_skip_waiver_refusal_pipeline_refuses", test_skip_waiver_refusal_pipeline_refuses),

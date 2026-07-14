@@ -2009,6 +2009,121 @@ def test_eval_evidence_neither_present_refuses():
 
 
 # ---------------------------------------------------------------------------
+# evaluate_deferred_runtime_exemption + write_runtime_gates_ledger
+#   (completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo).
+# ---------------------------------------------------------------------------
+
+def _write_structural_skip(spec_dir: Path) -> None:
+    """A structural SKIP_MCP_TEST.md (granted_by: pipeline-structural)."""
+    (spec_dir / "SKIP_MCP_TEST.md").write_text(
+        "---\n"
+        "kind: skip-mcp-test\n"
+        "feature_id: cc-feature\n"
+        "reason: repo has no MCP-reachable surface\n"
+        "date: 2026-07-14\n"
+        "skipped_by: pipeline\n"
+        "granted_by: pipeline-structural\n"
+        "spec_class: standalone — no app surface\n"
+        "---\n\n# Skip (structural)\n",
+        encoding="utf-8",
+    )
+
+
+def test_deferred_runtime_exemption_structural_skip_ok():
+    """VALIDATED.md + a re-verified structural skip in a no-app-surface repo →
+    ok: True (the honest deferred-runtime route is authorized)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)  # empty repo: no src-tauri/, no package.json
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _cc_write_validated(spec_dir)
+        _write_structural_skip(spec_dir)
+        r = lazy_core.evaluate_deferred_runtime_exemption(spec_dir, repo_root)
+        assert r["ok"] is True, r
+
+
+def test_deferred_runtime_exemption_app_repo_refuses():
+    """The KEY confinement: an APP repo (package.json present) makes the
+    structural waiver re-verify False → ok: False. A verification-only row in an
+    MCP repo still needs real MCP evidence — this route cannot fire there."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        (repo_root / "package.json").write_text("{}\n", encoding="utf-8")
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _cc_write_validated(spec_dir)
+        _write_structural_skip(spec_dir)
+        r = lazy_core.evaluate_deferred_runtime_exemption(spec_dir, repo_root)
+        assert r["ok"] is False, r
+        assert "re-verify" in r["reason"], r
+
+
+def test_deferred_runtime_exemption_missing_validated_refuses():
+    """Structural skip present but NO VALIDATED.md → ok: False (a bare skip
+    without the attestation envelope cannot certify a deferral)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _write_structural_skip(spec_dir)
+        r = lazy_core.evaluate_deferred_runtime_exemption(spec_dir, repo_root)
+        assert r["ok"] is False and "VALIDATED.md" in r["reason"], r
+
+
+def test_deferred_runtime_exemption_non_structural_skip_refuses():
+    """A non-structural (operator) skip → ok: False — the deferred-runtime route
+    is confined to a structural no-app-surface skip; other skips earn their rows
+    the ordinary way."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        spec_dir = repo_root / "spec"
+        spec_dir.mkdir()
+        _cc_write_validated(spec_dir)
+        (spec_dir / "SKIP_MCP_TEST.md").write_text(
+            "---\nkind: skip-mcp-test\nfeature_id: cc-feature\nreason: x\n"
+            "date: 2026-07-14\ngranted_by: operator\n---\n\n# Skip\n",
+            encoding="utf-8",
+        )
+        r = lazy_core.evaluate_deferred_runtime_exemption(spec_dir, repo_root)
+        assert r["ok"] is False and "pipeline-structural" in r["reason"], r
+
+
+def test_write_runtime_gates_ledger_writes_and_bytestable():
+    """The ledger writer emits RUNTIME_GATES.md (led by the PENDING line + the
+    sole-owner declaration), one row per deferred gate, and is byte-stable on a
+    re-run (regenerated, never appended). Empty rows → no file."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        fd = Path(td)
+        rows = [
+            {"phase": "### Phase 4: Validation", "lineno": 42,
+             "text": "- [ ] <!-- verification-only --> cloud run deferred"},
+        ]
+        r1 = lazy_core.write_runtime_gates_ledger(fd, rows, date="2026-07-14")
+        assert r1["written"] is True and r1["count"] == 1, r1
+        led = fd / "RUNTIME_GATES.md"
+        body = led.read_text(encoding="utf-8")
+        assert "MANUAL RUNTIME GATES PENDING" in body, body
+        assert "ONLY owner" in body, body
+        assert "cloud run deferred" in body, body
+        first = led.read_bytes()
+        lazy_core.write_runtime_gates_ledger(fd, rows, date="2026-07-14")
+        assert led.read_bytes() == first, "ledger must be byte-stable on re-run"
+        # Empty rows → nothing written.
+        fd2 = Path(td) / "empty"
+        fd2.mkdir()
+        r2 = lazy_core.write_runtime_gates_ledger(fd2, [], date="2026-07-14")
+        assert r2["written"] is False, r2
+        assert not (fd2 / "RUNTIME_GATES.md").exists()
+
+
+
+
+# ---------------------------------------------------------------------------
 # commit_drift_verdict — the SHARED docs-only carve-out helper (2026-06-23
 # DEADLOCK fix, hardening-log Round 36). The Step-9 state-script gates, the
 # __write_validated_from_results__ apply gate, and evaluate_completion_evidence
@@ -2720,6 +2835,11 @@ _TESTS = [
     ("test_eval_evidence_head_drift_docs_only_warn_exempt", test_eval_evidence_head_drift_docs_only_warn_exempt),
     ("test_eval_evidence_head_drift_source_refuses", test_eval_evidence_head_drift_source_refuses),
     ("test_eval_evidence_neither_present_refuses", test_eval_evidence_neither_present_refuses),
+    ("test_deferred_runtime_exemption_structural_skip_ok", test_deferred_runtime_exemption_structural_skip_ok),
+    ("test_deferred_runtime_exemption_app_repo_refuses", test_deferred_runtime_exemption_app_repo_refuses),
+    ("test_deferred_runtime_exemption_missing_validated_refuses", test_deferred_runtime_exemption_missing_validated_refuses),
+    ("test_deferred_runtime_exemption_non_structural_skip_refuses", test_deferred_runtime_exemption_non_structural_skip_refuses),
+    ("test_write_runtime_gates_ledger_writes_and_bytestable", test_write_runtime_gates_ledger_writes_and_bytestable),
     ("test_commit_drift_verdict_equal_is_fresh", test_commit_drift_verdict_equal_is_fresh),
     ("test_commit_drift_verdict_none_or_blank_is_fresh", test_commit_drift_verdict_none_or_blank_is_fresh),
     ("test_commit_drift_verdict_docs_only", test_commit_drift_verdict_docs_only),

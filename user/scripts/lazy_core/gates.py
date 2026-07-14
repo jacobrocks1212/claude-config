@@ -46,9 +46,12 @@ from .docmodel import (
     _plan_status,
     _unchecked_wus_in_plan_scope,
     count_deliverables,
+    enumerate_deferred_verification_rows,
     find_implementation_plans,
     parse_sentinel,
     remaining_unchecked_are_verification_only,
+    repo_has_no_app_surface,
+    skip_waiver_refusal,
 )
 from .runtimeplane import _current_head, _git
 
@@ -445,6 +448,140 @@ def evaluate_completion_evidence(feature_dir: Path, repo_root: Path) -> dict:
         "pass_count": pass_count,
         "validated_commit": validated_commit,
     }
+
+
+# ---------------------------------------------------------------------------
+# Deferred-runtime completion exemption
+#   (completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo).
+#
+# The completion path AUTO-TICKS verification-only rows only when
+# evaluate_completion_evidence above authorizes on the UNION of VALIDATED.md +
+# a passing MCP_TEST_RESULTS.md. In a no-MCP-surface repo (a re-verified
+# ``granted_by: pipeline-structural`` skip) that union is STRUCTURALLY
+# impossible — there is no MCP server to produce MCP_TEST_RESULTS.md — so a
+# legitimately-DEFERRED ``<!-- verification-only -->`` row (closed later outside
+# the pipeline, e.g. by a cloud-session run) deadlocks the completion-coherence
+# gate. The only pre-existing exemption marker (``<!-- descoped -->``)
+# MISREPRESENTS a deferred row as dropped.
+#
+# This helper is the honest route: it authorizes exempting those rows (they stay
+# ``- [ ]`` — NOT ticked) ONLY when the deferral cannot be evidenced any other
+# way AND is honestly tracked. It NEVER mutates state; the caller
+# (apply_pseudo) writes the RUNTIME_GATES.md ledger and threads
+# ``verification_only_exempt=True`` into _phase_completion_plan.
+# ---------------------------------------------------------------------------
+
+def evaluate_deferred_runtime_exemption(feature_dir: Path, repo_root: Path) -> dict:
+    """Return ``{ok: bool, reason: str}`` — may a DEFERRED verification-only row
+    complete via the no-MCP structural-skip route?
+
+    ``ok`` is True iff ALL hold:
+      * ``VALIDATED.md`` present with ``kind: validated`` — the attestation
+        envelope exists (a bare skip without validation cannot complete).
+      * ``SKIP_MCP_TEST.md`` present AND ``granted_by: pipeline-structural`` AND
+        ``skip_waiver_refusal(meta, repo_root)`` returns None — i.e. the
+        structural waiver RE-VERIFIES against the live repo
+        (``repo_has_no_app_surface``). This single check is what confines the
+        exemption to genuinely no-MCP-surface repos: an app repo (``src-tauri/``
+        or ``package.json`` present) re-verifies False, ``skip_waiver_refusal``
+        refuses, and a verification-only row there still requires real MCP
+        evidence to auto-tick.
+
+    PURE / side-effect-free (the only I/O is reading the two sentinels). Does NOT
+    look at PHASES.md — the caller decides whether there are actually unchecked
+    verification-only rows to exempt (an ``ok`` verdict with no such rows is a
+    no-op). A structural skip that does NOT re-verify, a non-structural
+    ``granted_by``, or a missing VALIDATED.md all return ``ok: False`` with a
+    reason (the strict coherence gate then blocks as before).
+    """
+    validated_meta = parse_sentinel(feature_dir / "VALIDATED.md")
+    if not (validated_meta and validated_meta.get("kind") == "validated"):
+        return {
+            "ok": False,
+            "reason": "VALIDATED.md (kind: validated) absent — no attestation "
+                      "envelope to certify the deferral",
+        }
+    skip_meta = parse_sentinel(feature_dir / "SKIP_MCP_TEST.md")
+    if not skip_meta:
+        return {
+            "ok": False,
+            "reason": "SKIP_MCP_TEST.md absent — the MCP auto-tick is not "
+                      "structurally impossible; no deferred-runtime route",
+        }
+    if skip_meta.get("granted_by") != "pipeline-structural":
+        return {
+            "ok": False,
+            "reason": "SKIP_MCP_TEST.md is not granted_by: pipeline-structural — "
+                      "the deferred-runtime route is confined to a structural "
+                      "no-app-surface skip (an operator/mcp-test skip earns its "
+                      "rows the ordinary way)",
+        }
+    waiver_refusal = skip_waiver_refusal(skip_meta, repo_root)
+    if waiver_refusal is not None:
+        return {
+            "ok": False,
+            "reason": f"structural SKIP_MCP_TEST.md did not re-verify — "
+                      f"{waiver_refusal}",
+        }
+    return {
+        "ok": True,
+        "reason": "structural no-app-surface skip re-verified + VALIDATED.md "
+                  "present — deferred verification-only rows may complete with a "
+                  "RUNTIME_GATES.md ledger",
+    }
+
+
+def write_runtime_gates_ledger(
+    feature_dir: Path, rows: list[dict], *, date: str
+) -> dict:
+    """Write/overwrite ``RUNTIME_GATES.md`` for the deferred verification-only rows.
+
+    Mirrors the ``_components/pending-runtime-gates.md`` contract (the manual
+    ``/execute-plan`` seam) at the lazy completion gate: one table row per pending
+    gate — verbatim gate text, owning phase, date deferred — led by the mandatory
+    ``N MANUAL RUNTIME GATES PENDING`` line and the no-downstream-owner
+    declaration (this repo has no ``/mcp-test`` step, so the ledger is the SOLE
+    owner). Idempotent + byte-stable for a given ``(rows, date)``: the whole file
+    is regenerated each call via ``_atomic_write`` (no incremental append, so a
+    re-run never duplicates rows). Returns ``{"written": bool, "count": int,
+    "path": str}``.
+
+    ``rows`` is the ``enumerate_deferred_verification_rows`` output
+    (``[{phase, lineno, text}]``). Empty ``rows`` writes nothing.
+    """
+    ledger_path = feature_dir / "RUNTIME_GATES.md"
+    if not rows:
+        return {"written": False, "count": 0, "path": str(ledger_path)}
+    n = len(rows)
+    lines = [
+        f"# Runtime Gates — {n} MANUAL RUNTIME GATES PENDING (feature not "
+        f"verified end-to-end)",
+        "",
+        "These runtime-verification rows are DEFERRED — their PHASES.md checkboxes "
+        "stay `- [ ]` because they cannot run in this environment yet (closed "
+        "later outside the pipeline; see each row's own closer). This repo "
+        "declares `MCP runtime: not-required` (no `/mcp-test` step downstream), so "
+        "**this ledger is the ONLY owner of these rows** — no pipeline gate will "
+        "hold them; the operator working the ledger is the sole remaining "
+        "mechanism.",
+        "",
+        "Written by the completion gate "
+        "(`completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo`) when "
+        "`__mark_complete__`/`__mark_fixed__` exempted these deferred rows on the "
+        "structural-skip route. Regenerated (not appended) on each completion.",
+        "",
+        "| # | Owning phase | Deferred | Gate row (verbatim) |",
+        "|---|---|---|---|",
+    ]
+    for i, row in enumerate(rows, start=1):
+        phase = (row.get("phase") or "").replace("|", "\\|")
+        # Strip the leading checkbox token for readability; keep the rest verbatim.
+        text = (row.get("text") or "")
+        text = re.sub(r"^-\s*\[\s*\]\s*", "", text).replace("|", "\\|")
+        lines.append(f"| {i} | {phase} | {date} | {text} |")
+    lines.append("")
+    _atomic_write(ledger_path, "\n".join(lines))
+    return {"written": True, "count": n, "path": str(ledger_path)}
 
 
 def _git_diff_name_only(
