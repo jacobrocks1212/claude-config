@@ -63,7 +63,7 @@ Where this plan's repo uses non-default gates or component paths (this is claude
 ## Work Units
 
 - [x] WU-1 — KPI registry wiring (two rows) + scorecard re-render
-- [ ] WU-2 — Root CLAUDE.md docs rows + doc-drift green
+- [x] WU-2 — Root CLAUDE.md docs rows + doc-drift green
 - [ ] WU-3 — Full validation sweep: dogfood banner, 5 Pester suites, Cognito-untouched diff proof
 
 ---
