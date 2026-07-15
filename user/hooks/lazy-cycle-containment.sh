@@ -297,6 +297,83 @@ def _normalize_ps_syntax(command):
             command += "\n" + tail
     return command
 
+# block-terminal-kill-false-denies-heredoc-body-tokens: a heredoc body
+# (`<<WORD` / `<< 'WORD'` / `<<"WORD"` / `<<-WORD` introducer through its
+# terminator line) is inert DATA — file/message CONTENT, never executed —
+# but its interior newlines satisfy _CMD_START's `\n` segment-separator
+# class exactly like a real command boundary, so a deny token sitting at
+# the start of a body line (e.g. a commit-message body, an appended log
+# line) fabricates a false command-segment start and false-denies a
+# completely benign command. THIRD variant of the same false-deny class
+# (1: bare word-boundary → segment-start anchoring; 2: quoted-argument
+# values → _mask_quoted; 3: this — heredoc bodies). Kept as an identical
+# hook-local copy across every _CMD_START-anchored guard (block-terminal-
+# kill.sh, this hook, long-build-ownership-guard.sh,
+# build-queue-enforce.sh) — same lockstep-copy discipline as
+# _normalize_ps_syntax / COMMAND_TOOL_NAMES; keep the copies in sync by
+# inspection.
+_HEREDOC_INTRODUCER_RE = re.compile(
+    r"<<(-)?[ \t]*(?:'([^'\n]*)'|\"([^\"\n]*)\"|([^\s'\"<>|;&()]+))"
+)
+
+
+def _mask_heredoc(command):
+    """Blank the INTERIOR of every heredoc body, offsets preserved.
+
+    A flat single-pass scan over `re.finditer` matches on the *original*
+    command (never a shell parser, same discipline as _mask_quoted /
+    _normalize_ps_syntax): each introducer resolves to a body span
+    `[body_start, body_end)` via the first terminator-shaped line found
+    at-or-after it. Unlike _mask_quoted (which keeps interior "\n" so a
+    multi-line quoted span still contributes real segment boundaries
+    elsewhere), this blanks EVERY interior char of the body -- INCLUDING
+    its newlines -- to a single space: the false segment starts this bug
+    fixes ARE the body's own newlines, so they must stop being newlines.
+    The introducer line and the terminator WORD line itself are left
+    untouched, so a real deny token chained AFTER the terminator line (a
+    genuine top-level segment start) is outside the masked span and still
+    denies.
+
+    A `<<-WORD` introducer allows the terminator line to carry leading
+    tabs/spaces (real bash `<<-` semantics); a plain `<<WORD` terminator
+    must start the line with no leading whitespace. A later introducer
+    match that falls INSIDE an already-masked span (a `<<`-looking token
+    inside masked body text) is skipped -- that text is already inert. An
+    unterminated heredoc (no terminator line before end-of-string) masks
+    through end-of-string -- conservative, never a crash.
+    """
+    out = list(command)
+    consumed_until = 0
+    for m in _HEREDOC_INTRODUCER_RE.finditer(command):
+        if m.start() < consumed_until:
+            continue  # inside an already-masked body -- inert, skip
+        word = m.group(2)
+        if word is None:
+            word = m.group(3)
+        if word is None:
+            word = m.group(4)
+        if not word:
+            continue  # empty/degenerate delimiter -- nothing to anchor on
+        nl = command.find("\n", m.end())
+        if nl == -1:
+            continue  # introducer with no body at all
+        body_start = nl + 1
+        if m.group(1) is not None:  # `<<-WORD` -- leading ws stripped
+            term_re = re.compile(
+                r"^[ \t]*" + re.escape(word) + r"[ \t]*$", re.MULTILINE
+            )
+        else:
+            term_re = re.compile(
+                r"^" + re.escape(word) + r"[ \t]*$", re.MULTILINE
+            )
+        term_match = term_re.search(command, body_start)
+        body_end = term_match.start() if term_match else len(command)
+        for i in range(body_start, body_end):
+            out[i] = " "
+        consumed_until = body_end
+    return "".join(out)
+
+
 # Recursive batch invocation: a dispatched cycle subagent must never start a
 # nested /lazy* batch orchestrator (the literal runaway path). Two anchored
 # signals (either match = deny):
@@ -580,6 +657,11 @@ def main():
     if not command:
         _allow()
     command = _normalize_ps_syntax(command)
+    # Blank heredoc-body interiors (newlines included) so a routing/lifecycle
+    # token sitting at a heredoc-body line start (a commit-message body, an
+    # appended log line) cannot fabricate a false segment start (see
+    # _mask_heredoc).
+    command = _mask_heredoc(command)
 
     if is_subagent:
         # --- Recursive batch invocation (the literal runaway path). ---

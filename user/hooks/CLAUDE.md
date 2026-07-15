@@ -140,6 +140,51 @@ separator-inside-quotes case — a `grep 'foo|kill'` regex alternation or a `pyt
 body is allowed while a genuine post-quote `echo "a;b" && kill 1` still denies (the reported
 `/build-queue-await` result-read incident, `block-terminal-kill-matches-separators-inside-quoted-args`).
 
+A **third** operator-observed false-positive class on the same hook
+(`block-terminal-kill-false-denies-heredoc-body-tokens`, 2026-07-15) targets a construct neither
+`_mask_quoted` nor segment-start anchoring can see: a **heredoc body**. `<<WORD` / `<< 'WORD'` /
+`<<"WORD"` / `<<-WORD` introduces a span of inert DATA (a commit message via `git commit -F -
+<<'EOF'`, appended file content via `cat >> f << 'EOF'`) running from the newline after the
+introducer through the terminator line — never executed — but the body's own interior newlines
+satisfy `_CMD_START`'s `\n` separator class exactly like a real command boundary, so a deny token
+sitting at the start of a body line (a commit-message body mentioning `kill`, a log line starting
+`exit 0`) fabricates a false segment start. `_mask_heredoc` (a flat single-pass scan over
+`re.finditer` introducer matches on the *original* command, the same not-a-shell-parser discipline
+as `_mask_quoted`/`_normalize_ps_syntax`) resolves each introducer to a body span via the first
+terminator-shaped line found at-or-after it and blanks **every** interior char of that span —
+**including its newlines** (unlike `_mask_quoted`, which keeps `\n`; the false segment starts
+here ARE the body's own newlines, so they must stop being newlines). The introducer line and the
+terminator WORD line itself are left untouched, so a real deny token chained AFTER the terminator
+(a genuine top-level segment start) still denies. Applied in `main()` BEFORE `_mask_quoted` (the
+two compose cleanly: a heredoc introducer's own `'WORD'`/`"WORD"` quoting is left for `_mask_quoted`
+to consume normally afterward, harmlessly). `<<-WORD` additionally tolerates a leading-whitespace
+terminator line (real bash `<<-` semantics); an unterminated heredoc masks through end-of-string
+(conservative, never a crash).
+
+Kept as an **identical hook-local copy** across every `_CMD_START`-anchored command guard —
+`block-terminal-kill.sh`, `lazy-cycle-containment.sh`, `long-build-ownership-guard.sh`,
+`build-queue-enforce.sh` — the same lockstep-copy discipline as `_normalize_ps_syntax` /
+`COMMAND_TOOL_NAMES` above; keep the four copies in sync by inspection. All four were confirmed
+vulnerable (each anchors its own deny tokens on `_CMD_START` and gets the identical fix + a
+heredoc-allow test + an after-terminator-still-denies regression test in `test_hooks.py`).
+`block-work-repo-git-push.sh` is the one command guard **NOT** touched: it carries no
+`_CMD_START` anchoring at all — its `git push` detection is an unanchored `\bgit\s+push\b`
+substring search over the whole raw command — so the heredoc-newline-fabricates-a-segment-start
+mechanism this fix targets does not apply to it structurally (a `git push` mention anywhere,
+heredoc or not, was already caught by the pre-existing unanchored match; a separate, wider,
+out-of-scope false-positive surface). Pinned by
+`test_push_unaffected_by_heredoc_body_no_cmd_start_anchoring`.
+
+**Accepted residual (NOT fixed this round) — PowerShell here-strings.** `@'...'@` / `@"..."@` are
+a distinct construct from POSIX heredocs; `_mask_heredoc` only recognizes `<<WORD` forms, so a PS
+here-string body is invisible to it. `_mask_quoted` coincidentally masks a well-formed here-string
+body (its `'`/`"` delimiter chars are read as an ordinary quote pair), but an apostrophe inside the
+body (`don't`) prematurely closes that fake quote span — the remaining body text, including a
+line-leading deny token, then reaches the matchers fully unmasked and still false-denies. Pinned
+(not silently left as a gap) by
+`test_termkill_ps_herestring_apostrophe_body_kill_accepted_residual` — a future PS here-string
+masker is a conscious behavior change, not an accidental one.
+
 ## Per-repo keyed, not global-marker
 
 The lazy enforcement hooks (`lazy-dispatch-guard.sh`, `lazy-route-inject.sh`,
