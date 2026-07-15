@@ -2,9 +2,19 @@
 
 > `_CMD_START`'s separator class (`\n ; & | (`) matches separators that occur **inside a quoted string argument**, so a `python -c "…"` body or a `grep '…|kill…'` pattern is mis-read as a shell command position and denied.
 
-**Status:** Concluded
+**Status:** Superseded
 **Severity:** P1
 **Discovered:** 2026-07-13
+**Superseded by:** the shipped `_mask_quoted` fix — `docs/bugs/block-terminal-kill-false-denies-quoted-argument-tokens` (already on `main`)
+
+> **Duplicate — superseded 2026-07-15 (rebase reconciliation).** origin/main independently shipped
+> `_mask_quoted` for the sibling bug `block-terminal-kill-false-denies-quoted-argument-tokens`, which
+> blanks *every* interior char of a quoted span (a separator `; & | (` inside quotes becomes a space,
+> so `_CMD_START` cannot fire on it). Every repro case below was verified allowed under the shipped
+> `_mask_quoted` (`grep 'foo|kill'`, `python -c "…;exit(0)"`, literal-newline-in-quotes) while genuine
+> post-quote `kill`/`taskkill` still deny (18/18 termkill tests green). The in-flight `_mask_quoted_spans`
+> that this SPEC was filed to justify was dropped during the rebase in favor of the tested `_mask_quoted`;
+> no fix remains outstanding. Superseded is receipt-exempt per `docs/bugs/CLAUDE.md`.
 **Placement:** docs/bugs/block-terminal-kill-matches-separators-inside-quoted-args
 **Related:** `docs/bugs/_archive/powershell-tool-bypasses-bash-matched-guards` (the segment-start anchoring this bug extends), `user/hooks/CLAUDE.md` → "PowerShell-syntax regex audit" / "Known limitation — `bash -c` / `sh -c` string-wraps evade every `_CMD_START`-anchored matcher"
 
