@@ -5,7 +5,7 @@
       "id": "block-terminal-kill-false-denies-heredoc-body-tokens",
       "name": "block-terminal-kill false-denies termination keywords inside heredoc bodies",
       "spec_dir": "block-terminal-kill-false-denies-heredoc-body-tokens",
-      "severity": null
+      "severity": "P2"
     },
     {
       "id": "adhoc-incident-hook-deny-19343d-r3",
