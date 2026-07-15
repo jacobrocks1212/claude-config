@@ -6,9 +6,11 @@
 > keyword appearing as prose inside a heredoc body (e.g. a git commit message) fabricates a false
 > segment start and false-denies a completely benign command.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-13
+**Fixed:** 2026-07-15
+**Fix commit:** 31ee7de
 **Placement:** docs/bugs/block-terminal-kill-false-denies-heredoc-body-tokens
 **Related:** `docs/bugs/_archive/powershell-tool-bypasses-bash-matched-guards` (variant 1 — segment-start anchoring), `docs/bugs/block-terminal-kill-false-denies-quoted-argument-tokens` (variant 2 — `_mask_quoted`), `user/hooks/CLAUDE.md` → "Every command-execution tool" / "Known limitation — `bash -c` / `sh -c` string-wraps", root `CLAUDE.md` Hooks table (`block-terminal-kill.sh` row)
 
