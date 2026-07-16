@@ -11,6 +11,7 @@ decisions:
   - "Corrective-coverage dispatch: add a registered `--emit-dispatch corrective-coverage` class (or a Step-10→mcp-test re-route) to author NEW mcp-test coverage for a genuinely-untested-but-testable row discovered at completion, since coherence-recovery correctly refuses implementation work and no legitimate dispatch path exists? (harden Round 22, 2026-07)"
   - "GATE_VERDICT.md authoring route: no sanctioned emit-dispatch class authors GATE_VERDICT.md for a genuinely-in-scope control-surface feature at __mark_complete__ — add a `gate-verdict` emit class, make it interactive-only, or move the gate to planning-time? (harden Round 36, 2026-07)"
   - "Provisional gate at the ship seam: should gate_verdict_ok (D3, STRUCTURALLY PROVISIONAL/unratified) hard-block completion before anti-overfit-design-gate is ratified, or degrade to advisory/planning-time until then? (harden Round 36, 2026-07)"
+  - "Consumed-fence robustness under a re-emit after `--cycle-begin`: the operator-blessed sub-subagent exemption fence (decision 4) binds ONE nonce at `--cycle-begin`, but the freshness-rule re-emit makes the worker consume a DIFFERENT emission → fence dead → sub-subagent denied. Re-derive the fence at guard time, re-bind at re-emit, or enforce emit-before-cycle-begin — without weakening the integrity guard? (harden Round 46, 2026-07)"
 date: 2026-06-16
 class: product
 next_skill: harden-harness
@@ -156,6 +157,95 @@ prefers to defer hard enforcement until anti-overfit-design-gate is ratified. Ei
 no-route dead-end for a genuinely-in-scope feature without weakening the gate's intent. This is a
 gate-semantics / authority fork, surfaced rather than baked silently (Round 36 did NOT self-dispatch
 a second hardening stage — depth-1 cap; the run-blocking half is already fixed mechanically).
+
+### 8. Consumed-fence robustness under a re-emit after `--cycle-begin`
+
+*(harden Round 46 — 2026-07-16, from the AlgoBooth `d8-signal-flow-viz` `/lazy-batch` run,
+session `40e929ed`, part-8 `/execute-plan` cycle; background observed-friction harden.)*
+
+**Problem:** Decision 4 (RESOLVED 2026-07-10, implemented hardening Round 16 `e3f5702`) blessed
+the **consumed fence** as the safety proof for the workstation sub-subagent exemption: the guard
+ALLOWs an unregistered worker-composed prompt only once `emission_consumed_by_nonce(cycle.nonce)`
+holds (the cycle's own registered dispatch is consumed ⇒ the worker is in flight ⇒ an unregistered
+prompt can only come from inside it). Round 16 wired this by having `--cycle-begin`
+(`resolve_cycle_worker_nonce`) bind the fence nonce to "the newest UNCONSUMED `class==cycle`
+emission then present," on the documented assumption that "`--emit-prompt` registers the cycle
+emission IMMEDIATELY before `--cycle-begin`."
+
+That assumption is VIOLATED by `/lazy-batch`'s own freshness rule (SKILL.md §1d, ~690/742:
+"Continuation cycles re-emit"; a by-reference dispatch is dispatchable only on the turn its
+emission was registered, else RE-PROBE `--emit-prompt` in-turn and dispatch THAT fresh ref). When
+a turn boundary/staleness intervenes between `--cycle-begin` and the actual worker dispatch, the
+orchestrator RE-EMITS — and that re-emission is registered AFTER `--cycle-begin`. The fence was
+bound at `--cycle-begin` to a stale/fresh nonce; the worker consumes the RE-EMITTED nonce; the two
+never match; `emission_consumed_by_nonce(cycle.nonce)` reads False for the whole cycle; the
+exemption never fires; every worker-composed test-agent/impl-agent dispatch is denied as false
+hardening debt.
+
+**Forensic evidence** (per-repo keyed state dir `~/.claude/state/37850b6e…/`; ledger + registry +
+telemetry, quoted in `docs/bugs/consumed-fence-dies-on-reemit-after-cycle-begin/SPEC.md`):
+- The exemption is LIVE and works: **108** `worker_subdispatch: true` (pre-acked) allows across the
+  run, all `execute-plan`, the last for `d8` at `ts 1784197418` inside the immediately-preceding
+  part-7 cycle.
+- Part-8 anomaly: ONE denied hand-composed test-agent (`denied_sha12 8ecb32c73a97`, `ts 1784198590`,
+  `prompt_head` "You are a TEST-AGENT for one work unit … (d8-signal-flow-viz, Phase 7, WU-2)…"),
+  the canonical corrective-recipe deny.
+- It falls INSIDE a `sub_skill=execute-plan` cycle (telemetry `cycle-begin ts 1784197993`,
+  `cycle-end ts 1784199546`) → condition 3 (`subagent_model True`) held; conditions 1–2
+  (workstation, bound) held. Only condition 4 (the fence) failed.
+- The smoking gun: the part-8 worker emission `nonce 5e508da3…` (`class cycle`, `consumed True`,
+  `consumed_by toolu_01AKox…`) has **`emitted_at 1784198002` — 9 s AFTER `--cycle-begin`
+  (1784197993)**, and the prior cycle emission `b4b15231` (`emitted_at 1784194061`) was already
+  consumed. So at `--cycle-begin` there was NO unconsumed cycle emission to bind; `resolve_cycle_
+  worker_nonce` fell to its "safe pre-fix degradation" branch and preserved the fresh hex, which is
+  absent from the registry → `emission_consumed_by_nonce(fresh_hex)` = False all cycle.
+
+This is the **2nd occurrence of the Round-16 shipped-exemption-mis-wiring class at the same symbol**
+(`resolve_cycle_worker_nonce` / the consumed fence). Round 16 fixed the fresh-hex-with-emission-
+already-present case; this is the re-emit-after-cycle-begin case. Round 16's regression test
+`_arm_worker_in_flight` (`test_hooks.py`) hard-codes the emit-BEFORE-`write_cycle_marker` order,
+masking this case exactly as the pre-Round-16 test masked the fresh-hex case.
+
+**Why this is a fork and not a mechanical fix:** a **write-side-only** fix is impossible — at
+`--cycle-begin` the worker's eventual re-emitted nonce does not exist yet, so no smarter binding at
+that moment can point the fence at it. The robust fix must either RE-DERIVE the fence at guard time
+or RE-BIND at re-emit/dispatch time — either modifies the **operator-blessed integrity-guard allow
+computation** (`lazy_guard.py` §2b condition 4 / the consumed-fence security window that decision 4
+explicitly reserved). Round 16 already made one unilateral mechanical change to this exact fence and
+it proved incomplete; a second unilateral re-wire of a security fence, without operator sign-off, is
+precisely what the hardening prohibitions (#2, never weaken/re-wire a gate to clear a denial) and the
+Round 9–13 precedent ("touches the security fence → surface, don't bake") counsel against.
+
+**Options:**
+- **Re-derive the fence at guard time (Recommended)** — Replace condition 4's single-nonce check with:
+  the NEWEST `class==cycle` registry emission is consumed AND its `emitted_at >= cycle.started_at`.
+  Pro: robust to any re-emit / ordering; keys off data the guard already reads; preserves the exact
+  pre-dispatch-window closure the operator blessed (before the worker dispatch, no cycle emission
+  registered-since-cycle-begin is consumed → fence closed). Con: changes the guard's allow
+  computation — the operator owns the soundness proof (does the "newest-cycle-emission-consumed-
+  since-begin" predicate admit any window where the orchestrator itself, not the worker, consumes a
+  re-emitted cycle emission before dispatching the worker? By construction the by-reference worker
+  dispatch IS the consume, so the invariant appears preserved — but "appears" on a security fence is
+  the operator's call). Requires a regression test that registers the consumed emission AFTER
+  `write_cycle_marker`.
+- **Re-bind the fence nonce at re-emit/dispatch time** — Have the re-emit path (or the guard's own
+  by-reference consume of a `class==cycle` entry) update the active cycle marker's fence nonce to the
+  emission actually consumed. Pro: keeps condition 4's single-nonce shape. Con: adds a marker write
+  from the re-emit/guard path (a new writer of the cycle marker), and must fence against the
+  orchestrator re-binding to its own improvised emission.
+- **Enforce/keep emit-before-cycle-begin and make a violation self-announcing** — Keep Round 16's
+  binding but detect at `--cycle-begin` (for a `subagent_model` cycle) that no bindable unconsumed
+  cycle emission exists, and emit a loud diagnostic/breadcrumb ("exemption fence will be DEAD this
+  cycle") so the silent 108:1 flake becomes observable. Pro: no gate-semantics change; pure
+  observability. Con: does NOT fix the deny — the re-emit is a legitimate, freshness-mandated move,
+  so a warning that fires on every such cycle is noisy and the sub-subagent still gets denied.
+
+**Recommendation:** Re-derive the fence at guard time (option 1) — it is the only option that both
+FIXES the deny AND stays faithful to the operator-blessed pre-dispatch-window closure, and it removes
+the fragile snapshot-nonce coupling at the root (so a 3rd variant cannot recur). The operator owns the
+soundness proof of the `emitted_at >= cycle.started_at` predicate on the integrity guard. Cross-
+reference: `docs/bugs/consumed-fence-dies-on-reemit-after-cycle-begin/SPEC.md` (Concluded); origin
+is decision 4 / hardening Round 16 (`e3f5702`), owned by `turn-routing-enforcement`.
 
 ## Why this is surfaced and not auto-applied
 
