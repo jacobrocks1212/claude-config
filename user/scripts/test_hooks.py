@@ -3413,6 +3413,55 @@ def test_containment_allows_carve_out_commit():
         )
 
 
+def test_containment_allows_same_feature_commit_grouped():
+    """lazy-cycle-containment-misparses-grouped-feature-paths: a `git commit`
+    staging only the marker feature's own GROUPED dir
+    (docs/features/<group>/<feature_id>/…) → ALLOW. The marker feature_id is the
+    bare slug; the on-disk path carries a domain-group segment before it. Before
+    the group-aware fix, _FEATURE_DIR_RE.group(1) captured the group ('audio'),
+    not the slug, so this same-feature commit was FALSE-DENIED."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(
+            state_dir, feature_id="audio-quality-analysis-visualization"
+        )
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'work'"),
+            state_dir,
+            staged_paths=[
+                "docs/features/audio/audio-quality-analysis-visualization/SPEC.md",
+                "docs/features/audio/audio-quality-analysis-visualization/PHASES.md",
+            ],
+        )
+        assert _containment_decision(result) != "deny", (
+            f"grouped same-feature commit must NOT deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_second_feature_commit_grouped():
+    """lazy-cycle-containment-misparses-grouped-feature-paths: the group-aware fix
+    must NOT weaken the tripwire — a `git commit` staging a DIFFERENT grouped
+    feature's dir than the marker's feature_id → still DENY."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(
+            state_dir, feature_id="audio-quality-analysis-visualization"
+        )
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'work'"),
+            state_dir,
+            # A different feature under a different domain group.
+            staged_paths=["docs/features/mixer/crossfader-curve/SPEC.md"],
+        )
+        assert _containment_decision(result) == "deny", (
+            f"grouped 2nd-feature commit must deny; stdout: {result.stdout!r}"
+        )
+
+
 def test_containment_increments_commit_tally_on_allow():
     """An ALLOWED same-feature `git commit` increments commit_tally in the
     marker (read-modify-write)."""
@@ -6738,6 +6787,10 @@ _TESTS = [
      test_containment_allows_same_feature_commit),
     ("test_containment_allows_carve_out_commit",
      test_containment_allows_carve_out_commit),
+    ("test_containment_allows_same_feature_commit_grouped",
+     test_containment_allows_same_feature_commit_grouped),
+    ("test_containment_denies_second_feature_commit_grouped",
+     test_containment_denies_second_feature_commit_grouped),
     ("test_containment_increments_commit_tally_on_allow",
      test_containment_increments_commit_tally_on_allow),
     ("test_containment_commit_count_backstop_denies",

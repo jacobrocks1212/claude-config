@@ -338,7 +338,41 @@ _STATE_PY_INVOKE_RE = re.compile(_CMD_START + _STATE_PY_TAIL)
 # mentioned in an unrelated later segment (a commit message) cannot trip it.
 _STATE_PY_INVOKE_SEG_RE = re.compile(r"^\s*" + _ENV_PREFIX + _STATE_PY_TAIL)
 _SEGMENT_SPLIT_RE = re.compile(r"[\n;&|({]")
+
+# lazy-cycle-containment-misparses-grouped-feature-paths (harden 2026-07):
+# _FEATURE_DIR_RE captures ONLY the FIRST path segment after docs/(features|bugs)/.
+# For a GROUPED feature (docs/features/audio/<slug>/, docs/features/mixer/<slug>/,
+# … — the layout AlgoBooth's queue produces via each item's `spec_dir`) that
+# segment is the DOMAIN GROUP ('audio'), NOT the feature slug, so a
+# `group(1) == feature_id` comparison NEVER matched a grouped feature's own paths
+# and the tripwire false-denied legitimate same-feature commits. The regex is now
+# RETAINED ONLY as an "is this path anywhere under the features/bugs tree?"
+# predicate; feature membership is decided group-aware by _path_under_feature,
+# keyed on the marker's feature_id (the queue item's bare slug), which anchors the
+# slug as a FULL path segment whether the feature is grouped (one optional group
+# segment) or ungrouped.
 _FEATURE_DIR_RE = re.compile(r"docs/(?:features|bugs)/([^/]+)/")
+
+
+def _path_under_feature(path, feature_id):
+    """True iff *path* lies within *feature_id*'s own docs dir, group-aware.
+
+    Matches both layouts the queue produces:
+      - ungrouped: docs/(features|bugs)/<feature_id>/...
+      - grouped:   docs/(features|bugs)/<group>/<feature_id>/...
+    The optional single `(?:[^/]+/)?` group segment plus the trailing `/` anchor
+    the (re.escape'd) feature_id as a FULL path segment, so it can never
+    partial-match a longer sibling slug. An empty/None feature_id → False (nothing
+    owns the path). Multi-level grouping is deliberately out of scope — the queue
+    does not produce it (see docs/bugs/lazy-cycle-containment-misparses-grouped-
+    feature-paths)."""
+    if not feature_id:
+        return False
+    norm = path.replace("\\", "/")
+    return re.search(
+        r"docs/(?:features|bugs)/(?:[^/]+/)?" + re.escape(feature_id) + r"/",
+        norm,
+    ) is not None
 
 # lazy-cycle-containment-lifecycle-patterns-still-unanchored: an anchored
 # invocation form for LIFECYCLE_PATTERNS, mirroring _STATE_PY_INVOKE_RE's
@@ -487,11 +521,10 @@ def _is_carve_out(path, feature_id):
     norm = path.replace("\\", "/")
     if norm in CARVE_OUT_PATHS:
         return True
-    # The feature's own dir (features OR bugs) is always allowed.
-    m = _FEATURE_DIR_RE.search(norm)
-    if m and m.group(1) == feature_id:
-        return True
-    return False
+    # The feature's own dir (features OR bugs) is always allowed — group-aware,
+    # keyed on the marker's feature_id, so a GROUPED feature's own paths
+    # (docs/features/<group>/<feature_id>/…) are correctly recognized as its own.
+    return _path_under_feature(norm, feature_id)
 
 
 def _increment_tally(marker):
@@ -626,12 +659,17 @@ def main():
                 + CORRECTIVE,
                 "commit-count-backstop",
             )
-        # Second-feature tripwire.
+        # Second-feature tripwire. A path is a 2nd-feature commit iff it is under
+        # SOME feature/bug dir (_FEATURE_DIR_RE, used purely as a tree predicate)
+        # but NOT a carve-out for THIS feature. _is_carve_out is now the sole
+        # group-aware membership authority (keyed on feature_id), so the old buggy
+        # `.group(1) != feature_id` comparison — which mis-parsed grouped features
+        # — is gone.
         staged = _staged_paths()
         offending = [
-            p for p in staged if not _is_carve_out(p, feature_id)
-            and _FEATURE_DIR_RE.search(p.replace("\\", "/"))
-            and _FEATURE_DIR_RE.search(p.replace("\\", "/")).group(1) != feature_id
+            p for p in staged
+            if _FEATURE_DIR_RE.search(p.replace("\\", "/"))
+            and not _is_carve_out(p, feature_id)
         ]
         if offending:
             _deny(
