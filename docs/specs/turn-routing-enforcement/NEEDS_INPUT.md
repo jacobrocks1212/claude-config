@@ -12,6 +12,7 @@ decisions:
   - "GATE_VERDICT.md authoring route: no sanctioned emit-dispatch class authors GATE_VERDICT.md for a genuinely-in-scope control-surface feature at __mark_complete__ — add a `gate-verdict` emit class, make it interactive-only, or move the gate to planning-time? (harden Round 36, 2026-07)"
   - "Provisional gate at the ship seam: should gate_verdict_ok (D3, STRUCTURALLY PROVISIONAL/unratified) hard-block completion before anti-overfit-design-gate is ratified, or degrade to advisory/planning-time until then? (harden Round 36, 2026-07)"
   - "Consumed-fence robustness under a re-emit after `--cycle-begin`: the operator-blessed sub-subagent exemption fence (decision 4) binds ONE nonce at `--cycle-begin`, but the freshness-rule re-emit makes the worker consume a DIFFERENT emission → fence dead → sub-subagent denied. Re-derive the fence at guard time, re-bind at re-emit, or enforce emit-before-cycle-begin — without weakening the integrity guard? (harden Round 46, 2026-07)"
+  - "Operator per-feature host-defer not machine-enforced over a VALIDATED feature: an operator's 'defer whole feature' resolution (apply-resolution writes DEFERRED_REQUIRES_HOST.md, deferred_by: operator) drives NO skip because (a) the named capability ids are unregistered → unknown-capability BLOCKED.md fail-fast, and (b) the host-defer branch is `not VALIDATED.md`-gated but the feature has a validated-modulo-observation-gaps VALIDATED.md → re-routes to __mark_complete__ → gate re-refuses → re-writes NEEDS_INPUT, re-asking an answered decision. Register the service capabilities + honor an operator DEFERRED_REQUIRES_HOST.md over a validated-modulo feature, or add a per-feature host-defer of verification rows — without weakening the completion gate or false-greening? Bundles with #5/#6. (harden Round 47, 2026-07)"
 date: 2026-06-16
 class: product
 next_skill: harden-harness
@@ -246,6 +247,89 @@ the fragile snapshot-nonce coupling at the root (so a 3rd variant cannot recur).
 soundness proof of the `emitted_at >= cycle.started_at` predicate on the integrity guard. Cross-
 reference: `docs/bugs/consumed-fence-dies-on-reemit-after-cycle-begin/SPEC.md` (Concluded); origin
 is decision 4 / hardening Round 16 (`e3f5702`), owned by `turn-routing-enforcement`.
+
+### 9. Operator per-feature host-defer not machine-enforced over a VALIDATED feature
+
+*(harden Round 47 — 2026-07-16, from the AlgoBooth `managed-llm-credits` `/lazy-batch` run;
+blocking observed-friction harden. Bundles with OPEN decisions #5 and #6 — all three name the
+SAME four rows.)*
+
+**Problem:** At the completion-integrity `NEEDS_INPUT.md` halt (the terminal hardening Round 44
+added), the operator answered "defer the whole feature to a capability-bearing host" for
+`managed-llm-credits` (4 unchecked Runtime-Verification rows: Phase 1 live-OAuth JWT-shape live
+capture, Phase 4 credits-proxy reachability smoke, Phase 7 Purchase CTA `ui_action`, Phase 8
+auto-refill toggle persistence). The apply-resolution subagent authored
+`docs/features/managed-llm-credits/DEFERRED_REQUIRES_HOST.md`
+(`missing_capabilities: [credits-proxy-host, live-oauth-host]`, `deferred_by: operator`). But that
+sentinel drives NO state-machine skip, for TWO independent reasons:
+
+1. **Unregistered capability ids.** `credits-proxy-host` and `live-oauth-host` are absent from the
+   closed `lazy_core.hostcaps._HOST_CAPABILITY_REGISTRY` (`hostcaps.py:74-110`). Declaring them in a
+   `requires_host:` set trips the Phase-4 unknown-capability fail-fast
+   (`lazy-state.py:2045-2078` → `blocker_kind: unknown-host-capability` BLOCKED.md) — a HARD blocked
+   terminal, the opposite of a clean defer. Unlike the registered hardware/OS capabilities, these are
+   SERVICE-REACHABILITY / configuration capabilities with no deterministic workstation self-probe.
+2. **The host-defer branch is `not VALIDATED.md`-gated.** `lazy-state.py:2087-2091` runs the
+   capability-miss defer only `if not host_validated and _phases_effectively_complete(...)`. This
+   feature carries a `VALIDATED.md` (`result: validated-modulo-observation-gaps` — the intended
+   output of the observation-gap path: MCP-driveable scope passed, some rows host-unobservable), so
+   the branch is skipped. With `VALIDATED.md` present the router goes straight to Step 10
+   `__mark_complete__` (the Step 9-pre re-open guard at `lazy-state.py:3520` checks only
+   `DEFERRED_REQUIRES_DEVICE.md`, never the host sentinel).
+
+So the deferral is documentation-only: the mechanical `--apply-pseudo` completion gate
+(`verify_ledger`, which never consults `DEFERRED_REQUIRES_HOST.md`) re-refuses on the 4 unchecked
+rows, the Round-44 `coherence-recovery` terminal reconciles 0 rows (they never ran on THIS host) and
+re-writes `NEEDS_INPUT.md` — re-asking a decision the operator already made. `DEFERRED_REQUIRES_HOST.md`
+is additionally a WRITE-ONLY sentinel on the routing side: the Step-2 branch re-derives
+`missing = required_host - host.present` each probe and never READS a pre-existing operator-authored
+sentinel as a skip driver.
+
+**Why this is a fork and not a mechanical fix:** the feature pipeline DELIBERATELY has NO
+operator-defer branch (`lazy-state.py:353-356`: "the feature side … has NO operator-DEFERRED.md
+branch (bug-pipeline-only — JUSTIFIED divergence)"; mirror note `bug-state.py:980-988`). Honoring the
+operator's "defer whole feature" answer therefore requires ADDING an operator-defer authority to the
+feature side AND either registering un-probeable service capabilities or teaching the completion gate
+to treat host-deferred rows as legitimately-deferred. Every path changes gate/authority semantics —
+and letting a sentinel waive the completion gate's unchecked-row refusal is exactly the gate-weakening
+Prohibition #2 reserves for the operator. Round 44 gave the loop a terminal; this decision gives the
+terminal's RESOLUTION a machine-honored home. This is the 3rd distinct round on the managed-llm-credits
+honest-stuck class (Round 22 #5/#6, Round 44 terminal, Round 47 resolution) — over-fit signal 2 is met.
+
+**Options:**
+- **Register the service capabilities (constant-False, no self-probe) + honor an operator
+  `DEFERRED_REQUIRES_HOST.md` over a validated-modulo feature (Recommended)** — Add `credits-proxy-host`
+  and `live-oauth-host` to the registry with a constant-False placeholder (mirroring `link-multi-peer`
+  — no workstation self-probe, so they re-open only under an explicit operator/env signal), AND relax
+  the completion path so an operator-authored `DEFERRED_REQUIRES_HOST.md` (`deferred_by: operator`)
+  routes the feature to the host-capability-saturated (Deferred) terminal instead of `__mark_complete__`,
+  even when a `validated-modulo-observation-gaps` VALIDATED.md is present. Pro: honors the operator's
+  answer with a clean Deferred terminal; no false-green (rows are deferred, not ticked); re-opens on a
+  capability host. **Load-bearing detail the operator owns:** the completion path (Step 9-pre and/or
+  `verify_ledger`) must recognize the host sentinel as a legitimate deferral without opening a
+  side-door that lets the PIPELINE (not the operator) waive the gate — the `deferred_by: operator`
+  provenance is the discriminator, and its trust model is the operator's call.
+- **General per-feature host-defer of specific verification ROWS** — The whole-feature analog of
+  decision #5's per-row `<!-- requires-host: <cap> -->` marker: the operator's deferral scopes to the
+  named rows, the feature completes-modulo-deferral on the validated scope, host-deferred rows are
+  tracked (not ticked, not blocking) and re-open on a capability host. Pro: finishes the feature on
+  validated scope rather than parking it whole; unifies with #5. Con: larger surface (per-row marker +
+  gate branch + receipt folding); the operator must confirm "complete-modulo-deferral" is the desired
+  disposition vs. a whole-feature Deferred park.
+- **Add an operator-DEFERRED authority branch to the FEATURE pipeline** — Give the feature side the
+  operator-defer affordance `lazy-state.py:353-356` currently reserves to the bug pipeline, reading an
+  operator-authored `DEFERRED_REQUIRES_HOST.md` as a skip driver. Pro: closest to what the
+  apply-resolution subagent already attempted. Con: reverses a JUSTIFIED parity divergence — the
+  operator owns whether the feature side SHOULD gain this authority, and how it fences against the
+  pipeline authoring its own defer.
+
+**Recommendation:** Option 1 (register service capabilities + honor the operator sentinel over a
+validated-modulo feature) — it directly ends the re-ask loop with a clean Deferred terminal and no
+false-green, keys off the existing `deferred_by: operator` provenance, and mirrors the `link-multi-peer`
+no-self-probe precedent. Resolve jointly with #5/#6 (all four managed-llm-credits rows): #6 authors the
+2 genuinely-MCP-testable-HERE rows (Phase 7 CTA, Phase 8 toggle), leaving the 2 truly host-blocked rows
+(Phase 1 live-OAuth, Phase 4 credits-proxy) for this decision's operator host-defer. Cross-reference:
+`docs/bugs/feature-operator-host-defer-not-honored-over-validated/SPEC.md` (Concluded).
 
 ## Why this is surfaced and not auto-applied
 
