@@ -435,7 +435,7 @@ If `sub_skill` starts with `__`, perform the action inline. Bug-pipeline pseudo-
     --context item_id="{bug_id}" \
     --context cwd="{cwd}"
   ```
-  Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The subagent reconciles PHASES.md honestly (tick-with-evidence or re-scope, never blind-tick) then returns to Step 1a. Exactly as a Gate-1 halt routes.
+  Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The subagent reconciles PHASES.md honestly (tick-with-evidence or re-scope, never blind-tick) then returns to Step 1a. Exactly as a Gate-1 halt routes. **Honest-stuck terminal (no oscillation):** if the coherence-recovery subagent reports `ESCALATED` — it could reconcile nothing because the only remaining blockers are verification rows that genuinely never ran on this host (0 genuine implementation deliverables) — it will have written `NEEDS_INPUT.md` (`written_by: completion-integrity-gate`, surfacing `turn-routing-enforcement` decisions #2/#5/#6). Do NOT re-dispatch coherence-recovery; return to Step 1a and the next probe returns `terminal_reason: needs-input` (Step 1g handles it). This is the deterministic replacement for the prior manual-NEEDS_INPUT improvisation the oscillation tripwire used to force (see `dispatch-coherence-recovery.md` step 3a).
   The orchestrator NEVER hand-writes the receipt, the status flip, or the sentinel deletions.
   After the script returns, the orchestrator runs ONE more script call — the **archive
   mechanics** are also script-owned per `~/.claude/skills/_components/mark-fixed-archive.md`:

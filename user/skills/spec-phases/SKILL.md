@@ -312,7 +312,7 @@ Phase-level dependencies on completed upstream features, extracted from each ups
 - [ ] {Concrete code output 2}
 - [ ] Tests: {What tests verify this phase}
 
-**Minimum Verifiable Behavior:** {The smallest runtime-observable proof that this phase's slice is wired — expressed as a runnable command, MCP assertion, or observable UI state. If the behavior does not exist yet, replace with a `- [ ]` Runtime Verification checklist row. This is NOT optional; "unit tests pass" is not a valid entry here.}
+**Minimum Verifiable Behavior:** {The smallest runtime-observable proof that this phase's slice is wired — expressed as a runnable command, MCP assertion, or observable UI state. If the behavior does not exist yet, replace with a `- [ ] <!-- verification-only -->` Runtime Verification checklist row (the canonical marker is mandatory — see the component below). This is NOT optional; "unit tests pass" is not a valid entry here.}
 
 !`cat .claude/skill-config/phases-runtime-verification.md 2>/dev/null || cat ~/.claude/skills/_components/phases-runtime-verification.md`
 
@@ -344,10 +344,12 @@ Phase-level dependencies on completed upstream features, extracted from each ups
 **Deliverables:**
 - [ ] {Concrete code output 1}
 
-**Minimum Verifiable Behavior:** {The smallest runtime-observable proof that this phase's slice is wired. Same rule as Phase 1 — runnable command, MCP assertion, or `- [ ]` row if the behavior doesn't yet exist. "Unit tests pass" is not valid.}
+**Minimum Verifiable Behavior:** {The smallest runtime-observable proof that this phase's slice is wired. Same rule as Phase 1 — runnable command, MCP assertion, or `- [ ] <!-- verification-only -->` row (canonical marker mandatory) if the behavior doesn't yet exist. "Unit tests pass" is not valid.}
 
 **Runtime Verification** *(checked by integration test or manual testing):*
-- [ ] {Observable runtime behavior if applicable — omit section if none}
+- [ ] <!-- verification-only --> {Observable runtime behavior if applicable — omit section if none}
+
+> Every Runtime-Verification `- [ ]` row MUST carry the canonical `<!-- verification-only -->` marker (an HTML comment, invisible in rendered markdown; SSOT `lazy_core:_VERIFICATION_ONLY_MARKER`), exactly as the `phases-runtime-verification.md` component above emits it. The marker is what lets the state machine route the phase forward to the MCP gate AND lets the completion gate auto-tick the row when its verification actually ran — DO NOT rely on the `**Runtime Verification**` header alone (that free-text form is the deprecated `_VERIFICATION_SECTION_RE` shim, which merely warns).
 
 **Prerequisites:**
 - Phase 1: {Specific dependency - what must exist}
