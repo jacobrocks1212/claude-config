@@ -21,7 +21,13 @@ re-invocation; never rely on it from inside any `Agent` dispatch.
 final message:**
 
 - **Backgrounded shell job** → block on it: re-run it foreground, or poll its output in a
-  bounded foreground loop, until it exits — then read the real pass/fail.
+  bounded foreground loop, until it exits — then read the real pass/fail. **Over-cap aggregate
+  gate (prevention, not just recovery):** if the command itself would exceed the ~10-min Bash
+  cap, re-running the *aggregate* in the foreground just re-hits the cap and re-backgrounds.
+  Do NOT reach for the aggregate at all — run its individual under-cap sub-components
+  synchronously in the foreground instead (each sub-check drives to a real pass/fail within the
+  cap). Never background a long gate from inside a dispatched agent, whose process tree is torn
+  down when its turn ends.
 - **Inner agent dispatch** → dispatch-and-AWAIT: the child's final report arrives as the
   `Agent` tool call's own result — consume it directly. NEVER dispatch asynchronously and end
   your turn expecting a message, watcher, or notification to bring the result back.

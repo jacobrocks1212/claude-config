@@ -622,7 +622,14 @@ TURN-END CONTRACT (HARD — read LAST because it is checked LAST):
   uncommitted work).
   1. NEVER end your turn while a process you started is still running. If a long
      gate/test/build was auto-backgrounded, block on it (await it or poll its
-     output in a bounded foreground loop) before returning.
+     output in a bounded foreground loop) before returning. PREVENT the
+     auto-background: when a required gate command would EXCEED the ~10-min Bash
+     cap (so the harness auto-backgrounds it), do NOT reach for the aggregate —
+     re-running the aggregate foreground just re-hits the cap and re-backgrounds.
+     Run its individual UNDER-cap sub-components synchronously in the foreground
+     instead (each drives to a real pass/fail within the cap). Never background a
+     long gate from inside this cycle subagent — its process tree is torn down
+     when your turn ends.
   2. ATOMIC GATE+COMMIT (R5): launch any long gate/test/build as ONE chained
      command that carries its own commit —
      `<gate> && git add -A && git commit -m "..." && git push` — so even an
@@ -659,7 +666,14 @@ TURN-END CONTRACT (HARD — read LAST because it is checked LAST):
   (a cycle that ends "waiting" on a backgrounded gate/test/build loses the job's
   process tree and returns resultless with uncommitted work).
   1. NEVER end your turn while a process you started is still running. If a long
-     gate/test/build was auto-backgrounded, block on it before returning.
+     gate/test/build was auto-backgrounded, block on it before returning. PREVENT
+     the auto-background: when a required gate command would EXCEED the ~10-min
+     Bash cap (so the harness auto-backgrounds it), do NOT reach for the aggregate
+     — re-running the aggregate foreground just re-hits the cap and re-backgrounds.
+     Run its individual UNDER-cap sub-components synchronously in the foreground
+     instead (each drives to a real pass/fail within the cap). Never background a
+     long gate from inside this cycle subagent — its process tree is torn down
+     when your turn ends.
   2. ATOMIC GATE+COMMIT (R5): launch any long gate/test/build as ONE chained
      command that carries its own commit+push —
      `<gate> && git add -A && git commit -m "..." && git push` — so even an
