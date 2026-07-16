@@ -561,6 +561,21 @@ async function getChangedFiles(prNumber: number, token: string): Promise<DiffRes
   };
 }
 
+// Resolve the merge-base (common ancestor) of base and head via the GitHub compare API,
+// so per-file diffs use three-dot (base...head) semantics matching what `gh pr diff` shows.
+// Diffing head against the base-branch TIP would leak post-branch-point base changes in as
+// phantom hunks. Falls back to the base commit if the compare API is unavailable.
+async function getMergeBase(baseCommit: string, headCommit: string, token: string): Promise<string> {
+  try {
+    const comparison = await ghFetch<any>(`/compare/${baseCommit}...${headCommit}`, token);
+    const sha = comparison?.merge_base_commit?.sha;
+    if (typeof sha === "string" && sha.length > 0) return sha;
+  } catch (err) {
+    console.error(`  Warning: Failed to resolve merge-base for ${baseCommit.slice(0, 8)}...${headCommit.slice(0, 8)}: ${err}`);
+  }
+  return baseCommit;
+}
+
 function mapGitHubStatus(status: string): string {
   switch (status) {
     case "added": return "add";
@@ -1560,9 +1575,12 @@ async function prepPR(prId: number, force = false, contextLines = DEFAULT_CONTEX
 
   // Get changed files from GitHub PR files endpoint
   const diff = await getChangedFiles(prId, token);
-  // Use the target (base) commit as the merge base for diff generation
-  const mergeBase = targetCommit;
+  // Resolve the real merge-base (common ancestor of base and head) so per-file diffs use
+  // three-dot (base...head) semantics matching `gh pr diff`. Diffing against the base-branch
+  // TIP (targetCommit) leaks post-branch-point base changes in as phantom hunks.
+  const mergeBase = await getMergeBase(targetCommit, sourceCommit, token);
   console.error(`GitHub reported ${diff.changes.length} changes`);
+  console.error(`Merge-base: ${mergeBase.slice(0, 8)}`);
 
   // Filter and process files
   const files: ManifestFile[] = [];
