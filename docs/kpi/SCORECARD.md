@@ -33,8 +33,8 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Canary trip precision | — | pending | — | NO-DATA |
-| Canary closure latency p50 | — | pending | — | NO-DATA |
+| Canary trip precision | 100% (90d) | pending | — | PENDING-BASELINE |
+| Canary closure latency p50 | 7 (90d) | pending | — | PENDING-BASELINE |
 
 ## skill-config
 
@@ -46,8 +46,8 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Conclusive efficacy verdicts produced | — | pending | — | NO-DATA |
-| Confounded-verdict ratio | — | pending | — | NO-DATA |
+| Conclusive efficacy verdicts produced | 0/90d | pending | — | PENDING-BASELINE |
+| Confounded-verdict ratio | 0% (90d) | pending | — | PENDING-BASELINE |
 
 ## anti-overfit-gate
 
@@ -62,8 +62,8 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Age in days of the oldest open docs/bugs/ item `[claude-config]` | 14 (1d) | 17 (measured 2026-07-11) | — | PENDING-BASELINE |
-| Count of docs/bugs/ items at Status: Concluded (investigated, never fixed) `[claude-config]` | 21 (1d) | 23 (measured 2026-07-11) | — | PENDING-BASELINE |
+| Age in days of the oldest open docs/bugs/ item `[claude-config]` | 16 (1d) | 17 (measured 2026-07-11) | — | PENDING-BASELINE |
+| Count of docs/bugs/ items at Status: Concluded (investigated, never fixed) `[claude-config]` | 25 (1d) | 23 (measured 2026-07-11) | — | PENDING-BASELINE |
 
 ## lazy-core
 
@@ -88,17 +88,13 @@
 
 ## Canary health
 
-- 42 canaries open, oldest 9d, 0 will no-data-close within 7d
+- 25 canaries open, oldest 5d, 0 will no-data-close within 7d
 
 ## Notes
 
 - `build-queue-false-green-rate`: no build records carrying hygiene.build_fidelity in the window
 - `build-queue-wait-time-p50`: results records carry no queued_at/started_at pair — runner timestamp add is a workstation-deferred follow-up
 - `mcp-validation-round-trips-per-feature`: unknown telemetry selector 'mcp-validation-round-trips-per-feature'
-- `canary-trip-precision`: no canary trips in the window — precision is undefined until the canary has tripped (never a fabricated zero)
-- `canary-closure-latency-p50`: no canary closures (excluding no-data) in the window
-- `efficacy-verdicts-produced`: no reviews recorded in the window
-- `confounded-verdict-ratio`: no due reviews in the window — ratio is undefined
 - `anti-overfit-gate-hit-rate`: no computation registered for 'harness-gate'/'hit-rate'
 - `anti-overfit-gate-override-rate`: no computation registered for 'harness-gate'/'override-rate'
 - `anti-overfit-gate-false-positive-rate`: no computation registered for 'harness-gate'/'false-positive-rate'
