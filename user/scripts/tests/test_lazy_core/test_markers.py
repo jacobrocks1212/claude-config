@@ -5695,6 +5695,108 @@ def test_advance_forward_cycle_legacy_marker_no_state_key_advances():
 
 
 
+def test_advance_forward_cycle_consume_gate_advances_multicycle_same_step():
+    """byref-forward-cycles-frozen-on-multicycle-same-step (2026-07-16):
+    ``advance_forward_cycle(state, consume_gate=True)`` advances forward_cycles ONCE
+    per distinct consumed dispatch across >=3 cycles that all share an IDENTICAL
+    (feature_id, current_step, sub_skill) tuple — the multi-part /execute-plan case.
+
+    RED without the fix: the state-change trigger alone freezes forward_cycles at 1
+    for every same-tuple cycle, so max_cycles can never trip. The consume-gate OR
+    trigger advances off each dispatch's registry consume. A bare re-fire between
+    dispatches (same tuple AND no new consume) must still no-op (idempotence)."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=10, now=_time.time(),
+            )
+            # A single, UNCHANGING tuple for the whole multi-part phase.
+            state = {
+                "sub_skill": "/execute-plan",
+                "feature_id": "hydra-overlay",
+                "current_step": "Step 7a: execute plan",
+            }
+
+            # Cycle 1: first probe advances via the state-change trigger (census 0).
+            m1 = lazy_core.advance_forward_cycle(state, consume_gate=True)
+            assert m1["forward_cycles"] == 1, m1
+
+            # A bare re-fire BEFORE the cycle-1 dispatch is consumed → no-op.
+            m1b = lazy_core.advance_forward_cycle(state, consume_gate=True)
+            assert m1b["forward_cycles"] == 1, (
+                f"bare re-fire (same tuple, no new consume) must not advance, got "
+                f"{m1b['forward_cycles']!r}"
+            )
+
+            # Cycles 2 and 3: each consumes one distinct dispatch, then the next
+            # dispatch-bound probe advances off the census rise DESPITE the identical
+            # tuple. This is exactly what froze at 1 before the fix.
+            for expected in (2, 3):
+                entry = lazy_core.register_emission("p", "cycle")
+                lazy_core.dispatch.consume_nonce(entry["nonce"])
+                mN = lazy_core.advance_forward_cycle(state, consume_gate=True)
+                assert mN["forward_cycles"] == expected, (
+                    f"a distinct consumed dispatch must advance forward_cycles to "
+                    f"{expected} even on an identical tuple, got "
+                    f"{mN['forward_cycles']!r}"
+                )
+                # Per-feature counter rides the same gate.
+                assert mN["per_feature_forward_cycles"]["hydra-overlay"] == expected, (
+                    f"per_feature must track the same advance, got "
+                    f"{mN['per_feature_forward_cycles']!r}"
+                )
+                # Idempotent re-fire after the advance, before the next consume.
+                mNb = lazy_core.advance_forward_cycle(state, consume_gate=True)
+                assert mNb["forward_cycles"] == expected, (
+                    f"re-fire after advance must no-op, got {mNb['forward_cycles']!r}"
+                )
+        finally:
+            _clear_state_dir()
+
+
+
+
+def test_advance_forward_cycle_consume_gate_default_off_preserves_freeze():
+    """The consume gate is OPT-IN: with the default (consume_gate omitted), an
+    identical tuple across cycles still no-ops even as the consume census rises —
+    the pseudo ``--apply-pseudo`` caller relies on the pure state-change trigger and
+    must stay byte-identical (a consume from an unrelated real dispatch must not
+    spuriously advance a pseudo re-fire)."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=10, now=_time.time(),
+            )
+            state = {
+                "sub_skill": "/execute-plan",
+                "feature_id": "feat-x",
+                "current_step": "execute-plan",
+            }
+            m1 = lazy_core.advance_forward_cycle(state)
+            assert m1["forward_cycles"] == 1, m1
+            # A consume lands, but the default path ignores the census entirely.
+            entry = lazy_core.register_emission("p", "cycle")
+            lazy_core.dispatch.consume_nonce(entry["nonce"])
+            m2 = lazy_core.advance_forward_cycle(state)
+            assert m2["forward_cycles"] == 1, (
+                f"default (no consume_gate) must keep the pure state-change trigger — "
+                f"identical tuple no-ops despite a census rise, got "
+                f"{m2['forward_cycles']!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+
+
 # ---------------------------------------------------------------------------
 # Tests: feature-budget-guard-and-skip-ahead Phase 1 — per-feature forward-cycle
 #   counter (per_feature_forward_cycles: {feature_id: int} run-marker map).
@@ -7537,6 +7639,8 @@ _TESTS = [
     ("test_advance_forward_cycle_pseudo_cleanup_routes_meta", test_advance_forward_cycle_pseudo_cleanup_routes_meta),
     ("test_advance_forward_cycle_verbatim_real_skill_theory_1b", test_advance_forward_cycle_verbatim_real_skill_theory_1b),
     ("test_advance_forward_cycle_legacy_marker_no_state_key_advances", test_advance_forward_cycle_legacy_marker_no_state_key_advances),
+    ("test_advance_forward_cycle_consume_gate_advances_multicycle_same_step", test_advance_forward_cycle_consume_gate_advances_multicycle_same_step),
+    ("test_advance_forward_cycle_consume_gate_default_off_preserves_freeze", test_advance_forward_cycle_consume_gate_default_off_preserves_freeze),
     ("test_write_run_marker_initializes_per_feature_map", test_write_run_marker_initializes_per_feature_map),
     ("test_advance_forward_cycle_increments_per_feature", test_advance_forward_cycle_increments_per_feature),
     ("test_advance_forward_cycle_meta_does_not_increment_per_feature", test_advance_forward_cycle_meta_does_not_increment_per_feature),

@@ -13337,8 +13337,17 @@ def main() -> int:
     # letting the max-cycles cap never fire. Meta accounting via --emit-dispatch /
     # advance_meta_cycle is untouched, so nothing on this path double-counts.
     # No marker present → no-op (advance_forward_cycle returns None).
+    #
+    # SECOND TRIGGER (byref-forward-cycles-frozen-on-multicycle-same-step): pass
+    # consume_gate=True so a genuine NEXT cycle sharing an IDENTICAL
+    # [feature_id, current_step, sub_skill] tuple (the multi-part execute-plan case:
+    # same feature, same step, same real sub_skill, one cycle per plan part) still
+    # advances forward_cycles off the registry consume-census rise. The state-change
+    # trigger ALONE froze the counter at 1 for the whole phase, so max_cycles could
+    # never trip. consume_gate is real-skill-probe-path-only — the pseudo apply path
+    # keeps the default (state-change trigger suffices there; no consume is emitted).
     if args.repeat_count:
-        lazy_core.advance_forward_cycle(state)
+        lazy_core.advance_forward_cycle(state, consume_gate=True)
     # --emit-prompt is strictly additive and flag-gated so that default output
     # remains byte-identical when the flag is absent. Placed AFTER the repeat
     # flags so the same-invocation count (from EITHER --repeat-count or
