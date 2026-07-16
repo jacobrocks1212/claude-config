@@ -8970,9 +8970,18 @@ def main() -> int:
     # max-cycles cap never fire. The two state scripts' advance wiring stays in
     # lockstep (lazy_parity_audit.py). Meta accounting via --emit-dispatch /
     # advance_meta_cycle is untouched, so nothing on this path double-counts.
+    #
+    # SECOND TRIGGER (byref-forward-cycles-frozen-on-multicycle-same-step — verbatim
+    # mirror of lazy-state.py): pass consume_gate=True so a genuine NEXT cycle sharing
+    # an IDENTICAL [feature_id, current_step, sub_skill] tuple (the multi-part
+    # execute-plan case: same bug, same step, same real sub_skill, one cycle per plan
+    # part) still advances forward_cycles off the registry consume-census rise. The
+    # state-change trigger ALONE froze the counter at 1 for the whole phase, so
+    # max_cycles could never trip. The two state scripts' advance wiring stays in
+    # lockstep (lazy_parity_audit.py).
     # No marker present → no-op (advance_forward_cycle returns None).
     if args.repeat_count:
-        lazy_core.advance_forward_cycle(state)
+        lazy_core.advance_forward_cycle(state, consume_gate=True)
     # --emit-prompt is strictly additive and flag-gated so that default output
     # remains byte-identical when the flag is absent. Placed AFTER the repeat
     # flags so the same-invocation count (from EITHER --repeat-count or
