@@ -4711,6 +4711,87 @@ def test_refuse_guard_noop_without_marker():
 
 
 
+def _capture_refusal_flagged(op, *, allow_hardening_subagent):
+    """Like _capture_refusal but threads allow_hardening_subagent through."""
+    import io as _io
+    buf = _io.StringIO()
+    real_stderr = sys.stderr
+    sys.stderr = buf
+    code = None
+    try:
+        lazy_core.refuse_if_cycle_active(
+            op, allow_hardening_subagent=allow_hardening_subagent
+        )
+    except SystemExit as exc:
+        code = exc.code if exc.code is not None else 0
+    finally:
+        sys.stderr = real_stderr
+    return code, buf.getvalue()
+
+
+def test_record_intervention_permitted_for_hardening_cycle_subagent():
+    """dispatched-harden-record-intervention-refused-by-containment: a dispatched
+    HARDENING cycle subagent (marker sub_skill == "hardening", LAZY_ORCHESTRATOR
+    unset) MUST be permitted --record-intervention (allow_hardening_subagent=True)
+    — the one op its SKILL contract requires — while a NON-hardening cycle subagent
+    is still refused, and the dangerous lifecycle ops stay refused even under a
+    hardening marker."""
+    _guard()
+    _clear_cycle_env()
+    # Force the subagent branch: no orchestrator identity, explicit subagent signal.
+    os.environ.pop("LAZY_ORCHESTRATOR", None)
+    os.environ["LAZY_CYCLE_SUBAGENT"] = "1"
+    try:
+        # (a) Hardening cycle marker → --record-intervention PERMITTED (no exit).
+        with tempfile.TemporaryDirectory() as td:
+            _set_state_dir(Path(td))
+            try:
+                lazy_core.write_cycle_marker(
+                    feature_id="some-bug", nonce="n", sub_skill="hardening"
+                )
+                code, _ = _capture_refusal_flagged(
+                    "--record-intervention", allow_hardening_subagent=True
+                )
+                assert code is None, (
+                    "record-intervention must be PERMITTED for a hardening cycle "
+                    f"subagent, got exit {code}"
+                )
+                # (b) A dangerous lifecycle op stays refused even under the hardening
+                #     marker (allow_hardening_subagent defaults False for it).
+                code_run_end, msg = _capture_refusal_flagged(
+                    "--run-end", allow_hardening_subagent=False
+                )
+                assert code_run_end == 3, (
+                    f"--run-end must STILL be refused (exit 3) under a hardening "
+                    f"marker, got {code_run_end}"
+                )
+                assert "--run-end" in msg
+            finally:
+                _clear_state_dir()
+        # (c) A NON-hardening cycle marker → --record-intervention STILL refused,
+        #     even with allow_hardening_subagent=True (the exemption is keyed on the
+        #     marker's own sub_skill, not on the flag alone).
+        with tempfile.TemporaryDirectory() as td:
+            _set_state_dir(Path(td))
+            try:
+                lazy_core.write_cycle_marker(
+                    feature_id="some-feature", nonce="n", sub_skill="execute-plan"
+                )
+                code, _ = _capture_refusal_flagged(
+                    "--record-intervention", allow_hardening_subagent=True
+                )
+                assert code == 3, (
+                    "record-intervention must STILL be refused for a NON-hardening "
+                    f"cycle subagent, got exit {code}"
+                )
+            finally:
+                _clear_state_dir()
+    finally:
+        _clear_cycle_env()
+
+
+
+
 def test_refuse_guard_leaves_run_marker_untouched():
     """A refused op leaves state untouched: the run marker on disk before the
     refusal is identical after it (zero side effects)."""
@@ -8272,6 +8353,7 @@ _TESTS = [
     ("test_set_marker_park_toggles_and_enforces_invariant", test_set_marker_park_toggles_and_enforces_invariant),
     ("test_fold_max_cycles_marker_authoritative", test_fold_max_cycles_marker_authoritative),
     ("test_fold_park_flags_marker_authoritative_with_legacy_fallback", test_fold_park_flags_marker_authoritative_with_legacy_fallback),
+    ("test_record_intervention_permitted_for_hardening_cycle_subagent", test_record_intervention_permitted_for_hardening_cycle_subagent),
 ]
 
 

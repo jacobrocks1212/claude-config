@@ -13442,8 +13442,15 @@ def main() -> int:
         # lazy_core.apply_pseudo — this CLI covers captures with no completion
         # event). Orchestrator-only: the record is committed pipeline state, so
         # refuse a cycle subagent FIRST (exit 3, zero side effects), exactly
-        # like --enqueue-adhoc / --reorder-queue.
-        lazy_core.refuse_if_cycle_active("--record-intervention")
+        # like --enqueue-adhoc / --reorder-queue — EXCEPT a dispatched HARDENING
+        # cycle subagent, which its SKILL contract REQUIRES to record its own
+        # round's intervention (capture-only telemetry, no lifecycle mutation).
+        # allow_hardening_subagent permits it ONLY when the cycle marker's
+        # sub_skill is a hardening class; every other cycle subagent is still
+        # refused (dispatched-harden-record-intervention-refused-by-containment).
+        lazy_core.refuse_if_cycle_active(
+            "--record-intervention", allow_hardening_subagent=True
+        )
         if not args.id:
             _die("--record-intervention requires --id")
         # D9 honesty convention: an explicit shipped_commit/shipped_date

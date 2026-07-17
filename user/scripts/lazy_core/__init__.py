@@ -269,6 +269,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "append_telemetry_event": "ledgers",
     "backfill_provenance": "ledgers",
     "build_hardening_emit_command": "ledgers",
+    "flush_commit_artifacts": "ledgers",
     "clear_efficacy_breadcrumb": "ledgers",
     "derive_touched_from_brackets": "ledgers",
     "derive_touched_from_grep": "ledgers",

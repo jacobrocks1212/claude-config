@@ -2155,6 +2155,33 @@ CYCLE_REFUSED_OPS: frozenset[str] = frozenset({
     "--emit-dispatch",
 })
 
+# dispatched-harden-record-intervention-refused-by-containment: cycle-marker
+# ``sub_skill`` values that identify a dispatched harness-hardening subagent. A
+# hardening dispatch (``dispatch.DISPATCH_CLASSES`` tag "hardening", emitted via
+# ``--emit-dispatch hardening``) is bracketed ``--cycle-begin --kind meta
+# --sub-skill hardening`` (coupled-trio §1d.1), so the cycle marker records
+# ``sub_skill == "hardening"`` for a live /harden-harness cycle. The narrow
+# ``--record-intervention`` containment exemption below keys on this set: a
+# dispatched harden's SKILL contract MANDATES recording its round as a
+# hypothesis-ledger intervention with a measurable target_signal, and
+# ``--record-intervention`` is capture-only telemetry (it writes
+# ``docs/interventions/<id>.md`` — no run-marker/registry/queue mutation), NOT a
+# run-lifecycle op, so permitting it for a hardening subagent does not open any
+# loop-formation surface (the genuinely-dangerous ops stay refused).
+_HARDENING_CYCLE_SUBSKILLS: frozenset[str] = frozenset({"hardening"})
+
+
+def _cycle_marker_is_hardening(marker: "dict | None") -> bool:
+    """True iff *marker* is a live cycle marker for a dispatched hardening cycle.
+
+    Keyed on the marker's own ``sub_skill`` (stamped at ``--cycle-begin``), so it
+    cannot be spoofed by a runaway's environment — only the orchestrator writes the
+    cycle marker. A missing/None marker or a non-hardening ``sub_skill`` → False.
+    """
+    if not isinstance(marker, dict):
+        return False
+    return str(marker.get("sub_skill") or "").strip() in _HARDENING_CYCLE_SUBSKILLS
+
 
 def _env_truthy(name: str) -> bool:
     """Return True when env var *name* is set to a non-empty, non-falsey value.
@@ -2168,7 +2195,9 @@ def _env_truthy(name: str) -> bool:
     return val.strip().lower() not in ("", "0", "false", "no", "off")
 
 
-def refuse_if_cycle_active(op_name: str) -> None:
+def refuse_if_cycle_active(
+    op_name: str, *, allow_hardening_subagent: bool = False
+) -> None:
     """Refuse an orchestrator-only op when the caller is a cycle subagent (D4).
 
     Invoked at the ENTRY of each guarded CLI handler (`--run-end`, `--run-start`,
@@ -2189,6 +2218,19 @@ def refuse_if_cycle_active(op_name: str) -> None:
     Args:
         op_name: the CLI flag being guarded (e.g. "--run-end"). Echoed in the
                  corrective message so the subagent sees exactly what it tried.
+        allow_hardening_subagent: when True, a dispatched HARDENING cycle subagent
+                 (the cycle marker's ``sub_skill`` is a hardening class) is PERMITTED
+                 this op instead of refused. Passed ONLY by the ``--record-intervention``
+                 handler (dispatched-harden-record-intervention-refused-by-containment):
+                 the /harden-harness SKILL MANDATES a dispatched harden record its
+                 round as a hypothesis-ledger intervention with a measurable
+                 target_signal, and ``--record-intervention`` is capture-only
+                 telemetry (writes ``docs/interventions/<id>.md`` — no
+                 run-marker/registry/queue mutation), so it opens no loop-formation
+                 surface. The genuinely-dangerous lifecycle ops
+                 (``--run-end`` / ``--run-start`` / ``--emit-dispatch`` /
+                 ``--apply-pseudo`` / ``--enqueue-adhoc``) DEFAULT this to False and
+                 stay refused for ANY cycle subagent, hardening or not.
     """
     # 1. The main-thread orchestrator asserts its identity → never self-refuse,
     #    even if a stale marker lingers from a crashed prior dispatch.
@@ -2206,6 +2248,18 @@ def refuse_if_cycle_active(op_name: str) -> None:
     explicit_subagent = _env_truthy("LAZY_CYCLE_SUBAGENT")
     marker = read_cycle_marker()
     if not explicit_subagent and marker is None:
+        return
+
+    # dispatched-harden-record-intervention-refused-by-containment: a dispatched
+    # HARDENING cycle subagent may record its own intervention (capture-only
+    # telemetry — the one op its SKILL contract requires). Keyed on the marker's
+    # own ``sub_skill`` (orchestrator-written; unspoofable by a runaway's env), so
+    # ONLY a real /harden-harness cycle is exempted, and ONLY for the op that
+    # passes allow_hardening_subagent (``--record-intervention``). Every other op
+    # keeps its default (allow_hardening_subagent=False) → still refused. This is
+    # checked AFTER the subagent-identity gate above so a non-subagent path is
+    # never reached here.
+    if allow_hardening_subagent and _cycle_marker_is_hardening(marker):
         return
 
     feature_id = (marker or {}).get("feature_id", "<unknown>")

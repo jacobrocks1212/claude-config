@@ -3919,3 +3919,105 @@ def bind_decision_record_context(
     context["chosen_path"] = record.get("chosen_path", "")
     context["resolution_summary"] = record.get("resolution_summary", "")
     return context
+
+
+def flush_commit_artifacts(
+    repo_root: "Path | str",
+    artifact_paths: "list[str]",
+    message: str,
+) -> dict:
+    """Stage + commit ONLY the named flush artifacts, by explicit PATHSPEC.
+
+    end-of-run-flush-commit-absorbs-concurrent-writer-staged-files: the end-of-run
+    efficacy/canary/KPI flush commits in the **claude-config** checkout even when the
+    run TARGETS another repo, where a ``/harden-harness`` agent may be concurrently
+    writing claude-config. A broad ``git add -A docs/*`` (the improvised staging that
+    caused the live incident — commit ``115a991a`` swallowed a concurrent harden
+    agent's ``docs/bugs/*/SPEC.md``) absorbs that foreign writer's staged, unrelated
+    files into the flush commit. This helper is the tested embodiment of the sanctioned
+    mechanism: stage the explicit artifact paths, then commit them with a trailing
+    ``-- <pathspec>`` so ONLY those paths are captured from the working tree — a
+    concurrently-staged foreign file is left in the index, untouched, NEVER absorbed.
+
+    Args:
+        repo_root: the claude-config checkout root (the interventions-bearing scope).
+        artifact_paths: repo-root-relative paths the flush generated THIS run — the
+            exact ``docs/interventions/<id>.md`` records, ``docs/kpi/SCORECARD.md``,
+            and any ``docs/bugs/reconsider-<id>/`` / ``docs/bugs/canary-revert-<id>/``
+            seed. Nonexistent paths are dropped (a no-op flush leaves nothing to
+            commit); NEVER pass a broad directory like ``docs`` — pass only the
+            specific artifacts.
+        message: the commit message (e.g. ``"docs(interventions): efficacy verdicts — <terminal>"``).
+
+    Returns:
+        ``{"ok": bool, "committed": [<paths>], "commit_sha": <str|None>,
+           "skipped_missing": [<paths>], "note": <str|None>, "error": <str|None>}``.
+        Fail-open (mirrors the flush's NON-BLOCKING posture): a git failure returns
+        ``ok: False`` with ``error`` set rather than raising.
+    """
+    root = Path(repo_root)
+
+    def _git(*args: str) -> "subprocess.CompletedProcess":
+        return subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True, text=True,
+        )
+
+    # Keep ONLY the artifacts that actually exist on disk (a no-op flush produced
+    # none of them). This is an explicit allow-list — never a directory glob.
+    present: list[str] = []
+    skipped_missing: list[str] = []
+    for p in artifact_paths:
+        rel = str(p).replace("\\", "/").strip()
+        if not rel:
+            continue
+        if (root / rel).exists():
+            present.append(rel)
+        else:
+            skipped_missing.append(rel)
+
+    if not present:
+        return {
+            "ok": True, "committed": [], "commit_sha": None,
+            "skipped_missing": skipped_missing,
+            "note": "no flush artifacts present — nothing to commit", "error": None,
+        }
+
+    # Stage ONLY the explicit paths (so untracked artifacts are tracked), then commit
+    # with the SAME paths as an explicit pathspec. The pathspec makes this a PARTIAL
+    # commit of only those paths from the working tree — any other staged file (a
+    # concurrent writer's) is left in the index, uncommitted, never absorbed.
+    add = _git("add", "--", *present)
+    if add.returncode != 0:
+        return {
+            "ok": False, "committed": [], "commit_sha": None,
+            "skipped_missing": skipped_missing, "note": None,
+            "error": f"git add failed: {add.stderr.strip()}",
+        }
+
+    commit = _git("commit", "-m", message, "--", *present)
+    if commit.returncode != 0:
+        # No changes in the pathspec (already committed / byte-identical regen) is a
+        # benign no-op, not a failure — git prints "nothing to commit" to stdout.
+        blob = (commit.stdout + commit.stderr).lower()
+        if "nothing to commit" in blob or "no changes added" in blob:
+            return {
+                "ok": True, "committed": [], "commit_sha": None,
+                "skipped_missing": skipped_missing,
+                "note": "flush artifacts already committed — no-op", "error": None,
+            }
+        return {
+            "ok": False, "committed": [], "commit_sha": None,
+            "skipped_missing": skipped_missing, "note": None,
+            "error": f"git commit failed: {commit.stderr.strip()}",
+        }
+
+    sha_proc = _git("rev-parse", "HEAD")
+    commit_sha = sha_proc.stdout.strip() if sha_proc.returncode == 0 else None
+    # The files actually captured by the commit (authoritative — reflects the pathspec).
+    show = _git("show", "--name-only", "--pretty=format:", "HEAD")
+    committed = [l.strip() for l in show.stdout.splitlines() if l.strip()] if show.returncode == 0 else present
+    return {
+        "ok": True, "committed": committed, "commit_sha": commit_sha,
+        "skipped_missing": skipped_missing, "note": None, "error": None,
+    }

@@ -3878,6 +3878,86 @@ def test_intervention_event_vocabulary_matches_live_emit_set():
     )
 
 
+# ---------------------------------------------------------------------------
+# flush_commit_artifacts (end-of-run-flush-commit-absorbs-concurrent-writer-
+# staged-files): the end-of-run efficacy flush must stage + commit ONLY its own
+# explicit artifacts, never absorb a concurrent writer's staged files.
+# ---------------------------------------------------------------------------
+
+def _fca_git_head_files(root: "Path") -> "list[str]":
+    r = subprocess.run(
+        ["git", "-C", str(root), "show", "--name-only", "--pretty=format:", "HEAD"],
+        check=True, capture_output=True, text=True,
+    )
+    return [l.strip() for l in r.stdout.splitlines() if l.strip()]
+
+
+def _fca_git_staged(root: "Path") -> "list[str]":
+    r = subprocess.run(
+        ["git", "-C", str(root), "diff", "--cached", "--name-only"],
+        check=True, capture_output=True, text=True,
+    )
+    return [l.strip() for l in r.stdout.splitlines() if l.strip()]
+
+
+def test_flush_commit_artifacts_does_not_absorb_foreign_staged_file():
+    """The MEASURABLE gap-3 regression: a foreign staged file (a concurrent harden
+    agent's spec) is NOT absorbed into the flush commit — the pathspec commit
+    captures ONLY the explicit flush artifacts; the foreign file stays staged."""
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _prov_git_fixture_repo(root)
+        # The flush's own artifacts.
+        (root / "docs" / "interventions").mkdir(parents=True)
+        (root / "docs" / "interventions" / "harden-x.md").write_text(
+            "---\nkind: intervention\n---\n", encoding="utf-8")
+        (root / "docs" / "kpi").mkdir(parents=True)
+        (root / "docs" / "kpi" / "SCORECARD.md").write_text("# scorecard\n", encoding="utf-8")
+        # A CONCURRENT writer's file, ALREADY STAGED (a harden agent mid-write).
+        (root / "docs" / "bugs" / "some-harden-bug").mkdir(parents=True)
+        foreign = root / "docs" / "bugs" / "some-harden-bug" / "SPEC.md"
+        foreign.write_text("# concurrent harden spec\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(root), "add", "docs/bugs/some-harden-bug/SPEC.md"],
+            check=True, capture_output=True, text=True,
+        )
+        assert "docs/bugs/some-harden-bug/SPEC.md" in _fca_git_staged(root)
+
+        result = lazy_core.flush_commit_artifacts(
+            root,
+            ["docs/interventions/harden-x.md", "docs/kpi/SCORECARD.md"],
+            "docs(interventions): efficacy verdicts — test",
+        )
+
+        assert result["ok"] is True, result
+        committed = _fca_git_head_files(root)
+        # The flush artifacts ARE committed …
+        assert "docs/interventions/harden-x.md" in committed
+        assert "docs/kpi/SCORECARD.md" in committed
+        # … and the foreign staged file is NOT absorbed into the flush commit …
+        assert "docs/bugs/some-harden-bug/SPEC.md" not in committed
+        # … and remains staged for its owner (uncommitted, not lost).
+        assert "docs/bugs/some-harden-bug/SPEC.md" in _fca_git_staged(root)
+
+
+def test_flush_commit_artifacts_skips_missing_and_noops_when_empty():
+    """A no-op flush (no artifacts present) commits nothing and reports skips."""
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        head0 = _prov_git_fixture_repo(root)
+        result = lazy_core.flush_commit_artifacts(
+            root, ["docs/interventions/absent.md"], "docs(interventions): none",
+        )
+        assert result["ok"] is True
+        assert result["committed"] == []
+        assert "docs/interventions/absent.md" in result["skipped_missing"]
+        head1 = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        assert head1 == head0, "no-op flush must not create a commit"
+
+
 _TESTS = [
     ("test_stale_and_materialized_symbols_present", test_stale_and_materialized_symbols_present),
     ("test_read_stale_upstream_absent", test_read_stale_upstream_absent),
@@ -4002,6 +4082,8 @@ _TESTS = [
     ("test_read_hook_events_empty_missing_and_corrupt_tolerant", test_read_hook_events_empty_missing_and_corrupt_tolerant),
     ("test_guard_plane_heartbeat_none_without_marker", test_guard_plane_heartbeat_none_without_marker),
     ("test_intervention_event_vocabulary_matches_live_emit_set", test_intervention_event_vocabulary_matches_live_emit_set),
+    ("test_flush_commit_artifacts_does_not_absorb_foreign_staged_file", test_flush_commit_artifacts_does_not_absorb_foreign_staged_file),
+    ("test_flush_commit_artifacts_skips_missing_and_noops_when_empty", test_flush_commit_artifacts_skips_missing_and_noops_when_empty),
 ]
 
 

@@ -9111,8 +9111,15 @@ def main() -> int:
         # lazy_core.record_intervention). Manual / hardening-round / D9-backfill
         # capture path — the completion-gate capture lives inside
         # lazy_core.apply_pseudo. Orchestrator-only: refuse a cycle subagent
-        # FIRST (exit 3, zero side effects).
-        lazy_core.refuse_if_cycle_active("--record-intervention")
+        # FIRST (exit 3, zero side effects) — EXCEPT a dispatched HARDENING cycle
+        # subagent, which its SKILL contract REQUIRES to record its own round's
+        # intervention (capture-only telemetry). allow_hardening_subagent permits
+        # it ONLY when the cycle marker's sub_skill is a hardening class; every
+        # other cycle subagent is still refused
+        # (dispatched-harden-record-intervention-refused-by-containment).
+        lazy_core.refuse_if_cycle_active(
+            "--record-intervention", allow_hardening_subagent=True
+        )
         if not args.id:
             _die("--record-intervention requires --id")
         provenance = (
