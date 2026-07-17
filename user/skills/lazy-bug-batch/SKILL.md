@@ -226,7 +226,7 @@ Repeat:
 LAZY-ROUTE (hook-injected, turn N): {"feature_id": "...", "sub_skill": "...", "cycle_prompt": "...", "cycle_model": "opus", ...} nonce=<hex-value>
 ```
 
-On post-compaction re-entry, a `POST-COMPACTION RE-ENTRY:` paragraph follows the nonce. If the inject hook errored, a `HOOK_ERROR: <error text>` suffix appears at the end. **If the current turn carries this banner**, consume it directly — extract `feature_id`/`bug_id`, `sub_skill`, `cycle_prompt`, `cycle_model`, and all other probe fields from the injected JSON. **Do NOT run another `bug-state.py` probe on this turn.** Re-probing advances the persisted counters TWICE for one logical cycle — a protocol violation. If no LAZY-ROUTE banner is present, run the probe as below.
+On post-compaction re-entry, a `POST-COMPACTION RE-ENTRY:` paragraph follows the nonce. If the inject hook errored, a `HOOK_ERROR: <error text>` suffix appears at the end. **If the current turn carries this banner**, consume it directly — extract `feature_id`/`bug_id`, `sub_skill`, `cycle_prompt`, `cycle_model`, and all other probe fields from the injected JSON. **Do NOT run another `bug-state.py` probe on this turn.** Re-probing advances the loop-detection STREAKS twice for one logical cycle — a protocol violation. (The BUDGET counters `forward_cycles`/`meta_cycles` are no longer probe-driven: as in `/lazy-batch`, the SCRIPT advances them at the `--cycle-end` bracket (keyed on the cycle marker's `--kind`) and at `--apply-pseudo` — the probe and inject hook are budget-neutral, so a double-probe cannot inflate the budget. The orchestrator no longer hand-counts; the "increment `forward_cycles`/`meta_cycles`" instructions below are descriptive of the script's action at that step.) If no LAZY-ROUTE banner is present, run the probe as below.
 
 ```bash
 python3 ~/.claude/scripts/bug-state.py
@@ -464,7 +464,9 @@ If `sub_skill` starts with `__`, perform the action inline. Bug-pipeline pseudo-
   (`Ready` or `In-progress` → `Complete`). Derive the plan part number from `phases:`; fall back
   to the plan filename. Commit with message
   `chore(<bug_id>): mark plan part N Complete (stale — already applied)`. Do NOT touch SPEC.md
-  or any sentinel. **Meta cycle** — increment `meta_cycles`.
+  or any sentinel. **Meta-class cleanup action** — applied INLINE (no Agent dispatch, no
+  `--cycle-begin`/`--cycle-end` bracket, and NOT via `--apply-pseudo`), so the script advances no
+  budget counter for it; that under-count is budget-neutral (`meta_cycles` is uncapped).
 
 After each inline action, follow the uniform post-cycle procedure from
 `~/.claude/skills/lazy-batch/SKILL.md` Step 1c.5 (cycle_log append, push backstop, emit Step 3
@@ -732,7 +734,7 @@ bindings:
     --context cwd="{cwd}"
   ```
   Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The `@requires` keys for `--emit-dispatch recovery` are: `item_name`, `spec_path`, `failure_summary`, `cwd`, `item_id`.
-- Increment `forward_cycles`. Return to Step 1a.
+- The SCRIPT has already advanced `forward_cycles` for this real-skill cycle at its `--cycle-end` bracket (the orchestrator no longer hand-counts). Return to Step 1a.
 
 ### 1f. Research-wait mode
 
