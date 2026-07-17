@@ -446,6 +446,42 @@ def _current_head(repo_root: Path) -> str | None:
     return None
 
 
+def _load_feature_queue_for_merged(repo_root: Path) -> list[dict[str, Any]]:
+    """Load docs/features/queue.json items for the merged work-list via the
+    EXISTING ``lazy-state.py:load_queue`` loader (not a hand-reparse).
+
+    Coupled-pair mirror of lazy-state.py's ``_load_bug_queue_for_merged``:
+    lazy-state.py is a hyphenated module so a plain ``import`` won't resolve;
+    load it from its sibling path with importlib. The returned entries each
+    carry at least ``id`` and ``tier`` — exactly what ``merged_priority`` needs.
+    Best-effort: if lazy-state.py is missing/unloadable, return [] so the merged
+    view degrades to bugs-only rather than crashing (a bugs-only repo's merged
+    head is unaffected).
+    """
+    import importlib.util
+
+    lazy_state_path = Path(__file__).parent / "lazy-state.py"
+    if not lazy_state_path.exists():
+        return []
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_lazy_state_for_merged", str(lazy_state_path)
+        )
+        if spec is None or spec.loader is None:
+            return []
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.load_queue(repo_root)
+    except Exception as exc:  # noqa: BLE001 — degrade to bugs-only on load error
+        # Mirror of the merged-view bug-side degradation diagnostic: a
+        # feature-side load failure must be observable, not silent, but STILL
+        # fail open (return []) so a bugs-only repo's merged head is unaffected.
+        _diag(
+            f"merged-view feature-side load failed ({exc}) — degrading to bugs-only"
+        )
+        return []
+
+
 def load_bug_queue(
     repo_root: Path, *, today: "date | None" = None
 ) -> list[dict[str, Any]]:
@@ -9289,6 +9325,23 @@ def main() -> int:
         # dispatch first.  Mirror of lazy-state.py (coupled-pair).
         _emit_marker = lazy_core.read_run_marker()
         _emit_debt = lazy_core.pending_hardening() if _emit_marker is not None else 0
+        # dispatch-probe-and-inject-bypass-merged-head (coupled-pair mirror of
+        # lazy-state.py): withhold when the MERGED work-list head diverges from
+        # the bug this probe would emit for (a higher-priority item — bug or
+        # feature — jumped the merged head mid-bug-run). Marker-gated +
+        # fail-safe. Reuses the SAME next_merged ordering.
+        _merged_override = None
+        if _emit_marker is not None:
+            try:
+                _mo_repo = Path(args.repo_root)
+                _merged_override = lazy_core.dispatch.merged_head_override(
+                    _load_feature_queue_for_merged(_mo_repo),
+                    load_bug_queue(_mo_repo),
+                    str(lazy_core.active_repo_root()),
+                    state.get("feature_id"),
+                )
+            except Exception:  # noqa: BLE001 — divergence probe must never break the base probe
+                _merged_override = None
         if _emit_marker is not None and _emit_debt > 0:
             # Withhold: no cycle_prompt, no cycle_model, no registration.
             _oldest = lazy_core.oldest_unacked_deny()
@@ -9327,6 +9380,14 @@ def main() -> int:
                 cycle_kind=_obligation.get("cycle_kind") or "",
                 cwd=str(args.repo_root),
             )
+        elif _merged_override is not None:
+            # dispatch-probe-and-inject-bypass-merged-head (coupled-pair mirror):
+            # the MERGED head is a DIFFERENT, higher-priority item than this bug
+            # probe would emit for. WITHHOLD the wrong-item forward route — same
+            # shape as the two withholds above. The orchestrator must re-probe
+            # --next-merged and type-dispatch to the merged head's script.
+            state["route_overridden_by"] = "merged-head-diverged"
+            state["merged_head"] = _merged_override["merged_head"]
         else:
             rc = state.get("repeat_count") if (args.repeat_count or args.repeat_count_peek) else None
             # Phase 9 (lazy-validation-readiness) — per-part model tiering.

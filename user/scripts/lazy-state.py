@@ -13554,6 +13554,28 @@ def main() -> int:
         # probe; the extractor now fails loudly on the missing key.
         _emit_marker = lazy_core.read_run_marker()
         _emit_debt = lazy_core.pending_hardening() if _emit_marker is not None else 0
+        # dispatch-probe-and-inject-bypass-merged-head: compute whether the
+        # MERGED work-list head diverges from the item this feature probe would
+        # emit for (a P0 bug that jumped the bug-queue head mid-feature-run).
+        # The unified driver is contracted to probe --next-merged FIRST and
+        # type-dispatch, but an orchestrator that calls this enriched
+        # --emit-prompt probe DIRECTLY (the manual Step-1a path) would otherwise
+        # get a stale feature route with no signal that a P0 bug outranks it.
+        # Marker-gated + fail-safe (any error → None → emit normally; never a
+        # spurious withhold). Reuses the SAME next_merged ordering the
+        # --next-merged surface uses — never a second ordering rule.
+        _merged_override = None
+        if _emit_marker is not None:
+            try:
+                _mo_repo = Path(args.repo_root)
+                _merged_override = lazy_core.dispatch.merged_head_override(
+                    load_queue(_mo_repo),
+                    _load_bug_queue_for_merged(_mo_repo),
+                    str(lazy_core.active_repo_root()),
+                    state.get("feature_id"),
+                )
+            except Exception:  # noqa: BLE001 — divergence probe must never break the base probe
+                _merged_override = None
         if _emit_marker is not None and _emit_debt > 0:
             # Withhold: no cycle_prompt, no cycle_model, no registration.
             _oldest = lazy_core.oldest_unacked_deny()
@@ -13598,6 +13620,19 @@ def main() -> int:
                 cycle_kind=_obligation.get("cycle_kind") or "",
                 cwd=str(args.repo_root),
             )
+        elif _merged_override is not None:
+            # dispatch-probe-and-inject-bypass-merged-head: the MERGED head is a
+            # DIFFERENT, higher-priority item than this feature probe would emit
+            # for (typically a P0 bug that jumped the bug-queue head). WITHHOLD
+            # the wrong-item forward route — same shape as the two withholds
+            # above (no cycle_prompt/cycle_model/registration side-effect this
+            # probe). The orchestrator must re-probe --next-merged and
+            # type-dispatch to the merged head's script (bug → bug-state.py).
+            # Lowest-precedence of the three withholds: a hardening/audit debt on
+            # the CURRENT item is discharged first; only then does a merged-head
+            # divergence redirect the route.
+            state["route_overridden_by"] = "merged-head-diverged"
+            state["merged_head"] = _merged_override["merged_head"]
         else:
             rc = state.get("repeat_count") if (args.repeat_count or args.repeat_count_peek) else None
             # Phase 9 (lazy-validation-readiness) — per-part model tiering.

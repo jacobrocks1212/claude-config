@@ -328,6 +328,71 @@ def _mcp_test_cycle_model(spec_path: str | None) -> str:
         return "sonnet"
 
 
+def merged_head_override(
+    feature_items: list[dict],
+    bug_items: list[dict],
+    repo_root: str,
+    current_item_id: str | None,
+    *,
+    today: "datetime.date | None" = None,
+) -> dict | None:
+    """Return a route-override payload when the MERGED work-list head is a
+    DIFFERENT item than the one a dispatch-bound probe is about to emit for —
+    else ``None`` (the common, no-divergence case: byte-identical output).
+
+    The unified driver contract (unified-pipeline-orchestrator Phase 2,
+    ``lazy-batch/SKILL.md`` Step 1a) is: each cycle probe the merged head with
+    ``--next-merged`` FIRST, then type-dispatch to the matching state script.
+    But the DISPATCH-BOUND enriched probe (``--emit-prompt``) and the inject
+    hook (``lazy_inject.py``) historically routed straight through the marker's
+    STICKY ``pipeline`` / their own single-queue state, IGNORING the merged head
+    — so a P0 bug that jumped the bug-queue head mid-feature-run was SILENTLY
+    skipped and the lower-priority feature was worked first
+    (docs/bugs/dispatch-probe-and-inject-bypass-merged-head, 2026-07-16).
+
+    This is the mechanical guard that makes that misroute self-announcing: it
+    reuses the SAME ``next_merged`` ordering (never a second ordering rule), and
+    when the merged head's ``item_id`` differs from ``current_item_id`` it
+    returns ``{"route_overridden_by": "merged-head-diverged", "merged_head":
+    {item_id, type}}`` so the caller WITHHOLDS the (wrong-item) forward route —
+    exactly mirroring the existing ``pending-hardening-debt`` /
+    ``audit-obligation`` withholds in each state script's ``--emit-prompt`` path.
+
+    Pure + fail-safe: empty queues, a missing ``current_item_id``, or a head
+    that MATCHES ``current_item_id`` (the normal case — the probe is already
+    emitting for the merged head) → ``None``, so the caller emits normally.
+    Callers wrap the call in try/except so a divergence-probe error NEVER breaks
+    the base probe (fail toward emitting, never toward a spurious withhold).
+
+    Args:
+        feature_items: feature ``queue.json`` items (from ``load_queue``).
+        bug_items: bug ``queue.json`` items (from ``load_bug_queue``).
+        repo_root: echoed into the returned ``merged_head`` via ``next_merged``;
+            does not affect ordering.
+        current_item_id: the id the dispatch-bound probe would emit for
+            (``state["feature_id"]`` in both scripts — the generic item id).
+        today: caller-supplied date for deterministic bug-aging ordering.
+
+    Returns:
+        The override dict when the merged head diverges from ``current_item_id``;
+        ``None`` otherwise.
+    """
+    from .depdag import next_merged
+
+    head = next_merged(feature_items, bug_items, repo_root, today=today)
+    if not head:
+        return None
+    if not current_item_id or head.get("item_id") == current_item_id:
+        return None
+    return {
+        "route_overridden_by": "merged-head-diverged",
+        "merged_head": {
+            "item_id": head.get("item_id"),
+            "type": head.get("type"),
+        },
+    }
+
+
 def emit_cycle_prompt(
     repo_root: Path,
     state: dict,

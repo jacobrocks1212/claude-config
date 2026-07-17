@@ -2673,6 +2673,101 @@ def test_subprocess_emit_prompt_with_marker_writes_registry():
 
 
 
+def test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug():
+    """dispatch-probe-and-inject-bypass-merged-head (end-to-end): a real
+    subprocess `lazy-state.py --repeat-count --probe --emit-prompt` with a
+    feature-run marker but a P0 bug at the merged head must WITHHOLD the feature
+    route: route_overridden_by == "merged-head-diverged", merged_head names the
+    bug, cycle_prompt is null, and NO cycle registry entry is written (the
+    orchestrator must re-probe --next-merged and type-dispatch to the bug).
+
+    RED state (pre-fix): the probe emitted the feat-c cycle_prompt and registered
+    it, silently skipping the P0 bug — the live 2026-07-17 friction.
+    """
+    _guard()
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        # Feature fixture (feat-c tier 1) — dispatchable on its own.
+        features = td_path / "fixture-repo" / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-c", "name": "Feature C", "spec_dir": "feat-c", "tier": 1}
+            ]
+        }), encoding="utf-8")
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        fdir = features / "feat-c"
+        fdir.mkdir()
+        (fdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+        (fdir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n",
+            encoding="utf-8")
+        (fdir / "plans").mkdir()
+        (fdir / "plans" / "all-phases-c.md").write_text("# Plan\n", encoding="utf-8")
+        fixture_repo = td_path / "fixture-repo"
+
+        # P0 bug at the merged head (rank 0 outranks feature tier 1).
+        bug_dir = fixture_repo / "docs" / "bugs" / "bug-z"
+        (bug_dir / "plans").mkdir(parents=True)
+        (fixture_repo / "docs" / "bugs" / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-z", "name": "Bug Z", "spec_dir": "bug-z", "severity": "P0"}
+            ]
+        }), encoding="utf-8")
+        (bug_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (bug_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Fix the thing\n- [ ] Tests\n", encoding="utf-8")
+        (bug_dir / "plans" / "all-phases-z.md").write_text("# Plan\n", encoding="utf-8")
+
+        state_dir = td_path / "lazy-state-dir"
+        state_dir.mkdir()
+
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(fixture_repo), max_cycles=10, now=_time.time(),
+            )
+        finally:
+            _clear_state_dir()
+
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        result = subprocess.run(
+            [sys.executable, str(lazy_state_script),
+             "--repeat-count", "--probe", "--emit-prompt",
+             "--repo-root", str(fixture_repo)],
+            capture_output=True, text=True, env=env,
+        )
+        assert result.returncode == 0, (
+            f"lazy-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
+        state_json = json.loads(result.stdout)
+
+        assert state_json.get("route_overridden_by") == "merged-head-diverged", (
+            f"feature probe must WITHHOLD over a P0-bug merged head; "
+            f"route_overridden_by={state_json.get('route_overridden_by')!r}, "
+            f"feature_id={state_json.get('feature_id')!r}")
+        assert state_json.get("merged_head") == {"item_id": "bug-z", "type": "bug"}, (
+            f"merged_head must name the P0 bug; got {state_json.get('merged_head')!r}")
+        assert state_json.get("cycle_prompt") is None, (
+            "cycle_prompt must be null on a withheld route")
+        # No cycle registry entry written (the withheld route registers nothing).
+        registry_file = state_dir / "lazy-prompt-registry.json"
+        if registry_file.exists():
+            entries = json.loads(registry_file.read_text(encoding="utf-8")).get("entries", [])
+            assert not [e for e in entries if e.get("class") == "cycle"], (
+                "a withheld route must NOT register a cycle emission")
+
+
+
+
 # ---------------------------------------------------------------------------
 # Test 13: --repeat-count-peek does NOT advance marker counters
 #          + freshness-leg assertion for lookup_emission
@@ -4463,6 +4558,59 @@ def test_merged_worklist_bug_breaks_tie_at_equal_priority():
 
 
 
+def test_merged_head_override_diverges_when_p0_bug_outranks_current_feature():
+    """dispatch-probe-and-inject-bypass-merged-head: a dispatch-bound FEATURE
+    probe emitting for hydra-overlay while a P0 bug sits at the merged head must
+    get a withhold payload (route_overridden_by=merged-head-diverged) NAMING the
+    bug — the exact live 2026-07-17 friction (the enriched --emit-prompt probe
+    returned the feature over two P0 bugs). Regression fixture: P0 bug at
+    bug-queue head + actionable feature → the override redirects to the bug."""
+    _guard()
+    feats = [{"id": "hydra-overlay", "tier": 3}]
+    bugs = [{"id": "adhoc-hydra-sidecar-dist-esm-no-frames", "severity": "P0"}]
+    override = lazy_core.dispatch.merged_head_override(
+        feats, bugs, "/r", "hydra-overlay"
+    )
+    assert override is not None, "P0 bug at merged head must override the feature route"
+    assert override["route_overridden_by"] == "merged-head-diverged"
+    assert override["merged_head"] == {
+        "item_id": "adhoc-hydra-sidecar-dist-esm-no-frames", "type": "bug",
+    }, override
+
+
+def test_merged_head_override_diverges_when_higher_sev_bug_jumps_head():
+    """Coupled-pair (bug-state) case: a bug probe emitting for a lower-severity
+    bug while a P0 bug jumped the merged head → withhold naming the P0 bug."""
+    _guard()
+    bugs = [{"id": "bug-p0", "severity": "P0"}, {"id": "bug-p2", "severity": "P2"}]
+    override = lazy_core.dispatch.merged_head_override([], bugs, "/r", "bug-p2")
+    assert override is not None
+    assert override["merged_head"] == {"item_id": "bug-p0", "type": "bug"}, override
+
+
+def test_merged_head_override_none_when_head_is_current_item():
+    """No divergence: the probe is already emitting for the merged head (feature
+    run whose head IS the feature; bug run whose head IS the bug) → None, so the
+    caller emits normally (byte-identical common path)."""
+    _guard()
+    assert lazy_core.dispatch.merged_head_override(
+        [{"id": "feat-a", "tier": 1}], [], "/r", "feat-a"
+    ) is None
+    assert lazy_core.dispatch.merged_head_override(
+        [], [{"id": "bug-a", "severity": "P0"}], "/r", "bug-a"
+    ) is None
+
+
+def test_merged_head_override_none_on_empty_queues_or_missing_id():
+    """Fail-safe: empty queues or a missing current_item_id → None (never a
+    spurious withhold that would stall a legitimate probe)."""
+    _guard()
+    assert lazy_core.dispatch.merged_head_override([], [], "/r", "feat-a") is None
+    assert lazy_core.dispatch.merged_head_override(
+        [{"id": "feat-a", "tier": 1}], [], "/r", None
+    ) is None
+
+
 def test_merged_worklist_only_features_matches_listed_order():
     """WU-1/WU-3: only features queued → identical to the feature queue's listed
     order (the head is what lazy-state would return)."""
@@ -5493,6 +5641,11 @@ _TESTS = [
     ("test_merged_priority_normalizes_tier_and_severity", test_merged_priority_normalizes_tier_and_severity),
     ("test_merged_worklist_both_populated_ordered_by_priority", test_merged_worklist_both_populated_ordered_by_priority),
     ("test_merged_worklist_bug_breaks_tie_at_equal_priority", test_merged_worklist_bug_breaks_tie_at_equal_priority),
+    ("test_merged_head_override_diverges_when_p0_bug_outranks_current_feature", test_merged_head_override_diverges_when_p0_bug_outranks_current_feature),
+    ("test_merged_head_override_diverges_when_higher_sev_bug_jumps_head", test_merged_head_override_diverges_when_higher_sev_bug_jumps_head),
+    ("test_merged_head_override_none_when_head_is_current_item", test_merged_head_override_none_when_head_is_current_item),
+    ("test_merged_head_override_none_on_empty_queues_or_missing_id", test_merged_head_override_none_on_empty_queues_or_missing_id),
+    ("test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug", test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug),
     ("test_merged_worklist_only_features_matches_listed_order", test_merged_worklist_only_features_matches_listed_order),
     ("test_merged_worklist_only_bugs_matches_listed_order", test_merged_worklist_only_bugs_matches_listed_order),
     ("test_merged_worklist_both_empty_returns_none", test_merged_worklist_both_empty_returns_none),

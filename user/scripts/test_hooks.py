@@ -957,6 +957,88 @@ def test_inject_emits_lazy_route_banner():
 
 
 # ---------------------------------------------------------------------------
+# Test 10b — inject banner reflects the MERGED head's type, not the marker
+#            pipeline (dispatch-probe-and-inject-bypass-merged-head)
+# ---------------------------------------------------------------------------
+
+def test_inject_banner_routes_bug_when_merged_head_is_p0_bug():
+    """Regression (dispatch-probe-and-inject-bypass-merged-head): with a
+    FEATURE-started run marker (pipeline="feature") but a P0 bug at the merged
+    work-list head, the injected LAZY-ROUTE banner must reflect the BUG (route
+    via bug-state.py) — NOT the lower-priority feature the marker's sticky
+    pipeline would otherwise select.
+
+    RED reason (pre-fix): _run_probe selected the state script from
+    marker.pipeline ("feature") and injected a feat-c banner, silently skipping
+    the P0 bug.
+    """
+    _guard()
+    assert _INJECT_SH.exists(), (
+        f"lazy-route-inject.sh missing: {_INJECT_SH}"
+    )
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+
+        # Feature fixture (feat-c, tier 1) + a P0 bug at the merged head.
+        fixture_repo = _build_fixture_repo(td_path)
+        bug_dir = fixture_repo / "docs" / "bugs" / "bug-z"
+        (bug_dir / "plans").mkdir(parents=True, exist_ok=True)
+        (fixture_repo / "docs" / "bugs" / "queue.json").write_text(
+            json.dumps({"queue": [
+                {"id": "bug-z", "name": "Bug Z", "spec_dir": "bug-z", "severity": "P0"}
+            ]}),
+            encoding="utf-8",
+        )
+        (bug_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        (bug_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Fix the thing\n- [ ] Tests\n",
+            encoding="utf-8",
+        )
+        (bug_dir / "plans" / "all-phases-z.md").write_text("# Plan\n", encoding="utf-8")
+
+        env = _base_env(state_dir)
+
+        owner_session = str(uuid.uuid4())
+        _set_state_dir(state_dir)
+        try:
+            # Marker is a FEATURE run — the sticky pipeline the pre-fix hook trusted.
+            lazy_core.write_run_marker(
+                pipeline="feature",
+                cloud=False,
+                repo_root=str(fixture_repo),
+                max_cycles=10,
+                now=time.time(),
+                session_id=owner_session,
+            )
+        finally:
+            _clear_state_dir()
+
+        stdin_text = _userPromptSubmit_json(session_id=owner_session)
+        result = _run_bash(_INJECT_SH, stdin_text, env)
+
+        assert result.returncode == 0, (
+            f"inject hook must exit 0; stderr: {result.stderr!r}"
+        )
+        output = result.stdout.strip()
+        assert output != "", "inject hook must produce output (marker + valid repo)"
+        payload = json.loads(output)
+        ctx = payload.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+        assert ctx.startswith("LAZY-ROUTE (hook-injected"), ctx[:120]
+        # The banner must reflect the MERGED head (the P0 bug), not the feature.
+        assert "bug-z" in ctx, (
+            f"inject banner must reflect the P0-bug merged head (route via "
+            f"bug-state.py); got: {ctx[:400]!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Test 11 — inject surfaces HOOK_ERROR breadcrumb
 # ---------------------------------------------------------------------------
 
