@@ -2433,7 +2433,18 @@ function Format-BuildQueueBanner {
 			} elseif ($ExitCode -eq 4) {
 				'rebuild (stale DLL)'
 			} else {
-				"read logs/$Seq.build.err.log"
+				# Op-aware error-log filename: the runner writes the extra
+				# <seq>.build.log / <seq>.build.err.log capture ONLY for build ops
+				# (build-queue-runner.ps1 gates that redirect on $isBuildOp). A test
+				# op (mstest/nxtest) has no .build.err.log — its output lives in
+				# <seq>.log / <seq>.err.log. Pointing a failed test op at the
+				# nonexistent .build.err.log sent readers to a missing file, so key
+				# the hint off the op name (mirrors the '^nx' name-keying above).
+				if ($Op -match 'build') {
+					"read logs/$Seq.build.err.log"
+				} else {
+					"read logs/$Seq.err.log"
+				}
 			}
 			$banner += " -> $nextAction"
 		}

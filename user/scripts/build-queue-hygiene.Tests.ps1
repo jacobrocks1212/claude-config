@@ -636,9 +636,9 @@ Describe 'Format-BuildQueueBanner' {
 		$result | Should -Be 'build-queue: seq=620 op=msbuild RESULT=FAIL (result_fidelity=verified) -> read logs/620.build.err.log'
 	}
 
-	It 'FAIL via log-failure-override (exit 0): RESULT=FAIL with the SAME read-logs next-action' {
+	It 'FAIL via log-failure-override (exit 0): a test op names its actual seq err.log (no .build. infix)' {
 		$result = Format-BuildQueueBanner -Seq 621 -Op nxtest -ExitCode 0 -ResultFidelity verified -BuildFidelity log-failure-override
-		$result | Should -Be 'build-queue: seq=621 op=nxtest RESULT=FAIL (result_fidelity=verified) -> read logs/621.build.err.log'
+		$result | Should -Be 'build-queue: seq=621 op=nxtest RESULT=FAIL (result_fidelity=verified) -> read logs/621.err.log'
 	}
 
 	It 'NO-TESTS-MATCHED takes precedence over the exit code and gets the widen-filter next-action' {
