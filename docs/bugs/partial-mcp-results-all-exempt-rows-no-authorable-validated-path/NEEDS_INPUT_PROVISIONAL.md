@@ -82,3 +82,15 @@ external-dependency-block class of `adhoc-hydra-load-code-mcp-tool`. The
 "engine writes sentinels" relaxation is deliberately scoped to the exemptions
 block; the operator owns whether that narrow carve-out is acceptable versus
 option 2's out-of-band emit path.
+
+## Resolution
+
+*Recorded on 2026-07-17. Provisionally auto-accepted on recommendation (`--park-provisional` divergence two-key). Ratify or redirect via the provisional-ratification affordance before completion.*
+
+resolved_by: auto-provisional
+decision_commit: 15cf1fe6715e96518b6f4d7f518175841d74382b
+
+### 1. 1. A `partial` MCP_TEST_RESULTS.md whose only uncovered rows are all test-exempt/build-deferred has no AUTHORABLE path to VALIDATED.md
+
+**Choice:** Bless a narrow model-authored `observation_gap_exemptions` amendment + surface it in mcp-test/SKILL.md, admitting build-artifact-deferred as a spec_class
+**Notes:** Provisionally accepted — divergence graded contained (producer) / contained (input-audit); pending operator ratification.
