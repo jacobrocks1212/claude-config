@@ -24,7 +24,7 @@
 # ~/.claude/hooks/ that point into the same layout.
 #
 # State dir: LAZY_STATE_DIR env var overrides ~/.claude/state/ for hermetic
-# pipe-tests (the same override used by test_lazy_core.py and test_hooks.py).
+# pipe-tests (the same override used by tests/test_lazy_core/ and test_hooks.py).
 # It is passed through to the --marker-present query unchanged so the query
 # resolves the exact same dir the writer used.
 #

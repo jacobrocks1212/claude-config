@@ -61,7 +61,7 @@ in the precondition step) has already written `FIXED.md`, flipped the SPEC.md/PH
 `DEFERRED_NON_CLOUD.md` sentinels. Do NOT re-perform any of those writes.
 
 **The archive mechanics are SCRIPT-OWNED** — one call performs everything that used to be
-prose Steps 1–5 (`lazy_core.archive_fixed`, tested in `test_lazy_core.py`):
+prose Steps 1–5 (`lazy_core.archive_fixed`, tested in `tests/test_lazy_core/`):
 
 ```bash
 python3 ~/.claude/scripts/bug-state.py --repo-root {repo_root} --archive-fixed {spec_path}

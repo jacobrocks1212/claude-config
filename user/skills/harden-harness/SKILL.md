@@ -162,17 +162,18 @@ Implement autonomously. Full gates are mandatory before committing:
 
 ```
 python ~/.claude/scripts/lint-skills.py --check-projected --check-capabilities
-python ~/.claude/scripts/test_lazy_core.py   # full suite — NO baseline regeneration
+python -m pytest ~/.claude/scripts/tests/test_lazy_core/   # full suite — NO baseline regeneration
 python ~/.claude/scripts/lazy-state.py --test
 python ~/.claude/scripts/bug-state.py --test
 python ~/.claude/scripts/test_hooks.py
 ```
 
-> **Dead-coverage guard (harness-hardening-retro-fixes Phase 5).** `test_lazy_core.py` above
-> includes a self-checking guard (`test_no_orphaned_test_functions`) that FAILS if a round adds
-> a zero-arg `def test_*` to `test_lazy_core.py` but forgets to register it in `_TESTS` — so a
-> hardening round CANNOT land regression tests that never execute (the Round-24 dead-coverage
-> class). If the guard names an orphan, append it to a `_TESTS` list before committing.
+> **Dead-coverage guard (harness-hardening-retro-fixes Phase 5).** The `tests/test_lazy_core/`
+> pytest package above includes a self-checking guard (`test_no_orphaned_test_functions`, in
+> `tests/test_lazy_core/test_misc.py`) that FAILS if a round adds a zero-arg `def test_*` to any
+> `tests/test_lazy_core/test_<seam>.py` module but forgets to register it in that module's `_TESTS`
+> — so a hardening round CANNOT land regression tests that never execute (the Round-24 dead-coverage
+> class). If the guard names an orphan, append it to the seam module's `_TESTS` list before committing.
 
 Plus:
 - **Coupled-pair mirroring:** changes to `lazy-batch/SKILL.md` must be mirrored in
@@ -323,7 +324,7 @@ template (the harness's own hypothesis-ledger discipline):
 
 **Action:**
 <one of:>
-  - Mechanical fix applied: <description>. Gates run: test_lazy_core.py N/N, test_hooks.py N/N, lint-skills.py OK, lazy-state.py/bug-state.py --test suites OK. Commit: <hash>.
+  - Mechanical fix applied: <description>. Gates run: tests/test_lazy_core/ N/N, test_hooks.py N/N, lint-skills.py OK, lazy-state.py/bug-state.py --test suites OK. Commit: <hash>.
   - NEEDS_INPUT.md written: <path>. Decisions: <decision titles>.
 
 **Over-fit spin-off:** <one of:>
@@ -331,7 +332,7 @@ template (the harness's own hypothesis-ledger discipline):
   - harden(spinoff): <smell signal(s) that tripped — e.g. "literal-phrase-to-matcher (signal 1)"> → front-enqueued <`/spec`|`/spec-bug`> `<item_id>` for the class «<one-line class boundary>». Cited instance(s): <round#(s) / file:symbol / phrase>. PushNotification sent.
 
 **Gates run:**
-  test_lazy_core.py: <N/N>
+  tests/test_lazy_core/: <N/N>
   test_hooks.py: <N/N>
   lint-skills.py: OK | <issue count>
   lazy-state.py --test: OK | FAIL
@@ -462,5 +463,5 @@ Structured summary:
 - `root_cause_class`: one of missing-emit-section | unbound-token | ambiguous-prose | script-defect | missing-contract | hook-defect
 - `action`: "mechanical-fix" (with commit hash) or "needs-input" (with path)
 - `spinoff`: the over-fit spin-off, if any — `<item_id> (reason: <smell signal + one-line class>)`, or `none`. When non-`none`, the orchestrator fires a `PushNotification` ("spun off `<item_id>` — `<reason>`") and adds a D7 digest entry; the front-enqueued item is worked next.
-- `gates_run`: summary of counts (test_lazy_core.py N/N, test_hooks.py N/N, etc.)
+- `gates_run`: summary of counts (tests/test_lazy_core/ N/N, test_hooks.py N/N, etc.)
 - `log_path`: path to the hardening-log round (e.g. docs/specs/turn-routing-enforcement/hardening-log/2026-06.md)

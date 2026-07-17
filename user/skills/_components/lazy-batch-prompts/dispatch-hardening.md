@@ -126,7 +126,7 @@ The harness-hardening agent:
 All of the following must pass before committing a mechanical harness fix:
 
   python ~/.claude/scripts/lint-skills.py --check-projected --check-capabilities
-  python ~/.claude/scripts/test_lazy_core.py   # full suite — NO baseline regeneration
+  python -m pytest ~/.claude/scripts/tests/test_lazy_core/   # full suite — NO baseline regeneration
   python ~/.claude/scripts/lazy-state.py --test
   python ~/.claude/scripts/bug-state.py --test
   python ~/.claude/scripts/test_hooks.py
@@ -152,5 +152,5 @@ Return the /harden-harness skill's structured output:
   script-defect, missing-contract, hook-defect).
 - Action taken: "mechanical fix applied" (with commit hash) OR "NEEDS_INPUT.md written"
   (with path and decision titles).
-- Gates run and result counts (e.g. "test_lazy_core.py: 277/277, test_hooks.py: 21/21").
+- Gates run and result counts (e.g. "tests/test_lazy_core/: 1159/1159, test_hooks.py: 21/21").
 - Hardening-log round path (e.g. docs/specs/turn-routing-enforcement/hardening-log/2026-06.md).
