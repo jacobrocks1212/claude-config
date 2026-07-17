@@ -15,7 +15,8 @@
 # CONTRACT (per user/hooks/CLAUDE.md):
 #   * Deny is JSON permissionDecision, NEVER `exit 2`.
 #   * FAIL-OPEN: any parse/match error ALLOWS the tool call (exit 0, no decision).
-#   * Bypass: command prefixed CLAUDE_PUSH_APPROVED=1 (set by the /push skill).
+#   * Bypass: CLAUDE_PUSH_APPROVED=1 present anywhere in the command (set by
+#     the /push skill; survives a `cd <repo> &&` prefix).
 #   * Python resolution: python3 preferred, falling back to python.
 
 if command -v python3 >/dev/null 2>&1; then
@@ -38,11 +39,17 @@ import sys
 # PowerShell-syntax regex audit (powershell-tool-bypasses-bash-matched-guards):
 # the bypass token was recognized only in bash env-assignment form
 # (`CLAUDE_PUSH_APPROVED=1`). PowerShell's equivalent is `$env:NAME=value` —
-# recognized here as an additional leading-token alternative so /push can
-# compose the bypass either way.
+# recognized here as an additional alternative so /push can compose the bypass
+# either way.
+#
+# The token is matched ANYWHERE in the command (search, not a leading match):
+# a compound command such as `cd <repo> && CLAUDE_PUSH_APPROVED=1 git push`
+# pushes the assignment off the front, so anchoring at `^` denied a legitimately
+# bypassed push. `\b` before the bash form still requires it to appear as a
+# distinct token (whitespace/`&&`/`;`/start boundary), not glued to other text.
 _BYPASS_RE = re.compile(
-    r"^(?:CLAUDE_PUSH_APPROVED=1\b"
-    r"|\$env:CLAUDE_PUSH_APPROVED\s*=\s*(?:'1'|\"1\"|1)\s*;?)"
+    r"(?:\bCLAUDE_PUSH_APPROVED=1\b"
+    r"|\$env:CLAUDE_PUSH_APPROVED\s*=\s*(?:'1'|\"1\"|1))"
 )
 
 
@@ -71,8 +78,8 @@ def main():
     if not re.search(r"\bgit\s+push\b", command, re.IGNORECASE):
         _allow()
 
-    # Allow if the bypass token leads the raw command string (set by /push).
-    if _BYPASS_RE.match(command):
+    # Allow if the bypass token appears anywhere in the command (set by /push).
+    if _BYPASS_RE.search(command):
         _allow()
 
     # Resolve the work-repo signal from the payload cwd (a git config read from

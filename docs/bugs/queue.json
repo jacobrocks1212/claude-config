@@ -20,12 +20,6 @@
       "severity": null
     },
     {
-      "id": "block-terminal-kill-false-denies-heredoc-body-tokens",
-      "name": "block-terminal-kill false-denies termination keywords inside heredoc bodies",
-      "spec_dir": "block-terminal-kill-false-denies-heredoc-body-tokens",
-      "severity": null
-    },
-    {
       "id": "adhoc-incident-hook-deny-19343d-r3",
       "name": "Repeated hook deny: lazy-cycle-containment loop-formation-flag (4x/24h)",
       "spec_dir": "adhoc-incident-hook-deny-19343d-r3",
@@ -35,12 +29,6 @@
       "id": "build-queue-no-artifact-or-process-hygiene-on-crash",
       "name": "Build queue has no artifact/process hygiene on build crash \u2014 Investigation Spec",
       "spec_dir": "build-queue-no-artifact-or-process-hygiene-on-crash",
-      "severity": null
-    },
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "name": "Build Queue Certifies Success on a Copy-Lock Failure \u2192 Stale-DLL False Pass \u2014 Investigation Spec",
-      "spec_dir": "build-queue-copy-lock-stale-dll-false-success",
       "severity": null
     },
     {

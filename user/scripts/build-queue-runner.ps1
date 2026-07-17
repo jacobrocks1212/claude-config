@@ -384,7 +384,19 @@ try {
 	}
 
 	$buildFailed = Get-SafeValue { ($null -eq $exitCode) -or ($exitCode -ne 0) } $true
-	if ($buildFailed -and $profilePoisonSweep -eq 'dotnet-dll' -and -not [string]::IsNullOrWhiteSpace($Worktree)) {
+	# Poison-DLL sweep is a BUILD-op concern only — gate on $isBuildOp so a
+	# zero-result TEST op (exit 3 no-output / exit 5 zero-match, both non-zero
+	# → buildFailed) no longer walks the whole worktree for artifacts a
+	# --no-build test op never produced (docs/bugs/build-queue-foreground-
+	# wait-blocks-past-terminal-outcome Theory 2). Delegated to the pure
+	# Test-ShouldSweepPoisonedArtifacts gate for coverage; fail-open to the
+	# same isBuildOp-gated inline predicate if the hygiene module is absent.
+	$shouldSweep = if (Get-Command Test-ShouldSweepPoisonedArtifacts -ErrorAction SilentlyContinue) {
+		Get-SafeValue { Test-ShouldSweepPoisonedArtifacts -IsBuildOp $isBuildOp -ExitCode $exitCode -PoisonSweep $profilePoisonSweep -Worktree $Worktree } $false
+	} else {
+		$isBuildOp -and $buildFailed -and $profilePoisonSweep -eq 'dotnet-dll' -and -not [string]::IsNullOrWhiteSpace($Worktree)
+	}
+	if ($shouldSweep) {
 		$quarantinedArtifacts = Get-SafeValue { @(Remove-PoisonedArtifacts -WorktreeRoot $Worktree) } @()
 	}
 }

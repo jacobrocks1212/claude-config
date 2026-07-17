@@ -407,7 +407,7 @@ Existing registry row (docs/kpi/registry.json) — the blind-wait friction this 
 - `docs/bugs/build-queue-outcome-opacity-and-inspect-deny/SPEC.md` — the banner trust contract
   D3 protects.
 - `docs/bugs/build-queue-recycle-kills-concurrent-worktree-build/SPEC.md` +
-  `docs/bugs/build-queue-false-green-on-silent-build-failure/SPEC.md` — the hardened
+  `docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/SPEC.md` — the hardened
   lock/occupancy/fidelity invariants behind D7's structural containment.
 - `user/scripts/build-queue.ps1`, `build-queue-runner.ps1`, `build-queue-hygiene.ps1`,
   `build-queue-status.ps1`; `user/scripts/build-queue-hygiene.Tests.ps1`.

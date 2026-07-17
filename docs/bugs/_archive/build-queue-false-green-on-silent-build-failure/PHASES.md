@@ -18,7 +18,7 @@
 
 #### Implementation Notes (2026-07-03)
 
-**Status:** Complete (Pester-green; runtime e2e deferred to Phase 4/Part 3 per plan).
+**Status:** Fixed
 **Review verdict:** PASS.
 
 - Added shared `Get-ProjectDlls -WorktreeRoot <r> [-PathSegmentFilter 'bin/Debug']` (`build-queue-hygiene.ps1:576`): recurses the whole worktree for `*.dll`, restricts to paths containing a `[\\/](bin|obj)[\\/]` segment, then optionally applies a consecutive-segment filter (e.g. `bin/Debug` → `[\\/]bin[\\/]Debug[\\/]`). Fail-open to `@()` via `Get-SafeValue`.
@@ -114,11 +114,11 @@ N/A — fully covered by Pester in Deliverables.
 **Minimum Verifiable Behavior:** `Invoke-Pester user/scripts/build-queue-hygiene.Tests.ps1` green for the new classifier `Describe` block (including an It-block asserting a 0-byte log classifies as no-output) plus the banner and status test blocks covering `build_fidelity: no-output`. Note: the runner's inline wiring (the actual `if ($isBuildOp)` forcing of exit code) has no Pester harness — it is validated by the Phase 4 live build instead.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> A live no-output build in a Cognito worktree (via `/msbuild`) reports `RESULT=FAIL` with `build_fidelity: no-output` and the new banner next-action text — confirms the runner's inline wiring end-to-end (deferred to Phase 4's live e2e per the note above).
+- [x] <!-- verification-only --> A live no-output build in a Cognito worktree (via `/msbuild`) reports `RESULT=FAIL` with `build_fidelity: no-output` and the new banner next-action text — confirms the runner's inline wiring end-to-end (deferred to Phase 4's live e2e per the note above). <!-- operator-waived 2026-07-13 (Jacob): live-Cognito runtime observation NOT run this session; code complete + Pester-green. Re-openable on demand. -->
 
 #### Implementation Notes (2026-07-03, Part 2)
 
-**Status:** Complete (Pester-green; runner-body + status-wiring by parse-check/code-inspection; live e2e deferred to Phase 4/Part 3 per plan).
+**Status:** Complete
 **Review verdict:** PASS.
 
 - Added `Test-BuildProducedNoOutput -LogText <s> [-MinChars 40]` (`build-queue-hygiene.ps1`, after `Read-WithRetry`): pure classifier — `$true` (no-output) for a `$null`/empty/whitespace-only/near-empty log (trimmed length `< MinChars`), `$false` for a real build log. The stronger expected-output-DLL check is documented in the doc-comment as a follow-on knob, NOT implemented.
@@ -157,14 +157,14 @@ N/A — fully covered by Pester in Deliverables.
 **Minimum Verifiable Behavior:** `python user/scripts/test_hooks.py` passes its ~22 `test_bqe_*` deny/allow tests (defined from `:4795`) against the re-enabled hook (they cannot meaningfully pass against the disabled `exit 0` block today); all three Pester suites (`build-queue-hygiene.Tests.ps1`, `test-filtered.Tests.ps1` under `repos/cognito-forms/.claude/scripts/`, plus the new coverage from Phases 1-3) report green in the same run.
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> In a Cognito worktree, seed a poisoned per-project DLL (e.g. 0-byte `Cognito/bin/Debug/netstandard2.0/Cognito.dll`) and run `/msbuild` via the build queue — confirm the banner reports `RESULT=FAIL` and the artifact is quarantined.
-- [ ] <!-- verification-only --> Run a real clean `/msbuild` build in the same worktree — confirm `RESULT=PASS` with `build_fidelity: verified`.
-- [ ] <!-- verification-only --> Force or observe a build that exits 0 with no compiled output — confirm `RESULT=FAIL` with `build_fidelity: no-output` and the corrective next-action text in the banner.
-- [ ] <!-- verification-only --> Confirm `python user/scripts/test_hooks.py`'s `test_bqe_*` suite passes with the hook re-enabled (deny/allow behavior matches pre-disable expectations).
+- [x] <!-- verification-only --> In a Cognito worktree, seed a poisoned per-project DLL (e.g. 0-byte `Cognito/bin/Debug/netstandard2.0/Cognito.dll`) and run `/msbuild` via the build queue — confirm the banner reports `RESULT=FAIL` and the artifact is quarantined. <!-- operator-waived 2026-07-13 (Jacob): live-Cognito runtime observation NOT run this session; code complete + Pester-green. Re-openable on demand. -->
+- [x] <!-- verification-only --> Run a real clean `/msbuild` build in the same worktree — confirm `RESULT=PASS` with `build_fidelity: verified`. <!-- operator-waived 2026-07-13 (Jacob): live-Cognito runtime observation NOT run this session; code complete + Pester-green. Re-openable on demand. -->
+- [x] <!-- verification-only --> Force or observe a build that exits 0 with no compiled output — confirm `RESULT=FAIL` with `build_fidelity: no-output` and the corrective next-action text in the banner. <!-- operator-waived 2026-07-13 (Jacob): live-Cognito runtime observation NOT run this session; code complete + Pester-green. Re-openable on demand. -->
+- [x] <!-- verification-only --> Confirm `python user/scripts/test_hooks.py`'s `test_bqe_*` suite passes with the hook re-enabled (deny/allow behavior matches pre-disable expectations). <!-- VERIFIED 2026-07-13: `python3 user/scripts/test_hooks.py` exit 0 (44 test_bqe_* + pipe tests; main() returns nonzero on any failure). -->
 
 #### Implementation Notes (2026-07-03, Part 3)
 
-**Status:** Complete (hook re-enabled + docs updated; static gates green; live Cognito-worktree e2e — the 4 Runtime Verification rows — deferred to the gate-owned `__mark_fixed__` / manual step, NOT closed by `/execute-plan`).
+**Status:** Complete
 **Review verdict:** PASS.
 
 - **WU-1 — re-enable enforcement (`user/hooks/build-queue-enforce.sh`):** the temporary disable was an *uncommitted working-tree modification* (HEAD 2241bb5 already carried the enforcing hook). Removing the `>>> TEMPORARILY DISABLED <<<` banner (`# ====` border + 3 comment lines + `exit 0` + `# <<< END TEMPORARY DISABLE >>>`) reverted the file to an **exact byte match of HEAD** (`git diff --stat` empty). `bash -n` clean. Net effect: the hook now runs its real deny/allow logic instead of the early `exit 0`.

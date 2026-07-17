@@ -6,7 +6,7 @@
 **Severity:** P2
 **Discovered:** 2026-07-08
 **Placement:** docs/bugs/sh-exe-crash-masks-successful-build-queue-run
-**Related:** `docs/bugs/build-queue-false-green-on-silent-build-failure/` (sibling "can the signal be trusted?" theme, opposite direction — that spec is a false PASS on a broken build; this one is a false FAIL/crash on a working build), `docs/bugs/build-queue-outcome-opacity-and-inspect-deny/` (agents already resort to inspecting queue state when the outcome is unclear), `docs/features/skill-usage-miner/PHASES.md:176` (prior awareness of `sh.exe.stackdump` as a stray file, not as a signal-integrity issue)
+**Related:** `docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/` (sibling "can the signal be trusted?" theme, opposite direction — that spec is a false PASS on a broken build; this one is a false FAIL/crash on a working build), `docs/bugs/build-queue-outcome-opacity-and-inspect-deny/` (agents already resort to inspecting queue state when the outcome is unclear), `docs/features/skill-usage-miner/PHASES.md:176` (prior awareness of `sh.exe.stackdump` as a stray file, not as a signal-integrity issue)
 
 ---
 
@@ -43,7 +43,7 @@
 
 ### Related Documentation
 - `docs/features/skill-usage-miner/PHASES.md:176-182` already treats `sh.exe.stackdump` purely as a stray file to sweep during workspace hygiene passes — it was not previously connected to a build-queue signal-integrity risk.
-- `docs/bugs/build-queue-false-green-on-silent-build-failure/` and siblings establish the precedent that "trust but verify" already applies to build-queue signals for *build-side* misclassification; this spec extends the same discipline to *shell-host* crashes that occur around (not inside) the queue's own logic.
+- `docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/` and siblings establish the precedent that "trust but verify" already applies to build-queue signals for *build-side* misclassification; this spec extends the same discipline to *shell-host* crashes that occur around (not inside) the queue's own logic.
 
 ## Theories
 

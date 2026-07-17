@@ -3847,6 +3847,58 @@ def test_containment_still_denies_real_state_script_invocation():
             )
 
 
+def test_containment_allows_heredoc_body_mentioning_lazy_batch():
+    """block-terminal-kill-false-denies-heredoc-body-tokens audit:
+    lazy-cycle-containment.sh shares the _CMD_START segment-start idiom
+    (_LAZY_BATCH_DIRECT_RE / _STATE_PY_INVOKE_RE / _LIFECYCLE_INVOKE_RE) with
+    no heredoc-body masking — a SUBAGENT git-commit whose heredoc-fed message
+    body has a line beginning with a routing token (a doc note mentioning
+    /lazy-batch) must ALLOW, not fabricate a false segment start from the
+    body's own newline. RED against the pre-fix hook (no _mask_heredoc)."""
+    _guard()
+    command = (
+        "git commit -q -F - <<'EOF'\n"
+        "docs: note that\n"
+        "/lazy-batch drains the queue nightly\n"
+        "EOF"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_containment(
+            _bash_preToolUse_json(command, agent_id=_SUBAGENT_AGENT_ID),
+            state_dir,
+        )
+        assert _containment_decision(result) != "deny", (
+            f"heredoc body mentioning /lazy-batch must NOT deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_real_lazy_batch_after_heredoc():
+    """REGRESSION: a REAL nested /lazy-batch invocation chained AFTER a
+    heredoc terminator (a genuine top-level segment start, outside any body)
+    must still deny — heredoc masking must not hide a real runaway."""
+    _guard()
+    command = (
+        "cat <<'EOF'\n"
+        "benign heredoc body\n"
+        "EOF\n"
+        "&& /lazy-batch"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_containment(
+            _bash_preToolUse_json(command, agent_id=_SUBAGENT_AGENT_ID),
+            state_dir,
+        )
+        assert _containment_decision(result) == "deny", (
+            f"real /lazy-batch chained after a heredoc must still deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
 def test_containment_agentid_absent_allows_routing_flags_no_marker():
     """MAIN-THREAD payload + routing flags, NO marker → allow (the orchestrator
     runs these between cycles)."""
@@ -5414,6 +5466,55 @@ def test_bqe_allows_direct_wrapper_invocation_segment_leading():
         )
 
 
+def test_bqe_allows_heredoc_body_mentioning_dotnet_build():
+    """block-terminal-kill-false-denies-heredoc-body-tokens audit:
+    build-queue-enforce.sh shares the _CMD_START segment-start idiom
+    (_DOTNET_BUILD_RE / _DOTNET_TEST_RE / _NX_BUILD_TEST_RE /
+    _FILTERED_SCRIPT_DIRECT_RE) with no heredoc-body masking — a heredoc-fed
+    commit message whose body has a line beginning `dotnet build` (e.g. a
+    doc note quoting the command) must ALLOW, not fabricate a false segment
+    start from the body's own newline. RED against the pre-fix hook (no
+    _mask_heredoc)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = (
+            "git commit -q -F - <<'EOF'\n"
+            "docs: note that\n"
+            "dotnet build produces the release binary\n"
+            "EOF"
+        )
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert _containment_decision(result) != "deny", (
+            f"heredoc body mentioning dotnet build must NOT deny; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_bqe_denies_real_build_after_heredoc():
+    """REGRESSION: a REAL `dotnet build` chained AFTER a heredoc terminator
+    (a genuine top-level segment start, outside any body) must still deny —
+    heredoc masking must not hide a real un-queued build."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        cmd = (
+            "cat <<'EOF'\n"
+            "benign heredoc body\n"
+            "EOF\n"
+            "&& dotnet build MySln.sln"
+        )
+        result = _run_bash(_BQE_HOOK_SH, _bqe_payload(cmd, str(repo)), _base_env(state_dir))
+        assert _containment_decision(result) == "deny", (
+            f"real dotnet build chained after a heredoc must still deny; "
+            f"stdout={result.stdout!r}"
+        )
+
+
 def test_bqe_bash_dash_c_wrapper_reference_accepted_residual():
     """D2 (documented-limitation, shared across the anchor-pair family, NOT
     fixed this round): a `bash -c "dotnet build ..."` string-wrap smuggles a
@@ -5724,6 +5825,54 @@ def test_longbuild_guard_allows_cargo_tauri_dev():
         )
         assert _containment_decision(result) != "deny", (
             f"`cargo tauri dev` must NOT deny; stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_allows_heredoc_body_mentioning_cargo_build():
+    """block-terminal-kill-false-denies-heredoc-body-tokens audit:
+    long-build-ownership-guard.sh shares the _CMD_START segment-start idiom
+    (_LONG_BUILD_RE) with no heredoc-body masking — a heredoc-fed commit
+    message whose body has a line beginning `cargo build --release` (e.g. a
+    doc note quoting the command) must ALLOW, not fabricate a false segment
+    start from the body's own newline. RED against the pre-fix hook (no
+    _mask_heredoc)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        command = (
+            "git commit -q -F - <<'EOF'\n"
+            "docs: note that\n"
+            "cargo build --release produces the release binary\n"
+            "EOF"
+        )
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json(command), state_dir
+        )
+        assert _containment_decision(result) != "deny", (
+            f"heredoc body mentioning cargo build --release must NOT deny; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_denies_real_build_after_heredoc():
+    """REGRESSION: a REAL `cargo build --release` chained AFTER a heredoc
+    terminator (a genuine top-level segment start, outside any body) must
+    still deny — heredoc masking must not hide a real long build."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        command = (
+            "cat <<'EOF'\n"
+            "benign heredoc body\n"
+            "EOF\n"
+            "&& cargo build --release"
+        )
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json(command), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"real cargo build --release chained after a heredoc must still "
+            f"deny; stdout={result.stdout!r}"
         )
 
 
@@ -6902,6 +7051,12 @@ _TESTS = [
      test_containment_allows_state_script_reference_only_mention),
     ("test_containment_still_denies_real_state_script_invocation",
      test_containment_still_denies_real_state_script_invocation),
+    # heredoc-body false-positive class (block-terminal-kill-false-denies-
+    # heredoc-body-tokens audit — lazy-cycle-containment.sh is vulnerable)
+    ("test_containment_allows_heredoc_body_mentioning_lazy_batch",
+     test_containment_allows_heredoc_body_mentioning_lazy_batch),
+    ("test_containment_denies_real_lazy_batch_after_heredoc",
+     test_containment_denies_real_lazy_batch_after_heredoc),
     ("test_containment_agentid_absent_allows_routing_flags_no_marker",
      test_containment_agentid_absent_allows_routing_flags_no_marker),
     ("test_containment_agentid_present_denies_lifecycle_no_marker",
@@ -8046,6 +8201,184 @@ def test_termkill_denies_real_kill_after_quoted_message():
         )
 
 
+# --- block-terminal-kill.sh: heredoc-body false-positive class --------------
+# (block-terminal-kill-false-denies-heredoc-body-tokens) — a termination
+# keyword sitting at the start of a HEREDOC BODY line is inert DATA (file/
+# message content, never executed), but the body's own `\n` satisfies
+# _CMD_START's separator class exactly like a real command boundary, so it
+# fabricates a false segment start and false-denies. THIRD variant of the
+# same false-deny class (1: bare word-boundary; 2: quoted-argument values;
+# 3: this). RED against the pre-fix hook (no _mask_heredoc).
+
+def test_termkill_allows_heredoc_commit_message_kill_repro():
+    """SPEC repro 1 (exact): `git commit -q -F - <<'EOF' ... EOF` whose body
+    has a line beginning with `kill` → allow. The heredoc body is the commit
+    MESSAGE, never executed."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        command = (
+            "git commit -q -F - <<'EOF'\n"
+            "some subject line\n"
+            "\n"
+            "a body line that ends with post-quote\n"
+            "kill/taskkill still deny — this line begins with `kill`\n"
+            "EOF"
+        )
+        result = _run_bash(
+            _TERMKILL_HOOK_SH, _hook_payload(command), _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"heredoc commit-message body line-leading kill must allow; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_allows_heredoc_log_append_exit_repro():
+    """SPEC repro 2 (exact): `cat >> /tmp/note.md << 'EOF' ... EOF` whose body
+    has a line beginning with `exit 0` → allow. The heredoc body is appended
+    file CONTENT, never executed."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        command = (
+            "cat >> /tmp/note.md << 'EOF'\n"
+            "prose mentioning\n"
+            "exit 0 at a line start\n"
+            "EOF"
+        )
+        result = _run_bash(
+            _TERMKILL_HOOK_SH, _hook_payload(command), _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"heredoc log-append body line-leading exit must allow; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_allows_heredoc_body_kill_unquoted_introducer():
+    """`<<EOF` (unquoted introducer) with a body line beginning `kill` →
+    allow. Introducer-variant coverage alongside the single-quoted repros."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        command = (
+            "cat >> f.md <<EOF\n"
+            "kill this is heredoc content, not a command\n"
+            "EOF"
+        )
+        result = _run_bash(
+            _TERMKILL_HOOK_SH, _hook_payload(command), _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"unquoted <<EOF body line-leading kill must allow; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_allows_heredoc_body_taskkill_double_quoted_introducer():
+    """`<<\"EOF\"` (double-quoted introducer) with a body line beginning
+    `taskkill` → allow."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        command = (
+            'cat >> f.md <<"EOF"\n'
+            "taskkill this is heredoc content, not a command\n"
+            "EOF"
+        )
+        result = _run_bash(
+            _TERMKILL_HOOK_SH, _hook_payload(command), _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f'double-quoted <<"EOF" body line-leading taskkill must allow; '
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_allows_heredoc_body_exit_dash_introducer_tab_terminator():
+    """`<<-EOF` (dash form) with a TAB-INDENTED terminator line and a body
+    line beginning `exit` → allow. The `-` form strips leading tabs from the
+    terminator line only — a distinct recognition path from the plain form."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        command = (
+            "cat >> f.md <<-EOF\n"
+            "exit this is heredoc content, not a command\n"
+            "\tEOF"
+        )
+        result = _run_bash(
+            _TERMKILL_HOOK_SH, _hook_payload(command), _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"dash-form heredoc with tab-indented terminator must allow; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_denies_kill_after_heredoc_terminator():
+    """REGRESSION: a real `kill` chained AFTER the heredoc terminator line
+    (a genuine top-level segment start, outside any body) must still deny —
+    heredoc masking must not hide a real deny."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        command = (
+            "cat <<'EOF'\n"
+            "foo\n"
+            "EOF\n"
+            " && kill 1"
+        )
+        result = _run_bash(
+            _TERMKILL_HOOK_SH, _hook_payload(command), _base_env(state_dir),
+        )
+        assert _hook_decision(result) == "deny", (
+            f"kill chained after the heredoc terminator must still deny; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_denies_bare_kill_no_heredoc_regression():
+    """REGRESSION: a plain `kill 123` (no heredoc anywhere) still denies —
+    the heredoc masker must be a no-op on commands with no `<<`."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        result = _run_bash(
+            _TERMKILL_HOOK_SH, _hook_payload("kill 123"), _base_env(state_dir),
+        )
+        assert _hook_decision(result) == "deny", (
+            f"bare kill 123 (no heredoc) must still deny; stdout={result.stdout!r}"
+        )
+
+
+def test_termkill_ps_herestring_apostrophe_body_kill_accepted_residual():
+    """ACCEPTED RESIDUAL (documented-limitation, NOT fixed this round):
+    PowerShell here-strings (`@'...'@` / `@"..."@`) are a DISTINCT construct
+    from POSIX heredocs — `_mask_heredoc` only recognizes `<<WORD` forms, so
+    a PS here-string body is entirely invisible to it. `_mask_quoted`
+    coincidentally masks a well-formed here-string body (its `'`/`"` chars
+    are read as an ordinary quote pair), but an APOSTROPHE inside the body
+    (`don't`) prematurely closes that fake quote span — the remaining body
+    text (including a line-leading `kill`) then reaches the matchers fully
+    UNMASKED, newlines and all, and still false-denies. Pinned as a
+    deliberate, documented gap (see user/hooks/CLAUDE.md) — a future PS
+    here-string masker is a conscious behavior change, not an accidental
+    one."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"; state_dir.mkdir()
+        command = (
+            "Set-Content -Path note.md -Value @'\n"
+            "don't worry\n"
+            "kill mentioned as a line-start word\n"
+            "'@"
+        )
+        result = _run_bash(
+            _TERMKILL_HOOK_SH,
+            _hook_payload(command, tool_name="PowerShell"),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) == "deny", (
+            f"PS here-string apostrophe-body kill is a DOCUMENTED accepted "
+            f"residual (NOT fixed this round), expected DENY (unchanged); "
+            f"stdout={result.stdout!r}"
+        )
+
+
 # --- block-work-repo-git-push.sh: PS-style bypass token ---------------------
 
 def test_push_allows_with_powershell_style_bypass_token():
@@ -8065,6 +8398,43 @@ def test_push_allows_with_powershell_style_bypass_token():
         )
         assert _hook_decision(result) is None, (
             f"PS-style bypass-token push must allow; stdout={result.stdout!r}"
+        )
+
+
+# --- block-work-repo-git-push.sh: heredoc audit (NOT vulnerable, pinned) ----
+# (block-terminal-kill-false-denies-heredoc-body-tokens audit) — unlike the
+# other 4 command guards, block-work-repo-git-push.sh carries NO _CMD_START
+# segment-start anchoring at all: its `git push` detection is an unanchored
+# `\bgit\s+push\b` substring search over the whole raw command, with no
+# quote/heredoc masking of any kind. The heredoc-newline-fabricates-a-
+# segment-start mechanism this bug fixes therefore does not apply to it
+# structurally — it was already (separately, out of THIS bug's scope) an
+# unanchored substring match that would trip on a "git push" mention
+# ANYWHERE, heredoc or not. No `_mask_heredoc` is added here; this test pins
+# the accepted, unchanged behavior.
+
+def test_push_unaffected_by_heredoc_body_no_cmd_start_anchoring():
+    """PIN: a real `git push` chained AFTER an unrelated heredoc, in a work
+    repo, still denies — this hook has no _CMD_START/heredoc masking to be
+    affected by the sibling fix, so its behavior is byte-identical."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        repo = _init_email_repo(td, "jacob@cognitoforms.com")
+        command = (
+            "cat >> note.md <<'EOF'\n"
+            "just some log prose, no push mentioned\n"
+            "EOF\n"
+            "git push origin main"
+        )
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload(command, cwd=str(repo)),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) == "deny", (
+            f"real git push after an unrelated heredoc in a work repo must "
+            f"still deny; stdout={result.stdout!r}"
         )
 
 
@@ -8149,9 +8519,29 @@ _TESTS = _TESTS + [
      test_termkill_allows_kill_inside_quoted_argument),
     ("test_termkill_denies_real_kill_after_quoted_message",
      test_termkill_denies_real_kill_after_quoted_message),
+    # block-terminal-kill.sh — heredoc-body false-positive class
+    ("test_termkill_allows_heredoc_commit_message_kill_repro",
+     test_termkill_allows_heredoc_commit_message_kill_repro),
+    ("test_termkill_allows_heredoc_log_append_exit_repro",
+     test_termkill_allows_heredoc_log_append_exit_repro),
+    ("test_termkill_allows_heredoc_body_kill_unquoted_introducer",
+     test_termkill_allows_heredoc_body_kill_unquoted_introducer),
+    ("test_termkill_allows_heredoc_body_taskkill_double_quoted_introducer",
+     test_termkill_allows_heredoc_body_taskkill_double_quoted_introducer),
+    ("test_termkill_allows_heredoc_body_exit_dash_introducer_tab_terminator",
+     test_termkill_allows_heredoc_body_exit_dash_introducer_tab_terminator),
+    ("test_termkill_denies_kill_after_heredoc_terminator",
+     test_termkill_denies_kill_after_heredoc_terminator),
+    ("test_termkill_denies_bare_kill_no_heredoc_regression",
+     test_termkill_denies_bare_kill_no_heredoc_regression),
+    ("test_termkill_ps_herestring_apostrophe_body_kill_accepted_residual",
+     test_termkill_ps_herestring_apostrophe_body_kill_accepted_residual),
     # block-work-repo-git-push.sh — PS-style bypass token
     ("test_push_allows_with_powershell_style_bypass_token",
      test_push_allows_with_powershell_style_bypass_token),
+    # block-work-repo-git-push.sh — heredoc audit (NOT vulnerable, pinned)
+    ("test_push_unaffected_by_heredoc_body_no_cmd_start_anchoring",
+     test_push_unaffected_by_heredoc_body_no_cmd_start_anchoring),
     # cross-guard registration meta-test
     ("test_all_command_guards_registered_with_widened_matcher",
      test_all_command_guards_registered_with_widened_matcher),
@@ -8185,6 +8575,12 @@ _TESTS = _TESTS + [
      test_longbuild_guard_allows_cargo_tauri_dev),
     ("test_longbuild_guard_bash_dash_c_wrap_accepted_residual",
      test_longbuild_guard_bash_dash_c_wrap_accepted_residual),
+    # heredoc-body false-positive class (block-terminal-kill-false-denies-
+    # heredoc-body-tokens audit — long-build-ownership-guard.sh is vulnerable)
+    ("test_longbuild_guard_allows_heredoc_body_mentioning_cargo_build",
+     test_longbuild_guard_allows_heredoc_body_mentioning_cargo_build),
+    ("test_longbuild_guard_denies_real_build_after_heredoc",
+     test_longbuild_guard_denies_real_build_after_heredoc),
     # long-build-and-build-queue-matcher-bypasses — build-queue-enforce.sh
     ("test_bqe_denies_echo_mention_then_real_build",
      test_bqe_denies_echo_mention_then_real_build),
@@ -8194,6 +8590,12 @@ _TESTS = _TESTS + [
      test_bqe_allows_direct_wrapper_invocation_segment_leading),
     ("test_bqe_bash_dash_c_wrapper_reference_accepted_residual",
      test_bqe_bash_dash_c_wrapper_reference_accepted_residual),
+    # heredoc-body false-positive class (block-terminal-kill-false-denies-
+    # heredoc-body-tokens audit — build-queue-enforce.sh is vulnerable)
+    ("test_bqe_allows_heredoc_body_mentioning_dotnet_build",
+     test_bqe_allows_heredoc_body_mentioning_dotnet_build),
+    ("test_bqe_denies_real_build_after_heredoc",
+     test_bqe_denies_real_build_after_heredoc),
 ]
 
 

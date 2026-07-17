@@ -12,19 +12,19 @@ complexity: mechanical
 > This plan is fully self-contained. The executing session needs no additional context.
 
 > **Plan series:** part 3 of 3. Sibling parts:
-> - part 1: `docs/bugs/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-1.md`
-> - part 2: `docs/bugs/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-2.md`
-> - part 3: `docs/bugs/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-3.md` (this file)
+> - part 1: `docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-1.md`
+> - part 2: `docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-2.md`
+> - part 3: `docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-3.md` (this file)
 >
 > Execute parts strictly in order. Each part is self-contained — do NOT cross-reference siblings during execution.
 
 # Implementation Plan — build-queue-false-green-on-silent-build-failure (Phase 4)  (v2)
 
 **PHASES.md files:**
-- `docs/bugs/build-queue-false-green-on-silent-build-failure/PHASES.md` (build-queue-false-green, phase 4 of 4)
+- `docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/PHASES.md` (build-queue-false-green, phase 4 of 4)
 
 **SPEC.md files:**
-- `docs/bugs/build-queue-false-green-on-silent-build-failure/SPEC.md`
+- `docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/SPEC.md`
 
 **Total phases (this part):** 1 (Phase 4 — re-enable enforcement hook + documentation)
 **Plan version:** v2 (reference-based — components loaded from disk per step)

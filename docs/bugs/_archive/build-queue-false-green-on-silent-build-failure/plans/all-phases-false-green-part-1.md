@@ -12,19 +12,19 @@ complexity: complex
 > This plan is fully self-contained. The executing session needs no additional context.
 
 > **Plan series:** part 1 of 3. Sibling parts:
-> - part 1: `docs/bugs/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-1.md` (this file)
-> - part 2: `docs/bugs/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-2.md`
-> - part 3: `docs/bugs/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-3.md`
+> - part 1: `docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-1.md` (this file)
+> - part 2: `docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-2.md`
+> - part 3: `docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-3.md`
 >
 > Execute parts strictly in order. Each part is self-contained — do NOT cross-reference siblings during execution.
 
 # Implementation Plan — build-queue-false-green-on-silent-build-failure (Phases 1–2)  (v2)
 
 **PHASES.md files:**
-- `docs/bugs/build-queue-false-green-on-silent-build-failure/PHASES.md` (build-queue-false-green, phases 1–2 of 4)
+- `docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/PHASES.md` (build-queue-false-green, phases 1–2 of 4)
 
 **SPEC.md files:**
-- `docs/bugs/build-queue-false-green-on-silent-build-failure/SPEC.md`
+- `docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/SPEC.md`
 
 **Total phases (this part):** 2 (Phase 1 — per-project quarantine sweep; Phase 2 — flush-retry helper)
 **Plan version:** v2 (reference-based — components loaded from disk per step)
@@ -161,5 +161,5 @@ This is the **claude-config** repo (a PowerShell/Python harness), NOT an app. Th
 When all three WUs are checked and all gates are green, this part is Complete. **Do NOT flip SPEC.md `**Status:**` or write `FIXED.md`** — those are `__mark_fixed__`-gate-owned and only fire after Phase 4's live verification (Part 3). Then execute part 2:
 
 ```
-/execute-plan docs/bugs/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-2.md
+/execute-plan docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-2.md
 ```
