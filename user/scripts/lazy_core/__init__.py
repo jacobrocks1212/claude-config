@@ -472,6 +472,8 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "_AGE_ESCALATION_FLOOR_RANK": "depdag",
     "_AGE_ESCALATION_QUANTUM_DAYS": "depdag",
     "_MERGED_SEVERITY_RANK": "depdag",
+    "_FEATURE_TIER_ENUM": "depdag",
+    "_resolve_feature_tier_element": "depdag",
     "_MERGED_TYPE_ORDER": "depdag",
     "_PIN_DEFAULT_MAX_AGE_DAYS": "depdag",
     "age_escalated_rank": "depdag",

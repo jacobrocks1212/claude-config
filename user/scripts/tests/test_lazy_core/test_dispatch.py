@@ -4530,6 +4530,78 @@ def test_merged_priority_normalizes_tier_and_severity():
 
 
 
+def test_merged_priority_feature_tier_enum_to_int():
+    """feature-tier-strings-fall-to-merged-priority-default: NAMED feature-tier
+    enums normalize to their integer priority (parallel to bug severity), while
+    every backward-compat shape (bare int, numeric string, bool, null/missing)
+    keeps its prior behavior."""
+    _guard()
+    # Every named enum resolves to its declared integer (SSOT: _FEATURE_TIER_ENUM).
+    for name, expected in lazy_core._FEATURE_TIER_ENUM.items():
+        assert lazy_core.merged_priority("feature", {"tier": name}) == expected, name
+    # The previously-`99` legacy strings now carry real priority (the whole point).
+    assert lazy_core.merged_priority("feature", {"tier": "milestone"}) != lazy_core.MERGED_PRIORITY_DEFAULT
+    assert lazy_core.merged_priority("feature", {"tier": "non-audio"}) != lazy_core.MERGED_PRIORITY_DEFAULT
+    # Backward compat — unchanged behavior for the pre-existing shapes.
+    assert lazy_core.merged_priority("feature", {"tier": 5}) == 5          # bare int
+    assert lazy_core.merged_priority("feature", {"tier": "6"}) == 6        # numeric string
+    assert lazy_core.merged_priority("feature", {"tier": True}) == lazy_core.MERGED_PRIORITY_DEFAULT
+    assert lazy_core.merged_priority("feature", {}) == lazy_core.MERGED_PRIORITY_DEFAULT
+    assert lazy_core.merged_priority("feature", {"tier": None}) == lazy_core.MERGED_PRIORITY_DEFAULT
+    # An UNKNOWN enum name still sorts last (no silent mis-priority).
+    assert lazy_core.merged_priority("feature", {"tier": "not-a-tier"}) == lazy_core.MERGED_PRIORITY_DEFAULT
+
+
+
+
+def test_merged_priority_feature_multi_enum_takes_min():
+    """feature-tier-strings-fall-to-merged-priority-default: a feature whose `tier`
+    is a LIST of enum names takes the MIN (highest-priority) of the enums' integer
+    values. Mixed int/enum lists and unresolvable elements are handled too."""
+    _guard()
+    # MIN of the enums' values: pre-release(1) vs milestone(3) → 1.
+    assert lazy_core.merged_priority(
+        "feature", {"tier": ["milestone", "pre-release"]}
+    ) == 1
+    # Order-independent — MIN, not first.
+    assert lazy_core.merged_priority(
+        "feature", {"tier": ["pre-release", "non-audio"]}
+    ) == 1
+    # Mixed bare-int + enum: min(0, 3) → 0.
+    assert lazy_core.merged_priority("feature", {"tier": [0, "milestone"]}) == 0
+    # Unresolvable elements are skipped; the resolvable one wins.
+    assert lazy_core.merged_priority(
+        "feature", {"tier": ["not-a-tier", "commercialization"]}
+    ) == lazy_core._FEATURE_TIER_ENUM["commercialization"]
+    # An all-unresolvable / empty list sorts last (never crashes).
+    assert lazy_core.merged_priority("feature", {"tier": ["nope", True]}) == lazy_core.MERGED_PRIORITY_DEFAULT
+    assert lazy_core.merged_priority("feature", {"tier": []}) == lazy_core.MERGED_PRIORITY_DEFAULT
+
+
+
+
+def test_merged_priority_prerelease_ordering_p0_before_prerelease_before_p2():
+    """feature-tier-strings-fall-to-merged-priority-default LOAD-BEARING ordering
+    (operator-specified): merged_priority(P0 bug)=0 < merged_priority(pre-release
+    feature)=1 < merged_priority(P2 bug)=2 — a P0 bug is still addressed BEFORE a
+    pre-release feature, which is addressed before a P2 bug."""
+    _guard()
+    p0 = lazy_core.merged_priority("bug", {"severity": "P0"})
+    prerelease = lazy_core.merged_priority("feature", {"tier": "pre-release"})
+    p2 = lazy_core.merged_priority("bug", {"severity": "P2"})
+    assert p0 == 0, p0
+    assert prerelease == 1, prerelease
+    assert p2 == 2, p2
+    assert p0 < prerelease < p2, (p0, prerelease, p2)
+    # And it holds through the merged worklist sort, not just the scalar function.
+    feats = [{"id": "pre-rel-feat", "tier": "pre-release"}]
+    bugs = [{"id": "p0-bug", "severity": "P0"}, {"id": "p2-bug", "severity": "P2"}]
+    ids = [e["item_id"] for e in lazy_core.merged_worklist(feats, bugs, "/r")]
+    assert ids == ["p0-bug", "pre-rel-feat", "p2-bug"], ids
+
+
+
+
 def test_merged_worklist_both_populated_ordered_by_priority():
     """WU-1/WU-3: both queues populated → ordered by effective priority; a
     higher-priority feature precedes a lower-priority bug regardless of type."""
@@ -5853,6 +5925,9 @@ _TESTS = [
     ("test_f2a_append_dispatch_by_reference_event_writes_ledger", test_f2a_append_dispatch_by_reference_event_writes_ledger),
     ("test_governing_file_set_includes_orchestrator_and_components", test_governing_file_set_includes_orchestrator_and_components),
     ("test_merged_priority_normalizes_tier_and_severity", test_merged_priority_normalizes_tier_and_severity),
+    ("test_merged_priority_feature_tier_enum_to_int", test_merged_priority_feature_tier_enum_to_int),
+    ("test_merged_priority_feature_multi_enum_takes_min", test_merged_priority_feature_multi_enum_takes_min),
+    ("test_merged_priority_prerelease_ordering_p0_before_prerelease_before_p2", test_merged_priority_prerelease_ordering_p0_before_prerelease_before_p2),
     ("test_merged_worklist_both_populated_ordered_by_priority", test_merged_worklist_both_populated_ordered_by_priority),
     ("test_merged_worklist_bug_breaks_tie_at_equal_priority", test_merged_worklist_bug_breaks_tie_at_equal_priority),
     ("test_merged_head_override_diverges_when_p0_bug_outranks_current_feature", test_merged_head_override_diverges_when_p0_bug_outranks_current_feature),

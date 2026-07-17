@@ -593,6 +593,19 @@
           "choices": null,
           "default_kind": "const",
           "group": null,
+          "help_head": "Umbrella park flag \u2014 the /lazy-bug-batch `--park` invocation flag.",
+          "metavar": null,
+          "name": "--park",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
           "help_head": "OPT-IN park mode (companion to --park-needs-input): when active, a bug carrying a bug-local BLOCKED.md is SKIPPED (parked) rather than halting the queue with terminal_reason='blocked'.",
           "metavar": null,
           "name": "--park-blocked",
@@ -2289,6 +2302,19 @@
           "choices": null,
           "default_kind": "const",
           "group": null,
+          "help_head": "Umbrella park flag \u2014 the /lazy-batch `--park` invocation flag.",
+          "metavar": null,
+          "name": "--park",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
           "help_head": "OPT-IN park mode (companion to --park-needs-input): when active, a feature carrying a feature-local BLOCKED.md is SKIPPED (parked) rather than halting the queue with terminal_reason='blocked'.",
           "metavar": null,
           "name": "--park-blocked",
@@ -2706,7 +2732,7 @@
           "choices": null,
           "default_kind": "none",
           "group": null,
-          "help_head": "Orchestrator-only, --operator-authorized: set feature ID's queue tier to TIER (int; lower = higher priority) and ATOMICALLY re-position it in listed order to match its new merged priority \u2014 one wri...",
+          "help_head": "Orchestrator-only, --operator-authorized: set feature ID's queue tier to TIER and ATOMICALLY re-position it in listed order to match its new merged priority \u2014 one write, never a stale reorder.",
           "metavar": [
             "ID",
             "TIER"

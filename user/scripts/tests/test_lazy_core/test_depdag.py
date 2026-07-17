@@ -634,8 +634,34 @@ def test_set_queue_priority_feature_tier_reorders(tmp_path):
     assert json.loads(qp.read_text())["queue"][0]["tier"] == 0
 
 
+def test_set_queue_priority_feature_accepts_tier_enum(tmp_path):
+    """feature-tier-strings-fall-to-merged-priority-default: --set-tier accepts a
+    named tier enum (stored as the enum name) and a comma-separated multi-enum
+    list, re-sorting by the resulting MERGED priority (MIN of the enums)."""
+    _guard()
+    feats = tmp_path / "docs" / "features"
+    feats.mkdir(parents=True)
+    qp = feats / "queue.json"
+    qp.write_text(json.dumps({"queue": [
+        {"id": "f-a", "name": "f-a", "spec_dir": "f-a", "tier": 1},
+        {"id": "f-b", "name": "f-b", "spec_dir": "f-b", "tier": 3},
+        {"id": "f-c", "name": "f-c", "spec_dir": "f-c", "tier": 5},
+    ]}, indent=2) + "\n", encoding="utf-8")
+    # Single enum name → stored verbatim; pre-release(1) ties f-a → sorts by FIFO
+    # after f-a (equal priority, stable), before f-b(3).
+    res = lazy_core.set_queue_priority(qp, "f-c", "feature", "pre-release", queue_label="queue.json")
+    entry = next(e for e in json.loads(qp.read_text())["queue"] if e["id"] == "f-c")
+    assert entry["tier"] == "pre-release", entry
+    assert res["new_position"] == 1, res  # after f-a (tier 1), ahead of f-b (tier 3)
+    # Comma-separated multi-enum → stored as a list; MIN(pre-release=1, milestone=3)=1.
+    lazy_core.set_queue_priority(qp, "f-b", "feature", "milestone,pre-release", queue_label="queue.json")
+    entry_b = next(e for e in json.loads(qp.read_text())["queue"] if e["id"] == "f-b")
+    assert entry_b["tier"] == ["milestone", "pre-release"], entry_b
+    assert lazy_core.merged_priority("feature", entry_b) == 1
+
+
 def test_set_queue_priority_invalid_value_dies_zero_mutation(tmp_path):
-    """A bad severity / non-int tier _die()s (exit 2) with ZERO mutation."""
+    """A bad severity / unknown-enum tier _die()s (exit 2) with ZERO mutation."""
     _guard()
     import pytest as _pytest
     qp = _prio_bug_queue(tmp_path, [{"id": "bug-a", "severity": "P2"}])
@@ -646,6 +672,17 @@ def test_set_queue_priority_invalid_value_dies_zero_mutation(tmp_path):
     with _pytest.raises(SystemExit):
         lazy_core.set_queue_priority(qp, "ghost", "bug", "P0", queue_label="bugs/queue.json")
     assert qp.read_bytes() == before
+    # An unknown feature-tier enum name is refused with zero mutation.
+    feats = tmp_path / "docs" / "features"
+    feats.mkdir(parents=True)
+    fqp = feats / "queue.json"
+    fqp.write_text(json.dumps({"queue": [
+        {"id": "f-a", "name": "f-a", "spec_dir": "f-a", "tier": 1},
+    ]}, indent=2) + "\n", encoding="utf-8")
+    fbefore = fqp.read_bytes()
+    with _pytest.raises(SystemExit):
+        lazy_core.set_queue_priority(fqp, "f-a", "feature", "not-a-real-tier", queue_label="queue.json")
+    assert fqp.read_bytes() == fbefore
 
 
 def test_mutate_queue_deps_add_remove_and_empty_drops_key(tmp_path):

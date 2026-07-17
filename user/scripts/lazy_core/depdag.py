@@ -751,8 +751,60 @@ def clear_queue_stub(queue_path: "Path", feature_id: str) -> dict:
 # rather than imported because bug-state.py is a hyphenated module that imports
 # lazy_core — a back-import would be circular). Lower = higher priority.
 _MERGED_SEVERITY_RANK: dict[str, int] = {"P0": 0, "P1": 1, "P2": 2, "Low": 3}
+
+# Feature `tier` → numeric priority, the FEATURE-axis analog of
+# `_MERGED_SEVERITY_RANK` (feature-tier-strings-fall-to-merged-priority-default).
+# Named tier enums map onto the SAME integer scale as bug severity (lower = higher
+# priority) so a feature and a bug are directly comparable in the merged worklist.
+#
+# LOAD-BEARING ORDERING (operator-specified): `pre-release` == 1 == P1, so a P0 bug
+# (rank 0) is still addressed BEFORE a pre-release feature (1), which is addressed
+# before a P2 bug (2):  merged_priority(P0 bug)=0 < pre-release feature=1 < P2 bug=2.
+#
+# `pre-release = 1` is operator-LOCKED. The remaining named-enum values are a
+# RECOMMENDED PROVISIONAL mapping surfaced for operator ratification (see
+# docs/specs/turn-routing-enforcement/NEEDS_INPUT_PROVISIONAL — legacy-feature-tier-
+# int-mapping). They previously ALL fell to MERGED_PRIORITY_DEFAULT (99); assigning
+# coherent values is the whole point of this unification. Bare integer tiers (0/1/5/6…)
+# keep their literal values and are chosen to slot into this same scale.
+_FEATURE_TIER_ENUM: dict[str, int] = {
+    "pre-release": 1,        # LOCKED — == P1 (load-bearing ordering)
+    "commercialization": 2,  # revenue-critical, just below pre-release
+    "milestone": 3,          # a delivery milestone
+    "major-initiative": 4,   # large strategic initiative
+    "4a": 4,                 # legacy phase-4 sub-tier a
+    "4b": 5,                 # legacy phase-4 sub-tier b (after 4a)
+    "follow-up": 6,          # deferred follow-up work
+    "non-audio": 7,          # non-audio work (lowest of the named set)
+}
+
 # Effective priority for an item with no comparable field — sorts last.
 MERGED_PRIORITY_DEFAULT = 99
+
+
+def _resolve_feature_tier_element(value) -> "int | None":
+    """Resolve ONE feature-tier element to a numeric priority, or ``None`` if it
+    is unresolvable (feature-tier-strings-fall-to-merged-priority-default).
+
+    Accepts a named tier enum (``_FEATURE_TIER_ENUM``), a bare int, or a numeric
+    string — the three shapes a single tier value can take. ``bool`` is rejected
+    (it is an ``int`` subclass but never a valid priority). An unknown string /
+    unsupported type returns ``None`` so callers can decide the fallback (MIN over
+    a list skips ``None``s; a scalar ``None`` maps to ``MERGED_PRIORITY_DEFAULT``).
+    """
+    if isinstance(value, bool):  # bool is an int subclass — reject it
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        key = value.strip()
+        if key in _FEATURE_TIER_ENUM:
+            return _FEATURE_TIER_ENUM[key]
+        try:
+            return int(key)
+        except (ValueError, AttributeError):
+            return None
+    return None
 # Tie-break on equal effective priority: bugs sort before features.
 _MERGED_TYPE_ORDER: dict[str, int] = {"bug": 0, "feature": 1}
 
@@ -906,16 +958,21 @@ def merged_priority(
     """
     if item_type == "feature":
         tier = raw_item.get("tier")
-        if isinstance(tier, bool):  # bool is an int subclass — reject it
-            return MERGED_PRIORITY_DEFAULT
-        if isinstance(tier, int):
-            return tier
-        if isinstance(tier, str):
-            try:
-                return int(tier.strip())
-            except (ValueError, AttributeError):
-                return MERGED_PRIORITY_DEFAULT
-        return MERGED_PRIORITY_DEFAULT
+        # Multi-enum feature (feature-tier-strings-fall-to-merged-priority-default):
+        # a `tier` LIST resolves each element and takes the MIN (highest-priority
+        # enum wins). Unresolvable elements are skipped; an all-unresolvable /
+        # empty list falls to the default (sorts last), never crashes.
+        if isinstance(tier, list):
+            resolved = [
+                r for r in (_resolve_feature_tier_element(e) for e in tier)
+                if r is not None
+            ]
+            return min(resolved) if resolved else MERGED_PRIORITY_DEFAULT
+        # Scalar tier: bare int (backward-compat), numeric string (backward-compat),
+        # or a named tier enum (new). None/unknown → default (byte-identical to the
+        # pre-unification behavior for null/missing/unrecognized).
+        resolved = _resolve_feature_tier_element(tier)
+        return resolved if resolved is not None else MERGED_PRIORITY_DEFAULT
     if item_type == "bug":
         sev = raw_item.get("severity")
         if isinstance(sev, str) and sev.strip() in _MERGED_SEVERITY_RANK:
@@ -990,6 +1047,59 @@ def reposition_by_priority(
     return dest
 
 
+def _coerce_set_tier_value(new_value, queue_path: "Path"):
+    """Normalize a ``--set-tier`` argument into the value to STORE in a feature
+    queue entry's ``tier`` field (feature-tier-strings-fall-to-merged-priority-
+    default). Accepts, in addition to the historic bare int / numeric string:
+
+      * a single named tier enum (``pre-release``, ``milestone``, …), stored as
+        the enum NAME (round-trips cleanly through ``merged_priority``);
+      * a comma-separated string (``"pre-release,milestone"``) or an actual list —
+        a MULTI-enum feature, stored as a list; ``merged_priority`` takes the MIN.
+
+    Every element must resolve to a known enum or an integer; the FIRST unknown
+    token ``_die``s (exit 2, zero mutation) naming the valid enum vocabulary.
+    Returns a scalar (int or enum-name str) for a single value, or a list for
+    multiple — the natural on-disk shape ``merged_priority`` already handles.
+    """
+    if isinstance(new_value, list):
+        tokens: list = new_value
+    elif isinstance(new_value, str) and "," in new_value:
+        tokens = [t.strip() for t in new_value.split(",") if t.strip()]
+    else:
+        tokens = [new_value]
+
+    normalized: list = []
+    for tok in tokens:
+        if isinstance(tok, bool):  # bool is an int subclass — reject it
+            _die(
+                f"--set-tier requires an integer tier or one of "
+                f"{'/'.join(_FEATURE_TIER_ENUM)}, got {tok!r}",
+                queue_path,
+            )
+            return  # pragma: no cover
+        if isinstance(tok, int):
+            normalized.append(tok)
+            continue
+        key = str(tok).strip()
+        if key in _FEATURE_TIER_ENUM:
+            normalized.append(key)  # store the enum NAME for readability
+            continue
+        try:
+            normalized.append(int(key))
+        except (TypeError, ValueError):
+            _die(
+                f"--set-tier requires an integer tier or one of "
+                f"{'/'.join(_FEATURE_TIER_ENUM)}, got {tok!r}",
+                queue_path,
+            )
+            return  # pragma: no cover
+    if not normalized:
+        _die("--set-tier requires at least one tier value", queue_path)
+        return  # pragma: no cover
+    return normalized[0] if len(normalized) == 1 else normalized
+
+
 def _load_queue_for_mutation(
     queue_path: "Path", queue_label: str
 ) -> "tuple[dict, list]":
@@ -1023,8 +1133,12 @@ def set_queue_priority(
     primitive (lazy-state.py ``--set-tier``; bug-state.py ``--set-severity``).
 
     ``item_type``:
-      * ``"feature"`` — ``new_value`` is the new integer ``tier`` (a string of
-        digits is accepted and coerced). A non-int / non-digit ``_die``s.
+      * ``"feature"`` — ``new_value`` is the new ``tier``: a bare int, a numeric
+        string, a named tier enum (``_FEATURE_TIER_ENUM`` — ``pre-release``,
+        ``milestone``, …), or a comma-separated / list of those (a MULTI-enum
+        feature, stored as a list; ``merged_priority`` takes the MIN). An unknown
+        token ``_die``s naming the valid enum vocabulary (see
+        ``_coerce_set_tier_value``).
       * ``"bug"`` — ``new_value`` is one of ``P0/P1/P2/Low`` (validated against
         ``_MERGED_SEVERITY_RANK``). Setting an EXPLICIT severity ALSO clears any
         active pin fields (``pinned_at``/``pinned_until``/``pin_reason``) — an
@@ -1055,19 +1169,7 @@ def set_queue_priority(
 
     if item_type == "feature":
         field = "tier"
-        if isinstance(new_value, bool):  # bool is an int subclass — reject it
-            _die(f"--set-tier requires an integer tier, got {new_value!r}", queue_path)
-        if isinstance(new_value, int):
-            coerced = new_value
-        else:
-            try:
-                coerced = int(str(new_value).strip())
-            except (TypeError, ValueError):
-                _die(
-                    f"--set-tier requires an integer tier, got {new_value!r}",
-                    queue_path,
-                )
-                return {}  # pragma: no cover
+        coerced = _coerce_set_tier_value(new_value, queue_path)
         old_value = entry.get("tier")
         entry["tier"] = coerced
         new_norm = coerced

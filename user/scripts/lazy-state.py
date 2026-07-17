@@ -11504,9 +11504,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--set-tier", dest="set_tier", nargs=2,
                         metavar=("ID", "TIER"), default=None,
                         help=("Orchestrator-only, --operator-authorized: set feature ID's "
-                              "queue tier to TIER (int; lower = higher priority) and "
-                              "ATOMICALLY re-position it in listed order to match its new "
-                              "merged priority — one write, never a stale reorder. "
+                              "queue tier to TIER and ATOMICALLY re-position it in listed "
+                              "order to match its new merged priority — one write, never a "
+                              "stale reorder. TIER is a bare int (lower = higher priority), "
+                              "a named tier enum (pre-release/commercialization/milestone/"
+                              "major-initiative/follow-up/non-audio/4a/4b), or a "
+                              "comma-separated list of those (a multi-enum feature — "
+                              "merged priority is the MIN). "
                               "refuse_if_cycle_active (exit 3 for a cycle subagent)."))
     parser.add_argument("--add-deps", dest="add_deps", metavar="ID", default=None,
                         help=("Orchestrator-only, --operator-authorized: add the --deps "
