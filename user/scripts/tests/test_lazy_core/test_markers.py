@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 
-from _util import _ModuleMissing, _GUARDED_OPS, _M4_CONFIG, _M4_CONFIG_BOOT, _M4_KEYS, _REAL_TEMPLATE_DIR, _STATE_A, _assert_run_end_refusal_emits, _build_phase8_fixture_repo, _clear_cycle_env, _clear_state_dir, _collect_bare_production_writes, _commit_dummy, _dispatch_requires, _make_git_repo_with_origin, _mrcr_restore_env, _mrcr_with_temp_home, _normalize_smoke_output, _os_env, _owned_lock, _phase9_guard_module, _prov_git_commit_file, _prov_git_fixture_repo, _record_consume, _seed_efficacy_breadcrumb, _set_state_dir, _t, _write_marker_in  # noqa: E402
+from _util import _ModuleMissing, _GUARDED_OPS, _M4_CONFIG, _M4_CONFIG_BOOT, _M4_KEYS, _REAL_TEMPLATE_DIR, _STATE_A, _assert_run_end_refusal_emits, _build_phase8_fixture_repo, _clear_cycle_env, _clear_state_dir, _collect_bare_production_writes, _commit_dummy, _dispatch_requires, _make_git_repo_with_origin, _mrcr_restore_env, _mrcr_with_temp_home, _normalize_smoke_output, _os_env, _owned_lock, _phase9_guard_module, _prov_git_commit_file, _prov_git_fixture_repo, _record_consume, _seed_efficacy_breadcrumb, _set_state_dir, _t, _write_marker_in, _write_phases_md, _write_spec_md, _write_validated_md  # noqa: E402
 
 
 
@@ -5997,6 +5997,315 @@ def test_advance_forward_cycle_meta_does_not_increment_per_feature():
 
 
 
+# ---------------------------------------------------------------------------
+# Tests: cycle-budget-counters-double-count-on-probes-and-inject-hook.
+#
+# The cycle-BUDGET counters (forward_cycles / meta_cycles) are DECOUPLED from the
+# --repeat-count PROBE path (which fires on inspection probes AND the per-turn
+# inject hook with NO dispatch). The budget now advances ONLY on a completed
+# --cycle-begin/--cycle-end dispatch bracket (advance_cycle_bracket_counter, keyed
+# on the cycle marker's --kind) and on --apply-pseudo (unchanged). The
+# loop-detection STREAKS (update_repeat_counts) stay probe-driven — a separate
+# concern with its own debounce.
+# ---------------------------------------------------------------------------
+
+
+def test_repeat_count_inspection_probe_does_not_advance_forward_budget():
+    """(a) N inspection ``--repeat-count --emit-prompt`` probes with ZERO
+    dispatches between them leave ``forward_cycles`` unchanged (0).
+
+    Regression for the live 2026-07-17 friction: three routing-DISCOVERY probes
+    drove forward_cycles 0→3 because the probe-path advance fired on each. With
+    the budget decoupled from the probe, repeated probes over a real, dispatchable
+    fixture (execute-plan route) advance nothing — the BRACKET is now the sole
+    budget authority for real dispatches.
+    """
+    _guard()
+    import time as _time
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = _build_phase8_fixture_repo(td_path)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(fixture_repo),
+                max_cycles=25, session_id="owner-session", now=_time.time(),
+            )
+        finally:
+            _clear_state_dir()
+        env = _run_start_park_env(state_dir)
+        marker_path = state_dir / lazy_core._MARKER_FILENAME
+        for i in range(3):
+            r = subprocess.run(
+                [sys.executable, str(lazy_state_script),
+                 "--repeat-count", "--probe", "--emit-prompt",
+                 "--repo-root", str(fixture_repo)],
+                capture_output=True, text=True, env=env,
+            )
+            assert r.returncode == 0, (
+                f"probe {i} failed: rc={r.returncode} stderr={r.stderr[:400]!r}"
+            )
+            probe = json.loads(r.stdout)
+            # Confirm the probe really routed to the REAL execute-plan skill — the
+            # exact by-reference route that used to advance the budget.
+            assert probe.get("sub_skill") == "execute-plan", (
+                f"probe {i} must route to the real execute-plan skill (else this "
+                f"is not exercising the inflation path), got {probe.get('sub_skill')!r}"
+            )
+            m = json.loads(marker_path.read_text(encoding="utf-8"))
+            assert m.get("forward_cycles") == 0, (
+                f"inspection probe {i} must NOT advance the forward budget "
+                f"(decoupled from the probe path); got forward_cycles="
+                f"{m.get('forward_cycles')!r}"
+            )
+            assert m.get("per_feature_forward_cycles") == {}, (
+                f"inspection probe {i} must NOT bump any per-feature counter, got "
+                f"{m.get('per_feature_forward_cycles')!r}"
+            )
+
+
+
+
+def test_inject_hook_probe_on_non_dispatch_turn_does_not_advance_forward_budget():
+    """(b) The per-turn inject-hook probe (lazy_inject.inject → lazy-state.py
+    --repeat-count) on a NON-dispatch turn leaves ``forward_cycles`` unchanged.
+
+    Regression for the live 2026-07-17 friction: after one real dispatch the
+    operator sent a chat message (no cycle dispatched); the inject hook fired its
+    full --repeat-count probe and bumped forward_cycles 1→2 with a phantom
+    per-feature entry. With the budget decoupled from the probe path, the
+    bound-owner inject probe still produces its banner (unchanged) but advances no
+    budget.
+    """
+    _guard()
+    lazy_inject = _phase9_inject_module()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = _build_phase8_fixture_repo(td_path)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(fixture_repo),
+                max_cycles=10, session_id="owner-session", now=_time.time(),
+            )
+            hook_input = json.dumps({
+                "session_id": "owner-session",  # MATCHES the bound marker
+                "hook_event_name": "UserPromptSubmit",
+                "prompt": "just a chat message — no dispatch this turn",
+            })
+            result = lazy_inject.inject(hook_input)
+            # The banner still fires (bound-owner path is unchanged).
+            assert result is not None, "bound-owner inject must still produce a banner"
+            marker_after = lazy_core.read_run_marker(session_id="owner-session")
+            assert marker_after is not None, "run marker must survive the inject probe"
+            assert marker_after.get("forward_cycles", 0) == 0, (
+                f"the inject-hook probe on a non-dispatch turn must NOT advance the "
+                f"forward budget; got forward_cycles={marker_after.get('forward_cycles')!r}"
+            )
+            assert marker_after.get("per_feature_forward_cycles") == {}, (
+                f"the inject-hook probe must NOT bump any per-feature counter, got "
+                f"{marker_after.get('per_feature_forward_cycles')!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+
+
+def test_cycle_end_real_bracket_advances_forward_and_per_feature():
+    """(c) ONE ``--cycle-begin --kind real ... / --cycle-end`` bracket increments
+    ``forward_cycles`` by exactly 1 AND ``per_feature_forward_cycles[feature]`` by
+    1 — the bracket is the budget authority for a real Agent dispatch.
+
+    This is the behavior that MOVED off the probe path (see the repurposed
+    ``test_repeat_count_real_skill_frozen_census_advances_forward``): a real cycle
+    is counted when its bracket CLOSES, not when a probe fires.
+    """
+    _guard()
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "repo"
+        root.mkdir()
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _run_start_park_env(state_dir)
+        marker_path = state_dir / lazy_core._MARKER_FILENAME
+
+        def run(extra):
+            return subprocess.run(
+                [sys.executable, str(lazy_state_script), "--repo-root", str(root)] + extra,
+                capture_output=True, text=True, env=env,
+            )
+
+        rs = run(["--run-start", "--max-cycles", "25"])
+        assert rs.returncode == 0, f"--run-start failed: {rs.stderr[:400]!r}"
+        m0 = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m0.get("forward_cycles", 0) == 0 and m0.get("meta_cycles", 0) == 0, m0
+
+        cb = run(["--cycle-begin", "--kind", "real", "--feature-id", "feat-C",
+                  "--nonce", "nonce-real-c", "--sub-skill", "execute-plan"])
+        assert cb.returncode == 0, f"--cycle-begin failed: {cb.stderr[:400]!r}"
+        # The bracket has NOT closed yet — the budget must still be 0.
+        m_mid = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m_mid.get("forward_cycles", 0) == 0, (
+            f"--cycle-begin alone must NOT advance the budget; got {m_mid!r}"
+        )
+
+        ce = run(["--cycle-end"])
+        assert ce.returncode == 0, f"--cycle-end failed: {ce.stderr[:400]!r}"
+        m1 = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m1.get("forward_cycles") == 1, (
+            f"a closed real bracket must advance forward_cycles to 1; got "
+            f"forward_cycles={m1.get('forward_cycles')!r}"
+        )
+        assert m1.get("per_feature_forward_cycles", {}).get("feat-C") == 1, (
+            f"the real bracket must bump per_feature_forward_cycles[feat-C] to 1; "
+            f"got {m1.get('per_feature_forward_cycles')!r}"
+        )
+        assert m1.get("meta_cycles", 0) == 0, (
+            f"a real bracket must NOT touch meta_cycles; got {m1.get('meta_cycles')!r}"
+        )
+
+
+
+
+def test_cycle_end_meta_bracket_advances_meta_and_cleanup_pseudo_classifies_meta():
+    """(d) A ``--kind meta`` bracket increments ``meta_cycles`` (NOT
+    ``forward_cycles``); and a cleanup pseudo-skill (``__flip_plan_complete_stale__``)
+    classifies to meta via the shared forward/meta classifier.
+
+    Meta dispatches are bracketed ``--kind meta``, so ``--cycle-end`` is the sole
+    counting point (counting at ``--emit-dispatch`` too would double-count — that
+    advance was removed). Cleanup pseudos are NOT members of
+    ``_FORWARD_ADVANCING_PSEUDO_SKILLS`` so the classifier routes them to meta.
+    """
+    _guard()
+    import time as _time
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+    # --- Part 1: a --kind meta bracket advances meta_cycles only. ---
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "repo"
+        root.mkdir()
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _run_start_park_env(state_dir)
+        marker_path = state_dir / lazy_core._MARKER_FILENAME
+
+        def run(extra):
+            return subprocess.run(
+                [sys.executable, str(lazy_state_script), "--repo-root", str(root)] + extra,
+                capture_output=True, text=True, env=env,
+            )
+
+        rs = run(["--run-start", "--max-cycles", "25"])
+        assert rs.returncode == 0, f"--run-start failed: {rs.stderr[:400]!r}"
+        cb = run(["--cycle-begin", "--kind", "meta", "--feature-id", "feat-M",
+                  "--nonce", "nonce-meta-m"])
+        assert cb.returncode == 0, f"meta --cycle-begin failed: {cb.stderr[:400]!r}"
+        ce = run(["--cycle-end"])
+        assert ce.returncode == 0, f"meta --cycle-end failed: {ce.stderr[:400]!r}"
+        m1 = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m1.get("meta_cycles") == 1, (
+            f"a closed meta bracket must advance meta_cycles to 1; got "
+            f"meta_cycles={m1.get('meta_cycles')!r}"
+        )
+        assert m1.get("forward_cycles", 0) == 0, (
+            f"a meta bracket must NOT advance forward_cycles; got "
+            f"forward_cycles={m1.get('forward_cycles')!r}"
+        )
+        assert m1.get("per_feature_forward_cycles") == {}, (
+            f"a meta bracket must NOT bump any per-feature counter, got "
+            f"{m1.get('per_feature_forward_cycles')!r}"
+        )
+    # --- Part 2: a cleanup pseudo classifies to meta (the exact advance the
+    #     --apply-pseudo path would make for a NON-forward pseudo). ---
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            m = lazy_core.advance_forward_cycle({
+                "sub_skill": "__flip_plan_complete_stale__", "feature_id": "feat-M",
+                "current_step": "Step 7a: flip plan Complete (stale)",
+            })
+            assert m["meta_cycles"] == 1, (
+                f"a cleanup pseudo (__flip_plan_complete_stale__) must classify to "
+                f"meta_cycles, got {m!r}"
+            )
+            assert m.get("forward_cycles", 0) == 0, (
+                f"a cleanup pseudo must NOT advance forward_cycles, got {m!r}"
+            )
+            assert m.get("per_feature_forward_cycles", {}).get("feat-M", 0) == 0, (
+                f"a cleanup pseudo must NOT bump per-feature counters, got "
+                f"{m.get('per_feature_forward_cycles')!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+
+
+def test_apply_pseudo_forward_advancing_increments_forward_cycles():
+    """(e) A forward-advancing ``--apply-pseudo`` (``__mark_complete__``) increments
+    ``forward_cycles`` — the apply-pseudo increment is UNCHANGED by this fix
+    (pseudo-skills dispatch no Agent and are not bracketed, so they keep counting
+    at apply-time).
+    """
+    _guard()
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        spec_dir = root / "feat-e"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        # Fully coherent PHASES so completion sails past the coherence gate.
+        _write_phases_md(
+            spec_dir,
+            "## Phase 1 — Foundations\n\n**Status:** Complete\n\n- [x] Build the thing\n",
+        )
+        state_dir = root / "state"
+        state_dir.mkdir()
+        env = _run_start_park_env(state_dir)
+        marker_path = state_dir / lazy_core._MARKER_FILENAME
+
+        rs = subprocess.run(
+            [sys.executable, str(lazy_state_script), "--repo-root", str(root),
+             "--run-start", "--max-cycles", "25"],
+            capture_output=True, text=True, env=env,
+        )
+        assert rs.returncode == 0, f"--run-start failed: {rs.stderr[:400]!r}"
+
+        ap = subprocess.run(
+            [sys.executable, str(lazy_state_script), "--repo-root", str(root),
+             "--apply-pseudo", "__mark_complete__", str(spec_dir),
+             "--apply-date", "2026-07-17"],
+            capture_output=True, text=True, env=env,
+        )
+        assert ap.returncode == 0, (
+            f"--apply-pseudo __mark_complete__ failed: rc={ap.returncode} "
+            f"stderr={ap.stderr[:400]!r} stdout={ap.stdout[:400]!r}"
+        )
+        result = json.loads(ap.stdout)
+        assert result.get("ok") is True, f"apply must succeed, got {result!r}"
+        m1 = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m1.get("forward_cycles") == 1, (
+            f"a forward-advancing --apply-pseudo must advance forward_cycles to 1 "
+            f"(unchanged apply-time increment); got forward_cycles="
+            f"{m1.get('forward_cycles')!r}"
+        )
+
+
+
+
 def test_per_feature_counter_independent_keys():
     """P1 RED: a second feature gets its own independent per-feature key."""
     _guard()
@@ -7896,6 +8205,11 @@ _TESTS = [
     ("test_write_run_marker_initializes_per_feature_map", test_write_run_marker_initializes_per_feature_map),
     ("test_advance_forward_cycle_increments_per_feature", test_advance_forward_cycle_increments_per_feature),
     ("test_advance_forward_cycle_meta_does_not_increment_per_feature", test_advance_forward_cycle_meta_does_not_increment_per_feature),
+    ("test_repeat_count_inspection_probe_does_not_advance_forward_budget", test_repeat_count_inspection_probe_does_not_advance_forward_budget),
+    ("test_inject_hook_probe_on_non_dispatch_turn_does_not_advance_forward_budget", test_inject_hook_probe_on_non_dispatch_turn_does_not_advance_forward_budget),
+    ("test_cycle_end_real_bracket_advances_forward_and_per_feature", test_cycle_end_real_bracket_advances_forward_and_per_feature),
+    ("test_cycle_end_meta_bracket_advances_meta_and_cleanup_pseudo_classifies_meta", test_cycle_end_meta_bracket_advances_meta_and_cleanup_pseudo_classifies_meta),
+    ("test_apply_pseudo_forward_advancing_increments_forward_cycles", test_apply_pseudo_forward_advancing_increments_forward_cycles),
     ("test_per_feature_counter_independent_keys", test_per_feature_counter_independent_keys),
     ("test_per_feature_counter_legacy_marker_tolerance", test_per_feature_counter_legacy_marker_tolerance),
     ("test_compute_per_feature_ceiling_override_short_circuits", test_compute_per_feature_ceiling_override_short_circuits),
