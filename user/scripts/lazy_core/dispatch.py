@@ -135,6 +135,33 @@ def _dedup_residue(tokens: list[str]) -> list[str]:
     return seen
 
 
+def _template_residue(template_text: str, bindings: dict[str, str]) -> list[str]:
+    """Return unbound TEMPLATE placeholder tokens surviving in *template_text*.
+
+    Strips every KNOWN token placeholder (``{token}`` for each key in *bindings*)
+    from the template text, THEN scans the remainder for
+    ``_PROMPT_RESIDUE_RE`` residue. The strip uses empty-string replacement so a
+    genuine unbound placeholder (a ``{lower_snake}`` NOT in *bindings*) is left
+    intact for the scan to catch.
+
+    Why this runs on the placeholder-stripped TEMPLATE — BEFORE any value
+    substitution — instead of on the fully-bound prompt: the residue guard must
+    distinguish a genuine unbound template placeholder from a literal
+    ``{lower_snake}`` brace that merely appears INSIDE an injected context VALUE
+    (a code snippet, a JSON object, or a curly-brace wire-type in a free-text
+    ``resolution_summary`` / ``failure_summary``). Scanning the fully-bound prompt
+    conflates the two and fail-closes a correct dispatch on DATA it should treat
+    as opaque (docs/bugs/emit-dispatch-residue-guard-flags-content-braces —
+    observed live on an apply-resolution emit). Detecting residue on the
+    pre-injection template makes value-content braces structurally invisible to
+    the guard while still catching every genuine unbound placeholder.
+    """
+    stripped = template_text
+    for token in bindings:
+        stripped = stripped.replace("{" + token + "}", "")
+    return _PROMPT_RESIDUE_RE.findall(stripped)
+
+
 def _emit_work_branch(repo_root: Path) -> str:
     """Resolve repo_root's current branch name for the {work_branch} token.
 
@@ -847,30 +874,35 @@ def emit_cycle_prompt(
             if not complexity_pinned_opus:
                 model = "sonnet"
 
-    # --- Bind all tokens (all occurrences, all sections + loop block) ---------
-    for token, value in bindings.items():
-        prompt = prompt.replace("{" + token + "}", value)
-
-    # --- Residue guard: any surviving {token} → refuse (never half-bound) -----
-    residue = _PROMPT_RESIDUE_RE.findall(prompt)
+    # --- Residue guard: unbound TEMPLATE placeholders → refuse (never half-bound)
+    # Runs on the TEMPLATE (base sections + addenda + loop block, all known
+    # placeholders stripped) BEFORE value injection, so a literal `{lower_snake}`
+    # brace inside an injected state VALUE (e.g. feature_name / sub_skill_args /
+    # untestability_reason carrying a code snippet or curly-brace wire-type) is
+    # opaque DATA, not a false unbound token
+    # (docs/bugs/emit-dispatch-residue-guard-flags-content-braces). Genuine
+    # unbound placeholders (not in `bindings`) survive the strip and are caught.
+    residue = _template_residue(prompt, bindings)
     if residue:
         seen = _dedup_residue(residue)
         # Attribute the residue to the addenda file when an unbound token traces
         # back to a (mis-authored) addenda section — so the operator knows which
-        # file to fix. We bind the addenda blob in isolation and check whether
-        # any of the surviving tokens originated there.
+        # file to fix. Scan the addenda blob's OWN template residue (same
+        # pre-injection strip) and check whether any surviving token originated there.
         suffix = ""
         if addenda_selected:
             addenda_blob = "\n\n".join(addenda_selected)
-            for token, value in bindings.items():
-                addenda_blob = addenda_blob.replace("{" + token + "}", value)
-            addenda_residue = set(_PROMPT_RESIDUE_RE.findall(addenda_blob))
+            addenda_residue = set(_template_residue(addenda_blob, bindings))
             if addenda_residue & set(seen):
                 suffix = (
                     " (from .claude/skill-config/cycle-prompt-addenda.md — fix or "
                     "remove the offending addenda section)"
                 )
         return {"ok": False, "refused": "unbound tokens: " + ", ".join(seen) + suffix}
+
+    # --- Bind all tokens (template verified fully-bound above) -----------------
+    for token, value in bindings.items():
+        prompt = prompt.replace("{" + token + "}", value)
 
     return {"ok": True, "prompt": prompt, "model": model}
 
@@ -1124,12 +1156,13 @@ def emit_dispatch_prompt(
     for key, value in context.items():
         bindings[key] = str(value) if value is not None else ""
 
-    # --- Bind all tokens -------------------------------------------------------
-    for token, value in bindings.items():
-        prompt = prompt.replace("{" + token + "}", value)
-
-    # --- Residue guard: any surviving {lower_snake_or_digit} → refuse ----------
-    residue = _PROMPT_RESIDUE_RE.findall(prompt)
+    # --- Residue guard: unbound TEMPLATE placeholders → refuse -----------------
+    # Detect residue on the TEMPLATE (all known placeholders stripped) BEFORE
+    # value injection, so a literal `{lower_snake}` brace living INSIDE a
+    # free-text context VALUE (a code snippet / JSON / curly-brace wire-type in a
+    # recorded resolution_summary) is treated as opaque DATA — never mis-flagged
+    # as an unbound token (docs/bugs/emit-dispatch-residue-guard-flags-content-braces).
+    residue = _template_residue(prompt, bindings)
     if residue:
         seen = _dedup_residue(residue)
         return {
@@ -1140,6 +1173,10 @@ def emit_dispatch_prompt(
                 + " — either add to @requires or remove from the template"
             ),
         }
+
+    # --- Bind all tokens (template verified fully-bound above) -----------------
+    for token, value in bindings.items():
+        prompt = prompt.replace("{" + token + "}", value)
 
     # --- Return assembled prompt + model assignment ----------------------------
     model = DISPATCH_MODELS.get(cls, "opus")

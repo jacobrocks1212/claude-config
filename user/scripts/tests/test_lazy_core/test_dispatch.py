@@ -3199,6 +3199,73 @@ def test_emit_dispatch_refuses_unbound_residue():
 
 
 
+def test_emit_dispatch_content_braces_in_value_do_not_refuse():
+    """A context VALUE containing a literal {lower_snake} brace (code snippet /
+    JSON / curly-brace wire-type in a free-text resolution_summary) must NOT be
+    mis-flagged as an unbound token — the emission succeeds and the brace
+    survives verbatim in the prompt.
+
+    Regression for docs/bugs/emit-dispatch-residue-guard-flags-content-braces:
+    the residue guard previously scanned the FULLY-BOUND prompt, so a literal
+    `{trigger_id}` inside the injected value fail-closed a correct dispatch.
+    """
+    _guard()
+    cls = "recovery"
+    with tempfile.TemporaryDirectory() as td:
+        tdir = Path(td) / "synth-dispatch-tpl"
+        tdir.mkdir(parents=True, exist_ok=True)
+        tpl_text = (
+            "<!-- @requires item_id,failure_summary -->\n"
+            "<!-- @section body pipelines=feature,bug modes=workstation,cloud -->\n"
+            "Recovery for {item_id}. Summary: {failure_summary}\n"
+        )
+        (tdir / f"dispatch-{cls}.md").write_text(tpl_text, encoding="utf-8")
+
+        # The free-text value legitimately contains literal {lower_snake} braces
+        # AND a JSON object — all opaque DATA, none of it a template placeholder.
+        brace_value = 'wire-type {trigger_id} in payload {"kind": "route_loop"}'
+        context = {"item_id": "feat-x", "failure_summary": brace_value}
+        result = lazy_core.emit_dispatch_prompt(
+            cls, context, pipeline="feature", cloud=False, template_dir=tdir,
+        )
+
+        assert isinstance(result, dict), result
+        assert result.get("ok") is True, (
+            f"content braces in a context VALUE must not refuse the dispatch; "
+            f"got: {result!r}"
+        )
+        assert brace_value in result["prompt"], (
+            "the brace-bearing value must survive verbatim in the emitted prompt"
+        )
+        # The genuine {item_id} placeholder is still bound (no residual placeholder).
+        assert "{item_id}" not in result["prompt"], "template placeholder left unbound"
+
+
+def test_emit_cycle_prompt_content_braces_in_state_value_do_not_refuse():
+    """Near-neighbor: emit_cycle_prompt binds free-text state values (item_name,
+    sub_skill_args, …). A literal {lower_snake} brace inside such a value must NOT
+    trip the residue guard (same class as the dispatch-site regression).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        tdir = Path(td) / "tpl"
+        body = (
+            "<!-- @section a pipelines=feature modes=workstation skills=all -->\n"
+            "Working {item_name} at {current_step}.\n"
+        )
+        _write_synth_template(tdir, body)
+        brace_name = "Feature {viz_param} overlay"
+        r = lazy_core.emit_cycle_prompt(
+            Path("/nonexistent/repo"),
+            _emit_state(sub_skill="/execute-plan", feature_name=brace_name),
+            pipeline="feature", cloud=False, template_dir=tdir,
+        )
+        assert r is not None and r.get("ok") is True, (
+            f"content braces in a state VALUE must not refuse the cycle prompt; got {r}"
+        )
+        assert brace_name in r["prompt"], "brace-bearing item_name must survive verbatim"
+
+
 def test_emit_dispatch_section_filtering():
     """Section filtering on a synthetic dispatch template:
     - A section gated pipelines=bug modes=cloud must appear only for bug+cloud.
@@ -6220,6 +6287,7 @@ _TESTS = [
     ("test_emit_cycle_prompt_non_execute_plan_ignores_complexity", test_emit_cycle_prompt_non_execute_plan_ignores_complexity),
     ("test_emit_cycle_prompt_section_selection_synthetic", test_emit_cycle_prompt_section_selection_synthetic),
     ("test_emit_cycle_prompt_refuses_unknown_token_synthetic", test_emit_cycle_prompt_refuses_unknown_token_synthetic),
+    ("test_emit_cycle_prompt_content_braces_in_state_value_do_not_refuse", test_emit_cycle_prompt_content_braces_in_state_value_do_not_refuse),
     ("test_emit_cycle_prompt_mcp_variant_routing_synthetic", test_emit_cycle_prompt_mcp_variant_routing_synthetic),
     ("test_emit_cycle_prompt_work_branch_fallback_non_git", test_emit_cycle_prompt_work_branch_fallback_non_git),
     ("test_emit_cycle_prompt_sub_skill_args_none_binds_empty", test_emit_cycle_prompt_sub_skill_args_none_binds_empty),
@@ -6259,6 +6327,7 @@ _TESTS = [
     ("test_emit_dispatch_real_template_binding_matrix", test_emit_dispatch_real_template_binding_matrix),
     ("test_emit_dispatch_refuses_missing_requires", test_emit_dispatch_refuses_missing_requires),
     ("test_emit_dispatch_refuses_unbound_residue", test_emit_dispatch_refuses_unbound_residue),
+    ("test_emit_dispatch_content_braces_in_value_do_not_refuse", test_emit_dispatch_content_braces_in_value_do_not_refuse),
     ("test_emit_dispatch_section_filtering", test_emit_dispatch_section_filtering),
     ("test_emit_dispatch_unknown_class_raises", test_emit_dispatch_unknown_class_raises),
     ("test_emit_dispatch_cli_registry_gating", test_emit_dispatch_cli_registry_gating),
