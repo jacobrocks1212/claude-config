@@ -1354,6 +1354,20 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
     ``checks`` values are always populated and accurate regardless of which check
     fails first — no short-circuit pruning is applied to the ``checks`` dict.
     """
+    # --- arg normalization: accept a SPEC.md file OR the spec directory ---
+    # `spec_path` is contractually the feature/bug DIRECTORY (checks below compute
+    # `spec_path / 'PHASES.md'` and scan the dir for plans). But the cycle-prompt
+    # metavar reads as the SPEC.md FILE (`--verify-ledger <spec_path>`), so callers
+    # legitimately pass `.../SPEC.md`. Passing the file used to yield a MISLEADING
+    # verdict (phantom `.../SPEC.md/PHASES.md`) instead of an error. Normalize a
+    # `.md` file arg to its parent directory at the SOURCE so the function and every
+    # caller agree by construction — including direct callers and any future one
+    # (bug `verify-ledger-planning-scope-and-file-arg`). `lazy-state.py` already
+    # performs the same normalization at its wrapper; this is idempotent for a dir
+    # arg (no `.md` suffix → unchanged) and harmless downstream of that wrapper.
+    if spec_path.suffix == ".md":
+        spec_path = spec_path.parent
+
     # --- check 1: clean working tree ---
     # Mirror the subprocess style used in _current_head in lazy-state.py:
     # capture_output + text + timeout guard, catch OSError/SubprocessError.

@@ -135,6 +135,48 @@ def _write_all_checked_phases(spec_dir: Path) -> Path:
 
 
 
+def test_verify_ledger_spec_md_file_arg_normalizes_to_parent_dir():
+    """A SPEC.md FILE arg yields the SAME verdict as passing the spec DIRECTORY.
+
+    Regression for bug `verify-ledger-planning-scope-and-file-arg`: verify_ledger
+    contractually takes the spec DIRECTORY (it computes `spec_path / 'PHASES.md'`),
+    but the cycle-prompt metavar reads as the SPEC.md FILE, so callers pass the
+    file. Passing the file used to yield a MISLEADING verdict against a phantom
+    `.../SPEC.md/PHASES.md`. The function now normalizes a `.md` arg to its parent
+    directory at the source, so a file arg and its parent dir agree exactly.
+
+    Fixture: the same all-green tree as test_verify_ledger_all_green_passes, plus a
+    SPEC.md file in the spec dir. Both `verify_ledger(root, dir)` and
+    `verify_ledger(root, dir / "SPEC.md")` must return ok=True with identical checks.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        _write_complete_plan(spec_dir / "plans")
+        _write_all_checked_phases(spec_dir)
+        (spec_dir / "SPEC.md").write_text("# my-feat\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "add feature files"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "push"], check=True,
+                       capture_output=True)
+
+        dir_result = lazy_core.verify_ledger(repo_root, spec_dir)
+        file_result = lazy_core.verify_ledger(repo_root, spec_dir / "SPEC.md")
+
+    assert dir_result["ok"] is True, f"dir arg should be ok=True, got {dir_result}"
+    assert file_result["ok"] is True, (
+        f"SPEC.md file arg should normalize to the dir and be ok=True, got {file_result}"
+    )
+    assert file_result["checks"] == dir_result["checks"], (
+        "file-arg and dir-arg checks must be identical after normalization: "
+        f"file={file_result['checks']} dir={dir_result['checks']}"
+    )
+
+
 def test_verify_ledger_all_green_passes():
     """All four checks true → ok=True, failing_check=None, all checks True.
 
@@ -2773,6 +2815,7 @@ def test_no_duplicate_top_level_defs_in_state_scripts():
 
 
 _TESTS = [
+    ("test_verify_ledger_spec_md_file_arg_normalizes_to_parent_dir", test_verify_ledger_spec_md_file_arg_normalizes_to_parent_dir),
     ("test_verify_ledger_all_green_passes", test_verify_ledger_all_green_passes),
     ("test_verify_ledger_dirty_tree_fails", test_verify_ledger_dirty_tree_fails),
     ("test_verify_ledger_behind_origin_fails", test_verify_ledger_behind_origin_fails),

@@ -8907,8 +8907,17 @@ def main() -> int:
         # non-zero exit when any check fails. When --plan is also passed, checks
         # 3+4 narrow to that plan part's scope (Phase 9 WU-3) — reuses the
         # existing --plan flag (shared with --apply-pseudo, no dest collision).
+        # verify_ledger expects a spec directory (not the SPEC.md file path).
+        # Normalize: if the caller passed a .md file, use its parent directory —
+        # coupled-pair mirror of lazy-state.py (bug `verify-ledger-planning-scope-
+        # and-file-arg`). Computing `_spec_dir` here (not passing args.verify_ledger
+        # raw) also stamps the correct `gate-refusal` item_id (the bug-dir name, not
+        # "SPEC.md"). verify_ledger itself also normalizes at the source; this keeps
+        # the telemetry item_id correct regardless.
+        _vl_path = Path(args.verify_ledger)
+        _spec_dir = _vl_path.parent if _vl_path.suffix == ".md" else _vl_path
         result = lazy_core.verify_ledger(
-            Path(args.repo_root), Path(args.verify_ledger),
+            Path(args.repo_root), _spec_dir,
             plan_path=Path(args.plan) if args.plan else None,
         )
         # harness-telemetry-ledger Phase 2 (D4-B) — coupled-pair mirror of
@@ -8916,7 +8925,7 @@ def main() -> int:
         if not result["ok"]:
             lazy_core.append_telemetry_event(
                 "gate-refusal",
-                item_id=Path(args.verify_ledger).resolve().name,
+                item_id=_spec_dir.resolve().name,
                 data={"gate": "verify-ledger",
                       "failing_check": result.get("failing_check"),
                       # completion-gate-refusal-opacity Fix Scope §3
