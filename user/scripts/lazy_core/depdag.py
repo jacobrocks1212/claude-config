@@ -933,6 +933,292 @@ def merged_priority(
     return MERGED_PRIORITY_DEFAULT
 
 
+# ---------------------------------------------------------------------------
+# no-sanctioned-cli-for-queue-state-mutations: operator-directed in-place
+# priority / dependency mutators (the sanctioned replacement for hand-editing
+# queue.json to change a severity/tier, or to add/remove a dependency). These
+# are the queue-plane engines behind lazy-state.py --set-tier / --add-deps /
+# --remove-deps and bug-state.py --set-severity / --add-deps / --remove-deps /
+# --unpin. Each mirrors reorder_queue/sync_deps' load → validate-list → mutate
+# → _atomic_write shape and is domain-agnostic (the caller passes its own
+# queue_path + queue_label).
+#
+# THE LOAD-BEARING INVARIANT (SPEC "two-regime ordering model"): a priority
+# change (severity/tier) MUST atomically re-position the entry in the queue's
+# LISTED order to agree with its new merged_priority — otherwise the merged
+# view says "P0" while the single-queue pipeline (which works listed order
+# head-first) still works it last. reposition_by_priority does that inside the
+# SAME _atomic_write, never as a separate step.
+# ---------------------------------------------------------------------------
+
+def reposition_by_priority(
+    items: list, item_id: str, item_type: str, *,
+    today: "datetime.date | None" = None,
+) -> "int | None":
+    """Move ``item_id`` (in place, mutating ``items``) to the listed-order slot
+    dictated by its ``merged_priority`` — stable FIFO within equal priority.
+
+    Semantics: the entry lands AFTER every entry of strictly-higher priority
+    (lower ``merged_priority`` number) and BEFORE the first entry of
+    strictly-lower priority; entries of EQUAL priority keep their relative
+    order and the repositioned item sorts behind them (FIFO — a fresh
+    promotion does not jump its equals). Only the one entry moves; every other
+    entry's relative order is preserved (curated order for the rest of the
+    queue is respected — this is a surgical single-item move, NOT a full
+    re-sort).
+
+    Returns the entry's new index, or ``None`` if ``item_id`` is not present
+    (caller handles the not-found case). A no-op move (already in the right
+    slot) still returns the index — byte-stability is the caller's concern
+    (it compares old vs new position).
+    """
+    idx = next(
+        (i for i, e in enumerate(items)
+         if isinstance(e, dict) and e.get("id") == item_id),
+        None,
+    )
+    if idx is None:
+        return None
+    entry = items.pop(idx)
+    my_priority = merged_priority(item_type, entry, today=today)
+    dest = len(items)  # default: append (lowest priority / tie-behind-equals)
+    for i, other in enumerate(items):
+        if merged_priority(item_type, other, today=today) > my_priority:
+            dest = i
+            break
+    items.insert(dest, entry)
+    return dest
+
+
+def _load_queue_for_mutation(
+    queue_path: "Path", queue_label: str
+) -> "tuple[dict, list]":
+    """Shared load → validate-list prologue for the priority/dep mutators.
+
+    Mirrors reorder_queue/sync_deps: a missing file or malformed JSON, or a
+    non-list ``queue`` field, calls ``_die`` (exit 2, zero mutation). Returns
+    ``(data, items)`` where ``items is data["queue"]``.
+    """
+    if not queue_path.exists():
+        _die(f"{queue_label} not found", queue_path)
+        return {}, []  # pragma: no cover
+    try:
+        data = json.loads(queue_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        _die(f"invalid {queue_label}: {exc}", queue_path)
+        return {}, []  # pragma: no cover
+    items = data.get("queue", [])
+    if not isinstance(items, list):
+        _die(f"{queue_label} 'queue' field must be an array", queue_path)
+        return {}, []  # pragma: no cover
+    return data, items
+
+
+def set_queue_priority(
+    queue_path: "Path", item_id: str, item_type: str, new_value, *,
+    today: "datetime.date | None" = None, queue_label: str = "queue.json",
+) -> dict:
+    """Change a queue entry's effective-priority field IN PLACE and atomically
+    re-sort its listed position to match — the operator-facing promote/demote
+    primitive (lazy-state.py ``--set-tier``; bug-state.py ``--set-severity``).
+
+    ``item_type``:
+      * ``"feature"`` — ``new_value`` is the new integer ``tier`` (a string of
+        digits is accepted and coerced). A non-int / non-digit ``_die``s.
+      * ``"bug"`` — ``new_value`` is one of ``P0/P1/P2/Low`` (validated against
+        ``_MERGED_SEVERITY_RANK``). Setting an EXPLICIT severity ALSO clears any
+        active pin fields (``pinned_at``/``pinned_until``/``pin_reason``) — an
+        explicit severity is the inverse of a null-pin, and a stale pin would
+        confuse ``merged_priority``'s fallback branch.
+
+    A missing ``item_id`` or malformed queue JSON ``_die``s (exit 2, zero
+    mutation). After the field is set, ``reposition_by_priority`` moves the
+    entry to its correct listed slot and the whole thing is one
+    ``_atomic_write`` (the load-bearing atomic-reorder side effect). Setting a
+    value that changes neither the field nor the position is still a real write
+    (the field may be byte-identical but the operation is authoritative) — the
+    return ``reordered`` flag reports whether the LISTED POSITION moved.
+
+    Returns ``{"id", "item_type", "field", "old_value", "new_value",
+    "old_position", "new_position", "reordered": bool, "queue_length"}``.
+    """
+    data, items = _load_queue_for_mutation(queue_path, queue_label)
+    idx = next(
+        (i for i, e in enumerate(items)
+         if isinstance(e, dict) and e.get("id") == item_id),
+        None,
+    )
+    if idx is None:
+        _die(f"item not queued: {item_id}", queue_path)
+        return {}  # pragma: no cover
+    entry = items[idx]
+
+    if item_type == "feature":
+        field = "tier"
+        if isinstance(new_value, bool):  # bool is an int subclass — reject it
+            _die(f"--set-tier requires an integer tier, got {new_value!r}", queue_path)
+        if isinstance(new_value, int):
+            coerced = new_value
+        else:
+            try:
+                coerced = int(str(new_value).strip())
+            except (TypeError, ValueError):
+                _die(
+                    f"--set-tier requires an integer tier, got {new_value!r}",
+                    queue_path,
+                )
+                return {}  # pragma: no cover
+        old_value = entry.get("tier")
+        entry["tier"] = coerced
+        new_norm = coerced
+    elif item_type == "bug":
+        field = "severity"
+        sev = str(new_value).strip()
+        if sev not in _MERGED_SEVERITY_RANK:
+            _die(
+                f"--set-severity requires one of "
+                f"{'/'.join(_MERGED_SEVERITY_RANK)}, got {new_value!r}",
+                queue_path,
+            )
+            return {}  # pragma: no cover
+        old_value = entry.get("severity")
+        entry["severity"] = sev
+        # An explicit severity supersedes a null-pin — drop the pin fields so
+        # merged_priority reads the new severity directly (not the fallback).
+        for _pk in ("pinned_at", "pinned_until", "pin_reason"):
+            entry.pop(_pk, None)
+        new_norm = sev
+    else:  # pragma: no cover — defensive; callers pass a literal
+        _die(f"set_queue_priority: unknown item_type {item_type!r}", queue_path)
+        return {}
+
+    old_position = idx
+    new_position = reposition_by_priority(items, item_id, item_type, today=today)
+    data["queue"] = items
+    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+    _diag(
+        f"set_queue_priority: {item_id} {field} {old_value!r} -> {new_norm!r} "
+        f"in {queue_label} (position {old_position} -> {new_position})"
+    )
+    return {
+        "id": item_id,
+        "item_type": item_type,
+        "field": field,
+        "old_value": old_value,
+        "new_value": new_norm,
+        "old_position": old_position,
+        "new_position": new_position,
+        "reordered": new_position != old_position,
+        "queue_length": len(items),
+    }
+
+
+def mutate_queue_deps(
+    queue_path: "Path", item_id: str, *,
+    add: "list[str] | None" = None, remove: "list[str] | None" = None,
+    queue_label: str = "queue.json",
+) -> dict:
+    """Add or remove hard-dependency ids on a queue entry's ``deps`` field
+    post-hoc — the arbitrary-edit sibling of ``sync_deps`` (which only projects
+    the SPEC's dep-block). Backs lazy-state.py / bug-state.py
+    ``--add-deps``/``--remove-deps``.
+
+    Exactly one of ``add`` / ``remove`` is non-empty per call (the CLI routes
+    each flag separately). Added ids are validated (regex + reserved
+    ``bug:``/``feature:`` prefixes → ``_die``) and a self-dep is refused. The
+    result is deduped, SPEC/insertion order preserved. An empty resulting set
+    REMOVES the ``deps`` key (restoring the byte-identical no-deps entry shape).
+    A change that leaves ``deps`` byte-identical is a ``noop: true`` ZERO write
+    (byte-stable, mirroring ``sync_deps``).
+
+    Deps affect the READINESS gate, not ``merged_priority`` — so this does NOT
+    reposition the entry (unlike ``set_queue_priority``).
+
+    Post-mutation ``detect_dep_cycle`` guard: a resulting queue graph with a
+    cycle ``_die``s (exit 2, file untouched) — a cycle would brick every
+    subsequent probe at load.
+
+    Returns ``{"mutated": bool, "noop": bool, "item_id", "deps": [...],
+    "added": [...], "removed": [...], "queue_length"}``.
+    """
+    data, items = _load_queue_for_mutation(queue_path, queue_label)
+    idx = next(
+        (i for i, e in enumerate(items)
+         if isinstance(e, dict) and e.get("id") == item_id),
+        None,
+    )
+    if idx is None:
+        _die(f"item not queued: {item_id}", queue_path)
+        return {}  # pragma: no cover
+    entry = items[idx]
+
+    current = list(entry.get("deps") or [])
+    added: list[str] = []
+    removed: list[str] = []
+
+    if add:
+        validate_dep_id_list(add, queue_path, context=f"'--add-deps' ({item_id!r})")
+        if item_id in add:
+            _die(
+                f"--add-deps: {item_id!r} cannot depend on itself — a "
+                f"self-dependency can never unblock.",
+                queue_path,
+            )
+            return {}  # pragma: no cover
+        for d in add:
+            if d not in current:
+                current.append(d)
+                added.append(d)
+    if remove:
+        for d in remove:
+            if d in current:
+                current.remove(d)
+                removed.append(d)
+
+    new_deps = current
+    prior = entry.get("deps")
+    # Compute the target entry shape: key removed when empty, else the list.
+    if new_deps:
+        would_change = prior != new_deps
+    else:
+        would_change = "deps" in entry
+    if not would_change:
+        return {
+            "mutated": True, "noop": True, "item_id": item_id,
+            "deps": list(new_deps), "added": added, "removed": removed,
+            "queue_length": len(items),
+        }
+
+    if new_deps:
+        entry["deps"] = new_deps
+    else:
+        entry.pop("deps", None)
+
+    # Write-side cycle guard on the POST-mutation in-memory items (D4 parity
+    # with sync_deps): never persist a projection that cycles the queued graph.
+    cycle = detect_dep_cycle(items)
+    if cycle is not None:
+        _die(
+            f"--add-deps: adding {added!r} to {item_id!r} would create a "
+            f"dependency cycle among queued entries: "
+            f"{', '.join(repr(c) for c in cycle)} — refusing to write.",
+            queue_path,
+        )
+        return {}  # pragma: no cover
+
+    data["queue"] = items
+    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+    _diag(
+        f"mutate_queue_deps: {item_id} deps -> {new_deps!r} in {queue_label} "
+        f"(added={added!r} removed={removed!r})"
+    )
+    return {
+        "mutated": True, "noop": False, "item_id": item_id,
+        "deps": list(new_deps), "added": added, "removed": removed,
+        "queue_length": len(items),
+    }
+
+
 def merged_worklist(
     feature_items: list[dict],
     bug_items: list[dict],

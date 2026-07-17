@@ -11495,6 +11495,28 @@ def build_parser() -> argparse.ArgumentParser:
                               "mid-run. 'on' requires park mode already on "
                               "(park_provisional requires park_needs_input, SPEC D1) — "
                               "else refused. Refused without --operator-authorized."))
+    # no-sanctioned-cli-for-queue-state-mutations: operator-directed in-place
+    # queue mutators (the sanctioned replacement for hand-editing queue.json).
+    # Each is refuse_if_cycle_active FIRST + requires --operator-authorized.
+    # --set-tier atomically RE-SORTS listed order to match the new merged
+    # priority (the load-bearing side effect). Coupled-pair: bug-state.py
+    # exposes --set-severity (the bug analog) + the same deps mutators + --unpin.
+    parser.add_argument("--set-tier", dest="set_tier", nargs=2,
+                        metavar=("ID", "TIER"), default=None,
+                        help=("Orchestrator-only, --operator-authorized: set feature ID's "
+                              "queue tier to TIER (int; lower = higher priority) and "
+                              "ATOMICALLY re-position it in listed order to match its new "
+                              "merged priority — one write, never a stale reorder. "
+                              "refuse_if_cycle_active (exit 3 for a cycle subagent)."))
+    parser.add_argument("--add-deps", dest="add_deps", metavar="ID", default=None,
+                        help=("Orchestrator-only, --operator-authorized: add the --deps "
+                              "id list as hard queue dependencies on feature ID (post-hoc, "
+                              "arbitrary — the non-SPEC sibling of --sync-deps). Deduped; "
+                              "post-mutation cycle-guarded. refuse_if_cycle_active FIRST."))
+    parser.add_argument("--remove-deps", dest="remove_deps", metavar="ID", default=None,
+                        help=("Orchestrator-only, --operator-authorized: remove the --deps "
+                              "id list from feature ID's hard queue dependencies (empty "
+                              "result drops the deps key). refuse_if_cycle_active FIRST."))
     parser.add_argument("--record-intervention", dest="record_intervention",
                         action="store_true",
                         help=("intervention-efficacy-tracking: write the "
@@ -12098,6 +12120,7 @@ def build_parser() -> argparse.ArgumentParser:
                             "ad-hoc grep. Missing file → 0."
                         ))
     cli_surface.add_dump_cli_surface_flag(parser)
+    cli_surface.add_ops_query_flags(parser)
     return parser
 
 
@@ -12112,6 +12135,12 @@ def main() -> int:
     _dump = cli_surface.maybe_handle_dump_cli_surface(args, parser, "lazy-state.py")
     if _dump is not None:
         return _dump
+
+    # no-sanctioned-cli-for-queue-state-mutations: op-discoverability search —
+    # read-only introspection, handled before any side effect (like the dump).
+    _ops = cli_surface.maybe_handle_ops_query(args, parser, "lazy-state.py")
+    if _ops is not None:
+        return _ops
 
     # multi-repo-concurrent-runs: bind the active repo ONCE so claude_state_dir()
     # scopes all run-scoped state (marker/registry/ledger/cycle/checkpoint) to
@@ -13223,6 +13252,52 @@ def main() -> int:
             _die("--set-park-provisional: no active run marker to update.")
         out = {"park_updated": True, **result}
         sys.stdout.write(json.dumps(out, indent=2) + "\n")
+        return 0
+
+    if args.set_tier is not None:
+        # no-sanctioned-cli-for-queue-state-mutations: operator-directed in-place
+        # tier change. Refuse FIRST (exit 3, zero side effects for a cycle
+        # subagent — the --reorder-queue/--enqueue-adhoc contract), then require
+        # --operator-authorized (this is an operator-directed priority change).
+        # set_queue_priority ATOMICALLY re-sorts listed order to match the new
+        # merged priority in the SAME write.
+        lazy_core.refuse_if_cycle_active("--set-tier")
+        if not args.operator_authorized:
+            _die("--set-tier requires --operator-authorized (the operator must have "
+                 "approved the priority change).")
+        _id, _tier = args.set_tier
+        result = lazy_core.set_queue_priority(
+            Path(args.repo_root) / "docs" / "features" / "queue.json",
+            _id, "feature", _tier, queue_label="queue.json",
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.add_deps or args.remove_deps:
+        # no-sanctioned-cli-for-queue-state-mutations: post-hoc arbitrary deps
+        # edit (the non-SPEC sibling of --sync-deps). Refuse FIRST + require
+        # --operator-authorized. --add-deps / --remove-deps are separate ops so a
+        # cycle-guard failure names the exact direction.
+        lazy_core.refuse_if_cycle_active("--add-deps/--remove-deps")
+        if args.add_deps and args.remove_deps:
+            _die("--add-deps and --remove-deps are mutually exclusive (one op per call).")
+        if not args.operator_authorized:
+            _die("--add-deps/--remove-deps requires --operator-authorized.")
+        _target = args.add_deps or args.remove_deps
+        _dep_ids = (
+            [s.strip() for s in args.deps.split(",") if s.strip()]
+            if args.deps else None
+        )
+        if not _dep_ids:
+            _die("--add-deps/--remove-deps requires a non-empty --deps id list.")
+        result = lazy_core.mutate_queue_deps(
+            Path(args.repo_root) / "docs" / "features" / "queue.json",
+            _target,
+            add=(_dep_ids if args.add_deps else None),
+            remove=(_dep_ids if args.remove_deps else None),
+            queue_label="queue.json",
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 
     if args.record_intervention:

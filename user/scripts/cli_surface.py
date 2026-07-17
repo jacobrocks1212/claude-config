@@ -168,6 +168,141 @@ def maybe_handle_dump_cli_surface(
 
 
 # ---------------------------------------------------------------------------
+# no-sanctioned-cli-for-queue-state-mutations — op discoverability search.
+#
+# The orchestrator must never hand-edit queue.json; every mutation has a CLI
+# command, but the surface is large. --list-ops / --search-ops let the
+# orchestrator find the right command for a natural-language op ("set bug
+# severity" -> --set-severity) WITHOUT reading source. It introspects the LIVE
+# parser (same projection cli_surface_gen.py consumes) so it is deterministic,
+# stdlib-only, and can never drift from the real flags.
+# ---------------------------------------------------------------------------
+
+def add_ops_query_flags(parser: argparse.ArgumentParser) -> None:
+    """Add ``--list-ops`` / ``--search-ops`` to ``parser``.
+
+    Call alongside ``add_dump_cli_surface_flag`` in each roster twin's
+    ``build_parser()`` so the search surface is itself introspected into the
+    registry (self-describing, like ``--dump-cli-surface``).
+    """
+    parser.add_argument(
+        "--list-ops",
+        action="store_true",
+        help=(
+            "List every CLI operation this script exposes as JSON "
+            "({name, usage, help_head}), then exit 0. The deterministic op "
+            "catalog — use it instead of hand-editing queue.json / the run "
+            "marker when you are unsure which command performs a mutation."
+        ),
+    )
+    parser.add_argument(
+        "--search-ops",
+        metavar="QUERY",
+        default=None,
+        help=(
+            "Search this script's CLI operations for a natural-language QUERY "
+            "(e.g. \"set bug severity\", \"add dependency\") and print the "
+            "ranked matching commands as JSON ({name, usage, help_head, "
+            "score}), then exit 0. Deterministic token-overlap ranking over "
+            "each flag's name + help."
+        ),
+    )
+
+
+def _usage_for_action(action: argparse.Action) -> str:
+    """Render a compact one-line usage hint for an optional action:
+    ``--flag`` / ``--flag VALUE`` / ``--flag {a,b}``."""
+    name, _aliases = _canonical_name_and_aliases(action)
+    if isinstance(action, _CONST_ACTION_TYPES):
+        return name
+    if action.choices:
+        return f"{name} {{{','.join(str(c) for c in action.choices)}}}"
+    metavar = action.metavar
+    if isinstance(metavar, (list, tuple)):
+        return f"{name} {' '.join(str(m) for m in metavar)}"
+    if metavar:
+        return f"{name} {metavar}"
+    return f"{name} {action.dest.upper()}"
+
+
+def ops_index(parser: argparse.ArgumentParser) -> list[dict[str, Any]]:
+    """Return the searchable op catalog: one ``{name, usage, help_head}`` per
+    optional flag (positionals + the ``--help`` action excluded)."""
+    ops: list[dict[str, Any]] = []
+    for action in parser._actions:
+        if not action.option_strings:
+            continue  # positional
+        if isinstance(action, argparse._HelpAction):
+            continue
+        name, aliases = _canonical_name_and_aliases(action)
+        ops.append({
+            "name": name,
+            "aliases": aliases,
+            "usage": _usage_for_action(action),
+            "help_head": _help_head(action.help),
+        })
+    ops.sort(key=lambda o: o["name"])
+    return ops
+
+
+_OPS_QUERY_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def search_ops(
+    parser: argparse.ArgumentParser, query: str
+) -> list[dict[str, Any]]:
+    """Rank the op catalog against ``query`` by token overlap.
+
+    Deterministic: each lowercased alnum query token scores a hit if it is a
+    substring of the flag NAME (weight 2 — a name match is the strongest
+    signal) or of its help_head (weight 1). Ops with score 0 are dropped;
+    ties break on name (ascending) for byte-stable ordering.
+    """
+    tokens = _OPS_QUERY_TOKEN_RE.findall((query or "").lower())
+    scored: list[tuple[int, str, dict[str, Any]]] = []
+    for op in ops_index(parser):
+        name_l = op["name"].lower()
+        help_l = (op["help_head"] or "").lower()
+        score = 0
+        for tok in tokens:
+            if tok in name_l:
+                score += 2
+            elif tok in help_l:
+                score += 1
+        if score > 0:
+            scored.append((score, op["name"], {**op, "score": score}))
+    scored.sort(key=lambda t: (-t[0], t[1]))
+    return [op for _s, _n, op in scored]
+
+
+def maybe_handle_ops_query(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+    script_name: str,
+) -> Optional[int]:
+    """Handle ``--list-ops`` / ``--search-ops`` if set (print JSON, return 0);
+    else return None so ``main()`` proceeds. Call immediately after
+    ``maybe_handle_dump_cli_surface`` — both are read-only introspection that
+    must run before any side effect."""
+    if getattr(args, "search_ops", None):
+        payload = {
+            "script": script_name,
+            "query": args.search_ops,
+            "matches": search_ops(parser, args.search_ops),
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+    if getattr(args, "list_ops", False):
+        payload = {
+            "script": script_name,
+            "ops": ops_index(parser),
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Phase 3 — runtime "did you mean" (D4-A: the two state-script twins only).
 # ---------------------------------------------------------------------------
 

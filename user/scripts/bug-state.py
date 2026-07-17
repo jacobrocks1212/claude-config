@@ -2280,6 +2280,82 @@ def pin_bug_severity(
     }
 
 
+def unpin_bug_severity(
+    repo_root: Path, bug_id: str, *, today: "date | None" = None
+) -> dict[str, Any]:
+    """Un-pin a bug — the INVERSE of ``pin_bug_severity``
+    (no-sanctioned-cli-for-queue-state-mutations).
+
+    Clears ``pinned_at``/``pinned_until``/``pin_reason`` and restores the
+    entry's ``severity`` from the SPEC's own ``**Severity:**`` line (so the bug
+    re-enters effective ordering at its declared severity rather than the
+    suppressed ``severity: null``), then ATOMICALLY re-positions it in listed
+    order to match its restored merged priority (via
+    ``lazy_core.reposition_by_priority``) in the SAME ``_atomic_write``.
+
+    A bug that is not queued ``_die``s (exit 2, zero mutation). A queued bug
+    that carries NO active pin (``pinned_at`` absent) is a byte-stable no-op
+    (``unpinned: False`` — ZERO write), mirroring ``sync_deps``' no-op contract.
+
+    Returns ``{"id", "unpinned": bool, "noop": bool, "restored_severity",
+    "new_position", "queue_length"}``.
+    """
+    repo_root = repo_root.resolve()
+    bugs_dir = repo_root / "docs" / "bugs"
+    queue_path = bugs_dir / "queue.json"
+    if not queue_path.exists():
+        _die("bugs/queue.json not found", queue_path)
+        return {}  # pragma: no cover
+    try:
+        data = json.loads(queue_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        _die(f"invalid bugs/queue.json: {exc}", queue_path)
+        return {}  # pragma: no cover
+    items = data.get("queue", [])
+    if not isinstance(items, list):
+        _die("bugs/queue.json 'queue' field must be an array", queue_path)
+        return {}  # pragma: no cover
+
+    entry = next(
+        (e for e in items if isinstance(e, dict) and e.get("id") == bug_id), None
+    )
+    if entry is None:
+        _die(f"--unpin: bug not queued: {bug_id!r}", queue_path)
+        return {}  # pragma: no cover
+
+    # Byte-stable no-op when the bug carries no active pin fields at all.
+    if not any(
+        entry.get(k) is not None
+        for k in ("pinned_at", "pinned_until", "pin_reason")
+    ) and entry.get("severity") is not None:
+        return {
+            "id": bug_id, "unpinned": False, "noop": True,
+            "restored_severity": entry.get("severity"),
+            "new_position": items.index(entry), "queue_length": len(items),
+        }
+
+    # Restore severity from the SPEC's **Severity:** line (fallback: leave the
+    # existing severity as-is if the SPEC has none — never fabricate a rank).
+    spec_subdir = entry.get("spec_dir", bug_id)
+    spec_md = (bugs_dir / spec_subdir / "SPEC.md") if spec_subdir else None
+    restored = bug_severity(spec_md) if (spec_md and spec_md.exists()) else None
+    if restored is not None:
+        entry["severity"] = restored
+    for _pk in ("pinned_at", "pinned_until", "pin_reason"):
+        entry.pop(_pk, None)
+
+    new_position = lazy_core.reposition_by_priority(
+        items, bug_id, "bug", today=today
+    )
+    data["queue"] = items
+    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+    return {
+        "id": bug_id, "unpinned": True, "noop": False,
+        "restored_severity": entry.get("severity"),
+        "new_position": new_position, "queue_length": len(items),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Production sentinel writers (production-sentinel-writes-bypass-atomic-write:
 # these two used to sit BELOW the "SMOKE FIXTURES" banner below (a stale
@@ -7581,6 +7657,43 @@ def build_parser() -> argparse.ArgumentParser:
               "park_needs_input, SPEC D1) — else refused. Refused without "
               "--operator-authorized."),
     )
+    # no-sanctioned-cli-for-queue-state-mutations (coupled-pair mirror of
+    # lazy-state.py): operator-directed in-place bug-queue mutators — the
+    # sanctioned replacement for hand-editing bugs/queue.json. Each is
+    # refuse_if_cycle_active FIRST + requires --operator-authorized. --set-severity
+    # atomically RE-SORTS listed order to match the new merged priority (the
+    # load-bearing side effect); --unpin is the inverse of --pin.
+    parser.add_argument(
+        "--set-severity", dest="set_severity", nargs=2,
+        metavar=("ID", "SEVERITY"), default=None,
+        help=("Orchestrator-only, --operator-authorized: set bug ID's queue "
+              "severity to SEVERITY (P0/P1/P2/Low) and ATOMICALLY re-position it "
+              "in listed order to match its new merged priority — one write, never "
+              "a stale reorder. Clears any active pin (an explicit severity is the "
+              "inverse of a null-pin). refuse_if_cycle_active (exit 3 for a cycle "
+              "subagent). The promote/demote sibling of --pin."),
+    )
+    parser.add_argument(
+        "--unpin", dest="unpin", metavar="ID", default=None,
+        help=("Orchestrator-only, --operator-authorized: un-pin bug ID (the inverse "
+              "of --pin) — clear pinned_at/pinned_until/pin_reason, restore severity "
+              "from the SPEC's **Severity:** line, and re-position in listed order. "
+              "A not-pinned bug is a byte-stable no-op. refuse_if_cycle_active FIRST."),
+    )
+    parser.add_argument(
+        "--add-deps", dest="add_deps", metavar="ID", default=None,
+        help=("Orchestrator-only, --operator-authorized: add the --deps id list as "
+              "hard queue dependencies on bug ID (post-hoc, arbitrary — the non-SPEC "
+              "sibling of --sync-deps). Deduped; post-mutation cycle-guarded. "
+              "refuse_if_cycle_active FIRST. Coupled-pair mirror of lazy-state.py."),
+    )
+    parser.add_argument(
+        "--remove-deps", dest="remove_deps", metavar="ID", default=None,
+        help=("Orchestrator-only, --operator-authorized: remove the --deps id list "
+              "from bug ID's hard queue dependencies (empty result drops the deps "
+              "key). refuse_if_cycle_active FIRST. Coupled-pair mirror of "
+              "lazy-state.py."),
+    )
     parser.add_argument(
         "--record-intervention", dest="record_intervention",
         action="store_true",
@@ -8034,6 +8147,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     cli_surface.add_dump_cli_surface_flag(parser)
+    cli_surface.add_ops_query_flags(parser)
     return parser
 
 
@@ -8048,6 +8162,12 @@ def main() -> int:
     _dump = cli_surface.maybe_handle_dump_cli_surface(args, parser, "bug-state.py")
     if _dump is not None:
         return _dump
+
+    # no-sanctioned-cli-for-queue-state-mutations (parity with lazy-state.py):
+    # op-discoverability search — read-only, handled before any side effect.
+    _ops = cli_surface.maybe_handle_ops_query(args, parser, "bug-state.py")
+    if _ops is not None:
+        return _ops
 
     # multi-repo-concurrent-runs: bind the active repo ONCE so claude_state_dir()
     # scopes all run-scoped state to this repo's subdir (parity with lazy-state.py).
@@ -8789,6 +8909,60 @@ def main() -> int:
         result = pin_bug_severity(
             Path(args.repo_root), args.id,
             until=args.pin_until, reason=args.reason,
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.set_severity is not None:
+        # no-sanctioned-cli-for-queue-state-mutations (coupled-pair mirror of
+        # lazy-state.py --set-tier): operator-directed in-place severity change.
+        # Refuse FIRST (exit 3 for a cycle subagent), then require
+        # --operator-authorized. set_queue_priority ATOMICALLY re-sorts listed
+        # order to match the new merged priority in the SAME write.
+        lazy_core.refuse_if_cycle_active("--set-severity")
+        if not args.operator_authorized:
+            _die("--set-severity requires --operator-authorized (the operator must "
+                 "have approved the priority change).")
+        _id, _sev = args.set_severity
+        result = lazy_core.set_queue_priority(
+            Path(args.repo_root) / "docs" / "bugs" / "queue.json",
+            _id, "bug", _sev, queue_label="bugs/queue.json",
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.unpin is not None:
+        # no-sanctioned-cli-for-queue-state-mutations: the inverse of --pin.
+        # Same gate contract as --pin + operator-authorization.
+        lazy_core.refuse_if_cycle_active("--unpin")
+        if not args.operator_authorized:
+            _die("--unpin requires --operator-authorized.")
+        result = unpin_bug_severity(Path(args.repo_root), args.unpin)
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.add_deps or args.remove_deps:
+        # no-sanctioned-cli-for-queue-state-mutations (coupled-pair mirror of
+        # lazy-state.py): post-hoc arbitrary deps edit. Refuse FIRST + require
+        # --operator-authorized. --add-deps / --remove-deps are mutually exclusive.
+        lazy_core.refuse_if_cycle_active("--add-deps/--remove-deps")
+        if args.add_deps and args.remove_deps:
+            _die("--add-deps and --remove-deps are mutually exclusive (one op per call).")
+        if not args.operator_authorized:
+            _die("--add-deps/--remove-deps requires --operator-authorized.")
+        _target = args.add_deps or args.remove_deps
+        _dep_ids = (
+            [s.strip() for s in args.deps.split(",") if s.strip()]
+            if args.deps else None
+        )
+        if not _dep_ids:
+            _die("--add-deps/--remove-deps requires a non-empty --deps id list.")
+        result = lazy_core.mutate_queue_deps(
+            Path(args.repo_root) / "docs" / "bugs" / "queue.json",
+            _target,
+            add=(_dep_ids if args.add_deps else None),
+            remove=(_dep_ids if args.remove_deps else None),
+            queue_label="bugs/queue.json",
         )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0

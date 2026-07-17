@@ -482,6 +482,12 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "next_merged": "depdag",
     "pin_is_active": "depdag",
     "reorder_queue": "depdag",
+    # no-sanctioned-cli-for-queue-state-mutations: operator-directed in-place
+    # priority/dependency mutators (--set-severity/--set-tier/--add-deps/
+    # --remove-deps engines) + the atomic listed-order reposition.
+    "reposition_by_priority": "depdag",
+    "set_queue_priority": "depdag",
+    "mutate_queue_deps": "depdag",
     "skip_ahead_ready": "depdag",
     # Phase 5 WU-3: receipt writers, validation escalation, archive-on-fix, gate-coverage plane.
     "VALIDATION_ESCALATION_SUFFIX": "gates",

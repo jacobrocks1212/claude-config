@@ -36,6 +36,19 @@
           "choices": null,
           "default_kind": "none",
           "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: add the --deps id list as hard queue dependencies on bug ID (post-hoc, arbitrary \u2014 the non-SPEC sibling of --sync-deps).",
+          "metavar": "ID",
+          "name": "--add-deps",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
           "help_head": "Override date (YYYY-MM-DD) for --apply-pseudo writes.",
           "metavar": null,
           "name": "--apply-date",
@@ -437,6 +450,19 @@
           "choices": null,
           "default_kind": "const",
           "group": null,
+          "help_head": "List every CLI operation this script exposes as JSON ({name, usage, help_head}), then exit 0.",
+          "metavar": null,
+          "name": "--list-ops",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
           "help_head": "Read-only, never-throws: print {\"present\": bool} for the current repo's run marker (--repo-root, default cwd).",
           "metavar": null,
           "name": "--marker-status",
@@ -791,6 +817,19 @@
           "required": false
         },
         {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: remove the --deps id list from bug ID's hard queue dependencies (empty result drops the deps key).",
+          "metavar": "ID",
+          "name": "--remove-deps",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
           "action": "_StoreTrueAction",
           "aliases": [],
           "choices": null,
@@ -900,6 +939,19 @@
           "choices": null,
           "default_kind": "none",
           "group": null,
+          "help_head": "Search this script's CLI operations for a natural-language QUERY (e.g.",
+          "metavar": "QUERY",
+          "name": "--search-ops",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
           "help_head": "With --record-decision: the sentinel file path this answer resolves.",
           "metavar": "PATH",
           "name": "--sentinel",
@@ -962,6 +1014,22 @@
           "metavar": null,
           "name": "--set-park-provisional",
           "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: set bug ID's queue severity to SEVERITY (P0/P1/P2/Low) and ATOMICALLY re-position it in listed order to match its new merged priority \u2014 one write, never a...",
+          "metavar": [
+            "ID",
+            "SEVERITY"
+          ],
+          "name": "--set-severity",
+          "nargs": 2,
           "positional": false,
           "required": false
         },
@@ -1172,6 +1240,19 @@
           "metavar": null,
           "name": "--unattended",
           "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: un-pin bug ID (the inverse of --pin) \u2014 clear pinned_at/pinned_until/pin_reason, restore severity from the SPEC's **Severity:** line, and re-position in lis...",
+          "metavar": "ID",
+          "name": "--unpin",
+          "nargs": null,
           "positional": false,
           "required": false
         },
@@ -1535,6 +1616,19 @@
           "metavar": null,
           "name": "--ack-unhardened",
           "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: add the --deps id list as hard queue dependencies on feature ID (post-hoc, arbitrary \u2014 the non-SPEC sibling of --sync-deps).",
+          "metavar": "ID",
+          "name": "--add-deps",
+          "nargs": null,
           "positional": false,
           "required": false
         },
@@ -2013,6 +2107,19 @@
           "choices": null,
           "default_kind": "const",
           "group": null,
+          "help_head": "List every CLI operation this script exposes as JSON ({name, usage, help_head}), then exit 0.",
+          "metavar": null,
+          "name": "--list-ops",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
           "help_head": "Read-only: exit 0 if a live run marker is present for the current repo (--repo-root, default cwd), exit 1 if absent.",
           "metavar": null,
           "name": "--marker-present",
@@ -2393,6 +2500,19 @@
           "required": false
         },
         {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: remove the --deps id list from feature ID's hard queue dependencies (empty result drops the deps key).",
+          "metavar": "ID",
+          "name": "--remove-deps",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
           "action": "_StoreTrueAction",
           "aliases": [],
           "choices": null,
@@ -2502,6 +2622,19 @@
           "choices": null,
           "default_kind": "none",
           "group": null,
+          "help_head": "Search this script's CLI operations for a natural-language QUERY (e.g.",
+          "metavar": "QUERY",
+          "name": "--search-ops",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
           "help_head": "With --record-decision: the sentinel file path this answer resolves.",
           "metavar": "PATH",
           "name": "--sentinel",
@@ -2564,6 +2697,22 @@
           "metavar": null,
           "name": "--set-park-provisional",
           "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: set feature ID's queue tier to TIER (int; lower = higher priority) and ATOMICALLY re-position it in listed order to match its new merged priority \u2014 one wri...",
+          "metavar": [
+            "ID",
+            "TIER"
+          ],
+          "name": "--set-tier",
+          "nargs": 2,
           "positional": false,
           "required": false
         },
