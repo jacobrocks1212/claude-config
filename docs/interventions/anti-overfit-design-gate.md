@@ -35,7 +35,7 @@ canary:
   - '9243257'
   pair_scope: []
   degraded_revert_note: null
-  status: open
+  status: closed-clean
 ---
 
 # Intervention: anti-overfit-design-gate
@@ -45,3 +45,11 @@ Hypothesis: shipping `anti-overfit-design-gate` (feature pipeline) moves `kpi:an
 Signal independence: independent — gate-weakening incidents reaching `main` unreviewed are produced by `intervention-efficacy-tracking` REFUTED verdicts and `/lazy-batch-retro` findings, NOT by the gate itself. The gate cannot suppress its own target signal (a change the gate wrongly passed that efficacy later REFUTES indicts the gate's verdict — the definition of a signal it does not control).
 
 Reviews are appended below by `user/scripts/efficacy-eval.py` (`## Review <date>` sections). Do not hand-edit the frontmatter — the evaluator is its sole post-capture writer.
+
+## Canary 2026-07-17
+
+- window: closed after 10/10 observed post-ship run(s) (matured: True)
+- signal movement: band-not-evaluable (target kpi)
+- incidents attributed: none
+- unattributed in-window incidents: 32 (listed, never counted)
+- handoff: the efficacy review proceeds on its own longer cadence — a clean canary does NOT pre-judge the efficacy verdict, and the watcher stops waking this record.

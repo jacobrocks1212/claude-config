@@ -34,7 +34,7 @@
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
 | Canary trip precision | 100% (90d) | pending | — | PENDING-BASELINE |
-| Canary closure latency p50 | 7 (90d) | pending | — | PENDING-BASELINE |
+| Canary closure latency p50 | 5 (90d) | pending | — | PENDING-BASELINE |
 
 ## skill-config
 
@@ -62,8 +62,8 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Age in days of the oldest open docs/bugs/ item `[claude-config]` | 16 (1d) | 17 (measured 2026-07-11) | — | PENDING-BASELINE |
-| Count of docs/bugs/ items at Status: Concluded (investigated, never fixed) `[claude-config]` | 30 (1d) | 23 (measured 2026-07-11) | — | PENDING-BASELINE |
+| Age in days of the oldest open docs/bugs/ item `[claude-config]` | 17 (1d) | 17 (measured 2026-07-11) | — | PENDING-BASELINE |
+| Count of docs/bugs/ items at Status: Concluded (investigated, never fixed) `[claude-config]` | 41 (1d) | 23 (measured 2026-07-11) | — | PENDING-BASELINE |
 
 ## lazy-core
 
@@ -88,7 +88,7 @@
 
 ## Canary health
 
-- 28 canaries open, oldest 5d, 0 will no-data-close within 7d
+- 9 canaries open, oldest 1d, 0 will no-data-close within 7d
 
 ## Notes
 
