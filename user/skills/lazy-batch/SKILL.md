@@ -375,7 +375,7 @@ If `--run-start` fails (script error), surface a T6 `⚠` and STOP before printi
 >   `--bug-id` scoping); the type-correct terminal action is `__mark_fixed__` (writes `FIXED.md`).
 >
 > The merged view normalizes the two queues' divergent ordering fields (feature `tier` int / bug
-> `severity` P0..Low) onto one effective-priority scale and breaks ties bug-before-feature — but that
+> `severity` P0..Low) onto one effective-priority scale and breaks ties feature-before-bug (with the rank-1 bug age-escalation floor, only a genuine P0 bug precedes a P1 feature) — but that
 > ordering lives ENTIRELY in `lazy_core.merged_priority` (Phase 1), NOT in this prose: the driver only
 > CONSUMES the merged head, it never re-implements ordering. Both state machines and all gates run
 > UNCHANGED — this skill carries NO new state-machine logic; the merged probe is the only addition.
@@ -394,6 +394,18 @@ If `--run-start` fails (script error), surface a T6 `⚠` and STOP before printi
 > `__mark_complete__` everywhere in the cycle body; the dispatch SHAPE is otherwise identical (this is
 > the same coupling `/lazy-bug-batch` already documents). See the **State Machine Summary** at the
 > bottom of this skill for the per-type dispatch table.
+>
+> **Research-gated head surfacing (research-gated-head-buried-by-skip-ahead-and-merged-fallthrough).**
+> The default-on skip-ahead advances past a **BLOCKED** gated head to find independent ready work, but
+> a **research-pending** head (RESEARCH_PROMPT.md, no RESEARCH.md — operator-resolvable in seconds) is
+> handled distinctly: when a feature `--emit-prompt` probe realized a skip past a research-gated head
+> that OUTRANKS (full merged ordering) the item the driver would otherwise dispatch, the probe re-emits
+> as that head's `terminal_reason: needs-research` (with `route_overridden_by: research-gated-head`),
+> so a feature probe can return a `needs-research` terminal for a DIFFERENT head than `--next-merged`
+> named. Handle it via the normal **Step 4 (research halt)** — no special-casing (the terminal drives
+> the route). A research head that is genuinely LOWER-priority than independent ready work is NOT
+> surfaced (skip-ahead proceeds as before — no over-halt). `--strict-research-halt` still halts on the
+> first gated head regardless.
 
 Repeat:
 
@@ -1544,7 +1556,7 @@ This protocol is read by Claude on the turn AFTER the halt, with the halted `/la
 | `feature` | `lazy-state.py` | `docs/features/` (SPEC/PHASES/plans/sentinels) | `__mark_complete__` | `COMPLETED.md` |
 | `bug` | `bug-state.py` | `docs/bugs/` (`--bug-id` scoping) | `__mark_fixed__` | `FIXED.md` |
 
-- **Ordering is script-owned.** The merged head is ordered by `lazy_core.merged_priority` (feature `tier` / bug `severity` normalized to one scale; equal priority → bug before feature). This skill never re-implements ordering — it consumes the head only.
+- **Ordering is script-owned.** The merged head is ordered by `lazy_core.merged_priority` (feature `tier` / bug `severity` normalized to one scale; equal priority → feature before bug, so only a genuine P0 bug precedes a P1 feature). This skill never re-implements ordering — it consumes the head only.
 - **No new state-machine logic in the skill.** Both `lazy-state.py` and `bug-state.py` run their existing state machines + gates unchanged; the merged probe is the sole addition. The Step 1c.5 pseudo-skill handlers, all resolution modes (1f–1i), and the gate suite are type-agnostic in shape (only the state script + terminal name differ by type).
 - **No-regression.** A single-type queue (features-only OR bugs-only) drives the same cycle sequence as the pre-unification per-type batch — the merged head is just that queue's head. Asserted by `lazy_parity_audit.py` (`audit_merged_view_dispatch_parity`) + a single-type fixture.
 - **Coupled pair.** `/lazy-batch` ↔ `/lazy-batch-cloud` mirror this merged-view dispatch shape (cloud passes `--cloud`); `/lazy-bug-batch` remains for standalone single-type bug runs and cross-references this unified driver. See CLAUDE.md → Coupled Skill Pairs.

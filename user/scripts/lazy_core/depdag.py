@@ -757,9 +757,16 @@ _MERGED_SEVERITY_RANK: dict[str, int] = {"P0": 0, "P1": 1, "P2": 2, "Low": 3}
 # Named tier enums map onto the SAME integer scale as bug severity (lower = higher
 # priority) so a feature and a bug are directly comparable in the merged worklist.
 #
-# LOAD-BEARING ORDERING (operator-specified): `pre-release` == 1 == P1, so a P0 bug
-# (rank 0) is still addressed BEFORE a pre-release feature (1), which is addressed
-# before a P2 bug (2):  merged_priority(P0 bug)=0 < pre-release feature=1 < P2 bug=2.
+# LOAD-BEARING ORDERING (operator-specified): `pre-release` == 1 == P1, so the SCALAR
+# effective priorities are merged_priority(P0 bug)=0 < pre-release feature=1 < P2 bug=2.
+#
+# TIE-BREAK RULE (operator-directed 2026-07-17, "I only want P0 bugs to sort ahead of
+# P1 features" — docs/bugs/non-p0-bug-outranks-p1-feature-on-aged-tie): at an EQUAL
+# effective rank the FEATURE is worked first (see `_MERGED_TYPE_ORDER` below). Combined
+# with the age-escalation floor (`_AGE_ESCALATION_FLOOR_RANK = 1`, so no aged bug ever
+# reaches rank 0), this means ONLY a strictly-lower-rank bug — a genuine P0 (rank 0) —
+# precedes a P1 (pre-release, rank 1) feature; an aged non-P0 bug that reaches rank-1
+# P1-equivalent sorts BEHIND the P1 feature.
 #
 # `pre-release = 1` is operator-LOCKED. The remaining named-enum values are a
 # RECOMMENDED PROVISIONAL mapping surfaced for operator ratification (see
@@ -805,8 +812,13 @@ def _resolve_feature_tier_element(value) -> "int | None":
         except (ValueError, AttributeError):
             return None
     return None
-# Tie-break on equal effective priority: bugs sort before features.
-_MERGED_TYPE_ORDER: dict[str, int] = {"bug": 0, "feature": 1}
+# Tie-break on equal effective priority: FEATURES sort before bugs (operator-directed
+# 2026-07-17 — docs/bugs/non-p0-bug-outranks-p1-feature-on-aged-tie). Because the bug
+# age-escalation floor is rank 1 (no aged bug reaches rank 0), a feature winning the
+# equal-rank tie means ONLY a genuine P0 bug (strictly rank 0) precedes a P1 feature —
+# exactly "I only want P0 bugs to sort ahead of P1 features". (Was {"bug": 0,
+# "feature": 1} — bugs-before-features — until this directive.)
+_MERGED_TYPE_ORDER: dict[str, int] = {"feature": 0, "bug": 1}
 
 # ---------------------------------------------------------------------------
 # bug-queue-aging-backpressure D1-A/D2-A/D3-A: age-escalation + severity-pin
@@ -1341,12 +1353,13 @@ def merged_worklist(
       1. Effective priority ascending (``merged_priority`` — lower = higher
          priority; feature ``tier`` and bug ``severity`` normalized to one
          scale).
-      2. Tie on equal priority → ``type == "bug"`` before ``type ==
-         "feature"``.
+      2. Tie on equal priority → ``type == "feature"`` before ``type ==
+         "bug"`` (operator-directed 2026-07-17; with the rank-1 age floor this
+         means only a genuine P0 bug precedes a P1 feature — see
+         ``_MERGED_TYPE_ORDER``).
       3. Stable for equal (priority, type): each queue's own listed order is
-         preserved (Python's sort is stable, and we seed the input in
-         bug-then-feature, queue-listed order before sorting on (priority,
-         type-rank) only).
+         preserved (Python's sort is stable, and the (priority, type-rank, seq)
+         key preserves each queue's listed order within a type).
 
     Each input item is expected to carry an id field. Feature loader items use
     ``id``; bug loader items use ``id`` as well. Items missing an id are
@@ -1364,10 +1377,10 @@ def merged_worklist(
     exclude = exclude_ids or frozenset()
     annotated: list[tuple[int, int, int, dict]] = []
     seq = 0
-    # Seed bugs first then features so that, at equal (priority, type-rank),
-    # the stable sort preserves bug-before-feature AND each queue's listed
-    # order. The (priority, type_rank) sort key alone + stable sort + this seed
-    # order yields the full contract.
+    # Seed bugs then features; the cross-type equal-rank tie is decided by the
+    # (priority, type_rank) key — with _MERGED_TYPE_ORDER feature(0) < bug(1) a
+    # feature sorts before a bug at equal priority — and the stable sort + seq
+    # tie-breaker preserves each queue's listed order WITHIN a type.
     for raw in bug_items:
         item_id = raw.get("id")
         if not item_id or item_id in exclude:

@@ -9392,6 +9392,15 @@ def main() -> int:
                 _mo_skipped = lazy_core.dispatch.probe_skipped_ids(state, _mo_bugs)
                 _mo_excluded = set(_mo_excluded) | _mo_skipped
                 _mo_excluded.discard(state.get("feature_id"))
+                # research-gated-head-buried-by-skip-ahead-and-merged-fallthrough:
+                # the research-halt surfacing (lazy_core.dispatch.research_halt_head)
+                # is a FEATURE-pipeline mechanic — the bug pipeline has no research
+                # gate (parity with the strict_research_halt PARITY-ONLY asymmetry
+                # above), so there is nothing to surface here. After the
+                # non-p0-bug-outranks-p1-feature-on-aged-tie tie-break, a bug reaches
+                # the merged head over a P1 research feature ONLY when it is a genuine
+                # P0 — which legitimately precedes a P1 research gap — so the bug side
+                # correctly needs no research-halt surfacing (documented parity).
                 _merged_override = lazy_core.dispatch.merged_head_override(
                     _mo_feats,
                     _mo_bugs,

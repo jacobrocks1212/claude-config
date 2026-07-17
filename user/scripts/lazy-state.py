@@ -186,6 +186,14 @@ def _state(
     # end-of-run gated-head flush.
     if _GATED_HEADS:
         out["gated_heads"] = list(_GATED_HEADS)
+    # research-gated-head-buried-by-skip-ahead-and-merged-fallthrough: the
+    # RESEARCH-pending subset of the skipped gated heads (a subset of gated_heads
+    # above). Same absent-when-empty discipline so default output stays
+    # byte-identical; the --emit-prompt merged-head path reads it (via
+    # lazy_core.dispatch.research_halt_head) to surface a needs-research halt when
+    # a research head outranks the fallthrough the driver would otherwise dispatch.
+    if _RESEARCH_GATED_HEADS:
+        out["research_gated_heads"] = list(_RESEARCH_GATED_HEADS)
     # queue-dependency-dag Phase 2 (D10): the items the dep-gate HELD this
     # probe — [{id, missing: [<incomplete dep ids>]}] — are ONLY surfaced when
     # the walk held at least one item (_DEP_GATED non-empty). When empty the
@@ -290,6 +298,16 @@ _BUDGET_GUARD: dict | None = None
 # absent from default output (no gated head / --strict-research-halt) so byte-
 # identity with the pre-Phase-3 baseline is preserved.
 _GATED_HEADS: list = []
+
+# research-gated-head-buried-by-skip-ahead-and-merged-fallthrough: the RESEARCH-
+# pending subset of _GATED_HEADS (heads carrying RESEARCH_PROMPT.md / NEEDS_RESEARCH.md
+# with no RESEARCH*.md — NOT BLOCKED heads). Surfaced as the "research_gated_heads"
+# probe key so the --emit-prompt merged-head path can distinguish an operator-
+# resolvable research gap (which must SURFACE a needs-research halt when it outranks
+# the fallthrough target) from a BLOCKED head (which legitimately skips-ahead to
+# independent ready work). Reset + cleared in lockstep with _GATED_HEADS; the key is
+# absent when empty (byte-identity with the pre-fix baseline).
+_RESEARCH_GATED_HEADS: list = []
 
 # budget-guard-defers-near-complete-feature Phase 3: the feature_id the end-of-run
 # resume flush auto-resumed this probe (None when the flush did not resume one →
@@ -1675,7 +1693,7 @@ def compute_state(
     # Park mode: set the module global from the param so _state() can gate
     # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
     global _PARK_MODE, _PARKED, _DEFERRED_BUDGET, _BUDGET_GUARD, _GATED_HEADS
-    global _BUDGET_RESUMED, _DEP_GATED, _PROVISIONAL
+    global _BUDGET_RESUMED, _DEP_GATED, _PROVISIONAL, _RESEARCH_GATED_HEADS
     _PARK_MODE = park_needs_input or park_blocked
     _PARKED.clear()
     # park-provisional-acceptance: park_provisional is a strict modifier of
@@ -1698,6 +1716,9 @@ def compute_state(
     # feature-budget-guard-and-skip-ahead Phase 3: reset the skip-ahead gated-head
     # surfaced list for this invocation.
     _GATED_HEADS = []
+    # research-gated-head-buried-by-skip-ahead-and-merged-fallthrough: reset the
+    # research-pending subset in lockstep with _GATED_HEADS.
+    _RESEARCH_GATED_HEADS = []
     # budget-guard-defers-near-complete-feature Phase 3: reset the end-of-run
     # resume-flush surfaced feature_id for this invocation.
     _BUDGET_RESUMED = None
@@ -1815,7 +1836,16 @@ def compute_state(
     # branch uses, plus BLOCKED. Cheap filesystem read; no per-feature state
     # machine. Used by the skip-ahead branch below (default-on; --strict-research-
     # halt disables it).
-    def _is_gated_head(sp: Path) -> bool:
+    def _gated_head_kind(sp: Path) -> "str | None":
+        # research-gated-head-buried-by-skip-ahead-and-merged-fallthrough:
+        # classify a gated head as 'research' (operator-resolvable research gap),
+        # 'blocked' (canonical BLOCKED.md — external gate / host), or None (not
+        # gated). Research-pending takes PRECEDENCE when a head carries BOTH a
+        # research prompt and a BLOCKED.md — aligning with the Step-1h
+        # research-blocked carve-out (a research gap is filled by a Gemini upload,
+        # not a corrective phase). The gated-vs-not verdict is unchanged from the
+        # old _is_gated_head boolean (research_pending OR BLOCKED); this only adds
+        # the KIND so the merged-head path can surface research heads distinctly.
         needs_research_file = sp / "NEEDS_RESEARCH.md"
         research_prompt = sp / "RESEARCH_PROMPT.md"
         research = sp / "RESEARCH.md"
@@ -1828,7 +1858,11 @@ def compute_state(
                 and not research_summary.exists()
             )
         )
-        return research_pending or (sp / "BLOCKED.md").exists()
+        if research_pending:
+            return "research"
+        if (sp / "BLOCKED.md").exists():
+            return "blocked"
+        return None
 
     # host-capability-declaration-for-gated-features Phase 5: lazily-resolved
     # host present-capability set. Injected (host_present is not None) ⇒ used as-is
@@ -2627,9 +2661,15 @@ def compute_state(
         #       strict halt for that item) — recorded in skip_ahead_blocked and
         #       skipped. A candidate that PASSES dispatches normally below.
         if not strict_research_halt:
-            if _is_gated_head(spec_path):
+            _gk = _gated_head_kind(spec_path)
+            if _gk is not None:
                 gated_ids.add(feature_id)
                 _GATED_HEADS.append(feature_id)
+                # research-gated-head-buried-by-skip-ahead-and-merged-fallthrough:
+                # track the research-pending subset so the merged-head path can
+                # surface it distinctly from a BLOCKED head.
+                if _gk == "research":
+                    _RESEARCH_GATED_HEADS.append(feature_id)
                 # Remember the FIRST gated head as a fallback dispatch target. If
                 # the loop exhausts with NO skip-ahead-ready candidate found (e.g.
                 # a single-item queue, or every other item is downstream/unmarked),
@@ -2715,6 +2755,12 @@ def compute_state(
     if current is None and gated_head_fallback is not None:
         current = gated_head_fallback
         _GATED_HEADS = []
+        # research-gated-head-buried-by-skip-ahead-and-merged-fallthrough: the
+        # skip was NOT realized (the gated head IS the dispatched item → its
+        # Step-5 needs-research / Step-3 blocked terminal fires directly), so
+        # clear the research subset in lockstep — no research-halt surfacing is
+        # needed when the research head is already the dispatched current item.
+        _RESEARCH_GATED_HEADS = []
         gated_ids = set()
         _diag(
             f"skip-ahead: no skip-ahead-ready alternative to gated head "
@@ -11880,7 +11926,8 @@ def build_parser() -> argparse.ArgumentParser:
     # unified-pipeline-orchestrator Phase 1: merged work-list view. Reads BOTH
     # docs/features/queue.json and docs/bugs/queue.json (via the existing
     # loaders), orders them (priority desc / lower-tier-or-severity first; tie →
-    # bug before feature; stable within each queue), and prints the next
+    # feature before bug — only a genuine P0 bug precedes a P1 feature; stable
+    # within each queue), and prints the next
     # actionable head as JSON {item_id, type, repo_root}. Read-only ordering
     # ONLY — never re-infers per-item state. Empty on both queues → null.
     parser.add_argument("--next-merged", action="store_true",
@@ -12252,7 +12299,8 @@ def main() -> int:
     # load_queue for features; bug-state.py's load_bug_queue for bugs, imported
     # via importlib because the filename is hyphenated) and the lazy_core
     # ordering helper (priority normalized across the two queues' divergent
-    # tier/severity fields; bug breaks ties; stable within each queue). Pure
+    # tier/severity fields; feature breaks ties so only a genuine P0 bug precedes
+    # a P1 feature; stable within each queue). Pure
     # ordering — it NEVER calls compute_state / re-infers per-item state. The
     # active repo was bound above, so repo_root in the output is the resolved
     # active repo. Prints JSON {item_id, type, repo_root} or null; exits like
@@ -13531,6 +13579,60 @@ def main() -> int:
         per_feature_cycle_cap=args.per_feature_cycle_cap,
         strict_research_halt=args.strict_research_halt,
     )
+    # research-gated-head-buried-by-skip-ahead-and-merged-fallthrough: when THIS
+    # dispatch-bound probe (--emit-prompt) REALIZED a skip PAST a research-pending
+    # gated head and that head OUTRANKS (full merged ordering incl. the type
+    # tie-break) the item the driver would otherwise dispatch — a lower-priority
+    # bug or feature the Round-64 merged fallthrough would route to — re-emit as
+    # that head's SCOPED needs-research terminal so the driver's EXISTING
+    # needs-research (Step 4) halt SURFACES the research prompt instead of burying
+    # it. A research gap is operator-resolvable in seconds; a BLOCKED head is not,
+    # so BLOCKED heads keep skipping-ahead to independent ready work (unchanged).
+    # Loop-free: the scoped re-run lands on the head's own Step-5 needs-research
+    # terminal (no re-dispatch, no stall). Feature-pipeline only + marker-gated +
+    # fail-safe (any error → keep the original state; never fabricate a halt).
+    if args.emit_prompt and _park_marker is not None and state.get("research_gated_heads"):
+        _rh_head = None
+        try:
+            _rh_repo = Path(args.repo_root)
+            _rh_feats = load_queue(_rh_repo)
+            _rh_bugs = _load_bug_queue_for_merged(_rh_repo)
+            _rh_excluded = lazy_core.nondispatchable_item_ids(
+                _rh_feats, _rh_bugs, str(_rh_repo),
+                park_needs_input=_eff_park_ni, park_blocked=_eff_park_bl,
+                park_provisional=_eff_park_pv,
+            )
+            _rh_excluded = set(_rh_excluded) | lazy_core.dispatch.probe_skipped_ids(
+                state, _rh_feats
+            )
+            _rh_excluded.discard(state.get("feature_id"))
+            _rh_head = lazy_core.dispatch.research_halt_head(
+                state, _rh_feats, _rh_bugs, str(lazy_core.active_repo_root()),
+                exclude_ids=_rh_excluded,
+            )
+        except Exception:  # noqa: BLE001 — detection must never break the base probe
+            _rh_head = None
+        if _rh_head is not None:
+            try:
+                _rh_state = compute_state(
+                    Path(args.repo_root),
+                    cloud=args.cloud,
+                    skip_needs_research=args.skip_needs_research,
+                    real_device=resolve_real_device(args.real_device),
+                    scope_feature_id=_rh_head,
+                    park_needs_input=_eff_park_ni,
+                    park_blocked=_eff_park_bl,
+                    park_provisional=_eff_park_pv,
+                    per_feature_cycle_cap=args.per_feature_cycle_cap,
+                    strict_research_halt=True,
+                )
+            except Exception:  # noqa: BLE001 — fail toward the original state
+                _rh_state = None
+            # Adopt the scoped terminal ONLY when it is actually the needs-research
+            # halt (fail-safe: never manufacture a halt from a mis-scoped re-run).
+            if _rh_state is not None and _rh_state.get("terminal_reason") == "needs-research":
+                _rh_state["route_overridden_by"] = "research-gated-head"
+                state = _rh_state
     # Surface the effective park state on the probe JSON when a marker is present
     # (byte-identical no-marker output preserved) so the orchestrator can confirm
     # a --set-park toggle took effect mid-run.

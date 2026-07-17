@@ -4618,14 +4618,40 @@ def test_merged_worklist_both_populated_ordered_by_priority():
 
 
 
-def test_merged_worklist_bug_breaks_tie_at_equal_priority():
-    """WU-1: equal effective priority → bug sorts before feature."""
+def test_merged_worklist_feature_breaks_tie_only_p0_bug_precedes_p1_feature():
+    """non-p0-bug-outranks-p1-feature-on-aged-tie (operator-directed 2026-07-17,
+    "I only want P0 bugs to sort ahead of P1 features"): at an EQUAL effective
+    rank the FEATURE sorts before the bug. Combined with the rank-1 age floor,
+    only a genuine P0 bug (strictly rank 0) precedes a P1 feature."""
     _guard()
-    # feature tier 1 (priority 1) vs bug P1 (rank 1) — equal → bug first.
+    # feature tier 1 (priority 1) vs bug P1 (rank 1) — equal → FEATURE first now.
     feats = [{"id": "feat-a", "tier": 1}]
     bugs = [{"id": "bug-a", "severity": "P1"}]
     head = lazy_core.next_merged(feats, bugs, "/r")
-    assert head == {"item_id": "bug-a", "type": "bug", "repo_root": "/r"}, head
+    assert head == {"item_id": "feat-a", "type": "feature", "repo_root": "/r"}, head
+    # A genuine P0 bug STILL precedes the P1 feature (strictly lower rank).
+    p0 = lazy_core.next_merged(feats, [{"id": "bug-p0", "severity": "P0"}], "/r")
+    assert p0 == {"item_id": "bug-p0", "type": "bug", "repo_root": "/r"}, p0
+
+
+def test_merged_worklist_aged_p2_bug_sorts_behind_p1_feature():
+    """non-p0-bug-outranks-p1-feature-on-aged-tie regression (the exact live
+    2026-07-17 friction): a P2 bug age-escalated to rank-1 P1-equivalent MUST
+    sort BEHIND a P1 (pre-release) feature; a genuine P0 bug still precedes it."""
+    import datetime
+    _guard()
+    today = datetime.date(2026, 7, 17)
+    # P2 bug discovered 8 days ago → age_escalated_rank(2, ...) == 1 (rank-1).
+    assert lazy_core.age_escalated_rank(2, "2026-07-09", today=today) == 1
+    feats = [{"id": "hydra-overlay", "tier": ["non-audio", "pre-release"]}]  # P1
+    aged_p2 = [{"id": "protocol-generic-claims-drift", "severity": "P2",
+                "discovered": "2026-07-09"}]
+    head = lazy_core.next_merged(feats, aged_p2, "/r", today=today)
+    assert head == {"item_id": "hydra-overlay", "type": "feature",
+                    "repo_root": "/r"}, head
+    # But a genuine P0 bug outranks the same P1 feature.
+    p0 = [{"id": "p0-bug", "severity": "P0"}]
+    assert lazy_core.next_merged(feats, p0, "/r", today=today)["type"] == "bug"
 
 
 
@@ -4758,14 +4784,22 @@ def _emit_prompt_subprocess(fixture_repo, state_dir, extra_args=None):
 
 
 def _write_feature(features_dir, fid, *, tier, status="Draft", independent=False,
-                   blocked=False, phases_body=None):
-    """Seed a feature spec dir + queue entry fields; returns the queue entry."""
+                   blocked=False, phases_body=None, research_gated=False):
+    """Seed a feature spec dir + queue entry fields; returns the queue entry.
+
+    ``research_gated=True`` seeds a RESEARCH_PROMPT.md with NO RESEARCH.md /
+    RESEARCH_SUMMARY.md (the needs-research-pending shape) instead of the
+    research-complete shape — used by the research-halt surfacing tests."""
     fdir = features_dir / fid
     fdir.mkdir(parents=True, exist_ok=True)
     (fdir / "SPEC.md").write_text(
         f"# Spec\n\n**Status:** {status}\n\n**Depends on:** (none)\n", encoding="utf-8")
-    (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
-    (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+    if research_gated:
+        # Research-pending: a prompt exists but no results → Step-5 needs-research.
+        (fdir / "RESEARCH_PROMPT.md").write_text("# Research prompt\n", encoding="utf-8")
+    else:
+        (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
     (fdir / "PHASES.md").write_text(
         phases_body or "# Phases\n\n### Phase 1\n- [ ] Build\n- [ ] Tests\n",
         encoding="utf-8")
@@ -4893,6 +4927,96 @@ def test_subprocess_emit_prompt_single_type_workable_head_unchanged():
         assert sj.get("cycle_prompt"), "a workable single-type head must emit a cycle_prompt"
         assert "gated_heads" not in sj, (
             f"no skip should have happened; got gated_heads={sj.get('gated_heads')!r}")
+
+
+def test_research_halt_head_surfaces_when_research_head_outranks_bug():
+    """research-gated-head-buried-by-skip-ahead-and-merged-fallthrough: a P1
+    research-gated head the probe skipped that OUTRANKS the fallthrough (a lower
+    P2 bug + a lower feature the probe dispatched) is returned → surface. The
+    exclude_ids fed in are exactly what the emit handler builds (nondispatchable ∪
+    probe_skipped_ids incl. the research head, current dispatch target removed)."""
+    _guard()
+    feats = [
+        {"id": "inspector", "tier": "pre-release"},  # P1 research-gated, skipped
+        {"id": "hydra", "tier": 3},                  # dispatched alternative
+    ]
+    bugs = [{"id": "drift", "severity": "P2"}]        # the merged fallthrough target
+    state = {"feature_id": "hydra", "research_gated_heads": ["inspector"]}
+    # exclude = probe_skipped_ids folds the research head in (Round-64 behavior).
+    got = lazy_core.dispatch.research_halt_head(
+        state, feats, bugs, "/r", exclude_ids={"inspector"}
+    )
+    assert got == "inspector", got
+
+
+def test_research_halt_head_none_when_ready_work_outranks_research_head():
+    """No over-halt (the task's explicit bound): when the research head is LOWER
+    priority than genuinely-independent ready work, the research-inclusive merged
+    head is that ready item — not the research head — so None is returned and
+    skip-ahead proceeds unchanged."""
+    _guard()
+    feats = [
+        {"id": "ready", "tier": 1},                  # P1 ready feature (dispatched)
+        {"id": "low-research", "tier": 5},           # lower-priority research head
+    ]
+    state = {"feature_id": "ready", "research_gated_heads": ["low-research"]}
+    got = lazy_core.dispatch.research_halt_head(
+        state, feats, [], "/r", exclude_ids={"low-research"}
+    )
+    assert got is None, got
+    # No research_gated_heads at all → None (byte-identical common path).
+    assert lazy_core.dispatch.research_halt_head(
+        {"feature_id": "x"}, feats, [], "/r", exclude_ids=set()) is None
+    # A BLOCKED (non-research) skipped head is NOT surfaced (only research is).
+    assert lazy_core.dispatch.research_halt_head(
+        {"feature_id": "ready", "gated_heads": ["blocked-head"]},
+        feats, [], "/r", exclude_ids={"blocked-head"}) is None
+
+
+def test_subprocess_emit_prompt_surfaces_needs_research_over_lower_bug():
+    """research-gated-head-buried-by-skip-ahead-and-merged-fallthrough (end-to-end,
+    the exact live 2026-07-17 friction): a P1 (pre-release) research-gated feature
+    at the queue head + an independent lower feature (realizes the skip) + a
+    lower-priority P2 bug. The probe MUST surface terminal_reason='needs-research'
+    for the research head instead of routing to the lower bug/feature. RED
+    (pre-fix): route_overridden_by='merged-head-diverged' to the bug (or a
+    cycle_prompt for the lower feature) with NO research halt."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = td_path / "fixture-repo"
+        features = fixture_repo / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        research = _write_feature(
+            features, "inspector-sample-clip-view", tier="pre-release",
+            research_gated=True)
+        workable = _write_feature(features, "hydra-overlay", tier=3, independent=True)
+        (features / "queue.json").write_text(
+            json.dumps({"queue": [research, workable]}), encoding="utf-8")
+        bugs_dir = fixture_repo / "docs" / "bugs"
+        bug_dir = bugs_dir / "protocol-generic-claims-drift"
+        bug_dir.mkdir(parents=True)
+        (bug_dir / "SPEC.md").write_text(
+            "# Bug\n\n**Severity:** P2\n**Status:** Concluded\n", encoding="utf-8")
+        (bugs_dir / "queue.json").write_text(
+            json.dumps({"queue": [{
+                "id": "protocol-generic-claims-drift", "name": "Drift",
+                "spec_dir": "protocol-generic-claims-drift", "severity": "P2"}]}),
+            encoding="utf-8")
+
+        state_dir = td_path / "lazy-state-dir"; state_dir.mkdir()
+        _seed_marker_for(fixture_repo, state_dir)
+        sj = _emit_prompt_subprocess(fixture_repo, state_dir)
+
+        assert sj.get("terminal_reason") == "needs-research", (
+            f"a research-gated P1 head outranking the fallthrough must SURFACE a "
+            f"needs-research halt; got terminal_reason={sj.get('terminal_reason')!r} "
+            f"feature_id={sj.get('feature_id')!r} "
+            f"route_overridden_by={sj.get('route_overridden_by')!r}")
+        assert sj.get("feature_id") == "inspector-sample-clip-view", sj.get("feature_id")
+        assert sj.get("route_overridden_by") == "research-gated-head", (
+            sj.get("route_overridden_by"))
 
 
 def test_spec_dir_would_park_predicate():
@@ -5150,11 +5274,12 @@ def test_merged_worklist_stable_within_queue_for_equal_keys():
     _guard()
     feats = [{"id": "f-first", "tier": 2}, {"id": "f-second", "tier": 2}]
     bugs = [{"id": "b-first", "severity": "P2"}, {"id": "b-second", "severity": "P2"}]
-    # All effective priority 2; bugs (type-rank 0) precede features (type-rank 1),
-    # and within each type listed order is preserved.
+    # All effective priority 2; features (type-rank 0) precede bugs (type-rank 1)
+    # after the 2026-07-17 tie-break flip, and within each type listed order is
+    # preserved (non-p0-bug-outranks-p1-feature-on-aged-tie).
     wl = lazy_core.merged_worklist(feats, bugs, "/r")
     assert [e["item_id"] for e in wl] == [
-        "b-first", "b-second", "f-first", "f-second"
+        "f-first", "f-second", "b-first", "b-second"
     ], [e["item_id"] for e in wl]
 
 
@@ -6141,7 +6266,8 @@ _TESTS = [
     ("test_merged_priority_feature_multi_enum_takes_min", test_merged_priority_feature_multi_enum_takes_min),
     ("test_merged_priority_prerelease_ordering_p0_before_prerelease_before_p2", test_merged_priority_prerelease_ordering_p0_before_prerelease_before_p2),
     ("test_merged_worklist_both_populated_ordered_by_priority", test_merged_worklist_both_populated_ordered_by_priority),
-    ("test_merged_worklist_bug_breaks_tie_at_equal_priority", test_merged_worklist_bug_breaks_tie_at_equal_priority),
+    ("test_merged_worklist_feature_breaks_tie_only_p0_bug_precedes_p1_feature", test_merged_worklist_feature_breaks_tie_only_p0_bug_precedes_p1_feature),
+    ("test_merged_worklist_aged_p2_bug_sorts_behind_p1_feature", test_merged_worklist_aged_p2_bug_sorts_behind_p1_feature),
     ("test_merged_head_override_diverges_when_p0_bug_outranks_current_feature", test_merged_head_override_diverges_when_p0_bug_outranks_current_feature),
     ("test_merged_head_override_diverges_when_higher_sev_bug_jumps_head", test_merged_head_override_diverges_when_higher_sev_bug_jumps_head),
     ("test_merged_head_override_none_when_head_is_current_item", test_merged_head_override_none_when_head_is_current_item),
@@ -6159,6 +6285,9 @@ _TESTS = [
     ("test_subprocess_emit_prompt_skips_blocked_gated_head_no_withhold", test_subprocess_emit_prompt_skips_blocked_gated_head_no_withhold),
     ("test_subprocess_emit_prompt_fully_gated_surfaces_blocked_terminal", test_subprocess_emit_prompt_fully_gated_surfaces_blocked_terminal),
     ("test_subprocess_emit_prompt_single_type_workable_head_unchanged", test_subprocess_emit_prompt_single_type_workable_head_unchanged),
+    ("test_research_halt_head_surfaces_when_research_head_outranks_bug", test_research_halt_head_surfaces_when_research_head_outranks_bug),
+    ("test_research_halt_head_none_when_ready_work_outranks_research_head", test_research_halt_head_none_when_ready_work_outranks_research_head),
+    ("test_subprocess_emit_prompt_surfaces_needs_research_over_lower_bug", test_subprocess_emit_prompt_surfaces_needs_research_over_lower_bug),
     ("test_merged_worklist_only_features_matches_listed_order", test_merged_worklist_only_features_matches_listed_order),
     ("test_merged_worklist_only_bugs_matches_listed_order", test_merged_worklist_only_bugs_matches_listed_order),
     ("test_merged_worklist_both_empty_returns_none", test_merged_worklist_both_empty_returns_none),

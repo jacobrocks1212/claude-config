@@ -46,6 +46,7 @@ bug-state.py).
 | Input-audit trigger | `/spec` or `plan-feature` cycles | `spec-bug` or `spec-phases` cycles (bug-state.py emits no `plan-feature`) |
 | `needs-spec-input` terminal | emitted by lazy-state.py → Step 1i | NOT emitted by bug-state.py — Step 1i routes only `completion-unverified` and `stale_upstream` |
 | Research / Gemini steps | Step 0.5 pre-loop ingest, `needs-research`, `queue-blocked-on-research`, Step 4, Step 5 | N/A — bugs do not undergo Gemini deep research |
+| Research-gated head surfacing (`research-gated-head-buried-by-skip-ahead-and-merged-fallthrough`) | feature `--emit-prompt` re-emits a skipped research head that outranks the fallthrough as `needs-research` (`route_overridden_by: research-gated-head`) | N/A — feature-only mechanic; a bug reaches the merged head over a P1 research feature only when it is a genuine P0, which legitimately precedes the research gap |
 | `--allow-research-skip` flag | parsed, enables batched research | N/A — no research in bug pipeline |
 | `skip_needs_research` var | used under `--allow-research-skip` | N/A |
 | `research_pending` var | accumulates research-pending feature_ids | N/A |

@@ -2844,7 +2844,7 @@ def test_lazy_batch_skill_carries_reload_discipline_prose():
 #
 # WU-1: merged-view helper + ordering comparator.
 # WU-2: ordering-field source normalization (feature `tier` vs bug `severity`).
-# WU-3: fixtures covering both-populated / bug-breaks-tie / only-features /
+# WU-3: fixtures covering both-populated / feature-breaks-tie / only-features /
 #       only-bugs / both-empty, plus the live --next-merged CLI over a two-queue
 #       temp-dir fixture.
 #
@@ -2867,7 +2867,7 @@ def test_merged_symbols_present():
 def test_next_merged_cli_over_two_queue_fixture():
     """WU-3 live integration: `lazy-state.py --next-merged --repo-root <fixture>`
     over a temp dir with one tier-1 feature and one P0 bug prints the bug as the
-    head (bugs break ties / higher priority). Exercises the real loaders +
+    head (P0 bug is strictly higher priority than a tier-1 feature). Exercises the real loaders +
     importlib bug-queue load end-to-end."""
     _guard()
     lazy_state = _SCRIPTS_DIR / "lazy-state.py"

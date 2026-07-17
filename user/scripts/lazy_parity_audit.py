@@ -474,7 +474,8 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
 # document type-correct terminals, and it must preserve single-type behavior
 # (the no-regression guarantee).  This is a docs-consistency check over the
 # SKILL.md prose — it never re-implements ordering (lazy_core.merged_priority is
-# the single source of "bugs break ties") and never runs a pipeline.
+# the single source of the equal-rank tie-break — features break ties, so only a
+# genuine P0 bug precedes a P1 feature) and never runs a pipeline.
 
 # The unified-driver pair: (name, repo-relative SKILL.md path).  Both the
 # workstation canonical driver and its cloud mirror carry the merged-view branch.

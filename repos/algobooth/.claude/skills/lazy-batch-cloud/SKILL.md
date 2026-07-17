@@ -282,7 +282,7 @@ Initialize per-session state — identical shape to `/lazy-batch` Step 0. **This
 >   `--bug-id` scoping); the type-correct terminal action is `__mark_fixed__` (writes `FIXED.md`).
 >
 > The merged view normalizes the two queues' divergent ordering fields (feature `tier` / bug `severity`)
-> onto one effective-priority scale and breaks ties bug-before-feature — that ordering lives ENTIRELY in
+> onto one effective-priority scale and breaks ties feature-before-bug (with the rank-1 bug age-escalation floor, only a genuine P0 bug precedes a P1 feature) — that ordering lives ENTIRELY in
 > `lazy_core.merged_priority` (Phase 1), NOT in this prose: the driver only CONSUMES the merged head, it
 > never re-implements ordering. Both state machines and all gates run UNCHANGED — this skill carries NO
 > new state-machine logic; the merged probe is the only addition. **This is a coupled-pair mirror of
@@ -294,6 +294,15 @@ Initialize per-session state — identical shape to `/lazy-batch` Step 0. **This
 > per-type batch (a features-only queue runs exactly as `/lazy-batch-cloud` always did, terminal
 > `__mark_complete__`; a bugs-only queue runs exactly as the standalone bug loop, terminal
 > `__mark_fixed__`). Asserted by `lazy_parity_audit.py --merged-view` + a single-type fixture.
+>
+> **Research-gated head surfacing (research-gated-head-buried-by-skip-ahead-and-merged-fallthrough; coupled-pair mirror of `/lazy-batch`).**
+> When a feature `--emit-prompt` probe realized a skip past a research-pending gated head that
+> OUTRANKS (full merged ordering) the item the driver would otherwise dispatch, the probe re-emits as
+> that head's `terminal_reason: needs-research` (`route_overridden_by: research-gated-head`) — so a
+> feature probe can return a `needs-research` terminal for a different head than `--next-merged` named.
+> Route it via normal research-halt handling (in cloud, `needs-research` is deferred like any
+> research-pending terminal). BLOCKED heads still skip-ahead; a lower-priority research head is not
+> surfaced (no over-halt); `--strict-research-halt` still halts on the first gated head.
 >
 > Steps 1a–1e below are written against `lazy-state.py --cloud` (the feature path). For a `type == "bug"`
 > cycle, substitute `bug-state.py --cloud` for `lazy-state.py --cloud` and `__mark_fixed__` for
@@ -1056,7 +1065,7 @@ All other behavior is identical — coupling is enforced by the state script (on
 | `feature` | `lazy-state.py --cloud` | `docs/features/` | `__write_deferred_non_cloud__` at Step 9 (defers MCP); `__mark_complete__` (`COMPLETED.md`) only once a workstation produced `VALIDATED.md` | `COMPLETED.md` |
 | `bug` | `bug-state.py --cloud` | `docs/bugs/` (`--bug-id` scoping) | `__mark_fixed__` (bug validation is docs-only — reachable in cloud) | `FIXED.md` |
 
-- **Ordering is script-owned** (`lazy_core.merged_priority`; equal priority → bug before feature). This skill consumes the head only — it never re-implements ordering.
+- **Ordering is script-owned** (`lazy_core.merged_priority`; equal priority → feature before bug, so only a genuine P0 bug precedes a P1 feature). This skill consumes the head only — it never re-implements ordering.
 - **No new state-machine logic in the skill.** Both state machines + gates run unchanged; the merged probe is the sole addition. `--cloud` is the only delta from `/lazy-batch` — the merged-view branch itself is NOT a cloud divergence.
 - **No-regression.** A single-type queue drives the same cycle sequence as the pre-unification per-type batch. Asserted by `lazy_parity_audit.py --merged-view` + a single-type fixture.
 - **Coupled pair.** Mirrors `/lazy-batch`'s State Machine Summary; see the **Differences from `/lazy-batch`** table for the merged-view-dispatch row and CLAUDE.md → Coupled Skill Pairs.

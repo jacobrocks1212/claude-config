@@ -490,6 +490,76 @@ def probe_skipped_ids(state: dict, items: list[dict] | None) -> "set[str]":
     return ids
 
 
+def research_halt_head(
+    state: dict,
+    feature_items: list[dict],
+    bug_items: list[dict],
+    repo_root: str,
+    *,
+    today: "datetime.date | None" = None,
+    exclude_ids: "set[str] | frozenset[str] | None" = None,
+) -> "str | None":
+    """Return the id of a RESEARCH-pending gated head the current per-pipeline
+    probe SKIPPED this cycle that OUTRANKS the item the driver would otherwise
+    dispatch — else ``None``. The signal the ``--emit-prompt`` path uses to
+    SURFACE a needs-research halt instead of burying the research gap.
+
+    This is the research-gating-vs-BLOCKED-gating distinction
+    (``docs/bugs/research-gated-head-buried-by-skip-ahead-and-merged-fallthrough``).
+    Round 64's :func:`probe_skipped_ids` folded research-pending gated heads into
+    the merged-head exclude set IDENTICALLY to BLOCKED heads, so a high-priority
+    research-gated feature at the queue head was silently buried behind the
+    lower-priority item the merged view fell through to (a bug, or a lower
+    feature) — the operator never saw the needs-research halt that a Gemini
+    upload resolves in seconds. A BLOCKED head (external gate / host) legitimately
+    skips-ahead to independent ready work; a research gap is operator-resolvable,
+    so a research head that is the merged head must SURFACE its halt.
+
+    Mechanism: ``exclude_ids`` is the caller's FULL merged-head exclude set
+    (``nondispatchable_item_ids`` ∪ :func:`probe_skipped_ids`, current dispatch
+    target discarded) — the set that, by Round 64, excludes the research heads
+    too. This helper RE-INCLUDES only the research-gated ids
+    (``state["research_gated_heads"]``) and recomputes the merged head. If that
+    head IS one of the research-gated ids, the research head is strictly ahead in
+    the FULL merged ordering (priority AND the type tie-break) of every OTHER
+    dispatchable item — including the fallthrough the driver would pick — so it
+    must surface. If some higher-or-equal-priority READY item is the head instead
+    (the research head is genuinely lower-priority), this returns ``None`` and
+    skip-ahead proceeds unchanged — no over-halt (the task's explicit
+    "don't blanket-halt when independent lower-priority ready work exists" bound).
+
+    Keyed on RELATIVE merged priority via the merged ordering itself (never a
+    second ordering rule): ``next_merged`` decides "is the research head the
+    top?", so the age-escalation + type tie-break in ``merged_priority`` /
+    ``merged_worklist`` are honored for free.
+
+    Pure + fail-safe: no ``research_gated_heads`` in ``state`` → ``None``; the
+    caller wraps in try/except so a detection error never breaks the base probe.
+    Research gating is a FEATURE-pipeline mechanic — on the bug pipeline
+    ``research_gated_heads`` is absent, so this returns ``None`` (documented
+    parity with the ``strict_research_halt`` bug-side asymmetry).
+    """
+    if not isinstance(state, dict):
+        return None
+    research = {r for r in (state.get("research_gated_heads") or []) if r}
+    if not research:
+        return None
+    from .depdag import next_merged
+
+    exclude = set(exclude_ids or set())
+    # Re-include ONLY the research-gated skips; the merely-BLOCKED / host / device
+    # / dep skips (and parked/deferred items) stay excluded so the driver's real
+    # fallthrough target is what the research head is compared against.
+    exclude_no_research = exclude - research
+    head = next_merged(
+        feature_items, bug_items, repo_root,
+        today=today, exclude_ids=exclude_no_research,
+    )
+    if head and head.get("type") == "feature" and head.get("item_id") in research:
+        return head.get("item_id")
+    return None
+
+
 def emit_cycle_prompt(
     repo_root: Path,
     state: dict,
