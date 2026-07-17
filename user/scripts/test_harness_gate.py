@@ -274,6 +274,40 @@ def test_gate_weakening_removed_refuse_construct_still_hits():
     assert out["result"] == "hit"
 
 
+def test_gate_weakening_reformatted_refuse_call_not_flagged():
+    """FP FIXTURE (gap-2 near-neighbor): a `refuse_*()` call REFORMATTED single-line
+    -> multi-line removes AND re-adds the construct (coverage-neutral). Net removed
+    == added, so it must NOT hit — the exact FP the harden commit that reformatted
+    `refuse_if_cycle_active(...)` produced."""
+    diff = _diff(
+        "user/scripts/lazy-state.py",
+        removed=['        lazy_core.refuse_if_cycle_active("--record-intervention")'],
+        added=[
+            "        lazy_core.refuse_if_cycle_active(",
+            '            "--record-intervention", allow_hardening_subagent=True',
+            "        )",
+        ],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+
+
+def test_gate_weakening_renamed_def_signature_not_flagged():
+    """FP FIXTURE (gap-2 near-neighbor): extending a `refuse_*` def signature (removed
+    old signature line + added new one) is a reformat, not a removal — no hit."""
+    diff = _diff(
+        "user/scripts/lazy_core.py",
+        removed=["def refuse_if_cycle_active(op_name: str) -> None:"],
+        added=[
+            "def refuse_if_cycle_active(",
+            "    op_name: str, *, allow_hardening_subagent: bool = False",
+            ") -> None:",
+        ],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+
+
 # --- tautology detector (SPEC D2 / D6) -------------------------------------------
 
 def test_tautology_missing_hypothesis_flags(tmp_path):

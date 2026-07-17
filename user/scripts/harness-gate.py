@@ -260,14 +260,32 @@ def detect_gate_weakening(hunks: list) -> dict:
     # per file and flag ONLY the NET removal (removed - added > 0) — a rename (1/1)
     # or split (1/2) is coverage-neutral-or-strengthening and never a weakening,
     # while a genuine removal with no replacement (1/0) still HITs unchanged.
+    # Per-file NET-count guard, applied to BOTH the `def test_*` removal check AND the
+    # gate-refusal construct (`_DENY_BRANCH_RE`) removal check: a coverage-neutral edit
+    # that removes AND re-adds an equivalent construct (a test-def RENAME, or a
+    # `refuse_*()` / `exit 3` / `deny`-branch REFORMAT single-line->multi-line) nets to
+    # zero and must NOT be misread as a removal (gap 2 + its deny-construct near-neighbor,
+    # surfaced by the harden commit that reformatted `refuse_if_cycle_active(...)`). Only a
+    # NET removal (removed > added — a construct deleted with no equivalent replacement)
+    # still HITs. `_DENY_BRANCH_RE` can match a line MORE than once (e.g. `refuse_x(` and
+    # `exit 3` on one line is rare, but a line with two `refuse_*(` calls counts each), so
+    # count matches, not lines, symmetrically on both sides.
     removed_test_defs: "dict[str, int]" = {}
     added_test_defs: "dict[str, int]" = {}
+    removed_deny: "dict[str, int]" = {}
+    added_deny: "dict[str, int]" = {}
     for h in hunks:
         removed_test_defs[h.file] = removed_test_defs.get(h.file, 0) + sum(
             1 for body in h.removed if _TEST_DEF_RE.match(body)
         )
         added_test_defs[h.file] = added_test_defs.get(h.file, 0) + sum(
             1 for body in h.added if _TEST_DEF_RE.match(body)
+        )
+        removed_deny[h.file] = removed_deny.get(h.file, 0) + sum(
+            len(_DENY_BRANCH_RE.findall(body)) for body in h.removed
+        )
+        added_deny[h.file] = added_deny.get(h.file, 0) + sum(
+            len(_DENY_BRANCH_RE.findall(body)) for body in h.added
         )
     for f in removed_test_defs:
         net = removed_test_defs[f] - added_test_defs.get(f, 0)
@@ -277,11 +295,15 @@ def detect_gate_weakening(hunks: list) -> dict:
                 f"(net {net}; {removed_test_defs[f]} removed, "
                 f"{added_test_defs.get(f, 0)} added)"
             )
+    for f in removed_deny:
+        net = removed_deny[f] - added_deny.get(f, 0)
+        if net > 0:
+            evidence.append(
+                f"{f}: gate-refusal construct removed without replacement "
+                f"(net {net}; {removed_deny[f]} removed, {added_deny.get(f, 0)} added)"
+            )
 
     for h in hunks:
-        for body in h.removed:
-            if _DENY_BRANCH_RE.search(body):
-                evidence.append(f"{h.file}: gate-refusal construct removed: {body.strip()[:80]}")
         for body, ctx in h.added_ctx:
             if _BYPASS_ENV_RE.search(body):
                 evidence.append(f"{h.file}: new bypass env-var introduced: {body.strip()[:80]}")
