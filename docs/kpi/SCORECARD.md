@@ -63,7 +63,7 @@
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
 | Age in days of the oldest open docs/bugs/ item `[claude-config]` | 17 (1d) | 17 (measured 2026-07-11) | — | PENDING-BASELINE |
-| Count of docs/bugs/ items at Status: Concluded (investigated, never fixed) `[claude-config]` | 41 (1d) | 23 (measured 2026-07-11) | — | PENDING-BASELINE |
+| Count of docs/bugs/ items at Status: Concluded (investigated, never fixed) `[claude-config]` | 48 (1d) | 23 (measured 2026-07-11) | — | PENDING-BASELINE |
 
 ## lazy-core
 
@@ -88,7 +88,7 @@
 
 ## Canary health
 
-- 9 canaries open, oldest 1d, 0 will no-data-close within 7d
+- 12 canaries open, oldest 1d, 0 will no-data-close within 7d
 
 ## Notes
 
