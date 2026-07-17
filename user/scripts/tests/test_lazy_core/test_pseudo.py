@@ -2692,6 +2692,46 @@ def test_archive_fixed_resume_after_partial_move():
 
 
 
+def test_archive_fixed_accepts_relative_spec_path():
+    """Regression (archive-fixed-relative-spec-path-valueerror): archive_fixed
+    must accept a REPO-RELATIVE spec_path (the `docs/bugs/<id>` form the CLI
+    passes straight through as `Path(args.archive_fixed)`) against an absolute
+    repo_root, anchoring it at repo_root — NOT crash with an uncaught ValueError
+    from `spec_path.relative_to(repo_root)` (gates.py:2104) nor refuse "nothing to
+    archive" because a CWD-anchored relative path does not exist.
+
+    Red before the fix: `spec_path` was used un-normalized while repo_root was
+    resolved to absolute, so a relative `spec_path` either (a) raised ValueError in
+    the per-file git-mv fallback, or (b) — as here, with CWD != repo_root — resolved
+    to a non-existent directory and refused. Green after: spec_path is anchored at
+    repo_root and the archive completes exactly as the absolute-path invocation."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _bug_dir = _make_fixed_bug_repo(td)
+        # The CLI passes the repo-relative dir through un-resolved; repo_root is
+        # absolute. Deliberately do NOT chdir into repo_root, so a CWD-anchored
+        # relative path would miss — proving the anchor is repo_root, not CWD.
+        rel_spec = Path("docs/bugs/my-bug")
+
+        result = lazy_core.archive_fixed(repo_root, rel_spec, date="2026-06-10")
+
+        assert result["ok"] is True, f"expected ok, got {result}"
+        assert result["archived_to"] == "docs/bugs/_archive/my-bug"
+        dest = repo_root / "docs" / "bugs" / "_archive" / "my-bug"
+        assert dest.exists() and not (repo_root / "docs" / "bugs" / "my-bug").exists()
+        assert result["queue_removed"] is True
+        assert result["committed"]
+        status = subprocess.run(
+            ["git", "-C", str(repo_root), "status", "--short"],
+            capture_output=True, text=True,
+        )
+        assert status.stdout.strip() == "", (
+            f"expected clean tree, got: {status.stdout}"
+        )
+
+
+
+
 # ---- validation_escalation() unit tests (shared predicate) ----
 
 def test_validation_escalation_retry_1_not_escalated():
@@ -4305,6 +4345,7 @@ _TESTS = [
     ("test_archive_fixed_collision_appends_suffix", test_archive_fixed_collision_appends_suffix),
     ("test_archive_fixed_rerun_is_noop", test_archive_fixed_rerun_is_noop),
     ("test_archive_fixed_resume_after_partial_move", test_archive_fixed_resume_after_partial_move),
+    ("test_archive_fixed_accepts_relative_spec_path", test_archive_fixed_accepts_relative_spec_path),
     ("test_validation_escalation_retry_1_not_escalated", test_validation_escalation_retry_1_not_escalated),
     ("test_validation_escalation_retry_2_escalated", test_validation_escalation_retry_2_escalated),
     ("test_validation_escalation_other_blocker_kind_not_escalated", test_validation_escalation_other_blocker_kind_not_escalated),

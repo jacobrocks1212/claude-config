@@ -1971,6 +1971,25 @@ def archive_fixed(
     if date is None:
         date = datetime.date.today().isoformat()
     repo_root = repo_root.resolve()
+    # Normalize spec_path to an ABSOLUTE path anchored at repo_root BEFORE any
+    # `spec_path.relative_to(repo_root)` below (the per-file git-mv fallback at
+    # ~L2104 that computes `rel_spec` for the repo-relative suffix strip). repo_root
+    # is resolved to absolute just above, so a RELATIVE spec_path — e.g. the
+    # repo-relative `docs/bugs/<id>` the CLI passes straight through as
+    # `Path(args.archive_fixed)` — would make relative_to() raise an UNCAUGHT
+    # ValueError (the try/except at the end of this fn catches only OSError /
+    # SubprocessError), killing --archive-fixed with a raw traceback instead of a
+    # structured refusal. Sibling gates (apply_pseudo/verify_ledger) never mix a
+    # relative spec_path with an absolute repo_root in a relative_to() call, so they
+    # were unaffected; this puts archive_fixed on the same footing. Anchoring a
+    # relative spec_path at repo_root (not CWD) is the correct interpretation:
+    # git ls-files output downstream is likewise repo-relative.
+    spec_path = Path(spec_path)
+    spec_path = (
+        spec_path.resolve()
+        if spec_path.is_absolute()
+        else (repo_root / spec_path).resolve()
+    )
     bug_id = spec_path.name
     result: dict[str, Any] = {
         "name": "archive_fixed",
