@@ -109,10 +109,12 @@ def _run_git(repo_root: Path, args: list) -> "tuple[int, str, str]":
             ["git", "-C", str(repo_root), *args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     except (OSError, ValueError) as exc:  # git absent, bad args
         return 1, "", str(exc)
-    return proc.returncode, proc.stdout, proc.stderr
+    return proc.returncode, proc.stdout or "", proc.stderr or ""
 
 
 def load_manifest(repo_root: Path) -> dict:

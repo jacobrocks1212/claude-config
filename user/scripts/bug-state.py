@@ -94,6 +94,7 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).parent))
 
 import cli_surface
+from _console_encoding import enable_utf8_stdio
 import lazy_core
 from lazy_core import (
     _atomic_write,
@@ -8007,6 +8008,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    enable_utf8_stdio()
     # Eager-import the lazy_core package (PEP 562 facade) so a broken submodule
     # fails at process start, not at first attribute access (SPEC D4-A).
     lazy_core.load_all()

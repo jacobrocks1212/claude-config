@@ -503,7 +503,8 @@ def _git_capture_lines(repo_root: Path, args: list[str]) -> list[str] | None:
     try:
         r = subprocess.run(
             ["git", "-C", str(repo_root)] + args,
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=30,
         )
         if r.returncode != 0:
             return None
@@ -3749,7 +3750,8 @@ def build_input_audit_emit_command(
     try:
         proc = subprocess.run(
             ["git", "-C", str(cwd), "log", "-1", "--format=%s"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=10,
         )
         if proc.returncode == 0:
             cycle_summary = proc.stdout.strip()

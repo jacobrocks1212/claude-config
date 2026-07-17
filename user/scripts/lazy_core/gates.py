@@ -596,7 +596,8 @@ def _git_diff_name_only(
     try:
         r = subprocess.run(
             ["git", "-C", str(repo_root), "diff", "--name-only", base, head],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=10,
         )
         if r.returncode == 0:
             return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
@@ -1368,6 +1369,8 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
             ["git", "-C", str(repo_root), "status", "--short"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
         )
         clean_tree = result.stdout.strip() == ""

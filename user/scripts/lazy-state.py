@@ -72,6 +72,7 @@ except ImportError:
 # symlink (mirrors the bug-state.py sibling-import guard).
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cli_surface
+from _console_encoding import enable_utf8_stdio
 
 # Domain-agnostic helpers live in lazy_core (WU-1.2 extraction). Import the
 # module itself so lazy_core._DIAGNOSTICS is the canonical list object and
@@ -4265,7 +4266,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             ]
         }))
         (features / "ROADMAP.md").write_text(
-            "# Roadmap\n\n- ~~Feature F — done~~ **COMPLETE**\n"
+            "# Roadmap\n\n- ~~Feature F — done~~ **COMPLETE**\n", encoding="utf-8"
         )
         f = features / "feat-f"
         f.mkdir()
@@ -4356,7 +4357,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
                 {"id": "feat-i", "name": "Feature I", "spec_dir": "feat-i", "tier": 1}
             ]
         }))
-        (features / "ROADMAP.md").write_text("# Roadmap\n\n- Feature I — still listed without COMPLETE token\n")
+        (features / "ROADMAP.md").write_text("# Roadmap\n\n- Feature I — still listed without COMPLETE token\n", encoding="utf-8")
         idir = features / "feat-i"
         idir.mkdir()
         (idir / "SPEC.md").write_text("# Spec\n\n**Status:** Complete\n\n**Depends on:** (none)\n")
@@ -4725,7 +4726,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             ]
         }))
         (features / "ROADMAP.md").write_text(
-            "# Roadmap\n\n- ~~Upstream U — done~~ **COMPLETE**\n"
+            "# Roadmap\n\n- ~~Upstream U — done~~ **COMPLETE**\n", encoding="utf-8"
         )
         up = features / "feat-up"
         up.mkdir()
@@ -4735,7 +4736,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         h.mkdir()
         (h / "SPEC.md").write_text(
             "# Spec\n\n**Status:** Draft\n\n**Depends on:**\n\n"
-            "- feat-up — hard — relies on the upstream contract\n"
+            "- feat-up — hard — relies on the upstream contract\n", encoding="utf-8"
         )
     elif name == "device-deferred-pending":
         # Phases + retro complete; a prior no-device /mcp-test deferred the
@@ -5374,7 +5375,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         # roadmap_marks_complete is the queue entry name "Audio", not the id.
         (features / "ROADMAP.md").write_text(
             "# Roadmap\n\n"
-            "- ~~Audio Engine — deep audio processing~~ **COMPLETE**\n"
+            "- ~~Audio Engine — deep audio processing~~ **COMPLETE**\n", encoding="utf-8"
         )
         a_dir = features / "feat-audio"
         a_dir.mkdir()
@@ -5554,7 +5555,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         # "audio-engine" is the collision.
         (features / "ROADMAP.md").write_text(
             "# Roadmap\n\n"
-            "- ~~audio-engine — deep audio processing~~ **COMPLETE**\n"
+            "- ~~audio-engine — deep audio processing~~ **COMPLETE**\n", encoding="utf-8"
         )
         # Create the upstream "audio" feature directory. Its SPEC.md status is
         # Draft (NOT Complete), so the SPEC-based check in upstream_is_complete
@@ -5573,7 +5574,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             "# Downstream Spec\n\n"
             "**Status:** Draft\n\n"
             "**Depends on:**\n\n"
-            "- audio — hard — this feature builds on the audio foundation\n"
+            "- audio — hard — this feature builds on the audio foundation\n", encoding="utf-8"
         )
         # No research files → if Step 4.6 correctly does NOT fire, the feature
         # falls through to Step 5 and dispatches /spec (research prompt generation).
@@ -5701,7 +5702,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         (plans / "all-phases-pstruct-fresh.md").write_text(
             "---\nkind: implementation-plan\nfeature_id: feat-pstruct-fresh\n"
             "status: Ready\ncreated: 2026-07-12\nphases: [1]\n---\n\n"
-            "## Work Units\n- [ ] WU-N — <short title>\n"
+            "## Work Units\n- [ ] WU-N — <short title>\n", encoding="utf-8"
         )
 
     elif name == "plan-structural-backstop-mid-execution-warns":
@@ -5734,7 +5735,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             "status: In-progress\ncreated: 2026-07-12\nphases: [1]\n---\n\n"
             "## Work Units\n"
             "- [x] WU-1 — did something real\n"
-            "- [ ] WU-N — <short title>\n"
+            "- [ ] WU-N — <short title>\n", encoding="utf-8"
         )
 
     elif name == "finalize-plan-verification-rows-only-flips":
@@ -5839,7 +5840,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             "# Decomposition Prerequisite\n\n"
             "## Work Units\n"
             "- [ ] WU-0A — Extract completion arrays\n"
-            "- [ ] WU-0B — Extract registration groups\n"
+            "- [ ] WU-0B — Extract registration groups\n", encoding="utf-8"
         )
         # No RETRO_DONE.md, no DEFERRED_NON_CLOUD.md.
 
@@ -5880,7 +5881,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             "# Decomposition Prerequisite\n\n"
             "## Work Units\n"
             "- [x] WU-0A — Extract completion arrays\n"
-            "- [x] WU-0B — Extract registration groups\n"
+            "- [x] WU-0B — Extract registration groups\n", encoding="utf-8"
         )
         # No RETRO_DONE.md, no DEFERRED_NON_CLOUD.md.
 
@@ -5910,7 +5911,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             ]
         }))
         (features / "ROADMAP.md").write_text(
-            "# Roadmap\n\n- ~~Upstream RHG Up — done~~ **COMPLETE**\n"
+            "# Roadmap\n\n- ~~Upstream RHG Up — done~~ **COMPLETE**\n", encoding="utf-8"
         )
         # Complete upstream feature directory
         up_dir = features / "feat-rhg-up"
@@ -5929,7 +5930,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         (down_dir / "SPEC.md").write_text(
             "# Spec\n\n**Status:** In-progress\n\n"
             "**Depends on:**\n\n"
-            "- feat-rhg-up — hard — downstream relies on upstream contract\n"
+            "- feat-rhg-up — hard — downstream relies on upstream contract\n", encoding="utf-8"
         )
         (down_dir / "RESEARCH.md").write_text("# R\n")
         (down_dir / "RESEARCH_SUMMARY.md").write_text("# S\n")
@@ -12075,6 +12076,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    enable_utf8_stdio()
     # Eager-import the lazy_core package (PEP 562 facade) so a broken submodule
     # fails at process start, not at first attribute access (SPEC D4-A).
     lazy_core.load_all()
