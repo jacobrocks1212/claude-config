@@ -235,6 +235,23 @@ try {
 			Get-SafeValue { Test-BuildLogFailure -Log $logText -SignatureSet $profileLogSignatures } @{ failed = $false; signature = $null }
 		} -Fallback @{ failed = $false; signature = $null }
 
+		# Final fallback read if initial retry exhausted without capturing log text:
+		# if $buildLogTextForClassify is still $null, attempt a final extended-window
+		# read. This handles the race where the file is created AFTER the initial
+		# retry loop completes (slow Nx I/O, node daemon startup delay, etc.).
+		if ($null -eq $script:buildLogTextForClassify -and -not [string]::IsNullOrWhiteSpace($buildLogPath)) {
+			$script:buildLogTextForClassify = Read-WithRetry -MaxAttempts 15 -DelayMs 100 -Parse {
+				if (-not (Test-Path $buildLogPath)) {
+					return $null
+				}
+				$logText = Get-SafeValue { [System.IO.File]::ReadAllText($buildLogPath) } $null
+				if ([string]::IsNullOrEmpty($logText)) {
+					return $null
+				}
+				return $logText
+			} -Fallback $null
+		}
+
 		if ($logFailure.failed -and $exitCode -eq 0) {
 			# Log-failure-override wins first: a real MSBuild failure signature is
 			# the strongest signal, so it takes precedence over the no-output

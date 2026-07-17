@@ -150,7 +150,13 @@ function Invoke-Main {
         $dotnetArgs += $Filter
     }
 
-    & dotnet @dotnetArgs 2>&1 | ForEach-Object {
+    # Capture output and exit code together. Piping through ForEach-Object can
+    # obscure the native exit code, so capture all lines first, then process them.
+    # This ensures $LASTEXITCODE reflects dotnet's actual exit code, not ForEach-Object's.
+    $allOutput = @(& dotnet @dotnetArgs 2>&1)
+    $dotnetExit = $LASTEXITCODE
+
+    $allOutput | ForEach-Object {
         $line = $_.ToString()
 
         # Passed test - show it
@@ -195,8 +201,6 @@ function Invoke-Main {
             }
         }
     }
-
-    $dotnetExit = $LASTEXITCODE
 
     # Distinguished exit codes: 3 = no summary captured at all (zero-output run);
     # 5 = zero-match filter (summary seen, Total=0). Both are distinct from a

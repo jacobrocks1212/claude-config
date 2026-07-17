@@ -60,8 +60,14 @@ try {
     )
     $summaryPattern = $summaryPatterns -join '|'
 
+    # Capture output and exit code together. Piping through ForEach-Object can
+    # obscure the native exit code, so capture all lines first, then process them.
+    # This ensures $LASTEXITCODE reflects npx's actual exit code, not ForEach-Object's.
+    $allOutput = @(& npx nx @nxArgs 2>&1)
+    $nxExit = $LASTEXITCODE
+
     # Stream Nx output line by line
-    & npx nx @nxArgs 2>&1 | ForEach-Object {
+    $allOutput | ForEach-Object {
         $line = $_.ToString()
 
         # Check for errors
@@ -90,6 +96,8 @@ try {
     if (-not $hasOutput) {
         Write-Host "Build SUCCEEDED (no errors)" -ForegroundColor Green
     }
+
+    exit $nxExit
 } finally {
     Pop-Location
 }

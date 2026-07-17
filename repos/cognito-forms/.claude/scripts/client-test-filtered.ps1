@@ -81,8 +81,17 @@ try {
     )
     $errorDetailPattern = $errorDetailPatterns -join '|'
 
+    # Capture output and exit code together. Piping through ForEach-Object can
+    # obscure the native exit code, so capture all lines first, then process them.
+    # This ensures $LASTEXITCODE reflects npx's actual exit code, not ForEach-Object's.
+    $allOutput = @(& npx nx @nxArgs 2>&1)
+    $nxExit = $LASTEXITCODE
+
+    $hasResults = $false
+    $resultLineCount = 0
+
     # Stream test output line by line
-    & npx nx @nxArgs 2>&1 | ForEach-Object {
+    $allOutput | ForEach-Object {
         $line = $_.ToString()
 
         # PASS line
@@ -90,6 +99,8 @@ try {
             Write-Host $line -ForegroundColor Green
             $inFailBlock = $false
             $inSummary = $false
+            $resultLineCount++
+            $hasResults = $true
         }
         # FAIL line - start capturing block
         elseif ($line -match $failPattern) {
@@ -97,6 +108,8 @@ try {
             $inFailBlock = $true
             $failBlockLines = 0
             $inSummary = $false
+            $resultLineCount++
+            $hasResults = $true
         }
         # Inside a fail block - show error details (limit lines)
         elseif ($inFailBlock -and $failBlockLines -lt $FailureLines) {
@@ -113,6 +126,7 @@ try {
         elseif ($line -match $summaryPattern) {
             $inFailBlock = $false
             $inSummary = $true
+            $hasResults = $true
             if ($line -match 'failed|FAIL') {
                 Write-Host $line -ForegroundColor Red
             } elseif ($line -match 'passed|PASS') {
@@ -132,6 +146,21 @@ try {
             }
         }
     }
+
+    # Determine exit code using build-queue conventions (matching test-filtered.ps1):
+    # - Exit 3 if no test results were captured (nx failed to run or produced no output)
+    # - Exit 5 if a test filter was used and matched zero tests (future enhancement)
+    # - Otherwise, forward nx's exit code (0 for success, non-zero for failure)
+    if (-not $hasResults -and $nxExit -eq 0) {
+        # No results captured, but nx said success — this shouldn't happen in normal test runs.
+        # The build queue classifies this as result_fidelity='no-output'.
+        Write-Host "WARN: No test results captured from nx (build may have failed to initialize)" -ForegroundColor Yellow
+        exit 3
+    }
+
+    # Forward the underlying nx exit code. When nx exits non-zero (e.g., target not found,
+    # tests failed, or build errors), we propagate that so the queue correctly reports FAIL.
+    exit $nxExit
 } finally {
     Pop-Location
 }

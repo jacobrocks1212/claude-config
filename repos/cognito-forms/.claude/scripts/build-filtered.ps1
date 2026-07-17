@@ -95,8 +95,14 @@ function Invoke-Main {
     # yet still exit 0 - $LASTEXITCODE alone is not trustworthy in that case.
     $buildLogFailure = $false
 
+    # Capture output and exit code together. Piping through ForEach-Object can
+    # obscure the native exit code, so capture all lines first, then process them.
+    # This ensures $LASTEXITCODE reflects dotnet's actual exit code, not ForEach-Object's.
+    $allBuildOutput = @(& dotnet @buildArgs 2>&1)
+    $buildExit = $LASTEXITCODE
+
     # Stream build output line by line
-    & dotnet @buildArgs 2>&1 | ForEach-Object {
+    $allBuildOutput | ForEach-Object {
         $line = $_.ToString()
         if ($line -match $pattern) {
             $hasOutput = $true
@@ -123,9 +129,6 @@ function Invoke-Main {
         Write-Host "Build SUCCEEDED (0 Errors)" -ForegroundColor Green
     }
 
-    # dotnet's own exit code, captured immediately after the stream completes.
-    $buildExit = $LASTEXITCODE
-
     # The build is a failure if the log itself asserted failure OR dotnet exited
     # nonzero. Prefer dotnet's nonzero code when present; otherwise fall back to 1
     # so a log-detected failure never masquerades as exit 0.
@@ -143,8 +146,14 @@ function Invoke-Main {
         $inFailBlock = $false
         $failBlockLines = 0
 
+        # Capture output and exit code together. Piping through ForEach-Object can
+        # obscure the native exit code, so capture all lines first, then process them.
+        # This ensures $LASTEXITCODE reflects dotnet's actual exit code, not ForEach-Object's.
+        $allTestOutput = @(& dotnet @testArgs 2>&1)
+        $testExit = $LASTEXITCODE
+
         # Stream test output line by line
-        & dotnet @testArgs 2>&1 | ForEach-Object {
+        $allTestOutput | ForEach-Object {
             $line = $_.ToString()
 
             # Passed test - show it
@@ -183,7 +192,6 @@ function Invoke-Main {
         # Combine severities: a nonzero test exit must still surface even if the
         # build itself succeeded, and a build failure must not be masked by a
         # passing test run.
-        $testExit = $LASTEXITCODE
         if ($testExit -ne 0) {
             $effectiveExit = $testExit
         }
