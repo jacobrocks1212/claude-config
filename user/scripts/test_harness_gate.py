@@ -176,6 +176,104 @@ def test_gate_weakening_clean_change_passes():
     assert out["result"] == "pass"
 
 
+# --- gate-weakening FALSE-POSITIVE regressions (gap 2 — rename + docstring/fixture) ---
+
+def test_gate_weakening_renamed_test_def_not_flagged():
+    """FP FIXTURE: a pure test-def rename (test_old removed + test_new added, body
+    unchanged) preserves coverage — must NOT hit (net removed-added == 0)."""
+    diff = _diff(
+        "user/scripts/tests/test_lazy_core/test_markers.py",
+        context=["    assert refuse_run_start_clobber(marker) is True"],
+        removed=["def test_weakening_is_refused_old():"],
+        added=["def test_weakening_is_refused_new():"],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+    assert out.get("evidence") == []
+
+
+def test_gate_weakening_split_test_def_strengthening_not_flagged():
+    """FP FIXTURE: one test def removed, TWO added (coverage strengthened) — no hit."""
+    diff = _diff(
+        "user/scripts/tests/test_lazy_core/test_markers.py",
+        removed=["def test_broad_case():"],
+        added=["def test_case_a():", "def test_case_b():"],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+
+
+def test_gate_weakening_added_docstring_not_membership():
+    """FP FIXTURE: an added docstring line sitting next to an exemption-set opening
+    must NOT be misread as a membership-set addition (the recurring `membership
+    added: \"\"\"` false positive, hardening-log Round 67)."""
+    diff = _diff(
+        "user/scripts/lazy_core.py",
+        context=["SANCTIONED_STOP_TERMINAL = {", "    'all-features-complete',"],
+        added=['    """A docstring that happens to sit near the set."""'],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+
+
+def test_gate_weakening_bare_triple_quote_line_not_membership():
+    """FP FIXTURE: a bare `\"\"\"` docstring-delimiter line is not a membership element."""
+    diff = _diff(
+        "user/scripts/lazy_core.py",
+        context=["_FAIL_CLOSED_EVIDENCE_SENTINELS = frozenset({"],
+        added=['    """'],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+
+
+def test_gate_weakening_fixture_list_near_bare_reference_not_membership():
+    """FP FIXTURE: a test-fixture list element added beside a BARE reference to an
+    exemption name (not a collection-opening of that set) must NOT hit."""
+    diff = _diff(
+        "user/scripts/tests/test_lazy_core/test_markers.py",
+        context=["    # exercises SANCTIONED_STOP_TERMINAL membership", "    fixture = ["],
+        added=["    'some-fixture-value',"],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+
+
+# --- gate-weakening TRUE-POSITIVE regressions (must STILL hit after the fix) --------
+
+def test_gate_weakening_exemption_add_to_real_set_still_hits():
+    """TP FIXTURE: an element genuinely appended to an exemption set being defined."""
+    diff = _diff(
+        "user/scripts/lazy_core.py",
+        context=["SANCTIONED_STOP_TERMINAL = {", "    'all-features-complete',"],
+        added=["    'newly-exempted-terminal',"],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "hit"
+    assert any("exemption/sanction-set membership added" in e for e in out["evidence"])
+
+
+def test_gate_weakening_genuine_test_removal_still_hits():
+    """TP FIXTURE: a gate test removed with NO replacement (net removal) still HITs."""
+    diff = _diff(
+        "user/scripts/tests/test_lazy_core/test_markers.py",
+        removed=["def test_important_gate():", "    assert something"],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "hit"
+    assert any("gate-test definition removed" in e for e in out["evidence"])
+
+
+def test_gate_weakening_removed_refuse_construct_still_hits():
+    """TP FIXTURE: a removed `refuse_*(...)` / `exit 3` gate-refusal construct still HITs."""
+    diff = _diff(
+        "user/scripts/lazy_core.py",
+        removed=["    refuse_run_start_clobber(marker)", "    exit 3"],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "hit"
+
+
 # --- tautology detector (SPEC D2 / D6) -------------------------------------------
 
 def test_tautology_missing_hypothesis_flags(tmp_path):

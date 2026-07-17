@@ -96,6 +96,22 @@ _DENY_BRANCH_RE = re.compile(r"permissionDecision['\"\s:]+.*deny|\bexit\s+3\b|\b
 _TEST_DEF_RE = re.compile(r"^\s*def\s+test_[A-Za-z0-9_]+\s*\(")
 # A numeric literal (int or float).
 _NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+# A triple-quoted (docstring) delimiter anywhere on the line. A docstring line is
+# never a membership-set element — excluded from the list-element check so an added
+# docstring is not misread as an allowlist/enum growth (gap 2 FP: the recurring
+# `membership added: """` false positive, e.g. hardening-log Round 67).
+_TRIPLE_QUOTE_RE = re.compile(r'"""|' + r"'''")
+# The exemption set name appears in a COLLECTION-OPENING / EXTENSION position on a
+# context line — an assignment whose RHS opens a collection literal (`NAME = {`,
+# `NAME = (`, `NAME = [`, `NAME: T = [`, `NAME = frozenset({`, `NAME = set([`). This
+# distinguishes a set genuinely being defined/grown from a bare REFERENCE to the name
+# (`assert x in NAME`, an import, a call arg) that a test fixture may sit beside (gap 2
+# FP: a list-literal fixture near an exemption-name mention misread as membership growth).
+def _exemption_opens_collection(nearby_line: str, name: str) -> bool:
+    return re.search(
+        r"\b" + re.escape(name) + r"\b[^\n=]*=\s*[\w.]*[\[{(]",
+        nearby_line,
+    ) is not None
 
 
 def _die(msg: str) -> "int":
@@ -238,19 +254,52 @@ def detect_overfit(hunks: list) -> dict:
 
 def detect_gate_weakening(hunks: list) -> dict:
     evidence = []
+    # Per-file test-def rename/strengthen guard (gap 2 FP: a renamed test def).
+    # A `def test_old` -> `def test_new` rename removes AND adds one test def; a
+    # split (1 removed, N>=1 added) preserves-or-strengthens coverage. Aggregate
+    # per file and flag ONLY the NET removal (removed - added > 0) — a rename (1/1)
+    # or split (1/2) is coverage-neutral-or-strengthening and never a weakening,
+    # while a genuine removal with no replacement (1/0) still HITs unchanged.
+    removed_test_defs: "dict[str, int]" = {}
+    added_test_defs: "dict[str, int]" = {}
+    for h in hunks:
+        removed_test_defs[h.file] = removed_test_defs.get(h.file, 0) + sum(
+            1 for body in h.removed if _TEST_DEF_RE.match(body)
+        )
+        added_test_defs[h.file] = added_test_defs.get(h.file, 0) + sum(
+            1 for body in h.added if _TEST_DEF_RE.match(body)
+        )
+    for f in removed_test_defs:
+        net = removed_test_defs[f] - added_test_defs.get(f, 0)
+        if net > 0:
+            evidence.append(
+                f"{f}: gate-test definition removed without replacement "
+                f"(net {net}; {removed_test_defs[f]} removed, "
+                f"{added_test_defs.get(f, 0)} added)"
+            )
+
     for h in hunks:
         for body in h.removed:
-            if _TEST_DEF_RE.match(body):
-                evidence.append(f"{h.file}: gate-test definition removed: {body.strip()[:80]}")
             if _DENY_BRANCH_RE.search(body):
                 evidence.append(f"{h.file}: gate-refusal construct removed: {body.strip()[:80]}")
         for body, ctx in h.added_ctx:
             if _BYPASS_ENV_RE.search(body):
                 evidence.append(f"{h.file}: new bypass env-var introduced: {body.strip()[:80]}")
             plus = "+" + body
+            # A triple-quoted (docstring) line is never a membership element (gap 2 FP).
+            if _TRIPLE_QUOTE_RE.search(body):
+                continue
             if _LIST_ELEMENT_RE.match(plus):
-                nearby = " ".join(ctx[-6:] + [body])
-                if any(name in nearby for name in _EXEMPTION_SET_NAMES):
+                # A membership-set GROWTH weakens a gate only when the exemption set
+                # is genuinely being defined/extended nearby (a collection-opening
+                # assignment), NOT when its name merely appears as a bare reference a
+                # fixture may sit beside (gap 2 FP: a list-literal test fixture).
+                nearby_lines = ctx[-6:] + [body]
+                if any(
+                    _exemption_opens_collection(line, name)
+                    for line in nearby_lines
+                    for name in _EXEMPTION_SET_NAMES
+                ):
                     evidence.append(f"{h.file}: exemption/sanction-set membership added: {body.strip()[:80]}")
         # numeric-literal-only change: a removed line and an added line identical but for a number
         _numeric_literal_change(h, evidence)
