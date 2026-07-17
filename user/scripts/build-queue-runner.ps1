@@ -218,8 +218,11 @@ try {
 		# absent or never settled (both => no output produced).
 		$script:buildLogTextForClassify = $null
 		$logFailure = Read-WithRetry -MaxAttempts 10 -DelayMs 100 -Parse {
+			# Return $null to signal "retry" if file doesn't exist yet (redirect not yet set up) OR empty.
+			# Do NOT early-return on missing file — that stops the retry loop and prevents waiting for
+			# file creation. Let the retry window (up to 1s) give the redirect a chance to create the file.
 			if ([string]::IsNullOrWhiteSpace($buildLogPath) -or -not (Test-Path $buildLogPath)) {
-				return @{ failed = $false; signature = $null }
+				return $null
 			}
 			$logText = Get-SafeValue { [System.IO.File]::ReadAllText($buildLogPath) } $null
 			if ([string]::IsNullOrEmpty($logText)) {
