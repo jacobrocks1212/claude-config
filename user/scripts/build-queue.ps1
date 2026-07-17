@@ -447,6 +447,23 @@ $machinePerf = Get-SafeValue {
 
 $execArgsArr = @($ExecArgs | Where-Object { $_ -ne $null })
 
+# Force a no-color environment for the entire detached build tree spawned below.
+# Start-Process inherits this process's env block, so FORCE_COLOR/NO_COLOR set
+# here propagate through runner -> build-filtered -> dotnet/nx -> pnpm -> the leaf
+# tools. This is scoped to the wrapper process (NOT a machine-wide env var and
+# NOT the interactive terminal). Build tool stdout is captured and re-emitted by
+# the filtered exec scripts (Write-Host -ForegroundColor), so ANSI in tool output
+# is never surfaced to the user; forcing color off makes captured output
+# deterministic and prevents ANSI escapes from corrupting captured artifacts and
+# the filtered parsers. Concretely, the client prod webpack build execs
+# `browserslist-useragent-regexp`, whose `console.log(<RegExp>)` is colorized by
+# Node's util.inspect when color is enabled — leaking ESC[..m codes into the
+# committed supported-browser-regex.txt (docs/bugs/build-queue-color-env-leaks-
+# ansi-into-artifact). FORCE_COLOR is checked BEFORE NO_COLOR, so 0 is the
+# operative value; NO_COLOR=1 is belt-and-suspenders.
+$env:FORCE_COLOR = '0'
+$env:NO_COLOR    = '1'
+
 function Format-ProcArg {
 	param([string]$Value)
 	if ($Value -eq '' -or $Value -match '[\s"]') {
