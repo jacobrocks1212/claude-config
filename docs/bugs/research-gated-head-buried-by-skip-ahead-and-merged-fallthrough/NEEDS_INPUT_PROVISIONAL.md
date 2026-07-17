@@ -5,7 +5,8 @@ written_by: harden-harness
 divergence: contained
 audit_divergence: contained
 decisions:
-  - "Research-halt surfacing precedence: surface iff the research-gated skipped head is the research-inclusive merged head (strictly ahead in the full merged ordering incl. the type tie-break) vs the fallthrough target; and research-first classification when a head carries BOTH a research prompt and a BLOCKED.md."
+  - "'Outranks the fallthrough' = strictly ahead in the FULL merged ordering (priority + the feature-before-bug type tie-break), decided by next_merged — not a scalar-priority-only compare."
+  - "Research-first classification when a gated head carries BOTH a live research prompt and a BLOCKED.md (aligns with the Step-1h research-blocked carve-out)."
 date: 2026-07-17
 class: policy
 next_skill: harden-harness
@@ -78,3 +79,20 @@ Both decisions are contained: reversible by changing the `research_halt_head` he
 (decision 1) or the `_gated_head_kind` precedence order (decision 2), each a localized
 constant/predicate. The `research_gated_heads` probe key, the feature-only asymmetry, and
 the loop-free scoped-terminal re-emit are locked (not provisional).
+
+## Resolution
+
+*Recorded on 2026-07-17. Provisionally auto-accepted on recommendation (`--park-provisional` divergence two-key). Ratify or redirect via the provisional-ratification affordance before completion.*
+
+resolved_by: auto-provisional
+decision_commit: adb80ec79fe0cbc3194c5b9fcdefb336b2809d83
+
+### 1. 1. "Outranks the fallthrough" = strictly ahead in the FULL merged ordering
+
+**Choice:** the full-ordering rule (option 1)
+**Notes:** Provisionally accepted — divergence graded contained (producer) / contained (input-audit); pending operator ratification.
+
+### 2. 2. Research-first classification when a head carries BOTH a research prompt and BLOCKED.md
+
+**Choice:** research-first (option 1), consistent with Step-1h.
+**Notes:** Provisionally accepted — divergence graded contained (producer) / contained (input-audit); pending operator ratification.
