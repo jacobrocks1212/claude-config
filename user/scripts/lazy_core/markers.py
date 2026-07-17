@@ -602,6 +602,15 @@ RUN_FRESH_FIELDS: frozenset = frozenset({
     # --run-start re-supplies it (or correctly resets a serial resume to None),
     # so it belongs on the FRESH side, never carried.
     "parent_run",
+    # lazy-batch-no-mid-run-budget-or-park-controls: park mode is RUN-SCOPED
+    # config re-supplied at run-start from the invocation --park flags (exactly
+    # like max_cycles), so a checkpoint resume re-derives it from the resume's
+    # own --park args — FRESH, never carried. A mid-run --set-park toggle is a
+    # deliberate in-run mutation (like --set-max-cycles on the FRESH max_cycles);
+    # a resume re-passes --park if the operator still wants it.
+    "park_needs_input",
+    "park_blocked",
+    "park_provisional",
 })
 
 
@@ -676,6 +685,9 @@ def write_run_marker(
     nonce_seed: str | None = None,
     attended: bool = True,
     parent_run: dict | None = None,
+    park_needs_input: bool = False,
+    park_blocked: bool = False,
+    park_provisional: bool = False,
     now: float | None = None,
 ) -> dict:
     """Write (or overwrite) the run marker to the state dir.
@@ -787,6 +799,21 @@ def write_run_marker(
         # this marker at a worktree root; None on every serial run. ALWAYS
         # minted (stable marker shape); classified RUN_FRESH_FIELDS.
         "parent_run": parent_run,
+        # lazy-batch-no-mid-run-budget-or-park-controls: park mode is now
+        # RUN-SCOPED state, persisted in the marker, so an operator can toggle it
+        # mid-run (--set-park / --set-park-provisional) and the probe reads it each
+        # cycle — instead of park being a pure invocation arg threaded per probe.
+        # SEEDED here from the --run-start invocation flags (default False → the
+        # marker is byte-identical to a non-park run when no --park was passed).
+        # Classified RUN_FRESH_FIELDS: re-supplied at run-start (like max_cycles);
+        # a checkpoint resume re-passes --park if the operator wants it. The
+        # standing invariant park_provisional ⇒ park_needs_input is enforced by
+        # the CLI (--park-provisional requires --park-needs-input) and by
+        # set_marker_park; write_run_marker itself trusts its caller (--run-start
+        # already validates the pairing before calling here).
+        "park_needs_input": bool(park_needs_input),
+        "park_blocked": bool(park_blocked),
+        "park_provisional": bool(park_provisional),
     }
     marker_path = claude_state_dir() / _MARKER_FILENAME
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
@@ -1089,6 +1116,116 @@ def reassert_marker_owner(
         # Fail-safe: a re-arm failure is non-fatal; the owner can retry. Never
         # raise into the CLI handler.
         return False
+
+
+# ---------------------------------------------------------------------------
+# lazy-batch-no-mid-run-budget-or-park-controls: operator-authorized in-place
+# mid-run mutators of the ACTIVE run marker. Both follow the bind_marker_session
+# / reassert_marker_owner discipline: read the live marker, mutate ONE facet,
+# _atomic_write it back — NO clobber, NO restart, NO run-end flush. The CLI
+# wrappers gate them behind refuse_if_cycle_active (orchestrator-only) AND
+# --operator-authorized (the operator explicitly approved the change), parallel
+# to the --run-end --reason checkpoint authorization gate.
+# ---------------------------------------------------------------------------
+
+def set_marker_max_cycles(new_max: int) -> "dict | None":
+    """Update the ACTIVE run marker's ``max_cycles`` in place (mid-run budget change).
+
+    The atomic, marker-consistent enactment of an operator "extend/reduce budget
+    to N" — the first-class replacement for the two broken workarounds
+    (``--run-start --max-cycles N`` REFUSES on an active marker via the
+    clobber guard; ``--run-end`` + ``--run-start`` runs the heavy flush and ENDS
+    the run; passing ``--max-cycles N`` per probe leaves the marker stale). After
+    this call the marker IS the authoritative live budget: the cycle header
+    (fold_max_cycles) and the per-feature budget guard (which reads the marker's
+    max_cycles) both agree with it, with no restart.
+
+    Contract:
+      - No active marker → no-op, returns None (the CLI wrapper _dies with a
+        clear "no active run marker" message).
+      - Otherwise: set ``max_cycles = new_max`` atomically and return a summary
+        ``{"max_cycles": new_max, "prior_max_cycles": <old>}``.
+
+    Args:
+        new_max: the new whole-run cycle budget (a positive int; the CLI
+            validates ``>= 1`` before calling).
+
+    Returns:
+        Summary dict on success, or None when no active marker exists.
+    """
+    marker = read_run_marker()
+    if marker is None:
+        return None
+    prior = marker.get("max_cycles")
+    marker["max_cycles"] = int(new_max)
+    marker_path = claude_state_dir() / _MARKER_FILENAME
+    _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+    return {"max_cycles": int(new_max), "prior_max_cycles": prior}
+
+
+def set_marker_park(
+    *,
+    park_needs_input: "bool | None" = None,
+    park_blocked: "bool | None" = None,
+    park_provisional: "bool | None" = None,
+) -> "dict | None":
+    """Toggle the ACTIVE run marker's park fields in place (mid-run park toggle).
+
+    Each argument is tri-state: ``None`` leaves that field untouched; a bool sets
+    it. The resulting park state MUST satisfy the standing invariant
+    ``park_provisional ⇒ park_needs_input`` (a provisional-accept run is a strict
+    modifier of needs-input park mode, SPEC D1). An update that would violate it
+    is REFUSED via ``_die`` with ZERO writes — the same fail-closed discipline as
+    the CLI's ``--park-provisional requires --park-needs-input`` guard.
+
+    Contract:
+      - No active marker → no-op, returns None (the CLI wrapper _dies "no active
+        run marker").
+      - Otherwise: apply the supplied field changes, enforce the invariant
+        (refuse on violation), _atomic_write, and return the resulting park state
+        ``{"park_needs_input": ..., "park_blocked": ..., "park_provisional": ...,
+        "prior": {<the three prior values>}}``.
+
+    Args:
+        park_needs_input: set the needs-input park facet, or None to leave it.
+        park_blocked: set the blocked park facet, or None to leave it.
+        park_provisional: set the provisional-accept modifier, or None to leave it.
+
+    Returns:
+        Resulting park-state summary dict on success, or None when no active
+        marker exists.
+    """
+    from ._ctx import _die  # deferred kernel import (function-local — parity with parse_parent_run_arg)
+    marker = read_run_marker()
+    if marker is None:
+        return None
+    prior = {
+        "park_needs_input": bool(marker.get("park_needs_input")),
+        "park_blocked": bool(marker.get("park_blocked")),
+        "park_provisional": bool(marker.get("park_provisional")),
+    }
+    ni = prior["park_needs_input"] if park_needs_input is None else bool(park_needs_input)
+    bl = prior["park_blocked"] if park_blocked is None else bool(park_blocked)
+    pv = prior["park_provisional"] if park_provisional is None else bool(park_provisional)
+    # Standing invariant: park_provisional is a strict modifier of park_needs_input.
+    # Refuse the inconsistent result with ZERO writes (fail-closed).
+    if pv and not ni:
+        _die(
+            "--set-park-provisional on requires park mode (park_needs_input) to be "
+            "on. Enable park first (--set-park on), or turn provisional off."
+        )
+        return None  # pragma: no cover — _die exits
+    marker["park_needs_input"] = ni
+    marker["park_blocked"] = bl
+    marker["park_provisional"] = pv
+    marker_path = claude_state_dir() / _MARKER_FILENAME
+    _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+    return {
+        "park_needs_input": ni,
+        "park_blocked": bl,
+        "park_provisional": pv,
+        "prior": prior,
+    }
 
 
 def delete_run_marker(clear_registry: bool = False) -> bool:
@@ -2351,6 +2488,82 @@ def fold_run_counters(
         forward = forward_flag
         meta = meta_flag
     return (forward, meta)
+
+
+def fold_max_cycles(
+    max_cycles_flag: "int | None",
+    marker: dict | None,
+) -> "int | None":
+    """Resolve the effective ``max_cycles`` for the cycle header / budget cap.
+
+    lazy-batch-no-mid-run-budget-or-park-controls: the MARKER is the authoritative
+    live budget. When a marker is present, its persisted ``max_cycles`` wins — so a
+    mid-run ``--set-max-cycles N`` update is reflected in the header immediately,
+    WITHOUT the orchestrator re-passing ``--max-cycles`` (the old cosmetic
+    workaround left the marker stale while the header diverged). Note the ASYMMETRY
+    with ``fold_run_counters`` (where the explicit flag wins): the counters are the
+    live truth an orchestrator supplies each probe, whereas the budget is
+    run-scoped state OWNED by the marker and mutated only via ``--set-max-cycles``.
+    At ``--run-start`` the marker's ``max_cycles`` is seeded from ``--max-cycles``,
+    so the two agree until an explicit mid-run change — exactly the intent.
+
+    Priority:
+      - marker present → the marker's ``max_cycles`` (may be None for an unbounded
+        run — respected as-is), else
+      - no marker → the explicit ``--max-cycles`` flag (may be None).
+
+    Args:
+        max_cycles_flag: the explicit ``--max-cycles`` CLI value (or None).
+        marker: the active run marker (or None).
+
+    Returns:
+        The effective max_cycles (int or None).
+    """
+    if marker is not None:
+        # ``max_cycles`` is an original marker field (never legacy-absent), so a
+        # plain .get is safe; None means an unbounded run and is respected.
+        return marker.get("max_cycles")
+    return max_cycles_flag
+
+
+def fold_park_flags(
+    needs_input_flag: bool,
+    blocked_flag: bool,
+    provisional_flag: bool,
+    marker: dict | None,
+) -> "tuple[bool, bool, bool]":
+    """Resolve the effective park state for the probe (marker-authoritative).
+
+    lazy-batch-no-mid-run-budget-or-park-controls: park mode is RUN-SCOPED state
+    persisted in the marker, so a live run's probe reads the MARKER each cycle —
+    letting an operator toggle park mid-run via ``--set-park`` /
+    ``--set-park-provisional``. Priority (mirrors the byte-identity discipline):
+
+      - NEW-SCHEMA marker present (carries the ``park_needs_input`` key, seeded at
+        run-start from the invocation flags) → the marker is AUTHORITATIVE. A
+        mid-run ``--set-park off`` then disables park even though the orchestrator
+        may still pass the invocation ``--park-*`` flags (marker wins).
+      - No marker, OR a LEGACY marker lacking the fields (an in-flight run started
+        before this change) → fall back to the CLI flags (back-compat: an
+        in-flight ``--park`` run keeps parking; a no-marker probe is byte-identical
+        to the pre-feature baseline).
+
+    Args:
+        needs_input_flag: the ``--park-needs-input`` CLI value.
+        blocked_flag: the ``--park-blocked`` CLI value.
+        provisional_flag: the ``--park-provisional`` CLI value.
+        marker: the active run marker (or None).
+
+    Returns:
+        ``(park_needs_input, park_blocked, park_provisional)`` bools.
+    """
+    if marker is not None and "park_needs_input" in marker:
+        return (
+            bool(marker.get("park_needs_input")),
+            bool(marker.get("park_blocked")),
+            bool(marker.get("park_provisional")),
+        )
+    return (bool(needs_input_flag), bool(blocked_flag), bool(provisional_flag))
 
 
 def _bump_per_feature_forward(marker: dict, feature_id) -> None:

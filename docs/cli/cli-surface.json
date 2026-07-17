@@ -926,6 +926,51 @@
           "choices": null,
           "default_kind": "none",
           "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: update the ACTIVE run marker's max_cycles to N in place (mid-run budget change).",
+          "metavar": "N",
+          "name": "--set-max-cycles",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": [
+            "off",
+            "on"
+          ],
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: toggle park mode on the ACTIVE run marker mid-run.",
+          "metavar": null,
+          "name": "--set-park",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": [
+            "off",
+            "on"
+          ],
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: toggle park-provisional-acceptance on the ACTIVE run marker mid-run.",
+          "metavar": null,
+          "name": "--set-park-provisional",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
           "help_head": "Bug severity, e.g.",
           "metavar": null,
           "name": "--severity",
@@ -2473,6 +2518,51 @@
           "help_head": "Optional session id for --marker-present (and other read paths): a marker bound to a DIFFERENT session id reads as absent (non-destructive session isolation).",
           "metavar": null,
           "name": "--session-id",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: update the ACTIVE run marker's max_cycles to N in place (mid-run budget change).",
+          "metavar": "N",
+          "name": "--set-max-cycles",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": [
+            "off",
+            "on"
+          ],
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: toggle park mode on the ACTIVE run marker mid-run.",
+          "metavar": null,
+          "name": "--set-park",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": [
+            "off",
+            "on"
+          ],
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: toggle park-provisional-acceptance on the ACTIVE run marker mid-run.",
+          "metavar": null,
+          "name": "--set-park-provisional",
           "nargs": null,
           "positional": false,
           "required": false

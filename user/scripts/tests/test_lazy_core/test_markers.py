@@ -7505,6 +7505,162 @@ def test_ctx_mutation_visible_through_facade():
         lazy_core._ctx._DIAGNOSTICS.clear()
 
 
+# ---------------------------------------------------------------------------
+# lazy-batch-no-mid-run-budget-or-park-controls: operator-authorized mid-run
+# budget + park controls (marker schema + in-place mutators + folds).
+# ---------------------------------------------------------------------------
+
+def test_write_run_marker_seeds_park_fields():
+    """write_run_marker mints the three park fields (default False), seeds them
+    from the kwargs, and classifies them RUN_FRESH_FIELDS."""
+    _guard()
+    now = _t.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # Default: all three park fields present and False (byte-identical to
+            # a non-park marker's shape).
+            m = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=now,
+            )
+            for k in ("park_needs_input", "park_blocked", "park_provisional"):
+                assert k in m, f"marker must always mint {k}"
+                assert m[k] is False, f"{k} must default False"
+            # Seeded from the --run-start invocation flags.
+            m2 = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=now,
+                park_needs_input=True, park_blocked=True, park_provisional=True,
+            )
+            assert (m2["park_needs_input"], m2["park_blocked"], m2["park_provisional"]) == (
+                True, True, True
+            )
+        finally:
+            _clear_state_dir()
+    # Partition completeness: the three park keys are classified RUN_FRESH_FIELDS
+    # (re-supplied at run-start, like max_cycles) — not continuity-carried.
+    for k in ("park_needs_input", "park_blocked", "park_provisional"):
+        assert k in lazy_core.RUN_FRESH_FIELDS, (
+            f"{k} must be classified RUN_FRESH_FIELDS"
+        )
+        assert k not in lazy_core.RUN_CONTINUITY_FIELDS
+
+
+def test_set_marker_max_cycles_updates_in_place():
+    """set_marker_max_cycles mutates the ACTIVE marker's max_cycles with no
+    clobber/restart, echoes prior/new, and no-ops (None) when no marker exists."""
+    _guard()
+    now = _t.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=10, now=now,
+            )
+            result = lazy_core.set_marker_max_cycles(20)
+            assert result == {"max_cycles": 20, "prior_max_cycles": 10}
+            # Persisted in place — same marker file, no restart.
+            data = json.loads(
+                (Path(td) / "lazy-run-marker.json").read_text(encoding="utf-8")
+            )
+            assert data["max_cycles"] == 20
+            # The mid-run budget fold now returns the updated value.
+            assert lazy_core.fold_max_cycles(None, data) == 20
+        finally:
+            _clear_state_dir()
+    # No active marker → no-op, None.
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            assert lazy_core.set_marker_max_cycles(20) is None
+        finally:
+            _clear_state_dir()
+
+
+def test_set_marker_park_toggles_and_enforces_invariant():
+    """set_marker_park toggles the park facets in place, and REFUSES (SystemExit,
+    zero writes) a result that violates park_provisional ⇒ park_needs_input."""
+    _guard()
+    now = _t.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        marker_path = Path(td) / "lazy-run-marker.json"
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=now,
+            )
+            # Arm the park umbrella (needs_input + blocked).
+            res = lazy_core.set_marker_park(park_needs_input=True, park_blocked=True)
+            assert (res["park_needs_input"], res["park_blocked"], res["park_provisional"]) == (
+                True, True, False
+            )
+            assert res["prior"] == {
+                "park_needs_input": False, "park_blocked": False,
+                "park_provisional": False,
+            }
+            # Provisional on is now legal (needs_input is on).
+            res2 = lazy_core.set_marker_park(park_provisional=True)
+            assert res2["park_provisional"] is True
+            # Invariant violation: turning needs_input off while provisional is on
+            # is REFUSED with zero writes (marker unchanged on disk).
+            before = marker_path.read_text(encoding="utf-8")
+            raised = False
+            try:
+                lazy_core.set_marker_park(park_needs_input=False)
+            except SystemExit:
+                raised = True
+            assert raised, "an invariant-violating park update must _die"
+            assert marker_path.read_text(encoding="utf-8") == before, (
+                "a refused park update must leave the marker byte-identical"
+            )
+        finally:
+            _clear_state_dir()
+    # No active marker → no-op, None.
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            assert lazy_core.set_marker_park(park_needs_input=True) is None
+        finally:
+            _clear_state_dir()
+
+
+def test_fold_max_cycles_marker_authoritative():
+    """fold_max_cycles: marker wins when present (live budget), flag when absent."""
+    _guard()
+    assert lazy_core.fold_max_cycles(10, None) == 10
+    assert lazy_core.fold_max_cycles(None, None) is None
+    # Marker present → its max_cycles is authoritative (ignores the stale flag).
+    assert lazy_core.fold_max_cycles(10, {"max_cycles": 20}) == 20
+    # None max_cycles in the marker means an unbounded run — respected as-is.
+    assert lazy_core.fold_max_cycles(10, {"max_cycles": None}) is None
+
+
+def test_fold_park_flags_marker_authoritative_with_legacy_fallback():
+    """fold_park_flags: a NEW-schema marker is authoritative; a legacy marker
+    lacking the fields and the no-marker path fall back to the CLI flags."""
+    _guard()
+    # No marker → flags (byte-identical back-compat).
+    assert lazy_core.fold_park_flags(True, True, False, None) == (True, True, False)
+    # New-schema marker → marker wins (so --set-park off disables even if the
+    # orchestrator still passes the invocation flags).
+    new_marker = {
+        "park_needs_input": False, "park_blocked": False, "park_provisional": False,
+    }
+    assert lazy_core.fold_park_flags(True, True, True, new_marker) == (
+        False, False, False
+    )
+    # New-schema marker with park ON → authoritative on.
+    on_marker = {
+        "park_needs_input": True, "park_blocked": True, "park_provisional": True,
+    }
+    assert lazy_core.fold_park_flags(False, False, False, on_marker) == (
+        True, True, True
+    )
+    # Legacy marker (no park keys) → fall back to flags (in-flight run keeps parking).
+    legacy = {"max_cycles": 10}
+    assert lazy_core.fold_park_flags(True, False, False, legacy) == (True, False, False)
+
+
 _TESTS = [
     ("test_lazy_state_test_output_matches_baseline", test_lazy_state_test_output_matches_baseline),
     ("test_bug_state_test_output_matches_baseline", test_bug_state_test_output_matches_baseline),
@@ -7701,6 +7857,11 @@ _TESTS = [
     ("test_no_bare_production_sentinel_writes", test_no_bare_production_sentinel_writes),
     ("test_bare_write_lint_guard_detects_planted_violation", test_bare_write_lint_guard_detects_planted_violation),
     ("test_ctx_mutation_visible_through_facade", test_ctx_mutation_visible_through_facade),
+    ("test_write_run_marker_seeds_park_fields", test_write_run_marker_seeds_park_fields),
+    ("test_set_marker_max_cycles_updates_in_place", test_set_marker_max_cycles_updates_in_place),
+    ("test_set_marker_park_toggles_and_enforces_invariant", test_set_marker_park_toggles_and_enforces_invariant),
+    ("test_fold_max_cycles_marker_authoritative", test_fold_max_cycles_marker_authoritative),
+    ("test_fold_park_flags_marker_authoritative_with_legacy_fallback", test_fold_park_flags_marker_authoritative_with_legacy_fallback),
 ]
 
 

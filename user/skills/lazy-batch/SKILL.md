@@ -78,12 +78,20 @@ Unknown tokens are an error:
 - **(a) Budget change** — the operator wants to extend or reduce `max_cycles` (e.g. "run 20 more cycles", "stop after this feature").
 - **(b) Standing resolution mode** — the operator wants a recurring resolution policy applied automatically until some condition (e.g. "auto-resolve all blockers as add-phase-and-fix until feature X completes").
 - **(c) Early stop** — the operator wants to terminate the current run sooner than `max_cycles` (e.g. "stop after this cycle", "pause after the next commit").
+- **(d) Park toggle** — the operator wants to turn park mode (or park-provisional) on or off mid-run (e.g. "start parking blockers instead of stopping", "stop parking — halt on the next needs-input").
 
 Echo-back format (one `AskUserQuestion`, phrased in active terms):
 
 > `{Interpretation of the directive in active terms, e.g. "Extend to N cycles and auto-resolve blockers as add-phase-and-fix until X completes — confirm?"}` — Yes / No (adjust: ...)
 
 Only enter the new mode after the operator confirms. If they say No or provide a correction, re-parse and echo again.
+
+**Enacting a budget or park change (operator-authorized mid-run controls).** After the echo-back confirms, ENACT the change ATOMICALLY through the marker — do NOT hand-adjust the in-context variables and leave the marker stale, and do NOT route a budget change through `--run-start` (it REFUSES against the active marker) or `--run-end`+`--run-start` (that runs the heavy run-end flush and ENDS the run). The marker is the authoritative live budget/park surface; the probe reads it each cycle:
+
+- **Budget (a):** `python3 ~/.claude/scripts/lazy-state.py --set-max-cycles <N> --operator-authorized` — updates the ACTIVE marker's `max_cycles` in place (no clobber, no restart, no flush). Then set the in-context `max_cycles = N` to match. The header `[fwd/N]` (Step 1a probe, folded from the marker) and the Step-1c cap (`forward_cycles >= max_cycles`) now agree with the marker. `--set-max-cycles` REFUSES without `--operator-authorized` (parallel to the `--run-end --reason checkpoint` gate) and requires `N >= 1`.
+- **Park (d):** `python3 ~/.claude/scripts/lazy-state.py --set-park on|off --operator-authorized` toggles park mode (`on` arms both `park_needs_input` and `park_blocked` — the `--park` umbrella; `off` clears both and `park_provisional`). `--set-park-provisional on|off --operator-authorized` toggles park-provisional (`on` requires park already on). Set the in-context `park_mode` / `park_provisional_mode` to match. Because the marker now drives park, the probe's park behavior updates on the next cycle — you no longer need to change the invocation `--park-*` flags you pass (the marker wins). Both REFUSE without `--operator-authorized`.
+
+An **early stop (c)** still routes through the budget-and-queue-guard `AskUserQuestion` + `--run-end --reason checkpoint --operator-authorized` (below) — it is NOT a `--set-max-cycles` change.
 
 **Budget-and-queue guard:** the orchestrator MUST NOT end a run with both budget remaining (`forward_cycles < max_cycles`) AND active queue items remaining (features that are neither complete, deferred, nor blocked on research) without first asking the operator (one `AskUserQuestion`) whether to continue into a new run or stop now. This prevents silent early exits where the orchestrator halts mid-queue without the operator realising. The `AskUserQuestion` path is the **attended default**. After the operator confirms a stop, the orchestrator passes `--operator-authorized` to `lazy-state.py --run-end --reason checkpoint`; without that confirmation flag the script REFUSES the checkpoint (exit 1, marker kept) — see HARD CONSTRAINT 10.
 

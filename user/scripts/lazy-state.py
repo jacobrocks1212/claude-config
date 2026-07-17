@@ -11468,6 +11468,33 @@ def build_parser() -> argparse.ArgumentParser:
                               "(requires --session-id). Gated by "
                               "refuse_if_cycle_active (exit 3 for a cycle "
                               "subagent). single-slot-marker-ownership-race."))
+    # lazy-batch-no-mid-run-budget-or-park-controls: operator-authorized mid-run
+    # controls. Each is orchestrator-only (refuse_if_cycle_active), requires an
+    # ACTIVE marker, and REFUSES without --operator-authorized (parallel to the
+    # --run-end --reason checkpoint authorization gate). They mutate the active
+    # marker IN PLACE — no clobber, no restart, no run-end flush.
+    parser.add_argument("--set-max-cycles", dest="set_max_cycles",
+                        type=int, default=None, metavar="N",
+                        help=("Orchestrator-only, --operator-authorized: update the "
+                              "ACTIVE run marker's max_cycles to N in place (mid-run "
+                              "budget change). Atomic — no clobber/restart/run-end "
+                              "flush. After this the marker is the authoritative live "
+                              "budget: the cycle header and per-feature budget guard "
+                              "both agree with N. Refused without --operator-authorized."))
+    parser.add_argument("--set-park", dest="set_park",
+                        choices=["on", "off"], default=None,
+                        help=("Orchestrator-only, --operator-authorized: toggle park "
+                              "mode on the ACTIVE run marker mid-run. 'on' arms BOTH "
+                              "park_needs_input and park_blocked (the --park umbrella); "
+                              "'off' clears both AND park_provisional. The probe reads "
+                              "the marker each cycle. Refused without --operator-authorized."))
+    parser.add_argument("--set-park-provisional", dest="set_park_provisional",
+                        choices=["on", "off"], default=None,
+                        help=("Orchestrator-only, --operator-authorized: toggle "
+                              "park-provisional-acceptance on the ACTIVE run marker "
+                              "mid-run. 'on' requires park mode already on "
+                              "(park_provisional requires park_needs_input, SPEC D1) — "
+                              "else refused. Refused without --operator-authorized."))
     parser.add_argument("--record-intervention", dest="record_intervention",
                         action="store_true",
                         help=("intervention-efficacy-tracking: write the "
@@ -12453,6 +12480,13 @@ def main() -> int:
             session_id=args.session_id,
             attended=not args.unattended,
             parent_run=parent_run,
+            # lazy-batch-no-mid-run-budget-or-park-controls: SEED park mode into
+            # the marker from the invocation --park flags so the probe reads it
+            # each cycle and --set-park can toggle it in place. Default False →
+            # byte-identical to a non-park run's marker.
+            park_needs_input=args.park_needs_input,
+            park_blocked=args.park_blocked,
+            park_provisional=args.park_provisional,
         )
         out: dict = dict(marker)
         # Phase 7 WU-7.4: consume any checkpoint left by a prior checkpoint
@@ -13131,6 +13165,66 @@ def main() -> int:
         ) + "\n")
         return 0
 
+    if args.set_max_cycles is not None:
+        # lazy-batch-no-mid-run-budget-or-park-controls: operator-authorized
+        # mid-run budget change. Orchestrator-only — refuse FIRST (exit 3, zero
+        # side effects), exactly like --reassert-owner / --run-start. Then require
+        # --operator-authorized (parallel to the --run-end checkpoint gate) and a
+        # positive N, and require an ACTIVE marker before mutating in place.
+        lazy_core.refuse_if_cycle_active("--set-max-cycles")
+        if not args.operator_authorized:
+            _die("--set-max-cycles requires --operator-authorized (the operator must "
+                 "have approved the mid-run budget change).")
+        if args.set_max_cycles < 1:
+            _die("--set-max-cycles requires a positive integer N (>= 1).")
+        result = lazy_core.set_marker_max_cycles(args.set_max_cycles)
+        if result is None:
+            _die("--set-max-cycles: no active run marker to update.")
+        out = {"max_cycles_updated": True, **result}
+        sys.stdout.write(json.dumps(out, indent=2) + "\n")
+        return 0
+
+    if args.set_park is not None:
+        # lazy-batch-no-mid-run-budget-or-park-controls: operator-authorized
+        # mid-run park toggle. 'on' arms BOTH park facets (the --park umbrella);
+        # 'off' clears both AND park_provisional (provisional requires needs-input).
+        lazy_core.refuse_if_cycle_active("--set-park")
+        if not args.operator_authorized:
+            _die("--set-park requires --operator-authorized (the operator must have "
+                 "approved the mid-run park toggle).")
+        _on = args.set_park == "on"
+        result = lazy_core.set_marker_park(
+            park_needs_input=_on,
+            park_blocked=_on,
+            # Turning park OFF also clears the provisional modifier (it requires
+            # needs-input); turning park ON leaves provisional untouched (armed
+            # separately via --set-park-provisional).
+            park_provisional=(None if _on else False),
+        )
+        if result is None:
+            _die("--set-park: no active run marker to update.")
+        out = {"park_updated": True, **result}
+        sys.stdout.write(json.dumps(out, indent=2) + "\n")
+        return 0
+
+    if args.set_park_provisional is not None:
+        # lazy-batch-no-mid-run-budget-or-park-controls: operator-authorized
+        # mid-run park-provisional toggle. set_marker_park enforces the standing
+        # invariant (provisional requires needs-input) and refuses 'on' when park
+        # is off (exit, zero writes).
+        lazy_core.refuse_if_cycle_active("--set-park-provisional")
+        if not args.operator_authorized:
+            _die("--set-park-provisional requires --operator-authorized (the operator "
+                 "must have approved the mid-run park-provisional toggle).")
+        result = lazy_core.set_marker_park(
+            park_provisional=(args.set_park_provisional == "on"),
+        )
+        if result is None:
+            _die("--set-park-provisional: no active run marker to update.")
+        out = {"park_updated": True, **result}
+        sys.stdout.write(json.dumps(out, indent=2) + "\n")
+        return 0
+
     if args.record_intervention:
         # intervention-efficacy-tracking Phase 1: the manual / hardening-round /
         # D9-backfill capture path (the completion-gate capture lives inside
@@ -13295,18 +13389,37 @@ def main() -> int:
     if args.test:
         return run_smoke_tests()
 
+    # lazy-batch-no-mid-run-budget-or-park-controls: resolve the EFFECTIVE park
+    # state — the marker is authoritative for a live run (so a mid-run --set-park
+    # toggle takes effect), with the CLI flags as the no-marker / legacy-marker
+    # fallback (byte-identical back-compat). Threaded into compute_state AND the
+    # emit path below so header/park behavior update immediately.
+    _park_marker = lazy_core.read_run_marker()
+    _eff_park_ni, _eff_park_bl, _eff_park_pv = lazy_core.fold_park_flags(
+        args.park_needs_input, args.park_blocked, args.park_provisional,
+        _park_marker,
+    )
     state = compute_state(
         Path(args.repo_root),
         cloud=args.cloud,
         skip_needs_research=args.skip_needs_research,
         real_device=resolve_real_device(args.real_device),
         scope_feature_id=args.feature_id,
-        park_needs_input=args.park_needs_input,
-        park_blocked=args.park_blocked,
-        park_provisional=args.park_provisional,
+        park_needs_input=_eff_park_ni,
+        park_blocked=_eff_park_bl,
+        park_provisional=_eff_park_pv,
         per_feature_cycle_cap=args.per_feature_cycle_cap,
         strict_research_halt=args.strict_research_halt,
     )
+    # Surface the effective park state on the probe JSON when a marker is present
+    # (byte-identical no-marker output preserved) so the orchestrator can confirm
+    # a --set-park toggle took effect mid-run.
+    if _park_marker is not None and "park_needs_input" in _park_marker:
+        state["park_active"] = {
+            "park_needs_input": _eff_park_ni,
+            "park_blocked": _eff_park_bl,
+            "park_provisional": _eff_park_pv,
+        }
     # --repeat-count / --repeat-count-peek are strictly additive and flag-gated
     # so that default output remains byte-identical when neither is passed.
     # --repeat-count ADVANCES the persisted streak; --repeat-count-peek computes
@@ -13428,8 +13541,10 @@ def main() -> int:
                 # selects the park=park template sections (the stub-spec
                 # sentinel-mediation contract). Non-park emission is
                 # byte-identical (the attribute is absent on every
-                # pre-existing section).
-                park_mode=args.park_needs_input,
+                # pre-existing section). lazy-batch-no-mid-run-budget-or-park-
+                # controls: uses the EFFECTIVE (marker-authoritative) park state
+                # so a mid-run --set-park toggle drives the emitted template.
+                park_mode=_eff_park_ni,
             )
             if emitted is None:
                 state["cycle_prompt"] = None
@@ -13514,9 +13629,14 @@ def main() -> int:
             args.forward_cycles, args.meta_cycles,
             _marker,
         )
+        # lazy-batch-no-mid-run-budget-or-park-controls: the marker is the
+        # authoritative live budget — fold max_cycles from it when present so a
+        # mid-run --set-max-cycles update shows in the header immediately (no
+        # re-passing --max-cycles). No marker → the explicit flag (byte-identical).
+        _max_cycles = lazy_core.fold_max_cycles(args.max_cycles, _marker)
         state["cycle_header"] = lazy_core.format_cycle_header(
             state, forward_cycles=_fwd,
-            max_cycles=args.max_cycles, meta_cycles=_meta,
+            max_cycles=_max_cycles, meta_cycles=_meta,
         )
         # Phase 7 WU-7.1: deny-ledger enrichment — MARKER-GATED so default
         # (no-marker) probe output stays byte-identical to the committed
