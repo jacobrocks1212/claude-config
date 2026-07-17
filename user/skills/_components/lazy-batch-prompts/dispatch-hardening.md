@@ -140,8 +140,8 @@ marked run every Agent dispatch is registry-validated, and a hardening agent emi
 unregistered dispatches is exactly the failure class this stage polices. You MAY use the
 Skill tool (that is how you invoke `/harden-harness` itself).
 
-**Push policy:** commit `harden(<area>):` work locally under full gates; do NOT `git push`
-— the orchestrator/operator owns pushes for claude-config.
+**Push policy:** commit `harden(<area>):` work under full gates, then **`git push`** — claude-config's
+remote is always kept in sync with local (never leave a `harden(...)` commit unpushed).
 
 <!-- @section return-format pipelines=feature,bug modes=workstation,cloud -->
 ## Return format

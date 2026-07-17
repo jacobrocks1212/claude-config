@@ -7,9 +7,13 @@
   This matches the repo's existing commit history and the `/commit` skill convention.
 - **Commit cadence** — commit after each completed plan part / phase (the lazy pipeline expects a
   clean tree between cycles). Keep commits scoped to one logical change.
-- **Push** — allowed. claude-config is a personal config repo, not a work repo (the
-  `block-work-repo-git-push` hook does not apply here). Push when a feature or coherent batch is
-  complete.
+- **Push — ALWAYS keep the remote in sync (HARD REQUIREMENT).** claude-config is a personal config
+  repo, not a work repo (the `block-work-repo-git-push` hook does not apply here), so its
+  `origin/main` MUST NOT lag local `main`: **`git push` after every commit** (or immediately after a
+  coherent batch of commits in the same turn). Never leave a claude-config commit unpushed. This is
+  the OPPOSITE of the work-repo policy (AlgoBooth / cognito), where push is operator-gated via
+  `/push` — here, if you commit, you push. Any skill/component prose that says "commits stay local"
+  or "the operator owns pushes" for claude-config is superseded by this rule.
 - **Symlink awareness** — edits to `user/**`, `repos/**`, `personal/**`, `workspace/**` write
   through to live `~/.claude/` locations; `git status` in this repo reflects them directly.
 - **`LAZY_QUEUE.md` regen (mobile-queue-control)** — before each per-cycle commit, the orchestrator

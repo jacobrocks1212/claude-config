@@ -32,6 +32,15 @@ short-lived *work branches* and *worktree lane branches* (`lazy-batch-parallel`,
 **within a single run** and never persist. They are machinery, not the feature branches this policy
 prohibits.
 
+## Push Policy (HARD REQUIREMENT)
+
+**claude-config's remote is always kept in sync with local — `git push` after every commit.** This
+is a personal config repo, not a work repo (the `block-work-repo-git-push` hook does NOT apply here),
+so `origin/main` must never lag local `main`: if you commit to claude-config, you push it, in the
+same turn. There is no operator-gated / "commits stay local" step for this repo — that policy is for
+work repos (AlgoBooth / cognito, where `/push` is the human-invoked path). Full rules:
+`.claude/skill-config/commit-policy.md`.
+
 ## Directory Layout
 
 ```

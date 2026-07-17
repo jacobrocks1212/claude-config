@@ -1,6 +1,6 @@
 ---
 name: harden-harness
-description: Harness-hardening stage: USE WHEN a marked orchestrator run hits a misroute, no-route condition, inject-hook error, or process-friction ledger entry — root-causes the broken route, fixes mechanically under full gates, forks policy via NEEDS_INPUT.md.
+description: Harness-hardening stage: USE WHEN a marked orchestrator run hits a misroute, no-route condition, inject-hook error, or process-friction ledger entry — root-causes the broken route, fixes mechanically under full gates, and resolves design forks park-provisionally (selects the recommended option and IMPLEMENTS it, recording a ratification-pending NEEDS_INPUT_PROVISIONAL.md) — hard-parking only gate-weakening or structural forks.
 argument-hint: [description of the observed friction or no-route condition]
 ---
 
@@ -149,8 +149,10 @@ begins. This ensures the fix is well investigated beforehand, and serves as an a
   commit, so the audit trail predates the change.
 - **Proportionality:** even a trivial one-line fix gets a SHORT bug spec (verified symptom +
   root cause + fix scope in a few lines) — "every invocation" is literal, but the spec scales
-  to the fix. A pure NEEDS_INPUT design-fork round still authors the bug spec (Status:
-  Investigating / Concluded) documenting WHY it is operator-owned.
+  to the fix. A design-fork round still authors the bug spec (Status: Investigating /
+  Concluded) documenting the fork; under the park-provisional default (Step 3) it ALSO
+  implements the recommended option and records a provisional sentinel — only the
+  gate-weakening / structural carve-outs remain pure operator-owned parks that ship nothing.
 - **Then** proceed to Step 3 and implement the fix the concluded spec describes.
 
 ### Step 3: Act by decision class (tiered authority)
@@ -182,8 +184,9 @@ Plus:
   (`sentinel-frontmatter.md`), keep in lockstep with AlgoBooth's
   `scripts/check-docs-consistency.ts` `SENTINEL_SCHEMAS`.
 
-Commit under the `harden(<area>):` prefix (see §Commit discipline below). Commits stay
-local — do NOT `git push`; the orchestrator/operator owns pushes for claude-config.
+Commit under the `harden(<area>):` prefix (see §Commit discipline below), then **`git push`** —
+claude-config's remote is always kept in sync with local (see the Push rule in
+`.claude/skill-config/commit-policy.md`); never leave a `harden(...)` commit unpushed.
 
 #### Over-fit detector (anti-overfit reflex — runs AFTER the mechanical fix lands)
 
@@ -281,25 +284,54 @@ the round + Return format, and continue. Do NOT manufacture a spurious spin-off.
 **Contract / policy / design forks** (new pipeline steps, authority changes, gate semantics
 changes, anything an operator would want to own):
 
-Write `NEEDS_INPUT.md` into the relevant spec dir (usually
-`docs/specs/turn-routing-enforcement/` or the spec whose contract is at issue), following the
-canonical sentinel schema + rich-body convention from
-`~/.claude/skills/_components/sentinel-frontmatter.md`:
+**Default disposition: park-provisional — select the recommended option and IMPLEMENT it.**
+`/harden-harness` runs as if `--park --park-provisional` is always active: a design fork is NOT a
+blocking halt that ships nothing. For every design choice you:
 
-```yaml
----
-kind: needs-input
-feature_id: turn-routing-enforcement
-written_by: harden-harness
-decisions:
-  - "<one-line description of the design fork>"
-date: <YYYY-MM-DD>
----
-```
+1. **Author the decision** as a `NEEDS_INPUT.md` in the relevant spec dir (usually
+   `docs/specs/turn-routing-enforcement/` or the spec whose contract is at issue), following the
+   canonical schema + rich-body convention from `~/.claude/skills/_components/sentinel-frontmatter.md`
+   — with a full `## Decision Context` body, **recommendation-first options** (each decision carries a
+   `**Recommendation:**` block), and a file-level `divergence:` grade (`isolated | contained |
+   structural`, most-severe across decisions):
 
-With a full `## Decision Context` body per the rich-body convention. Never bake a
-harness-design fork in silently — the NEEDS_INPUT.md is the triage signal that surfaces it to
-the operator.
+   ```yaml
+   ---
+   kind: needs-input
+   feature_id: turn-routing-enforcement
+   written_by: harden-harness
+   divergence: isolated | contained | structural
+   decisions:
+     - "<one-line description of the design fork>"
+   date: <YYYY-MM-DD>
+   ---
+   ```
+
+2. **Select the recommended option and implement it** under full gates (the mechanical path above),
+   committing + pushing under `harden(<area>):`. The run ships a real change, not a park.
+
+3. **Provisionally accept the decision** so it is ratification-pending (never silently baked in):
+   run `python3 ~/.claude/scripts/lazy-state.py --provisionalize-sentinel <path-to-NEEDS_INPUT.md>`.
+   This appends a `## Resolution` block (`resolved_by: auto-provisional`, `decision_commit: <HEAD sha>`)
+   and RENAMES the file to `NEEDS_INPUT_PROVISIONAL.md` (keeps `kind: needs-input`; the filename is the
+   state carrier). That sentinel is the ratification signal: a later operator ratify/redirect pass (the
+   `provisional-ratification` affordance) closes it, and a redirect authors a `corrective` phase scoped
+   by `git diff <decision_commit>..HEAD`. Commit + push the provisionalized sentinel with (or right
+   after) the implementing commit.
+
+**The two carve-outs that STILL hard-park** (write a blocking `NEEDS_INPUT.md`, implement nothing):
+
+- **Gate-weakening (ALWAYS — Prohibition #2).** A fork whose recommended option would remove/soften a
+  gate, threshold, denial, or validation is NEVER implemented provisionally — it halts for explicit
+  operator sign-off. Weakening a gate to clear a denial is prohibited, not a "design choice."
+- **`structural` divergence, or a baseline the operator has never ratified (`stub_origin`).** When the
+  options fork architecture, persistent data, or a user-visible workflow — so a wrong provisional pick
+  is expensive to redirect — grade it `divergence: structural` and park it for the operator, exactly as
+  `--park-provisional` itself fails a structural/stub-origin decision closed. Bias toward
+  provisional-implement for anything genuinely `isolated`/`contained`; reserve the hard park for these.
+
+Never bake a harness-design fork in silently — the provisional sentinel (or, for the two carve-outs,
+the blocking `NEEDS_INPUT.md`) is the triage signal that surfaces it to the operator.
 
 ### Step 4: Deliverable — HARDENING.md round
 
@@ -323,8 +355,9 @@ template (the harness's own hypothesis-ledger discipline):
 
 **Action:**
 <one of:>
-  - Mechanical fix applied: <description>. Gates run: test_lazy_core.py N/N, test_hooks.py N/N, lint-skills.py OK, lazy-state.py/bug-state.py --test suites OK. Commit: <hash>.
-  - NEEDS_INPUT.md written: <path>. Decisions: <decision titles>.
+  - Mechanical fix applied: <description>. Gates run: test_lazy_core.py N/N, test_hooks.py N/N, lint-skills.py OK, lazy-state.py/bug-state.py --test suites OK. Commit + push: <hash>.
+  - Provisional design-fork resolved: implemented recommended option for <decision titles>. Gates run: <as above>. Commit + push: <hash>. Provisional sentinel: <path to NEEDS_INPUT_PROVISIONAL.md> (decision_commit: <sha>).
+  - NEEDS_INPUT.md written (hard-park carve-out — gate-weakening / structural, nothing implemented): <path>. Decisions: <decision titles>.
 
 **Over-fit spin-off:** <one of:>
   - none — fix is structural / class has not recurred; no over-fit smell tripped.
@@ -346,9 +379,10 @@ If the hardening log directory or the current month's file does not yet exist, c
 
 ### Intervention record for the round (intervention-efficacy-tracking, additive)
 
-After appending a **mechanical-fix** round (the `Mechanical fix applied:` action form — a
-NEEDS_INPUT round records no intervention; nothing shipped), ALSO capture the round as a
-hypothesis-ledger intervention record so its efficacy is measured instead of assumed. This is
+After appending a round that SHIPPED a change (the `Mechanical fix applied:` OR the
+`Provisional design-fork resolved:` action form — a pure hard-park `NEEDS_INPUT.md` round records
+no intervention; nothing shipped), ALSO capture the round as a hypothesis-ledger intervention
+record so its efficacy is measured instead of assumed. This is
 ADDITIVE to the HARDENING.md round above — it replaces nothing. From the claude-config root:
 
 ```bash
@@ -444,9 +478,12 @@ The commit prefix is load-bearing for retro grading: the HARDENING.md log cites 
 ## Outputs
 
 1. A round APPENDED to `docs/specs/turn-routing-enforcement/hardening-log/YYYY-MM.md`.
-2. Either:
-   - A committed mechanical fix (under full gates, `harden(<area>):` prefix), OR
-   - A `NEEDS_INPUT.md` written to the relevant spec dir.
+2. One of:
+   - A committed + pushed mechanical fix (under full gates, `harden(<area>):` prefix), OR
+   - A committed + pushed provisional design-fork resolution (recommended option implemented under
+     gates) PLUS a `NEEDS_INPUT_PROVISIONAL.md` (ratification-pending), OR
+   - For a gate-weakening / structural carve-out only: a blocking `NEEDS_INPUT.md` written to the
+     relevant spec dir (nothing implemented).
    PLUS, when the over-fit detector trips: a front-enqueued `/spec`/`/spec-bug` for the
    generalized class (via `adhoc-enqueue`), recorded in the round's `**Over-fit spin-off:**`
    line and surfaced via `PushNotification`. The mechanical fix and the spin-off are both
@@ -460,7 +497,7 @@ Structured summary:
 - `trigger_kind`: one of validate-deny | no-route | inject-hook-error | process-friction | manual
 - `divergence_point`: one-line naming the step and dispatch class
 - `root_cause_class`: one of missing-emit-section | unbound-token | ambiguous-prose | script-defect | missing-contract | hook-defect
-- `action`: "mechanical-fix" (with commit hash) or "needs-input" (with path)
+- `action`: "mechanical-fix" (with commit hash), "provisional-resolve" (with commit hash + NEEDS_INPUT_PROVISIONAL.md path + decision_commit), or "needs-input" (gate-weakening / structural hard-park carve-out, with path)
 - `spinoff`: the over-fit spin-off, if any — `<item_id> (reason: <smell signal + one-line class>)`, or `none`. When non-`none`, the orchestrator fires a `PushNotification` ("spun off `<item_id>` — `<reason>`") and adds a D7 digest entry; the front-enqueued item is worked next.
 - `gates_run`: summary of counts (test_lazy_core.py N/N, test_hooks.py N/N, etc.)
 - `log_path`: path to the hardening-log round (e.g. docs/specs/turn-routing-enforcement/hardening-log/2026-06.md)
