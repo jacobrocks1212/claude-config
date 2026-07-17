@@ -139,6 +139,62 @@ def test_probe_failopen_benign_default_on_loader_error(lazy_state_mod, tmp_path)
 
 
 # ---------------------------------------------------------------------------
+# live-settings-probe-false-positive-in-consumer-repo (Gap 2): the tracked
+# settings SSOT lives ONLY in the claude-config checkout; a run TARGETING a
+# consumer repo (AlgoBooth: no user/settings.json) must resolve the SSOT to
+# claude-config, not the run's repo_root, or every probe false-reports
+# 'missing settings'.
+# ---------------------------------------------------------------------------
+
+
+def test_settings_ssot_root_falls_back_for_consumer_repo(lazy_state_mod, tmp_path):
+    """A consumer repo (no user/settings.json) resolves to the claude-config
+    checkout; a repo that HAS user/settings.json is used unchanged."""
+    ddl = lazy_state_mod._load_doc_drift_module()
+    cc = tmp_path / "cc"
+    (cc / "user").mkdir(parents=True)
+    (cc / "user" / "settings.json").write_text("{}", encoding="utf-8")
+    ddl._config_checkout_root = lambda: cc
+
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+
+    # Consumer repo → falls back to the claude-config checkout.
+    assert Path(ddl.settings_ssot_root(consumer)) == cc
+    # A repo that already carries the SSOT (claude-config itself / a hermetic
+    # fixture) → used unchanged, so --live CLI + hermetic tests stay identical.
+    assert Path(ddl.settings_ssot_root(cc)) == cc
+
+
+def test_probe_consumer_repo_resolves_ssot_to_claude_config(lazy_state_mod, tmp_path):
+    """End-to-end: probing from a consumer repo whose live symlink correctly
+    points at the claude-config SSOT reports ok=True (pre-fix: false 'missing
+    user/settings.json' because tracked resolved to the consumer repo)."""
+    cc = tmp_path / "claude-config"
+    (cc / "user").mkdir(parents=True)
+    (cc / "user" / "settings.json").write_text(
+        json.dumps({"hooks": {}}), encoding="utf-8"
+    )
+    live_path = _clean_live_path(cc, tmp_path)  # symlink → cc's tracked SSOT
+
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()  # AlgoBooth-like: no user/ dir at all
+
+    # Pre-patch the config-checkout resolver on a loaded ddl and feed it through
+    # the probe's loader seam (the probe re-loads fresh each call otherwise).
+    ddl = lazy_state_mod._load_doc_drift_module()
+    ddl._config_checkout_root = lambda: cc
+    lazy_state_mod._load_doc_drift_module = lambda: ddl
+
+    ok, detail = lazy_state_mod.live_settings_probe(consumer, live_path=live_path)
+
+    assert ok is True, (
+        f"consumer-repo probe must resolve the SSOT to claude-config and report "
+        f"ok=True; got ok={ok!r} detail={detail!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # _live_settings_advisory (lazy_inject.py)
 # ---------------------------------------------------------------------------
 

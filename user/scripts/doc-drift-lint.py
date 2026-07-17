@@ -557,6 +557,40 @@ def _live_settings_path(repo_root):
     return Path.home() / ".claude" / "settings.json"
 
 
+def _config_checkout_root():
+    """The claude-config checkout root. This module lives at
+    ``<claude-config>/user/scripts/doc-drift-lint.py``, so ``parents[2]`` is the
+    root — resolved through the ``~/.claude/scripts`` symlink so it is correct on
+    every machine (Windows laptop/desktop, WSL) regardless of the checkout path.
+    Factored out so the probe callers (and tests) can monkeypatch it."""
+    return Path(__file__).resolve().parents[2]
+
+
+def settings_ssot_root(repo_root):
+    """Resolve the repo that actually holds the tracked settings SSOT
+    (``user/settings.json``).
+
+    live-settings-probe-false-positive-in-consumer-repo (Gap 2): the tracked
+    settings SSOT exists ONLY in the claude-config checkout — the live
+    ``~/.claude/settings.json`` symlink points there regardless of which repo a
+    ``/lazy-batch`` run TARGETS. A consumer repo (AlgoBooth) has no ``user/``
+    dir, so resolving the SSOT against the run's ``repo_root`` made every
+    consumer-repo probe false-report ``tracked user/settings.json is
+    missing/unreadable``. This mirrors the two-scope resolution the
+    efficacy/canary/intervention-coverage flush already uses (harness artifacts
+    resolve to claude-config, not the run's target repo).
+
+    When ``repo_root`` ALREADY carries ``user/settings.json`` — claude-config
+    itself, or a hermetic test fixture — it is returned unchanged, so the
+    ``--live`` CLI and the existing hermetic tests stay byte-identical. Only a
+    consumer repo (no ``user/settings.json``) falls back to the claude-config
+    checkout."""
+    rr = Path(repo_root)
+    if (rr / "user" / "settings.json").exists():
+        return rr
+    return _config_checkout_root()
+
+
 def check_live_settings(repo_root, live_path=None):
     """Pure-read comparison of the tracked SSOT (repo_root/user/settings.json)
     against the live settings path. Returns a list of Finding (check='live')."""

@@ -5158,6 +5158,99 @@ def test_longbuild_guard_denies_npm_run_build():
         )
 
 
+def test_longbuild_guard_denies_qg_rust():
+    """long-build-ownership-guard-misses-qg-gates (Gap 1): `npm run qg -- rust`
+    (the heavy Rust quality gate — build+clippy+fmt+test) → deny + takeover
+    signature. It exceeds a subagent turn like the packaged builds and orphans
+    cargo when torn down."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json("npm run qg -- rust"), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"`npm run qg -- rust` must deny; stdout: {result.stdout!r}"
+        )
+        reason = json.loads(result.stdout.strip())["hookSpecificOutput"][
+            "permissionDecisionReason"
+        ]
+        assert _LONGBUILD_TAKEOVER_SIGNATURE in reason, (
+            f"deny reason must name the takeover signature; got {reason!r}"
+        )
+
+
+def test_longbuild_guard_denies_qg_ts():
+    """`npm run qg -- ts` (vue-tsc+eslint+vitest+vite build, ~4-6 min) → deny.
+    qg-ts is NOT queue-serialized (no manifest op) but is still orchestrator-
+    owned — a bare backgrounded vite build vanishes on subagent tear."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json("npm run qg -- ts"), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"`npm run qg -- ts` must deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_denies_qg_sidecar_and_quality_gate_alias():
+    """`npm run qg -- sidecar` and the `npm run quality-gate -- rust` alias →
+    deny (both heavy-gate forms the manifest registers)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for cmd in ("npm run qg -- sidecar", "npm run quality-gate -- rust"):
+            result = _run_longbuild_guard(
+                _bash_preToolUse_json(cmd), state_dir
+            )
+            assert _containment_decision(result) == "deny", (
+                f"{cmd!r} must deny; stdout: {result.stdout!r}"
+            )
+
+
+def test_longbuild_guard_denies_cd_prefixed_qg_rust():
+    """A qg gate chained behind a leading `cd` (`cd "..." && npm run qg -- rust`)
+    → still deny (command-position matcher, not only string-start)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json('cd "C:/repo" && npm run qg -- rust'), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"cd-prefixed `npm run qg -- rust` must deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_allows_fast_qg_groups():
+    """The FAST qg groups (`arch`, `docs`, `lint`) and a bare `npm run qg` with
+    no target are NOT redirected — only the enumerated heavy targets
+    (rust/ts/sidecar) are (D1 near-zero-false-positive charter)."""
+    allow_cmds = [
+        "npm run qg -- arch",
+        "npm run qg -- docs",
+        "npm run qg -- lint",
+        "npm run qg",
+        "npm run qg -- ts-foo",   # not the exact `ts` target token
+    ]
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for cmd in allow_cmds:
+            result = _run_longbuild_guard(
+                _bash_preToolUse_json(cmd), state_dir
+            )
+            assert result.returncode == 0, (
+                f"{cmd!r} must exit 0; stderr: {result.stderr!r}"
+            )
+            assert _containment_decision(result) != "deny", (
+                f"{cmd!r} must NOT deny (fast qg group / bare qg); "
+                f"stdout: {result.stdout!r}"
+            )
+
+
 def test_longbuild_guard_env_prefix_tolerance():
     """A leading env assignment (`ENV=1 tauri build`) → still deny (the matcher
     tolerates the env-assignment prefix before the long-build binary)."""
@@ -7123,6 +7216,16 @@ _TESTS = [
      test_longbuild_guard_denies_cargo_build_release),
     ("test_longbuild_guard_denies_npm_run_build",
      test_longbuild_guard_denies_npm_run_build),
+    ("test_longbuild_guard_denies_qg_rust",
+     test_longbuild_guard_denies_qg_rust),
+    ("test_longbuild_guard_denies_qg_ts",
+     test_longbuild_guard_denies_qg_ts),
+    ("test_longbuild_guard_denies_qg_sidecar_and_quality_gate_alias",
+     test_longbuild_guard_denies_qg_sidecar_and_quality_gate_alias),
+    ("test_longbuild_guard_denies_cd_prefixed_qg_rust",
+     test_longbuild_guard_denies_cd_prefixed_qg_rust),
+    ("test_longbuild_guard_allows_fast_qg_groups",
+     test_longbuild_guard_allows_fast_qg_groups),
     ("test_longbuild_guard_env_prefix_tolerance",
      test_longbuild_guard_env_prefix_tolerance),
     ("test_longbuild_guard_allows_false_positive_scope",

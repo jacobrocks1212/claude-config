@@ -11479,7 +11479,12 @@ def live_settings_probe(repo_root, live_path=None):
     split-brain, Fix Scope 4 / D2)."""
     try:
         ddl = _load_doc_drift_module()
-        ok, detail = ddl.live_settings_status(Path(repo_root), live_path=live_path)
+        # live-settings-probe-false-positive-in-consumer-repo (Gap 2): resolve
+        # the tracked settings SSOT against the claude-config checkout when the
+        # RUN targets a consumer repo (AlgoBooth has no user/settings.json) —
+        # else every consumer-repo probe false-reports 'missing settings'.
+        ssot_root = ddl.settings_ssot_root(repo_root)
+        ok, detail = ddl.live_settings_status(ssot_root, live_path=live_path)
         return bool(ok), str(detail)
     except Exception:  # noqa: BLE001 — benign default, never propagate
         return True, "live-settings check unavailable (doc-drift-lint not loadable)"

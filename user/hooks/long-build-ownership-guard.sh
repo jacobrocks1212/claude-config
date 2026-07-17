@@ -18,6 +18,16 @@
 #   * `tauri build`
 #   * `cargo build --release`
 #   * `npm run build`
+#   * `npm run qg -- {rust,ts,sidecar}` (and the `quality-gate` alias) — the
+#     heavy AlgoBooth quality gates (qg-rust = Rust build+clippy+fmt+test,
+#     ~5-10 min; qg-ts = vue-tsc+eslint+vitest+vite build, ~4-6 min; qg-sidecar
+#     = the heavy sidecar gate). These exceed a single subagent turn exactly
+#     like the packaged builds and die the same way when backgrounded from a
+#     cycle subagent (the qg-rust queue wrapper orphans cargo + leaves a stale
+#     active.lock; a bare qg-ts vite build simply vanishes) — so they are
+#     orchestrator-owned too. The fast qg groups (`arch`, `docs`, `lint`, …) are
+#     deliberately NOT matched (enumerated heavy targets only — the guard's
+#     near-zero-false-positive charter, D1).
 # On match → DENY with a corrective reason naming the orchestrator-takeover
 # signature LONG-BUILD-OWNERSHIP-TAKEOVER, so the orchestrator can deterministically
 # recognize the redirect and re-launch the build itself (Bash run_in_background
@@ -190,11 +200,25 @@ _PATH_PREFIX = r"(?:\.?[\\/])?(?:[^\s;&|]*[\\/])?"
 # considered and deferred; see the CLAUDE.md note for the full rationale).
 # This is an ACCEPTED, DELIBERATE residual, not an oversight — pinned by
 # `test_longbuild_guard_bash_dash_c_wrap_accepted_residual` in test_hooks.py.
+# long-build-ownership-guard-misses-qg-gates (Gap 1): the heavy AlgoBooth
+# quality gates run as long as the packaged builds and die the same way when a
+# cycle subagent backgrounds them (qg-rust orphans cargo + leaves a stale
+# active.lock; qg-ts's vite build vanishes) — so they are orchestrator-owned
+# too. The `npm\s+run\s+(?:qg|quality-gate)\s+--\s+(?:rust|ts|sidecar)` arm
+# enumerates EXACTLY the heavy targets (D1 near-zero-false-positive charter):
+# it matches `npm run qg -- rust`, `npm run qg -- ts`, `npm run qg -- sidecar`
+# and the `quality-gate` alias, and deliberately does NOT match the fast qg
+# groups (`npm run qg -- arch` / `-- docs` / `-- lint`) or a bare `npm run qg`
+# with no target. qg-rust/qg-sidecar ALSO carry a build-queue-ops manifest
+# entry, so `_queue_routing_hint` additionally names the queue wrapper for them;
+# qg-ts is ownership-tracked but not queue-serialized (no manifest op), so it
+# gets a plain ownership redirect with no queue hint — both correct.
 _LONG_BUILD_RE = re.compile(
     _CMD_START + _PATH_PREFIX + r"(?:"
     r"(?:npx\s+|npm\s+run\s+|cargo\s+)?tauri\s+build(?:\s|$)"
     r"|cargo\s+build\s+--release(?:\s|$)"
     r"|npm\s+run\s+build(?:\s|$)"
+    r"|npm\s+run\s+(?:qg|quality-gate)\s+--\s+(?:rust|ts|sidecar)(?:\s|$)"
     r")"
 )
 
@@ -473,8 +497,9 @@ def main():
         )
         _deny(
             "LONG BUILD REDIRECTED TO ORCHESTRATOR "
-            f"[{TAKEOVER_SIGNATURE}]: a long build "
-            "(`tauri build` / `cargo build --release` / `npm run build`) "
+            f"[{TAKEOVER_SIGNATURE}]: a long build or heavy gate "
+            "(`tauri build` / `cargo build --release` / `npm run build` / "
+            "`npm run qg -- {rust,ts,sidecar}`) "
             "backgrounded from inside a cycle subagent DIES when the subagent's "
             "turn ends — its process tree is torn down with the turn, leaving no "
             "artifact and no error. This build is ORCHESTRATOR-OWNED: the main "

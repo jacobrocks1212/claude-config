@@ -274,7 +274,12 @@ def _live_settings_advisory(repo_root, live_path=None):
     fires every prompt-submit in a marked run."""
     try:
         ddl = _load_doc_drift_module()
-        ok, detail = ddl.live_settings_status(Path(repo_root), live_path=live_path)
+        # live-settings-probe-false-positive-in-consumer-repo (Gap 2): resolve
+        # the tracked settings SSOT against the claude-config checkout when the
+        # marked run targets a consumer repo (no user/settings.json), so the
+        # banner never false-fires 'settings drift' in AlgoBooth.
+        ssot_root = ddl.settings_ssot_root(repo_root)
+        ok, detail = ddl.live_settings_status(ssot_root, live_path=live_path)
         if ok:
             return None
         return f"⚠ live settings drift: {detail}"
