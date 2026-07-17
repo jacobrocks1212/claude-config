@@ -100,7 +100,10 @@ try {
 
 function Format-ProcArg {
 	param([string]$Value)
-	if ($Value -eq '' -or $Value -match '[\s"]') {
+	# Quote if empty, or if the value contains ANY PowerShell special characters
+	# that could be misinterpreted as operators/pipes when the argument list is
+	# re-parsed. Whitelist: only alphanumeric + safe path/name characters.
+	if ($Value -eq '' -or $Value -notmatch '^[A-Za-z0-9_./:=-]*$') {
 		return '"' + ($Value -replace '"', '\"') + '"'
 	}
 	return $Value
