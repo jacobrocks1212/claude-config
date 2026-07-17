@@ -3878,7 +3878,7 @@ def test_hardening_skill_file_contract():
       - Body containing all four trigger descriptions (validate-deny/denied,
         no-route, inject, manual)
       - NEEDS_INPUT escalation path
-      - Full gate list (lint-skills.py, --check-projected, test_lazy_core.py,
+      - Full gate list (lint-skills.py, --check-projected, tests/test_lazy_core/,
         test_hooks.py, bug-state.py --test)
       - Hardening-log path 'hardening-log'
       - Cadence clause 'unbounded' (per locked decision 4)
@@ -3940,7 +3940,7 @@ def test_hardening_skill_file_contract():
     for gate_phrase in (
         "lint-skills.py",
         "--check-projected",
-        "test_lazy_core.py",
+        "tests/test_lazy_core/",
         "test_hooks.py",
         "bug-state.py --test",
     ):
