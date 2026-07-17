@@ -69,17 +69,46 @@ function Format-ProcArg {
 
 **Why the failure is silent:** The broken pipe context causes `npx` to receive an unexpected/malformed command, which exits with a cryptic failure; the filtered exec script (`client-test-filtered.ps1`) catches this via `$LASTEXITCODE` but outputs nothing because there's no Jest output to filter.
 
-## Fix Scope
+## CORRECTED Root Cause — CONFIRMED via direct repro
 
-Update `Format-ProcArg` to quote any argument containing special PowerShell characters that could be misinterpreted as operators or escape sequences when the argument list is re-parsed by PowerShell. Specifically:
-- Pipe characters: `|`
-- Redirect operators: `>`, `<`
-- Ampersand: `&`
-- Semicolon: `;`
-- Dollar sign: `$`
-- Backtick: `` ` ``
-- Parentheses: `()`, braces: `{}`
+The `Format-ProcArg` finding above was **necessary but not sufficient**. A peer re-ran the exact repro after the `Format-ProcArg` fix landed and it still failed identically (seq=1259). Direct reproduction then isolated the true breakage point.
 
-The safest approach: use a negative character class — quote anything that's **not** a safe alphanumeric + a minimal set of safe path/name characters (`A-Za-z0-9_./-:`).
+**Instrumented repro (from `Cognito.Web.Client`, `& npx nx test cognito-spa -- --testPathPattern=DocumentFieldSettings|DocumentLockSettings ...`) captured this decisive output:**
 
-This is a mechanical, targeted fix to the character-class regex in `Format-ProcArg`; no other changes to build-queue logic or runner behavior.
+```
+> nx run cognito-spa:test --testPathPattern=DocumentFieldSettings|DocumentLockSettings --no-coverage --listTests
+'DocumentLockSettings' is not recognized as an internal or external command,
+operable program or batch file.
+NX   Running target test for project cognito-spa ... failed
+```
+
+**What actually happens:**
+
+1. From PowerShell, `& npx` resolves to `npx.ps1` (verified: `npx.ps1:29 & $NODE_EXE $NPX_CLI_JS $args`), which invokes `node.exe` directly — there is **no cmd.exe hop at the first (npx) hop**.
+2. nx receives the `--testPathPattern=A|B|C` argument **intact** (it echoes the full pattern in its `> nx run ...` display line).
+3. nx then spawns the **jest executor as a child process through a shell (`cmd.exe`) on Windows**. A bare `|` on *that* inner command line is interpreted by cmd.exe as a **pipe operator**, splitting the command — so `DocumentLockSettings ...` is treated as a second command to pipe into, and cmd.exe reports `'DocumentLockSettings' is not recognized as an internal or external command`.
+4. The task exits near-instantly (~8-20s) with no jest ever running the intended files, hence the empty log + `counts:null` + exit 1.
+
+**Why embedded quotes did not save it:** the original client script already built `--testPathPattern="$Pattern"` with embedded double-quotes. Those quotes do not survive the full PowerShell 5.1 → npx → node → nx → cmd.exe relay: PowerShell 5.1 does not properly escape embedded quotes when marshalling arguments to native commands (the pre-7.3 argument-passing limitation), so the quotes are stripped before nx re-serializes to its jest child, re-exposing the bare pipe.
+
+## Fix Scope — TWO parts
+
+**Part 1 (build-queue arg relay — necessary, landed first):** `Format-ProcArg` in BOTH `user/scripts/build-queue.ps1` and `user/scripts/build-queue-runner.ps1` used regex `[\s"]`, failing to quote pipes when re-emitting the argument string for `Start-Process powershell.exe`. Fixed to a whitelist character class `^[A-Za-z0-9_./:=-]*$` (quote anything not purely safe path/name chars). This correctly delivers the literal `|` pattern value through the build-queue → runner → client hops.
+
+**Part 2 (the actual silent-failure fix):** `repos/cognito-forms/.claude/scripts/client-test-filtered.ps1` — split the `-Pattern` value on `|` and pass each fragment as a **separate positional jest argument** instead of a single `--testPathPattern="A|B|C"`. Jest treats multiple positional arguments as testPathPattern regexes combined with OR, so this is semantically identical to the alternation regex while keeping every command-line argument free of shell-hostile characters — nothing for nx's jest-spawn cmd.exe to misinterpret. A pattern with no `|` yields a single positional arg (equivalent to the prior `--testPathPattern` behavior). The `-Filter`/`--testNamePattern` path is left unchanged (out of scope; only `-Pattern` was affected).
+
+**Secondary (banner hint):** `Format-BuildQueueBanner` in `user/scripts/build-queue-hygiene.ps1` printed `-> read logs/<seq>.build.err.log` on any non-PASS, but the runner writes the `.build.` capture only for build ops; test ops (mstest/nxtest) have only `<seq>.log`/`<seq>.err.log`. Made the hint op-aware (build ops → `.build.err.log`, else → `.err.log`).
+
+## Verification
+
+Exact operator repro re-run via build-queue (seq=1260):
+```
+PASS src/views/build/DocumentLockSettings.unit.ts
+PASS src/views/build/DocumentFieldSettings.unit.ts
+PASS src/views/build/RequireSigningBySelector.unit.ts
+Test Suites: 3 passed, 3 total
+Tests:       47 passed, 47 total
+Ran all test suites matching /DocumentFieldSettings|DocumentLockSettings|RequireSigningBySelector/i.
+build-queue: seq=1260 op=nxtest RESULT=PASS (result_fidelity=verified)
+```
+All three files matched, 47 tests passed (10+9+28 — matching the sum of the individual-pattern runs), full jest tree printed, genuine PASS. The silent-empty-log failure is eliminated.
