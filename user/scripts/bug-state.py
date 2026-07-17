@@ -9358,11 +9358,28 @@ def main() -> int:
         if _emit_marker is not None:
             try:
                 _mo_repo = Path(args.repo_root)
+                _mo_feats = _load_feature_queue_for_merged(_mo_repo)
+                _mo_bugs = load_bug_queue(_mo_repo)
+                # merged-head-includes-parked-items-deadlocks-park-run (coupled-pair
+                # mirror of lazy-state.py): exclude the PARKED items (unresolved
+                # NEEDS_INPUT.md / BLOCKED.md) a park-mode run has skipped, so the
+                # merged head is the highest-priority UN-PARKED item and the
+                # withhold fires ONLY for genuine merged-view divergence — never
+                # behind an undriveable parked head (which deadlocks the run).
+                # Effective park facets are in scope from the emit path above; no
+                # facet → empty set → byte-identical.
+                _mo_excluded = lazy_core.parked_item_ids(
+                    _mo_feats, _mo_bugs, str(_mo_repo),
+                    park_needs_input=_eff_park_ni,
+                    park_blocked=_eff_park_bl,
+                    park_provisional=_eff_park_pv,
+                )
                 _merged_override = lazy_core.dispatch.merged_head_override(
-                    _load_feature_queue_for_merged(_mo_repo),
-                    load_bug_queue(_mo_repo),
+                    _mo_feats,
+                    _mo_bugs,
                     str(lazy_core.active_repo_root()),
                     state.get("feature_id"),
+                    exclude_ids=_mo_excluded,
                 )
             except Exception:  # noqa: BLE001 — divergence probe must never break the base probe
                 _merged_override = None

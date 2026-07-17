@@ -2134,6 +2134,75 @@ def detect_noncanonical_blocker(spec_dir: Path) -> Path | None:
     return None
 
 
+def spec_dir_would_park(
+    spec_dir: "Path",
+    *,
+    park_needs_input: bool = False,
+    park_blocked: bool = False,
+    park_provisional: bool = False,
+) -> bool:
+    """Return True iff an item whose sentinels live in ``spec_dir`` would be
+    SKIPPED (parked) — not dispatched — this run, given the active park facets.
+
+    This mirrors the compute_state park branches in ``lazy-state.py`` /
+    ``bug-state.py`` (the SAME predicate that populates each probe's ``parked[]``
+    array), factored into one place so the merged-head computation
+    (``merged_worklist`` / ``next_merged`` / ``merged_head_override``) can EXCLUDE
+    parked items — otherwise a parked, undriveable item at the merged head makes
+    the ``merged-head-diverged`` withhold deadlock a park-mode run
+    (``docs/bugs/merged-head-includes-parked-items-deadlocks-park-run``).
+
+    Park families covered (the two cited by the bug + the stray-blocker parity the
+    ``parked[]`` array already includes):
+
+      * ``--park-blocked``: a canonical ``BLOCKED.md`` OR a stray mis-named
+        blocker (``detect_noncanonical_blocker``) → parked.
+      * ``--park-needs-input``: an unresolved ``NEEDS_INPUT.md`` → parked, with
+        two mirrored guards from compute_state — (a) ``BLOCKED.md`` retains
+        precedence (a dir carrying BOTH still HALTS as blocked when
+        ``--park-blocked`` is off, so it is NOT a needs-input park here); (b) under
+        ``--park-provisional`` a provisional-ELIGIBLE sentinel ROUTES the
+        ``__provisional_accept__`` pseudo-skill (the item keeps moving — actionable,
+        NOT parked); an ineligible one parks.
+
+    Deliberately OUT of scope (class boundary): the narrower "unratified
+    ``NEEDS_INPUT_PROVISIONAL.md`` + ``VALIDATED.md`` parks at completion" branch —
+    that item is workable up to completion (driveable), not part of the observed
+    deadlock.
+
+    Pure + fail-safe: no facet active, a missing/unreadable ``spec_dir``, or a
+    ``None`` → ``False`` (byte-identical non-park behavior; the exclusion set the
+    callers build stays empty).
+    """
+    if spec_dir is None:
+        return False
+    try:
+        if not spec_dir.exists():
+            return False
+    except OSError:
+        return False
+    blocked = (spec_dir / "BLOCKED.md").exists()
+    # BLOCKED park (canonical or stray mis-named blocker) — --park-blocked.
+    if park_blocked:
+        if blocked:
+            return True
+        if detect_noncanonical_blocker(spec_dir) is not None:
+            return True
+    # NEEDS_INPUT park — --park-needs-input. BLOCKED retains precedence (the
+    # `and not BLOCKED.md` guard mirrors compute_state): a dir with BOTH still
+    # halts as blocked when --park-blocked is off, so it is not a needs-input park.
+    if park_needs_input and (spec_dir / "NEEDS_INPUT.md").exists() and not blocked:
+        # park-provisional-acceptance: a provisional-ELIGIBLE sentinel ROUTES the
+        # __provisional_accept__ pseudo-skill (actionable — keeps moving), so it is
+        # NOT parked. Ineligible → parked exactly as compute_state parks it.
+        if park_provisional:
+            eligible, _ = provisional_eligibility(spec_dir / "NEEDS_INPUT.md")
+            if eligible:
+                return False
+        return True
+    return False
+
+
 # ---------------------------------------------------------------------------
 # neutralize_sentinel — WU-3: rename a resolved sentinel to the canonical
 #   *_RESOLVED_<date> form (collision-safe, git-mv-aware).

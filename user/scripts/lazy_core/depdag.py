@@ -1225,6 +1225,7 @@ def merged_worklist(
     repo_root: str,
     *,
     today: "datetime.date | None" = None,
+    exclude_ids: "set[str] | frozenset[str] | None" = None,
 ) -> list[dict]:
     """Order both queues into a single work-list and return it as a list of
     ``{"item_id", "type", "repo_root"}`` dicts (head first).
@@ -1248,7 +1249,15 @@ def merged_worklist(
     Each input item is expected to carry an id field. Feature loader items use
     ``id``; bug loader items use ``id`` as well. Items missing an id are
     skipped (a malformed entry must not produce a None-id head).
+
+    ``exclude_ids`` (merged-head-includes-parked-items-deadlocks-park-run): the set
+    of ids to EXCLUDE from the ordering — the PARKED items a park-mode run has
+    skipped (built by ``parked_item_ids``). Excluding them makes the merged head
+    the highest-priority UN-PARKED actionable item, so the
+    ``merged-head-diverged`` withhold never withholds behind an undriveable parked
+    head. Default ``None`` → nothing excluded (byte-identical non-park behavior).
     """
+    exclude = exclude_ids or frozenset()
     annotated: list[tuple[int, int, int, dict]] = []
     seq = 0
     # Seed bugs first then features so that, at equal (priority, type-rank),
@@ -1257,7 +1266,7 @@ def merged_worklist(
     # order yields the full contract.
     for raw in bug_items:
         item_id = raw.get("id")
-        if not item_id:
+        if not item_id or item_id in exclude:
             continue
         annotated.append(
             (merged_priority("bug", raw, today=today), _MERGED_TYPE_ORDER["bug"], seq,
@@ -1266,7 +1275,7 @@ def merged_worklist(
         seq += 1
     for raw in feature_items:
         item_id = raw.get("id")
-        if not item_id:
+        if not item_id or item_id in exclude:
             continue
         annotated.append(
             (merged_priority("feature", raw, today=today), _MERGED_TYPE_ORDER["feature"], seq,
@@ -1286,12 +1295,82 @@ def next_merged(
     repo_root: str,
     *,
     today: "datetime.date | None" = None,
+    exclude_ids: "set[str] | frozenset[str] | None" = None,
 ) -> dict | None:
     """Return the head of the merged work-list (``{item_id, type, repo_root}``)
-    or ``None`` when both queues are empty. Thin head-of ``merged_worklist``.
-    ``today`` is caller-supplied for determinism (bug-queue-aging-backpressure)."""
-    worklist = merged_worklist(feature_items, bug_items, repo_root, today=today)
+    or ``None`` when both queues are empty (or every item is excluded). Thin
+    head-of ``merged_worklist``. ``today`` is caller-supplied for determinism
+    (bug-queue-aging-backpressure); ``exclude_ids`` drops PARKED items so the head
+    is the highest-priority UN-PARKED item (see ``merged_worklist``)."""
+    worklist = merged_worklist(
+        feature_items, bug_items, repo_root, today=today, exclude_ids=exclude_ids
+    )
     return worklist[0] if worklist else None
+
+
+def parked_item_ids(
+    feature_items: list[dict],
+    bug_items: list[dict],
+    repo_root: str,
+    *,
+    park_needs_input: bool = False,
+    park_blocked: bool = False,
+    park_provisional: bool = False,
+) -> "set[str]":
+    """Return the set of queue-item ids that WOULD be parked (skipped, not
+    dispatched) this run under the active park facets — the ids the merged-head
+    computation must EXCLUDE so the merged head is the highest-priority UN-PARKED
+    actionable item
+    (merged-head-includes-parked-items-deadlocks-park-run).
+
+    Resolves each item's spec dir and applies the SAME park predicate the probe
+    ``parked[]`` array uses (``docmodel.spec_dir_would_park``):
+
+      * feature → ``<repo_root>/docs/features/<spec_dir|id>``;
+      * bug → the loader-supplied absolute ``spec_path`` when present, else
+        ``<repo_root>/docs/bugs/<spec_dir|id>``.
+
+    ``repo_root`` MUST be the on-disk repo root the queues were loaded from (NOT
+    the echoed ``active_repo_root`` string ``merged_head`` carries). No park facet
+    active → empty set (byte-identical non-park behavior); a missing/unreadable
+    spec dir contributes nothing (``spec_dir_would_park`` fail-safes to False).
+    """
+    from pathlib import Path as _Path
+    from .docmodel import spec_dir_would_park
+
+    # Fast path: no park facet ⇒ nothing is parked-and-excludable. (park_provisional
+    # is a strict modifier of park_needs_input, so checking the two base facets is
+    # sufficient — provisional alone never parks.)
+    if not (park_needs_input or park_blocked):
+        return set()
+
+    root = _Path(repo_root)
+    parked: set[str] = set()
+
+    def _park(spec_dir: "_Path") -> bool:
+        return spec_dir_would_park(
+            spec_dir,
+            park_needs_input=park_needs_input,
+            park_blocked=park_blocked,
+            park_provisional=park_provisional,
+        )
+
+    for raw in (feature_items or []):
+        item_id = raw.get("id")
+        if not item_id:
+            continue
+        spec_dir = root / "docs" / "features" / (raw.get("spec_dir") or item_id)
+        if _park(spec_dir):
+            parked.add(item_id)
+    for raw in (bug_items or []):
+        item_id = raw.get("id")
+        if not item_id:
+            continue
+        _sp = raw.get("spec_path")
+        spec_dir = _Path(_sp) if _sp else root / "docs" / "bugs" / (raw.get("spec_dir") or item_id)
+        if _park(spec_dir):
+            parked.add(item_id)
+    return parked
 
 def skip_ahead_ready(
     deps: list[dict] | None,

@@ -12257,8 +12257,23 @@ def main() -> int:
         repo_root = Path(args.repo_root)
         feature_items = load_queue(repo_root)
         bug_items = _load_bug_queue_for_merged(repo_root)
+        # merged-head-includes-parked-items-deadlocks-park-run: EXCLUDE the items
+        # a park-mode run would skip (unresolved NEEDS_INPUT.md / BLOCKED.md) so
+        # the merged head is the highest-priority UN-PARKED actionable item — else
+        # the orchestrator dispatches to a parked head that just re-parks (deadlock).
+        # Effective (marker-authoritative) park facets so a mid-run --set-park
+        # toggle takes effect; no marker / no facet → empty set → byte-identical.
+        _nm_marker = lazy_core.read_run_marker()
+        _nm_ni, _nm_bl, _nm_pv = lazy_core.fold_park_flags(
+            args.park_needs_input, args.park_blocked, args.park_provisional, _nm_marker
+        )
+        _nm_excluded = lazy_core.parked_item_ids(
+            feature_items, bug_items, str(repo_root),
+            park_needs_input=_nm_ni, park_blocked=_nm_bl, park_provisional=_nm_pv,
+        )
         head = lazy_core.next_merged(
-            feature_items, bug_items, lazy_core.active_repo_root()
+            feature_items, bug_items, lazy_core.active_repo_root(),
+            exclude_ids=_nm_excluded,
         )
         sys.stdout.write(json.dumps(head) + "\n")
         return 0
@@ -13591,11 +13606,27 @@ def main() -> int:
         if _emit_marker is not None:
             try:
                 _mo_repo = Path(args.repo_root)
+                _mo_feats = load_queue(_mo_repo)
+                _mo_bugs = _load_bug_queue_for_merged(_mo_repo)
+                # merged-head-includes-parked-items-deadlocks-park-run: exclude the
+                # PARKED items (unresolved NEEDS_INPUT.md / BLOCKED.md) a park-mode
+                # run has skipped, so the merged head is the highest-priority
+                # UN-PARKED item and the withhold fires ONLY for genuine
+                # feature-vs-bug divergence — never behind an undriveable parked
+                # head (which deadlocks the run). Effective park facets are in
+                # scope from the emit path above; no facet → empty set → byte-identical.
+                _mo_excluded = lazy_core.parked_item_ids(
+                    _mo_feats, _mo_bugs, str(_mo_repo),
+                    park_needs_input=_eff_park_ni,
+                    park_blocked=_eff_park_bl,
+                    park_provisional=_eff_park_pv,
+                )
                 _merged_override = lazy_core.dispatch.merged_head_override(
-                    load_queue(_mo_repo),
-                    _load_bug_queue_for_merged(_mo_repo),
+                    _mo_feats,
+                    _mo_bugs,
                     str(lazy_core.active_repo_root()),
                     state.get("feature_id"),
+                    exclude_ids=_mo_excluded,
                 )
             except Exception:  # noqa: BLE001 — divergence probe must never break the base probe
                 _merged_override = None

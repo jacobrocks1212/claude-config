@@ -4611,6 +4611,131 @@ def test_merged_head_override_none_on_empty_queues_or_missing_id():
     ) is None
 
 
+def test_spec_dir_would_park_predicate():
+    """merged-head-includes-parked-items-deadlocks-park-run: the shared park
+    predicate mirrors the compute_state parked[] branches — NEEDS_INPUT under
+    --park-needs-input parks; BLOCKED retains precedence; --park-blocked parks a
+    BLOCKED.md; no facet → never parks (byte-identical non-park behavior)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        ni = root / "needs-input"; ni.mkdir()
+        (ni / "NEEDS_INPUT.md").write_text("x", encoding="utf-8")
+        bl = root / "blocked"; bl.mkdir()
+        (bl / "BLOCKED.md").write_text("x", encoding="utf-8")
+        both = root / "both"; both.mkdir()
+        (both / "NEEDS_INPUT.md").write_text("x", encoding="utf-8")
+        (both / "BLOCKED.md").write_text("x", encoding="utf-8")
+        clean = root / "clean"; clean.mkdir()
+        (clean / "SPEC.md").write_text("x", encoding="utf-8")
+
+        # No facet active → nothing parks.
+        assert not lazy_core.spec_dir_would_park(ni)
+        assert not lazy_core.spec_dir_would_park(bl)
+        # --park-needs-input parks an unresolved NEEDS_INPUT.md.
+        assert lazy_core.spec_dir_would_park(ni, park_needs_input=True)
+        # BLOCKED precedence: NEEDS_INPUT+BLOCKED is NOT a needs-input park when
+        # --park-blocked is off (it still halts as blocked).
+        assert not lazy_core.spec_dir_would_park(both, park_needs_input=True)
+        # --park-blocked parks a BLOCKED.md (and the both-dir).
+        assert lazy_core.spec_dir_would_park(bl, park_blocked=True)
+        assert lazy_core.spec_dir_would_park(both, park_blocked=True)
+        # A clean dir never parks; a missing dir fail-safes to False.
+        assert not lazy_core.spec_dir_would_park(clean, park_needs_input=True, park_blocked=True)
+        assert not lazy_core.spec_dir_would_park(root / "nope", park_needs_input=True)
+
+
+def test_parked_item_ids_resolves_feature_and_bug_spec_dirs():
+    """parked_item_ids resolves feature (docs/features/<id>) and bug
+    (docs/bugs/<id>, or the loader spec_path) dirs and returns the parked set;
+    no facet → empty set."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        feat_dir = root / "docs" / "features" / "feat-parked"; feat_dir.mkdir(parents=True)
+        (feat_dir / "NEEDS_INPUT.md").write_text("x", encoding="utf-8")
+        bug_dir = root / "docs" / "bugs" / "bug-parked"; bug_dir.mkdir(parents=True)
+        (bug_dir / "NEEDS_INPUT.md").write_text("x", encoding="utf-8")
+        bug_ok = root / "docs" / "bugs" / "bug-ok"; bug_ok.mkdir(parents=True)
+        (bug_ok / "SPEC.md").write_text("x", encoding="utf-8")
+
+        feats = [{"id": "feat-parked"}, {"id": "feat-none"}]
+        # Bug items may carry an absolute spec_path (the load_bug_queue shape).
+        bugs = [
+            {"id": "bug-parked", "spec_path": bug_dir},
+            {"id": "bug-ok", "spec_path": bug_ok},
+        ]
+        # No facet → empty (byte-identical non-park behavior).
+        assert lazy_core.parked_item_ids(feats, bugs, str(root)) == set()
+        parked = lazy_core.parked_item_ids(
+            feats, bugs, str(root), park_needs_input=True
+        )
+        assert parked == {"feat-parked", "bug-parked"}, parked
+
+
+def test_merged_head_override_excludes_parked_head_no_deadlock():
+    """merged-head-includes-parked-items-deadlocks-park-run REGRESSION: the two
+    top-priority P0 bugs parked on NEEDS_INPUT.md + a lower-priority actionable
+    bug. With the parked ids excluded, the merged head is the ACTIONABLE bug —
+    so --next-merged returns it AND the emit probe (current == actionable) gets
+    NO merged-head-diverged withhold (the deadlock is gone)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        for pid in ("adhoc-hydra-sidecar-dist-esm-no-frames", "adhoc-hydra-load-code-mcp-tool"):
+            d = root / "docs" / "bugs" / pid; d.mkdir(parents=True)
+            (d / "NEEDS_INPUT.md").write_text("x", encoding="utf-8")
+        act = root / "docs" / "bugs" / "adhoc-incident-hook-deny-a51dde"; act.mkdir(parents=True)
+        (act / "SPEC.md").write_text("x", encoding="utf-8")
+
+        bugs = [
+            {"id": "adhoc-hydra-sidecar-dist-esm-no-frames", "severity": "P0",
+             "spec_path": root / "docs" / "bugs" / "adhoc-hydra-sidecar-dist-esm-no-frames"},
+            {"id": "adhoc-hydra-load-code-mcp-tool", "severity": "P0",
+             "spec_path": root / "docs" / "bugs" / "adhoc-hydra-load-code-mcp-tool"},
+            {"id": "adhoc-incident-hook-deny-a51dde", "severity": "P2", "spec_path": act},
+        ]
+        excluded = lazy_core.parked_item_ids(
+            [], bugs, str(root), park_needs_input=True, park_provisional=True
+        )
+        assert excluded == {
+            "adhoc-hydra-sidecar-dist-esm-no-frames", "adhoc-hydra-load-code-mcp-tool",
+        }, excluded
+        # --next-merged surface: head is the actionable bug, not a parked one.
+        head = lazy_core.next_merged([], bugs, "/echo", exclude_ids=excluded)
+        assert head["item_id"] == "adhoc-incident-hook-deny-a51dde", head
+        # Emit probe for the actionable bug → NO withhold (the deadlock is gone).
+        override = lazy_core.dispatch.merged_head_override(
+            [], bugs, "/echo", "adhoc-incident-hook-deny-a51dde", exclude_ids=excluded,
+        )
+        assert override is None, override
+        # Without the exclusion the OLD behavior deadlocks: head is a parked P0
+        # bug and the actionable probe is withheld behind it.
+        old = lazy_core.dispatch.merged_head_override(
+            [], bugs, "/echo", "adhoc-incident-hook-deny-a51dde",
+        )
+        assert old is not None and old["merged_head"]["item_id"] == (
+            "adhoc-hydra-sidecar-dist-esm-no-frames"
+        ), old
+
+
+def test_merged_worklist_exclude_ids_drops_parked_items():
+    """merged_worklist/next_merged honor exclude_ids — a byte-identical drop of
+    the named ids from the ordering (empty/None → unchanged)."""
+    _guard()
+    feats = [{"id": "feat-1", "tier": 1}]
+    bugs = [{"id": "bug-1", "severity": "P0"}, {"id": "bug-2", "severity": "P0"}]
+    # No exclusion → byte-identical.
+    assert [e["item_id"] for e in lazy_core.merged_worklist(feats, bugs, "/r")] == [
+        "bug-1", "bug-2", "feat-1",
+    ]
+    wl = lazy_core.merged_worklist(feats, bugs, "/r", exclude_ids={"bug-1"})
+    assert [e["item_id"] for e in wl] == ["bug-2", "feat-1"], wl
+    assert lazy_core.next_merged(
+        feats, bugs, "/r", exclude_ids={"bug-1", "bug-2"}
+    )["item_id"] == "feat-1"
+
+
 def test_merged_worklist_only_features_matches_listed_order():
     """WU-1/WU-3: only features queued → identical to the feature queue's listed
     order (the head is what lazy-state would return)."""
@@ -5645,6 +5770,10 @@ _TESTS = [
     ("test_merged_head_override_diverges_when_higher_sev_bug_jumps_head", test_merged_head_override_diverges_when_higher_sev_bug_jumps_head),
     ("test_merged_head_override_none_when_head_is_current_item", test_merged_head_override_none_when_head_is_current_item),
     ("test_merged_head_override_none_on_empty_queues_or_missing_id", test_merged_head_override_none_on_empty_queues_or_missing_id),
+    ("test_spec_dir_would_park_predicate", test_spec_dir_would_park_predicate),
+    ("test_parked_item_ids_resolves_feature_and_bug_spec_dirs", test_parked_item_ids_resolves_feature_and_bug_spec_dirs),
+    ("test_merged_head_override_excludes_parked_head_no_deadlock", test_merged_head_override_excludes_parked_head_no_deadlock),
+    ("test_merged_worklist_exclude_ids_drops_parked_items", test_merged_worklist_exclude_ids_drops_parked_items),
     ("test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug", test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug),
     ("test_merged_worklist_only_features_matches_listed_order", test_merged_worklist_only_features_matches_listed_order),
     ("test_merged_worklist_only_bugs_matches_listed_order", test_merged_worklist_only_bugs_matches_listed_order),

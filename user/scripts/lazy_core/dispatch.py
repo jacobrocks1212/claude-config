@@ -335,6 +335,7 @@ def merged_head_override(
     current_item_id: str | None,
     *,
     today: "datetime.date | None" = None,
+    exclude_ids: "set[str] | frozenset[str] | None" = None,
 ) -> dict | None:
     """Return a route-override payload when the MERGED work-list head is a
     DIFFERENT item than the one a dispatch-bound probe is about to emit for —
@@ -372,6 +373,14 @@ def merged_head_override(
         current_item_id: the id the dispatch-bound probe would emit for
             (``state["feature_id"]`` in both scripts — the generic item id).
         today: caller-supplied date for deterministic bug-aging ordering.
+        exclude_ids: PARKED item ids to drop from the merged head
+            (merged-head-includes-parked-items-deadlocks-park-run). Without this,
+            a parked, undriveable item at the merged head makes this override fire
+            forever in park mode (the probe withholds behind a head it can never
+            drive → run deadlock). Excluding parked items means the head is the
+            highest-priority UN-PARKED item, so the override fires ONLY for genuine
+            feature-vs-bug pipeline divergence (its intended purpose). Default
+            ``None`` → nothing excluded (byte-identical non-park behavior).
 
     Returns:
         The override dict when the merged head diverges from ``current_item_id``;
@@ -379,7 +388,9 @@ def merged_head_override(
     """
     from .depdag import next_merged
 
-    head = next_merged(feature_items, bug_items, repo_root, today=today)
+    head = next_merged(
+        feature_items, bug_items, repo_root, today=today, exclude_ids=exclude_ids
+    )
     if not head:
         return None
     if not current_item_id or head.get("item_id") == current_item_id:

@@ -480,6 +480,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "merged_priority": "depdag",
     "merged_worklist": "depdag",
     "next_merged": "depdag",
+    "parked_item_ids": "depdag",
     "pin_is_active": "depdag",
     "reorder_queue": "depdag",
     # no-sanctioned-cli-for-queue-state-mutations: operator-directed in-place
@@ -535,6 +536,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "parse_independent_marker": "docmodel",
     "provisional_eligibility": "docmodel",
     "provisionalize_sentinel": "docmodel",
+    "spec_dir_would_park": "docmodel",
     # Phase 5 WU-3: git helpers + self-edit detection.
     "GOVERNING_FILE_SET": "runtimeplane",
     "_current_head": "runtimeplane",
