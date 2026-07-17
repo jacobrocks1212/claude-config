@@ -104,8 +104,31 @@ appended ## Resolution section (chosen path + operator notes). Then enact EXACTL
     Agent) against this {item_label} (the item id shown above), authoring a new phase whose scope is the blocker described
     in BLOCKED.md (and any recovery the cycle subagent suggested). It appends the phase to
     PHASES.md (In-progress, with unchecked deliverables) per its own contract. Then
-    NEUTRALIZE BLOCKED.md (see below). The next loop cycle's state script routes the
-    {item_label} to plan/implement the new phase.
+    RECONCILE THE ORIGINATING PLAN (see below), NEUTRALIZE BLOCKED.md (see below). The next
+    loop cycle's state script routes the {item_label} to plan/implement the new phase.
+    RECONCILE THE ORIGINATING PLAN (HARD — when the new corrective phase SUPERSEDES
+    deliverables that belong to an originating In-progress plan): if the new phase makes
+    prior deliverables architecturally impossible / obsolete and you (or /add-phase) struck
+    those deliverables in PHASES.md, you MUST also reconcile any originating implementation
+    plan under <spec_path>/plans/ whose per-WU checkboxes track those SAME superseded
+    deliverables — otherwise the router re-loops. The router (Step 7a) prioritizes finishing
+    any plan whose frontmatter `status:` is `In-progress` and whose `## Work Units` checklist
+    still has unchecked `- [ ] WU-N` rows; an unreconciled originating plan re-routes
+    /execute-plan straight back to the superseded, now-impossible WUs and re-blocks (an
+    infinite loop — this is the exact friction this step closes). For EACH originating plan
+    (`plans/*.md`, `status: In-progress`) that references the superseded deliverables:
+      (a) In its `## Work Units` checklist, strike each superseded WU row with the canonical
+          descoped marker — turn `- [ ] WU-N — <title>` into
+          `- [ ] ~~WU-N — <title>~~ **SUPERSEDED** <!-- descoped -->` (the marker string is
+          the SSOT `lazy_core:_DESCOPED_MARKER`; the strikethrough + marker is what removes
+          the row from the router's unchecked-WU count). Cite the new phase number in the
+          strike note. Leave genuinely-still-pending WU rows untouched.
+      (b) If, after striking, EVERY remaining WU row is either already `[x]` landed or struck
+          `~~...~~ **SUPERSEDED**` (i.e. no live implementation work is left in the plan),
+          flip the plan's frontmatter `status:` to `Complete` so the router filters it out
+          and advances to the new corrective phase. If some WUs are still genuinely pending,
+          leave `status: In-progress` (the plan still has real work).
+    Do NOT touch plans whose deliverables the new phase does NOT supersede.
     SEAM-BATCHED SCOPE (HARD, mcp-validation blockers at ANY retry_count): the new phase
     MUST carry a full-chain seam-audit deliverable scoped to the FULL ## Seam Enumeration
     section BLOCKED.md's validation cycle already wrote (every probed-FAIL + unprobed row)
