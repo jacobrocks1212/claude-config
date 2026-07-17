@@ -11692,6 +11692,18 @@ def build_parser() -> argparse.ArgumentParser:
                             "An unratified provisional file blocks completion mechanically and "
                             "halts non-park probes on `needs-ratification`."
                         ))
+    parser.add_argument("--park", dest="park_umbrella", action="store_true",
+                        help=(
+                            "Umbrella park flag — the /lazy-batch `--park` invocation flag. "
+                            "Arms BOTH --park-needs-input AND --park-blocked in one token "
+                            "(mirroring `--set-park on`), so `--run-start --park` persists park "
+                            "mode into the run marker and the probe reads it from cycle 1. "
+                            "Equivalent to passing the two granular flags; combine with "
+                            "--park-provisional for provisional-acceptance. Default off → "
+                            "byte-identical to a non-park run. (Fixes lazy-run-marker-park-arm: "
+                            "Step 0.55 forwards the operator's `--park` verbatim, no "
+                            "re-translation to forget.)"
+                        ))
     parser.add_argument("--provisionalize-sentinel", default=None, metavar="PATH",
                         help=(
                             "Provisionally accept the NEEDS_INPUT.md at PATH on its "
@@ -12153,6 +12165,17 @@ def main() -> int:
     # advance and peek the persisted streak.
     if args.repeat_count and args.repeat_count_peek:
         _die("--repeat-count and --repeat-count-peek are mutually exclusive")
+
+    # --park is the umbrella that arms BOTH park facets (needs-input + blocked),
+    # matching the /lazy-batch `--park` invocation flag and `--set-park on`. Fold
+    # it into the granular flags EARLY — BEFORE the pairing guard below and the
+    # run-start marker threading — so every downstream read sees the same shape
+    # whether the umbrella or the two granular flags were passed. (harden fix
+    # lazy-run-marker-park-arm-and-forward-cycle-inflation: Step 0.55 forwards the
+    # operator's `--park` verbatim; the CLI expands it here.)
+    if getattr(args, "park_umbrella", False):
+        args.park_needs_input = True
+        args.park_blocked = True
 
     # park-provisional-acceptance (SPEC D1): --park-provisional is a strict
     # modifier of --park-needs-input — alone it is a hard CLI error, never a

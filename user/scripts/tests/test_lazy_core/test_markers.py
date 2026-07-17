@@ -5797,6 +5797,101 @@ def test_advance_forward_cycle_consume_gate_default_off_preserves_freeze():
 
 
 
+def _run_start_park_env(state_dir: "Path") -> dict:
+    """Subprocess env for a `--run-start` invocation against an ISOLATED state
+    dir: LAZY_STATE_DIR scopes all marker state to the temp dir, LAZY_ORCHESTRATOR=1
+    immunizes the call against the cycle-containment guard, and any inherited
+    LAZY_CYCLE_SUBAGENT (present when this suite runs INSIDE a marked run) is
+    stripped so the isolated run-start is not falsely refused."""
+    e = {k: v for k, v in os.environ.items()
+         if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+    e["LAZY_STATE_DIR"] = str(state_dir)
+    e["LAZY_ORCHESTRATOR"] = "1"
+    return e
+
+
+def _park_facets(state_dir: "Path") -> dict:
+    """Read the run marker written directly under an isolated LAZY_STATE_DIR and
+    return only its three park facets."""
+    marker = json.loads(
+        (state_dir / lazy_core._MARKER_FILENAME).read_text(encoding="utf-8")
+    )
+    return {k: marker.get(k) for k in
+            ("park_needs_input", "park_blocked", "park_provisional")}
+
+
+def test_run_start_park_umbrella_arms_both_facets_both_scripts():
+    """harden lazy-run-marker-park-arm-and-forward-cycle-inflation (DEFECT 2):
+    `--run-start --park` (the umbrella) persists park_needs_input=True AND
+    park_blocked=True into the marker, and `--park --park-provisional` persists
+    all three — for BOTH lazy-state.py (feature) and bug-state.py (bug), the
+    coupled pair. A bare `--run-start` leaves all three False (byte-identical to a
+    non-park run). This is the CLI half of the fix; the SKILL Step 0.55 half
+    forwards the operator's `--park` token to this invocation.
+
+    RED before the fix: `--park` is an unknown argument → argparse exits 2, so the
+    subprocess returncode assertion fails with an explicit reason."""
+    _guard()
+    import time as _time  # noqa: F401 (kept for parity with sibling tests' style)
+    for script in ("lazy-state.py", "bug-state.py"):
+        script_path = _SCRIPTS_DIR / script
+        # --- (a) --park umbrella → both facets armed, provisional off ---
+        with tempfile.TemporaryDirectory() as td:
+            sd = Path(td)
+            r = subprocess.run(
+                [sys.executable, str(script_path), "--run-start", "--park",
+                 "--max-cycles", "20", "--repo-root", str(sd)],
+                capture_output=True, text=True, env=_run_start_park_env(sd),
+            )
+            assert r.returncode == 0, (
+                f"[{script}] --run-start --park must exit 0 (is --park a known "
+                f"flag?); rc={r.returncode} stderr={r.stderr!r}"
+            )
+            facets = _park_facets(sd)
+            assert facets == {"park_needs_input": True, "park_blocked": True,
+                              "park_provisional": False}, (
+                f"[{script}] --park umbrella must arm BOTH facets, got {facets!r}"
+            )
+        # --- (b) --park --park-provisional → all three armed ---
+        with tempfile.TemporaryDirectory() as td:
+            sd = Path(td)
+            r = subprocess.run(
+                [sys.executable, str(script_path), "--run-start", "--park",
+                 "--park-provisional", "--max-cycles", "20", "--repo-root", str(sd)],
+                capture_output=True, text=True, env=_run_start_park_env(sd),
+            )
+            assert r.returncode == 0, (
+                f"[{script}] --run-start --park --park-provisional must exit 0; "
+                f"rc={r.returncode} stderr={r.stderr!r}"
+            )
+            facets = _park_facets(sd)
+            assert facets == {"park_needs_input": True, "park_blocked": True,
+                              "park_provisional": True}, (
+                f"[{script}] --park --park-provisional must arm all three facets "
+                f"(the umbrella satisfies the provisional pairing guard), got "
+                f"{facets!r}"
+            )
+        # --- (c) bare --run-start → byte-identical non-park marker ---
+        with tempfile.TemporaryDirectory() as td:
+            sd = Path(td)
+            r = subprocess.run(
+                [sys.executable, str(script_path), "--run-start",
+                 "--max-cycles", "20", "--repo-root", str(sd)],
+                capture_output=True, text=True, env=_run_start_park_env(sd),
+            )
+            assert r.returncode == 0, (
+                f"[{script}] bare --run-start must exit 0; rc={r.returncode} "
+                f"stderr={r.stderr!r}"
+            )
+            facets = _park_facets(sd)
+            assert facets == {"park_needs_input": False, "park_blocked": False,
+                              "park_provisional": False}, (
+                f"[{script}] bare --run-start must leave park OFF, got {facets!r}"
+            )
+
+
+
+
 # ---------------------------------------------------------------------------
 # Tests: feature-budget-guard-and-skip-ahead Phase 1 — per-feature forward-cycle
 #   counter (per_feature_forward_cycles: {feature_id: int} run-marker map).
@@ -7797,6 +7892,7 @@ _TESTS = [
     ("test_advance_forward_cycle_legacy_marker_no_state_key_advances", test_advance_forward_cycle_legacy_marker_no_state_key_advances),
     ("test_advance_forward_cycle_consume_gate_advances_multicycle_same_step", test_advance_forward_cycle_consume_gate_advances_multicycle_same_step),
     ("test_advance_forward_cycle_consume_gate_default_off_preserves_freeze", test_advance_forward_cycle_consume_gate_default_off_preserves_freeze),
+    ("test_run_start_park_umbrella_arms_both_facets_both_scripts", test_run_start_park_umbrella_arms_both_facets_both_scripts),
     ("test_write_run_marker_initializes_per_feature_map", test_write_run_marker_initializes_per_feature_map),
     ("test_advance_forward_cycle_increments_per_feature", test_advance_forward_cycle_increments_per_feature),
     ("test_advance_forward_cycle_meta_does_not_increment_per_feature", test_advance_forward_cycle_meta_does_not_increment_per_feature),

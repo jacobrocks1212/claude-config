@@ -190,8 +190,10 @@ export LAZY_ORCHESTRATOR=1
 
 python3 ~/.claude/scripts/bug-state.py \
   --run-start --max-cycles {max_cycles} \
-  --repo-root {cwd}
+  --repo-root {cwd} {park_flags}
 ```
+
+**Park-mode arm (`{park_flags}`) — load-bearing.** Substitute `{park_flags}` with `--park` when `park_mode == true` (the operator passed `/lazy-bug-batch --park`), and ALSO `--park-provisional` when `park_provisional_mode == true`; otherwise `{park_flags}` is empty (byte-identical to a non-park run's run-start). `--park` is the umbrella flag that arms BOTH `park_needs_input` AND `park_blocked` in the marker (the same expansion as `--set-park on`), so park mode is live from cycle 1's probe. **Do not omit this:** park is a RUN_FRESH_FIELD re-supplied at run-start from the invocation flags — a run-start that drops `{park_flags}` writes a park-OFF marker EVEN under a `--park` invocation, so an overnight `--park` run would halt on the first blocker / needs-input until a mid-run `--set-park` toggle (the `lazy-run-marker-park-arm-and-forward-cycle-inflation` friction, 2026-07-17). The mid-run `--set-park` toggle remains the way to CHANGE park mode after run-start; this line ARMS it at birth.
 
 **Attendedness:** interactive `/lazy-bug-batch` invocations call `--run-start` WITHOUT `--unattended` — the marker records `attended: true` (the default). Only a scheduled/cron driver passes `--unattended`, recording `attended: false`. The `attended` field governs whether `--run-end --reason checkpoint` requires `--operator-authorized` (see HARD CONSTRAINT 10 and the budget-and-queue guard above). Legacy markers lacking the field are treated as attended — the stricter gate is the safe default.
 

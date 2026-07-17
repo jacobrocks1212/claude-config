@@ -7822,6 +7822,20 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--park", dest="park_umbrella", action="store_true",
+        help=(
+            "Umbrella park flag — the /lazy-bug-batch `--park` invocation flag. "
+            "Arms BOTH --park-needs-input AND --park-blocked in one token "
+            "(mirroring `--set-park on`), so `--run-start --park` persists park "
+            "mode into the run marker and the probe reads it from cycle 1. "
+            "Equivalent to passing the two granular flags; combine with "
+            "--park-provisional for provisional-acceptance. Default off → "
+            "byte-identical to a non-park run. Coupled-pair mirror of "
+            "lazy-state.py. (Fixes lazy-run-marker-park-arm: Step 0.55 forwards "
+            "the operator's `--park` verbatim.)"
+        ),
+    )
+    parser.add_argument(
         "--provisionalize-sentinel", default=None, metavar="PATH",
         help=(
             "Provisionally accept the NEEDS_INPUT.md at PATH on its "
@@ -8214,6 +8228,16 @@ def main() -> int:
     # advance and peek the persisted streak.
     if args.repeat_count and args.repeat_count_peek:
         _die("--repeat-count and --repeat-count-peek are mutually exclusive")
+
+    # --park is the umbrella arming BOTH park facets (needs-input + blocked),
+    # matching the /lazy-bug-batch `--park` invocation flag and `--set-park on`.
+    # Fold it into the granular flags EARLY — before the pairing guard below and
+    # the run-start marker threading — so every downstream read sees the same
+    # shape whether the umbrella or the two granular flags were passed (coupled-
+    # pair mirror of lazy-state.py; harden lazy-run-marker-park-arm...).
+    if getattr(args, "park_umbrella", False):
+        args.park_needs_input = True
+        args.park_blocked = True
 
     # park-provisional-acceptance (SPEC D1, parity with lazy-state.py):
     # --park-provisional is a strict modifier of --park-needs-input.
