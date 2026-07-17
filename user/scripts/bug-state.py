@@ -9376,6 +9376,22 @@ def main() -> int:
                     park_blocked=_eff_park_bl,
                     park_provisional=_eff_park_pv,
                 )
+                # merged-head-diverged-stalls-on-gated-head (coupled-pair mirror
+                # of lazy-state.py): ALSO exclude the ids THIS bug probe already
+                # SKIPPED this cycle — device-deferred (device_deferred_features)
+                # and operator-deferred (operator_deferred). The file predicate
+                # above covers operator-defer via DEFERRED.md, but device-defer is
+                # context-conditional (real-device host) and only the probe knows
+                # it; the bug pipeline has NO skip-ahead (a BLOCKED bug halts, so
+                # there is no gated_heads list here), so the two deferral lists are
+                # the bug-side skip set. Reusing the probe's own skip decisions
+                # keeps the merged head in parity so the withhold fires ONLY for a
+                # genuine dispatchable-item divergence, never behind a deferred
+                # head the probe already skipped (see
+                # lazy_core.dispatch.probe_skipped_ids).
+                _mo_skipped = lazy_core.dispatch.probe_skipped_ids(state, _mo_bugs)
+                _mo_excluded = set(_mo_excluded) | _mo_skipped
+                _mo_excluded.discard(state.get("feature_id"))
                 _merged_override = lazy_core.dispatch.merged_head_override(
                     _mo_feats,
                     _mo_bugs,
@@ -9383,6 +9399,22 @@ def main() -> int:
                     state.get("feature_id"),
                     exclude_ids=_mo_excluded,
                 )
+                # Observability (skip is NON-withholding): coupled-pair mirror of
+                # lazy-state.py — a deferred head the probe skipped is surfaced in
+                # the existing device_deferred_features / operator_deferred keys;
+                # add a diagnostic naming the skip so retro/telemetry can see the
+                # divergence was SKIPPED (not withheld) when a workable item
+                # existed downstream.
+                if _mo_skipped and _merged_override is None:
+                    _diag_line = (
+                        "merged-head: skipped deferred head(s) "
+                        f"{sorted(_mo_skipped)!r} — dispatching the workable merged "
+                        f"item '{state.get('feature_id')}' (merged-head-diverged "
+                        "NOT withheld; skip observable via device_deferred_features "
+                        "/ operator_deferred)."
+                    )
+                    if isinstance(state.get("diagnostics"), list):
+                        state["diagnostics"].append(_diag_line)
             except Exception:  # noqa: BLE001 — divergence probe must never break the base probe
                 _merged_override = None
         if _emit_marker is not None and _emit_debt > 0:

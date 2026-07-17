@@ -4683,6 +4683,218 @@ def test_merged_head_override_none_on_empty_queues_or_missing_id():
     ) is None
 
 
+def test_probe_skipped_ids_collects_all_skip_lists_and_resolves_names():
+    """merged-head-diverged-stalls-on-gated-head: probe_skipped_ids folds the
+    per-pipeline probe's OWN same-cycle skip lists into one id set — gated_heads /
+    host_deferred_features / dep_gated are id-keyed (used directly);
+    device_deferred_features / operator_deferred are NAME-keyed and resolved to
+    queue ids via the loaded items. Empty state → empty set (common path)."""
+    _guard()
+    state = {
+        "feature_id": "workable",
+        "gated_heads": ["blocked-feat"],
+        "host_deferred_features": ["host-feat"],
+        "device_deferred_features": ["Device Feature Name"],
+        "dep_gated": [{"id": "dep-feat", "missing": ["upstream"]}],
+    }
+    items = [
+        {"id": "workable", "name": "Workable"},
+        {"id": "blocked-feat", "name": "Blocked"},
+        {"id": "host-feat", "name": "Host"},
+        {"id": "device-feat", "name": "Device Feature Name"},
+        {"id": "dep-feat", "name": "Dep"},
+    ]
+    got = lazy_core.dispatch.probe_skipped_ids(state, items)
+    assert got == {"blocked-feat", "host-feat", "device-feat", "dep-feat"}, got
+    # Byte-identical common path: a probe that skipped nothing → empty set.
+    assert lazy_core.dispatch.probe_skipped_ids({"feature_id": "x"}, items) == set()
+    assert lazy_core.dispatch.probe_skipped_ids(None, items) == set()
+
+
+def test_merged_head_override_gated_head_excluded_no_false_withhold():
+    """merged-head-diverged-stalls-on-gated-head: when the highest-priority merged
+    item is a GATED head the probe already skipped (fed via exclude_ids, exactly
+    as the emit handler now does), the override returns None — the merged head is
+    the workable item the probe chose (== current), so NO withhold/stall. But a
+    genuinely-DISPATCHABLE higher-priority item (a P0 bug) still diverges even with
+    the gated head excluded (the withhold retains its precise meaning)."""
+    _guard()
+    feats = [
+        {"id": "blocked-feat", "tier": 0},   # gated head (BLOCKED) the probe skipped
+        {"id": "workable", "tier": 2},       # the item the probe dispatched
+    ]
+    # Gated head folded into exclude_ids → merged head is `workable` (== current)
+    # → None (no false withhold, the stall is gone).
+    assert lazy_core.dispatch.merged_head_override(
+        feats, [], "/r", "workable", exclude_ids={"blocked-feat"}
+    ) is None
+    # A dispatchable P0 bug outranks the workable feature → still withholds even
+    # with the gated feature excluded (genuine dispatchable-item divergence).
+    override = lazy_core.dispatch.merged_head_override(
+        feats, [{"id": "bug-z", "severity": "P0"}], "/r", "workable",
+        exclude_ids={"blocked-feat"},
+    )
+    assert override is not None and override["merged_head"] == {
+        "item_id": "bug-z", "type": "bug"}, override
+
+
+def _emit_prompt_subprocess(fixture_repo, state_dir, extra_args=None):
+    """Run `lazy-state.py --repeat-count --probe --emit-prompt` as a real
+    subprocess against a fixture repo with a live feature-run marker; return the
+    parsed probe JSON. Mirrors test_subprocess_emit_prompt_withholds_when_merged_
+    head_is_p0_bug's harness."""
+    import os as _os2
+    env = dict(_os_env.environ)
+    env["LAZY_STATE_DIR"] = str(state_dir)
+    result = subprocess.run(
+        [sys.executable, str(_SCRIPTS_DIR / "lazy-state.py"),
+         "--repeat-count", "--probe", "--emit-prompt",
+         "--repo-root", str(fixture_repo), *(extra_args or [])],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, (
+        f"lazy-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
+    return json.loads(result.stdout)
+
+
+def _write_feature(features_dir, fid, *, tier, status="Draft", independent=False,
+                   blocked=False, phases_body=None):
+    """Seed a feature spec dir + queue entry fields; returns the queue entry."""
+    fdir = features_dir / fid
+    fdir.mkdir(parents=True, exist_ok=True)
+    (fdir / "SPEC.md").write_text(
+        f"# Spec\n\n**Status:** {status}\n\n**Depends on:** (none)\n", encoding="utf-8")
+    (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+    (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+    (fdir / "PHASES.md").write_text(
+        phases_body or "# Phases\n\n### Phase 1\n- [ ] Build\n- [ ] Tests\n",
+        encoding="utf-8")
+    (fdir / "plans").mkdir(exist_ok=True)
+    (fdir / "plans" / f"all-phases-{fid}.md").write_text("# Plan\n", encoding="utf-8")
+    if blocked:
+        (fdir / "BLOCKED.md").write_text(
+            "---\nphase: External gate\nblocker_kind: external-gate\n---\n"
+            "Awaiting external CI.\n", encoding="utf-8")
+    entry = {"id": fid, "name": fid, "spec_dir": fid, "tier": tier}
+    if independent:
+        entry["independent"] = True
+    return entry
+
+
+def _seed_marker_for(fixture_repo, state_dir):
+    import time as _time
+    _set_state_dir(state_dir)
+    try:
+        lazy_core.write_run_marker(
+            pipeline="feature", cloud=False,
+            repo_root=str(fixture_repo), max_cycles=10, now=_time.time(),
+        )
+    finally:
+        _clear_state_dir()
+
+
+def test_subprocess_emit_prompt_skips_blocked_gated_head_no_withhold():
+    """merged-head-diverged-stalls-on-gated-head (end-to-end): a BLOCKED
+    external-gate feature pinned at the merged head (tier 0) with a lower-priority
+    WORKABLE independent feature downstream must SKIP the gated head — NOT withhold
+    the route. The probe skip-aheads to the workable feature, and the merged-head
+    check no longer diverges (route_overridden_by absent, a real cycle_prompt is
+    emitted for the workable feature). RED (pre-fix): route_overridden_by ==
+    merged-head-diverged with null cycle_prompt — the live 2026-07-17 stall."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = td_path / "fixture-repo"
+        features = fixture_repo / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        blocked = _write_feature(features, "cross-platform-distribution", tier=0, blocked=True)
+        workable = _write_feature(features, "hydra-overlay", tier=2, independent=True)
+        (features / "queue.json").write_text(
+            json.dumps({"queue": [blocked, workable]}), encoding="utf-8")
+        (fixture_repo / "docs" / "bugs").mkdir(parents=True)
+        (fixture_repo / "docs" / "bugs" / "queue.json").write_text(
+            json.dumps({"queue": []}), encoding="utf-8")
+
+        state_dir = td_path / "lazy-state-dir"; state_dir.mkdir()
+        _seed_marker_for(fixture_repo, state_dir)
+        sj = _emit_prompt_subprocess(fixture_repo, state_dir)
+
+        assert sj.get("route_overridden_by") is None, (
+            f"a gated (BLOCKED) merged head the probe skipped must NOT withhold; "
+            f"got route_overridden_by={sj.get('route_overridden_by')!r}")
+        assert sj.get("feature_id") == "hydra-overlay", (
+            f"probe must dispatch the workable feature; got {sj.get('feature_id')!r}")
+        assert sj.get("cycle_prompt"), "a skipped-gated-head route must emit a cycle_prompt"
+        # The skip stays observable via gated_heads (the blocked head is named).
+        assert "cross-platform-distribution" in (sj.get("gated_heads") or []), (
+            f"the skipped gated head must remain observable in gated_heads; "
+            f"got {sj.get('gated_heads')!r}")
+
+
+def test_subprocess_emit_prompt_fully_gated_surfaces_blocked_terminal():
+    """merged-head-diverged-stalls-on-gated-head (fully-gated terminal): when
+    EVERY feature is BLOCKED (no skip-ahead-ready alternative), the probe falls
+    back to the gated head and surfaces terminal_reason='blocked' — the existing
+    terminal, NOT an infinite skip and NOT a merged-head-diverged withhold."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = td_path / "fixture-repo"
+        features = fixture_repo / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        b1 = _write_feature(features, "cross-platform-distribution", tier=0, blocked=True)
+        b2 = _write_feature(features, "other-blocked", tier=2, blocked=True)
+        (features / "queue.json").write_text(
+            json.dumps({"queue": [b1, b2]}), encoding="utf-8")
+        (fixture_repo / "docs" / "bugs").mkdir(parents=True)
+        (fixture_repo / "docs" / "bugs" / "queue.json").write_text(
+            json.dumps({"queue": []}), encoding="utf-8")
+
+        state_dir = td_path / "lazy-state-dir"; state_dir.mkdir()
+        _seed_marker_for(fixture_repo, state_dir)
+        sj = _emit_prompt_subprocess(fixture_repo, state_dir)
+
+        assert sj.get("route_overridden_by") is None, (
+            f"fully-gated queue must NOT withhold on merged-head divergence; "
+            f"got {sj.get('route_overridden_by')!r}")
+        assert sj.get("terminal_reason") == "blocked", (
+            f"fully-gated queue must surface the blocked terminal, not skip forever; "
+            f"got terminal_reason={sj.get('terminal_reason')!r}, "
+            f"feature_id={sj.get('feature_id')!r}")
+
+
+def test_subprocess_emit_prompt_single_type_workable_head_unchanged():
+    """No-regression: a single-type feature queue whose head IS workable behaves
+    byte-identically — normal cycle_prompt, no route_overridden_by, no gated_heads
+    (the fix is additive; it only fires when the probe actually skipped a gated
+    head)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = td_path / "fixture-repo"
+        features = fixture_repo / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        w = _write_feature(features, "feat-w", tier=1)
+        (features / "queue.json").write_text(
+            json.dumps({"queue": [w]}), encoding="utf-8")
+        (fixture_repo / "docs" / "bugs").mkdir(parents=True)
+        (fixture_repo / "docs" / "bugs" / "queue.json").write_text(
+            json.dumps({"queue": []}), encoding="utf-8")
+
+        state_dir = td_path / "lazy-state-dir"; state_dir.mkdir()
+        _seed_marker_for(fixture_repo, state_dir)
+        sj = _emit_prompt_subprocess(fixture_repo, state_dir)
+
+        assert sj.get("route_overridden_by") is None
+        assert sj.get("feature_id") == "feat-w"
+        assert sj.get("cycle_prompt"), "a workable single-type head must emit a cycle_prompt"
+        assert "gated_heads" not in sj, (
+            f"no skip should have happened; got gated_heads={sj.get('gated_heads')!r}")
+
+
 def test_spec_dir_would_park_predicate():
     """merged-head-includes-parked-items-deadlocks-park-run: the shared park
     predicate mirrors the compute_state parked[] branches — NEEDS_INPUT under
@@ -5942,6 +6154,11 @@ _TESTS = [
     ("test_merged_head_override_excludes_parked_head_no_deadlock", test_merged_head_override_excludes_parked_head_no_deadlock),
     ("test_merged_worklist_exclude_ids_drops_parked_items", test_merged_worklist_exclude_ids_drops_parked_items),
     ("test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug", test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug),
+    ("test_probe_skipped_ids_collects_all_skip_lists_and_resolves_names", test_probe_skipped_ids_collects_all_skip_lists_and_resolves_names),
+    ("test_merged_head_override_gated_head_excluded_no_false_withhold", test_merged_head_override_gated_head_excluded_no_false_withhold),
+    ("test_subprocess_emit_prompt_skips_blocked_gated_head_no_withhold", test_subprocess_emit_prompt_skips_blocked_gated_head_no_withhold),
+    ("test_subprocess_emit_prompt_fully_gated_surfaces_blocked_terminal", test_subprocess_emit_prompt_fully_gated_surfaces_blocked_terminal),
+    ("test_subprocess_emit_prompt_single_type_workable_head_unchanged", test_subprocess_emit_prompt_single_type_workable_head_unchanged),
     ("test_merged_worklist_only_features_matches_listed_order", test_merged_worklist_only_features_matches_listed_order),
     ("test_merged_worklist_only_bugs_matches_listed_order", test_merged_worklist_only_bugs_matches_listed_order),
     ("test_merged_worklist_both_empty_returns_none", test_merged_worklist_both_empty_returns_none),

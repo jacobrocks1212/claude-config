@@ -404,6 +404,92 @@ def merged_head_override(
     }
 
 
+def probe_skipped_ids(state: dict, items: list[dict] | None) -> "set[str]":
+    """Return the set of queue IDS the CURRENT per-pipeline probe already
+    SKIPPED this cycle (advanced past without dispatching) — reusing the probe's
+    OWN skip decisions so the merged-head computation stays in exact parity with
+    the per-pipeline skip-ahead, instead of re-inferring per-item state.
+
+    This is the durable fix for the ``merged-head-diverged`` STALL
+    (``docs/bugs/merged-head-diverged-stalls-on-gated-head``): the per-pipeline
+    ``--emit-prompt`` probe applies default-on skip-ahead — it advances past a
+    research-pending / BLOCKED gated head (``gated_heads``), a host-deferred head
+    (``host_deferred_features``), a device-deferred head
+    (``device_deferred_features``), a dependency-gated head (``dep_gated``), and
+    (bug pipeline) an operator-deferred head (``operator_deferred``) — but the
+    merged-head divergence check only excluded the NARROWER file-predicate park /
+    operator-defer set. When a gated head sat at the merged head, the two
+    disagreed and the probe WITHHELD the route (``route_overridden_by:
+    merged-head-diverged``, null ``cycle_prompt``) even though the probe had
+    already computed the correct next workable item — stalling forward progress
+    (observed live 2026-07-17 on ``cross-platform-distribution``, a BLOCKED
+    external-gate pre-release feature pinned at priority 1). Folding these ids
+    into the merged-head exclude set makes the merged head the SAME workable item
+    the probe chose, so the withhold fires ONLY for a genuine
+    dispatchable-item divergence (a P0 bug jumping the queue), never behind a
+    gated head the probe already skipped.
+
+    Why the probe's own signal (not a second scoped re-probe): the lists below
+    are populated by ``compute_state`` as it walks, so they encode EXACTLY the
+    skip-ahead two-key predicate AND ``--strict-research-halt`` (which disables
+    skip-ahead — under it ``gated_heads`` is empty, so a gated head is NOT
+    excluded and the run halts on it, preserving the opt-in). They also make the
+    fully-gated queue terminate correctly: when NO skip-ahead-ready alternative
+    exists the probe clears ``gated_heads`` and dispatches the gated head as its
+    own terminal (blocked / needs-research), so this set is empty and the merged
+    head equals that terminal head — the existing exhausted/blocked terminal, NOT
+    an infinite skip. And because a skipped item is by definition never the
+    dispatched (``feature_id``) item, this set never contains the current item,
+    so the "never exclude the current dispatch target" invariant holds for free.
+
+    Args:
+        state: the ``compute_state`` output dict for THIS probe (same-pipeline).
+        items: the same-pipeline queue items (from ``load_queue`` /
+            ``load_bug_queue``) — used ONLY to resolve the NAME-keyed skip lists
+            (``device_deferred_features`` / ``operator_deferred`` store the human
+            ``name``, not the queue ``id``) back to queue ids. ID-keyed lists
+            (``gated_heads`` / ``host_deferred_features`` / ``dep_gated``) need no
+            resolution.
+
+    Returns:
+        The set of queue ids the probe skipped this cycle (empty when the probe
+        skipped nothing — the byte-identical common path).
+    """
+    if not isinstance(state, dict):
+        return set()
+    ids: set[str] = set()
+    # ID-keyed skip lists — used directly.
+    for _v in (state.get("gated_heads") or []):
+        if _v:
+            ids.add(_v)
+    for _v in (state.get("host_deferred_features") or []):
+        if _v:
+            ids.add(_v)
+    for _row in (state.get("dep_gated") or []):
+        _rid = _row.get("id") if isinstance(_row, dict) else None
+        if _rid:
+            ids.add(_rid)
+    # NAME-keyed skip lists — resolve name → queue id via the loaded items (each
+    # carries both id and name). A value that resolves to no item is added as-is
+    # (fail toward exclusion of a genuinely-skipped item; a stray non-matching
+    # value merely never appears in the worklist and is harmless).
+    _name_to_id: dict[str, str] = {}
+    for _raw in (items or []):
+        _iid = _raw.get("id") if isinstance(_raw, dict) else None
+        if not _iid:
+            continue
+        _name_to_id[_iid] = _iid
+        _nm = _raw.get("name")
+        if _nm:
+            _name_to_id[_nm] = _iid
+    for _key in ("device_deferred_features", "operator_deferred"):
+        for _v in (state.get(_key) or []):
+            if not _v:
+                continue
+            ids.add(_name_to_id.get(_v, _v))
+    return ids
+
+
 def emit_cycle_prompt(
     repo_root: Path,
     state: dict,

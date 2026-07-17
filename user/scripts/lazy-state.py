@@ -13631,6 +13631,24 @@ def main() -> int:
                     park_blocked=_eff_park_bl,
                     park_provisional=_eff_park_pv,
                 )
+                # merged-head-diverged-stalls-on-gated-head: ALSO exclude the ids
+                # THIS feature probe already SKIPPED this cycle — research-pending
+                # / BLOCKED gated heads (gated_heads), host-deferred
+                # (host_deferred_features), device-deferred
+                # (device_deferred_features), dependency-gated (dep_gated). The
+                # file predicate above only covers the NARROWER park /
+                # operator-defer set, so a gated (e.g. BLOCKED external-gate) head
+                # at the merged head diverged from the workable item the probe
+                # chose and WITHHELD the route — stalling the driver. Reusing the
+                # probe's OWN skip decisions keeps the merged head in exact parity
+                # with the per-pipeline skip-ahead (honors --strict-research-halt,
+                # the two-key predicate, and the fully-gated terminal for free —
+                # see lazy_core.dispatch.probe_skipped_ids). The withhold now
+                # fires ONLY for a genuine dispatchable-item divergence (a P0 bug
+                # jumping the queue), never behind an already-skipped gated head.
+                _mo_skipped = lazy_core.dispatch.probe_skipped_ids(state, _mo_feats)
+                _mo_excluded = set(_mo_excluded) | _mo_skipped
+                _mo_excluded.discard(state.get("feature_id"))
                 _merged_override = lazy_core.dispatch.merged_head_override(
                     _mo_feats,
                     _mo_bugs,
@@ -13638,6 +13656,23 @@ def main() -> int:
                     state.get("feature_id"),
                     exclude_ids=_mo_excluded,
                 )
+                # Observability (skip is NON-withholding): a gated head the probe
+                # skipped is surfaced in the existing gated_heads /
+                # device_deferred_features / host_deferred_features / dep_gated
+                # keys; add a diagnostic naming the skip so retro/telemetry can
+                # see the merged-head divergence was correctly SKIPPED (not
+                # withheld) when a workable item existed downstream.
+                if _mo_skipped and _merged_override is None:
+                    _diag_line = (
+                        "merged-head: skipped gated/deferred head(s) "
+                        f"{sorted(_mo_skipped)!r} — dispatching the workable merged "
+                        f"item '{state.get('feature_id')}' (merged-head-diverged "
+                        "NOT withheld; skip observable via gated_heads / "
+                        "device_deferred_features / host_deferred_features / "
+                        "dep_gated)."
+                    )
+                    if isinstance(state.get("diagnostics"), list):
+                        state["diagnostics"].append(_diag_line)
             except Exception:  # noqa: BLE001 — divergence probe must never break the base probe
                 _merged_override = None
         if _emit_marker is not None and _emit_debt > 0:
