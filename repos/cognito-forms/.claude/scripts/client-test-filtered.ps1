@@ -29,7 +29,18 @@ try {
     # Add passthrough args after --
     $passthroughArgs = @()
     if ($Pattern) {
-        $passthroughArgs += "--testPathPattern=`"$Pattern`""
+        # A '|'-alternation pattern (e.g. "FileA|FileB|FileC") cannot be passed as a
+        # single --testPathPattern value on Windows: nx spawns the jest executor as a
+        # child process through cmd.exe, and a bare '|' on that inner command line is
+        # interpreted as a shell pipe operator (splitting the command and failing
+        # silently with zero jest output). Jest treats multiple positional arguments as
+        # testPathPattern regexes combined with OR, so splitting the alternation into
+        # separate positional args is semantically identical to a single "A|B|C" regex
+        # while keeping every argument free of shell-hostile characters. A pattern with
+        # no '|' yields a single positional arg (equivalent to --testPathPattern).
+        foreach ($frag in ($Pattern -split '\|')) {
+            if ($frag) { $passthroughArgs += $frag }
+        }
     }
     if ($Filter) {
         $passthroughArgs += "--testNamePattern=`"$Filter`""
