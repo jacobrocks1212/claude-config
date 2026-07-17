@@ -13,10 +13,6 @@ Most operations are org-scoped. `Organization` is the partition key for storage 
 - Interfaces: `IEntity`, `IModelEntity` defined in `Cognito.Amender/`; `IEncryptable`, `IFlushable` in `Cognito/`. Reference wrappers (`FormRef`, `FormEntryRef`, …) are generic `Reference<T>`.
 - Revision system for schema evolution — breaking entity changes must include a revision migration
 
-## Services
-- `IFormsService` extends `IModuleService<FormsConfiguration>`
-- AI services use Liquid templates from `Services/Forms/AI/Prompts/`
-
 ## DI Registration — `DependencyInjection/CognitoCoreModule.cs` (Autofac Module)
 - Registers `Module<IFormsService>`, `Module<IPaymentService>`, etc. as singletons; factory delegates via `CoreServiceFactory(IComponentContext ctx)`; conditional GemBox vs Aspose registration (feature flag)
 - **Convention-scan determinism gotcha:** `RegisterCoreServices` assembly-scans the `Cognito.Core.Services` namespace `.AsImplementedInterfaces()`. If two types in that namespace implement the *same* interface, a single-instance resolve of that interface is **nondeterministic** (last-registration-wins on scan order, silently). To force a deterministic default, exclude the non-default impl from the scan with `.Except<TOther>()` **and** register the chosen default explicitly after `RegisterCoreServices(builder)`. Precedent: `.Except<CoreService>()`.

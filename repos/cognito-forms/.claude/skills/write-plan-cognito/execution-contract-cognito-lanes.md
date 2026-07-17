@@ -38,7 +38,7 @@ This plan uses an **orchestrator + Sonnet lane-agent** architecture:
 
 **HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are
 about to modify a `.cs`, `.ts`, `.vue`, `.js`, `.tsx`, or test file — STOP and compose an `Agent`
-tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, the plan
+tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, `CLAUDE.local.md`, the plan
 file's frontmatter, `work-log.jsonl`. The ONLY source-adjacent artifact you regenerate directly
 is `Cognito.Web.Client/libs/types/server-types/**` — via the typegen script, never by hand.
 

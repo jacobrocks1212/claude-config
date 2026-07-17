@@ -11,7 +11,4 @@
 - `EntityObserver` extends Vue 2's internal `Observer` (`vue/src/core/observer`) — hooks entity change events instead of Vue's defineProperty walking: `accessed` -> `dep.depend()` (register watcher dependency); `changed` -> `dep.notify()` (trigger re-render)
 - `CustomObserver` (base class) manages per-property `Dep` objects for Vue dependency tracking
 
-## Source Adapters
-- `SourceRootAdapter` — binds an entity as the root data source for a component
-- `SourcePathAdapter` — binds a nested property path within an entity
-- Global components: `vm-root`, `vm-source` (registered by plugin install)
+Maintenance: record non-obvious gotchas and pattern/structure changes here; do NOT add version numbers, line numbers, or test counts.

@@ -5,19 +5,6 @@
     Frontend: Vue 2.7 Composition API, TypeScript, Nx monorepo (pnpm)
   </project>
 
-  <structure>
-    Backend: Cognito.Core/ (domain), Cognito/ (business logic), Cognito.Services/ (web/API), Cognito.Queue*/ (jobs)
-    Frontend: Cognito.Web.Client/apps/{spa,client,marketing,website}, libs/{model.js,vuemodel,element-ui,types,api,utils,shared-components,styles,content-data-layer,importers,workflow-diagram}
-    Tests: Cognito.UnitTests/ (unit), Cognito.Forms.UnitTests/ (Selenium/browser integration) — both MSTest
-  </structure>
-
-  <subdirectory-docs>
-    These directories have their own CLAUDE.local.md with detailed patterns:
-    Cognito.Core/ (domain layer, DI), Cognito/ (services, data layer, storage), Cognito.Services/ (MVC controllers, routing),
-    Cognito.Web.Client/ (Nx monorepo map), libs/model.js/ (reactive entity framework), libs/vuemodel/ (Vue 2 bridge),
-    apps/client/ (form rendering: extensions, converters, web-api), apps/spa/ (builder/admin: GlobalState, composables, Element UI)
-  </subdirectory-docs>
-
   <knowledge-base>
     Feature docs in `C:/Users/JacobMadsen/source/repos/cog-docs/docs/features/` (sibling cog-docs repo)
   </knowledge-base>
@@ -26,9 +13,7 @@
     - Never reference personal/planning documentation (SPEC, PHASES, WU, work-item docs, etc.) in
       code, test names, comments, commit messages, or anything checked into the repo. These are
       local artifacts that mean nothing to other contributors.
-    - Do not write code comments. The only exception is a doc comment on a public/service interface
-      definition where genuinely warranted. Never delete a human's existing comment just to satisfy
-      this rule.
+    - Code comments: see AGENTS.md (repo root) — same rule applies in this repo.
     - Never reference the implementation process in assert messages or test names — no TDD state
       ("RED before fix", "PASS before and after fix"), no "currently fails because...", no test-ordering
       labels like "(a)/(b)/(c)". Describe only the required behavior; these artifacts go stale the
@@ -71,7 +56,7 @@
 ## Backend Tests
 
 - **`/mstest`** — filtered test runner (passed/failed, errors, summary), queue-routed.
-- Default project: `Cognito.UnitTests` — **all** service/unit tests live here (including `EntryIndexServiceTests`, `PersonSubmissionIndexingTests`, `ShouldInvalidateIndexTests`, etc.). Use `-TestDll "Cognito.Forms.UnitTests"` ONLY for Selenium/browser integration tests.
+- Default project: `Cognito.UnitTests` — **all** service/unit tests live here. Use `-TestDll "Cognito.Forms.UnitTests"` ONLY for Selenium/browser integration tests.
 - Filter syntax: `ClassName~Foo`, `Name~Bar`, `FullyQualifiedName~Baz`.
 - Tests run with `--no-build` — build first with `/msbuild` if needed.
 - **Do not relocate test output to dodge DLL-copy-lock contention.** `dotnet test --artifacts-path`/`--output` to a temp dir breaks net472 tests that resolve content files at relative paths (`bin\Cognito.Services\Web.config`, `_snapshots/*`, FakeAzure data) — they fail en masse with `DirectoryNotFoundException`, masquerading as a logic regression. If `bin\Debug\*.dll` is locked (MSB3027/MSB3021), the build queue automatically reaps leftover build processes, recycles VBCSCompiler, and quarantines 0-byte/truncated DLLs between runs — check `/build-queue-status` for the per-build hygiene outcome before manually killing anything.
@@ -81,7 +66,6 @@
 
 - **`/nxbuild`** — filtered frontend build. Options: `-Project "cognito-spa"`, `-All`.
 - **`/nxtest`** — filtered frontend test runner. Options: `-Project "cognito-spa"` (default), `-Pattern "Button"` (file path filter), `-Filter "should render"` (test name filter), `-NoCoverage`.
-- Nx project names (NOT directory names): `cognito-client`, `cognito-spa`, `@cognitoforms/model.js`, `@cognitoforms/vuemodel`, … — `npx nx show projects` lists all.
 - First run may be slow due to dependency builds (model.js, vuemodel, element-ui).
 
 <csharp-workflow>
@@ -123,7 +107,7 @@
 </frontend-workflow>
 
 <work-logging>
-  Scoped to Cognito Forms sessions only (2026-06-11) — other repos no longer log.
+  Scoped to Cognito Forms sessions only — other repos do not log.
 
   Call the `work-logging-plugin` MCP tool `work_log_append` at the **end** of any session that
   produces meaningful engineering output (completed plans, real code changes). Skip for trivial
@@ -153,7 +137,7 @@ if (ModelSource.TryGetSource(formType, fieldPath.Value, out var source))
 }
 ```
 
-Canonical example: `EntryIndexService.ResolveCustomerEntryIdAsync` (PersonField case, `Cognito.Core/Services/Forms/EntryIndexService.cs`). See also `IndexBuilder.cs` and `AutoCreateEntriesService.cs`. (Mistake originally shipped in PR #16543.)
+Canonical example: `EntryIndexService.ResolveCustomerEntryIdAsync` (PersonField case, `Cognito.Core/Services/Forms/EntryIndexService.cs`). See also `IndexBuilder.cs` and `AutoCreateEntriesService.cs`.
 
 ## Branch-aware doc context
 
@@ -161,3 +145,5 @@ Most `p/*` work branches are backed by a docs directory under `../cog-docs/docs/
 
 - **When the hook surfaces a pointer:** read that directory's SPEC.md and PHASES.md before doing any work on the branch.
 - **When the hook is silent but branch docs likely exist:** list `../cog-docs/docs/{bugs,features}`, resolve the directory by slug or work-item id, review it, and backfill a `**Branch:** <current-branch>` line into its SPEC.md or PHASES.md so future sessions resolve automatically.
+
+Maintenance: record non-obvious gotchas and pattern/structure changes here; do NOT add version numbers, line numbers, or test counts.

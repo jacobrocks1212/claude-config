@@ -9,7 +9,7 @@
 - **Static assets (JS/CSS/HTML) don't need backend builds** — files in `Views/` like `build.js`, `build.htm`, `build.scss` are served directly by IIS. Only `.cs` changes require a build.
 
 ## build.js — MANDATORY Skill Invocation
-**BEFORE editing `Views/Shared/build.js` (22K+ lines), you MUST invoke the `/build-js` skill** — an auto-generated index for finding existing code before proposing changes (avoid duplicates), locating HasChanges rules / event handlers / computed properties, and insertion points. If stale, regenerate (worktree-aware):
+**BEFORE editing `Views/Shared/build.js` (large), you MUST invoke the `/build-js` skill** — an auto-generated index for finding existing code before proposing changes (avoid duplicates), locating HasChanges rules / event handlers / computed properties, and insertion points. If stale, regenerate (worktree-aware):
 ```bash
 node ~/.claude/skills/build-js/tools/generate-index.mjs
 ```

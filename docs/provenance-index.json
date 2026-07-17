@@ -53,6 +53,11 @@
   ],
   "CLAUDE.md": [
     {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "concurrent-same-branch-walkers-no-arbitration",
       "type": "bug",
       "provenance": "backfilled"
@@ -176,11 +181,6 @@
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
-    },
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
     }
   ],
   "LAZY_QUEUE.md": [
@@ -213,6 +213,11 @@
       "id": "bug-state-scoped-query-loses-deferred-bug-identity",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "descoped-row-recognition-needs-canonical-marker",
@@ -317,11 +322,6 @@
     {
       "id": "state-cli-contract-registry",
       "type": "feature",
-      "provenance": "pipeline-gated"
-    },
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
       "provenance": "pipeline-gated"
     }
   ],
@@ -2617,6 +2617,55 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/BLOCKED.md": [
+    {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/PHASES.md": [
+    {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/SKIP_MCP_TEST.md": [
+    {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/VALIDATED.md": [
+    {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-1.md": [
+    {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-2.md": [
+    {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-3.md": [
+    {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/build-queue-enforce-cd-prefix-bypass/PHASES.md": [
     {
       "id": "build-queue-enforce-cd-prefix-bypass",
@@ -2627,6 +2676,34 @@
   "docs/bugs/build-queue-enforce-cd-prefix-bypass/plans/all-phases-2026-07-06.md": [
     {
       "id": "build-queue-enforce-cd-prefix-bypass",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/GATE_VERDICT.md": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/PHASES.md": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/SKIP_MCP_TEST.md": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/SPEC.md": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
       "type": "bug",
       "provenance": "pipeline-gated"
     }
@@ -4749,6 +4826,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "byref-dispatch-undercounts-forward-cycles",
       "type": "bug",
       "provenance": "backfilled"
@@ -4931,11 +5013,6 @@
     {
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
-      "provenance": "pipeline-gated"
-    },
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
       "provenance": "pipeline-gated"
     }
   ],
@@ -10668,6 +10745,34 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/build-queue-foreground-outcome.Tests.ps1": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/build-queue-hygiene.ps1": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/build-queue-runner.ps1": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/build-queue.ps1": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/scripts/cli_surface_gen.py": [
     {
       "id": "generalized-build-test-runner-skills",
@@ -13954,111 +14059,6 @@
     {
       "id": "spec-excerpt-scoped-plans",
       "type": "feature",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/BLOCKED.md": [
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/PHASES.md": [
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/SKIP_MCP_TEST.md": [
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/VALIDATED.md": [
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-1.md": [
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-2.md": [
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-3.md": [
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/GATE_VERDICT.md": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/PHASES.md": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/SKIP_MCP_TEST.md": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/SPEC.md": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "user/scripts/build-queue-foreground-outcome.Tests.ps1": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "user/scripts/build-queue-hygiene.ps1": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "user/scripts/build-queue-runner.ps1": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "user/scripts/build-queue.ps1": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
       "provenance": "pipeline-gated"
     }
   ]

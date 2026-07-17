@@ -152,7 +152,7 @@ python ~/.claude/scripts/phases-slice.py <PHASES.md> --phase <id> --no-preamble
 
 The contract's EXECUTION MODEL governs. Executor-specific reinforcement:
 
-- **Fail-fast trip-wire (MANDATORY):** before ANY `Edit`/`Write`, ask "is this path a source/test file?" (`.rs`/`.ts`/`.tsx`/`.jsx`/`.js`/`.cs`/`.vue`/`.py`, anything under `tests/`, `src/`, `src-tauri/`). If yes — STOP; compose `Agent({ model: "sonnet", ... })` instead. The ONLY files you modify directly: `PHASES.md`, `IMPLEMENTATION_NOTES.md`, `CLAUDE.md`, the plan file (frontmatter status + WU checkboxes only), task tracking.
+- **Fail-fast trip-wire (MANDATORY):** before ANY `Edit`/`Write`, ask "is this path a source/test file?" (`.rs`/`.ts`/`.tsx`/`.jsx`/`.js`/`.cs`/`.vue`/`.py`, anything under `tests/`, `src/`, `src-tauri/`). If yes — STOP; compose `Agent({ model: "sonnet", ... })` instead. The ONLY files you modify directly: `PHASES.md`, `IMPLEMENTATION_NOTES.md`, `CLAUDE.md`, `CLAUDE.local.md`, the plan file (frontmatter status + WU checkboxes only), task tracking.
 - **Sub-subagent dispatch contract (LOAD-BEARING):** every batch producing source/test changes MUST include ≥ 1 Sonnet test-agent dispatch (briefing: `~/.claude/skills/_components/tdd-test-agent.md`) and ≥ 1 Sonnet impl-agent dispatch (briefing: `~/.claude/skills/_components/implementation-agent.md`) — test-first, `agents_dispatched_per_batch ≥ 2`. (Lane plans override this via their contract's dispatch-census note: one inline-TDD lane agent counts as both.)
 - **A batch completed with zero sub-subagent dispatches is a contract violation** — record `CONTRACT_VIOLATION: zero sub-subagents dispatched on batch <N>` in your final summary; never silently elide it.
 

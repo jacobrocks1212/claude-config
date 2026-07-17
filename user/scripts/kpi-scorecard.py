@@ -103,6 +103,11 @@ _SOURCES: dict[str, frozenset] = {
         # point-in-time scan of docs/bugs/ SPEC.md header lines.
         "oldest-open-bug-age-days",
         "concluded-unfixed-count",
+        # claude-md-maintenance-v2: a point-in-time wc -c sum over the 12 Cognito
+        # Forms CLAUDE.local.md files (repos/cognito-forms/**/CLAUDE.local.md).
+        # Compute IS wired (_sel_claude_md_corpus_bytes); --capture-baseline reads
+        # it directly — a pure-read on-disk scan, no host dependency.
+        "claude-md-corpus-bytes",
     }),
     # Offline session-log corpus, mined on demand by mine-sessions'
     # attribute_predispatch.py (pre-first-dispatch context attribution). No
@@ -983,6 +988,21 @@ def _sel_concluded_unfixed_count(repo_root) -> Tuple[Optional[float], Optional[s
     return (float(n), None)
 
 
+def _sel_claude_md_corpus_bytes(
+        repo_root) -> Tuple[Optional[float], Optional[str]]:
+    """Total bytes of the Cognito Forms CLAUDE.local.md corpus — the
+    auto-loaded per-session doc surface claude-md-maintenance-v2 trims. A
+    point-in-time wc -c sum over repos/cognito-forms/**/CLAUDE.local.md."""
+    corpus_dir = Path(repo_root) / "repos" / "cognito-forms"
+    if not corpus_dir.is_dir():
+        return (None, "repos/cognito-forms tree absent — nothing to scan")
+    files = sorted(corpus_dir.rglob("CLAUDE.local.md"))
+    if not files:
+        return (None, "no CLAUDE.local.md files under repos/cognito-forms")
+    total = sum(f.stat().st_size for f in files)
+    return (float(total), None)
+
+
 # -- dispatcher -------------------------------------------------------------------
 
 def compute_reading(row, *, repo_root,
@@ -1021,6 +1041,8 @@ def compute_reading(row, *, repo_root,
                 return _sel_oldest_open_bug_age_days(repo_root)
             if selector == "concluded-unfixed-count":
                 return _sel_concluded_unfixed_count(repo_root)
+            if selector == "claude-md-corpus-bytes":
+                return _sel_claude_md_corpus_bytes(repo_root)
         return (None, f"no computation registered for "
                       f"{source!r}/{selector!r}")
     except Exception as exc:  # noqa: BLE001 — honest NO-DATA, never a crash

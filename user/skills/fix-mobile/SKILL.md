@@ -123,7 +123,7 @@ This plan uses an **orchestrator + Sonnet subagent** architecture:
 | **Orchestrator (you)** | Read plan, compose Agent prompts, dispatch subagents, review output, run quality gates, update tracking docs | `Agent`, `Read`, `Bash` (gates only), `TaskCreate`/`TaskUpdate` |
 | **Sonnet subagent** | Write ALL source and test code | `Edit`, `Write`, `Read`, `Bash`, `Grep`, `Glob` |
 
-**HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`.
+**HARD CONSTRAINT:** You MUST NOT call `Edit` or `Write` on source or test files. If you are about to modify a `.ts`, `.js`, `.cs`, `.vue`, `.py`, `.rs`, `.tsx`, `.jsx`, or test file — STOP and compose an `Agent` tool call instead. The ONLY files you may modify directly: `PHASES.md`, `CLAUDE.md`, `CLAUDE.local.md`.
 
 **Dispatch pattern:** `Agent({ description: "...", model: "sonnet", prompt: "<FULL self-contained context — subagent has zero prior context>" })`
 
@@ -268,7 +268,7 @@ Read `~/.claude/skills/_components/integration-verification.md` and follow its c
 #### CLAUDE.md Update Step
 
 ```
-## Update CLAUDE.md Files (MANDATORY — DO NOT SKIP)
+## Update CLAUDE.md Files (rare — only durable structural knowledge)
 
 Read `~/.claude/skills/_components/claude-md-review.md` and follow its instructions.
 ```

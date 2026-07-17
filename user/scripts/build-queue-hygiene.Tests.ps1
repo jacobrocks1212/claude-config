@@ -903,6 +903,80 @@ Time Elapsed 00:00:07.42
 		$result = Test-BuildProducedNoOutput -LogText $realLog
 		$result | Should -BeFalse
 	}
+
+	It 'classifies a terse Nx log WITH ANSI codes as produced-output (not false-no-output) — build-queue-nxbuild-terse-output-false-fail' {
+		# Simulates a real Nx build with terse success output and ANSI color codes.
+		# Without ANSI stripping, this log has ~50 raw characters but would fail the
+		# MinChars=40 check and be falsely classified as "no output".
+		# With stripping, the cleaned text is "Building cognito-client...NX  Successfully ran target build for project cognito-client"
+		# which is ~100+ chars and passes the threshold.
+		$esc = [char]27
+		$terseNxLog = 'Building cognito-client...' + "`r`n" + $esc + '[0m' + $esc + '[36mNX' + $esc + '[39m  ' + $esc + '[32mSuccessfully ran target build for project cognito-client' + $esc + '[0m'
+		$result = Test-BuildProducedNoOutput -LogText $terseNxLog
+		$result | Should -BeFalse
+	}
+
+	It 'classifies a very terse log (below threshold even after ANSI stripping) as no-output' {
+		# A log that is genuinely empty/truncated, even after ANSI stripping.
+		$esc = [char]27
+		$veryTerse = 'x' + $esc + '[0my'
+		$result = Test-BuildProducedNoOutput -LogText $veryTerse
+		$result | Should -BeTrue
+	}
+}
+
+Describe 'Strip-AnsiCodes (ANSI escape sequence removal)' {
+	It 'defines Strip-AnsiCodes' {
+		Get-Command Strip-AnsiCodes -ErrorAction SilentlyContinue | Should -Not -BeNullOrEmpty
+	}
+
+	It 'returns empty string for $null input' {
+		$result = Strip-AnsiCodes -Text $null
+		$result | Should -BeExactly ''
+	}
+
+	It 'returns empty string for whitespace-only input' {
+		$result = Strip-AnsiCodes -Text "   `r`n`t  "
+		$result | Should -BeExactly ''
+	}
+
+	It 'removes a simple ANSI color code (ESC[0m reset)' {
+		$esc = [char]27
+		$input = 'hello' + $esc + '[0mworld'
+		$result = Strip-AnsiCodes -Text $input
+		$result | Should -BeExactly 'helloworld'
+	}
+
+	It 'removes ANSI color codes with parameters (ESC[32m green, ESC[1;32m bold-green)' {
+		$esc = [char]27
+		$input = $esc + '[32mgreen' + $esc + '[0m' + $esc + '[1;32mbold-green' + $esc + '[0m'
+		$result = Strip-AnsiCodes -Text $input
+		$result | Should -BeExactly 'greenbold-green'
+	}
+
+	It 'removes webpackbar-style ANSI sequences (real Nx output)' {
+		$esc = [char]27
+		$input = '[webpackbar] ' + $esc + '[32m✔' + $esc + '[39m Form-client: Compiled successfully'
+		$result = Strip-AnsiCodes -Text $input
+		$result | Should -BeExactly '[webpackbar] ✔ Form-client: Compiled successfully'
+	}
+
+	It 'preserves regular text and non-ANSI special characters' {
+		$input = "Line 1`r`nLine 2 (no codes here)"
+		$result = Strip-AnsiCodes -Text $input
+		$result | Should -BeExactly $input
+	}
+
+	It 'handles a complex multi-line log with mixed ANSI codes' {
+		$esc = [char]27
+		$input = 'Building ' + $esc + '[36mcognito-client' + $esc + '[39m...' + "`r`n" + $esc + '[0m' + $esc + '[36mNX' + $esc + '[39m  ' + $esc + '[32mSuccessfully ran target build for project cognito-client' + $esc + '[0m'
+		$result = Strip-AnsiCodes -Text $input
+		# After stripping, should have the plain text without ANSI codes
+		$result | Should -Match 'Building cognito-client'
+		$result | Should -Match 'Successfully ran target build'
+		# Verify ANSI codes are gone (the escape character should be stripped)
+		$result | Should -Not -Match ([char]27)
+	}
 }
 
 Describe 'Format-BuildQueueBanner — build_fidelity no-output arm (WU-1)' {

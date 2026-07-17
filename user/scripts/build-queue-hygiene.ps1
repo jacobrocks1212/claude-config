@@ -108,6 +108,45 @@ function Read-WithRetry {
 	return $Fallback
 }
 
+function Strip-AnsiCodes {
+	<#
+	.SYNOPSIS
+	  Removes ANSI escape sequences from a string.
+
+	.DESCRIPTION
+	  Strips all ANSI color, movement, and formatting escape sequences (ESC [ ... m)
+	  from the input text, returning the cleaned string. Used to measure build-log
+	  output emptiness without ANSI codes inflating the character count.
+
+	  Match pattern: ESC [ followed by zero or more numeric/semicolon parameters,
+	  terminated by 'm' (the SGR — Select Graphic Rendition suffix).
+	  Example: "\e[0m" (reset), "\e[32m" (green), "\e[1;32m" (bold green).
+
+	  Pure, side-effect-free; never throws.
+
+	.PARAMETER Text
+	  The text to clean. $null / empty / whitespace passes through unchanged.
+
+	.OUTPUTS
+	  [string] the input text with all ANSI codes removed (empty string if input is $null).
+	#>
+	[CmdletBinding()]
+	[OutputType([string])]
+	param(
+		[string]$Text
+	)
+
+	if ([string]::IsNullOrWhiteSpace($Text)) {
+		return ''
+	}
+
+	# ANSI escape pattern: ESC (0x1B = \e in PowerShell) followed by [ and
+	# optional numeric/semicolon parameters, terminated by 'm' (SGR).
+	# Also match other escape sequences like clear-screen (ESC [ ... J/H).
+	# Regex: \e\[[0-9;]*[a-zA-Z] covers most common ANSI sequences.
+	return [regex]::Replace($Text, '\e\[[0-9;]*[a-zA-Z]', '')
+}
+
 function Test-BuildProducedNoOutput {
 	<#
 	.SYNOPSIS
@@ -130,6 +169,13 @@ function Test-BuildProducedNoOutput {
 	  elapsed-time line, i.e. hundreds of characters, so the near-empty threshold
 	  cannot false-positive a genuine build.
 
+	  ANSI-code stripping (build-queue-nxbuild-terse-output-false-fail fix): The
+	  length check is applied to ANSI-code-stripped text. Nx and webpack tools emit
+	  terse but real success output wrapped in ANSI color codes; without stripping,
+	  the code count could artificially reduce the apparent character count of a
+	  genuinely terse but real log, causing a false-no-output classification on
+	  legitimate builds.
+
 	  FOLLOW-ON KNOB (documented, NOT implemented here): a stronger
 	  expected-output-DLL check — the build's expected output DLL exists AND is
 	  newer than its sources — would catch a build that logged plausibly but wrote
@@ -144,9 +190,10 @@ function Test-BuildProducedNoOutput {
 	  $null when the runner never captured a log.
 
 	.PARAMETER MinChars
-	  Near-empty threshold: a trimmed log shorter than this many characters counts
-	  as no-output. Default 40 — comfortably below any real build log, well above a
-	  truncated/empty capture.
+	  Near-empty threshold: a log (after ANSI-code stripping and trimming) shorter
+	  than this many characters counts as no-output. Default 40 — comfortably below
+	  any real build log, well above a truncated/empty capture. Applies to the
+	  cleaned text, not the raw log.
 
 	.OUTPUTS
 	  [bool] $true when the build produced no output; $false otherwise.
@@ -159,7 +206,13 @@ function Test-BuildProducedNoOutput {
 	)
 
 	if ([string]::IsNullOrWhiteSpace($LogText)) { return $true }
-	if ($LogText.Trim().Length -lt $MinChars) { return $true }
+
+	# Strip ANSI codes before measuring emptiness, so terse ANSI-heavy logs
+	# (e.g., Nx/webpack output with color codes) are not falsely classified as
+	# "no output" just because their apparent character count is low.
+	$cleaned = Strip-AnsiCodes -Text $LogText
+	if ($cleaned.Trim().Length -lt $MinChars) { return $true }
+
 	return $false
 }
 
