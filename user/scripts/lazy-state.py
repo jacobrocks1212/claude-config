@@ -194,6 +194,16 @@ def _state(
     # a research head outranks the fallthrough the driver would otherwise dispatch.
     if _RESEARCH_GATED_HEADS:
         out["research_gated_heads"] = list(_RESEARCH_GATED_HEADS)
+    # merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone: the
+    # candidates skip-ahead skipped because they FAILED the two-key readiness
+    # predicate (dep-unready / not independent) — surfaced ONLY when the walk
+    # blocked at least one (_SKIP_AHEAD_BLOCKED non-empty). Absent-when-empty so
+    # default output stays byte-identical — same discipline as "gated_heads". The
+    # --emit-prompt merged-head exclude path reads it (via
+    # lazy_core.dispatch.probe_skipped_ids) so the merged-head-diverged guard
+    # cannot withhold the route pointing at a non-dispatchable dep-unready item.
+    if _SKIP_AHEAD_BLOCKED:
+        out["skip_ahead_blocked"] = list(_SKIP_AHEAD_BLOCKED)
     # queue-dependency-dag Phase 2 (D10): the items the dep-gate HELD this
     # probe — [{id, missing: [<incomplete dep ids>]}] — are ONLY surfaced when
     # the walk held at least one item (_DEP_GATED non-empty). When empty the
@@ -308,6 +318,21 @@ _GATED_HEADS: list = []
 # independent ready work). Reset + cleared in lockstep with _GATED_HEADS; the key is
 # absent when empty (byte-identity with the pre-fix baseline).
 _RESEARCH_GATED_HEADS: list = []
+
+# merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone: the candidates
+# skip-ahead advanced PAST this probe because they FAILED the two-key readiness
+# predicate (skip_ahead_ready — a hard dep on a skipped gated id, or not
+# `independent: true`) — e.g. a dependency-gated milestone with unmet hard deps.
+# Formerly a write-only local (`skip_ahead_blocked`) never surfaced, so
+# lazy_core.dispatch.probe_skipped_ids could not fold it into the merged-head
+# exclude set — letting the merged-head-diverged guard WITHHOLD the route pointing
+# at a NON-dispatchable dep-unready item (null cycle_prompt AND null
+# terminal_reason → no-route, observed live 2026-07-17 on
+# 'prerelease-complete-milestone'). Now surfaced via the "skip_ahead_blocked" probe
+# key (mirrors _GATED_HEADS: absent when empty; cleared in the gated_head_fallback
+# branch where no skip is realized) and consumed by probe_skipped_ids. Reset at the
+# start of each compute_state().
+_SKIP_AHEAD_BLOCKED: list = []
 
 # budget-guard-defers-near-complete-feature Phase 3: the feature_id the end-of-run
 # resume flush auto-resumed this probe (None when the flush did not resume one →
@@ -1694,6 +1719,7 @@ def compute_state(
     # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
     global _PARK_MODE, _PARKED, _DEFERRED_BUDGET, _BUDGET_GUARD, _GATED_HEADS
     global _BUDGET_RESUMED, _DEP_GATED, _PROVISIONAL, _RESEARCH_GATED_HEADS
+    global _SKIP_AHEAD_BLOCKED
     _PARK_MODE = park_needs_input or park_blocked
     _PARKED.clear()
     # park-provisional-acceptance: park_provisional is a strict modifier of
@@ -1719,6 +1745,9 @@ def compute_state(
     # research-gated-head-buried-by-skip-ahead-and-merged-fallthrough: reset the
     # research-pending subset in lockstep with _GATED_HEADS.
     _RESEARCH_GATED_HEADS = []
+    # merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone: reset the
+    # not-skip-ahead-ready (dep-unready) skip list for this invocation.
+    _SKIP_AHEAD_BLOCKED = []
     # budget-guard-defers-near-complete-feature Phase 3: reset the end-of-run
     # resume-flush surfaced feature_id for this invocation.
     _BUDGET_RESUMED = None
@@ -1774,11 +1803,12 @@ def compute_state(
     # feature-budget-guard-and-skip-ahead Phase 3: skip-ahead bookkeeping.
     # gated_ids accumulates the feature ids of gated heads skipped this probe
     # (research-pending or BLOCKED) so a downstream candidate with a hard dep on
-    # ANY of them is correctly NOT skipped onto. skip_ahead_blocked tracks
-    # candidates we declined to dispatch (downstream or unmarked) so the all-gated
-    # terminal can distinguish "blocked behind a gated head" from a clean queue.
+    # ANY of them is correctly NOT skipped onto. The not-skip-ahead-ready skips
+    # (candidates that failed the two-key readiness predicate — downstream/unmarked
+    # or dep-unready) are tracked in the SURFACED module global _SKIP_AHEAD_BLOCKED
+    # (reset above) so probe_skipped_ids can fold them into the merged-head exclude
+    # set — see merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone.
     gated_ids: set[str] = set()
-    skip_ahead_blocked: list[str] = []
     # The first gated head encountered — dispatched as a fallback if the loop
     # exhausts without finding a skip-ahead-ready alternative (so a single gated
     # item still reaches its per-feature terminal; only a realized skip past a
@@ -2726,7 +2756,7 @@ def compute_state(
                     f"→ {'DISPATCH' if _sa_ready else 'SKIP (not skip-ahead-ready)'}"
                 )
                 if not _sa_ready:
-                    skip_ahead_blocked.append(feature_id)
+                    _SKIP_AHEAD_BLOCKED.append(feature_id)
                     continue
         current = {
             "name": name,
@@ -2761,6 +2791,12 @@ def compute_state(
         # clear the research subset in lockstep — no research-halt surfacing is
         # needed when the research head is already the dispatched current item.
         _RESEARCH_GATED_HEADS = []
+        # merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone: clear
+        # the not-skip-ahead-ready skip list in lockstep — no independent skip was
+        # realized (the gated head is dispatched directly), so the skip_ahead_blocked
+        # probe key stays absent, preserving byte-identity with the pre-surfacing
+        # baseline exactly as _GATED_HEADS is cleared here.
+        _SKIP_AHEAD_BLOCKED = []
         gated_ids = set()
         _diag(
             f"skip-ahead: no skip-ahead-ready alternative to gated head "

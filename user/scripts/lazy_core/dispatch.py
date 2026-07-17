@@ -462,6 +462,17 @@ def probe_skipped_ids(state: dict, items: list[dict] | None) -> "set[str]":
     for _v in (state.get("gated_heads") or []):
         if _v:
             ids.add(_v)
+    # merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone: the
+    # candidates the skip-ahead readiness predicate BLOCKED this probe (a hard dep
+    # on a skipped gated id, or not `independent: true` — e.g. a dependency-unready
+    # milestone). Formerly a write-only local that never reached the merged-head
+    # exclude set, so the merged-head-diverged guard could WITHHOLD the route
+    # pointing at a non-dispatchable dep-unready item (no-route). Now surfaced by
+    # lazy-state.py under "skip_ahead_blocked" (feature pipeline; bug state lacks
+    # the key → .get None → no-op, byte-identical). ID-keyed → used directly.
+    for _v in (state.get("skip_ahead_blocked") or []):
+        if _v:
+            ids.add(_v)
     for _v in (state.get("host_deferred_features") or []):
         if _v:
             ids.add(_v)

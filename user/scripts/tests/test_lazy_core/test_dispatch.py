@@ -4726,6 +4726,11 @@ def test_probe_skipped_ids_collects_all_skip_lists_and_resolves_names():
         "host_deferred_features": ["host-feat"],
         "device_deferred_features": ["Device Feature Name"],
         "dep_gated": [{"id": "dep-feat", "missing": ["upstream"]}],
+        # merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone: the
+        # not-skip-ahead-ready skip list (id-keyed) must fold in too, else the
+        # merged-head-diverged guard withholds the route pointing at a
+        # non-dispatchable dep-unready milestone → no-route.
+        "skip_ahead_blocked": ["milestone-feat"],
     }
     items = [
         {"id": "workable", "name": "Workable"},
@@ -4733,9 +4738,12 @@ def test_probe_skipped_ids_collects_all_skip_lists_and_resolves_names():
         {"id": "host-feat", "name": "Host"},
         {"id": "device-feat", "name": "Device Feature Name"},
         {"id": "dep-feat", "name": "Dep"},
+        {"id": "milestone-feat", "name": "Milestone"},
     ]
     got = lazy_core.dispatch.probe_skipped_ids(state, items)
-    assert got == {"blocked-feat", "host-feat", "device-feat", "dep-feat"}, got
+    assert got == {
+        "blocked-feat", "host-feat", "device-feat", "dep-feat", "milestone-feat",
+    }, got
     # Byte-identical common path: a probe that skipped nothing → empty set.
     assert lazy_core.dispatch.probe_skipped_ids({"feature_id": "x"}, items) == set()
     assert lazy_core.dispatch.probe_skipped_ids(None, items) == set()
