@@ -2203,6 +2203,38 @@ def spec_dir_would_park(
     return False
 
 
+def spec_dir_operator_deferred(spec_dir: "Path") -> bool:
+    """Return True iff an item whose sentinels live in ``spec_dir`` is
+    OPERATOR-DEFERRED — a ``DEFERRED.md`` sentinel is present.
+
+    UNCONDITIONAL, unlike the park families in ``spec_dir_would_park``: the
+    ``compute_state`` walk in ``bug-state.py`` skips an operator-deferred bug with
+    a bare ``continue`` the moment ``DEFERRED.md`` exists, INDEPENDENT of any park
+    flag (bug-state.py's operator-deferred branch). So an operator-deferred item is
+    NEVER the dispatched item, and the merged-head computation must EXCLUDE it on
+    EVERY run (park or not) or the ``merged-head-diverged`` withhold deadlocks the
+    run behind an undriveable operator-deferred head
+    (``docs/bugs/merged-head-excludes-parked-not-operator-deferred-deadlocks``).
+
+    Kept SEPARATE from ``spec_dir_would_park`` precisely because it is not
+    park-flag-gated — the resolver (``depdag.nondispatchable_item_ids``) ORs the
+    two so an operator-deferred item is excluded regardless of the active facets.
+
+    Bug-pipeline-only: the feature pipeline has no operator-``DEFERRED.md`` branch
+    (a justified parity divergence), so a feature spec dir never carries the file
+    and this predicate contributes nothing there.
+
+    Pure + fail-safe: ``None`` / a missing or unreadable ``spec_dir`` → ``False``
+    (byte-identical non-defer behavior; the caller's exclusion set stays empty).
+    """
+    if spec_dir is None:
+        return False
+    try:
+        return (spec_dir / "DEFERRED.md").exists()
+    except OSError:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # neutralize_sentinel — WU-3: rename a resolved sentinel to the canonical
 #   *_RESOLVED_<date> form (collision-safe, git-mv-aware).

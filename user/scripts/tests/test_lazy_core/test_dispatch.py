@@ -4645,10 +4645,10 @@ def test_spec_dir_would_park_predicate():
         assert not lazy_core.spec_dir_would_park(root / "nope", park_needs_input=True)
 
 
-def test_parked_item_ids_resolves_feature_and_bug_spec_dirs():
-    """parked_item_ids resolves feature (docs/features/<id>) and bug
+def test_nondispatchable_item_ids_resolves_feature_and_bug_spec_dirs():
+    """nondispatchable_item_ids resolves feature (docs/features/<id>) and bug
     (docs/bugs/<id>, or the loader spec_path) dirs and returns the parked set;
-    no facet → empty set."""
+    no facet AND no DEFERRED.md → empty set."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
@@ -4665,12 +4665,101 @@ def test_parked_item_ids_resolves_feature_and_bug_spec_dirs():
             {"id": "bug-parked", "spec_path": bug_dir},
             {"id": "bug-ok", "spec_path": bug_ok},
         ]
-        # No facet → empty (byte-identical non-park behavior).
-        assert lazy_core.parked_item_ids(feats, bugs, str(root)) == set()
-        parked = lazy_core.parked_item_ids(
+        # No facet + no DEFERRED.md → empty (byte-identical non-defer behavior).
+        assert lazy_core.nondispatchable_item_ids(feats, bugs, str(root)) == set()
+        parked = lazy_core.nondispatchable_item_ids(
             feats, bugs, str(root), park_needs_input=True
         )
         assert parked == {"feat-parked", "bug-parked"}, parked
+
+
+def test_spec_dir_operator_deferred_predicate():
+    """merged-head-excludes-parked-not-operator-deferred-deadlocks: the
+    UNCONDITIONAL operator-defer predicate — True iff DEFERRED.md is present,
+    independent of any park flag; fail-safe False on a missing/clean dir."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        deferred = root / "deferred"; deferred.mkdir()
+        (deferred / "DEFERRED.md").write_text("x", encoding="utf-8")
+        clean = root / "clean"; clean.mkdir()
+        (clean / "SPEC.md").write_text("x", encoding="utf-8")
+
+        # DEFERRED.md → True with NO park flags (it is unconditional).
+        assert lazy_core.spec_dir_operator_deferred(deferred)
+        # A clean dir + a missing dir + None → False.
+        assert not lazy_core.spec_dir_operator_deferred(clean)
+        assert not lazy_core.spec_dir_operator_deferred(root / "nope")
+        assert not lazy_core.spec_dir_operator_deferred(None)
+
+
+def test_nondispatchable_item_ids_excludes_operator_deferred_unconditionally():
+    """merged-head-excludes-parked-not-operator-deferred-deadlocks REGRESSION
+    fixture (a): a top operator-deferred bug (DEFERRED.md) is excluded from the
+    merged head EVEN WITH NO PARK FLAG — the Round-56 fast-path used to short-
+    circuit to empty here. The merged head becomes the lower actionable bug and
+    the actionable probe gets NO merged-head-diverged withhold (deadlock gone)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        dfr = root / "docs" / "bugs" / "non-windows-audio-output-unvalidated"
+        dfr.mkdir(parents=True)
+        (dfr / "DEFERRED.md").write_text("reason: needs non-Windows host", encoding="utf-8")
+        act = root / "docs" / "bugs" / "adhoc-incident-hook-deny-a51dde"; act.mkdir(parents=True)
+        (act / "SPEC.md").write_text("x", encoding="utf-8")
+
+        bugs = [
+            {"id": "non-windows-audio-output-unvalidated", "severity": "P0",
+             "spec_path": dfr},
+            {"id": "adhoc-incident-hook-deny-a51dde", "severity": "P2", "spec_path": act},
+        ]
+        # NO park flag at all — operator-defer is unconditional.
+        excluded = lazy_core.nondispatchable_item_ids([], bugs, str(root))
+        assert excluded == {"non-windows-audio-output-unvalidated"}, excluded
+        # --next-merged surface: head is the ACTIONABLE bug, not the deferred one.
+        head = lazy_core.next_merged([], bugs, "/echo", exclude_ids=excluded)
+        assert head["item_id"] == "adhoc-incident-hook-deny-a51dde", head
+        # Emit probe for the actionable bug → NO withhold (deadlock gone).
+        override = lazy_core.dispatch.merged_head_override(
+            [], bugs, "/echo", "adhoc-incident-hook-deny-a51dde", exclude_ids=excluded,
+        )
+        assert override is None, override
+        # Without the exclusion the OLD (post-Round-56) behavior deadlocks: head is
+        # the operator-deferred P0 bug and the actionable probe is withheld behind it.
+        old = lazy_core.dispatch.merged_head_override(
+            [], bugs, "/echo", "adhoc-incident-hook-deny-a51dde",
+        )
+        assert old is not None and old["merged_head"]["item_id"] == (
+            "non-windows-audio-output-unvalidated"
+        ), old
+
+
+def test_nondispatchable_item_ids_mixed_parked_and_operator_deferred():
+    """merged-head-excludes-parked-not-operator-deferred-deadlocks REGRESSION
+    fixture (c): a mixed queue — a parked (NEEDS_INPUT.md, park mode) top P0 bug +
+    an operator-deferred (DEFERRED.md) second P0 bug + a lower actionable bug. BOTH
+    non-dispatchable items are excluded, so the merged head is the actionable one."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        parked = root / "docs" / "bugs" / "bug-parked"; parked.mkdir(parents=True)
+        (parked / "NEEDS_INPUT.md").write_text("x", encoding="utf-8")
+        dfr = root / "docs" / "bugs" / "bug-deferred"; dfr.mkdir(parents=True)
+        (dfr / "DEFERRED.md").write_text("x", encoding="utf-8")
+        act = root / "docs" / "bugs" / "bug-actionable"; act.mkdir(parents=True)
+        (act / "SPEC.md").write_text("x", encoding="utf-8")
+
+        bugs = [
+            {"id": "bug-parked", "severity": "P0", "spec_path": parked},
+            {"id": "bug-deferred", "severity": "P0", "spec_path": dfr},
+            {"id": "bug-actionable", "severity": "P2", "spec_path": act},
+        ]
+        excluded = lazy_core.nondispatchable_item_ids(
+            [], bugs, str(root), park_needs_input=True, park_provisional=True
+        )
+        assert excluded == {"bug-parked", "bug-deferred"}, excluded
+        head = lazy_core.next_merged([], bugs, "/echo", exclude_ids=excluded)
+        assert head["item_id"] == "bug-actionable", head
 
 
 def test_merged_head_override_excludes_parked_head_no_deadlock():
@@ -4695,7 +4784,7 @@ def test_merged_head_override_excludes_parked_head_no_deadlock():
              "spec_path": root / "docs" / "bugs" / "adhoc-hydra-load-code-mcp-tool"},
             {"id": "adhoc-incident-hook-deny-a51dde", "severity": "P2", "spec_path": act},
         ]
-        excluded = lazy_core.parked_item_ids(
+        excluded = lazy_core.nondispatchable_item_ids(
             [], bugs, str(root), park_needs_input=True, park_provisional=True
         )
         assert excluded == {
@@ -5771,7 +5860,10 @@ _TESTS = [
     ("test_merged_head_override_none_when_head_is_current_item", test_merged_head_override_none_when_head_is_current_item),
     ("test_merged_head_override_none_on_empty_queues_or_missing_id", test_merged_head_override_none_on_empty_queues_or_missing_id),
     ("test_spec_dir_would_park_predicate", test_spec_dir_would_park_predicate),
-    ("test_parked_item_ids_resolves_feature_and_bug_spec_dirs", test_parked_item_ids_resolves_feature_and_bug_spec_dirs),
+    ("test_nondispatchable_item_ids_resolves_feature_and_bug_spec_dirs", test_nondispatchable_item_ids_resolves_feature_and_bug_spec_dirs),
+    ("test_spec_dir_operator_deferred_predicate", test_spec_dir_operator_deferred_predicate),
+    ("test_nondispatchable_item_ids_excludes_operator_deferred_unconditionally", test_nondispatchable_item_ids_excludes_operator_deferred_unconditionally),
+    ("test_nondispatchable_item_ids_mixed_parked_and_operator_deferred", test_nondispatchable_item_ids_mixed_parked_and_operator_deferred),
     ("test_merged_head_override_excludes_parked_head_no_deadlock", test_merged_head_override_excludes_parked_head_no_deadlock),
     ("test_merged_worklist_exclude_ids_drops_parked_items", test_merged_worklist_exclude_ids_drops_parked_items),
     ("test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug", test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug),

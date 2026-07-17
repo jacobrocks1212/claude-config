@@ -1250,12 +1250,14 @@ def merged_worklist(
     ``id``; bug loader items use ``id`` as well. Items missing an id are
     skipped (a malformed entry must not produce a None-id head).
 
-    ``exclude_ids`` (merged-head-includes-parked-items-deadlocks-park-run): the set
-    of ids to EXCLUDE from the ordering — the PARKED items a park-mode run has
-    skipped (built by ``parked_item_ids``). Excluding them makes the merged head
-    the highest-priority UN-PARKED actionable item, so the
-    ``merged-head-diverged`` withhold never withholds behind an undriveable parked
-    head. Default ``None`` → nothing excluded (byte-identical non-park behavior).
+    ``exclude_ids`` (merged-head-includes-parked-items-deadlocks-park-run +
+    merged-head-excludes-parked-not-operator-deferred-deadlocks): the set of ids to
+    EXCLUDE from the ordering — the NON-DISPATCHABLE items the pipeline skips (parked
+    items a park-mode run skips PLUS unconditional operator-deferred items; built by
+    ``nondispatchable_item_ids``). Excluding them makes the merged head the
+    highest-priority DISPATCHABLE item, so the ``merged-head-diverged`` withhold never
+    withholds behind an undriveable head. Default ``None`` → nothing excluded
+    (byte-identical non-park behavior).
     """
     exclude = exclude_ids or frozenset()
     annotated: list[tuple[int, int, int, dict]] = []
@@ -1308,7 +1310,7 @@ def next_merged(
     return worklist[0] if worklist else None
 
 
-def parked_item_ids(
+def nondispatchable_item_ids(
     feature_items: list[dict],
     bug_items: list[dict],
     repo_root: str,
@@ -1317,37 +1319,54 @@ def parked_item_ids(
     park_blocked: bool = False,
     park_provisional: bool = False,
 ) -> "set[str]":
-    """Return the set of queue-item ids that WOULD be parked (skipped, not
-    dispatched) this run under the active park facets — the ids the merged-head
-    computation must EXCLUDE so the merged head is the highest-priority UN-PARKED
-    actionable item
-    (merged-head-includes-parked-items-deadlocks-park-run).
+    """Return the set of queue-item ids that are NON-DISPATCHABLE this run — the
+    ids the merged-head computation must EXCLUDE so the merged head is the
+    highest-priority item that would actually DISPATCH, not one the pipeline just
+    skips (``docs/bugs/merged-head-excludes-parked-not-operator-deferred-deadlocks``,
+    generalizing ``merged-head-includes-parked-items-deadlocks-park-run``).
 
-    Resolves each item's spec dir and applies the SAME park predicate the probe
-    ``parked[]`` array uses (``docmodel.spec_dir_would_park``):
+    Two non-dispatchable categories, ORed per item:
 
-      * feature → ``<repo_root>/docs/features/<spec_dir|id>``;
-      * bug → the loader-supplied absolute ``spec_path`` when present, else
-        ``<repo_root>/docs/bugs/<spec_dir|id>``.
+      * **PARK (flag-gated)** — ``docmodel.spec_dir_would_park`` (the SAME predicate
+        the probe ``parked[]`` array uses): a canonical/stray ``BLOCKED.md`` under
+        ``--park-blocked`` or an unresolved ``NEEDS_INPUT.md`` under
+        ``--park-needs-input`` (provisional-eligible routes, so not parked).
+      * **OPERATOR-DEFERRED (unconditional)** — ``docmodel.spec_dir_operator_deferred``:
+        a ``DEFERRED.md`` sentinel. ``compute_state`` skips such a bug regardless of
+        any park flag, so it is excluded on EVERY run.
 
-    ``repo_root`` MUST be the on-disk repo root the queues were loaded from (NOT
-    the echoed ``active_repo_root`` string ``merged_head`` carries). No park facet
-    active → empty set (byte-identical non-park behavior); a missing/unreadable
-    spec dir contributes nothing (``spec_dir_would_park`` fail-safes to False).
+    Resolves each item's spec dir: feature → ``<repo_root>/docs/features/<spec_dir|id>``;
+    bug → the loader-supplied absolute ``spec_path`` when present, else
+    ``<repo_root>/docs/bugs/<spec_dir|id>``.
+
+    ``repo_root`` MUST be the on-disk repo root the queues were loaded from (NOT the
+    echoed ``active_repo_root`` string ``merged_head`` carries).
+
+    No park facet active AND no ``DEFERRED.md`` present → empty set (byte-identical
+    non-defer, non-park behavior); a missing/unreadable spec dir contributes nothing
+    (both predicates fail-safe to False). There is deliberately NO "no park facet →
+    empty" fast-path: operator-defer is unconditional, so every item is checked.
+
+    **Scope boundary.** This resolver covers only the non-dispatchable states a
+    PURE, context-free file check classifies correctly (the two park families +
+    unconditional operator-defer). Context-conditional deferrals (device / cloud /
+    host — gated on VALIDATED / phases-complete / host flags) and non-file
+    terminal_reasons (completion-unverified / stale_upstream / needs-research /
+    needs-ratification) are OUT of scope here — correctly classifying them needs the
+    scoped ``compute_state`` dispatch oracle, tracked by the spun-off actionability
+    generalization.
     """
     from pathlib import Path as _Path
-    from .docmodel import spec_dir_would_park
-
-    # Fast path: no park facet ⇒ nothing is parked-and-excludable. (park_provisional
-    # is a strict modifier of park_needs_input, so checking the two base facets is
-    # sufficient — provisional alone never parks.)
-    if not (park_needs_input or park_blocked):
-        return set()
+    from .docmodel import spec_dir_operator_deferred, spec_dir_would_park
 
     root = _Path(repo_root)
-    parked: set[str] = set()
+    excluded: set[str] = set()
 
-    def _park(spec_dir: "_Path") -> bool:
+    def _nondispatchable(spec_dir: "_Path") -> bool:
+        # Operator-defer is UNCONDITIONAL (no park flag); park families are
+        # flag-gated. Either makes the item non-dispatchable this run.
+        if spec_dir_operator_deferred(spec_dir):
+            return True
         return spec_dir_would_park(
             spec_dir,
             park_needs_input=park_needs_input,
@@ -1360,17 +1379,17 @@ def parked_item_ids(
         if not item_id:
             continue
         spec_dir = root / "docs" / "features" / (raw.get("spec_dir") or item_id)
-        if _park(spec_dir):
-            parked.add(item_id)
+        if _nondispatchable(spec_dir):
+            excluded.add(item_id)
     for raw in (bug_items or []):
         item_id = raw.get("id")
         if not item_id:
             continue
         _sp = raw.get("spec_path")
         spec_dir = _Path(_sp) if _sp else root / "docs" / "bugs" / (raw.get("spec_dir") or item_id)
-        if _park(spec_dir):
-            parked.add(item_id)
-    return parked
+        if _nondispatchable(spec_dir):
+            excluded.add(item_id)
+    return excluded
 
 def skip_ahead_ready(
     deps: list[dict] | None,

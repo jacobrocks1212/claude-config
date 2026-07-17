@@ -12257,17 +12257,20 @@ def main() -> int:
         repo_root = Path(args.repo_root)
         feature_items = load_queue(repo_root)
         bug_items = _load_bug_queue_for_merged(repo_root)
-        # merged-head-includes-parked-items-deadlocks-park-run: EXCLUDE the items
-        # a park-mode run would skip (unresolved NEEDS_INPUT.md / BLOCKED.md) so
-        # the merged head is the highest-priority UN-PARKED actionable item — else
-        # the orchestrator dispatches to a parked head that just re-parks (deadlock).
-        # Effective (marker-authoritative) park facets so a mid-run --set-park
-        # toggle takes effect; no marker / no facet → empty set → byte-identical.
+        # merged-head-includes-parked-items-deadlocks-park-run +
+        # merged-head-excludes-parked-not-operator-deferred-deadlocks: EXCLUDE the
+        # NON-DISPATCHABLE items the pipeline skips — parked items a park-mode run
+        # skips (unresolved NEEDS_INPUT.md / BLOCKED.md) PLUS unconditional
+        # operator-deferred items (DEFERRED.md) — so the merged head is the
+        # highest-priority DISPATCHABLE item, else the orchestrator dispatches to a
+        # head that just re-parks/re-defers (deadlock). Effective
+        # (marker-authoritative) park facets so a mid-run --set-park toggle takes
+        # effect; no facet AND no DEFERRED.md → empty set → byte-identical.
         _nm_marker = lazy_core.read_run_marker()
         _nm_ni, _nm_bl, _nm_pv = lazy_core.fold_park_flags(
             args.park_needs_input, args.park_blocked, args.park_provisional, _nm_marker
         )
-        _nm_excluded = lazy_core.parked_item_ids(
+        _nm_excluded = lazy_core.nondispatchable_item_ids(
             feature_items, bug_items, str(repo_root),
             park_needs_input=_nm_ni, park_blocked=_nm_bl, park_provisional=_nm_pv,
         )
@@ -13608,14 +13611,17 @@ def main() -> int:
                 _mo_repo = Path(args.repo_root)
                 _mo_feats = load_queue(_mo_repo)
                 _mo_bugs = _load_bug_queue_for_merged(_mo_repo)
-                # merged-head-includes-parked-items-deadlocks-park-run: exclude the
-                # PARKED items (unresolved NEEDS_INPUT.md / BLOCKED.md) a park-mode
-                # run has skipped, so the merged head is the highest-priority
-                # UN-PARKED item and the withhold fires ONLY for genuine
-                # feature-vs-bug divergence — never behind an undriveable parked
-                # head (which deadlocks the run). Effective park facets are in
-                # scope from the emit path above; no facet → empty set → byte-identical.
-                _mo_excluded = lazy_core.parked_item_ids(
+                # merged-head-includes-parked-items-deadlocks-park-run +
+                # merged-head-excludes-parked-not-operator-deferred-deadlocks: exclude
+                # the NON-DISPATCHABLE items the pipeline skips — PARKED items
+                # (unresolved NEEDS_INPUT.md / BLOCKED.md) a park-mode run skips PLUS
+                # unconditional operator-deferred items (DEFERRED.md) — so the merged
+                # head is the highest-priority DISPATCHABLE item and the withhold
+                # fires ONLY for genuine feature-vs-bug divergence, never behind an
+                # undriveable head (which deadlocks the run). Effective park facets
+                # are in scope from the emit path above; no facet AND no DEFERRED.md
+                # → empty set → byte-identical.
+                _mo_excluded = lazy_core.nondispatchable_item_ids(
                     _mo_feats, _mo_bugs, str(_mo_repo),
                     park_needs_input=_eff_park_ni,
                     park_blocked=_eff_park_bl,
