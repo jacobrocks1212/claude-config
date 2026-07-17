@@ -1990,6 +1990,53 @@ def test_observation_gap_promotable_shared_predicate():
     ) is True
 
 
+def test_observation_gap_promotable_admits_build_artifact_deferred_class():
+    """Decision #13 (turn-routing-enforcement NEEDS_INPUT, harden Round 61):
+    ``build-artifact-deferred`` is an ADMISSIBLE observation-gap ``spec_class``.
+
+    The promotion predicate keys on a NON-EMPTY ``spec_class`` provenance STRING,
+    not on a closed class vocabulary — so admitting ``build-artifact-deferred``
+    (an assertion MCP-driveable only against a packaged production build, absent
+    from a dev session, already covered by the Rust/unit tier and pre-classified
+    in PHASES) needs NO gate code change; the mcp-test SKILL prose is what makes
+    it reachable. This test LOCKS that contract: if a future change closes the
+    ``spec_class`` vocabulary, it must keep ``build-artifact-deferred`` (and the
+    "Cannot Prove" no-MCP-tool class) admissible or this regression fails.
+    See docs/bugs/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/.
+    """
+    _guard()
+    ogp = lazy_core.observation_gap_promotable
+
+    # The sidecar-integrity-gate-blocks-user-modified-sidecar shape: a partial
+    # whose two uncovered rows are (row 1) a Tauri command with no registered
+    # MCP-tool mirror ("Cannot Prove") and (row 2) build-artifact-deferred.
+    assert ogp(
+        {
+            "result": "partial",
+            "pass_count": 4,
+            "total_count": 4,
+            "observation_gap_exemptions": [
+                {"surface": "sidecar-integrity-command",
+                 "spec_class": "cannot-prove — no registered MCP-tool mirror per "
+                               "docs/features/mcp-testing/SPEC.md"},
+                {"surface": "sidecar-mismatch-branch",
+                 "spec_class": "build-artifact-deferred — reachable only against a "
+                               "packaged production build; Rust-covered, PHASES-classified"},
+            ],
+        }
+    ) is True
+
+    # An all-build-artifact-deferred partial promotes identically (the class is
+    # admissible on its own, not only when paired with cannot-prove).
+    assert ogp(
+        {
+            "result": "partial",
+            "observation_gap_exemptions": [
+                {"surface": "packaged-only-branch",
+                 "spec_class": "build-artifact-deferred"},
+            ],
+        }
+    ) is True
 
 
 def test_eval_evidence_head_drift_docs_only_warn_exempt():
@@ -2875,6 +2922,7 @@ _TESTS = [
     ("test_eval_evidence_observation_gap_partial_with_failure_refuses", test_eval_evidence_observation_gap_partial_with_failure_refuses),
     ("test_eval_evidence_observation_gap_partial_no_provenance_refuses", test_eval_evidence_observation_gap_partial_no_provenance_refuses),
     ("test_observation_gap_promotable_shared_predicate", test_observation_gap_promotable_shared_predicate),
+    ("test_observation_gap_promotable_admits_build_artifact_deferred_class", test_observation_gap_promotable_admits_build_artifact_deferred_class),
     ("test_eval_evidence_head_drift_docs_only_warn_exempt", test_eval_evidence_head_drift_docs_only_warn_exempt),
     ("test_eval_evidence_head_drift_source_refuses", test_eval_evidence_head_drift_source_refuses),
     ("test_eval_evidence_neither_present_refuses", test_eval_evidence_neither_present_refuses),
