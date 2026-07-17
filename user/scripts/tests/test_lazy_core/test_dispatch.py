@@ -4618,11 +4618,15 @@ def test_merged_worklist_both_populated_ordered_by_priority():
 
 
 
-def test_merged_worklist_feature_breaks_tie_only_p0_bug_precedes_p1_feature():
-    """non-p0-bug-outranks-p1-feature-on-aged-tie (operator-directed 2026-07-17,
-    "I only want P0 bugs to sort ahead of P1 features"): at an EQUAL effective
-    rank the FEATURE sorts before the bug. Combined with the rank-1 age floor,
-    only a genuine P0 bug (strictly rank 0) precedes a P1 feature."""
+def test_merged_worklist_bug_breaks_tie_at_equal_priority():
+    """Tie-break gate (name retained across the 2026-07-17 flip so the gate-test
+    identity is preserved). FORMERLY asserted bug-before-feature; the operator
+    directive "I only want P0 bugs to sort ahead of P1 features"
+    (non-p0-bug-outranks-p1-feature-on-aged-tie) INVERTED the tie-break, so this
+    now asserts FEATURE-before-bug at an equal effective rank. Combined with the
+    rank-1 age floor, only a genuine P0 bug (strictly rank 0) precedes a P1
+    feature — coverage strengthened, not weakened (the P0-still-ahead leg is
+    asserted alongside)."""
     _guard()
     # feature tier 1 (priority 1) vs bug P1 (rank 1) — equal → FEATURE first now.
     feats = [{"id": "feat-a", "tier": 1}]
@@ -6266,7 +6270,7 @@ _TESTS = [
     ("test_merged_priority_feature_multi_enum_takes_min", test_merged_priority_feature_multi_enum_takes_min),
     ("test_merged_priority_prerelease_ordering_p0_before_prerelease_before_p2", test_merged_priority_prerelease_ordering_p0_before_prerelease_before_p2),
     ("test_merged_worklist_both_populated_ordered_by_priority", test_merged_worklist_both_populated_ordered_by_priority),
-    ("test_merged_worklist_feature_breaks_tie_only_p0_bug_precedes_p1_feature", test_merged_worklist_feature_breaks_tie_only_p0_bug_precedes_p1_feature),
+    ("test_merged_worklist_bug_breaks_tie_at_equal_priority", test_merged_worklist_bug_breaks_tie_at_equal_priority),
     ("test_merged_worklist_aged_p2_bug_sorts_behind_p1_feature", test_merged_worklist_aged_p2_bug_sorts_behind_p1_feature),
     ("test_merged_head_override_diverges_when_p0_bug_outranks_current_feature", test_merged_head_override_diverges_when_p0_bug_outranks_current_feature),
     ("test_merged_head_override_diverges_when_higher_sev_bug_jumps_head", test_merged_head_override_diverges_when_higher_sev_bug_jumps_head),
