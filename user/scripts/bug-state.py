@@ -8384,6 +8384,14 @@ def main() -> int:
         bracket = lazy_core.record_cycle_commit_bracket(
             repo_root=Path(args.repo_root)
         )
+        # cycle-budget-counters-double-count-on-probes-and-inject-hook (coupled-pair
+        # mirror of lazy-state.py): THE budget authority for bracketed Agent
+        # dispatches. A completed bracket wraps exactly one dispatch — count it here
+        # keyed on the cycle marker's --kind: real → forward_cycles (+ per-feature
+        # sibling), meta → meta_cycles. Read BEFORE clear_cycle_marker() so the
+        # marker's kind is still available. Marker-gated + idempotent per bracket.
+        # This replaces the removed probe-path forward advance.
+        lazy_core.advance_cycle_bracket_counter(_tl_cycle)
         cleared = lazy_core.clear_cycle_marker()
         # harness-telemetry-ledger Phase 2 (D4-B) — coupled-pair mirror of
         # lazy-state.py (marker-gated + fail-open; adds NO output keys).
@@ -9306,34 +9314,15 @@ def main() -> int:
         )
         state["repeat_count"] = _counts["repeat_count"]
         state["step_repeat_count"] = _counts["step_repeat_count"]
-    # Counter advance: at dispatch-bound probe time (--repeat-count, NOT
-    # --repeat-count-peek) advance the marker-persisted forward/meta counters.
-    # Mirror of the peek discipline for update_repeat_counts: only the one
-    # dispatch-bound probe per cycle advances any persisted state.
-    #
-    # FORWARD-CYCLE AUTHORITY (byref-dispatch-undercounts-forward-cycles, Phase 1,
-    # WU-2 — verbatim mirror of lazy-state.py's WU-1 form-1 reconciliation):
-    # advance_forward_cycle is the AUTHORITATIVE forward-advance trigger on this
-    # real-skill (by-reference) probe path. It keys on the consume-INDEPENDENT
-    # [feature_id, current_step, sub_skill] state change, so a by-ref dispatch that
-    # does NOT bump the consume census (the frozen-census / Theory-1b case) still
-    # advances forward_cycles. advance_run_counters (the consume-gated oracle) is NO
-    # LONGER the forward authority on this path — it undercounted, letting the
-    # max-cycles cap never fire. The two state scripts' advance wiring stays in
-    # lockstep (lazy_parity_audit.py). Meta accounting via --emit-dispatch /
-    # advance_meta_cycle is untouched, so nothing on this path double-counts.
-    #
-    # SECOND TRIGGER (byref-forward-cycles-frozen-on-multicycle-same-step — verbatim
-    # mirror of lazy-state.py): pass consume_gate=True so a genuine NEXT cycle sharing
-    # an IDENTICAL [feature_id, current_step, sub_skill] tuple (the multi-part
-    # execute-plan case: same bug, same step, same real sub_skill, one cycle per plan
-    # part) still advances forward_cycles off the registry consume-census rise. The
-    # state-change trigger ALONE froze the counter at 1 for the whole phase, so
-    # max_cycles could never trip. The two state scripts' advance wiring stays in
-    # lockstep (lazy_parity_audit.py).
-    # No marker present → no-op (advance_forward_cycle returns None).
-    if args.repeat_count:
-        lazy_core.advance_forward_cycle(state, consume_gate=True)
+    # cycle-budget-counters-double-count-on-probes-and-inject-hook (coupled-pair
+    # mirror of lazy-state.py): the forward budget advance formerly fired HERE on the
+    # --repeat-count probe path. REMOVED — probes (inspection probes AND the per-turn
+    # inject hook, lazy_inject.py) fire this path with NO dispatch, so coupling the
+    # budget to it inflated forward_cycles. The budget now advances ONLY on a
+    # completed dispatch bracket (advance_cycle_bracket_counter at --cycle-end, keyed
+    # on the cycle marker's --kind) and on --apply-pseudo. update_repeat_counts (the
+    # loop-detection STREAKS) stays probe-driven above — only the BUDGET decoupled.
+    # The two state scripts' budget wiring stays in lockstep (lazy_parity_audit.py).
     # --emit-prompt is strictly additive and flag-gated so that default output
     # remains byte-identical when the flag is absent. Placed AFTER the repeat
     # flags so the same-invocation count (from EITHER --repeat-count or

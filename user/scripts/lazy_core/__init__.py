@@ -414,6 +414,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "_env_truthy": "markers",
     "_execute_plan_commit_budget": "markers",
     "_run_marker_scoped_keys": "markers",
+    "advance_cycle_bracket_counter": "markers",
     "advance_forward_cycle": "markers",
     "advance_meta_cycle": "markers",
     "advance_run_counters": "markers",

@@ -2964,6 +2964,69 @@ def advance_meta_cycle() -> dict | None:
     return marker
 
 
+def advance_cycle_bracket_counter(cycle_marker: dict | None) -> dict | None:
+    """Advance the run-marker cycle-budget counter for ONE completed dispatch
+    bracket, keyed on the CYCLE marker's ``kind`` (cycle-budget-counters-double-
+    count-on-probes-and-inject-hook).
+
+    THE budget authority for real/meta Agent dispatches. Called from BOTH
+    ``--cycle-end`` handlers (lazy-state.py / bug-state.py) AFTER reading the cycle
+    marker and BEFORE ``clear_cycle_marker()``. The ``--cycle-begin`` /
+    ``--cycle-end`` bracket wraps EXACTLY ONE Agent dispatch, so a completed bracket
+    is a real dispatch event the script observes directly. Moving the budget
+    increment here DECOUPLES it from the ``--repeat-count`` probe path — which fired
+    on inspection probes AND the per-turn inject hook (lazy_inject.py), inflating
+    ``forward_cycles`` with no dispatch (the root cause). The probe path now advances
+    only the loop-detection streaks (``update_repeat_counts``), never the budget.
+
+    Classification (from the cycle marker's ``kind``, written by ``--cycle-begin``):
+      - ``kind == "real"`` → ``forward_cycles += 1`` PLUS the sibling
+        ``per_feature_forward_cycles[feature_id]`` bump, via the SAME
+        ``_bump_per_feature_forward`` helper ``advance_run_counters`` /
+        ``advance_forward_cycle`` use (no second oracle — "what counts as a forward
+        cycle" and "which feature it bumps" stay defined in exactly one place).
+      - ``kind == "meta"`` → ``meta_cycles += 1`` (uncapped).
+      - any other / absent kind → no-op, no write (defensive; the bracket contract
+        only ever writes "real" | "meta").
+
+    Idempotent per bracket BY CONSTRUCTION: one cycle marker == one dispatch, and
+    the marker is cleared immediately after this call at ``--cycle-end`` — so a
+    bracket can advance the budget at most once.
+
+    Marker-gated: no RUN marker → returns None and writes nothing (byte-identical to
+    the no-run path, so a --cycle-end outside a live run is inert). A None / non-dict
+    / kind-less CYCLE marker is likewise a no-op. On a real advance the updated run
+    marker is atomic-written and returned.
+
+    Args:
+        cycle_marker: the cycle marker dict just read at --cycle-end (or None).
+
+    Returns:
+        The updated run marker dict; None when there is no run marker (or nothing
+        to count for this bracket).
+    """
+    marker = read_run_marker()
+    if marker is None:
+        return None
+    if not isinstance(cycle_marker, dict):
+        return None
+    kind = cycle_marker.get("kind")
+    if kind == "real":
+        marker["forward_cycles"] = marker.get("forward_cycles", 0) + 1
+        # Sibling per-feature bump, gated by the SAME real classification (no
+        # second oracle) — reuses the helper the probe-path advances also use.
+        _bump_per_feature_forward(marker, cycle_marker.get("feature_id"))
+    elif kind == "meta":
+        marker["meta_cycles"] = marker.get("meta_cycles", 0) + 1
+    else:
+        # Neither "real" nor "meta" (legacy / malformed cycle marker) — count
+        # nothing and do not write.
+        return None
+    marker_path = claude_state_dir() / _MARKER_FILENAME
+    _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+    return marker
+
+
 # Forward-advancing pseudo-skills: inline (--apply-pseudo) terminals that ADVANCE
 # the pipeline a step (write a receipt / flip status / archive), as opposed to
 # cleanup/meta pseudo-skills. A forward-advancing pseudo-skill counts toward the

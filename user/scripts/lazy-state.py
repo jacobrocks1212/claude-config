@@ -12546,6 +12546,15 @@ def main() -> int:
         bracket = lazy_core.record_cycle_commit_bracket(
             repo_root=Path(args.repo_root)
         )
+        # cycle-budget-counters-double-count-on-probes-and-inject-hook: THE budget
+        # authority for bracketed Agent dispatches. A completed --cycle-begin/
+        # --cycle-end bracket wraps exactly one dispatch, so count it here keyed on
+        # the cycle marker's --kind: real → forward_cycles (+ per-feature sibling),
+        # meta → meta_cycles. Read BEFORE clear_cycle_marker() so the marker's kind
+        # is still available. Marker-gated (no run marker → no-op) and idempotent
+        # per bracket (the marker is cleared right below). This replaces the removed
+        # probe-path forward advance and the --emit-dispatch meta advance.
+        lazy_core.advance_cycle_bracket_counter(_tl_cycle)
         cleared = lazy_core.clear_cycle_marker()
         # harness-telemetry-ledger Phase 2 (D4-B): cycle-bracket emission
         # (marker-gated + fail-open inside the emitter; adds NO output keys).
@@ -13027,15 +13036,13 @@ def main() -> int:
                 item_id=context.get("item_id"),
                 model=model,
             )
-            # ISSUE 5 (d8-effect-chains live run): a meta/recovery dispatch goes
-            # through --emit-dispatch (NOT the --repeat-count probe path), so the
-            # meta budget was never advancing (meta_cycles stayed 0 through 2 live
-            # recoveries). Advance it here on a registered (marker-present) meta
-            # emission so recovery/hardening/apply-resolution dispatches count
-            # against the meta-cycle budget. Gated on _ref_entry (marker present →
-            # this is a real, registered dispatch — not a no-marker peek).
-            if _ref_entry is not None:
-                lazy_core.advance_meta_cycle()
+            # cycle-budget-counters-double-count-on-probes-and-inject-hook: the
+            # meta-cycle advance formerly fired HERE at --emit-dispatch. It has moved
+            # to the --cycle-end bracket (advance_cycle_bracket_counter, keyed on the
+            # cycle marker's --kind meta) — every meta/recovery/apply-resolution/
+            # hardening dispatch is bracketed --kind meta, so counting at emit AND at
+            # the bracket would double-count. --cycle-end is now the sole budget
+            # authority for bracketed dispatches; emit no longer touches the budget.
             # mechanize-prose-only-orchestrator-contracts (b) / D2-A: a
             # REGISTERED (marker-present) input-audit emission discharges the
             # D2-A obligation — this IS the "the audit dispatch itself" the
@@ -13655,34 +13662,16 @@ def main() -> int:
         )
         state["repeat_count"] = _counts["repeat_count"]
         state["step_repeat_count"] = _counts["step_repeat_count"]
-    # Counter advance: at dispatch-bound probe time (--repeat-count, NOT
-    # --repeat-count-peek) advance the marker-persisted forward/meta counters.
-    # Mirror of the peek discipline for update_repeat_counts: only the one
-    # dispatch-bound probe per cycle advances any persisted state.
-    #
-    # FORWARD-CYCLE AUTHORITY (byref-dispatch-undercounts-forward-cycles, Phase 1,
-    # WU-1 — form 1 reconciliation): advance_forward_cycle is the AUTHORITATIVE
-    # forward-advance trigger on this real-skill (by-reference) probe path. It keys
-    # on the consume-INDEPENDENT [feature_id, current_step, sub_skill] state change,
-    # so a by-ref dispatch that does NOT bump the consume census (the frozen-census
-    # / Theory-1b case) still advances forward_cycles — defeating BOTH the
-    # advance_meta_cycle +1 over-absorb and the ring-cap census regression at once.
-    # advance_run_counters (the consume-gated oracle) is NO LONGER the forward
-    # authority on this path — it was non-monotonic here and silently undercounted,
-    # letting the max-cycles cap never fire. Meta accounting via --emit-dispatch /
-    # advance_meta_cycle is untouched, so nothing on this path double-counts.
-    # No marker present → no-op (advance_forward_cycle returns None).
-    #
-    # SECOND TRIGGER (byref-forward-cycles-frozen-on-multicycle-same-step): pass
-    # consume_gate=True so a genuine NEXT cycle sharing an IDENTICAL
-    # [feature_id, current_step, sub_skill] tuple (the multi-part execute-plan case:
-    # same feature, same step, same real sub_skill, one cycle per plan part) still
-    # advances forward_cycles off the registry consume-census rise. The state-change
-    # trigger ALONE froze the counter at 1 for the whole phase, so max_cycles could
-    # never trip. consume_gate is real-skill-probe-path-only — the pseudo apply path
-    # keeps the default (state-change trigger suffices there; no consume is emitted).
-    if args.repeat_count:
-        lazy_core.advance_forward_cycle(state, consume_gate=True)
+    # cycle-budget-counters-double-count-on-probes-and-inject-hook: the forward
+    # budget advance formerly fired HERE on the --repeat-count probe path. REMOVED —
+    # probes (inspection probes AND the per-turn inject hook, lazy_inject.py) fire
+    # this path with NO dispatch, so coupling the budget to it double-counted /
+    # inflated forward_cycles (0→3 over three distinct-item inspection probes; a
+    # non-dispatch inject turn bumped 1→2). The budget now advances ONLY on a
+    # completed dispatch bracket (advance_cycle_bracket_counter at --cycle-end, keyed
+    # on the cycle marker's --kind) and on --apply-pseudo. update_repeat_counts
+    # (the loop-detection STREAKS) stays probe-driven above — only the BUDGET
+    # decoupled from the probe path.
     # --emit-prompt is strictly additive and flag-gated so that default output
     # remains byte-identical when the flag is absent. Placed AFTER the repeat
     # flags so the same-invocation count (from EITHER --repeat-count or
