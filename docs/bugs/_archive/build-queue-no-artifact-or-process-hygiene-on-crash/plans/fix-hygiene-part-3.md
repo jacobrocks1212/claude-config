@@ -12,19 +12,19 @@ phases: [4, 5]
 > This plan is fully self-contained. The executing session needs no additional context.
 
 > **Plan series:** part 3 of 3. Sibling parts:
-> - part 1: `docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash/plans/fix-hygiene-part-1.md`
-> - part 2: `docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash/plans/fix-hygiene-part-2.md`
-> - part 3: `docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash/plans/fix-hygiene-part-3.md` (this file)
+> - part 1: `docs/bugs/_archive/build-queue-no-artifact-or-process-hygiene-on-crash/plans/fix-hygiene-part-1.md`
+> - part 2: `docs/bugs/_archive/build-queue-no-artifact-or-process-hygiene-on-crash/plans/fix-hygiene-part-2.md`
+> - part 3: `docs/bugs/_archive/build-queue-no-artifact-or-process-hygiene-on-crash/plans/fix-hygiene-part-3.md` (this file)
 >
 > Execute parts strictly in order. Each part is self-contained — do NOT cross-reference siblings during execution.
 
 # Implementation Plan — build-queue artifact/process hygiene (Part 3: Phases 4–5)  (v2)
 
 **PHASES.md files:**
-- `docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash/PHASES.md` (5 phases; this part covers Phase 4 + Phase 5)
+- `docs/bugs/_archive/build-queue-no-artifact-or-process-hygiene-on-crash/PHASES.md` (5 phases; this part covers Phase 4 + Phase 5)
 
 **SPEC.md files:**
-- `docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash/SPEC.md`
+- `docs/bugs/_archive/build-queue-no-artifact-or-process-hygiene-on-crash/SPEC.md`
 
 **Total phases (this part):** 2 of 5
 **Plan version:** v2 (reference-based — components loaded from disk per step)

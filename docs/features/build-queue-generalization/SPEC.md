@@ -500,7 +500,7 @@ Existing registry rows (docs/kpi/registry.json) — generalization extends the m
   directive, 2026-07-04). Key influences: the four build-queue bug hardenings (invariants that
   must not regress) and CI-system ops-registry prior art (per-repo pipeline manifests, closed
   hygiene/profile registries).
-- `docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash/SPEC.md` — Locked Decisions
+- `docs/bugs/_archive/build-queue-no-artifact-or-process-hygiene-on-crash/SPEC.md` — Locked Decisions
   1-3 (VBCSCompiler single sanctioned name-kill; no name-glob kills; targeted poison sweep).
 - `docs/bugs/build-queue-recycle-kills-concurrent-worktree-build/SPEC.md` — occupancy gating,
   atomic provisional lock, Vector-B off-queue invisibility (the motivation for D5-A).
