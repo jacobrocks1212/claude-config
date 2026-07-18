@@ -14,10 +14,12 @@
          [--allow-research-skip] (Step 1f always runs under --allow-research-skip).
 
      Placeholder note for the length indicator line:
-       {within | over} is chosen by comparing measured char count to 24,000
-       (Gemini's practical web-UI character cap; see ~/.claude/skills/spec/SKILL.md
-       Phase 2 for source notes). When over, append "(may need manual trimming
-       before paste)" to that line — informational only, do NOT refuse to print.
+       {within | over} is chosen by comparing measured char count to 18,000
+       (the safe target below Gemini's empirically-confirmed 20,000-char
+       hard-truncation limit — a prompt at/above 20,000 is silently cut on paste;
+       see ~/.claude/skills/spec/SKILL.md Phase 2 for source notes). When over,
+       append "(may need manual trimming before paste)" to that line —
+       informational only, do NOT refuse to print.
 
      POINTER-RESOLUTION note for {RESEARCH_PROMPT content} (both variants):
        The {…RESEARCH_PROMPT content…} token is the EFFECTIVE (resolved) prompt,
@@ -90,7 +92,7 @@ Prompt file: `{spec_path}/RESEARCH_PROMPT.md`
 {full RESEARCH_PROMPT.md content, verbatim, including the `## Project context` identity prepend if present — prompt content ONLY, no operator instructions or ship-as-a-unit / mode metadata inside this fence (see CODE-BLOCK HYGIENE above)}
 ```
 
-[length: {NNNN} chars — {within | over} Gemini's 24,000-char practical web-UI limit]
+[length: {NNNN} chars — {within | over} Gemini's 18,000-char safe cap (hard truncation at 20,000)]
 
 FASTEST RESUME — upload the research in your NEXT MESSAGE in this
 conversation (file attachment, pasted text, or absolute path). I will
@@ -149,7 +151,7 @@ Prompt file: `{spec_path}/RESEARCH_PROMPT.md`
 {full RESEARCH_PROMPT.md content, verbatim, including the `## Project context` identity prepend if present — prompt content ONLY, no operator instructions or ship-as-a-unit / mode metadata inside this fence (see CODE-BLOCK HYGIENE above)}
 ```
 
-[length: {NNNN} chars — {within | over} Gemini's 24,000-char practical web-UI limit]
+[length: {NNNN} chars — {within | over} Gemini's 18,000-char safe cap (hard truncation at 20,000)]
 
 ───────────────────────────────────────────────────────────────────────────
 ```

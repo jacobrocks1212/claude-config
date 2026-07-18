@@ -252,7 +252,7 @@ Mark task 3 `completed` when all partitions are resolved.
    1. `docs/product/PRODUCT_IDENTITY_SUMMARY.md` — if exists, use verbatim (fast path).
    2. `docs/product/PRODUCT_IDENTITY.md` — if ≤ budget, use verbatim; if over budget, condense to ~1-page summary, write to `docs/product/PRODUCT_IDENTITY_SUMMARY.md`, use that.
    3. Neither file: skip the prepend silently.
-3. **Compose the prompt body** (identity prepend + body must stay under `GEMINI_PROMPT_CHAR_CAP = 24,000` chars):
+3. **Compose the prompt body** (identity prepend + body must stay under `GEMINI_PROMPT_CHAR_CAP = 18,000` chars — safe target below Gemini's confirmed 20,000-char hard truncation; see `~/.claude/skills/spec/SKILL.md` Phase 2 cap-source note):
 
    ```markdown
    ## Project context
@@ -270,7 +270,7 @@ Mark task 3 `completed` when all partitions are resolved.
    - **Output Format Request** — structured findings with sections, examples, actionable recommendations
 
 4. Write to `{spec-dir}/{feature-slug}/RESEARCH_PROMPT.md`.
-5. Length-check the file against the 24,000 cap; warn (but do not truncate) if over.
+5. Length-check the file against the 18,000 cap; warn (but do not truncate) if over.
 6. Echo the full prompt to chat in a quadruple-backtick fenced block for direct copy-paste into Gemini Deep Research.
 7. Tell the user: "Research prompt saved. Run deep research, then give me the file path to the results."
 8. **STOP and wait for the user to return with the research file path.**

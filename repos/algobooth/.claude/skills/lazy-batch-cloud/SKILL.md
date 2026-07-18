@@ -659,7 +659,7 @@ Append to `cycle_log` `{forward_cycles + meta_cycles + 1, feature_name, sub_skil
 
 ### 1f. Research-wait mode (`terminal_reason == "queue-blocked-on-research"`)
 
-**Reachable only when `allow_research_skip == true`.** Identical shape to `/lazy-batch` Step 1f — passive halt with inline RESEARCH_PROMPT.md content for every pending feature (fenced ```text block for mobile long-press-copy into Gemini), char-count over/under indicator against the 24,000-char Gemini web-UI cap, all three upload paths. Run `python3 ~/.claude/scripts/lazy-state.py --run-end` before the PushNotification. PushNotification, final batch report, STOP.
+**Reachable only when `allow_research_skip == true`.** Identical shape to `/lazy-batch` Step 1f — passive halt with inline RESEARCH_PROMPT.md content for every pending feature (fenced ```text block for mobile long-press-copy into Gemini), char-count over/under indicator against the 18,000-char Gemini safe cap (hard truncation at 20,000), all three upload paths. Run `python3 ~/.claude/scripts/lazy-state.py --run-end` before the PushNotification. PushNotification, final batch report, STOP.
 
 See `~/.claude/skills/lazy-batch/SKILL.md` Step 1f for the full algorithm and the announcement template — replace "/lazy-batch" with "/lazy-batch-cloud" in the chat text. Cloud-specific upload nuance:
 
@@ -968,7 +968,7 @@ Identical to `/lazy-batch` Step 4's disambiguation block (mirrored per the CLAUD
   ---
   ```
 
-- **Default-path halt announcement uses `/lazy-batch-cloud` in the chat heading and re-invoke line.** Replace every `/lazy-batch` token in the announcement template with `/lazy-batch-cloud`. The fenced ```text prompt block and char-count over/under indicator (against the 24,000-char Gemini cap) are unchanged. The "FASTEST RESUME" block (in-session chat upload → /ingest-research → re-invoke) is identical, only the re-invoke command name differs.
+- **Default-path halt announcement uses `/lazy-batch-cloud` in the chat heading and re-invoke line.** Replace every `/lazy-batch` token in the announcement template with `/lazy-batch-cloud`. The fenced ```text prompt block and char-count over/under indicator (against the 18,000-char Gemini safe cap; hard truncation at 20,000) are unchanged. The "FASTEST RESUME" block (in-session chat upload → /ingest-research → re-invoke) is identical, only the re-invoke command name differs.
 
 - **The cloud announcement reorders the alternative upload paths to reflect cloud reality.** In cloud:
   - **Path ① (staged .txt)** is gitignored and therefore NON-DURABLE across container reclaim unless ingested in-session. Surface this with the prefix `(gitignored — non-durable unless ingested in-session; in-session resume above does that automatically)`.
