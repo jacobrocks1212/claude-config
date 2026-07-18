@@ -5459,13 +5459,14 @@ def test_spec_dir_research_pending_predicate():
 
 
 def test_nondispatchable_item_ids_excludes_research_pending_under_skip_flag():
-    """merged-head-diverged-withholds-on-research-skipped-head REGRESSION fixture:
-    a research-pending head (NEEDS_RESEARCH.md, no RESEARCH.md) at the merged head +
-    a ready downstream feature. Under skip_needs_research the head is EXCLUDED so the
-    merged head is the downstream item and the downstream probe gets NO
-    merged-head-diverged withhold (the no-route stall is gone). WITHOUT the flag the
-    head is NOT excluded (a needs-research head HALTS, not skips) → the withhold
-    fires — proving the fix is flag-gated, not a blanket behavior change."""
+    """merged-head-research-exclusion-flag-gated-splits-cross-script REGRESSION fixture
+    (completes merged-head-diverged-withholds-on-research-skipped-head): a
+    research-pending head (NEEDS_RESEARCH.md, no RESEARCH.md) at the merged head + a
+    ready downstream feature. The research head is EXCLUDED **unconditionally** — with
+    AND without the skip flag (the on-disk sentinel IS the research-defer decision) — so
+    the merged head is the downstream item and the downstream probe gets NO
+    merged-head-diverged withhold. Excluding it always is what keeps both coupled
+    scripts' merged heads consistent (bug-state.py has no skip flag)."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
@@ -5481,27 +5482,105 @@ def test_nondispatchable_item_ids_excludes_research_pending_under_skip_flag():
             {"id": "shared-hook-lib"},
         ]
 
-        # WITHOUT the flag: research-pending is NOT excluded (it would HALT, not skip).
-        assert lazy_core.nondispatchable_item_ids(feats, [], str(root)) == set()
-        old = lazy_core.dispatch.merged_head_override(
+        # The raw override (no exclude passed) still diverges — proving the withhold
+        # mechanism is intact; the CALLERS are what supply the exclude set below.
+        raw = lazy_core.dispatch.merged_head_override(
             feats, [], "/echo", "shared-hook-lib",
         )
-        assert old is not None and old["merged_head"]["item_id"] == (
+        assert raw is not None and raw["merged_head"]["item_id"] == (
             "subagent-wedge-backstop-hook"
-        ), old
+        ), raw
 
-        # WITH --skip-needs-research: the research head is excluded exactly like a
-        # parked head → merged head is the downstream item → NO withhold.
-        excluded = lazy_core.nondispatchable_item_ids(
-            feats, [], str(root), skip_needs_research=True
+        # UNCONDITIONAL: the research head is excluded WITH the flag AND WITHOUT it
+        # (flag now inert) → identical exclude set → merged head is the downstream item
+        # → NO withhold. The flag no longer changes the result (the split-brain is gone).
+        for excluded in (
+            lazy_core.nondispatchable_item_ids(feats, [], str(root)),
+            lazy_core.nondispatchable_item_ids(
+                feats, [], str(root), skip_needs_research=True
+            ),
+        ):
+            assert excluded == {"subagent-wedge-backstop-hook"}, excluded
+            head = lazy_core.next_merged(feats, [], "/echo", exclude_ids=excluded)
+            assert head["item_id"] == "shared-hook-lib", head
+            override = lazy_core.dispatch.merged_head_override(
+                feats, [], "/echo", "shared-hook-lib", exclude_ids=excluded,
+            )
+            assert override is None, override
+
+
+def test_research_pending_exclusion_consistent_across_state_scripts():
+    """merged-head-research-exclusion-flag-gated-splits-cross-script REGRESSION: the
+    cross-script split-brain deadlock. A research-skipped FEATURE head + a Concluded
+    on-disk BUG must yield the SAME merged head from BOTH scripts' emit-path exclude
+    computations and emit the bug route.
+
+    Pre-fix: lazy-state.py's caller passed skip_needs_research=True (excluded the
+    research feature → merged head = bug) but bug-state.py's caller passed no flag
+    (research feature NOT excluded → merged head = the undriveable feature), so each
+    withheld its own emit and neither dispatched. Post-fix the exclusion is
+    flag-independent, so the two callers compute the SAME exclude set → the SAME merged
+    head (the bug) → the bug side emits, the feature side withholds pointing at the
+    DISPATCHABLE bug (the driver follows it to the bug emit). No deadlock."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        # Two research-pending feature heads (NEEDS_RESEARCH.md, no RESEARCH.md).
+        for fid in ("merged-head-actionability-oracle", "subagent-wedge-backstop-hook"):
+            d = root / "docs" / "features" / fid; d.mkdir(parents=True)
+            (d / "NEEDS_RESEARCH.md").write_text("x", encoding="utf-8")
+        # A ready downstream feature + a Concluded on-disk bug (dispatchable).
+        act = root / "docs" / "features" / "shared-hook-lib"; act.mkdir(parents=True)
+        (act / "SPEC.md").write_text("x", encoding="utf-8")
+        bug_dir = root / "docs" / "bugs" / "external-owner-contracts-locked-without-consultation"
+        bug_dir.mkdir(parents=True)
+        (bug_dir / "SPEC.md").write_text("x", encoding="utf-8")
+
+        feats = [
+            {"id": "merged-head-actionability-oracle"},
+            {"id": "subagent-wedge-backstop-hook"},
+            {"id": "shared-hook-lib"},
+        ]
+        bugs = [
+            {"id": "external-owner-contracts-locked-without-consultation",
+             "severity": "P2", "spec_path": bug_dir},
+        ]
+
+        # The exclude set each script's merged-head caller computes. Feature side
+        # historically passed skip_needs_research=True; bug side passes NO flag. They
+        # MUST now be equal (the flag is inert).
+        feature_side = lazy_core.nondispatchable_item_ids(
+            feats, bugs, str(root), skip_needs_research=True
         )
-        assert excluded == {"subagent-wedge-backstop-hook"}, excluded
-        head = lazy_core.next_merged(feats, [], "/echo", exclude_ids=excluded)
-        assert head["item_id"] == "shared-hook-lib", head
-        override = lazy_core.dispatch.merged_head_override(
-            feats, [], "/echo", "shared-hook-lib", exclude_ids=excluded,
+        bug_side = lazy_core.nondispatchable_item_ids(feats, bugs, str(root))
+        assert feature_side == bug_side, (feature_side, bug_side)
+        assert feature_side == {
+            "merged-head-actionability-oracle", "subagent-wedge-backstop-hook",
+        }, feature_side
+
+        # SAME merged head from both exclude sets — the dispatchable bug.
+        for excluded in (feature_side, bug_side):
+            head = lazy_core.next_merged(feats, bugs, "/echo", exclude_ids=excluded)
+            assert head is not None and head["item_id"] == (
+                "external-owner-contracts-locked-without-consultation"
+            ) and head["type"] == "bug", head
+
+        # Bug side dispatching the bug → merged head == bug → NO withhold (emit).
+        bug_emit = lazy_core.dispatch.merged_head_override(
+            feats, bugs, "/echo",
+            "external-owner-contracts-locked-without-consultation",
+            exclude_ids=bug_side,
         )
-        assert override is None, override
+        assert bug_emit is None, bug_emit
+
+        # Feature side dispatching a feature → withhold now points at the DISPATCHABLE
+        # bug (correct: the driver follows it to the bug emit, no deadlock).
+        feat_withhold = lazy_core.dispatch.merged_head_override(
+            feats, bugs, "/echo", "shared-hook-lib", exclude_ids=feature_side,
+        )
+        assert feat_withhold is not None and feat_withhold["merged_head"]["item_id"] == (
+            "external-owner-contracts-locked-without-consultation"
+        ), feat_withhold
 
 
 def test_merged_head_override_excludes_parked_head_no_deadlock():
@@ -6615,6 +6694,7 @@ _TESTS = [
     ("test_nondispatchable_item_ids_mixed_parked_and_operator_deferred", test_nondispatchable_item_ids_mixed_parked_and_operator_deferred),
     ("test_spec_dir_research_pending_predicate", test_spec_dir_research_pending_predicate),
     ("test_nondispatchable_item_ids_excludes_research_pending_under_skip_flag", test_nondispatchable_item_ids_excludes_research_pending_under_skip_flag),
+    ("test_research_pending_exclusion_consistent_across_state_scripts", test_research_pending_exclusion_consistent_across_state_scripts),
     ("test_merged_head_override_excludes_parked_head_no_deadlock", test_merged_head_override_excludes_parked_head_no_deadlock),
     ("test_merged_worklist_exclude_ids_drops_parked_items", test_merged_worklist_exclude_ids_drops_parked_items),
     ("test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug", test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug),

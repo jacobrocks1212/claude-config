@@ -2338,21 +2338,26 @@ def spec_dir_research_pending(spec_dir: "Path") -> bool:
     peek (the ``if skip_needs_research:`` branch in ``lazy-state.py`` and the
     ``_gated_head_kind`` 'research' classifier) — the SAME predicate, factored
     here so ``depdag.nondispatchable_item_ids`` can EXCLUDE a research-pending
-    head from the merged-head computation WHEN THE RUN SKIPS IT
-    (``--skip-needs-research``). Without that exclusion the ``merged-head-diverged``
-    withhold deadlocks a research-skip run behind an undriveable research head
-    (``docs/bugs/merged-head-diverged-withholds-on-research-skipped-head``, the
-    5th facet of the merged-head exclude-set recurring class).
-
-    CONDITIONAL by caller intent: research-pending is non-dispatchable ONLY under
-    ``--skip-needs-research`` — WITHOUT the flag a research-pending head HALTS
-    (it IS the dispatched needs-research terminal, not skippable). So this
-    predicate is a pure classifier; the flag-gating lives in the caller
-    (``nondispatchable_item_ids(..., skip_needs_research=...)``), NOT here.
+    head from the merged-head computation. The exclusion is UNCONDITIONAL: a
+    research-pending head is non-dispatchable on EVERY run (it HALTS at the Step-5
+    walk gate, or is SKIPPED under ``--skip-needs-research``), and the on-disk
+    sentinel IS the deliberate research-defer decision — so no flag context is
+    needed to classify it. Excluding it always keeps the two COUPLED scripts'
+    merged-head-override computations consistent: ``bug-state.py``'s caller reads
+    the feature queue too but has no ``--skip-needs-research`` flag and cannot fold
+    a feature head into its bug-scoped ``probe_skipped_ids`` — so this file
+    predicate is the ONLY reachable exclusion on the bug side. A flag-gated
+    exclusion split the two scripts' merged heads on the same on-disk state and
+    deadlocked both emits (``docs/bugs/merged-head-research-exclusion-flag-gated-splits-cross-script``,
+    the 6th facet of the merged-head exclude-set recurring class; completes
+    ``docs/bugs/merged-head-diverged-withholds-on-research-skipped-head``, Round 91,
+    which flag-gated it at the ``lazy-state.py`` caller only).
 
     Feature-pipeline mechanic: research gating is feature-only (a documented
     parity divergence — ``bug-state.py`` has no ``--skip-needs-research``), so a
-    bug spec dir never carries these files and this contributes nothing there.
+    bug spec dir never carries these files and this contributes nothing to a bug
+    queue's own items (it fires only against the FEATURE items the merged-head
+    caller passes in).
 
     Pure + fail-safe: ``None`` / a missing or unreadable ``spec_dir`` → ``False``
     (byte-identical non-research behavior; the caller's exclusion set stays empty).
