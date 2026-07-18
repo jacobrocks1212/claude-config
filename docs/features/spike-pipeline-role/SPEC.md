@@ -1,12 +1,18 @@
-# Spike — Runtime-Proof Pipeline Role — Specification
+# Spike — Runtime-Proof Pipeline Role — Feature Specification
 
 > A first-class lazy-pipeline stage that definitively PROVES things about the running
 > system (a runtime measurement, a GO/NO-GO verdict, a confirm/deny of real behavior),
 > instead of dead-ending into a manual operator block.
 
 **Status:** In-progress (foundational round landed — routing/orchestration phased; see PHASES.md)
+**Priority:** P1
 **Owner:** harden-harness (originated Round 80, 2026-07-17)
 **Last updated:** 2026-07-17
+
+**Depends on:** (none)
+<!-- All reused machinery (unified-pipeline-orchestrator; the mcp-test runner/verdict shape;
+long-build-and-runtime-ownership's --ensure-runtime) is already Complete, so there is no blocking
+upstream ordering constraint. Spike composes with that machinery but is gated by none of it. -->
 
 ## Origin — the motivating incident
 

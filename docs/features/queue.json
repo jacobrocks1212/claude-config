@@ -3,6 +3,12 @@
   "autodiscover": true,
   "queue": [
     {
+      "id": "spike-pipeline-role",
+      "name": "Spike — Runtime-Proof Pipeline Role",
+      "spec_dir": "spike-pipeline-role",
+      "tier": 1
+    },
+    {
       "id": "shared-hook-lib",
       "name": "Shared Hook Lib (hook-prelude.sh + hook_lib.py)",
       "spec_dir": "shared-hook-lib",

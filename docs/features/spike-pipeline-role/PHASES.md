@@ -2,8 +2,9 @@
 
 **Status:** In-progress (Phase 1 landed 2026-07-17; Phases 2–6 surfaced)
 
-This is a hand-implemented harness spec (`docs/specs/`, outside the autonomous lazy pipeline).
-Phases are worked directly. Phase 1 is the FOUNDATIONAL round (harden Round 80): the
+This is a harness spec now under lazy-pipeline management (relocated to
+`docs/features/spike-pipeline-role/`, enqueued 2026-07-17). Phase 1 was hand-implemented as the
+FOUNDATIONAL round (harden Round 80); Phases 2–6 are driven by the autonomous pipeline. Phase 1: the
 self-contained, fully-tested primitives that make Spike dispatchable and parseable WITHOUT
 destabilizing the live `compute_state` state machine. Phases 2–6 are the routing/orchestration
 surgery, phased because each changes what the live pipeline returns for real features and must
