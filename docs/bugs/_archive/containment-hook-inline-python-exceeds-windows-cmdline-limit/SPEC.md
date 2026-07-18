@@ -3,6 +3,8 @@
 **Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-18
+**Fixed:** 2026-07-18
+**Fix commit:** e1c5ed57
 **Related:** `docs/bugs/guard-fail-open-leaves-no-trace` (E2BIG slips between that fix's "no-python"
 and python-catch-all breadcrumb sites — a NEW untraced fail-open class); `user/hooks/CLAUDE.md`
 → "Fail-OPEN is mandatory" / "Fail-open observability". Discovered incidentally by
