@@ -3,6 +3,8 @@
 **Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-17 (observed live during a `/lazy-batch` run on AlgoBooth)
+**Fixed:** 2026-07-18
+**Fix commit:** 3716bd51
 **Related:** `docs/bugs/feature-tier-strings-fall-to-merged-priority-default` (Round 63 — unified
 feature-tier enums onto the bug-severity scale, establishing the `pre-release == 1 == P1`
 load-bearing ordering); `docs/features/unified-pipeline-orchestrator/` (the merged-view ordering
