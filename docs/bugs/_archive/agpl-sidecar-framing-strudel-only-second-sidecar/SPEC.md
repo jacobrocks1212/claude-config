@@ -1,6 +1,8 @@
 # Bug: AGPL public-sidecar framing + IP-placement preference is Strudel-only; a second public AGPL sidecar (hydra) has no covering contract
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-18
+**Fix commit:** e4fd093d
 **Reported via:** `/harden-harness` observed-friction dispatch (2026-07-16, item in flight `hydra-overlay`, AlgoBooth `/lazy-batch`, blocking=false). Operator-directed (Jacob, mid-run).
 **Root-cause class:** `missing-contract`
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage); AlgoBooth `docs/legal/AGPL_ISOLATION.md` + `docs/legal/AGPL_PUBLICATION_MANIFEST.md` (the legal source of truth these harness prose surfaces point at); the in-flight `hydra-overlay` feature (creates the second sidecar `hydra-sidecar/`, AGPL `hydra-synth`).
