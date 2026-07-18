@@ -3,7 +3,7 @@ kind: needs-input
 feature_id: turn-routing-enforcement
 written_by: harden-harness
 decisions:
-  - "Dispatch-preference contract for Agent dispatches: keep `dispatch_prompt_ref` (@@lazy-ref) PREFERRED, or flip to verbatim `dispatch_prompt`?"
+  - "Dispatch-preference contract for Agent dispatches: keep `dispatch_prompt_ref` (@@lazy-ref) PREFERRED, or flip to verbatim `dispatch_prompt`? NEW EVIDENCE (harden Round 84, 2026-07-17): a background (`run_in_background: true`) Agent dispatch's F2a ALLOW+consume fires but the `updatedInput` rewrite is NOT applied — the subagent gets the bare `@@lazy-ref` token. See `docs/bugs/byref-updatedinput-unapplied-on-background-agent-dispatch/`. Confirm `updatedInput` platform behavior for background Agent dispatches (claude-code-guide) before deciding; a background-only carve-out is a partial flip of this decision."
   - "Partial-VALIDATED → `__mark_complete__` oscillation: route back to `mcp-test` when the PHASES verification matrix is incomplete, or change what mints VALIDATED.md? (harden Round 45)"
   - "forward_cycles under-count in interleaved real+meta by-ref dispatch: reopen the archived `byref-dispatch-undercounts-forward-cycles` bug, or accept the low-impact under-count? (harden Round 45)"
   - "Dispatch-guard contract for WORKSTATION sub-subagent dispatches: how should `lazy_guard.py` distinguish a cycle worker's now-authorized test-agent/impl-agent split from an orchestrator improvising an unregistered cycle prompt, without weakening the integrity guard? (harden Round 9, 2026-07)"
