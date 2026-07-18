@@ -3,9 +3,10 @@
 > `/resolve-review` independently validates a reviewer's *findings* but never validates the pipeline's own *decline rationales*, and no gate anywhere checks that net-new code avoids `[Obsolete]` surfaces — so 57077 Phase 9 declined an async ask with a factually wrong rationale that missed the `[Obsolete]` attribute pointing at the exact fix, and the branch shipped a net-new caller of a deprecated API on the precise axis under review (→ corrective Phase 12).
 
 **Status:** Fixed
-**Fixed:** 2026-07-10 — implemented out-of-pipeline (operator-directed subagent orchestration; fix scope in this SPEC)
+**Fixed:** 2026-07-18
 **Severity:** P2
 **Discovered:** 2026-07-10
+**Fix commit:** d9f23a59
 **Placement:** docs/bugs/review-decline-rationales-and-deprecated-apis-unverified
 **Related:** 57077 case study (Phases 9, 12), `repos/cognito-forms/.claude/skills/resolve-review/SKILL.md`, `repos/cognito-forms/.claude/skills/write-plan-cognito/lane-agent-briefing.md`
 
