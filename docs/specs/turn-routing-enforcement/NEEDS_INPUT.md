@@ -4,18 +4,18 @@ feature_id: turn-routing-enforcement
 written_by: harden-harness
 decisions:
   - "Dispatch-preference contract for Agent dispatches: keep `dispatch_prompt_ref` (@@lazy-ref) PREFERRED, or flip to verbatim `dispatch_prompt`? NEW EVIDENCE (harden Round 84, 2026-07-17): a background (`run_in_background: true`) Agent dispatch's F2a ALLOW+consume fires but the `updatedInput` rewrite is NOT applied — the subagent gets the bare `@@lazy-ref` token. See `docs/bugs/byref-updatedinput-unapplied-on-background-agent-dispatch/`. Confirm `updatedInput` platform behavior for background Agent dispatches (claude-code-guide) before deciding; a background-only carve-out is a partial flip of this decision."
-  - "Partial-VALIDATED → `__mark_complete__` oscillation: route back to `mcp-test` when the PHASES verification matrix is incomplete, or change what mints VALIDATED.md? (harden Round 45)"
-  - "forward_cycles under-count in interleaved real+meta by-ref dispatch: reopen the archived `byref-dispatch-undercounts-forward-cycles` bug, or accept the low-impact under-count? (harden Round 45)"
+  - "[RESOLVED 2026-07-18 → re-route to mcp-test on incomplete matrix] Partial-VALIDATED → `__mark_complete__` oscillation: route back to `mcp-test` when the PHASES verification matrix is incomplete, or change what mints VALIDATED.md? (harden Round 45)"
+  - "[RESOLVED 2026-07-18 → subsumed by decision #11 dispatch-time advance] forward_cycles under-count in interleaved real+meta by-ref dispatch: reopen the archived `byref-dispatch-undercounts-forward-cycles` bug, or accept the low-impact under-count? (harden Round 45)"
   - "Dispatch-guard contract for WORKSTATION sub-subagent dispatches: how should `lazy_guard.py` distinguish a cycle worker's now-authorized test-agent/impl-agent split from an orchestrator improvising an unregistered cycle prompt, without weakening the integrity guard? (harden Round 9, 2026-07)"
-  - "Completion-gate treatment of un-migrated + host-blocked verification rows: add a per-row host-capability deferral so a feature blocked only on host-unavailable backend verification can complete-modulo-deferral instead of all-or-nothing, and/or converge the completion recognizer with the routing bypass? (harden Round 22, 2026-07)"
-  - "Corrective-coverage dispatch: add a registered `--emit-dispatch corrective-coverage` class (or a Step-10→mcp-test re-route) to author NEW mcp-test coverage for a genuinely-untested-but-testable row discovered at completion, since coherence-recovery correctly refuses implementation work and no legitimate dispatch path exists? (harden Round 22, 2026-07)"
+  - "[RESOLVED 2026-07-18 → per-row requires-host deferral marker] Completion-gate treatment of un-migrated + host-blocked verification rows: add a per-row host-capability deferral so a feature blocked only on host-unavailable backend verification can complete-modulo-deferral instead of all-or-nothing, and/or converge the completion recognizer with the routing bypass? (harden Round 22, 2026-07)"
+  - "[RESOLVED 2026-07-18 → Step-10 re-route to mcp-test] Corrective-coverage dispatch: add a registered `--emit-dispatch corrective-coverage` class (or a Step-10→mcp-test re-route) to author NEW mcp-test coverage for a genuinely-untested-but-testable row discovered at completion, since coherence-recovery correctly refuses implementation work and no legitimate dispatch path exists? (harden Round 22, 2026-07)"
   - "GATE_VERDICT.md authoring route: no sanctioned emit-dispatch class authors GATE_VERDICT.md for a genuinely-in-scope control-surface feature at __mark_complete__ — add a `gate-verdict` emit class, make it interactive-only, or move the gate to planning-time? (harden Round 36, 2026-07)"
   - "Provisional gate at the ship seam: should gate_verdict_ok (D3, STRUCTURALLY PROVISIONAL/unratified) hard-block completion before anti-overfit-design-gate is ratified, or degrade to advisory/planning-time until then? (harden Round 36, 2026-07)"
-  - "Consumed-fence robustness under a re-emit after `--cycle-begin`: the operator-blessed sub-subagent exemption fence (decision 4) binds ONE nonce at `--cycle-begin`, but the freshness-rule re-emit makes the worker consume a DIFFERENT emission → fence dead → sub-subagent denied. Re-derive the fence at guard time, re-bind at re-emit, or enforce emit-before-cycle-begin — without weakening the integrity guard? (harden Round 46, 2026-07)"
-  - "Operator per-feature host-defer not machine-enforced over a VALIDATED feature: an operator's 'defer whole feature' resolution (apply-resolution writes DEFERRED_REQUIRES_HOST.md, deferred_by: operator) drives NO skip because (a) the named capability ids are unregistered → unknown-capability BLOCKED.md fail-fast, and (b) the host-defer branch is `not VALIDATED.md`-gated but the feature has a validated-modulo-observation-gaps VALIDATED.md → re-routes to __mark_complete__ → gate re-refuses → re-writes NEEDS_INPUT, re-asking an answered decision. Register the service capabilities + honor an operator DEFERRED_REQUIRES_HOST.md over a validated-modulo feature, or add a per-feature host-defer of verification rows — without weakening the completion gate or false-greening? Bundles with #5/#6. (harden Round 47, 2026-07)"
-  - "Turn-end verify-ledger mis-scoped for PLANNING cycles: the cycle-subagent `@section turn-end` TERMINAL VERIFY GATE injects `--verify-ledger` reconcile-until-ok:true with `skills=all`, but verify-ledger is the COMPLETION gate — a planning cycle (spec-phases/write-plan/plan-bug/plan-feature/spec/spec-bug) authors a Ready plan with unchecked deliverables → structurally ok:false → the reconcile loop is unsatisfiable without fabricating completion (Status-honesty forbids). Scope the verify-ledger substep to completion-capable skills only (mirror the orchestrator's already-shipped guardrail-D scope), or add a 'planning-ok' verdict mode to verify_ledger — which terminal guarantee should planning cycles carry? (harden Round 51, 2026-07)"
-  - "forward_cycles OVER-count on non-dispatch inject-hook turns: the inject-hook `--repeat-count` probe advances forward_cycles via the consume-INDEPENDENT state-change trigger on notification turns (route changes, no dispatch), ballooning forward_cycles and false-hitting max_cycles so overnight runs end early. The evidence's consume-only fix reverses the 2026-07-16 `byref-forward-cycles-frozen-on-multicycle-same-step` + Theory-1b decisions and their pinned tests (symmetric under-count catastrophe). Move the forward-advance OFF banner-emission to actual dispatch time (subsuming decision #3's under-count too), or accept? (harden Round 55, 2026-07)"
-  - "Operator recovery of a CRASHED run's orphaned markers is under-served: the containment guards (`refuse_if_cycle_active` / `refuse_cycle_marker_mutation_if_subagent`) key ONLY on marker-presence + env, consulting neither the marker's recorded session_id/started_at nor process liveness, so an operator tearing down a dead run's corpse from a fresh session is refused as a 'single cycle subagent' and must climb a 4-gate cascade (containment → efficacy-flush → terminal-reason) with no chain-aware guidance and no crash/disconnect terminal reason. Add a session-liveness/ownership teardown path, a first-class `--recover-stale-marker`/`--force-run-end` op, chain-aware messages, and/or a `crashed-run` sanctioned terminal reason — all authority/gate-semantics changes? (harden Round 58, 2026-07)"
+  - "[RESOLVED 2026-07-18 → re-derive fence at guard time] Consumed-fence robustness under a re-emit after `--cycle-begin`: the operator-blessed sub-subagent exemption fence (decision 4) binds ONE nonce at `--cycle-begin`, but the freshness-rule re-emit makes the worker consume a DIFFERENT emission → fence dead → sub-subagent denied. Re-derive the fence at guard time, re-bind at re-emit, or enforce emit-before-cycle-begin — without weakening the integrity guard? (harden Round 46, 2026-07)"
+  - "[RESOLVED 2026-07-18 → register constant-False caps + honor operator sentinel] Operator per-feature host-defer not machine-enforced over a VALIDATED feature: an operator's 'defer whole feature' resolution (apply-resolution writes DEFERRED_REQUIRES_HOST.md, deferred_by: operator) drives NO skip because (a) the named capability ids are unregistered → unknown-capability BLOCKED.md fail-fast, and (b) the host-defer branch is `not VALIDATED.md`-gated but the feature has a validated-modulo-observation-gaps VALIDATED.md → re-routes to __mark_complete__ → gate re-refuses → re-writes NEEDS_INPUT, re-asking an answered decision. Register the service capabilities + honor an operator DEFERRED_REQUIRES_HOST.md over a validated-modulo feature, or add a per-feature host-defer of verification rows — without weakening the completion gate or false-greening? Bundles with #5/#6. (harden Round 47, 2026-07)"
+  - "[RESOLVED 2026-07-18 → scope verify-ledger substep to completion-capable skills] Turn-end verify-ledger mis-scoped for PLANNING cycles: the cycle-subagent `@section turn-end` TERMINAL VERIFY GATE injects `--verify-ledger` reconcile-until-ok:true with `skills=all`, but verify-ledger is the COMPLETION gate — a planning cycle (spec-phases/write-plan/plan-bug/plan-feature/spec/spec-bug) authors a Ready plan with unchecked deliverables → structurally ok:false → the reconcile loop is unsatisfiable without fabricating completion (Status-honesty forbids). Scope the verify-ledger substep to completion-capable skills only (mirror the orchestrator's already-shipped guardrail-D scope), or add a 'planning-ok' verdict mode to verify_ledger — which terminal guarantee should planning cycles carry? (harden Round 51, 2026-07)"
+  - "[RESOLVED 2026-07-18 → move forward-advance to dispatch time; probe path becomes PEEK] forward_cycles OVER-count on non-dispatch inject-hook turns: the inject-hook `--repeat-count` probe advances forward_cycles via the consume-INDEPENDENT state-change trigger on notification turns (route changes, no dispatch), ballooning forward_cycles and false-hitting max_cycles so overnight runs end early. The evidence's consume-only fix reverses the 2026-07-16 `byref-forward-cycles-frozen-on-multicycle-same-step` + Theory-1b decisions and their pinned tests (symmetric under-count catastrophe). Move the forward-advance OFF banner-emission to actual dispatch time (subsuming decision #3's under-count too), or accept? (harden Round 55, 2026-07)"
+  - "[RESOLVED 2026-07-18 → liveness teardown + --recover-stale-marker + crash terminal reasons (operator-authorized still required)] Operator recovery of a CRASHED run's orphaned markers is under-served: the containment guards (`refuse_if_cycle_active` / `refuse_cycle_marker_mutation_if_subagent`) key ONLY on marker-presence + env, consulting neither the marker's recorded session_id/started_at nor process liveness, so an operator tearing down a dead run's corpse from a fresh session is refused as a 'single cycle subagent' and must climb a 4-gate cascade (containment → efficacy-flush → terminal-reason) with no chain-aware guidance and no crash/disconnect terminal reason. Add a session-liveness/ownership teardown path, a first-class `--recover-stale-marker`/`--force-run-end` op, chain-aware messages, and/or a `crashed-run` sanctioned terminal reason — all authority/gate-semantics changes? (harden Round 58, 2026-07)"
   - "A `partial` MCP_TEST_RESULTS.md whose only uncovered rows are all documented-test-exempt/build-deferred has no AUTHORABLE path to VALIDATED.md: the `observation_gap_exemptions`→scoped-VALIDATED mechanism EXISTS (gates.py/pseudo.py, wired to 3 sites) but (a) the `mcp-test` SKILL never surfaces it so the producer invents a non-promoting `carve_outs` block, (b) the results file is engine-written and 'the model NEVER authors sentinels' so no shipped path emits the spec_class-bearing exemptions block, and (c) 'build-artifact-deferred' is not the documented observation-gap class. Bless model-authored exemptions / add an emit path, and classify build-artifact-deferred? Bundles with #2 and #9. (harden Round 59, 2026-07)"
   - "[RESOLVED 2026-07-17 → operator-authorized, enqueued as feature subagent-wedge-backstop-hook] Mechanical `SubagentStop`-hook backstop for a GENUINELY-WEDGED dispatched orchestrator (child never resumes parent; work left uncommitted): a `SubagentStop` hook can BLOCK a subagent's premature stop and force it to continue. Firing semantics are FAVORABLE (fires only at genuine agentic-loop end, not at foreground-child yields), and execute-plan's existing run-marker lifecycle supplies the operator-requested paused-with-live-children opt-out for free — but (a) the loop-guard field `stop_hook_active` is GENUINELY UNDOCUMENTED (a wrong assumption risks an infinite block→continue→block loop; claude-code-guide advised not shipping load-bearing logic on it without confirmation), and (b) blocking a subagent's stop is a NEW subagent-lifecycle enforcement authority a false-positive predicate could use to force-spin a genuinely-done agent — the exact dual-writer harm. Add the hook (authority + undocumented-field dependency), or keep the wedge path prose-only? (harden Round 81, 2026-07)"
 date: 2026-06-16
@@ -57,6 +57,13 @@ This preference was introduced deliberately in Phase 7 / lazy-validation-readine
 
 **Recommendation:** Route to `mcp-test` when the matrix is incomplete (option 1) — it is self-healing and preserves the partial-results contract. But the row↔scenario coverage check is the load-bearing detail (false-positives re-run mcp-test, false-negatives re-loop), so the operator should own the approach + the conservatism dial. This is a gate-semantics / routing fork, not a mechanical fix.
 
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** Option 1 — route back to `mcp-test` when the verification
+matrix is incomplete: before routing to `__mark_complete__`, an In-progress phases state with
+unchecked, non-exempt, non-host-deferred runtime-verification rows that the recorded evidence does
+not cover re-routes to `mcp-test` (conservative form accepted — one redundant mcp-test pass on a
+genuinely-complete-but-unticked matrix is tolerable). The coverage predicate is SHARED with
+decision #6's Step-10 re-route — implement as ONE predicate serving both.
+
 ### 3. forward_cycles under-count in interleaved real+meta by-ref dispatch: reopen `byref-dispatch-undercounts-forward-cycles`, or accept the low-impact under-count?
 
 *(harden Round 45 — 2026-06-29, from the same run.)*
@@ -69,6 +76,10 @@ This preference was introduced deliberately in Phase 7 / lazy-validation-readine
 - **Add an independent forward-advance cross-check** — Advance `forward_cycles` when a real-skill probe observes HEAD advanced + a new commit since the last advance, independent of the consume oracle. Rejected as the recommended path: it reintroduces exactly the multi-signal accounting that caused the ISSUE-5 inflation, and risks double-counting.
 
 **Recommendation:** Reopen + investigate (option 1) — but gated on the operator judging budget-signal accuracy worth the regression risk; otherwise accept (option 2), especially noting the unattended-run exposure. I deliberately did NOT attempt an autonomous fix: the archived bug's inflation-regression history makes a blind counter patch higher-risk than the low-impact under-count it would address.
+
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** resolved by decision #11's resolution — the dispatch-time
+forward-advance retires BOTH this under-count and #11's over-count at the shared root. No reopen
+of the archived `byref-dispatch-undercounts-forward-cycles` bug beyond the #11 implementation.
 
 ### 4. Dispatch-guard contract for WORKSTATION sub-subagent dispatches: how should `lazy_guard.py` distinguish a cycle worker's authorized test-agent/impl-agent split from an orchestrator improvising an unregistered cycle prompt?
 
@@ -108,6 +119,12 @@ The instance is NOT hard-blocked — the worker's documented fallback ("When you
 
 **Recommendation:** The per-row host-capability deferral marker — it directly resolves the observed managed-llm-credits block (backend rows deferred, feature completes on validated scope) without weakening the gate or false-greening, and mirrors an existing feature-level pattern.
 
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** per-row `<!-- requires-host: <cap> -->` deferral marker — the
+completion gate treats marked rows as legitimately-deferred (NOT ticked, NOT blocking), folded into
+the `DEFERRED_REQUIRES_HOST.md` receipt and re-opened on a capability-bearing host. Composes with
+decision #9's registered constant-False capabilities; implement jointly (implementation home:
+`docs/bugs/feature-operator-host-defer-not-honored-over-validated/`).
+
 ### 6. Corrective-coverage dispatch for newly-discovered coverage at completion
 
 **Problem:** When Gate 1 / Gate 2 at Step 10 reveal a genuinely-untested but MCP-testable-HERE behavior needing a NEW scenario authored + run (managed-llm-credits Purchase-CTA `ui_action` + auto-refill toggle-persistence), there is NO legitimate dispatch path. The `coherence-recovery` dispatch CORRECTLY refuses implementation work (its contract is PHASES reconciliation, not scenario authoring); a hand-composed mcp-test/implementation prompt is DENIED by the validate-deny guard (no registered emission); and the state machine will not re-route Step 10 → mcp-test while VALIDATED.md + MCP_TEST_RESULTS.md already exist. So authoring newly-discovered coverage at completion is stranded — the operator had to choose between deferring or a manual out-of-band cycle. Resolve together with decisions #2 and #5.
@@ -118,6 +135,11 @@ The instance is NOT hard-blocked — the worker's documented fallback ("When you
 - **Leave it manual** — Rejected: a stranded coverage gap forces an out-of-band manual cycle every time, defeating the pipeline's dispatch-for-discovered-work contract.
 
 **Recommendation:** The Step-10 → mcp-test re-route (option 2) IF a clean "uncovered non-exempt verification row remains" predicate can be defined (it reuses the shipped mcp-test dispatch); otherwise the dedicated `corrective-coverage` emit class.
+
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** Step-10 → `mcp-test` re-route on uncovered non-exempt,
+non-host-deferred verification rows (option 2 — no new dispatch class). The load-bearing
+predicate is shared with decision #2's re-route; it must terminate (never re-trigger on
+already-exempt / host-deferred rows).
 
 ### 7. GATE_VERDICT.md has no in-pipeline authoring route + a provisional gate is live-blocking the ship seam
 
@@ -254,6 +276,14 @@ soundness proof of the `emitted_at >= cycle.started_at` predicate on the integri
 reference: `docs/bugs/consumed-fence-dies-on-reemit-after-cycle-begin/SPEC.md` (Concluded); origin
 is decision 4 / hardening Round 16 (`e3f5702`), owned by `turn-routing-enforcement`.
 
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** Option 1 — re-derive the fence at guard time. Condition 4's
+single-nonce check is replaced with: the NEWEST `class==cycle` registry emission is consumed AND its
+`emitted_at >= cycle.started_at`. The operator signs off the soundness argument (the by-reference
+worker dispatch IS the consume, so the pre-dispatch window stays closed — before the worker
+dispatch, no cycle emission registered-since-cycle-begin can be consumed). Required regression test:
+register the consumed emission AFTER `write_cycle_marker` (the ordering Round 16's fixture
+hard-coded away). Implementation home: `docs/bugs/consumed-fence-dies-on-reemit-after-cycle-begin/`.
+
 ### 9. Operator per-feature host-defer not machine-enforced over a VALIDATED feature
 
 *(harden Round 47 — 2026-07-16, from the AlgoBooth `managed-llm-credits` `/lazy-batch` run;
@@ -337,6 +367,15 @@ no-self-probe precedent. Resolve jointly with #5/#6 (all four managed-llm-credit
 (Phase 1 live-OAuth, Phase 4 credits-proxy) for this decision's operator host-defer. Cross-reference:
 `docs/bugs/feature-operator-host-defer-not-honored-over-validated/SPEC.md` (Concluded).
 
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** Option 1 — register `credits-proxy-host` + `live-oauth-host` as
+constant-False no-self-probe registry capabilities (the `link-multi-peer` precedent), AND honor an
+operator-authored `DEFERRED_REQUIRES_HOST.md` over a `validated-modulo-observation-gaps`
+VALIDATED.md, routing the feature to the host-capability-saturated (Deferred) terminal instead of
+`__mark_complete__`. `deferred_by: operator` is the trust discriminator — the pipeline must never
+be able to author its own waiver. Resolve jointly with #5 (per-row marker) and #6 (the re-route
+authors the 2 genuinely-MCP-testable rows, leaving the 2 host-blocked rows to this deferral).
+Implementation home: `docs/bugs/feature-operator-host-defer-not-honored-over-validated/`.
+
 ### 10. Turn-end verify-ledger mis-scoped for PLANNING cycles: scope the substep, or add a "planning-ok" verdict?
 
 *(harden Round 51 — 2026-07-16, observed-friction from the AlgoBooth `/lazy-batch` bug pipeline, item `adhoc-hydra-load-code-mcp-tool`, a `/plan-bug` cycle. Bug: `docs/bugs/verify-ledger-planning-scope-and-file-arg/` (Concluded). The sibling ARG-ambiguity half of that bug was fixed mechanically this round — `harden(script)` `3d2311ce`; only this SCOPE half is escalated.)*
@@ -351,6 +390,14 @@ no-self-probe precedent. Resolve jointly with #5/#6 (all four managed-llm-credit
 - **Accept the friction (status quo)** — Leave `skills=all`; rely on the planning subagent recognizing the gate is completion-only and returning without forcing ok:true. Pro: no change. Con: the injected prose literally says "RE-RUN the verifier until `ok` is true ... a return without it is a resultless return" — a compliant subagent is told to do the impossible or fabricate; this IS the observed friction, and it recurs every planning cycle.
 
 **Recommendation:** Option 1 (scope the substep to completion-capable skills, mirroring guardrail-D) — it harmonizes an already-decided scoping across the two enforcement sites and needs no gate code change. The operator should own the completion-capable skill LIST (the load-bearing detail) and confirm whether the small loss of scripted clean-tree/pushed certification for planning cycles is acceptable, or whether Option 2's "planning-ok" verdict is preferred to retain it. This is a gate-semantics / cycle-prompt-contract fork, not a mechanical fix — surfaced here rather than baked silently.
+
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** Option 1 — scope the verify-ledger substep to
+completion-capable skills (`execute-plan`, `mcp-test`, `retro-feature` + the bug-pipeline analogs),
+mirroring the orchestrator's shipped guardrail-D scope; the universal turn-end conditions
+(committed, pushed, sentinel-on-disk) stay `skills=all` as self-asserted checks. The operator
+accepts the small loss of scripted clean-tree/pushed certification for planning cycles. The
+completion-capable skill LIST is the load-bearing detail — enumerate it explicitly in the split
+section. Implementation home: `docs/bugs/verify-ledger-planning-scope-and-file-arg/`.
 
 ### 11. forward_cycles OVER-counts on non-dispatch inject-hook turns: gate the advance on consume (reversing two 2026-07-16 decisions), or move the advance off banner-emission to dispatch time?
 
@@ -373,6 +420,14 @@ The two named failure modes are SYMMETRIC catastrophes: DEFECT 1 (over-count →
 
 **Recommendation:** Option 1 (move the advance to dispatch time) — it is the only option that resolves BOTH the DEFECT-1 over-count AND the decision-#3 under-count at the shared root (the counter should count dispatches, and the reliable dispatch bracket — not the every-turn banner probe — is where to count them), without leaving a residual oracle to re-tune. The operator owns the routing-contract change (advance relocates off the probe path) and the pinned-test retargeting. This is a gate/counter-semantics fork, surfaced rather than baked silently. Cross-reference: `docs/bugs/_archive/lazy-run-marker-park-arm-and-forward-cycle-inflation/SPEC.md` (DEFECT 1, Concluded); origin is `byref-forward-cycles-frozen-on-multicycle-same-step` (2026-07-16) + Theory-1b, owned by `turn-routing-enforcement`; bundles with decision #3.
 
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** Option 1 — move the forward-advance OFF banner-emission to
+actual dispatch time; the inject-hook `--repeat-count` probe path becomes a pure PEEK. The advance
+happens exactly once at the real dispatch bracket (guard-ALLOW consume / `--cycle-begin`), the
+`--apply-pseudo` forward-advancing-pseudo-skill path keeps advancing at its own apply bracket, and
+within-cycle idempotence is preserved. The two pinned tests (multicycle-same-step + Theory-1b) are
+RETARGETED to assert dispatch-time advance, not inverted. Subsumes decision #3 (the under-count
+mirror). Implementation home: enqueue as a harness bug (the originating bug is archived).
+
 ### 12. Operator recovery of a CRASHED run's orphaned markers is under-served: add a liveness/ownership teardown path, a first-class recovery op, chain-aware messages, and/or a crash terminal reason?
 
 *(harden Round 58 — 2026-07-17, manual invocation. Firsthand friction: a `/lazy-batch` session died on a remote-control disconnect, leaving `lazy-run-marker.json` + `lazy-cycle-active.json` orphaned; an operator in a later session hit a cascade of misleading refusals tearing the corpse down. Bug: `docs/bugs/operator-recovery-of-crashed-run-orphaned-markers-underserved/` (Concluded).)*
@@ -390,6 +445,19 @@ The two named failure modes are SYMMETRIC catastrophes: DEFECT 1 (over-count →
 **Recommendation:** (a) + the crash terminal reason, with (b) as the ergonomic wrapper if the operator wants a single command; (c) folded into whichever lands. The operator owns the "provably dead" definition (liveness probe vs. a short age threshold) and whether a crash reason may end a run without `--operator-authorized`. Surfaced rather than baked — this is an authority-model fork.
 
 **HARD-PARK (harden Round 60, 2026-07-17, park-provisional protocol).** Assessed under the park-provisional default and DELIBERATELY NOT implemented — this decision hits BOTH hard-park carve-outs. (1) **Gate-weakening (Prohibition #2):** the recommended option (a) softens the containment deny decision (`refuse_if_cycle_active` / `refuse_cycle_marker_mutation_if_subagent` would now ALLOW a foreign+dead-owner teardown they currently refuse), and the composed `crashed-run`/`remote-control-disconnect` sanctioned terminal reason lets a run END WITHOUT `--operator-authorized` (removing an authorization requirement) — both are softenings of an existing denial/validation, never provisional-eligible. (2) **`divergence: structural`:** it forks the operator recovery workflow and the containment/terminal-reason authority model, and the "provably dead" cross-platform liveness definition is exactly the expensive-to-redirect wrong-pick the structural carve-out reserves for the operator. A purely-additive `--recover-stale-marker` op gated on `--operator-authorized` (no new no-auth terminal reason) would be provisional-eligible in isolation, but it does not resolve the recommended fix and would pre-empt the operator's authority-model choice, so the whole decision stays a blocking park for operator sign-off. Nothing implemented.
+
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion) — operator sign-off on the HARD-PARK:** all three composable
+pieces authorized — (a) the session-liveness/ownership teardown path (foreign `session_id` +
+provably-dead owner + explicit operator opt-in; `marker_owner_status`'s non-destructive
+`foreign-stamped` detect reused; the non-destructive-on-live-mismatch invariant MUST be preserved),
+(b) the first-class `--recover-stale-marker` / `--force-run-end` op as the ergonomic wrapper (one
+sanctioned audited step: cycle-end + run-end + crash terminal reason), and the `crashed-run` /
+`remote-control-disconnect` sanctioned terminal reasons, with (c) chain-aware refusal messages
+folded into whichever surfaces land. CONSERVATIVE DEFAULT RETAINED: the crash terminal reasons
+still REQUIRE `--operator-authorized` — the no-auth relaxation was NOT granted. The "provably
+dead" definition is delegated to implementation: process-liveness probe preferred, short age
+threshold as the fallback where a cross-platform probe is unreliable. Implementation home:
+`docs/bugs/operator-recovery-of-crashed-run-orphaned-markers-underserved/`.
 
 ### 13. A `partial` MCP_TEST_RESULTS.md whose only uncovered rows are all test-exempt/build-deferred has no AUTHORABLE path to VALIDATED.md: bless model-authored exemptions + classify build-artifact-deferred?
 
