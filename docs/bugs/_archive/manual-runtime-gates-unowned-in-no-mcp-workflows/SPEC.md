@@ -3,9 +3,10 @@
 > `/execute-plan` flips phases/plans to `Complete` past unchecked `verification-only` runtime rows on the assumption that a downstream MCP/`__mark_complete__` gate will hold them — but in manual (non-lazy) workflows and no-MCP repos (Cognito) that gate never runs, so "complete" claims ship with the feature's central premise unverified.
 
 **Status:** Fixed
-**Fixed:** 2026-07-10 — implemented out-of-pipeline (operator-directed subagent orchestration; fix scope in this SPEC)
+**Fixed:** 2026-07-18
 **Severity:** P1
 **Discovered:** 2026-07-10
+**Fix commit:** 4299bf5c
 **Placement:** docs/bugs/manual-runtime-gates-unowned-in-no-mcp-workflows
 **Related:** 57077 case study (`cog-docs/docs/features/57077-cognito-pay-account-deletion/`), `_components/completion-integrity-gate.md`, `_components/phases-runtime-verification.md`, sibling bug `planning-validation-misses-serving-path-and-data-reach`
 
