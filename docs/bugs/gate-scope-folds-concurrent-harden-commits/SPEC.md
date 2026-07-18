@@ -12,7 +12,7 @@
 **Status:** Concluded
 **Priority:** P1
 **Last updated:** 2026-07-13
-**Related:** `docs/features/anti-overfit-design-gate/` (owns `gate_verdict_ok` + the control-surface manifest; STRUCTURALLY PROVISIONAL, `NEEDS_INPUT_PROVISIONAL.md` pending); `docs/specs/turn-routing-enforcement/` (owns the hardening stage that surfaced this — Round 36); `docs/specs/turn-routing-enforcement/NEEDS_INPUT.md` (the sibling gap-1 design fork this fix does NOT close: no sanctioned route authors `GATE_VERDICT.md` for a genuinely-in-scope pipeline feature). Sibling of `docs/bugs/descoped-marker-blind-completion-coherence-gate/` (Round 35 — the PRIOR completion gate on the SAME feature; this feature advanced past it into the next gate).
+**Related:** `docs/features/anti-overfit-design-gate/` (owns `gate_verdict_ok` + the control-surface manifest; STRUCTURALLY PROVISIONAL, `NEEDS_INPUT_PROVISIONAL.md` pending); `docs/specs/turn-routing-enforcement/` (owns the hardening stage that surfaced this — Round 36); `docs/specs/turn-routing-enforcement/NEEDS_INPUT.md` (the sibling gap-1 design fork this fix does NOT close: no sanctioned route authors `GATE_VERDICT.md` for a genuinely-in-scope pipeline feature). Sibling of `docs/bugs/_archive/descoped-marker-blind-completion-coherence-gate/` (Round 35 — the PRIOR completion gate on the SAME feature; this feature advanced past it into the next gate).
 
 ## Verified Symptom
 

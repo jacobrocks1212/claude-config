@@ -10,7 +10,9 @@
 > **deadlocked at the finish line**: `--verify-ledger` returned `ok:true` but
 > `--apply-pseudo __mark_complete__` refused.
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-18
+**Fix commit:** 6ec23c18
 **Priority:** P1
 **Last updated:** 2026-07-13
 **Related:** `docs/bugs/_archive/verification-only-bypass-blind-to-descoped-rows/` (established the mid-feature descope carve-out); `docs/bugs/_archive/descoped-row-recognition-needs-canonical-marker/` (introduced the canonical `_DESCOPED_MARKER` constant + row/header-scope semantics this gate must mirror); `docs/specs/turn-routing-enforcement/` (owns the hardening stage that surfaced this). Sibling of the completion-coherence-gate-reconciliation feature (which reconciled the verification-only axis at completion time; this closes the descope axis it left open).
