@@ -1,6 +1,6 @@
 # Merged-driver stalls on a gated merged head (`merged-head-diverged` withhold)
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-17 (observed live during a `/lazy-batch` run on AlgoBooth)
 **Related:** `docs/bugs/dispatch-probe-and-inject-bypass-merged-head` (introduced the
