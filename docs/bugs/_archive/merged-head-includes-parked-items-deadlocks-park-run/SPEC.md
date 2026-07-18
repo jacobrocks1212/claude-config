@@ -3,6 +3,8 @@
 **Status:** Fixed
 **Severity:** P0
 **Discovered:** 2026-07-17
+**Fixed:** 2026-07-18
+**Fix commit:** a08e5966
 **Related:** `docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/` (Round 54 — the
 merged-head-diverged withhold this bug interacts badly with); `docs/features/unified-pipeline-orchestrator/`
 (the merged-view / type-dispatch contract); `docs/specs/turn-routing-enforcement/` (hardening
