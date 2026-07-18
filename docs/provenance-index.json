@@ -8430,6 +8430,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/test-only-production-seams/PHASES.md": [
+    {
+      "id": "test-only-production-seams",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/test-only-production-seams/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -8450,6 +8457,13 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/bugs/test-only-production-seams/plans/all-phases-test-only-production-seams.md": [
+    {
+      "id": "test-only-production-seams",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/unqueued-fixed-without-receipt-dirs-perpetual-diagnostic-noise/SPEC.md": [
@@ -16904,6 +16918,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/CLAUDE.md": [
+    {
+      "id": "test-only-production-seams",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/hooks/CLAUDE.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -17181,6 +17202,27 @@
   "user/plugins/local-tools/plugins/cognito-pr-review/commands/review-pr.md": [
     {
       "id": "pr-review-rereview-low-fidelity-metadata",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/plugins/local-tools/plugins/cognito-pr-review/knowledge/rendered/code-consistency.md": [
+    {
+      "id": "test-only-production-seams",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/plugins/local-tools/plugins/cognito-pr-review/knowledge/rules/code-consistency.yaml": [
+    {
+      "id": "test-only-production-seams",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/plugins/local-tools/plugins/cognito-pr-review/knowledge/weights.yaml": [
+    {
+      "id": "test-only-production-seams",
       "type": "bug",
       "provenance": "pipeline-gated"
     }
@@ -20853,6 +20895,11 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "test-only-production-seams",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/_components/touchpoint-audit-gate.md": [
@@ -22307,6 +22354,20 @@
     {
       "id": "spec-excerpt-scoped-plans",
       "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/test-driven-development/SKILL.md": [
+    {
+      "id": "test-only-production-seams",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/test-driven-development/testing-anti-patterns.md": [
+    {
+      "id": "test-only-production-seams",
+      "type": "bug",
       "provenance": "pipeline-gated"
     }
   ],

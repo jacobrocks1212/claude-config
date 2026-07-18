@@ -21,7 +21,7 @@ No `**Depends on:**` block on the SPEC — no hard upstream deps. (Omitted: noth
 
 ### Phase 1: Authoring + review + constitution guardrails (the emit-prevention layer)
 
-**Status:** Complete
+**Status:** Fixed
 
 **Scope:** Close the claude-config-side gap so the workflow stops *emitting* test-only production seams. One consolidated anti-pattern in the TDD reference (covering the two uncovered shapes and cross-referencing the existing partial coverage), its index bullet, a pre-commit review flag line, and a terse always-on constitution principle. Each keys on **"sole consumer is a test"** (not "used by tests"), and each redirects to the legitimate remedy (constructor-injected dependency / mockable interface / `protected virtual` extension point) so the guidance forbids-and-redirects rather than merely forbidding.
 

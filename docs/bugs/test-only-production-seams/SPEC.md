@@ -2,7 +2,7 @@
 
 > The agentic implementation workflow systematically ships speculative production code whose only purpose is to enable test coverage/observability (test-only hooks invoked in production hot paths, settable override properties read only by tests, and reaching for the codebase-forbidden `[InternalsVisibleTo]`), because no authoring guardrail, execute/review gate, constitution rule, or PR-review detector covers this specific class.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-13
 **Placement:** docs/bugs/test-only-production-seams/
