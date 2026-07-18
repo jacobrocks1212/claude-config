@@ -194,10 +194,5 @@ stands as written). This "IF wanted" phase is closed with no action; recognized-
 remains available later as a separate AlgoBooth-scoped follow-up (the AlgoBooth half is outside
 harden-harness scope — Prohibition #1). Deliverables descoped so the router's unchecked count clears.
 
-- [ ] IF the operator wants full lint/gate coverage of the verdict schema (Open Question 1),
-  promote `SPIKE_VERDICT.md` to a recognized sentinel: add its schema to
-  `sentinel-frontmatter.md` (claude-config) AND to AlgoBooth's
-  `scripts/check-docs-consistency.ts SENTINEL_SCHEMAS` (**AlgoBooth repo — outside harden-harness
-  scope; a normal AlgoBooth session must make this edit**) <!-- descoped -->
-- [ ] Until then, the verdict rides on a plain audit doc + already-recognized sentinels (Phase 1
-  design), which is fully functional <!-- descoped -->
+- [ ] ~~Promote `SPIKE_VERDICT.md` to a recognized sentinel (schema in `sentinel-frontmatter.md` + AlgoBooth `check-docs-consistency.ts SENTINEL_SCHEMAS`)~~ **WON'T-DO** <!-- descoped --> (operator decision, AskUserQuestion 2026-07-18; AlgoBooth half outside harden-harness scope)
+- [ ] ~~Until then, the verdict rides on a plain audit doc + already-recognized sentinels (Phase 1 design), which is fully functional~~ **WON'T-DO** <!-- descoped --> (descriptive statement of the locked design, not closable work)
