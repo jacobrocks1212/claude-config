@@ -12,11 +12,13 @@
 > operator's cost budget. The frozen counter also freezes the derived `cycle_header` (`[1/10]`)
 > and the inject-banner turn number (`forward_cycles + meta_cycles + 1` → perpetual "turn 2").
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1 (safety/cost — the max-cycles budget cap, the only mechanical ceiling on an
 autonomous `/lazy-batch` run, is fully defeated for any feature whose implementation spans
 multiple same-step cycles; the run is unbounded against the operator's cost budget)
 **Discovered:** 2026-07-16
+**Fixed:** 2026-07-18
+**Fix commit:** f1095e05
 **Placement:** docs/bugs/byref-forward-cycles-frozen-on-multicycle-same-step
 **Related:**
 - `byref-dispatch-undercounts-forward-cycles` (archived-fixed) — Phase 1 REPLACED the
