@@ -56,3 +56,10 @@ explicitly-open, out-of-scope-spanning product question, so it halts.
 **Recommendation:** Keep the plain audit doc — it is the SPEC's locked design and the only
 fully in-scope path, the role is already fully functional without promotion, and promotion
 remains available later as an AlgoBooth-scoped follow-up (exactly as Open Question 1 frames it).
+
+## Resolution
+
+- **Decision 1 (Promote SPIKE_VERDICT.md to a recognized sentinel?):** **Keep the plain audit doc** — the recommended option, chosen by the operator via AskUserQuestion on 2026-07-18 (wind-down of the overnight /lazy-batch-parallel run).
+- **Propagation:** Phase 6 is closed with no action as an intentionally-unbuilt "IF wanted" design phase (Won't-do), per the option's own terms. SPEC `## Non-goals` stands as written; promotion remains available later as a separate AlgoBooth-scoped follow-up.
+- resolved_by: operator (AskUserQuestion, Step 1g decision-resume)
+- date: 2026-07-18

@@ -65,3 +65,10 @@ question, not in isolation.
 choice reconfigures a shipped dispatch-preference control surface and/or the registry read model,
 and it is already an operator-owned fork; do not provisional-implement over it. No gate weakened,
 no registry/marker edited by this round.
+
+## Resolution
+
+- **Decision 1 (byref updatedInput on background dispatches):** **Option (a) — confirm the platform behavior first** — the recommended option, chosen by the operator via AskUserQuestion on 2026-07-18.
+- **Propagation:** the orchestrator runs a read-only `claude-code-guide` confirmation immediately after this run's `--run-end` (unmarked session state; the guide dispatch is then guard-exempt) and records the finding in this bug dir. The (b)/(c) fix choice is then decided by the operator TOGETHER with the parked dispatch-preference decision #1 at `docs/specs/turn-routing-enforcement/NEEDS_INPUT.md`, with facts in hand. This sentinel stays live (bug remains open) until that joint decision.
+- resolved_by: operator (AskUserQuestion, Step 1g decision-resume; partial resolution — confirmation step authorized, fix fork intentionally still open)
+- date: 2026-07-18
