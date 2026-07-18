@@ -6060,6 +6060,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/harness-gate-gate-weakening-false-positives-rename-and-docstring/PHASES.md": [
+    {
+      "id": "harness-gate-gate-weakening-false-positives-rename-and-docstring",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/harness-gate-gate-weakening-false-positives-rename-and-docstring/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -6080,6 +6087,13 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/bugs/harness-gate-gate-weakening-false-positives-rename-and-docstring/plans/phase-1-verify-landed-fix.md": [
+    {
+      "id": "harness-gate-gate-weakening-false-positives-rename-and-docstring",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/interventions-telemetry-repo-scope-split-brain/PHASES.md": [

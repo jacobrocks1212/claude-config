@@ -1,6 +1,6 @@
 # harness-gate `gate_weakening` false-positives on renamed test defs + docstring/list-literal additions
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-17 (recurring — the docstring FP was explicitly noted as a verified false positive in hardening-log Rounds 62-67; Round 67's over-fit note names `test_markers.py: ... membership added: """`)
 **Related:** `anti-overfit-design-gate` (`harness-gate.py` — the mechanical design-gate checker); the `/harden-harness` over-fit detector (§Step 3, which shells `harness-gate.py`).

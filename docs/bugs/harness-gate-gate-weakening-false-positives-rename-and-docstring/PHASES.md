@@ -20,7 +20,7 @@ Because the implementation and its regression coverage already shipped, this pla
 
 ### Phase 1: Verify the landed gate_weakening FP fix + confirm regression coverage locks it
 
-**Status:** Complete — verified 2026-07-18 (all fix elements + 7 named fixtures present; suite 32 passed).
+**Status:** Fixed
 
 **Scope:** Confirm — against the live tree — that the four heuristic tightenings from the SPEC's `## Fix scope` are present in `harness-gate.py::detect_gate_weakening`, that the FP-false and TP-true regression fixtures exist in `test_harness_gate.py`, and that the full suite passes. No code changes: the fix landed via commits `7dd6ad78` + `cf105d9a`; this phase certifies it and locks the regression guarantee that is the bug's honest measurement target (`gate_weakening` has no run-time ledger event, per the SPEC).
 
