@@ -56,7 +56,7 @@ Where this plan's repo uses non-default gates or component paths (this is `claud
 
 ## Work Units
 
-- [ ] WU-1 — Migrate `block-noncanonical-blocker-write.sh`
+- [x] WU-1 — Migrate `block-noncanonical-blocker-write.sh`
 - [ ] WU-2 — Migrate `block-sentinel-write-on-stray-branch.sh`
 - [ ] WU-3 — Migrate `long-build-ownership-guard.sh` (+ collapse anchors)
 - [ ] WU-4 — Migrate `build-queue-enforce.sh` (+ collapse anchors)
