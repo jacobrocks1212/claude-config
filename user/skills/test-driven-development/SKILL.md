@@ -360,6 +360,7 @@ When adding mocks or test utilities, read @testing-anti-patterns.md to avoid com
 - Testing mock behavior instead of real behavior
 - Adding test-only methods to production classes
 - Mocking without understanding dependencies
+- Production seams (hooks, settable overrides, visibility widening) whose sole consumer is a test — a test-only production seam; inject a real dependency instead
 
 ## Final Rule
 

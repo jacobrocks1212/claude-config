@@ -442,6 +442,93 @@ TDD cycle:
 4. THEN claim complete
 ```
 
+## Anti-Pattern 9: Production Seams That Exist Only for Test Observability
+
+**The violation:**
+```csharp
+// ❌ BAD: a hook invoked on the production path purely so a test can observe/simulate a mid-operation event
+public class ArchiveService
+{
+    // Set only by a test (via reflection or InternalsVisibleTo); null in production.
+    internal Action? ArchiveMidpointHookForTests;
+
+    public void Archive(IEnumerable<Record> records)
+    {
+        foreach (var record in records)
+        {
+            WriteToArchive(record);
+            ArchiveMidpointHookForTests?.Invoke(); // <- production code calling a test-only seam
+        }
+    }
+}
+
+// ❌ BAD: a settable test-override property whose sole consumer is a test
+public class PaymentProcessor
+{
+    // Set only by a test via reflection; production always uses the real resolver.
+    internal Func<PaymentAccountType>? PaymentAccountTypeResolverOverride { get; set; }
+
+    private PaymentAccountType ResolveAccountType()
+        => PaymentAccountTypeResolverOverride?.Invoke() ?? _realResolver.Resolve();
+}
+```
+
+**Why this is wrong:**
+- Production code carries a branch or member whose only caller is a test — dead weight (and latent risk) on every production execution
+- The seam widens the production surface for a test's convenience, exactly the coupling dependency injection exists to avoid
+- It is invisible to reviewers who search for "used by tests" — the member IS used by production code (that's the trap), just never for a production purpose
+- A stray production caller, or a serialized/reflected default, can silently fire the hook or flip the override in prod
+
+**The fix:**
+```csharp
+// ✅ GOOD: inject a real dependency — the test supplies a fake, production supplies the real one
+public interface IArchiveObserver { void OnRecordArchived(); }
+
+public class ArchiveService
+{
+    private readonly IArchiveObserver _observer;
+    public ArchiveService(IArchiveObserver observer) => _observer = observer;
+
+    public void Archive(IEnumerable<Record> records)
+    {
+        foreach (var record in records)
+        {
+            WriteToArchive(record);
+            _observer.OnRecordArchived(); // real seam: a no-op observer in prod, a spy in tests
+        }
+    }
+}
+
+// ✅ GOOD: resolve through a constructor-injected, mockable interface — the test injects a stub
+public class PaymentProcessor
+{
+    private readonly IPaymentAccountTypeResolver _resolver;
+    public PaymentProcessor(IPaymentAccountTypeResolver resolver) => _resolver = resolver;
+
+    private PaymentAccountType ResolveAccountType() => _resolver.Resolve();
+}
+```
+
+The remedy is **redirect, not delete** — the test's need is legitimate; the *mechanism* is wrong. Replace the test-only seam with a real injectable dependency, a mockable interface, or a `protected virtual` extension point the test subclasses.
+
+### Gate Function
+
+```
+BEFORE adding a hook, settable field/property, or visibility widening to production code:
+  Ask: "Does this production member have ANY consumer OTHER than a test?"
+
+  IF no (the SOLE consumer is a test):
+    STOP - do not add the seam to production
+    Introduce a real injectable dependency / mockable interface / protected virtual
+    extension point instead, and have the test drive THAT
+
+  The boundary is SOLE-consumer-is-a-test, NOT "used by tests":
+    A genuine injectable dependency or a protected virtual member that ALSO has a
+    real production consumer is fine and is never flagged.
+```
+
+**Related (one consolidated cluster):** this is the *seam* sibling of **Anti-Pattern 2: Test-Only Methods in Production** (test-only *methods*); together they cover test-only members of every shape. The PR-review detector enforces the same boundary on production files via `no-test-only-production-seam`, alongside the existing seam-hygiene rules `no-test-only-service-params`, `no-public-for-tests`, and `no-internals-visible-to-for-tests`.
+
 ## When Mocks Become Too Complex
 
 **Warning signs:**
@@ -475,6 +562,7 @@ TDD cycle:
 | Homogeneous fixtures for divergent representations | Add at least one test where both representations differ, for every derived property |
 | Synthetic input masks missing producer | Add a sibling producer test that starts without the field and asserts it is stamped |
 | Existence-only assertion when correctness is checkable | Assert the specific derived value; write an analyzer helper if one doesn't exist |
+| Production seam whose sole consumer is a test | Inject a real dependency / mockable interface / protected virtual extension point |
 | Tests as afterthought | TDD - tests first |
 | Over-complex mocks | Consider integration tests |
 
@@ -492,6 +580,7 @@ TDD cycle:
 - Every assertion in a pipeline test is `.length > 0`, `.toHaveBeenCalled()`, or `.toBeDefined()` — no test asserts the actual value
 - A pure-function analyzer for the output property exists but no test uses it
 - "Value correctness will be caught in manual testing / QA"
+- A production hook, settable field/property, or visibility widening whose sole consumer is a test
 
 ## The Bottom Line
 

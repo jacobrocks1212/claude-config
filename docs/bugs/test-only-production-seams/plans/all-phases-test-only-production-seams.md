@@ -57,9 +57,9 @@ Phase 1 (WU-1..3) and Phase 2's WU-4 are file-disjoint and dependency-free relat
 
 ## Work Units
 
-- [ ] WU-1 — Author the "production seams that exist only for test observability" anti-pattern + its SKILL.md index bullet
-- [ ] WU-2 — Add the test-seam-hygiene flag line to subagent-review.md's TDD-DISCIPLINE block
-- [ ] WU-3 — Add the always-on test-seam principle to user/CLAUDE.md `<testing>`
+- [x] WU-1 — Author the "production seams that exist only for test observability" anti-pattern + its SKILL.md index bullet
+- [x] WU-2 — Add the test-seam-hygiene flag line to subagent-review.md's TDD-DISCIPLINE block
+- [x] WU-3 — Add the always-on test-seam principle to user/CLAUDE.md `<testing>`
 - [ ] WU-4 — Add the `no-test-only-production-seam` rule + weight entry to cognito-pr-review
 - [ ] WU-5 — Regenerate the rendered shard via `/cognito-pr-review:rebuild-agents` and verify the rule is present
 

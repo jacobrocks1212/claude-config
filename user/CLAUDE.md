@@ -25,6 +25,7 @@
   <testing>
     - xUnit, AAA pattern, test behavior not implementation
     - Descriptive names, mock external dependencies
+    - Production code carries no seams (hooks, settable overrides, visibility widening) whose sole consumer is a test — introduce a real injectable dependency instead
   </testing>
 
   <windows-platform>
