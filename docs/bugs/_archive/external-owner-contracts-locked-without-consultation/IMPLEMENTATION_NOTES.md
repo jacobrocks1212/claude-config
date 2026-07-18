@@ -19,6 +19,6 @@
 - None — this phase was a pure verify-and-confirm pass; both greps hit on the first try and semantics matched the SPEC Fix Scope exactly.
 
 **Files modified:**
-- `docs/bugs/external-owner-contracts-locked-without-consultation/PHASES.md` — ticked the 3 Phase 1 deliverable checkboxes (2 content rows + the "no automated test" row).
-- `docs/bugs/external-owner-contracts-locked-without-consultation/plans/fix-external-owner-consultation-gate.md` — ticked WU-1/WU-2, flipped frontmatter `status: Complete`.
-- `docs/bugs/external-owner-contracts-locked-without-consultation/IMPLEMENTATION_NOTES.md` — this file (created).
+- `docs/bugs/_archive/external-owner-contracts-locked-without-consultation/PHASES.md` — ticked the 3 Phase 1 deliverable checkboxes (2 content rows + the "no automated test" row).
+- `docs/bugs/_archive/external-owner-contracts-locked-without-consultation/plans/fix-external-owner-consultation-gate.md` — ticked WU-1/WU-2, flipped frontmatter `status: Complete`.
+- `docs/bugs/_archive/external-owner-contracts-locked-without-consultation/IMPLEMENTATION_NOTES.md` — this file (created).

@@ -3,9 +3,10 @@
 > `/spec` can lock a decision that creates or changes a contract consumed by another team (events, sync schemas, exported columns) on purely in-repo evidence — the 57077 classic `organization.archived` CognitoEvent was locked this way, then reversed by one OW-team Slack message, deleting Phase 1+6 event work and invalidating an entire sibling Overwatch SPEC authored ~24h earlier.
 
 **Status:** Fixed
-**Fixed:** 2026-07-10 — implemented out-of-pipeline (operator-directed subagent orchestration; fix scope in this SPEC)
+**Fixed:** 2026-07-18
 **Severity:** P2
 **Discovered:** 2026-07-10
+**Fix commit:** c32794ca
 **Placement:** docs/bugs/external-owner-contracts-locked-without-consultation
 **Related:** 57077 case study (Phase 10, Locked Decision 4), sibling bug `premise-contradictions-demoted-not-escalated` (shares `user/skills/spec/SKILL.md` — implementation sequenced AFTER it)
 
