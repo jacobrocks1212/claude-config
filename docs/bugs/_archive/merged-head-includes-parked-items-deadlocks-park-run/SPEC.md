@@ -8,7 +8,7 @@
 **Related:** `docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/` (Round 54 — the
 merged-head-diverged withhold this bug interacts badly with); `docs/features/unified-pipeline-orchestrator/`
 (the merged-view / type-dispatch contract); `docs/specs/turn-routing-enforcement/` (hardening
-stage); `docs/bugs/lazy-batch-no-mid-run-budget-or-park-controls/` (park-mode facets).
+stage); `docs/bugs/_archive/lazy-batch-no-mid-run-budget-or-park-controls/` (park-mode facets).
 
 ## Trigger
 

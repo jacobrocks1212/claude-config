@@ -1,7 +1,9 @@
 # /lazy-batch has no clean operator-authorized mid-run budget or park controls
 
-**Status:** Concluded
+**Status:** Fixed
 **Discovered:** 2026-07-16 (operator-directed observed-friction, AlgoBooth `/lazy-batch` run; the operator approved extending `max_cycles` 10→20 mid-run and there was no clean path)
+**Fixed:** 2026-07-18
+**Fix commit:** cb940efb
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage + `--operator-authorized` authorization discipline + the run marker); `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md`; coupled pair `lazy-batch` ↔ `lazy-bug-batch` (+ `lazy-batch-cloud`).
 
 ## Summary
