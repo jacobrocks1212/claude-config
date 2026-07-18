@@ -2766,6 +2766,141 @@ def test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug():
                 "a withheld route must NOT register a cycle emission")
 
 
+def test_subprocess_emit_prompt_oracle_excludes_nondispatchable_bug_head_no_withhold():
+    """merged-head-actionability-oracle Phase 2 (feature-side, real scoped probe):
+    a NON-DISPATCHABLE bug at the merged head (a BLOCKED bug — a category the old
+    file-predicate never excluded on the feature-side cross-pipeline path) is now
+    EXCLUDED by the oracle's REAL cross-pipeline scoped `bug-state.compute_state`,
+    so the feature probe does NOT withhold and dispatches the workable feature.
+    Pre-oracle this withheld behind the undriveable bug head (the stall class this
+    feature ends). Byte-identity for a DISPATCHABLE P0 bug is covered by
+    test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug (still green)."""
+    _guard()
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        features = td_path / "fixture-repo" / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [{"id": "feat-c", "name": "Feature C", "spec_dir": "feat-c", "tier": 1}]
+        }), encoding="utf-8")
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        fdir = features / "feat-c"
+        (fdir / "plans").mkdir(parents=True)
+        (fdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+        (fdir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n", encoding="utf-8")
+        (fdir / "plans" / "all-phases-c.md").write_text("# Plan\n", encoding="utf-8")
+        fixture_repo = td_path / "fixture-repo"
+
+        # P0 bug at the merged head, but BLOCKED → scoped bug probe is
+        # non-dispatchable → the oracle excludes it (no withhold).
+        bug_dir = fixture_repo / "docs" / "bugs" / "bug-blk"
+        bug_dir.mkdir(parents=True)
+        (fixture_repo / "docs" / "bugs" / "queue.json").write_text(json.dumps({
+            "queue": [{"id": "bug-blk", "name": "Bug Blocked", "spec_dir": "bug-blk", "severity": "P0"}]
+        }), encoding="utf-8")
+        (bug_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (bug_dir / "BLOCKED.md").write_text(
+            "---\nphase: External gate\nblocker_kind: external-gate\n---\nAwaiting.\n",
+            encoding="utf-8")
+
+        state_dir = td_path / "lazy-state-dir"
+        state_dir.mkdir()
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(fixture_repo), max_cycles=10, now=_time.time())
+        finally:
+            _clear_state_dir()
+
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        result = subprocess.run(
+            [sys.executable, str(lazy_state_script),
+             "--repeat-count", "--probe", "--emit-prompt", "--repo-root", str(fixture_repo)],
+            capture_output=True, text=True, env=env)
+        assert result.returncode == 0, (
+            f"lazy-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
+        state_json = json.loads(result.stdout)
+        # NO withhold — the blocked bug is excluded; the feature is dispatched.
+        assert state_json.get("route_overridden_by") is None, (
+            f"blocked bug head must NOT withhold; got "
+            f"route_overridden_by={state_json.get('route_overridden_by')!r}")
+        assert state_json.get("feature_id") == "feat-c", state_json.get("feature_id")
+        assert state_json.get("cycle_prompt"), "feature cycle_prompt must be emitted"
+
+
+def test_subprocess_bug_emit_prompt_oracle_excludes_nondispatchable_feature_head_no_withhold():
+    """merged-head-actionability-oracle Phase 2 (bug-side coupled mirror, real
+    scoped probe): a higher-priority BLOCKED FEATURE at the merged head is EXCLUDED
+    by the oracle's real cross-pipeline scoped `lazy-state.compute_state`, so the
+    bug probe does NOT withhold and dispatches the workable bug."""
+    _guard()
+    bug_state_script = _SCRIPTS_DIR / "bug-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = td_path / "fixture-repo"
+        # Workable bug (current, P2).
+        bugs = fixture_repo / "docs" / "bugs"
+        bug_dir = bugs / "bug-w"
+        (bug_dir / "plans").mkdir(parents=True)
+        (bugs / "queue.json").write_text(json.dumps({
+            "queue": [{"id": "bug-w", "name": "Bug W", "spec_dir": "bug-w", "severity": "P2"}]
+        }), encoding="utf-8")
+        (bug_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (bug_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Fix\n- [ ] Tests\n", encoding="utf-8")
+        (bug_dir / "plans" / "all-phases-w.md").write_text("# Plan\n", encoding="utf-8")
+
+        # Higher-priority BLOCKED feature at the merged head (tier 0).
+        features = fixture_repo / "docs" / "features"
+        fdir = features / "feat-blk"
+        fdir.mkdir(parents=True)
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [{"id": "feat-blk", "name": "Feature Blocked", "spec_dir": "feat-blk", "tier": 0}]
+        }), encoding="utf-8")
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        (fdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (fdir / "BLOCKED.md").write_text(
+            "---\nphase: External gate\nblocker_kind: external-gate\n---\nAwaiting.\n",
+            encoding="utf-8")
+
+        state_dir = td_path / "bug-state-dir"
+        state_dir.mkdir()
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="bug", cloud=False,
+                repo_root=str(fixture_repo), max_cycles=10, now=_time.time())
+        finally:
+            _clear_state_dir()
+
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        result = subprocess.run(
+            [sys.executable, str(bug_state_script),
+             "--repeat-count", "--probe", "--emit-prompt", "--repo-root", str(fixture_repo)],
+            capture_output=True, text=True, env=env)
+        assert result.returncode == 0, (
+            f"bug-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
+        state_json = json.loads(result.stdout)
+        assert state_json.get("route_overridden_by") is None, (
+            f"blocked feature head must NOT withhold on the bug side; got "
+            f"route_overridden_by={state_json.get('route_overridden_by')!r}")
+        assert state_json.get("feature_id") == "bug-w", state_json.get("feature_id")
+        assert state_json.get("cycle_prompt"), "bug cycle_prompt must be emitted"
+
+
 def test_subprocess_emit_prompt_lane_marker_skips_merged_head_withhold():
     """lazy-batch-parallel-run-harness-gaps gap 1: the SAME divergent-head fixture
     as above, but with a LANE marker (parent_run set), must NOT withhold — the
@@ -7122,6 +7257,8 @@ _TESTS = [
     ("test_merged_head_override_excludes_parked_head_no_deadlock", test_merged_head_override_excludes_parked_head_no_deadlock),
     ("test_merged_worklist_exclude_ids_drops_parked_items", test_merged_worklist_exclude_ids_drops_parked_items),
     ("test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug", test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug),
+    ("test_subprocess_emit_prompt_oracle_excludes_nondispatchable_bug_head_no_withhold", test_subprocess_emit_prompt_oracle_excludes_nondispatchable_bug_head_no_withhold),
+    ("test_subprocess_bug_emit_prompt_oracle_excludes_nondispatchable_feature_head_no_withhold", test_subprocess_bug_emit_prompt_oracle_excludes_nondispatchable_feature_head_no_withhold),
     ("test_subprocess_emit_prompt_lane_marker_skips_merged_head_withhold", test_subprocess_emit_prompt_lane_marker_skips_merged_head_withhold),
     ("test_subprocess_emit_prompt_serial_tail_lease_held_skips_merged_head_withhold", test_subprocess_emit_prompt_serial_tail_lease_held_skips_merged_head_withhold),
     ("test_subprocess_emit_prompt_serial_tail_no_lease_still_withholds", test_subprocess_emit_prompt_serial_tail_no_lease_still_withholds),

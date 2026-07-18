@@ -703,6 +703,40 @@ def _load_bug_queue_for_merged(repo_root: Path) -> list[dict[str, Any]]:
         return []
 
 
+_BUG_STATE_MODULE_CACHE: dict = {}
+
+
+def _load_bug_state_module():
+    """Load ``bug-state.py`` as a module (cached), or ``None`` when unavailable.
+
+    The importlib precedent from :func:`_load_bug_queue_for_merged`, reused by
+    the merged-head actionability oracle (merged-head-actionability-oracle) so
+    the ``--emit-prompt`` merged-override site can run the REAL cross-pipeline
+    scoped ``bug-state.compute_state`` per candidate. Cached module-level so the
+    (large) script body is exec'd at most once per process. Best-effort: a
+    missing/unloadable ``bug-state.py`` returns ``None`` — the oracle then treats
+    every cross candidate as non-dispatchable (fail toward EMITTING the workable
+    item, never toward a spurious withhold)."""
+    if "mod" in _BUG_STATE_MODULE_CACHE:
+        return _BUG_STATE_MODULE_CACHE["mod"]
+    import importlib.util
+
+    mod = None
+    bug_state_path = Path(__file__).parent / "bug-state.py"
+    if bug_state_path.exists():
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "_bug_state_for_oracle", str(bug_state_path)
+            )
+            if spec is not None and spec.loader is not None:
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+        except Exception:  # noqa: BLE001 — degrade to None (features-only) on load error
+            mod = None
+    _BUG_STATE_MODULE_CACHE["mod"] = mod
+    return mod
+
+
 def enqueue_adhoc(
     repo_root: Path,
     feature_id: str,
@@ -14080,52 +14114,58 @@ def main() -> int:
                 _mo_repo = Path(args.repo_root)
                 _mo_feats = load_queue(_mo_repo)
                 _mo_bugs = _load_bug_queue_for_merged(_mo_repo)
-                # merged-head-includes-parked-items-deadlocks-park-run +
-                # merged-head-excludes-parked-not-operator-deferred-deadlocks: exclude
-                # the NON-DISPATCHABLE items the pipeline skips — PARKED items
-                # (unresolved NEEDS_INPUT.md / BLOCKED.md) a park-mode run skips PLUS
-                # unconditional operator-deferred items (DEFERRED.md) — so the merged
-                # head is the highest-priority DISPATCHABLE item and the withhold
-                # fires ONLY for genuine feature-vs-bug divergence, never behind an
-                # undriveable head (which deadlocks the run). Effective park facets
-                # are in scope from the emit path above; no facet AND no DEFERRED.md
-                # → empty set → byte-identical.
-                # merged-head-diverged-withholds-on-research-skipped-head: under
-                # --skip-needs-research a research-pending head (NEEDS_RESEARCH.md /
-                # RESEARCH_PROMPT.md-without-RESEARCH*) is SKIPPED by the walk (the
-                # `if skip_needs_research:` branch) but is NOT surfaced in gated_heads
-                # (that branch `continue`s before the default-on skip-ahead populates
-                # _GATED_HEADS), and a scoped --feature-id probe never visits it at all
-                # — so probe_skipped_ids can't fold it in. Pass skip_needs_research so
-                # nondispatchable_item_ids excludes it via the pure file predicate,
-                # exactly like a parked head. Feature-pipeline only (research gating is
-                # a documented feature/bug divergence — bug-state.py has no flag, so its
-                # coupled caller stays byte-identical; the shared helper is the mirror).
-                _mo_excluded = lazy_core.nondispatchable_item_ids(
-                    _mo_feats, _mo_bugs, str(_mo_repo),
-                    park_needs_input=_eff_park_ni,
-                    park_blocked=_eff_park_bl,
-                    park_provisional=_eff_park_pv,
-                    skip_needs_research=args.skip_needs_research,
-                )
-                # merged-head-diverged-stalls-on-gated-head: ALSO exclude the ids
-                # THIS feature probe already SKIPPED this cycle — research-pending
-                # / BLOCKED gated heads (gated_heads), host-deferred
-                # (host_deferred_features), device-deferred
-                # (device_deferred_features), dependency-gated (dep_gated). The
-                # file predicate above only covers the NARROWER park /
-                # operator-defer set, so a gated (e.g. BLOCKED external-gate) head
-                # at the merged head diverged from the workable item the probe
-                # chose and WITHHELD the route — stalling the driver. Reusing the
-                # probe's OWN skip decisions keeps the merged head in exact parity
-                # with the per-pipeline skip-ahead (honors --strict-research-halt,
-                # the two-key predicate, and the fully-gated terminal for free —
-                # see lazy_core.dispatch.probe_skipped_ids). The withhold now
-                # fires ONLY for a genuine dispatchable-item divergence (a P0 bug
-                # jumping the queue), never behind an already-skipped gated head.
+                # merged-head-actionability-oracle (SPEC L1/L2/L3/L5): build the
+                # merged-head exclude set via the AUTHORITATIVE actionability
+                # oracle — the single replacement for the file-predicate
+                # `nondispatchable_item_ids` ∪ `probe_skipped_ids` union that had
+                # accreted five/six `merged-head-diverged-withholds-on-<X>` facets.
+                #   (1) same-pipeline (features) → `probe_skipped_ids(state, feats)`
+                #       UNCHANGED (L2 — the cross-item skip-ahead ordering context).
+                #   (2) cross-pipeline (bugs) → the REAL scoped `bug-state.compute_state`
+                #       per at-or-above candidate, EXCLUDED iff non-dispatchable
+                #       (`is_dispatchable` false), honoring the SAME run flags the emit
+                #       probe used (cloud/real_device/park facets/strict_research_halt;
+                #       the bug pipeline has no --skip-needs-research). A candidate the
+                #       probe can't classify (module unloadable / probe error) is treated
+                #       non-dispatchable → fail toward EMITTING the workable item.
+                #   (3) `.discard(current)` (invariant preserved, inside the oracle).
+                # Byte-identical for a dispatchable head (a P0 bug jumping the queue
+                # still withholds); previously-uncovered non-dispatchable categories
+                # (cloud/completion-unverified/blocked/…) are now correctly excluded,
+                # ending the recurring stall class by construction. In-process safety
+                # (Phase-1 OQ1/L4): the scoped bug probe calls `clear_diagnostics()` on
+                # the SHARED lazy_core._DIAGNOSTICS, so snapshot/restore it around the
+                # oracle (the primary `state` dict is already a captured snapshot).
+                _mo_bug_state_mod = _load_bug_state_module()
+                _mo_real_device = resolve_real_device(args.real_device)
+
+                def _mo_bug_scoped_probe(_bug_id):
+                    if _mo_bug_state_mod is None:
+                        return {}
+                    try:
+                        return _mo_bug_state_mod.compute_state(
+                            _mo_repo, cloud=args.cloud, real_device=_mo_real_device,
+                            scope_bug_id=_bug_id,
+                            park_needs_input=_eff_park_ni, park_blocked=_eff_park_bl,
+                            park_provisional=_eff_park_pv,
+                            strict_research_halt=args.strict_research_halt,
+                        )
+                    except Exception:  # noqa: BLE001 — a per-candidate probe error must not break the base probe
+                        return {}
+
+                _mo_diag_snapshot = list(lazy_core._DIAGNOSTICS)
+                try:
+                    _mo_excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+                        _mo_feats, _mo_bugs, str(lazy_core.active_repo_root()),
+                        state.get("feature_id"),
+                        same_pipeline="feature", same_pipeline_state=state,
+                        scoped_probe=_mo_bug_scoped_probe,
+                    )
+                finally:
+                    lazy_core._DIAGNOSTICS[:] = _mo_diag_snapshot
+                # Retained for the observability diagnostic below (the same-pipeline
+                # skip set the withhold folded in) — the oracle already includes it.
                 _mo_skipped = lazy_core.dispatch.probe_skipped_ids(state, _mo_feats)
-                _mo_excluded = set(_mo_excluded) | _mo_skipped
-                _mo_excluded.discard(state.get("feature_id"))
                 _merged_override = lazy_core.dispatch.merged_head_override(
                     _mo_feats,
                     _mo_bugs,

@@ -151,6 +151,8 @@ behavior, not a mock).
 
 ### Phase 2: Emit-path migration + parity + byte-identity
 
+**Status:** Complete
+
 **Scope:** Rewire the `--emit-prompt` merged-override exclude-set construction on BOTH state scripts
 (`lazy-state.py:14104` `_mo_excluded`, `bug-state.py:9715` `_mo_excluded`) to call the oracle
 (`merged_head_nondispatchable_ids`) with the REAL cross-pipeline scoped `compute_state` bound to the
@@ -160,21 +162,21 @@ the legacy construction until Phase 3 (incremental migration — the oracle and 
 this phase).
 
 **Deliverables:**
-- [ ] `lazy-state.py` `--emit-prompt` merged-override site (`_mo_excluded`, ~14104): replace the
+- [x] `lazy-state.py` `--emit-prompt` merged-override site (`_mo_excluded`, ~14104): replace the
   `nondispatchable_item_ids(...) | probe_skipped_ids(state, _mo_feats)` construction with
   `merged_head_nondispatchable_ids(...)` — same-pipeline = features (`probe_skipped_ids(state, _mo_feats)`
   preserved inside the oracle), cross-pipeline = bugs via the real bug-scoped `compute_state` (`--bug-id`
   in-process, the `--next-merged` importlib precedent). The `.discard(current)` invariant and the existing
   observability `_diag` line (skipped gated/deferred head) are preserved.
-- [ ] `bug-state.py` `--emit-prompt` merged-override site (`_mo_excluded`, ~9715): the coupled-pair mirror —
+- [x] `bug-state.py` `--emit-prompt` merged-override site (`_mo_excluded`, ~9715): the coupled-pair mirror —
   same-pipeline = bugs (`probe_skipped_ids(state, _mo_bugs)`), cross-pipeline = features via the real
   feature-scoped `compute_state` (`--feature-id` in-process). Mirror the divergences the current code
   already carries (the feature-side `--skip-needs-research` asymmetry stays a documented divergence).
-- [ ] The in-process scoped probe honors the SAME run flags the emit probe used (park facets,
+- [x] The in-process scoped probe honors the SAME run flags the emit probe used (park facets,
   `skip_needs_research`, `cloud`, `real_device`, `strict_research_halt`) per L2/Technical Design, and does
   NOT corrupt the primary probe's already-captured `state` (the Phase 1 isolation strategy applied at the
   real call site).
-- [ ] Tests: byte-identity for dispatchable heads (a P0 bug jumping the queue mid-feature-run → the
+- [x] Tests: byte-identity for dispatchable heads (a P0 bug jumping the queue mid-feature-run → the
   `merged-head-diverged` withhold fires IDENTICALLY to pre-oracle) as a `test_dispatch.py` fixture; the
   cross-probe isolation fixture at the REAL emit call site (primary `state` unchanged after N scoped
   probes); both scripts' in-file `--test` suites green; the frozen smoke baselines re-pinned only if the
@@ -307,6 +309,21 @@ recurrences).
   already-captured `state`. Phase 2 therefore binds `scoped_probe` to a plain in-process cross-pipeline
   `compute_state` call and reads its returned dict (no defensive globals snapshot). The subprocess
   `--bug-id`/`--feature-id` fallback is NOT needed.
+- **Phase 2 real-call-site isolation refinement.** The Phase-1 conclusion ("reading the returned dict
+  suffices") holds for the primary `state` DICT, but the real cross-pipeline scoped probe runs the OTHER
+  script's `compute_state`, which calls `clear_diagnostics()` on the SHARED `lazy_core._DIAGNOSTICS` list
+  (both scripts import the same `lazy_core`). So each `_mo` site SNAPSHOTS `list(lazy_core._DIAGNOSTICS)`
+  before the oracle call and RESTORES it in a `finally` — the cross-probe has ZERO observable diagnostics
+  side effect on the emit path. The bug-state module is loaded once via a cached `_load_bug_state_module()`
+  / `_load_feature_state_module()` (the `_load_*_queue_for_merged` importlib precedent). A candidate the
+  probe cannot classify (module unloadable / probe exception) returns `{}` → non-dispatchable → fail toward
+  EMITTING the workable item (never a spurious withhold). SEAM-DESIGN halts (blocked/needs-input/needs-research)
+  ARE excluded per SPEC ("...gated / halted rather than actually worked") — surfaced by the item's own
+  pipeline / notify / end-of-run flush, not by hijacking the cross-pipeline cycle.
+- **Baselines unchanged (Phase 2).** Both `lazy-state.py --test` and `bug-state.py --test` stay green against
+  the committed frozen baselines — the `_mo` rewrite changed no `--test`-observable smoke output (the emit
+  subprocess fixtures live in the pytest seam suite, not the in-file smoke harness), so NO baseline re-pin was
+  needed this phase.
 - **Phase 1 oracle signature (mechanical-internal choice).** The Phase-1 pure form takes the
   `scoped_probe` callable INJECTED (the hermetic seam) rather than raw run-flag kwargs — the SPEC
   "Target shape" `<run flags>` placeholder is realized as the closure the caller (Phase 2) binds with
