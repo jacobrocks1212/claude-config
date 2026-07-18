@@ -1,6 +1,6 @@
 # `merged-head-diverged` withholds behind a research-skipped head under `--skip-needs-research`
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-18 (harden-harness no-route dispatch during a `/lazy-batch-parallel`
 serial-degrade run on claude-config; item in flight `shared-hook-lib`)
