@@ -5,6 +5,8 @@
 **Severity:** P1
 
 **Discovered:** 2026-07-18
+**Fixed:** 2026-07-18
+**Fix commit:** c3ac1844
 
 **Origin:** harden-harness Round 93 (no-route trigger) — live write-plan routing loop on the
 in-flight bug `dispatched-harden-record-intervention-refused-by-containment`.
