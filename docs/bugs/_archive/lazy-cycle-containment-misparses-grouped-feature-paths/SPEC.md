@@ -11,7 +11,9 @@
 > feature's OWN staged paths are misclassified as a DIFFERENT feature, the carve-out fails, and the
 > C2 second-feature tripwire FALSE-DENIES legitimate same-feature cycle-subagent commits.
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-18
+**Fix commit:** e66c02f6
 **Priority:** P1
 **Last updated:** 2026-07-16
 **Related:** `docs/specs/turn-routing-enforcement/` (owns the containment hook + the hardening stage that surfaced this — Round in `hardening-log/2026-07.md`). Distinct from the Round-35 finding (`second-feature tripwire over-broad for the /harden-harness Step 2.5 path` — a harden subagent commits a bug spec under a *different* feature dir): that is about cross-workstream harden commits; THIS is about the tripwire mis-parsing the feature's OWN grouped path.
