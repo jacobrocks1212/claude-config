@@ -3,6 +3,8 @@
 **Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-17 (captured live in the act during a `/lazy-batch` run on AlgoBooth)
+**Fixed:** 2026-07-18
+**Fix commit:** 7ad7feaf
 **Related:** `feature-budget-guard-and-skip-ahead` (per-feature forward cycles); Round-era fixes
 `byref-dispatch-undercounts-forward-cycles`, `byref-forward-cycles-frozen-on-multicycle-same-step`,
 and ISSUE-5 (`advance_run_counters` consume-oracle) — this bug supersedes their probe-coupled
