@@ -235,6 +235,11 @@
   ],
   "LAZY_QUEUE.md": [
     {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "adhoc-checkpoint-resume-field-complete-continuity",
       "type": "bug",
       "provenance": "backfilled"
@@ -3968,6 +3973,11 @@
   ],
   "docs/bugs/adhoc-audit-obligation-fires-on-zero-commit-failed-cycle/PHASES.md": [
     {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-batch-parallel-run-harness-gaps-round-2",
       "type": "bug",
       "provenance": "manual"
@@ -3980,6 +3990,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/adhoc-audit-obligation-fires-on-zero-commit-failed-cycle/SPEC.md": [
+    {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/adhoc-audit-obligation-fires-on-zero-commit-failed-cycle/VALIDATED.md": [
     {
       "id": "lazy-batch-parallel-run-harness-gaps-round-2",
@@ -3988,6 +4005,11 @@
     }
   ],
   "docs/bugs/adhoc-audit-obligation-fires-on-zero-commit-failed-cycle/plans/all-phases-audit-obligation-zero-commit.md": [
+    {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "lazy-batch-parallel-run-harness-gaps-round-2",
       "type": "bug",
@@ -4816,6 +4838,11 @@
     }
   ],
   "docs/bugs/byref-updatedinput-unapplied-on-background-agent-dispatch/NEEDS_INPUT.md": [
+    {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -6238,6 +6265,20 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/bugs/lazy-batch-parallel-run-harness-gaps-round-2/FIXED.md": [
+    {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/lazy-batch-parallel-run-harness-gaps-round-2/SPEC.md": [
+    {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/lazy-batch-parallel-run-harness-gaps/SPEC.md": [
@@ -11879,6 +11920,11 @@
   ],
   "docs/features/merged-head-actionability-oracle/NEEDS_RESEARCH.md": [
     {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
@@ -11895,6 +11941,11 @@
     }
   ],
   "docs/features/merged-head-actionability-oracle/RESEARCH.md": [
+    {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "lazy-batch-parallel-run-harness-gaps-round-2",
       "type": "bug",
@@ -12767,12 +12818,22 @@
   ],
   "docs/features/shared-hook-lib/NEEDS_RESEARCH.md": [
     {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-batch-parallel-run-harness-gaps-round-2",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/features/shared-hook-lib/RESEARCH.md": [
+    {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "lazy-batch-parallel-run-harness-gaps-round-2",
       "type": "bug",
@@ -13127,6 +13188,11 @@
   ],
   "docs/features/spike-pipeline-role/NEEDS_INPUT.md": [
     {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
@@ -13347,6 +13413,11 @@
   ],
   "docs/features/subagent-wedge-backstop-hook/NEEDS_RESEARCH.md": [
     {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
@@ -13385,6 +13456,11 @@
     }
   ],
   "docs/features/subagent-wedge-backstop-hook/RESEARCH.md": [
+    {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "lazy-batch-parallel-run-harness-gaps-round-2",
       "type": "bug",
@@ -16119,6 +16195,11 @@
   ],
   "docs/specs/turn-routing-enforcement/hardening-log/2026-07.md": [
     {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "bug-state-verification-only-remainder-loops-write-plan",
       "type": "bug",
       "provenance": "manual"
@@ -17408,6 +17489,11 @@
   ],
   "user/scripts/CLAUDE.md": [
     {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "adhoc-cycle-begin-real-requires-sub-skill",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -17641,6 +17727,11 @@
     }
   ],
   "user/scripts/bug-state.py": [
+    {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "adhoc-cycle-begin-real-requires-sub-skill",
       "type": "bug",
@@ -18266,6 +18357,11 @@
   ],
   "user/scripts/lazy-state.py": [
     {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "adhoc-cycle-begin-real-requires-sub-skill",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -18434,6 +18530,13 @@
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/lazy_coord.py": [
+    {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/lazy_core.py": [
@@ -18650,6 +18753,11 @@
   ],
   "user/scripts/lazy_core/__init__.py": [
     {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -18826,6 +18934,11 @@
   ],
   "user/scripts/lazy_core/ledgers.py": [
     {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -18852,6 +18965,11 @@
     }
   ],
   "user/scripts/lazy_core/markers.py": [
+    {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -20197,6 +20315,11 @@
   ],
   "user/scripts/tests/test_lazy_core/test_dispatch.py": [
     {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -20290,6 +20413,11 @@
   ],
   "user/scripts/tests/test_lazy_core/test_ledgers.py": [
     {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -20316,6 +20444,11 @@
     }
   ],
   "user/scripts/tests/test_lazy_core/test_markers.py": [
+    {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -21485,6 +21618,11 @@
     }
   ],
   "user/skills/lazy-batch-parallel/SKILL.md": [
+    {
+      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",

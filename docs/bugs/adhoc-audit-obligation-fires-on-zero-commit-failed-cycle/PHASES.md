@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress — both phases implemented, validation pending (routes to the `__mark_fixed__` completion gate).
+**Status:** Fixed
 
 **MCP runtime:** not-required — claude-config is a pure-Python harness repo (state-machine scripts); validation is the in-file `--test` smoke harness + `pytest tests/test_lazy_core/` + `lazy_parity_audit.py`. No Tauri/MCP runtime surface exists (cross-checked: this repo has no `.claude/skill-config/mcp-tool-catalog.md`, so the MCP tool-existence audit no-ops).
 

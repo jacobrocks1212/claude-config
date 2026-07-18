@@ -2,7 +2,7 @@
 
 > A `/spec`-kind cycle that fails with zero commits still arms the §1d.5 input-audit obligation; the pre-composed emit command then binds `cycle_commit_sha=HEAD~1`, which points at the PREVIOUS (unrelated) item's commit — dispatching a pointless ~77k-token audit against the wrong diff.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-18
 **Placement:** docs/bugs/adhoc-audit-obligation-fires-on-zero-commit-failed-cycle
