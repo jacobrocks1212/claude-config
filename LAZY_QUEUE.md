@@ -33,7 +33,7 @@
 | | status: Spec · next: spec | | | |
 | 9 | [adhoc-plan-bug-no-guard-for-fixed-annotated-specs](docs/bugs/adhoc-plan-bug-no-guard-for-fixed-annotated-specs/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 10 | [adhoc-cli-surface-registry-stale-set-independent](docs/bugs/adhoc-cli-surface-registry-stale-set-independent/SPEC.md) | Spec | — |  |
+| 10 | [adhoc-cli-surface-registry-stale-set-independent](docs/bugs/_archive/adhoc-cli-surface-registry-stale-set-independent/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
 | 11 | [adhoc-containment-hook-e2big-fails-open-windows-native](docs/bugs/adhoc-containment-hook-e2big-fails-open-windows-native/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |

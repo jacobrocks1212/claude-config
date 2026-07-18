@@ -56,12 +56,6 @@
       "severity": null
     },
     {
-      "id": "adhoc-cli-surface-registry-stale-set-independent",
-      "name": "cli-surface.json stale: --set-independent shipped without registry regen",
-      "spec_dir": "adhoc-cli-surface-registry-stale-set-independent",
-      "severity": null
-    },
-    {
       "id": "adhoc-containment-hook-e2big-fails-open-windows-native",
       "name": "lazy-cycle-containment.sh E2BIG fail-open on Windows-native Git Bash",
       "spec_dir": "adhoc-containment-hook-e2big-fails-open-windows-native",
