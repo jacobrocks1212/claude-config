@@ -10,7 +10,7 @@
 > `{within | over}` indicator reports "within" for a prompt that will in fact be cut. The
 > operator has no signal that the most load-bearing tail of the prompt was severed.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2 (correctness/silent-data-loss — research prompts in the 20,000–24,000-char band
 are silently truncated at paste time with a falsely-reassuring "within" indicator. Not
 destructive to on-disk state — the `RESEARCH_PROMPT.md` file is written whole — but the operator
@@ -18,6 +18,8 @@ pastes a prompt they believe is complete and Gemini receives a truncated one, co
 research output at the top of the pipeline. Detected only by an operator happening to notice the
 paste ended mid-sentence.)
 **Discovered:** 2026-07-17
+**Fixed:** 2026-07-18
+**Fix commit:** 9f715c31
 **Placement:** docs/bugs/gemini-prompt-char-cap-above-hard-truncation-limit
 **Related:**
 - `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` — this investigation is the
