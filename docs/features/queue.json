@@ -3,8 +3,15 @@
   "autodiscover": true,
   "queue": [
     {
+      "id": "merged-head-actionability-oracle",
+      "name": "Merged-head actionability oracle (replace 5-facet exclude-set enumeration)",
+      "spec_dir": "merged-head-actionability-oracle",
+      "tier": 0,
+      "adhoc": true
+    },
+    {
       "id": "spike-pipeline-role",
-      "name": "Spike — Runtime-Proof Pipeline Role",
+      "name": "Spike \u2014 Runtime-Proof Pipeline Role",
       "spec_dir": "spike-pipeline-role",
       "tier": 1
     },
