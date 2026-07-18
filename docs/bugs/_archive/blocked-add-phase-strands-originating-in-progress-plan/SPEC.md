@@ -1,7 +1,9 @@
 # Bug: blocked-resolution add-phase strands the originating In-progress plan → router re-loop
 
-**Status:** Concluded
+**Status:** Fixed
 **Discovered:** 2026-07-17 — observed mid-run on a live `/lazy-batch` run (item in flight: `hydra-overlay`, plan part 8)
+**Fixed:** 2026-07-18
+**Fix commit:** 33cafa01
 **Root-cause class:** missing-contract
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage); `_components/blocked-resolution.md`; `_components/completeness-policy.md`; hardening-log Round 32 (2026-07)
 
