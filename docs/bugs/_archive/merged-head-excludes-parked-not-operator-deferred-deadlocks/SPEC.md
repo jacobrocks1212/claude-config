@@ -3,6 +3,8 @@
 **Status:** Fixed
 **Severity:** P0
 **Discovered:** 2026-07-17
+**Fixed:** 2026-07-18
+**Fix commit:** c5a3b385
 **Related:** `docs/bugs/merged-head-includes-parked-items-deadlocks-park-run/` (Round 56 — the
 direct precedent; this bug is the "later round widens the boundary" case its own §Fix scope
 invited); `docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/` (Round 54 — the
