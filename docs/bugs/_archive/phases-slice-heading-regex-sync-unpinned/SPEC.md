@@ -9,7 +9,9 @@
 > `lazy_core/_monolith.py` → `lazy_core/docmodel.py`), and phases 3–6 of the decomposition
 > keep its home a moving target — comment-discipline alone is now measurably weaker.
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-18
+**Fix commit:** a78845f7
 **Priority:** P2
 **Last updated:** 2026-07-13
 **Related:** `docs/features/lazy-core-package-decomposition/` (the module move that exposed the gap; Phase 2 WU-2 relocated the canonical to `lazy_core/docmodel.py:1419` with the facade entry `_PHASE_HEADING_RE → docmodel` in `lazy_core/__init__.py:100`); `docs/features/phases-slice-scoped-reads/` (the feature that shipped the private copy with the comment-only contract); `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` Round 38 (the hardening round that fixes this).
