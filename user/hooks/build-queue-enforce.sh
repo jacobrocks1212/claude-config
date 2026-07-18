@@ -70,50 +70,55 @@
 # block legitimate work. Deny is expressed via JSON permissionDecision: deny;
 # a non-zero PreToolUse exit is a HARD error and is never used here.
 #
-# Python resolution: python3 preferred, falling back to python (Windows git-bash).
+# shared-hook-lib (Phase 3): python resolution, the scripts-dir derivation, the
+# no-python breadcrumb, AND the pure-bash error breadcrumb (hook_emit_error_event)
+# are provided by the SOURCED hook-prelude.sh (HOOK_PYTHON / HOOK_SCRIPTS_DIR /
+# HOOK_NAME); the allow/deny emitters, the countable hook-events append, and the
+# fail-open breadcrumb are provided by hook_lib (imported from HOOK_SCRIPTS_DIR by
+# the inline body). The command-segment anchor regexes (ENV_PREFIX / CMD_START /
+# PATH_PREFIX) are ALSO consumed from hook_lib — their inline copies (the anchor
+# triplication, incl. the two env-prefix literals kept in lockstep and the three
+# inline path-prefix literals, SPEC D3) are gone. The PS-syntax regex audit
+# (_normalize_ps_syntax), the heredoc mask, and the COMMAND_TOOL_NAMES tool-name
+# gate stay hook-local and unchanged.
 
-if command -v python3 >/dev/null 2>&1; then
-  PYTHON=python3
-elif command -v python >/dev/null 2>&1; then
-  PYTHON=python
-else
-  # No python at all → fail open (exit 0, no output). guard-fail-open-leaves-no-trace:
-  # this is the severest failure class (the ENTIRE python-bearing guard plane is
-  # dead) and precisely the one no python-side appender can record, so the
-  # breadcrumb is written here in pure bash (no python required). Best-effort —
-  # every write is `2>/dev/null || true` so a breadcrumb failure never turns into
-  # a deny or a non-zero exit. Kept as an identical copied block across every
-  # python-bearing hook (interim per docs/bugs/guard-fail-open-leaves-no-trace D4
-  # — the natural long-term home is a shared hook-prelude, not yet built; keep
-  # the copies in lockstep).
-  _HOOK_NOPY_BASE="${LAZY_STATE_DIR:-$HOME/.claude/state}"
-  _HOOK_NOPY_TS="$(date +%s 2>/dev/null || echo 0)"
-  mkdir -p "$_HOOK_NOPY_BASE" 2>/dev/null
-  printf '{"hook":"build-queue-enforce","error":"no python interpreter on PATH","at":"%s"}' \
-    "$_HOOK_NOPY_TS" > "$_HOOK_NOPY_BASE/hook-error.json" 2>/dev/null || true
-  printf '{"ts":%s,"kind":"error","hook":"build-queue-enforce","repo_root":"","signature":"","detail":"no python interpreter on PATH"}\n' \
-    "$_HOOK_NOPY_TS" >> "$_HOOK_NOPY_BASE/hook-events.jsonl" 2>/dev/null || true
-  exit 0
-fi
-
-# incident-auto-capture Phase 1 (D2): resolve the scripts dir relative to this
-# hook so the inline Python can import lazy_core for the keyed hook-events
-# append (best-effort — the appender falls back to the base dir when the import
-# is unavailable). Builtins only; $0 may carry Windows backslashes.
+# Source the shared hook prelude, fail-open-guarded (shared-hook-lib SPEC D2).
+# A missing/broken prelude ALLOWS (exit 0), never wedges. Derive this hook's own
+# directory here ONLY to locate the prelude; the prelude then provides
+# HOOK_PYTHON (python3→python resolution; total absence ⇒ pure-bash breadcrumb
+# + exit 0 — guard-fail-open-leaves-no-trace §1), HOOK_SCRIPTS_DIR (the sibling
+# user/scripts/ dir), HOOK_NAME, and hook_emit_error_event. Builtins only ($0 may
+# carry Windows backslashes; `dirname` is not guaranteed on a non-login git-bash
+# PATH).
 SELF="${0//\\//}"
 case "$SELF" in
-  */*) BQE_SCRIPT_DIR="$(cd "${SELF%/*}" && pwd)" ;;
-  *)   BQE_SCRIPT_DIR="$(pwd)" ;;
+  */*) _HOOK_DIR="$(cd "${SELF%/*}" && pwd)" ;;
+  *)   _HOOK_DIR="$(pwd)" ;;
 esac
-BQE_SCRIPTS_DIR="$BQE_SCRIPT_DIR/../scripts"
+. "$_HOOK_DIR/hook-prelude.sh" 2>/dev/null || exit 0
 
 read -r -d '' _BQE_PY <<'PYEOF'
-import datetime
 import json
 import os
 import re
 import subprocess
 import sys
+
+# shared-hook-lib (SPEC D2): seed sys.path from HOOK_SCRIPTS_DIR (threaded via
+# env) and import hook_lib for the allow/deny emitters, the countable
+# hook-events append, the fail-open breadcrumb, AND the shared command-segment
+# anchor regexes (ENV_PREFIX / CMD_START / PATH_PREFIX — the anchor triplication
+# collapse, SPEC D3). A missing/failed import must ALLOW, never wedge — the ONLY
+# retained inline fallback is this minimal `except ImportError: sys.exit(0)`.
+try:
+    _sd = os.environ.get("HOOK_SCRIPTS_DIR")
+    if _sd and _sd not in sys.path:
+        sys.path.insert(0, _sd)
+    import hook_lib
+except ImportError:
+    sys.exit(0)
+
+_HOOK = "build-queue-enforce"
 
 # powershell-tool-bypasses-bash-matched-guards: the harness exposes more than
 # one command-execution tool (Bash, PowerShell) sharing the same
@@ -127,30 +132,21 @@ import sys
 # ever grows a member.
 COMMAND_TOOL_NAMES = frozenset({"Bash", "PowerShell"})
 
-STATE_DIR = os.environ.get("LAZY_STATE_DIR") or os.path.join(
-    os.path.expanduser("~"), ".claude", "state"
-)
-
-# PowerShell-syntax regex audit (powershell-tool-bypasses-bash-matched-guards):
-# env-assignment prefixes differ between shells (`NAME=value` in bash vs
-# `$env:NAME='value';` in PowerShell). The bypass token is recognized in
-# EITHER form, with an optional leading env-prefix (either form, repeated)
-# before it.
-_ENV_PREFIX_ANY = (
-    r"(?:"
-    r"[A-Za-z_][A-Za-z0-9_]*=\S+\s+"
-    r"|\$env:[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:'[^']*'|\"[^\"]*\"|\S+)\s*;\s*"
-    r")*"
-)
+# The bypass token is recognized in EITHER shell's env-assignment form, with an
+# optional leading env-prefix (either form, repeated) before it. shared-hook-lib
+# (SPEC D3): the env-prefix now comes from hook_lib.ENV_PREFIX — the single home
+# of the anchor pair that used to be hand-copied here (as BOTH _ENV_PREFIX_ANY
+# and _ENV_PREFIX, which the old file kept "in lockstep by inspection") and in
+# the sibling guards.
 _BYPASS_TOKEN_RE = (
     r"(?:BUILD_QUEUE_BYPASS=1(?:\s|$)"
     r"|\$env:BUILD_QUEUE_BYPASS\s*=\s*(?:'1'|\"1\"|1)\s*;?)"
 )
 # Match the bypass token as a leading env assignment. Applied to the whole
 # command (fast-path allow) AND per segment via _suppress_bypassed_segments.
-_BYPASS_RE = re.compile(r"^\s*" + _ENV_PREFIX_ANY + _BYPASS_TOKEN_RE)
+_BYPASS_RE = re.compile(r"^\s*" + hook_lib.ENV_PREFIX + _BYPASS_TOKEN_RE)
 
-# Shell separators that begin a new command segment (mirrors _CMD_START's
+# Shell separators that begin a new command segment (mirrors CMD_START's
 # character class). Splitting on these yields per-segment strings _BYPASS_RE
 # can be matched against, so the bypass token is recognized when it leads the
 # build's own segment behind a `cd "..." && ` (or `;`/pipeline) prefix.
@@ -170,7 +166,7 @@ _SEGMENT_SPLIT_RE = re.compile(r"([\n;&|({])")
 # already uses (mirrors `_FILTERED_SCRIPT_DIRECT_RE` / `_FILTERED_SCRIPT_POWERSHELL_RE`
 # below) — two anchored forms, either match = allow:
 #   (a) a command-segment-start invocation whose token path ends in
-#       `build-queue.ps1` (`_CMD_START` + the same optional path-prefix idiom).
+#       `build-queue.ps1` (hook_lib.CMD_START + hook_lib.PATH_PREFIX).
 #   (b) the `powershell(.exe)?|pwsh ... -File <path>build-queue.ps1` form (this
 #       is the sanctioned skills' real invocation shape — see
 #       `repos/cognito-forms/.claude/skills/{msbuild,mstest,nxbuild,nxtest}/SKILL.md`
@@ -178,10 +174,15 @@ _SEGMENT_SPLIT_RE = re.compile(r"([\n;&|({])")
 #       an adjacent path argument, not a bare mention).
 # `echo build-queue.ps1; dotnet build` now correctly DENIES on the second
 # segment (the `echo` segment matches neither form).
-# NOTE: the two compiled regexes (`_WRAPPER_DIRECT_RE` / `_WRAPPER_POWERSHELL_RE`)
-# are defined further below, immediately after `_CMD_START` — they need that
-# name already bound at module-load time (Python compiles this module
-# top-to-bottom; `_CMD_START` is not yet defined at this point in the file).
+_WRAPPER_DIRECT_RE = re.compile(
+    hook_lib.CMD_START
+    + hook_lib.PATH_PREFIX + r"build-queue\.ps1(?:\s|$|\")",
+    re.IGNORECASE,
+)
+_WRAPPER_POWERSHELL_RE = re.compile(
+    r"(?:powershell(?:\.exe)?|pwsh)\b[^\n;&|]*-File\s+\S*build-queue\.ps1",
+    re.IGNORECASE,
+)
 
 # Safe dotnet/nx variants that must NEVER count as a heavy build even though
 # they share the "dotnet"/"nx" prefix. These occurrences are blanked out of a
@@ -194,52 +195,16 @@ _NX_SAFE_RE = re.compile(
     r"(?:npx\s+)?nx\s+(?:lint|typecheck|format)\b", re.IGNORECASE
 )
 
-# Command-position anchor (mirrors long-build-ownership-guard.sh): a heavy
-# build must be the INVOKED command — either the start of the string, or
-# immediately after a shell separator (`&&`, `||`, `|`, `;`, `(`, `{`,
-# newline), with optional leading `NAME=value` env assignments. This lets a
-# build chained behind a leading command still deny (`cd "..." && dotnet
-# build ...`) while a read verb referencing a build token as an ARGUMENT
-# (`grep ... test-filtered.ps1`, `cat build-filtered.ps1 | head`) does not
-# begin a command segment and so does not match.
-#
-# PowerShell-syntax regex audit (powershell-tool-bypasses-bash-matched-guards):
-# env-assignment prefixes differ between shells (`NAME=value` in bash vs
-# `$env:NAME='value';` in PowerShell) — mirrors _ENV_PREFIX_ANY above (the
-# bypass-token prefix); kept as a separate literal because it is defined
-# before _ENV_PREFIX_ANY in file order and both must stay in lockstep.
-_ENV_PREFIX = (
-    r"(?:"
-    r"[A-Za-z_][A-Za-z0-9_]*=\S+\s+"
-    r"|\$env:[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:'[^']*'|\"[^\"]*\"|\S+)\s*;\s*"
-    r")*"
-)
-_CMD_START = r"(?:^|[\n;&|({])\s*" + _ENV_PREFIX
-
-# long-build-and-build-queue-matcher-bypasses (Fix Scope #2): the anchored
-# wrapper-recognizer regexes (see the comment above `# Match the sanctioned
-# wrapper` for the full rationale) — defined here, not there, because they
-# need `_CMD_START` already bound.
-_WRAPPER_DIRECT_RE = re.compile(
-    _CMD_START
-    + r"(?:\.?[\\/])?(?:[^\s;&|]*[\\/])?build-queue\.ps1(?:\s|$|\")",
-    re.IGNORECASE,
-)
-_WRAPPER_POWERSHELL_RE = re.compile(
-    r"(?:powershell(?:\.exe)?|pwsh)\b[^\n;&|]*-File\s+\S*build-queue\.ps1",
-    re.IGNORECASE,
-)
-
 # PowerShell backtick line-continuation: the next physical line is part of the
 # SAME logical command — not a segment boundary. Collapsed to a space before
 # the deny scan so a continued invocation (`dotnet build `` + newline +
 # `Cognito.sln`) is not hidden from the anchored patterns below by
-# _CMD_START's `\n` separator.
+# CMD_START's `\n` separator.
 _PS_LINE_CONTINUATION_RE = re.compile(r"`\r?\n")
 
 # PowerShell nesting: `powershell(.exe)?|pwsh ... -Command "..."` executes its
 # quoted STRING argument as a command line — a heavy build hidden inside that
-# string is not at a top-level segment-start position under _CMD_START.
+# string is not at a top-level segment-start position under CMD_START.
 # Purely additive: the tail following the opening quote is reappended as a
 # synthetic newline-prefixed segment so the existing anchored patterns can
 # still find it. (Distinct from _FILTERED_SCRIPT_POWERSHELL_RE below, which
@@ -273,14 +238,14 @@ def _normalize_ps_syntax(command):
 # block-terminal-kill-false-denies-heredoc-body-tokens: a heredoc body
 # (`<<WORD` / `<< 'WORD'` / `<<"WORD"` / `<<-WORD` introducer through its
 # terminator line) is inert DATA — file/message CONTENT, never executed —
-# but its interior newlines satisfy _CMD_START's `\n` segment-separator
+# but its interior newlines satisfy CMD_START's `\n` segment-separator
 # class exactly like a real command boundary, so a deny token sitting at
 # the start of a body line (e.g. a commit-message body, an appended log
 # line) fabricates a false command-segment start and false-denies a
 # completely benign command. THIRD variant of the same false-deny class
 # (1: bare word-boundary → segment-start anchoring; 2: quoted-argument
 # values → _mask_quoted; 3: this — heredoc bodies). Kept as an identical
-# hook-local copy across every _CMD_START-anchored guard (block-terminal-
+# hook-local copy across every CMD_START-anchored guard (block-terminal-
 # kill.sh, lazy-cycle-containment.sh, long-build-ownership-guard.sh, this
 # hook) — same lockstep-copy discipline as _normalize_ps_syntax /
 # COMMAND_TOOL_NAMES; keep the copies in sync by inspection.
@@ -347,13 +312,13 @@ def _mask_heredoc(command):
 
 
 # Deny patterns. Run against the SUPPRESSED command (safe variants blanked out).
-_DOTNET_BUILD_RE = re.compile(_CMD_START + r"dotnet\s+build(?:\s|$)", re.IGNORECASE)
-_DOTNET_TEST_RE = re.compile(_CMD_START + r"dotnet\s+test(?:\s|$)", re.IGNORECASE)
+_DOTNET_BUILD_RE = re.compile(hook_lib.CMD_START + r"dotnet\s+build(?:\s|$)", re.IGNORECASE)
+_DOTNET_TEST_RE = re.compile(hook_lib.CMD_START + r"dotnet\s+test(?:\s|$)", re.IGNORECASE)
 # nx / npx nx with build, test, or run-many target.
 # Matches: nx build X, nx test X, nx run-many --target=build/test,
 #          npx nx build X, npx nx test X, npx nx run-many --target=build/test
 _NX_BUILD_TEST_RE = re.compile(
-    _CMD_START + r"(?:npx\s+)?nx\s+"
+    hook_lib.CMD_START + r"(?:npx\s+)?nx\s+"
     r"(?:"
     r"(?:run-many\b.*?--target[= ]\s*(?:build|test)\b)"
     r"|(?:(?:build|test|run-many)\b)"
@@ -366,9 +331,9 @@ _NX_BUILD_TEST_RE = re.compile(
 # `find . -name build-filtered.ps1` because the script name there follows a
 # read verb, not a command separator.
 _FILTERED_SCRIPT_DIRECT_RE = re.compile(
-    _CMD_START
-    + r"(?:\.?[\\/])?(?:[^\s;&|]*[\\/])?"
-    r"(?:build-filtered|test-filtered|client-build-filtered|client-test-filtered)\.ps1"
+    hook_lib.CMD_START
+    + hook_lib.PATH_PREFIX
+    + r"(?:build-filtered|test-filtered|client-build-filtered|client-test-filtered)\.ps1"
     r"(?:\s|$|\")",
     re.IGNORECASE,
 )
@@ -409,84 +374,20 @@ def _suppress_bypassed_segments(command):
 _EVT_CWD = ""
 
 
-def _append_hook_event(kind, signature, detail):
-    """incident-auto-capture Phase 1 (D2): append one countable hook-event line
-    (hook-events.jsonl). Best-effort / FAIL-OPEN — never raises, never changes
-    the deny/allow output. Prefers the shared lazy_core appender (keyed state
-    dir when the repo is resolvable; exact LAZY_STATE_DIR dir in tests); falls
-    back to an inline append at the base dir when lazy_core is unavailable."""
-    try:
-        try:
-            _sd = os.environ.get("BQE_SCRIPTS_DIR")
-            if _sd and _sd not in sys.path:
-                sys.path.insert(0, _sd)
-            import lazy_core
-            try:
-                lazy_core.set_active_repo_root(_EVT_CWD or None)
-                repo_root = str(lazy_core.active_repo_root() or "")
-            except Exception:
-                repo_root = _EVT_CWD or ""
-            lazy_core.append_hook_event(
-                kind, "build-queue-enforce", signature, detail,
-                repo_root=repo_root,
-            )
-            return
-        except ImportError:
-            pass
-        import time as _time
-        os.makedirs(STATE_DIR, exist_ok=True)
-        entry = {
-            "ts": _time.time(), "kind": kind,
-            "hook": "build-queue-enforce",
-            "repo_root": _EVT_CWD or "", "signature": (signature or "")[:200],
-            "detail": (detail or "")[:500],
-        }
-        with open(
-            os.path.join(STATE_DIR, "hook-events.jsonl"), "a", encoding="utf-8"
-        ) as fh:
-            fh.write(json.dumps(entry) + "\n")
-    except Exception:
-        pass
-
-
-def _breadcrumb(err):
-    try:
-        os.makedirs(STATE_DIR, exist_ok=True)
-        with open(
-            os.path.join(STATE_DIR, "hook-error.json"), "w", encoding="utf-8"
-        ) as fh:
-            json.dump(
-                {
-                    "hook": "build-queue-enforce",
-                    "error": str(err),
-                    "at": datetime.datetime.now(tz=datetime.timezone.utc)
-                    .strftime("%Y-%m-%dT%H:%M:%S") + "Z",
-                },
-                fh,
-            )
-    except Exception:
-        pass
-    # D2: the breadcrumb stays byte-identical; the countable history is the
-    # additive hook-events line beside it (fail-open, never raises).
-    _append_hook_event("error", "", str(err))
-
-
 def _allow():
-    sys.exit(0)
+    hook_lib.allow()
 
 
 def _deny(reason, signature="build-queue-enforced"):
     # incident-auto-capture D2: countable deny event (fail-open, additive) —
-    # each deny site passes its classified op as the signature.
-    _append_hook_event("deny", signature, reason)
-    print(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": reason,
-        }
-    }))
-    sys.exit(0)
+    # each deny site passes its classified op as the signature. The event
+    # append + the deny JSON both live in hook_lib now (shared-hook-lib D3).
+    hook_lib.append_hook_event("deny", _HOOK, signature, reason, repo_root=_EVT_CWD)
+    hook_lib.deny(reason)
+
+
+def _breadcrumb(err):
+    hook_lib.breadcrumb(_HOOK, err)
 
 
 def _is_cognito_worktree(cwd):
@@ -567,7 +468,7 @@ def _compile_manifest_deny(pattern):
     discipline. A `*.ps1` entry reuses the filtered-script shapes (direct
     segment-leading invocation with optional path prefix + the
     powershell -File form); any other entry is tokenized and joined with \\s+,
-    anchored at _CMD_START — the invoke-vs-reference discrimination the
+    anchored at hook_lib.CMD_START — the invoke-vs-reference discrimination the
     Cognito denies already carry. Returns a list of compiled regexes
     (empty for a blank/unusable pattern)."""
     p = (pattern or "").strip()
@@ -576,8 +477,8 @@ def _compile_manifest_deny(pattern):
     if p.lower().endswith(".ps1"):
         name = re.escape(os.path.basename(p.replace("\\", "/")))
         direct = re.compile(
-            _CMD_START
-            + r"(?:\.?[\\/])?(?:[^\s;&|]*[\\/])?" + name + r"(?:\s|$|\")",
+            hook_lib.CMD_START
+            + hook_lib.PATH_PREFIX + name + r"(?:\s|$|\")",
             re.IGNORECASE,
         )
         psfile = re.compile(
@@ -586,7 +487,7 @@ def _compile_manifest_deny(pattern):
         )
         return [direct, psfile]
     body = r"\s+".join(re.escape(tok) for tok in p.split())
-    return [re.compile(_CMD_START + body + r"(?:\s|$)", re.IGNORECASE)]
+    return [re.compile(hook_lib.CMD_START + body + r"(?:\s|$)", re.IGNORECASE)]
 
 
 def _manifest_redirect_reason(op_name, skill, pattern):
@@ -832,7 +733,7 @@ try:
 except SystemExit:
     raise
 except Exception as exc:
-    _breadcrumb(exc)
+    hook_lib.breadcrumb(_HOOK, exc)
     sys.exit(0)
 PYEOF
 
@@ -842,8 +743,9 @@ PYEOF
 # `mktemp` honors TMPDIR (the standard POSIX seam) so a test can force this
 # step to fail by pointing TMPDIR at a non-existent parent. Both the mktemp
 # step AND the subsequent write are guarded — either failing takes the SAME
-# traced fail-open branch (breadcrumb + hook-events line), distinct from the
-# no-python breadcrumb above by its `detail` text.
+# traced fail-open branch (breadcrumb + hook-events line via the prelude's
+# hook_emit_error_event), distinct from the no-python breadcrumb by its
+# `detail` text.
 _bqe_tmpwrite_failed=0
 tmpfile="$(mktemp --suffix=.py 2>/dev/null)"
 if [ -z "$tmpfile" ] || [ ! -f "$tmpfile" ]; then
@@ -856,16 +758,11 @@ else
 fi
 
 if [ "$_bqe_tmpwrite_failed" = "1" ]; then
-  # Traced fail-open (guard-fail-open-leaves-no-trace): identical shape to the
-  # no-python breadcrumb above, but a DISTINCT detail string so the two fail-
-  # open causes are distinguishable in hook-error.json / hook-events.jsonl.
-  _HOOK_TMPWRITE_BASE="${LAZY_STATE_DIR:-$HOME/.claude/state}"
-  _HOOK_TMPWRITE_TS="$(date +%s 2>/dev/null || echo 0)"
-  mkdir -p "$_HOOK_TMPWRITE_BASE" 2>/dev/null
-  printf '{"hook":"build-queue-enforce","error":"temp-file write failed","at":"%s"}' \
-    "$_HOOK_TMPWRITE_TS" > "$_HOOK_TMPWRITE_BASE/hook-error.json" 2>/dev/null || true
-  printf '{"ts":%s,"kind":"error","hook":"build-queue-enforce","repo_root":"","signature":"","detail":"temp-file write failed"}\n' \
-    "$_HOOK_TMPWRITE_TS" >> "$_HOOK_TMPWRITE_BASE/hook-events.jsonl" 2>/dev/null || true
+  # Traced fail-open (guard-fail-open-leaves-no-trace): the prelude's shared
+  # pure-bash breadcrumb, with a DISTINCT detail string so this temp-write
+  # cause is distinguishable from the no-python cause in
+  # hook-error.json / hook-events.jsonl.
+  hook_emit_error_event "$HOOK_NAME" "" "temp-file write failed"
   exit 0
 fi
 
@@ -884,9 +781,9 @@ fi
 # sys.stdin — nothing pipes into this invocation on stdin, so it is
 # untouched, exactly as the old `-c` form preserved it.
 #
-# BQE_SCRIPTS_DIR is threaded via env (D2) so the inline appender can import
-# lazy_core for the keyed hook-events append.
-BQE_SCRIPTS_DIR="$BQE_SCRIPTS_DIR" "$PYTHON" "$tmppath"
+# HOOK_SCRIPTS_DIR is threaded via env so the inline body can import hook_lib
+# for the emitters + the keyed hook-events append.
+HOOK_SCRIPTS_DIR="$HOOK_SCRIPTS_DIR" "$HOOK_PYTHON" "$tmppath"
 
 # Always exit 0 from the shell side: a non-zero PreToolUse exit is a hard
 # blocking error in Claude Code; deny is expressed in JSON, never an exit code.
