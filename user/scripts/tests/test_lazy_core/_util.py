@@ -1039,15 +1039,37 @@ def _set_state_dir(path: "Path") -> None:
 
 
 
+# Hermetic isolation of the run-state dir for the WHOLE test package — set BEFORE
+# _ORIGINAL_LAZY_STATE_DIR is captured so the restore path below stays isolated too.
+# Without this, an in-process call into a refuse_if_cycle_active-guarded helper (the
+# ~80 apply_pseudo/mark_complete tests call lazy_core.apply_pseudo, which guards at
+# its entry) resolves LAZY_STATE_DIR to the REAL per-repo keyed dir
+# ~/.claude/state/<repo_key>/ — and DURING a live /lazy-batch run that dir carries the
+# cycle marker, so every such test raised SystemExit(3) purely because a real run was
+# in flight (docs/bugs/adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker). It
+# is the structural form of the user/scripts/CLAUDE.md contributor convention
+# ("isolate LAZY_STATE_DIR") applied ONCE at this shared import chokepoint, imported by
+# every shard in BOTH pytest and the standalone per-shard __main__ runners.
+# setdefault (never overwrite) so the documented operator override
+# `LAZY_STATE_DIR=<temp> python3 …` still wins; only the unset (real-keyed-dir) case
+# is redirected to a throwaway temp dir a test never populates with a marker.
+if not _os_env.environ.get("LAZY_STATE_DIR"):
+    import atexit as _atexit
+    import shutil as _shutil
+
+    _HERMETIC_STATE_DIR = tempfile.mkdtemp(prefix="test-lazy-core-state-")
+    _os_env.environ["LAZY_STATE_DIR"] = _HERMETIC_STATE_DIR
+    _atexit.register(_shutil.rmtree, _HERMETIC_STATE_DIR, ignore_errors=True)
+
 # The LAZY_STATE_DIR value present when this test module was imported — i.e. the
-# operator's PROCESS-LEVEL override, if any. The documented mitigation for running
-# the full suite DURING a live lazy cycle is `LAZY_STATE_DIR=<temp> python3
-# test_lazy_core.py`, so the cycle-active guards (`refuse_if_cycle_active` reached
-# via `apply_pseudo`) read a clean temp state dir instead of the real
-# ~/.claude/state/<repo>/ carrying the live cycle marker. `_clear_state_dir()` must
-# RESTORE this value, not unconditionally delete it — otherwise an early
-# cycle-marker test's teardown strips the operator override mid-suite and every
-# later guard reads the REAL state dir and false-fails on the live marker.
+# operator's PROCESS-LEVEL override, if any (or the hermetic temp default seeded just
+# above). The documented mitigation for running the full suite DURING a live lazy
+# cycle is `LAZY_STATE_DIR=<temp> python3 test_lazy_core.py`, so the cycle-active
+# guards (`refuse_if_cycle_active` reached via `apply_pseudo`) read a clean temp state
+# dir instead of the real ~/.claude/state/<repo>/ carrying the live cycle marker.
+# `_clear_state_dir()` must RESTORE this value, not unconditionally delete it —
+# otherwise an early cycle-marker test's teardown strips the override mid-suite and
+# every later guard reads the REAL state dir and false-fails on the live marker.
 # See docs/bugs/clear-state-dir-teardown-strips-lazy-state-dir-override.
 _ORIGINAL_LAZY_STATE_DIR = _os_env.environ.get("LAZY_STATE_DIR")
 
