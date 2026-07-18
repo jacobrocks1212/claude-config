@@ -912,6 +912,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/bug-state-verification-only-remainder-loops-write-plan/FIXED.md": [
+    {
+      "id": "bug-state-verification-only-remainder-loops-write-plan",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/bug-state-verification-only-remainder-loops-write-plan/SPEC.md": [
+    {
+      "id": "bug-state-verification-only-remainder-loops-write-plan",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/BLOCKED_RESOLVED_2026-07-13.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -15261,6 +15275,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/interventions/harden-2026-07-r93.md": [
+    {
+      "id": "bug-state-verification-only-remainder-loops-write-plan",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/hardening-intervention-records-unmeasurable-or-missing.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -15913,6 +15934,11 @@
     }
   ],
   "docs/specs/turn-routing-enforcement/hardening-log/2026-07.md": [
+    {
+      "id": "bug-state-verification-only-remainder-loops-write-plan",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "descoped-row-recognition-needs-canonical-marker",
       "type": "bug",

@@ -2,6 +2,12 @@
   "_note": "2026-07-13 (bug-queue-aging-backpressure): the pin/expiry contract is now MECHANIZED, not prose-only. A queue entry deprioritized to severity: null is a deliberate, reviewable PIN made via the sanctioned mutation 'bug-state.py --pin --id <id> [--until YYYY-MM-DD] [--reason TEXT]' (never hand-edited) \u2014 it stamps pinned_at/pinned_until/pin_reason on the entry. While the pin is ACTIVE (before pinned_until, or within a 90-day default max age when pinned_until is absent), lazy_core.merged_priority suppresses the entry at merged priority 99 (\"AFTER every feature\"). Past expiry, the merged view automatically falls back to the entry's own SPEC **Severity:** line and resumes age-escalating (7-day quantum toward rank 0, floored at P1-equivalent so a genuine P0 always wins) \u2014 no operator action needed to restore priority. Restore-by-removing-the-entry (bug-state.py --reorder-queue --id <id> --to remove) remains the immediate-restore escape hatch. The two entries below carrying severity: null with NO pinned_at field predate this feature (set 2026-07-04, resume-lanes-hardening \u2014 PowerShell/Pester build-queue defects untestable off a Windows workstation) and are DELIBERATELY left unmigrated: shipping this feature does not retroactively re-prioritize any already-committed entry (see SPEC.md 'V1 scope narrowing'). Re-pinning them via --pin (recording the host-capability pin_reason explicitly) is a deliberate follow-up operator action, not automated here. Prior notes (2026-07-11 hardening-audit batch ordering; 2026-07-04 resume-lanes-hardening) are superseded \u2014 both named P0/P1 heads they described have since been fixed and archived.",
   "queue": [
     {
+      "id": "adhoc-parity-audit-blind-to-compute-state-routing-branches",
+      "name": "Parity audit misses compute_state routing-branch asymmetry between the state scripts",
+      "spec_dir": "adhoc-parity-audit-blind-to-compute-state-routing-branches",
+      "severity": null
+    },
+    {
       "id": "adhoc-bug-pickup-routes-superseded-specs",
       "name": "On-disk bug pickup routes Superseded SPECs into investigation",
       "spec_dir": "adhoc-bug-pickup-routes-superseded-specs",
