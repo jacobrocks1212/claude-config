@@ -554,9 +554,11 @@ rm -f .claude/pr-cache/pr-review-active.json
 
 Read `{cacheDir}/pr-context.json` for the `cogDocsItemDir` field (always set in PR mode — see Step 1.6).
 
-Write `<cogDocsItemDir>/REVIEWED.md` with YAML frontmatter carrying the PR identity, today's date, and the finding counts reported in Step 12 (total count plus per-tier counts — critical, important, minor — as produced by the synthesizer). Follow the frontmatter with a one-line human-readable body.
+Write `<cogDocsItemDir>/REVIEWED.md` with YAML frontmatter carrying the PR identity, today's date, the **reviewed head SHA** (`reviewed_sha`), and the finding counts reported in Step 12 (total count plus per-tier counts — critical, important, minor — as produced by the synthesizer). Follow the frontmatter with a one-line human-readable body.
 
-Template (substitute live values; use ISO date `YYYY-MM-DD` for `date`):
+`reviewed_sha` is the head commit that was actually reviewed — the `pr.sourceCommit` field in the prep manifest (`{cacheDir}/manifest.json`, written by `prep-pr.ts`). Persisting it lets the NEXT re-review anchor its incremental diff on the real commit that was last reviewed, instead of using a journey review-round number as an index into the commit array (RC-2a). On a re-review this is what `detectReReview` reads back as the previous-review anchor.
+
+Template (substitute live values; use ISO date `YYYY-MM-DD` for `date`, and the manifest `pr.sourceCommit` for `reviewed_sha`):
 
 ```bash
 cat > "<cogDocsItemDir>/REVIEWED.md" << 'EOF'
@@ -564,6 +566,7 @@ cat > "<cogDocsItemDir>/REVIEWED.md" << 'EOF'
 kind: reviewed
 pr: {pr_id}
 date: "{YYYY-MM-DD}"
+reviewed_sha: "{manifest.pr.sourceCommit}"
 findings_total: {total_findings_count}
 critical: {critical_count}
 important: {important_count}

@@ -75,7 +75,7 @@ No contradiction (anchor- or premise-grade). All paths `exists: yes` except the 
 ## Work Units
 
 - [x] WU-1 — Lifespan counter fidelity (post-process.ts + tests)
-- [ ] WU-2 — Reviewed-SHA re-review anchor (review-pr.md + prep-pr.ts + net-new test)
+- [x] WU-2 — Reviewed-SHA re-review anchor (review-pr.md + prep-pr.ts + net-new test)
 - [ ] WU-3 — Merge-safe base-relative iteration diff (prep-pr.ts + test)
 
 ---

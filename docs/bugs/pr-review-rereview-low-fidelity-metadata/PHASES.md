@@ -73,11 +73,18 @@ The SPEC's four Open Questions are fix-shape sizing decisions, not user-visible 
 **Scope:** Stop using the journey `### Iteration N` review-round number as a commit-array index. Persist the actually-reviewed head SHA in `REVIEWED.md` at review time, and anchor the incremental diff on that SHA on the next re-review — eliminating the numbering-space mismatch. Journey-scrape remains only as a fallback for pre-existing reviews with no persisted SHA.
 
 **Deliverables:**
-- [ ] Extend the `REVIEWED.md` frontmatter template in `review-pr.md` Step 12.6 (`:562-573`) with `reviewed_sha: "<head commit SHA>"`, sourced from the source/head commit already resolved during prep/synthesis.
-- [ ] `detectReReview` (`prep-pr.ts:789`) reads `REVIEWED.md` (sibling of the journey in `cogDocsItemDir`) and returns the persisted `reviewed_sha` as the previous-review anchor when present.
-- [ ] `computeIterationDiff` / its call site (`prep-pr.ts:1614-1621`) uses the persisted SHA directly as `previousSha` when available, bypassing the `iterations[previousIterationId - 1]` index (`:749`) that mixes numbering spaces. When no `reviewed_sha` is present (legacy `REVIEWED.md`, or none), fall back to the existing journey-scrape path unchanged.
-- [ ] `ReReviewInfo` (`prep-pr.ts:172-174` / `:278-279`) carries the reviewed SHA alongside `previousIterationId`.
-- [ ] Tests: `prep-pr.test.ts` (net-new) — a `REVIEWED.md` fixture with `reviewed_sha` makes `detectReReview` return that SHA as the anchor; a legacy `REVIEWED.md` without it falls back to the journey `### Iteration N` scrape (behavior preserved).
+- [x] Extend the `REVIEWED.md` frontmatter template in `review-pr.md` Step 12.6 (`:562-573`) with `reviewed_sha: "<head commit SHA>"`, sourced from the source/head commit already resolved during prep/synthesis.
+- [x] `detectReReview` (`prep-pr.ts:789`) reads `REVIEWED.md` (sibling of the journey in `cogDocsItemDir`) and returns the persisted `reviewed_sha` as the previous-review anchor when present.
+- [x] `computeIterationDiff` / its call site (`prep-pr.ts:1614-1621`) uses the persisted SHA directly as `previousSha` when available, bypassing the `iterations[previousIterationId - 1]` index (`:749`) that mixes numbering spaces. When no `reviewed_sha` is present (legacy `REVIEWED.md`, or none), fall back to the existing journey-scrape path unchanged.
+- [x] `ReReviewInfo` (`prep-pr.ts:172-174` / `:278-279`) carries the reviewed SHA alongside `previousIterationId`.
+- [x] Tests: `prep-pr.test.ts` (net-new) — a `REVIEWED.md` fixture with `reviewed_sha` makes `detectReReview` return that SHA as the anchor; a legacy `REVIEWED.md` without it falls back to the journey `### Iteration N` scrape (behavior preserved).
+
+**Implementation Notes (2026-07-18):**
+- New exported `readReviewedSha(cogDocsItemDir)` parses `reviewed_sha:` from REVIEWED.md's YAML frontmatter (regex, 7–40 hex chars, quote-tolerant; scoped to the leading `---`…`---` block). `detectReReview` is now exported and calls it; `ReReviewInfo` carries `reviewedSha: string | null`.
+- Call site (`prepPR`) admits the iteration diff on EITHER the persisted SHA OR a journey `previousIterationId`, and threads `reReviewInfo.reviewedSha` into `computeIterationDiff` as the new optional `previousShaOverride` param — `previousSha = previousShaOverride ?? iterations[previousIterationId - 1]?.…` (legacy index preserved as fallback).
+- `review-pr.md` Step 12.6 template now writes `reviewed_sha: "{manifest.pr.sourceCommit}"` (the real reviewed head commit).
+- **Enabling refactor:** the CLI entry point (bottom of `prep-pr.ts`) is wrapped in an `isMainModule` guard (`import.meta.url === pathToFileURL(process.argv[1]).href`) so `prep-pr.test.ts` can `import` `detectReReview`/`readReviewedSha` without the module executing its CLI dispatch / `process.chdir` / `process.exit`. Phase 3's `computeIterationDiff` test relies on the same guard.
+- Files: `scripts/prep-pr.ts`, `commands/review-pr.md`; net-new `scripts/prep-pr.test.ts`; fixtures `test-fixtures/rereview-with-sha/{REVIEWED.md,PR-101-journey.md}`, `test-fixtures/rereview-legacy/{REVIEWED.md,PR-102-journey.md}`. Gate: `npx tsx --test prep-pr.test.ts` → 5 pass / 0 fail; `tsc --noEmit` clean.
 
 **Minimum Verifiable Behavior:** `npx tsx --test scripts/prep-pr.test.ts` passes: given a fixture `REVIEWED.md` carrying `reviewed_sha: <sha>`, `detectReReview` resolves the previous anchor to `<sha>` (not a journey round number); given one without it, the journey fallback still yields the max `### Iteration N`.
 
