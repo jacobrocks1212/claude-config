@@ -120,15 +120,17 @@ Per the Step 2.7 runtime-assumption gate. This feature has **no user-facing prod
 
 ### Phase 3: Migrate the five inline-Python enforcement hooks (one per step)
 
+**Status:** ✅ Complete (2026-07-18)
+
 **Scope:** Migrate each of the five inline-Python enforcement hooks onto the prelude (`source` + `HOOK_PYTHON`/`HOOK_SCRIPTS_DIR`) and `hook_lib` (`import hook_lib` seeded from `HOOK_SCRIPTS_DIR`), in D3 lowest-blast-radius-first order. Each hook drops its inline `_allow`/`_deny`/`_append_hook_event`/`_breadcrumb` copies and (for the three anchor-bearing hooks) its `_ENV_PREFIX`/`_CMD_START` definitions, retaining only a minimal `except ImportError: sys.exit(0)` fallback. **Full `python user/scripts/test_hooks.py` after EACH single-hook migration** — the pipe-tests assert deny/allow output byte-identically, which is the no-behavior-change proof; a regression is attributable to exactly one hook.
 
 **Deliverables:**
-- [ ] Migrate `user/hooks/block-noncanonical-blocker-write.sh` (#1) → prelude + `hook_lib`; full suite green.
-- [ ] Migrate `user/hooks/block-sentinel-write-on-stray-branch.sh` (#2) → prelude + `hook_lib`; full suite green.
-- [ ] Migrate `user/hooks/long-build-ownership-guard.sh` (#3) → prelude + `hook_lib`; collapse `_ENV_PREFIX`/`_CMD_START` (lines 153/161) into `hook_lib.ENV_PREFIX`/`CMD_START`; full suite green.
-- [ ] Migrate `user/hooks/build-queue-enforce.sh` (#4) → prelude + `hook_lib`; collapse anchors (lines 211/217); full suite green.
-- [ ] Migrate `user/hooks/lazy-cycle-containment.sh` (#5, highest blast radius) → prelude + `hook_lib`; collapse anchors (lines 263/269); full suite green.
-- [ ] Tests: extend `test_hooks.py` with the D2 import-failure pipe-test (`HOOK_SCRIPTS_DIR` pointed at an empty dir → `import hook_lib` fails → hook still allows + leaves a prelude-side trace) for at least one migrated enforcement hook.
+- [x] Migrate `user/hooks/block-noncanonical-blocker-write.sh` (#1) → prelude + `hook_lib`; full suite green.
+- [x] Migrate `user/hooks/block-sentinel-write-on-stray-branch.sh` (#2) → prelude + `hook_lib`; full suite green.
+- [x] Migrate `user/hooks/long-build-ownership-guard.sh` (#3) → prelude + `hook_lib`; collapse `_ENV_PREFIX`/`_CMD_START` (lines 153/161) into `hook_lib.ENV_PREFIX`/`CMD_START`; full suite green.
+- [x] Migrate `user/hooks/build-queue-enforce.sh` (#4) → prelude + `hook_lib`; collapse anchors (lines 211/217); full suite green.
+- [x] Migrate `user/hooks/lazy-cycle-containment.sh` (#5, highest blast radius) → prelude + `hook_lib`; collapse anchors (lines 263/269); full suite green.
+- [x] Tests: extend `test_hooks.py` with the D2 import-failure pipe-test (`HOOK_SCRIPTS_DIR` pointed at an empty dir → `import hook_lib` fails → hook still allows + leaves a prelude-side trace) for at least one migrated enforcement hook.
 
 **Minimum Verifiable Behavior:** After each migration, `python user/scripts/test_hooks.py` reports the full suite passing (~273 tests) with deny/allow output byte-identical to the pre-migration baseline; the new import-failure pipe-test asserts fail-open + a traced allow.
 
@@ -146,6 +148,14 @@ Per the Step 2.7 runtime-assumption gate. This feature has **no user-facing prod
 - After Phase 3, `grep` inventory should show `_append_hook_event` / `_breadcrumb` / the anchor pair each defined ONCE (in `hook_lib.py`) — this is the input to Phase 4's duplicated-line counter.
 - The anchor-semantics collapse coordinates with the archived `long-build-and-build-queue-matcher-bypasses` bug: the matcher fix now lands in one place (`hook_lib.CMD_START`).
 - The `block-terminal-kill` / `block-work-repo-git-push` stdin hooks are deliberately NOT migrated (Open Question 2 — owned by `legacy-tool-input-env-hooks-dead`).
+
+**Implementation Notes (2026-07-18, plan part 2):**
+- All 5 enforcement hooks migrated in D3 order (WU-1..5), full `test_hooks.py` suite green after EACH single-hook migration (byte-identical deny/allow = the no-behavior-change proof). Final suite: **266/266** (was 265 + the new import-failure pipe-test).
+- Each hook now: sources `hook-prelude.sh` (fail-open-guarded) for `HOOK_PYTHON`/`HOOK_SCRIPTS_DIR`/`HOOK_NAME`/`hook_emit_error_event`; imports `hook_lib` (seeded from `HOOK_SCRIPTS_DIR`) for `allow`/`deny`/`append_hook_event`/`breadcrumb`; retains only a minimal `except ImportError: sys.exit(0)`. The inline `_allow`/`_deny`/`_append_hook_event`/`_breadcrumb` copies and the anchor triplication are GONE — verified by grep (defined ONCE in `hook_lib.py`).
+- Anchor collapse: WU-3/4/5 consume `hook_lib.ENV_PREFIX`/`CMD_START` (and, for full de-duplication, `hook_lib.PATH_PREFIX`); WU-4 also collapsed its second `_ENV_PREFIX_ANY` copy, retiring the "keep the two env-prefix literals in lockstep" burden. `_normalize_ps_syntax` / `_mask_heredoc` / `COMMAND_TOOL_NAMES` stay hook-local (not provided by `hook_lib`).
+- **D2 trace on shared-module-unavailable (uniform across all 5):** a bash `[ -f "$HOOK_SCRIPTS_DIR/hook_lib.py" ]` guard after the prelude source calls `hook_emit_error_event` and fails open when `hook_lib.py` is absent — restoring the "leave a trace even when the shared module is unavailable" property the pre-migration inline `lazy_core` fallback carried. The Python `except ImportError: sys.exit(0)` stays the silent last-resort for a present-but-unimportable `hook_lib`. New pipe-test `test_containment_hook_lib_unavailable_fails_open_with_trace` asserts this (allow + traced), and a red-check confirmed the guard is load-bearing (no trace without it).
+- `lazy-cycle-containment.sh` keeps ONE direct `import lazy_core` in `_resolve_marker_path` (for `claude_state_dir` — `hook_lib` deliberately does not re-export it); the `build-queue-enforce.sh` / `lazy-cycle-containment.sh` temp-file invocation (windows-32k E2BIG fix) is preserved, with its temp-write-failed breadcrumb folded onto the prelude's `hook_emit_error_event`.
+- `block-terminal-kill.sh` retains its own `_CMD_START` copy (out of scope — not one of the 5; see the note above).
 
 ---
 

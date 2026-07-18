@@ -6947,6 +6947,59 @@ def test_prelude_no_python_leaves_numeric_ts_event():
         )
 
 
+def test_containment_hook_lib_unavailable_fails_open_with_trace():
+    """shared-hook-lib SPEC D2 (Phase 3 / WU-5): when hook_lib is UNAVAILABLE in
+    the scripts dir (an `import hook_lib` would fail), a migrated enforcement
+    hook must still ALLOW (exit 0, no deny) AND leave a prelude-side trace line
+    in hook-events.jsonl — the "trace even when the shared module is
+    unavailable" property the pre-migration inline lazy_core fallback carried.
+
+    Mechanism: copy the containment hook + hook-prelude.sh into a temp hooks/
+    dir whose sibling scripts/ dir is EMPTY (no hook_lib.py), so the
+    prelude-derived HOOK_SCRIPTS_DIR points at a dir without hook_lib.py and the
+    hook's `[ -f "$HOOK_SCRIPTS_DIR/hook_lib.py" ]` guard fires the shared
+    hook_emit_error_event breadcrumb before the inline body ever runs.
+
+    RED reason: a bare `except ImportError: sys.exit(0)` migration allows but
+    leaves NO trace (the bash guard is absent)."""
+    minimal_payload = json.dumps({
+        "tool_name": "Bash",
+        "tool_input": {"command": "echo hi"},
+        "cwd": "C:/repo",
+    })
+    with tempfile.TemporaryDirectory() as td:
+        tdp = Path(td)
+        hooks_dir = tdp / "hooks"
+        hooks_dir.mkdir()
+        (tdp / "scripts").mkdir()  # EMPTY — no hook_lib.py
+        state_dir = tdp / "state"
+        state_dir.mkdir()
+        # Copy the real hook + prelude into the temp hooks dir; the prelude
+        # derives HOOK_SCRIPTS_DIR = <hooks>/../scripts, which is empty here.
+        shutil.copy2(_CONTAINMENT_SH, hooks_dir / _CONTAINMENT_SH.name)
+        shutil.copy2(_PRELUDE_SH, hooks_dir / _PRELUDE_SH.name)
+        copied_hook = hooks_dir / _CONTAINMENT_SH.name
+        result = _run_bash(copied_hook, minimal_payload, _base_env(state_dir))
+        assert result.returncode == 0, (
+            f"hook_lib-unavailable must exit 0 (fail-open); "
+            f"stderr={result.stderr!r}"
+        )
+        assert _containment_decision(result) != "deny", (
+            f"hook_lib-unavailable must NOT deny; stdout={result.stdout!r}"
+        )
+        assert result.stdout.strip() == "", (
+            f"fail-open allow must emit no stdout; got {result.stdout!r}"
+        )
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, (
+            f"expected exactly one prelude-side trace line; got {events!r}"
+        )
+        e = events[0]
+        assert e["kind"] == "error", e
+        assert e["hook"] == "lazy-cycle-containment", e
+        assert "hook_lib" in e["detail"], e
+
+
 def test_noncanonical_catch_all_writes_breadcrumb_and_event():
     """guard-fail-open-leaves-no-trace symptom (c): block-noncanonical-blocker
     -write.sh's generic catch-all previously had NO breadcrumb/event at all
@@ -9814,6 +9867,9 @@ _TESTS = _TESTS + [
      test_missing_prelude_source_fails_open_allows),
     ("test_prelude_no_python_leaves_numeric_ts_event",
      test_prelude_no_python_leaves_numeric_ts_event),
+    # shared-hook-lib Phase 3 — hook_lib import-failure fails open + leaves a trace
+    ("test_containment_hook_lib_unavailable_fails_open_with_trace",
+     test_containment_hook_lib_unavailable_fails_open_with_trace),
 ]
 
 

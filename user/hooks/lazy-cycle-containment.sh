@@ -42,65 +42,54 @@
 # never wedge the pipeline.  The C3 state-script refusal (lazy_core.py) is the
 # backstop.  This mirrors lazy-route-inject.sh / lazy-dispatch-guard.sh.
 #
-# Python resolution: python3 preferred (WSL / Linux), falling back to python
-# (Windows git-bash where python3 may not be on PATH).
-#
 # Test override: LAZY_CYCLE_STAGED_PATHS (newline-separated) substitutes for
 # `git diff --cached --name-only` so the 2nd-feature tripwire is hermetically
 # testable without a temp git repo.
-
+#
+# shared-hook-lib (Phase 3): python resolution, the scripts-dir derivation, the
+# no-python breadcrumb, AND the pure-bash error breadcrumb (hook_emit_error_event)
+# are provided by the SOURCED hook-prelude.sh (HOOK_PYTHON / HOOK_SCRIPTS_DIR /
+# HOOK_NAME); the allow/deny emitters, the countable hook-events append, and the
+# fail-open breadcrumb are provided by hook_lib (imported from HOOK_SCRIPTS_DIR by
+# the inline body). The command-segment anchor pair (ENV_PREFIX / CMD_START) is
+# ALSO consumed from hook_lib — the inline copies (the anchor triplication, SPEC
+# D3) are gone. The keyed cycle-marker resolution still imports lazy_core directly
+# (hook_lib deliberately does NOT re-export claude_state_dir); the PS-syntax audit,
+# the heredoc mask, and COMMAND_TOOL_NAMES stay hook-local and unchanged.
+#
 # multi-repo-concurrent-runs (Phase 2 / WU-2.3): the cycle marker
-# (lazy-cycle-active.json) is now per-repo, a sibling of the run marker in the
-# SAME keyed subdir (~/.claude/state/<repo-key>/) when LAZY_STATE_DIR is unset.
-# The embedded Python resolves MARKER repo-aware via lazy_core.claude_state_dir()
+# (lazy-cycle-active.json) is per-repo, a sibling of the run marker in the SAME
+# keyed subdir (~/.claude/state/<repo-key>/) when LAZY_STATE_DIR is unset. The
+# embedded Python resolves MARKER repo-aware via lazy_core.claude_state_dir()
 # after binding the active repo to the PreToolUse cwd — repo_key derivation lives
 # ONLY in Python (bash never re-derives it). When LAZY_STATE_DIR IS set (hermetic
-# tests) the override dir is used exactly, preserving every existing pipe-test.
-#
-# We do NOT force-export LAZY_STATE_DIR here: the embedded Python must SEE whether
-# it was genuinely set vs unset (set → exact dir; unset → keyed). We pass the
-# scripts dir so the Python can import lazy_core, plus a fallback base dir for the
-# breadcrumb path if the import is unavailable.
-LCC_BASE_DIR="${LAZY_STATE_DIR:-$HOME/.claude/state}"
-MARKER="$LCC_BASE_DIR/lazy-cycle-active.json"  # fallback path for early failures
+# tests) the override dir is used exactly, preserving every existing pipe-test. We
+# do NOT force-export LAZY_STATE_DIR here: the embedded Python must SEE whether it
+# was genuinely set vs unset. HOOK_SCRIPTS_DIR is threaded so the Python can import
+# both hook_lib and lazy_core.
 
-# Resolve the scripts dir relative to this hook's own directory so the embedded
-# Python can import lazy_core for the keyed state-dir resolution. Builtins only
-# (${0%/*}, cd, pwd) — `dirname` is not guaranteed on PATH for non-login git-bash.
-# $0 may carry Windows backslashes; normalize to forward slashes first.
+# Source the shared hook prelude, fail-open-guarded (shared-hook-lib SPEC D2).
+# A missing/broken prelude ALLOWS (exit 0), never wedges. Derive this hook's own
+# directory here ONLY to locate the prelude; the prelude then provides
+# HOOK_PYTHON (python3→python resolution; total absence ⇒ pure-bash breadcrumb
+# + exit 0 — guard-fail-open-leaves-no-trace §1), HOOK_SCRIPTS_DIR, HOOK_NAME,
+# and hook_emit_error_event. Builtins only ($0 may carry Windows backslashes;
+# `dirname` is not guaranteed on a non-login git-bash PATH).
 SELF="${0//\\//}"
 case "$SELF" in
-  */*) LCC_SCRIPT_DIR="$(cd "${SELF%/*}" && pwd)" ;;
-  *)   LCC_SCRIPT_DIR="$(pwd)" ;;
+  */*) _HOOK_DIR="$(cd "${SELF%/*}" && pwd)" ;;
+  *)   _HOOK_DIR="$(pwd)" ;;
 esac
-LCC_SCRIPTS_DIR="$LCC_SCRIPT_DIR/../scripts"
+. "$_HOOK_DIR/hook-prelude.sh" 2>/dev/null || exit 0
 
-# NOTE (D4): the bash fast-path no longer exits on marker-absence — the inline
-# Python must evaluate `agent_id` even when no marker is armed. The Python body
-# fast-allows immediately for the common no-marker + no-agent_id case, so the
-# only added cost for interactive/main-thread events is one short Python start.
-
-# Resolve python interpreter: prefer python3, fall back to python.
-if command -v python3 >/dev/null 2>&1; then
-  PYTHON=python3
-elif command -v python >/dev/null 2>&1; then
-  PYTHON=python
-else
-  # No python at all → fail open (exit 0, no output). guard-fail-open-leaves-no-trace
-  # CONFIRMED DEFECT (b): this breadcrumb previously targeted the unset $STATE_DIR
-  # — that name exists ONLY inside the inline Python body below; the bash-scope
-  # base dir var is $LCC_BASE_DIR (set above the python resolution). The write
-  # silently landed at the filesystem root (or failed outright) and was swallowed
-  # by `2>/dev/null || true`, so this breadcrumb had never actually worked. Fixed
-  # to use $LCC_BASE_DIR, and extended with the same hook-events.jsonl append the
-  # other python-bearing hooks carry (interim copied block per
-  # docs/bugs/guard-fail-open-leaves-no-trace D4 — keep the copies in lockstep).
-  _HOOK_NOPY_TS="$(date +%s 2>/dev/null || echo 0)"
-  mkdir -p "$LCC_BASE_DIR" 2>/dev/null
-  printf '{"hook":"lazy-cycle-containment","error":"no python interpreter on PATH","at":"%s"}' \
-    "$_HOOK_NOPY_TS" > "$LCC_BASE_DIR/hook-error.json" 2>/dev/null || true
-  printf '{"ts":%s,"kind":"error","hook":"lazy-cycle-containment","repo_root":"","signature":"","detail":"no python interpreter on PATH"}\n' \
-    "$_HOOK_NOPY_TS" >> "$LCC_BASE_DIR/hook-events.jsonl" 2>/dev/null || true
+# shared-hook-lib (SPEC D2): if hook_lib is unavailable in the scripts dir, leave
+# a prelude-side trace (hook_emit_error_event — the shared pure-bash breadcrumb)
+# and fail OPEN. This restores the "leave a trace even when the shared module is
+# unavailable" property the pre-migration inline lazy_core fallback carried; the
+# inline body's `except ImportError: sys.exit(0)` stays the silent last-resort for
+# a present-but-unimportable hook_lib.
+if [ ! -f "$HOOK_SCRIPTS_DIR/hook_lib.py" ]; then
+  hook_emit_error_event "$HOOK_NAME" "" "hook_lib.py not found in scripts dir"
   exit 0
 fi
 
@@ -112,7 +101,7 @@ fi
 #
 # windows-32k-cmdline-e2big-silently-disarms-containment: the Python body is
 # handed to the interpreter via a `mktemp`'d TEMP FILE, NOT `-c "$_LCC_PY"`.
-# The body is ~34KB; on Windows (Git Bash -> native python.exe) a `-c`
+# The body is large; on Windows (Git Bash -> native python.exe) a `-c`
 # invocation this large exceeds CreateProcess's 32,767-char command-line
 # limit, so the process silently fails to spawn (E2BIG) and the hook falls
 # through to its unconditional `exit 0` -- the containment guard is disarmed
@@ -130,7 +119,23 @@ import json
 import os
 import re
 import sys
-import datetime
+
+# shared-hook-lib (SPEC D2): seed sys.path from HOOK_SCRIPTS_DIR (threaded via
+# env) and import hook_lib for the allow/deny emitters, the countable
+# hook-events append, the fail-open breadcrumb, AND the shared command-segment
+# anchor pair (ENV_PREFIX / CMD_START — the anchor triplication collapse, SPEC
+# D3). A missing/failed import must ALLOW, never wedge — the ONLY retained inline
+# fallback is this minimal `except ImportError: sys.exit(0)` (the bash guard above
+# writes the prelude-side trace for the file-absent case).
+try:
+    _sd = os.environ.get("HOOK_SCRIPTS_DIR")
+    if _sd and _sd not in sys.path:
+        sys.path.insert(0, _sd)
+    import hook_lib
+except ImportError:
+    sys.exit(0)
+
+_HOOK = "lazy-cycle-containment"
 
 # powershell-tool-bypasses-bash-matched-guards: the harness exposes more than
 # one command-execution tool (Bash, PowerShell) sharing the same
@@ -177,7 +182,7 @@ def _resolve_marker_path(cwd):
     if os.environ.get("LAZY_STATE_DIR"):
         return os.path.join(os.environ["LAZY_STATE_DIR"], "lazy-cycle-active.json")
     try:
-        scripts_dir = os.environ.get("LCC_SCRIPTS_DIR")
+        scripts_dir = os.environ.get("HOOK_SCRIPTS_DIR")
         if scripts_dir and scripts_dir not in sys.path:
             sys.path.insert(0, scripts_dir)
         import lazy_core
@@ -239,7 +244,7 @@ LIFECYCLE_PATTERNS = (
 # MESSAGE BODY merely mentions e.g. `dev:kill` as prose (`git commit -m "docs:
 # explain the npm run dev:kill teardown behavior"`) was wrongly denied, the
 # same reference-only-mention false-deny class already fixed for
-# _LAZY_BATCH_*_RE / _STATE_PY_INVOKE_RE above. A genuine INVOCATION is either
+# _LAZY_BATCH_*_RE / _STATE_PY_INVOKE_RE below. A genuine INVOCATION is either
 # segment-leading (a bare `dev:kill` / `kill-port 3333` command) OR immediately
 # after a recognized task-runner verb (`npm run` / `pnpm run` / `yarn run`) —
 # the form the two pinned tests (`npm run dev:kill`, bare `dev:kill`) require
@@ -256,21 +261,14 @@ LIFECYCLE_PATTERNS = (
 # begin a command segment and so must NOT trip the recursion deny — this is the
 # false-positive fixed in docs/bugs/adhoc-incident-hook-deny-4b767b.
 #
-# PowerShell-syntax regex audit (powershell-tool-bypasses-bash-matched-guards):
-# env-assignment prefixes differ between shells (`NAME=value` in bash vs
-# `$env:NAME='value';` in PowerShell) — _ENV_PREFIX now recognizes both forms
-# so a routing-flag invocation prefixed either way is still scoped correctly.
-_ENV_PREFIX = (
-    r"(?:"
-    r"[A-Za-z_][A-Za-z0-9_]*=\S+\s+"
-    r"|\$env:[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:'[^']*'|\"[^\"]*\"|\S+)\s*;\s*"
-    r")*"
-)
-_CMD_START = r"(?:^|[\n;&|({])\s*" + _ENV_PREFIX
+# shared-hook-lib (SPEC D3): the segment anchor pair (ENV_PREFIX / CMD_START) now
+# comes from hook_lib — the single home of what used to be hand-copied here and in
+# the sibling guards. The PowerShell-syntax audit that motivated ENV_PREFIX's
+# two-shell shape lives with the constant in hook_lib.
 
 # A PowerShell backtick at end-of-line is a LINE CONTINUATION (the next line is
 # part of the SAME logical command) — not a segment boundary. Left unhandled,
-# the `\n` in _CMD_START's separator class would wrongly split a continued
+# the `\n` in CMD_START's separator class would wrongly split a continued
 # invocation (`cargo build `` + newline + `--release`) into two segments,
 # hiding the build from every anchored pattern below. Normalized once in
 # main() before any matching: a backtick-newline collapses to a single space.
@@ -281,7 +279,7 @@ _PS_LINE_CONTINUATION_RE = re.compile(r"`\r?\n")
 # at a top-level segment-start position under the anchors above, so a runaway
 # op hidden inside a nested -Command string would otherwise walk past every
 # deny below. Purely additive: the tail following the opening quote is
-# reappended as a synthetic segment (newline-prefixed, a recognized _CMD_START
+# reappended as a synthetic segment (newline-prefixed, a recognized CMD_START
 # separator) so the existing anchored patterns can still find it.
 _PS_NESTED_COMMAND_RE = re.compile(
     r"(?:powershell(?:\.exe)?|pwsh)\b[^\n;&|]*?-[Cc]ommand\s+[\"']"
@@ -311,14 +309,14 @@ def _normalize_ps_syntax(command):
 # block-terminal-kill-false-denies-heredoc-body-tokens: a heredoc body
 # (`<<WORD` / `<< 'WORD'` / `<<"WORD"` / `<<-WORD` introducer through its
 # terminator line) is inert DATA — file/message CONTENT, never executed —
-# but its interior newlines satisfy _CMD_START's `\n` segment-separator
+# but its interior newlines satisfy CMD_START's `\n` segment-separator
 # class exactly like a real command boundary, so a deny token sitting at
 # the start of a body line (e.g. a commit-message body, an appended log
 # line) fabricates a false command-segment start and false-denies a
 # completely benign command. THIRD variant of the same false-deny class
 # (1: bare word-boundary → segment-start anchoring; 2: quoted-argument
 # values → _mask_quoted; 3: this — heredoc bodies). Kept as an identical
-# hook-local copy across every _CMD_START-anchored guard (block-terminal-
+# hook-local copy across every CMD_START-anchored guard (block-terminal-
 # kill.sh, this hook, long-build-ownership-guard.sh,
 # build-queue-enforce.sh) — same lockstep-copy discipline as
 # _normalize_ps_syntax / COMMAND_TOOL_NAMES; keep the copies in sync by
@@ -396,10 +394,10 @@ def _mask_heredoc(command):
 #                   ALSO anchored to a command-segment start so the `.claude/`
 #                   path component never false-matches.
 _LAZY_BATCH_DIRECT_RE = re.compile(
-    _CMD_START + r"/lazy(?:-bug)?-batch(?:-cloud)?\b(?!/)"
+    hook_lib.CMD_START + r"/lazy(?:-bug)?-batch(?:-cloud)?\b(?!/)"
 )
 _LAZY_BATCH_NESTED_RE = re.compile(
-    _CMD_START + r"claude\b[^\n;&|]*/lazy(?:-bug)?-batch(?:-cloud)?\b"
+    hook_lib.CMD_START + r"claude\b[^\n;&|]*/lazy(?:-bug)?-batch(?:-cloud)?\b"
 )
 
 # Carve-out shared roots: always allowed in a commit even when not under the
@@ -410,7 +408,7 @@ CARVE_OUT_PATHS = ("docs/features/queue.json", "docs/features/ROADMAP.md", "CLAU
 # docs/bugs/lazy-cycle-containment-false-denies-reference-only-routing-mentions):
 # a state-script INVOCATION begins a command segment (optionally behind a
 # `python`/`python3` interpreter + a path prefix), mirroring
-# build-queue-enforce.sh's _CMD_START segment anchoring and the _LAZY_BATCH_*_RE
+# build-queue-enforce.sh's CMD_START segment anchoring and the _LAZY_BATCH_*_RE
 # anchors above. A `lazy-state.py`/`bug-state.py` token appearing as an ARGUMENT
 # to another verb (`git add user/scripts/lazy-state.py`) or inside a commit
 # MESSAGE body (`git commit -m "...routes via lazy-state.py --emit-dispatch..."`)
@@ -418,13 +416,13 @@ CARVE_OUT_PATHS = ("docs/features/queue.json", "docs/features/ROADMAP.md", "CLAU
 _STATE_PY_TAIL = (
     r"(?:python3?\s+)?(?:[^\s;&|]*[\\/])?(?:lazy-state|bug-state)\.py\b"
 )
-_STATE_PY_INVOKE_RE = re.compile(_CMD_START + _STATE_PY_TAIL)
+_STATE_PY_INVOKE_RE = re.compile(hook_lib.CMD_START + _STATE_PY_TAIL)
 # Per-segment anchored form: the command is split on the same separators the
-# _CMD_START class recognizes, then each segment is matched from its start
+# CMD_START class recognizes, then each segment is matched from its start
 # (absorbing leading whitespace + NAME=value env assignments), so the
 # routing-flag check can be scoped to the INVOKING segment only — a routing flag
 # mentioned in an unrelated later segment (a commit message) cannot trip it.
-_STATE_PY_INVOKE_SEG_RE = re.compile(r"^\s*" + _ENV_PREFIX + _STATE_PY_TAIL)
+_STATE_PY_INVOKE_SEG_RE = re.compile(r"^\s*" + hook_lib.ENV_PREFIX + _STATE_PY_TAIL)
 _SEGMENT_SPLIT_RE = re.compile(r"[\n;&|({]")
 
 # lazy-cycle-containment-misparses-grouped-feature-paths (harden 2026-07):
@@ -472,7 +470,7 @@ def _path_under_feature(path, feature_id):
 
 # lazy-cycle-containment-lifecycle-patterns-still-unanchored: an anchored
 # invocation form for LIFECYCLE_PATTERNS, mirroring _STATE_PY_INVOKE_RE's
-# _CMD_START anchoring. Matches either a bare segment-leading token
+# CMD_START anchoring. Matches either a bare segment-leading token
 # (`dev:kill`, `kill-port 3333`) or the token immediately after a recognized
 # task-runner verb (`npm run` / `pnpm run` / `yarn run`) — never a mention
 # elsewhere in the command (e.g. inside a quoted commit-message body).
@@ -481,7 +479,7 @@ _LIFECYCLE_TAIL = (
     r"(?=$|[\s;&|)}])"
 )
 _LIFECYCLE_INVOKE_RE = re.compile(
-    _CMD_START + r"(?:(?:npm|pnpm|yarn)\s+run\s+)?" + _LIFECYCLE_TAIL
+    hook_lib.CMD_START + r"(?:(?:npm|pnpm|yarn)\s+run\s+)?" + _LIFECYCLE_TAIL
 )
 
 
@@ -490,84 +488,22 @@ _LIFECYCLE_INVOKE_RE = re.compile(
 _EVT_CWD = ""
 
 
-def _append_hook_event(kind, signature, detail):
-    """incident-auto-capture Phase 1 (D2): append one countable hook-event line
-    (hook-events.jsonl). Best-effort / FAIL-OPEN — never raises, never changes
-    the deny/allow output. Prefers the shared lazy_core appender (keyed state
-    dir when the repo is resolvable; exact LAZY_STATE_DIR dir in tests); falls
-    back to an inline append at the base dir when lazy_core is unavailable."""
-    try:
-        try:
-            _sd = os.environ.get("LCC_SCRIPTS_DIR")
-            if _sd and _sd not in sys.path:
-                sys.path.insert(0, _sd)
-            import lazy_core
-            try:
-                lazy_core.set_active_repo_root(_EVT_CWD or None)
-                repo_root = str(lazy_core.active_repo_root() or "")
-            except Exception:
-                repo_root = _EVT_CWD or ""
-            lazy_core.append_hook_event(
-                kind, "lazy-cycle-containment", signature, detail,
-                repo_root=repo_root,
-            )
-            return
-        except ImportError:
-            pass
-        import time as _time
-        os.makedirs(STATE_DIR, exist_ok=True)
-        entry = {
-            "ts": _time.time(), "kind": kind,
-            "hook": "lazy-cycle-containment",
-            "repo_root": _EVT_CWD or "", "signature": (signature or "")[:200],
-            "detail": (detail or "")[:500],
-        }
-        with open(
-            os.path.join(STATE_DIR, "hook-events.jsonl"), "a", encoding="utf-8"
-        ) as fh:
-            fh.write(json.dumps(entry) + "\n")
-    except Exception:
-        pass
-
-
-def _breadcrumb(err):
-    """Write a fail-open breadcrumb; never raise."""
-    try:
-        os.makedirs(STATE_DIR, exist_ok=True)
-        with open(os.path.join(STATE_DIR, "hook-error.json"), "w", encoding="utf-8") as fh:
-            json.dump(
-                {
-                    "hook": "lazy-cycle-containment",
-                    "error": str(err),
-                    "at": datetime.datetime.now(tz=datetime.timezone.utc)
-                    .strftime("%Y-%m-%dT%H:%M:%S") + "Z",
-                },
-                fh,
-            )
-    except Exception:
-        pass
-    # D2: the breadcrumb stays byte-identical; the countable history is the
-    # additive hook-events line beside it (fail-open, never raises).
-    _append_hook_event("error", "", str(err))
-
-
 def _allow():
     """Fast allow: emit nothing (PreToolUse with no decision = allow)."""
-    sys.exit(0)
+    hook_lib.allow()
 
 
 def _deny(reason, signature="containment-deny"):
     # incident-auto-capture D2: countable deny event (fail-open, additive) —
-    # each deny site passes its stable per-trip signature token.
-    _append_hook_event("deny", signature, reason)
-    print(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": reason,
-        }
-    }))
-    sys.exit(0)
+    # each deny site passes its stable per-trip signature token. The event
+    # append + the deny JSON both live in hook_lib now (shared-hook-lib D3).
+    hook_lib.append_hook_event("deny", _HOOK, signature, reason, repo_root=_EVT_CWD)
+    hook_lib.deny(reason)
+
+
+def _breadcrumb(err):
+    """Write a fail-open breadcrumb via hook_lib; never raise."""
+    hook_lib.breadcrumb(_HOOK, err)
 
 
 def _is_truthy_background(val):
@@ -803,7 +739,7 @@ try:
 except SystemExit:
     raise
 except Exception as exc:  # noqa: BLE001 — fail-OPEN on ANY error.
-    _breadcrumb(exc)
+    hook_lib.breadcrumb(_HOOK, exc)
     sys.exit(0)
 PYEOF
 
@@ -816,8 +752,9 @@ PYEOF
 # `mktemp` honors TMPDIR (the standard POSIX seam) so a test can force this
 # step to fail by pointing TMPDIR at a non-existent parent. Both the mktemp
 # step AND the subsequent write are guarded — either failing takes the SAME
-# traced fail-open branch (breadcrumb + hook-events line), distinct from the
-# no-python breadcrumb above by its `detail` text.
+# traced fail-open branch (breadcrumb + hook-events line via the prelude's
+# hook_emit_error_event), distinct from the no-python breadcrumb by its
+# `detail` text.
 _lcc_tmpwrite_failed=0
 tmpfile="$(mktemp --suffix=.py 2>/dev/null)"
 if [ -z "$tmpfile" ] || [ ! -f "$tmpfile" ]; then
@@ -830,15 +767,11 @@ else
 fi
 
 if [ "$_lcc_tmpwrite_failed" = "1" ]; then
-  # Traced fail-open (guard-fail-open-leaves-no-trace): identical shape to the
-  # no-python breadcrumb above, but a DISTINCT detail string so the two fail-
-  # open causes are distinguishable in hook-error.json / hook-events.jsonl.
-  _HOOK_TMPWRITE_TS="$(date +%s 2>/dev/null || echo 0)"
-  mkdir -p "$LCC_BASE_DIR" 2>/dev/null
-  printf '{"hook":"lazy-cycle-containment","error":"temp-file write failed","at":"%s"}' \
-    "$_HOOK_TMPWRITE_TS" > "$LCC_BASE_DIR/hook-error.json" 2>/dev/null || true
-  printf '{"ts":%s,"kind":"error","hook":"lazy-cycle-containment","repo_root":"","signature":"","detail":"temp-file write failed"}\n' \
-    "$_HOOK_TMPWRITE_TS" >> "$LCC_BASE_DIR/hook-events.jsonl" 2>/dev/null || true
+  # Traced fail-open (guard-fail-open-leaves-no-trace): the prelude's shared
+  # pure-bash breadcrumb, with a DISTINCT detail string so this temp-write
+  # cause is distinguishable from the no-python cause in
+  # hook-error.json / hook-events.jsonl.
+  hook_emit_error_event "$HOOK_NAME" "" "temp-file write failed"
   exit 0
 fi
 
@@ -861,9 +794,9 @@ fi
 # LAZY_STATE_DIR — the embedded Python must see whether it was genuinely set
 # (hermetic test → exact dir) or unset (production → keyed dir via lazy_core).
 # LAZY_STATE_DIR (if set in this hook's environment) already passes through to
-# the child. We export LCC_SCRIPTS_DIR so the Python can import lazy_core for the
-# keyed resolution; the embedded body resolves the keyed marker path itself.
-LCC_SCRIPTS_DIR="$LCC_SCRIPTS_DIR" "$PYTHON" "$tmppath"
+# the child. We export HOOK_SCRIPTS_DIR so the Python can import hook_lib (the
+# emitters + append) AND lazy_core (the keyed marker resolution).
+HOOK_SCRIPTS_DIR="$HOOK_SCRIPTS_DIR" "$HOOK_PYTHON" "$tmppath"
 
 # Always exit 0 from the shell side: a non-zero PreToolUse exit is a hard
 # blocking error in Claude Code; deny is expressed in JSON, never an exit code.

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: shared-hook-lib
-status: In-progress
+status: Complete
 created: 2026-07-18
 complexity: complex
 phases: [3]
@@ -60,7 +60,7 @@ Where this plan's repo uses non-default gates or component paths (this is `claud
 - [x] WU-2 — Migrate `block-sentinel-write-on-stray-branch.sh`
 - [x] WU-3 — Migrate `long-build-ownership-guard.sh` (+ collapse anchors)
 - [x] WU-4 — Migrate `build-queue-enforce.sh` (+ collapse anchors)
-- [ ] WU-5 — Migrate `lazy-cycle-containment.sh` (+ collapse anchors, + import-failure pipe-test)
+- [x] WU-5 — Migrate `lazy-cycle-containment.sh` (+ collapse anchors, + import-failure pipe-test)
 
 ---
 

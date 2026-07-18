@@ -101,3 +101,4 @@ the historical / manually-authored spec archive (not under pipeline management).
 ~~- Bug-Queue Aging Backpressure (`bug-queue-aging-backpressure`) — P2 — the harness bug backlog has inflow caps but no outflow forcing function (oldest open bug 17 days, 23 Concluded-unfixed, null-severity pins permanent): age-escalation in the merged-view sort, expiry on hand-pinned deprioritizations, queue-age surfaced in LAZY_QUEUE.md.~~  ✅ COMPLETE
 ~~- Generalized build/test runner skill system (claude-config battery + AlgoBooth qg ops; Cognito pattern preserved) — (ad-hoc, enqueued 2026-07-13)~~  ✅ COMPLETE
 - Merged-head actionability oracle (replace 5-facet exclude-set enumeration) — (ad-hoc, enqueued 2026-07-18)
+- Concurrent multi-agent worktree coordination (awareness + FIFO file-lock + conflict handling) — (ad-hoc, enqueued 2026-07-18)

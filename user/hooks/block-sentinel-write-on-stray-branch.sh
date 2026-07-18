@@ -43,6 +43,17 @@ case "$SELF" in
   *)   _HOOK_DIR="$(pwd)" ;;
 esac
 . "$_HOOK_DIR/hook-prelude.sh" 2>/dev/null || exit 0
+
+# shared-hook-lib (SPEC D2): if hook_lib is unavailable in the scripts dir, leave
+# a prelude-side trace (hook_emit_error_event — the shared pure-bash breadcrumb)
+# and fail OPEN. Restores the "trace even when the shared module is unavailable"
+# property the pre-migration inline lazy_core fallback carried; the inline body's
+# `except ImportError: sys.exit(0)` is the silent last-resort for a
+# present-but-unimportable hook_lib.
+if [ ! -f "$HOOK_SCRIPTS_DIR/hook_lib.py" ]; then
+  hook_emit_error_event "$HOOK_NAME" "" "hook_lib.py not found in scripts dir"
+  exit 0
+fi
 STATE_PY="$HOOK_SCRIPTS_DIR/lazy-state.py"
 
 # All deny/allow logic lives in this inline Python. It reads the PreToolUse JSON
