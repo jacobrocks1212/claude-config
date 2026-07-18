@@ -175,13 +175,15 @@ for e in queue:
     candidates.append({"id": e["id"], "dep_ready": dep_ready,
                        "independent": lazy_core.parse_independent_marker(spec_text, e)})
 
-lock = os.path.join(os.path.dirname(LEASES), "global.lock.d")
-lazy_coord.acquire_lock(lock)
-try:
-    lazy_coord.reclaim_expired(LEASES, "<POOL>")          # dead-lane sweep first
-    print(json.dumps(lazy_coord.claim_shardable(candidates, LEASES)))
-finally:
-    lazy_coord.release_lock(lock)
+# reclaim_expired + acquire_lease are SELF-LOCKING (each takes global.lock.d
+# INTERNALLY via a non-reentrant os.mkdir lock); claim_shardable is a lock-free
+# READ. Do NOT wrap them in an outer acquire_lock — the inner mkdir would fail on
+# the dir this process already holds and TimeoutError after 10s (self-deadlock,
+# lazy-batch-parallel-run-harness-gaps gap 2). The primitives are individually
+# atomic; acquire_lease re-checks liveness under its own lock and returns None on
+# a double-claim, so the sequence is safe without an outer hold.
+lazy_coord.reclaim_expired(LEASES, "<POOL>")             # dead-lane sweep (self-locks)
+print(json.dumps(lazy_coord.claim_shardable(candidates, LEASES)))  # lock-free read
 PY
 ```
 
@@ -189,8 +191,9 @@ PY
 `no-independent-marker` / `live-lease`). Effective lanes =
 `lazy_coord.effective_lanes(requested, len(claimed), pool_size)`; truncate `claimed` to that
 count — the remainder stays queued for the serial phase / a later wave. Take ONE
-`acquire_lease(LEASES, item_id, pid, slot, ttl)` per claimed item (under the same lock hold),
-capturing each `term_token`, and `ledger_record_claim(LANES, item_id, slot, lane_branch)`.
+`acquire_lease(LEASES, item_id, pid, slot, ttl)` per claimed item (each call self-locks — do
+NOT hold an outer lock across them), capturing each `term_token`, and
+`ledger_record_claim(LANES, item_id, slot, lane_branch)`.
 
 Print the **shard report** (T6 zone):
 
