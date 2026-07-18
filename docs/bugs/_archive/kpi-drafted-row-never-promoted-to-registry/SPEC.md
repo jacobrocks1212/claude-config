@@ -6,9 +6,11 @@
 > gate, but `kpi-scorecard.py --capture-baseline lazy-core-monolith-intervention-drag` fails —
 > the row was never written to `docs/kpi/registry.json`.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P2
 **Discovered:** 2026-07-13
+**Fixed:** 2026-07-18
+**Fix commit:** b88fc5ab
 **Related:** `docs/features/friction-kpi-registry/` (owns `kpi-scorecard.py` + the registry);
 `user/skills/_components/spec-friction-kpi-gate.md` (the Step 8.5 gate); `docs/features/anti-overfit-design-gate/`
 and `docs/features/lazy-core-package-decomposition/` (both used the "full-schema drafted row"
