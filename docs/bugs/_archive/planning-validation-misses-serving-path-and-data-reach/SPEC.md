@@ -3,9 +3,10 @@
 > The planning-time runtime-assumption gate classifies sub-facts but never mandates (1) tracing the end-to-end serving path a feature's premise depends on ("can the user even reach the surface?"), or (2) tracing the write-side store binding of each entity a plan retains/deletes ("does the purge actually reach this data?") — producing the 57077 HTTP-500 (Phase 8) and the dead-code carve-outs (Phase 9).
 
 **Status:** Fixed
-**Fixed:** 2026-07-10 — implemented out-of-pipeline (operator-directed subagent orchestration; fix scope in this SPEC)
+**Fixed:** 2026-07-18
 **Severity:** P1
 **Discovered:** 2026-07-10
+**Fix commit:** e040e039
 **Placement:** docs/bugs/planning-validation-misses-serving-path-and-data-reach
 **Related:** 57077 case study, `_components/phases-runtime-validation.md`, sibling bugs `manual-runtime-gates-unowned-in-no-mcp-workflows`, `premise-contradictions-demoted-not-escalated`
 
