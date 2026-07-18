@@ -14,7 +14,7 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Runaway containment trip rate | 2599/30d | pending | — | PENDING-BASELINE |
+| Runaway containment trip rate | 3381/30d | pending | — | PENDING-BASELINE |
 
 ## halt-handling
 
@@ -26,7 +26,7 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Cycles per completion | 8.57 (30d) | pending | — | PENDING-BASELINE |
+| Cycles per completion | 10.86 (30d) | pending | — | PENDING-BASELINE |
 | MCP-validation round trips per feature | — | pending | — | NO-DATA |
 
 ## harness-canary
@@ -88,7 +88,7 @@
 
 ## Canary health
 
-- 16 canaries open, oldest 2d, 0 will no-data-close within 7d
+- 17 canaries open, oldest 2d, 0 will no-data-close within 7d
 
 ## Notes
 
