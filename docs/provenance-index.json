@@ -285,6 +285,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "descoped-row-recognition-needs-canonical-marker",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -4080,6 +4085,20 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/adhoc-bug-pickup-routes-superseded-specs/FIXED.md": [
+    {
+      "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-bug-pickup-routes-superseded-specs/SPEC.md": [
+    {
+      "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/adhoc-checkpoint-resume-field-complete-continuity/ADHOC_BRIEF.md": [
     {
       "id": "adhoc-checkpoint-resume-field-complete-continuity",
@@ -5206,11 +5225,25 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/containment-hook-inline-python-exceeds-windows-cmdline-limit/PHASES.md": [
+    {
+      "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/containment-hook-inline-python-exceeds-windows-cmdline-limit/SPEC.md": [
     {
       "id": "adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/bugs/containment-hook-inline-python-exceeds-windows-cmdline-limit/plans/fix-inline-python-cmdline-limit.md": [
+    {
+      "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/coord-lock-no-stale-reclaim/SPEC.md": [
@@ -15708,6 +15741,11 @@
       "id": "adhoc-bug-pickup-routes-superseded-specs",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/interventions/hardening-intervention-records-unmeasurable-or-missing.md": [
@@ -16386,6 +16424,11 @@
       "id": "bug-state-verification-only-remainder-loops-write-plan",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "descoped-row-recognition-needs-canonical-marker",
@@ -17410,6 +17453,11 @@
   ],
   "user/hooks/build-queue-enforce.sh": [
     {
+      "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -17460,6 +17508,11 @@
   "user/hooks/lazy-cycle-containment.sh": [
     {
       "id": "adhoc-incident-hook-deny-4b767b",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
       "type": "bug",
       "provenance": "pipeline-gated"
     },
@@ -17929,6 +17982,11 @@
       "id": "byref-dispatch-undercounts-forward-cycles",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "cycle-subagent-fabricates-policy-or-stray-branch",
@@ -19792,6 +19850,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "cycle-subagent-fabricates-policy-or-stray-branch",
       "type": "bug",
       "provenance": "backfilled"
@@ -20358,6 +20421,11 @@
     }
   ],
   "user/scripts/tests/baselines/bug-state-test-baseline.txt": [
+    {
+      "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "descoped-row-recognition-needs-canonical-marker",
       "type": "bug",

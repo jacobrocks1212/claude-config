@@ -1,6 +1,6 @@
 # lazy-cycle-containment.sh inline python exceeds the Windows command-line limit → silent fail-open (guard disarmed)
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-18
 **Related:** `docs/bugs/guard-fail-open-leaves-no-trace` (E2BIG slips between that fix's "no-python"

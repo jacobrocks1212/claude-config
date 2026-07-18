@@ -57,7 +57,7 @@ move/rename/delete; N/A.
 
 ### Phase 1: Convert the containment hook to a temp-file python invocation (restore the guard on Windows)
 
-**Status:** Complete
+**Status:** Fixed
 
 **Scope:** Stop passing the ~33.7 KB `$_LCC_PY` body as a `-c` argument. Write it to a temporary
 `.py` file and invoke `"$PYTHON" "$tmpfile"` with the PreToolUse payload still on real stdin —
