@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: shared-hook-lib
-status: In-progress
+status: Complete
 created: 2026-07-18
 complexity: complex
 phases: [1, 2]
@@ -60,7 +60,7 @@ Where this plan's repo uses non-default gates or component paths (this is `claud
 - [x] WU-1 — Author `hook-prelude.sh` + its fail-open pipe-tests
 - [x] WU-2 — Wire `lazy-dispatch-guard.sh` onto the prelude
 - [x] WU-3 — Wire `lazy-route-inject.sh` onto the prelude
-- [ ] WU-4 — Author `hook_lib.py` + `test_hook_lib.py` (import-light)
+- [x] WU-4 — Author `hook_lib.py` + `test_hook_lib.py` (import-light)
 
 ---
 

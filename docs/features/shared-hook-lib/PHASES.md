@@ -79,9 +79,11 @@ Per the Step 2.7 runtime-assumption gate. This feature has **no user-facing prod
 
 **Scope:** Author `user/scripts/hook_lib.py` — the imported python substrate. Provides `allow()` / `deny(reason)` JSON emitters, `append_hook_event(kind, hook, signature, detail, repo_root=None)` (lazily delegating to `lazy_core.append_hook_event` when importable, with the current per-hook inline fallback branch collapsed to live here ONCE), `breadcrumb(hook, err)` (chaining into `append_hook_event("error", …)`), and the shared anchor constants `ENV_PREFIX` / `CMD_START` (single source for the pair triplicated across three hooks). **Import-light discipline (D4):** stdlib only at module top; `import lazy_core` deferred lazily inside `append_hook_event`. `hook_lib` import must never read stdin.
 
+**Status:** ✅ Complete (2026-07-18)
+
 **Deliverables:**
-- [ ] `user/scripts/hook_lib.py` — `allow()`, `deny(reason)`, `append_hook_event(...)` (lazy `lazy_core` delegation + inline JSONL fallback), `breadcrumb(hook, err)`, `ENV_PREFIX` / `CMD_START` module constants, plus the shared path-prefix helper idiom.
-- [ ] Tests: `user/scripts/test_hook_lib.py` — unit tests for each emitter/appender/breadcrumb (assert JSON shape + fail-open on write error) AND the **import-light guard**: a subprocess `import hook_lib` MUST NOT have imported `lazy_core` (assert `"lazy_core" not in sys.modules` after `import hook_lib`).
+- [x] `user/scripts/hook_lib.py` — `allow()`, `deny(reason)`, `append_hook_event(...)` (lazy `lazy_core` delegation + inline JSONL fallback), `breadcrumb(hook, err)`, `ENV_PREFIX` / `CMD_START` module constants, plus the shared path-prefix helper idiom.
+- [x] Tests: `user/scripts/test_hook_lib.py` — unit tests for each emitter/appender/breadcrumb (assert JSON shape + fail-open on write error) AND the **import-light guard**: a subprocess `import hook_lib` MUST NOT have imported `lazy_core` (assert `"lazy_core" not in sys.modules` after `import hook_lib`).
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_hook_lib.py` passes, including the import-light guard proving `import hook_lib` does not pull `lazy_core` into `sys.modules`.
 
@@ -98,6 +100,21 @@ Per the Step 2.7 runtime-assumption gate. This feature has **no user-facing prod
 - `append_hook_event`'s inline fallback branch now lives ONCE here; Phase 3 hooks retain only a MINIMAL `except ImportError: sys.exit(0)` guard (a few lines), not the ~40-line per-hook copy.
 - `ENV_PREFIX` / `CMD_START` here are the single source; Phase 3 deletes the three inline copies and imports these. Coordinate the anchor SEMANTICS with the archived `long-build-and-build-queue-matcher-bypasses` bug so the matcher-semantics live in one place.
 - Mirror `lazy_core.append_hook_event`'s signature exactly (`kind, hook, signature, detail, repo_root=None`) so the delegation is a pass-through.
+
+**Implementation Notes (2026-07-18):**
+- Authored `user/scripts/hook_lib.py` (import-light: only `datetime`/`json`/`os`/`sys`/`time` at module top; `lazy_core` imported LAZILY inside `append_hook_event`, seeding its own dir onto `sys.path` first). `allow()`/`deny(reason)` are byte-identical to the enforcement hooks' `_allow`/`_deny` (deny shape asserted byte-exact via `json.dumps` insertion order). `append_hook_event(kind, hook, signature, detail, repo_root=None)` delegates to `lazy_core.append_hook_event` (binding the active repo when `repo_root` given), inline base-dir fallback otherwise; returns bool, never raises. `breadcrumb(hook, err)` writes `hook-error.json` + chains one `append_hook_event("error", ...)` line. `ENV_PREFIX`/`CMD_START`/`PATH_PREFIX` copied BYTE-IDENTICALLY from `long-build-ownership-guard.sh` so Phase 3's anchor collapse is a pure de-dup.
+- **Import-light guard (D4) proven:** `test_import_hook_lib_does_not_import_lazy_core` runs a fresh subprocess `import hook_lib` and asserts `"lazy_core" not in sys.modules` — the per-invocation `lazy_core` import cost (~95 ms warm) never lands at hook-import time.
+- **Gate:** `python user/scripts/test_hook_lib.py` → **7/7 passed** (constants incl. PATH_PREFIX; allow/deny exact shape via subprocess; append writes-line + returns-False-on-write-error; breadcrumb writes + chains; import-light guard). Also pytest-collectable (`pytest user/scripts/test_hook_lib.py` → 7 passed).
+- **Phase 3 is NOT touched** (out of this plan part — parts 2/3). The five enforcement hooks still carry their inline copies; they migrate onto `hook_lib` + the prelude in Phase 3.
+
+> **Repo invariant-battery note (PRE-EXISTING, unrelated to this feature):** `gate-battery.py`
+> reports `RESULT=FAIL` on the `pytest` gate, but the SOLE failure is
+> `test_kpi_scorecard.py:142` (`assert len(registry["kpis"]) == 21` — the committed
+> `docs/kpi/registry.json` has 22 rows; the 22nd, `subagent-wedge-strand-recurrence`, was
+> seeded by commit `d6e9465e` BEFORE this session). shared-hook-lib touches no KPI file; the
+> battery was already red at the tree this part started from. Its own two gates
+> (`test_hooks.py` 265/265, `test_hook_lib.py` 7/7) are fully green. Reported to the
+> orchestrator for a harden-harness spin-off (stale hardcoded count → 22 + add the new id).
 
 ---
 
