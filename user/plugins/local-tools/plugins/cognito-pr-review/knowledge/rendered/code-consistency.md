@@ -332,4 +332,37 @@ An added or modified block may duplicate logic that already exists ELSEWHERE IN 
 
 An added or modified block may diverge from the conventions established by the surrounding code in the same file (naming, error handling, logging, or the structural shape of sibling members). Sweep cannot verify whole-file conventions, so: FLAG this file as an intra-file consistency candidate when a change appears to introduce a naming or structural pattern inconsistent with its siblings, then ESCALATE to the intra-file consistency stage for an agent with structural access to confirm the divergence.
 
+#### No Test Only Production Seam (`no-test-only-production-seam`)
+**Severity:** important
+
+Net-new production code whose SOLE consumer is a test is defective. Flag a hook (an internal Action/Func) ?.Invoke()'d on a production path, a settable internal test-override property/field set only by a test, or visibility widening done solely so a test can reach a member. The remedy is a real injectable dependency, a mockable interface, or a protected virtual extension point the test drives — not a seam baked into production. Keys on "sole consumer is a test," NOT "used by tests": genuine injectable dependencies and protected virtual extension points that also have a real production consumer are NOT flagged.
+
+**Anti-pattern:**
+```csharp
+// Set only by a test; invoked on the production path so a test can observe a mid-operation event.
+internal Action? ArchiveMidpointHookForTests;
+public void Archive(IEnumerable<Record> records)
+{
+    foreach (var record in records)
+    {
+        WriteToArchive(record);
+        ArchiveMidpointHookForTests?.Invoke(); // test-only seam on a production path
+    }
+}
+
+// Settable test-override property whose sole consumer is a test (set via reflection).
+internal Func<PaymentAccountType>? PaymentAccountTypeResolverOverride { get; set; }
+```
+
+**Correct pattern:**
+```csharp
+// Inject a real dependency: a no-op observer in production, a spy in tests.
+public interface IArchiveObserver { void OnRecordArchived(); }
+public ArchiveService(IArchiveObserver observer) => _observer = observer;
+// ... inside Archive(): _observer.OnRecordArchived();
+
+// Resolve through a constructor-injected, mockable interface.
+public PaymentProcessor(IPaymentAccountTypeResolver resolver) => _resolver = resolver;
+```
+
 ---

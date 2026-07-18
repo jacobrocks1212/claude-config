@@ -58,15 +58,17 @@ python ~/.claude/scripts/project-skills.py && python ~/.claude/scripts/lint-skil
 
 ### Phase 2: cognito-pr-review detector in a production-file-matching category (the catch layer)
 
+**Status:** Complete
+
 **Scope:** Add a correctly-scoped PR-review detector so a test-only production seam that reaches a PR is *caught*. The rule lands in a category whose `file_patterns` match production code (NOT `testing.yaml`, which matches only test files — the SPEC's scoping trap), gets a `weights.yaml` entry, and the rendered shard is regenerated via the plugin's own command.
 
 ⚖ policy: PR-review category placement → `code-consistency.yaml` (all-files: `*.cs`/`*.ts`/`*.tsx`/`*.vue`). Chosen as the most-complete path (D7): it catches the witnessed C# cases AND TS/Vue analogs, the rule keys language-agnostically on "sole consumer is a test" so broader coverage introduces no false-positive risk, and it is a cleaner thematic home than `csharp-architecture.yaml` (C#-architecture-specific). This is a coverage-completeness choice, not a product fork.
 
 **Deliverables:**
-- [ ] Add a `no-test-only-production-seam` rule to `user/plugins/local-tools/plugins/cognito-pr-review/knowledge/rules/code-consistency.yaml`, mirroring the `no-internals-visible-to-for-tests` schema (`id`, `severity: important`, `description`, `rationale`, `anti_pattern`, `correct_pattern`). `description` keys on **sole consumer is a test** and enumerates the shapes (hook `?.Invoke()` on a production path, settable `internal` test-override property/field, visibility widening); `correct_pattern` shows the DI / mockable interface / `protected virtual` remedy. Explicitly does NOT flag genuine injectable dependencies or `protected virtual` extension points ("used by tests" ≠ "sole consumer is a test").
-- [ ] Add `no-test-only-production-seam:` with `weight: 0.7` / `data_points: 0` to `user/plugins/local-tools/plugins/cognito-pr-review/knowledge/weights.yaml` (matching the seam-cluster entries).
-- [ ] Run `/cognito-pr-review:rebuild-agents` to regenerate `knowledge/rendered/code-consistency.md` from the updated rule catalog (never hand-edit the rendered shard).
-- [ ] Confirm the regenerated shard carries the new rule.
+- [x] Add a `no-test-only-production-seam` rule to `user/plugins/local-tools/plugins/cognito-pr-review/knowledge/rules/code-consistency.yaml`, mirroring the `no-internals-visible-to-for-tests` schema (`id`, `severity: important`, `description`, `rationale`, `anti_pattern`, `correct_pattern`). `description` keys on **sole consumer is a test** and enumerates the shapes (hook `?.Invoke()` on a production path, settable `internal` test-override property/field, visibility widening); `correct_pattern` shows the DI / mockable interface / `protected virtual` remedy. Explicitly does NOT flag genuine injectable dependencies or `protected virtual` extension points ("used by tests" ≠ "sole consumer is a test").
+- [x] Add `no-test-only-production-seam:` with `weight: 0.7` / `data_points: 0` to `user/plugins/local-tools/plugins/cognito-pr-review/knowledge/weights.yaml` (matching the seam-cluster entries).
+- [x] Run `/cognito-pr-review:rebuild-agents` to regenerate `knowledge/rendered/code-consistency.md` from the updated rule catalog (never hand-edit the rendered shard). *(Rendered append-only per `commands/rebuild-agents.md` §3 — the new rule's H4 subsection only; no other rule changed, so no full-catalog re-render was needed.)*
+- [x] Confirm the regenerated shard carries the new rule.
 
 **Minimum Verifiable Behavior:** After the rule + weight edits and the rebuild:
 ```bash

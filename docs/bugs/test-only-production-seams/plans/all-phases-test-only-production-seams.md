@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: test-only-production-seams
-status: In-progress
+status: Complete
 created: 2026-07-18
 complexity: complex
 phases: [1, 2]
@@ -61,7 +61,7 @@ Phase 1 (WU-1..3) and Phase 2's WU-4 are file-disjoint and dependency-free relat
 - [x] WU-2 — Add the test-seam-hygiene flag line to subagent-review.md's TDD-DISCIPLINE block
 - [x] WU-3 — Add the always-on test-seam principle to user/CLAUDE.md `<testing>`
 - [x] WU-4 — Add the `no-test-only-production-seam` rule + weight entry to cognito-pr-review
-- [ ] WU-5 — Regenerate the rendered shard via `/cognito-pr-review:rebuild-agents` and verify the rule is present
+- [x] WU-5 — Regenerate the rendered shard via `/cognito-pr-review:rebuild-agents` and verify the rule is present
 
 ---
 
