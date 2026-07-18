@@ -1,6 +1,6 @@
 # Feature tier strings fall to MERGED_PRIORITY_DEFAULT, sorting real features dead-last
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-17
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage);
