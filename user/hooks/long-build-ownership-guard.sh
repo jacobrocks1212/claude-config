@@ -62,43 +62,29 @@
 # A best-effort breadcrumb is written to the state dir on an internal error,
 # mirroring the sibling guards.
 #
-# Python resolution: python3 preferred (WSL / Linux), falling back to python
-# (Windows git-bash where python3 may not be on PATH).
+# shared-hook-lib (Phase 3): python resolution, the scripts-dir derivation, and
+# the no-python breadcrumb are provided by the SOURCED hook-prelude.sh
+# (HOOK_PYTHON / HOOK_SCRIPTS_DIR); the allow/deny emitters, the countable
+# hook-events append, and the fail-open breadcrumb are provided by hook_lib
+# (imported from HOOK_SCRIPTS_DIR by the inline body). The command-segment anchor
+# regexes (ENV_PREFIX / CMD_START / PATH_PREFIX) are ALSO consumed from hook_lib —
+# their inline copies (the anchor triplication, SPEC D3) are gone. The PS-syntax
+# regex audit (_normalize_ps_syntax), the heredoc mask, and the COMMAND_TOOL_NAMES
+# tool-name gate stay hook-local and unchanged.
 
-if command -v python3 >/dev/null 2>&1; then
-  PYTHON=python3
-elif command -v python >/dev/null 2>&1; then
-  PYTHON=python
-else
-  # No python at all → fail open (exit 0, no output). guard-fail-open-leaves-no-trace:
-  # this is the severest failure class (the ENTIRE python-bearing guard plane is
-  # dead) and precisely the one no python-side appender can record, so the
-  # breadcrumb is written here in pure bash (no python required). Best-effort —
-  # every write is `2>/dev/null || true` so a breadcrumb failure never turns into
-  # a deny or a non-zero exit. Kept as an identical copied block across every
-  # python-bearing hook (interim per docs/bugs/guard-fail-open-leaves-no-trace D4
-  # — the natural long-term home is a shared hook-prelude, not yet built; keep
-  # the copies in lockstep).
-  _HOOK_NOPY_BASE="${LAZY_STATE_DIR:-$HOME/.claude/state}"
-  _HOOK_NOPY_TS="$(date +%s 2>/dev/null || echo 0)"
-  mkdir -p "$_HOOK_NOPY_BASE" 2>/dev/null
-  printf '{"hook":"long-build-ownership-guard","error":"no python interpreter on PATH","at":"%s"}' \
-    "$_HOOK_NOPY_TS" > "$_HOOK_NOPY_BASE/hook-error.json" 2>/dev/null || true
-  printf '{"ts":%s,"kind":"error","hook":"long-build-ownership-guard","repo_root":"","signature":"","detail":"no python interpreter on PATH"}\n' \
-    "$_HOOK_NOPY_TS" >> "$_HOOK_NOPY_BASE/hook-events.jsonl" 2>/dev/null || true
-  exit 0
-fi
-
-# incident-auto-capture Phase 1 (D2): resolve the scripts dir relative to this
-# hook so the inline Python can import lazy_core for the keyed hook-events
-# append (best-effort — the appender falls back to the base dir when the import
-# is unavailable). Builtins only; $0 may carry Windows backslashes.
+# Source the shared hook prelude, fail-open-guarded (shared-hook-lib SPEC D2).
+# A missing/broken prelude ALLOWS (exit 0), never wedges. Derive this hook's own
+# directory here ONLY to locate the prelude; the prelude then provides
+# HOOK_PYTHON (python3→python resolution; total absence ⇒ pure-bash breadcrumb
+# + exit 0 — guard-fail-open-leaves-no-trace §1) and HOOK_SCRIPTS_DIR (the
+# sibling user/scripts/ dir). Builtins only ($0 may carry Windows backslashes;
+# `dirname` is not guaranteed on a non-login git-bash PATH).
 SELF="${0//\\//}"
 case "$SELF" in
-  */*) LBO_SCRIPT_DIR="$(cd "${SELF%/*}" && pwd)" ;;
-  *)   LBO_SCRIPT_DIR="$(pwd)" ;;
+  */*) _HOOK_DIR="$(cd "${SELF%/*}" && pwd)" ;;
+  *)   _HOOK_DIR="$(pwd)" ;;
 esac
-LBO_SCRIPTS_DIR="$LBO_SCRIPT_DIR/../scripts"
+. "$_HOOK_DIR/hook-prelude.sh" 2>/dev/null || exit 0
 
 # All deny/allow logic lives in this inline Python. It reads the PreToolUse JSON
 # from stdin and emits an allow/deny hookSpecificOutput block (or nothing for a
@@ -109,11 +95,26 @@ LBO_SCRIPTS_DIR="$LBO_SCRIPT_DIR/../scripts"
 # piped into this hook. With `-c`, the hook's real stdin (the payload) flows
 # straight through to python's sys.stdin.
 read -r -d '' _LBO_PY <<'PYEOF'
-import datetime
 import json
 import os
 import re
 import sys
+
+# shared-hook-lib (SPEC D2): seed sys.path from HOOK_SCRIPTS_DIR (threaded via
+# env) and import hook_lib for the allow/deny emitters, the countable
+# hook-events append, the fail-open breadcrumb, AND the shared command-segment
+# anchor regexes (ENV_PREFIX / CMD_START / PATH_PREFIX — the anchor triplication
+# collapse, SPEC D3). A missing/failed import must ALLOW, never wedge — the ONLY
+# retained inline fallback is this minimal `except ImportError: sys.exit(0)`.
+try:
+    _sd = os.environ.get("HOOK_SCRIPTS_DIR")
+    if _sd and _sd not in sys.path:
+        sys.path.insert(0, _sd)
+    import hook_lib
+except ImportError:
+    sys.exit(0)
+
+_HOOK = "long-build-ownership-guard"
 
 # powershell-tool-bypasses-bash-matched-guards: the harness exposes more than
 # one command-execution tool (Bash, PowerShell) sharing the same
@@ -131,11 +132,6 @@ COMMAND_TOOL_NAMES = frozenset({"Bash", "PowerShell"})
 # consumes the same literal to deterministically recognize the redirect).
 TAKEOVER_SIGNATURE = "LONG-BUILD-OWNERSHIP-TAKEOVER"
 
-# Breadcrumb base dir (best-effort diagnostic only; un-keyed base / override).
-STATE_DIR = os.environ.get("LAZY_STATE_DIR") or os.path.join(
-    os.path.expanduser("~"), ".claude", "state"
-)
-
 # Command-position matcher: a long-build invocation that sits at a COMMAND
 # position — the start of the string (after optional leading `NAME=value` env
 # assignments) OR immediately after a shell command separator (`&&`, `||`, `|`,
@@ -147,28 +143,18 @@ STATE_DIR = os.environ.get("LAZY_STATE_DIR") or os.path.join(
 # end-of-string or whitespace, so `npm run build:docs` / `npm run build-foo` do
 # NOT match. `cargo build` REQUIRES `--release` (a plain `cargo build` debug build
 # is fast and not redirected; `cargo check --release` is a different verb).
-# PowerShell-syntax regex audit (powershell-tool-bypasses-bash-matched-guards):
-# env-assignment prefixes differ between shells (`NAME=value` in bash vs
-# `$env:NAME='value';` in PowerShell) — _ENV_PREFIX recognizes both forms.
-_ENV_PREFIX = (
-    r"(?:"
-    r"[A-Za-z_][A-Za-z0-9_]*=\S+\s+"
-    r"|\$env:[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:'[^']*'|\"[^\"]*\"|\S+)\s*;\s*"
-    r")*"
-)
-# A command-start boundary: string start, or a shell separator, then optional
-# whitespace and optional env-assignment prefix.
-_CMD_START = r"(?:^|[\n;&|({])\s*" + _ENV_PREFIX
-
-# long-build-and-build-queue-matcher-bypasses (Fix Scope #1): an optional path
-# prefix so a path-qualified binary token (`/abs/path/cargo build --release`)
-# still matches — the same idiom `build-queue-enforce.sh` uses for
-# `_FILTERED_SCRIPT_DIRECT_RE` (a run of non-separator characters ending in the
-# final path separator, optionally preceded by a `./`/`.\` relative marker).
-# Purely additive: every existing match position is unaffected because both
-# groups are optional.
-_PATH_PREFIX = r"(?:\.?[\\/])?(?:[^\s;&|]*[\\/])?"
-
+# shared-hook-lib (SPEC D3): CMD_START (built on ENV_PREFIX) and PATH_PREFIX now
+# come from hook_lib — the single home of the anchor pair + path prefix that used
+# to be hand-copied here and in lazy-cycle-containment.sh / build-queue-enforce.sh.
+# The PowerShell-syntax audit that motivated ENV_PREFIX's two-shell shape lives
+# with the constant in hook_lib.
+#
+# long-build-and-build-queue-matcher-bypasses (Fix Scope #1): hook_lib.PATH_PREFIX
+# is an optional path prefix so a path-qualified binary token
+# (`/abs/path/cargo build --release`) still matches — the same idiom
+# `build-queue-enforce.sh` uses for `_FILTERED_SCRIPT_DIRECT_RE`. Purely additive:
+# every existing match position is unaffected because both groups are optional.
+#
 # long-build-and-build-queue-matcher-bypasses (Fix Scope #1): the ORIGINAL
 # enumeration only matched the raw binary token itself (`tauri build`,
 # `cargo build --release`, `npm run build`) — verified live to walk straight
@@ -192,9 +178,9 @@ _PATH_PREFIX = r"(?:\.?[\\/])?(?:[^\s;&|]*[\\/])?"
 # bash -c / sh -c STRING-WRAP RESIDUAL (D2, documented-limitation — see
 # `user/hooks/CLAUDE.md` "Known limitation — bash -c / sh -c string-wraps" and
 # the sibling note in `build-queue-enforce.sh`): a quoted-string wrap
-# (`bash -c "cargo build --release"`) smuggles the build past `_CMD_START`
+# (`bash -c "cargo build --release"`) smuggles the build past CMD_START
 # because the build token is not a top-level segment start — it sits inside a
-# STRING ARGUMENT to `bash`/`sh`, one level of indirection `_CMD_START`
+# STRING ARGUMENT to `bash`/`sh`, one level of indirection CMD_START
 # deliberately does not unwrap (unlike the `powershell/pwsh -Command "..."`
 # case, which normalization DOES unwrap — a bash/sh nested-command subscan was
 # considered and deferred; see the CLAUDE.md note for the full rationale).
@@ -214,7 +200,7 @@ _PATH_PREFIX = r"(?:\.?[\\/])?(?:[^\s;&|]*[\\/])?"
 # qg-ts is ownership-tracked but not queue-serialized (no manifest op), so it
 # gets a plain ownership redirect with no queue hint — both correct.
 _LONG_BUILD_RE = re.compile(
-    _CMD_START + _PATH_PREFIX + r"(?:"
+    hook_lib.CMD_START + hook_lib.PATH_PREFIX + r"(?:"
     r"(?:npx\s+|npm\s+run\s+|cargo\s+)?tauri\s+build(?:\s|$)"
     r"|cargo\s+build\s+--release(?:\s|$)"
     r"|npm\s+run\s+build(?:\s|$)"
@@ -225,12 +211,12 @@ _LONG_BUILD_RE = re.compile(
 # PowerShell backtick line-continuation: the next physical line is part of the
 # SAME logical command — not a segment boundary. Collapsed to a space before
 # matching so a continued invocation (`cargo build `` + newline + `--release`)
-# is not hidden from _LONG_BUILD_RE by _CMD_START's `\n` separator.
+# is not hidden from _LONG_BUILD_RE by CMD_START's `\n` separator.
 _PS_LINE_CONTINUATION_RE = re.compile(r"`\r?\n")
 
 # PowerShell nesting: `powershell(.exe)?|pwsh ... -Command "..."` executes its
 # quoted STRING argument as a command line — a build hidden inside that string
-# is not at a top-level segment-start position under _CMD_START. Purely
+# is not at a top-level segment-start position under CMD_START. Purely
 # additive: the tail following the opening quote is reappended as a synthetic
 # newline-prefixed segment so _LONG_BUILD_RE can still find it.
 _PS_NESTED_COMMAND_RE = re.compile(
@@ -263,14 +249,14 @@ def _normalize_ps_syntax(command):
 # block-terminal-kill-false-denies-heredoc-body-tokens: a heredoc body
 # (`<<WORD` / `<< 'WORD'` / `<<"WORD"` / `<<-WORD` introducer through its
 # terminator line) is inert DATA — file/message CONTENT, never executed —
-# but its interior newlines satisfy _CMD_START's `\n` segment-separator
+# but its interior newlines satisfy CMD_START's `\n` segment-separator
 # class exactly like a real command boundary, so a deny token sitting at
 # the start of a body line (e.g. a commit-message body, an appended log
 # line) fabricates a false command-segment start and false-denies a
 # completely benign command. THIRD variant of the same false-deny class
 # (1: bare word-boundary → segment-start anchoring; 2: quoted-argument
 # values → _mask_quoted; 3: this — heredoc bodies). Kept as an identical
-# hook-local copy across every _CMD_START-anchored guard (block-terminal-
+# hook-local copy across every CMD_START-anchored guard (block-terminal-
 # kill.sh, lazy-cycle-containment.sh, this hook, build-queue-enforce.sh) —
 # same lockstep-copy discipline as _normalize_ps_syntax / COMMAND_TOOL_NAMES;
 # keep the copies in sync by inspection.
@@ -377,7 +363,7 @@ def _queue_routing_hint(command, cwd):
                     continue
                 body = r"\s+".join(re.escape(t) for t in pat.split())
                 if re.search(
-                    _CMD_START + body + r"(?:\s|$)", command, re.IGNORECASE
+                    hook_lib.CMD_START + body + r"(?:\s|$)", command, re.IGNORECASE
                 ):
                     skill = entry.get("skill") or ""
                     skill_txt = f" (skill: {skill})" if skill else ""
@@ -397,93 +383,14 @@ def _queue_routing_hint(command, cwd):
         return ""
 
 
-def _append_hook_event(kind, signature, detail, cwd=""):
-    """incident-auto-capture Phase 1 (D2): append one countable hook-event line
-    (hook-events.jsonl). Best-effort / FAIL-OPEN — never raises, never changes
-    the deny/allow output. Prefers the shared lazy_core appender (keyed state
-    dir when the repo is resolvable; exact LAZY_STATE_DIR dir in tests); falls
-    back to an inline append at the base dir when lazy_core is unavailable."""
-    try:
-        try:
-            _sd = os.environ.get("LBO_SCRIPTS_DIR")
-            if _sd and _sd not in sys.path:
-                sys.path.insert(0, _sd)
-            import lazy_core
-            try:
-                lazy_core.set_active_repo_root(cwd or None)
-                repo_root = str(lazy_core.active_repo_root() or "")
-            except Exception:
-                repo_root = cwd or ""
-            lazy_core.append_hook_event(
-                kind, "long-build-ownership-guard", signature, detail,
-                repo_root=repo_root,
-            )
-            return
-        except ImportError:
-            pass
-        import time as _time
-        os.makedirs(STATE_DIR, exist_ok=True)
-        entry = {
-            "ts": _time.time(), "kind": kind,
-            "hook": "long-build-ownership-guard",
-            "repo_root": cwd or "", "signature": (signature or "")[:200],
-            "detail": (detail or "")[:500],
-        }
-        with open(
-            os.path.join(STATE_DIR, "hook-events.jsonl"), "a", encoding="utf-8"
-        ) as fh:
-            fh.write(json.dumps(entry) + "\n")
-    except Exception:
-        pass
-
-
-def _breadcrumb(err):
-    """Write a fail-open breadcrumb; never raise."""
-    try:
-        os.makedirs(STATE_DIR, exist_ok=True)
-        with open(
-            os.path.join(STATE_DIR, "hook-error.json"), "w", encoding="utf-8"
-        ) as fh:
-            json.dump(
-                {
-                    "hook": "long-build-ownership-guard",
-                    "error": str(err),
-                    "at": datetime.datetime.now(tz=datetime.timezone.utc)
-                    .strftime("%Y-%m-%dT%H:%M:%S") + "Z",
-                },
-                fh,
-            )
-    except Exception:
-        pass
-    # D2: the breadcrumb stays byte-identical; the countable history is the
-    # additive hook-events line beside it (fail-open, never raises).
-    _append_hook_event("error", "", str(err))
-
-
-def _allow():
-    """Fast allow: emit nothing (PreToolUse with no decision = allow)."""
-    sys.exit(0)
-
-
-def _deny(reason):
-    print(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": reason,
-        }
-    }))
-    sys.exit(0)
-
-
 def main():
     raw = sys.stdin.read()
     payload = json.loads(raw)  # JSONDecodeError → caught below → fail-open
     if payload.get("tool_name", "") not in COMMAND_TOOL_NAMES:
-        _allow()
+        hook_lib.allow()
     command = (payload.get("tool_input") or {}).get("command", "")
     if not isinstance(command, str) or not command:
-        _allow()
+        hook_lib.allow()
     command = _normalize_ps_syntax(command)
     # Blank heredoc-body interiors (newlines included) so a long-build token
     # sitting at a heredoc-body line start (a commit-message body, an
@@ -492,10 +399,11 @@ def main():
     command = _mask_heredoc(command)
     if _LONG_BUILD_RE.search(command):
         # incident-auto-capture D2: countable deny event (fail-open, additive).
-        _append_hook_event(
-            "deny", TAKEOVER_SIGNATURE, command, payload.get("cwd") or ""
+        hook_lib.append_hook_event(
+            "deny", _HOOK, TAKEOVER_SIGNATURE, command,
+            repo_root=payload.get("cwd") or "",
         )
-        _deny(
+        hook_lib.deny(
             "LONG BUILD REDIRECTED TO ORCHESTRATOR "
             f"[{TAKEOVER_SIGNATURE}]: a long build or heavy gate "
             "(`tauri build` / `cargo build --release` / `npm run build` / "
@@ -509,7 +417,7 @@ def main():
             "compile errors fast before committing to the long build."
             + _queue_routing_hint(command, payload.get("cwd") or "")
         )
-    _allow()
+    hook_lib.allow()
 
 
 try:
@@ -517,15 +425,15 @@ try:
 except SystemExit:
     raise
 except Exception as exc:  # noqa: BLE001 — fail-OPEN on ANY error.
-    _breadcrumb(exc)
+    hook_lib.breadcrumb(_HOOK, exc)
     sys.exit(0)
 PYEOF
 
 # `read -d ''` returns non-zero at EOF even on success — that is expected; the
 # variable is populated. Run python with the captured body via -c so the hook's
-# real stdin (the PreToolUse payload) reaches python untouched. LBO_SCRIPTS_DIR
-# is threaded via env (D2) so the inline appender can import lazy_core.
-LBO_SCRIPTS_DIR="$LBO_SCRIPTS_DIR" "$PYTHON" -c "$_LBO_PY"
+# real stdin (the PreToolUse payload) reaches python untouched. HOOK_SCRIPTS_DIR
+# is threaded via env so the inline body can import hook_lib.
+HOOK_SCRIPTS_DIR="$HOOK_SCRIPTS_DIR" "$HOOK_PYTHON" -c "$_LBO_PY"
 
 # Always exit 0 from the shell side: a non-zero PreToolUse exit is a hard
 # blocking error in Claude Code; deny is expressed in JSON, never an exit code.
