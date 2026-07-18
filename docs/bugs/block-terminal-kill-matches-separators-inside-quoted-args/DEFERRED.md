@@ -15,6 +15,6 @@ on-disk bug pickup does not exclude `Superseded` SPECs, so the merged head route
 `spec-bug` during the 2026-07-18 overnight run. Deferred mechanically under the run's standing
 directive so the pipeline does not burn an investigation cycle on a superseded document.
 
-The routing gap itself is tracked as `docs/bugs/adhoc-bug-pickup-routes-superseded-specs/`
+The routing gap itself is tracked as `docs/bugs/_archive/adhoc-bug-pickup-routes-superseded-specs/`
 (8th exclude-set facet class; generalization: `docs/features/merged-head-actionability-oracle`).
 Un-defer by deleting this file if the supersession is ever revisited.

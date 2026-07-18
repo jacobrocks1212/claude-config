@@ -44,12 +44,6 @@
       "severity": null
     },
     {
-      "id": "adhoc-bug-pickup-routes-superseded-specs",
-      "name": "On-disk bug pickup routes Superseded SPECs into investigation",
-      "spec_dir": "adhoc-bug-pickup-routes-superseded-specs",
-      "severity": null
-    },
-    {
       "id": "adhoc-plan-bug-no-guard-for-fixed-annotated-specs",
       "name": "plan-bug Step 0.4 lacks a guard for Fixed-annotated / already-implemented SPECs",
       "spec_dir": "adhoc-plan-bug-no-guard-for-fixed-annotated-specs",

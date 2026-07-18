@@ -31,7 +31,7 @@
 | | status: Spec · next: spec | | | |
 | 7 | [adhoc-parity-audit-blind-to-compute-state-routing-branches](docs/bugs/adhoc-parity-audit-blind-to-compute-state-routing-branches/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 8 | [adhoc-bug-pickup-routes-superseded-specs](docs/bugs/adhoc-bug-pickup-routes-superseded-specs/SPEC.md) | Spec | — |  |
+| 8 | [adhoc-bug-pickup-routes-superseded-specs](docs/bugs/_archive/adhoc-bug-pickup-routes-superseded-specs/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
 | 9 | [adhoc-plan-bug-no-guard-for-fixed-annotated-specs](docs/bugs/adhoc-plan-bug-no-guard-for-fixed-annotated-specs/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
