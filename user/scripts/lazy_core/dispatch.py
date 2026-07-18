@@ -554,8 +554,8 @@ def research_halt_head(
     so a research head that is the merged head must SURFACE its halt.
 
     Mechanism: ``exclude_ids`` is the caller's FULL merged-head exclude set
-    (``nondispatchable_item_ids`` ∪ :func:`probe_skipped_ids`, current dispatch
-    target discarded) — the set that, by Round 64, excludes the research heads
+    (built by :func:`merged_head_nondispatchable_ids`, the actionability oracle —
+    current dispatch target discarded) — the set that excludes the research heads
     too. This helper RE-INCLUDES only the research-gated ids
     (``state["research_gated_heads"]``) and recomputes the merged head. If that
     head IS one of the research-gated ids, the research head is strictly ahead in
@@ -725,6 +725,18 @@ def merged_head_nondispatchable_ids(
     if same_pipeline_state is not None:
         same_items = feature_items if same_pipeline == "feature" else bug_items
         exclude: set[str] = set(probe_skipped_ids(same_pipeline_state, same_items))
+        # Fold the probe's OWN parked ids too (park mode): a parked item is the
+        # probe's skip decision, but it lives in ``state["parked"]`` — NOT in the
+        # gated/deferred lists ``probe_skipped_ids`` reads. Without this a parked
+        # SAME-pipeline item ranked above the emitted item would fall to the
+        # `iid in same_ids` "dispatchable same head" break below and NOT be
+        # excluded → the park-mode merged-head deadlock the retired file predicate
+        # closed (merged-head-includes-parked-items-deadlocks-park-run). Still the
+        # probe's own decision (L2), just its separately-tracked park list.
+        for _pe in (same_pipeline_state.get("parked") or []):
+            _pid = _pe.get("id") if isinstance(_pe, dict) else _pe
+            if _pid:
+                exclude.add(_pid)
         same_ids = {
             raw.get("id") for raw in (same_items or [])
             if isinstance(raw, dict) and raw.get("id")

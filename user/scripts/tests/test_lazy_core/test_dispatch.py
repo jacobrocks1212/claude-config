@@ -32,10 +32,7 @@ sys.path.insert(0, str(_SCRIPTS_DIR))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
-
 from _util import _ModuleMissing, _REAL_TEMPLATE_DIR, _STATE_A, _assert_run_end_refusal_emits, _build_bug_retro_routing_repo, _clear_state_dir, _commit_dummy, _dispatch_requires, _drive_run_end, _f1_guard_module, _f1_hook_input, _load_state_script, _make_git_repo_with_origin, _os_env, _record_consume, _set_state_dir, _write_marker_in  # noqa: E402
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -48,13 +45,10 @@ _IMPORT_ERROR: Exception | None = None
 lazy_core = None
 
 
-
 try:
     import lazy_core  # type: ignore[import]
 except ImportError as exc:
     _IMPORT_ERROR = exc
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -67,8 +61,6 @@ _FAILURES: list[str] = []
 _PASSES: list[str] = []
 
 
-
-
 def _guard() -> None:
     """Raise _ModuleMissing if lazy_core hasn't been extracted yet.
 
@@ -78,8 +70,6 @@ def _guard() -> None:
     """
     if _IMPORT_ERROR is not None:
         raise _ModuleMissing(f"lazy_core not importable: {_IMPORT_ERROR}")
-
-
 
 
 def _run_test(name: str, fn) -> None:
@@ -97,9 +87,6 @@ def _run_test(name: str, fn) -> None:
     except Exception as exc:  # noqa: BLE001
         _FAILURES.append(name)
         print(f"  FAIL  {name}: {type(exc).__name__}: {exc}")
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -123,8 +110,6 @@ def test_load_context_json_valid_long_value():
     assert result["item_id"] == "d8-effect-chains"
 
 
-
-
 def test_load_context_json_rejects_non_object():
     """A JSON array/string top level → ValueError (caught as structured error)."""
     _guard()
@@ -135,16 +120,12 @@ def test_load_context_json_rejects_non_object():
         lazy_core.load_context_json('"a bare string"')
 
 
-
-
 def test_load_context_json_rejects_malformed():
     """Invalid JSON → ValueError, never a silent empty dict."""
     _guard()
     import pytest as _pytest
     with _pytest.raises(ValueError):
         lazy_core.load_context_json('{not valid json,,,}')
-
-
 
 
 def test_load_context_json_coerces_values_to_str():
@@ -166,8 +147,6 @@ _STATE_A_SAME_STEP_DIFF_ARGS = {
     "sub_skill_args": "plan-part-9.md",    # differs from _STATE_A
     "current_step": "Step 7a: execute plan",  # SAME current_step as _STATE_A
 }
-
-
 
 
 def test_update_repeat_counts_step_counter_ordered_args_advance_resets():
@@ -204,8 +183,6 @@ def test_update_repeat_counts_step_counter_ordered_args_advance_resets():
     assert r2["repeat_count"] == 1, (
         f"dispatch-tuple repeat_count must RESET when sub_skill/args change, got {r2!r}"
     )
-
-
 
 
 def test_update_repeat_counts_step_multipart_progress_does_not_trip():
@@ -249,8 +226,6 @@ def test_update_repeat_counts_step_multipart_progress_does_not_trip():
         f"step_repeat_count must NEVER reach the >=3 tripwire for genuine "
         f"multi-part progress, got {step_counts!r}"
     )
-
-
 
 
 def test_update_repeat_counts_step_same_args_oscillation_still_trips():
@@ -302,8 +277,6 @@ def test_update_repeat_counts_step_same_args_oscillation_still_trips():
     )
 
 
-
-
 def test_update_repeat_counts_legacy_file_without_step_keys():
     """A persisted file written by the Phase-9 shape (signature/count/head, NO
     step_signature/step_count) → step_repeat_count starts at 1, and the new keys
@@ -344,8 +317,6 @@ def test_update_repeat_counts_legacy_file_without_step_keys():
     )
 
 
-
-
 def test_update_repeat_count_wrapper_still_returns_int():
     """The backward-compatible wrapper update_repeat_count returns the bare
     dispatch-tuple int (NOT a dict) — existing callers/tests are unbroken.
@@ -366,8 +337,6 @@ def test_update_repeat_count_wrapper_still_returns_int():
     assert r2["step_repeat_count"] == 2, (
         f"wrapper must persist step keys so the plural sees them, got {r2!r}"
     )
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -393,8 +362,6 @@ def _record_meta_consume(state_dir: "Path", cls: str = "hardening") -> None:
         assert consumed, "pre-condition: the fresh nonce must consume cleanly"
     finally:
         _clear_state_dir()
-
-
 
 
 def test_gap_a_meta_class_consume_does_not_defeat_step_debounce():
@@ -437,8 +404,6 @@ def test_gap_a_meta_class_consume_does_not_defeat_step_debounce():
     )
 
 
-
-
 def test_gap_a_meta_class_consume_does_not_defeat_dispatch_tuple_debounce():
     """Residual gap A mirror for repeat_count (F1, dispatch-tuple streak): the
     SAME oracle feeds both counters, so a META-class consume between two
@@ -468,8 +433,6 @@ def test_gap_a_meta_class_consume_does_not_defeat_dispatch_tuple_debounce():
         f"a META-class consume between two identical probes must NOT advance "
         f"repeat_count, got {r2!r}"
     )
-
-
 
 
 def test_gap_a_cycle_class_consume_still_trips_despite_intervening_meta():
@@ -506,8 +469,6 @@ def test_gap_a_cycle_class_consume_still_trips_despite_intervening_meta():
         f"oscillation counter (1 → 2), regardless of an intervening meta "
         f"consume, got {r2!r}"
     )
-
-
 
 
 def test_f1_repeat_count_head_reset_wins_over_debounce():
@@ -561,8 +522,6 @@ def test_f1_repeat_count_head_reset_wins_over_debounce():
     )
 
 
-
-
 # ---------------------------------------------------------------------------
 # Tests: format_cycle_header — WU-5 single-probe payload (cycle header)
 # ---------------------------------------------------------------------------
@@ -590,8 +549,6 @@ def test_format_cycle_header_full():
     )
 
 
-
-
 def test_format_cycle_header_missing_fields():
     """state={} and all counters None → Step falls back to 'Cycle', summary to the
     em-dash sentinel, counters to '?'.
@@ -612,12 +569,8 @@ def test_format_cycle_header_missing_fields():
     )
 
 
-
-
 # Residue regex — the same pattern the emitter's residue guard uses.
 _TOKEN_RESIDUE_RE = re.compile(r"\{[a-z_]+\}")
-
-
 
 
 def _emit_state(**overrides):
@@ -637,8 +590,6 @@ def _emit_state(**overrides):
     return base
 
 
-
-
 def test_emit_cycle_prompt_symbol_present():
     """emit_cycle_prompt must be importable from lazy_core.
 
@@ -646,8 +597,6 @@ def test_emit_cycle_prompt_symbol_present():
     """
     _guard()
     assert hasattr(lazy_core, "emit_cycle_prompt"), "lazy_core.emit_cycle_prompt missing"
-
-
 
 
 def test_emit_cycle_prompt_binding_matrix_real_template():
@@ -695,8 +644,6 @@ def test_emit_cycle_prompt_binding_matrix_real_template():
                 assert result["model"] == "opus", f"{ctx}: expected opus model, got {result['model']!r}"
 
 
-
-
 def test_emit_cycle_prompt_mcp_test_variant_anchors_real_template():
     """mcp-test (workstation) over the REAL template: runtime-up variant by
     default (no PHASES.md), no-runtime variant when PHASES declares
@@ -735,8 +682,6 @@ def test_emit_cycle_prompt_mcp_test_variant_anchors_real_template():
         assert not _TOKEN_RESIDUE_RE.findall(res_nr["prompt"]), "no-runtime residue"
 
 
-
-
 def test_emit_cycle_prompt_bug_tokens_real_template():
     """pipeline=bug binds FIXED.md + __mark_fixed__ (never COMPLETED.md /
     __mark_complete__ in a NO-LOOP emission); feature is the mirror image.
@@ -771,8 +716,6 @@ def test_emit_cycle_prompt_bug_tokens_real_template():
     assert "feature pipeline" in fp, "feature prompt missing pipeline_phrase 'feature pipeline'"
 
 
-
-
 def test_emit_cycle_prompt_pseudo_and_idle_return_none():
     """Pseudo-skill (__*), falsy sub_skill, and falsy feature_id each → None."""
     _guard()
@@ -800,8 +743,6 @@ def test_emit_cycle_prompt_pseudo_and_idle_return_none():
         repo, _emit_state(feature_id=""),
         pipeline="feature", template_dir=_REAL_TEMPLATE_DIR,
     ) is None, "empty feature_id must return None"
-
-
 
 
 def test_emit_cycle_prompt_loop_append_and_model_flip():
@@ -851,8 +792,6 @@ def test_emit_cycle_prompt_loop_append_and_model_flip():
     assert "LOOP DETECTED" not in none["prompt"], "loop block appended at repeat_count=None"
 
 
-
-
 def test_emit_cycle_prompt_mcp_test_cycle_model_haiku():
     """A happy-path mcp-test cycle (no loop) dispatches on haiku — the Informed
     Dispatcher base tier (run the deterministic engine, read the small verdict;
@@ -883,8 +822,6 @@ def test_emit_cycle_prompt_mcp_test_cycle_model_haiku():
             assert r["model"] == "haiku", f"rc={rc}: mcp-test expected haiku, got {r['model']!r}"
 
 
-
-
 def test_emit_cycle_prompt_mcp_test_legacy_md_escalates_sonnet():
     """An mcp-test cycle whose ONLY scenario is an unconverted legacy `.md`
     (no converted corpus/live/*.yaml counterpart) escalates to sonnet at emit
@@ -911,8 +848,6 @@ def test_emit_cycle_prompt_mcp_test_legacy_md_escalates_sonnet():
         )
 
 
-
-
 def test_emit_cycle_prompt_mcp_test_ready_yaml_stays_haiku():
     """An mcp-test cycle whose candidate scenarios are ALL ready converted YAML
     (corpus/live/*.yaml present) stays on the haiku happy path. The explicit
@@ -936,8 +871,6 @@ def test_emit_cycle_prompt_mcp_test_ready_yaml_stays_haiku():
         )
 
 
-
-
 def test_emit_cycle_prompt_mcp_test_loop_cycle_model_sonnet():
     """A looping (repeat_count>=2) mcp-test cycle ESCALATES from the haiku base to
     sonnet — the loop block's unconditional 'sonnet' target composes correctly
@@ -955,8 +888,6 @@ def test_emit_cycle_prompt_mcp_test_loop_cycle_model_sonnet():
     assert r is not None and r.get("ok") is True, f"emit: {r}"
     assert r["model"] == "sonnet", f"looping mcp-test expected sonnet, got {r['model']!r}"
     assert "LOOP DETECTED" in r["prompt"], "loop block not appended for looping mcp-test"
-
-
 
 
 # --- Phase 9: per-part complexity model tiering (lazy-validation-readiness) ---
@@ -985,8 +916,6 @@ def _write_complexity_plan(plan_dir: Path, name: str, complexity: str | None) ->
     return p
 
 
-
-
 def test_emit_cycle_prompt_mechanical_part_cycle_model_sonnet():
     """A `mechanical`-tagged execute-plan part → cycle_model == 'sonnet' even
     with no loop (repeat_count=1)."""
@@ -1001,8 +930,6 @@ def test_emit_cycle_prompt_mechanical_part_cycle_model_sonnet():
         )
     assert r is not None and r.get("ok") is True, f"emit: {r}"
     assert r["model"] == "sonnet", f"mechanical part expected sonnet, got {r['model']!r}"
-
-
 
 
 def test_emit_cycle_prompt_complex_part_cycle_model_opus():
@@ -1020,8 +947,6 @@ def test_emit_cycle_prompt_complex_part_cycle_model_opus():
     assert r["model"] == "opus", f"complex part expected opus, got {r['model']!r}"
 
 
-
-
 def test_emit_cycle_prompt_untagged_part_cycle_model_opus():
     """An untagged execute-plan part → cycle_model == 'opus' (back-compat)."""
     _guard()
@@ -1035,8 +960,6 @@ def test_emit_cycle_prompt_untagged_part_cycle_model_opus():
         )
     assert r is not None and r.get("ok") is True, f"emit: {r}"
     assert r["model"] == "opus", f"untagged part expected opus, got {r['model']!r}"
-
-
 
 
 def test_emit_cycle_prompt_complex_part_loop_stays_opus():
@@ -1060,8 +983,6 @@ def test_emit_cycle_prompt_complex_part_loop_stays_opus():
     assert "LOOP DETECTED" in r["prompt"], "loop block not appended for looping complex part"
 
 
-
-
 def test_emit_cycle_prompt_untagged_part_loop_stays_opus():
     """A looping (repeat_count>=2) UNTAGGED execute-plan part STAYS opus — the
     complexity floor uses plan_complexity's SAFE `complex` default for an untagged
@@ -1082,8 +1003,6 @@ def test_emit_cycle_prompt_untagged_part_loop_stays_opus():
     assert "LOOP DETECTED" in r["prompt"], "loop block not appended for looping untagged part"
 
 
-
-
 def test_emit_cycle_prompt_mechanical_part_loop_stays_sonnet():
     """A looping (repeat_count>=2) `mechanical` execute-plan part downgrades to
     sonnet exactly as before — the complexity floor only pins NON-mechanical parts,
@@ -1100,8 +1019,6 @@ def test_emit_cycle_prompt_mechanical_part_loop_stays_sonnet():
     assert r is not None and r.get("ok") is True, f"emit: {r}"
     assert r["model"] == "sonnet", f"looping mechanical part expected sonnet, got {r['model']!r}"
     assert "LOOP DETECTED" in r["prompt"], "loop block not appended for looping mechanical part"
-
-
 
 
 def test_emit_cycle_prompt_non_execute_plan_ignores_complexity():
@@ -1121,8 +1038,6 @@ def test_emit_cycle_prompt_non_execute_plan_ignores_complexity():
     assert r["model"] == "opus", f"non-execute cycle expected opus, got {r['model']!r}"
 
 
-
-
 # --- Synthetic-template parser-behavior unit tests --------------------------
 
 def _write_synth_template(template_dir: Path, sections: str, loop_body: str | None = None):
@@ -1135,8 +1050,6 @@ def _write_synth_template(template_dir: Path, sections: str, loop_body: str | No
     (template_dir / "cycle-base-prompt.md").write_text(header + sections, encoding="utf-8")
     if loop_body is not None:
         (template_dir / "loop-block.md").write_text(loop_body, encoding="utf-8")
-
-
 
 
 def test_emit_cycle_prompt_section_selection_synthetic():
@@ -1204,8 +1117,6 @@ def test_emit_cycle_prompt_section_selection_synthetic():
         assert "SECTION_C" not in r4["prompt"]
 
 
-
-
 def test_emit_cycle_prompt_refuses_unknown_token_synthetic():
     """A synthetic section with an unknown {bogus_token} → ok=False naming it."""
     _guard()
@@ -1223,8 +1134,6 @@ def test_emit_cycle_prompt_refuses_unknown_token_synthetic():
         assert r is not None, "refusal must be a dict, not None"
         assert r.get("ok") is False, f"expected refusal, got {r}"
         assert "bogus_token" in r.get("refused", ""), f"refusal must name the token: {r}"
-
-
 
 
 def test_emit_cycle_prompt_mcp_variant_routing_synthetic():
@@ -1276,8 +1185,6 @@ def test_emit_cycle_prompt_mcp_variant_routing_synthetic():
         assert reason in r_nr["prompt"], "untestability_reason not bound from PHASES line"
 
 
-
-
 def test_emit_cycle_prompt_work_branch_fallback_non_git():
     """A non-git repo_root → {work_branch} falls back to 'the current branch',
     and the emission still succeeds (ok=True, no residue).
@@ -1295,8 +1202,6 @@ def test_emit_cycle_prompt_work_branch_fallback_non_git():
         assert not _TOKEN_RESIDUE_RE.findall(r["prompt"]), "non-git residue"
 
 
-
-
 def test_emit_cycle_prompt_sub_skill_args_none_binds_empty():
     """sub_skill_args=None binds to an empty string (no 'None' literal, no residue)."""
     _guard()
@@ -1309,8 +1214,6 @@ def test_emit_cycle_prompt_sub_skill_args_none_binds_empty():
     # The literal "args: None" must not appear (None → "").
     assert "args: None" not in r["prompt"], "sub_skill_args=None leaked a 'None' literal"
     assert not _TOKEN_RESIDUE_RE.findall(r["prompt"]), "residue with None args"
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -1333,8 +1236,6 @@ def _write_addenda(repo_root: Path, body: str) -> Path:
     header = "# repo addenda\n\nMetadata that must never be emitted.\n\n"
     path.write_text(header + body, encoding="utf-8")
     return path
-
-
 
 
 def test_emit_cycle_prompt_addenda_absent_is_byte_identical():
@@ -1374,8 +1275,6 @@ def test_emit_cycle_prompt_addenda_absent_is_byte_identical():
     )
 
 
-
-
 def test_emit_cycle_prompt_addenda_selected_and_appended_after_base():
     """A matching addenda section is appended AFTER the base sections (and the
     addenda content + a base-section marker both appear, addenda LAST)."""
@@ -1402,8 +1301,6 @@ def test_emit_cycle_prompt_addenda_selected_and_appended_after_base():
     addenda_idx = p.find("ADDENDA_BODY")
     assert base_anchor_idx != -1, "base section anchor not found in prompt"
     assert addenda_idx > base_anchor_idx, "addenda must be appended AFTER base sections"
-
-
 
 
 def test_emit_cycle_prompt_addenda_filtered_by_skill_and_pipeline_and_mode():
@@ -1442,8 +1339,6 @@ def test_emit_cycle_prompt_addenda_filtered_by_skill_and_pipeline_and_mode():
     assert "ADDENDA_WRONGPIPE" not in p, "pipelines filter not applied to addenda"
 
 
-
-
 def test_emit_cycle_prompt_addenda_tokens_bound():
     """Tokens inside an addenda section are bound by the SAME binding map."""
     _guard()
@@ -1463,8 +1358,6 @@ def test_emit_cycle_prompt_addenda_tokens_bound():
     p = r["prompt"]
     assert "Addenda for feat-x (Feature)." in p, f"addenda tokens not bound: {p[-300:]!r}"
     assert not _TOKEN_RESIDUE_RE.findall(p), "residue after addenda binding"
-
-
 
 
 def test_emit_cycle_prompt_addenda_residue_refuses_naming_file():
@@ -1495,8 +1388,6 @@ def test_emit_cycle_prompt_addenda_residue_refuses_naming_file():
     assert "cycle-prompt-addenda.md" in refused, (
         f"refusal must name the addenda file so the bad section is locatable: {refused!r}"
     )
-
-
 
 
 def test_emit_cycle_prompt_addenda_before_loop_block():
@@ -1539,8 +1430,6 @@ def test_emit_cycle_prompt_addenda_before_loop_block():
     )
 
 
-
-
 # ---------------------------------------------------------------------------
 # cycle-prompt-environment-dialect Phase 2 (STATE lane) — `hosts=` selection
 # filter. Both selection loops (base template + repo addenda) must exclude a
@@ -1572,8 +1461,6 @@ class _FakeOsName:
         return getattr(os, attr)
 
 
-
-
 def test_emit_cycle_prompt_hosts_windows_selected_on_win32():
     """A `hosts=windows` section IS selected when the emitting host is
     Windows (os.name == 'nt')."""
@@ -1603,8 +1490,6 @@ def test_emit_cycle_prompt_hosts_windows_selected_on_win32():
         "hosts=windows section must be selected when os.name == 'nt'"
     )
     assert "SECTION_CORE" in r["prompt"]
-
-
 
 
 def test_emit_cycle_prompt_hosts_windows_excluded_on_non_windows():
@@ -1641,8 +1526,6 @@ def test_emit_cycle_prompt_hosts_windows_excluded_on_non_windows():
     )
 
 
-
-
 def test_emit_cycle_prompt_hosts_windows_addenda_excluded_on_non_windows():
     """The `hosts=` filter applies identically to the repo-addenda selection
     loop, not just the base-template loop."""
@@ -1672,8 +1555,6 @@ def test_emit_cycle_prompt_hosts_windows_addenda_excluded_on_non_windows():
     )
 
 
-
-
 def test_env_dialect_section_byte_budget():
     """The real template's env-dialect-core / env-dialect-windows sections
     each stay under the D4 2,048-byte budget (parsed via the SAME
@@ -1692,8 +1573,6 @@ def test_env_dialect_section_byte_budget():
         )
 
 
-
-
 def test_bug_state_retro_fresh_routes_past_step8():
     """bug-state: RETRO_DONE.md whose phase_count_at_retro EQUALS the current
     phase count → fresh retro; routing falls through Step 8 to the Step 9
@@ -1710,8 +1589,6 @@ def test_bug_state_retro_fresh_routes_past_step8():
         state = bs.compute_state(root, False)
     assert state["sub_skill"] == "mcp-test", state
     assert state["current_step"] == "Step 9: run MCP tests", state["current_step"]
-
-
 
 
 def test_normalize_widened_equivalence_pairs():
@@ -1744,8 +1621,6 @@ def test_normalize_widened_equivalence_pairs():
     assert lazy_core.prompt_sha256(mutated) != h_base, (
         "a real word change must still change the hash (deny still fires)"
     )
-
-
 
 
 def test_f2b_emdash_hashes_equal_to_hyphen():
@@ -1781,8 +1656,6 @@ def test_f2b_emdash_hashes_equal_to_hyphen():
     )
 
 
-
-
 def test_f2b_curly_quotes_hash_equal_to_straight():
     """F2b: left/right single curly quotes → apostrophe; left/right double curly
     quotes → straight double quote.  A prompt with curly quotes must hash equal to
@@ -1810,8 +1683,6 @@ def test_f2b_curly_quotes_hash_equal_to_straight():
     )
 
 
-
-
 def test_f2b_nbsp_hashes_equal_to_space():
     """F2b: non-breaking space U+00A0 and narrow NBSP U+202F must fold to regular
     space so a copy that picks up NBSP (common in web/docx copy-paste) still
@@ -1829,8 +1700,6 @@ def test_f2b_nbsp_hashes_equal_to_space():
     assert lazy_core.prompt_sha256(narrow_nb) == lazy_core.prompt_sha256(base), (
         f"narrow NBSP (U+202F) must fold to space (F2b leg 5); hashes differed"
     )
-
-
 
 
 def test_f2b_genuine_word_change_still_differs():
@@ -1855,8 +1724,6 @@ def test_f2b_genuine_word_change_still_differs():
     )
 
 
-
-
 def test_single_slot_dispatch_templates():
     """Every @requires token appears EXACTLY ONCE as a {token} slot in each
     dispatch template body (WU-7.3a transcription-surface reduction)."""
@@ -1875,8 +1742,6 @@ def test_single_slot_dispatch_templates():
                 f"{tpl.name}: @requires token {tok!r} must appear EXACTLY ONCE "
                 f"as a {{{tok}}} slot, found {count}"
             )
-
-
 
 
 def test_emit_dispatch_cycle_header_marker_gated():
@@ -1934,8 +1799,6 @@ def test_emit_dispatch_cycle_header_marker_gated():
             assert ri["cycle_header"].startswith("### Investigate — Bug Q [meta 4]"), ri["cycle_header"]
         finally:
             _clear_state_dir()
-
-
 
 
 def test_record_decision_cli_and_apply_resolution_binds_end_to_end():
@@ -2009,8 +1872,6 @@ def test_record_decision_cli_and_apply_resolution_binds_end_to_end():
         assert "operator picked the recommended default at the prompt" in prompt, prompt
 
 
-
-
 def test_emit_dispatch_always_emits_json_on_error():
     """ISSUE 3: --emit-dispatch NEVER emits non-JSON, even on a bad context payload.
 
@@ -2037,8 +1898,6 @@ def test_emit_dispatch_always_emits_json_on_error():
             f"structured error must carry error_kind, got {data}"
         )
         assert "not valid JSON" in data["dispatch_prompt_refused"]
-
-
 
 
 def test_f1a_default_deny_reason_names_customization_path():
@@ -2078,8 +1937,6 @@ def test_f1a_default_deny_reason_names_customization_path():
     )
 
 
-
-
 def test_f1a_hardening_cap_reason_unchanged():
     """F1a must NOT touch the hardening depth-1 cap reason: it still says halt +
     PushNotification and must NOT recommend `--emit-dispatch hardening`."""
@@ -2091,8 +1948,6 @@ def test_f1a_hardening_cap_reason_unchanged():
     assert "--emit-dispatch hardening" not in reason, (
         "the hardening cap reason must never recommend recursive hardening"
     )
-
-
 
 
 def test_f1b_pure_suffix_cycle_prompt_auto_readmits():
@@ -2156,8 +2011,6 @@ def test_f1b_pure_suffix_cycle_prompt_auto_readmits():
             _clear_state_dir()
 
 
-
-
 def test_f1b_in_body_edit_still_denies():
     """F1b exclusion: an in-body edit (a word changed mid-prompt, NOT a pure
     trailing suffix) is NOT a suffix superset → it still DENIES with the default
@@ -2211,8 +2064,6 @@ def test_f1b_in_body_edit_still_denies():
             _clear_state_dir()
 
 
-
-
 def test_f1b_auto_readmit_error_falls_through_to_deny():
     """F1b fail-open: if the auto-readmit path raises internally (here:
     consume_nonce poisoned), the guard must fall through to the NORMAL deny — never
@@ -2253,8 +2104,6 @@ def test_f1b_auto_readmit_error_falls_through_to_deny():
             _clear_state_dir()
 
 
-
-
 def test_f1b_register_emission_stores_normalized_prompt_text():
     """F1b registry-text field: register_emission stores the
     normalize_prompt_for_hash-normalized prompt text on each entry (the field the
@@ -2275,8 +2124,6 @@ def test_f1b_register_emission_stores_normalized_prompt_text():
             )
         finally:
             _clear_state_dir()
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -2331,8 +2178,6 @@ def test_registry_register_lookup_consume():
             _clear_state_dir()
 
 
-
-
 # ---------------------------------------------------------------------------
 # Test 6: registry TTL — stale entry not dispatchable; fresh entry is
 # ---------------------------------------------------------------------------
@@ -2367,8 +2212,6 @@ def test_registry_ttl():
             )
         finally:
             _clear_state_dir()
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -2419,8 +2262,6 @@ def test_crlf_lf_normalization():
             )
         finally:
             _clear_state_dir()
-
-
 
 
 def test_advance_run_counters_census_regression_does_not_strand():
@@ -2516,8 +2357,6 @@ def test_advance_run_counters_census_regression_does_not_strand():
                 )
         finally:
             _clear_state_dir()
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -2669,8 +2508,6 @@ def test_subprocess_emit_prompt_with_marker_writes_registry():
         assert matching[0]["class"] == "cycle", (
             f"registry entry class must be 'cycle', got {matching[0]['class']!r}"
         )
-
-
 
 
 def test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug():
@@ -3113,8 +2950,6 @@ def test_subprocess_emit_prompt_serial_tail_no_lease_still_withholds():
             f"merged_head must name the P0 bug; got {state_json.get('merged_head')!r}")
 
 
-
-
 # ---------------------------------------------------------------------------
 # Test 13: --repeat-count-peek does NOT advance marker counters
 #          + freshness-leg assertion for lookup_emission
@@ -3250,8 +3085,6 @@ def test_repeat_count_peek_does_not_advance_marker_counters():
             _clear_state_dir()
 
 
-
-
 # ---------------------------------------------------------------------------
 # End of Phase 1 test definitions
 # ---------------------------------------------------------------------------
@@ -3283,7 +3116,6 @@ _EXPECTED_DISPATCH_CLASSES = (
 )
 
 
-
 # Model assignment per class — derived from the SOURCE COMPONENTS (not SPEC.md,
 # which pins no per-class models).  apply-resolution=opus because
 # blocked-resolution.md dispatches its apply subagent as Opus.
@@ -3295,8 +3127,6 @@ _EXPECTED_DISPATCH_MODELS = {
     "coherence-recovery": "sonnet",
     "needs-runtime-redispatch": "opus",
 }
-
-
 
 
 def test_emit_dispatch_symbols_present():
@@ -3360,8 +3190,6 @@ def test_emit_dispatch_symbols_present():
             f"DISPATCH_MODELS[{cls!r}] = {model!r}; expected {expected_model!r} "
             f"per the Phase 3 spec contract"
         )
-
-
 
 
 def test_emit_dispatch_real_template_binding_matrix():
@@ -3445,8 +3273,6 @@ def test_emit_dispatch_real_template_binding_matrix():
                 )
 
 
-
-
 def test_emit_dispatch_refuses_missing_requires():
     """Synthetic template with @requires foo,bar; context missing 'bar'
     → ok=False, refusal message names 'bar'.
@@ -3495,8 +3321,6 @@ def test_emit_dispatch_refuses_missing_requires():
         )
 
 
-
-
 def test_emit_dispatch_refuses_unbound_residue():
     """Synthetic template with a {not_supplied} token NOT declared in @requires
     → ok=False, refusal message names the token.
@@ -3542,8 +3366,6 @@ def test_emit_dispatch_refuses_unbound_residue():
             f"refusal message must name the unbound token 'not_supplied'; "
             f"got: {refused_msg!r}"
         )
-
-
 
 
 def test_emit_dispatch_content_braces_in_value_do_not_refuse():
@@ -3681,8 +3503,6 @@ def test_emit_dispatch_section_filtering():
         )
 
 
-
-
 def test_emit_dispatch_unknown_class_raises():
     """emit_dispatch_prompt raises ValueError for unknown classes (e.g. 'nonsense').
     'hardening' was listed here in Phase 3 as a future unknown class; it is now
@@ -3716,8 +3536,6 @@ def test_emit_dispatch_unknown_class_raises():
         )
 
 
-
-
 def _build_dispatch_registry_fixture(td_path):
     """Build the minimal lazy-state.py fixture repo used by the dispatch CLI tests.
 
@@ -3749,8 +3567,6 @@ def _build_dispatch_registry_fixture(td_path):
     return td_path / "fixture-repo"
 
 
-
-
 def _read_recovery_requires_keys():
     """Return the @requires keys declared in dispatch-recovery.md line 1,
     or None if the file doesn't exist (so callers can skip gracefully).
@@ -3764,8 +3580,6 @@ def _read_recovery_requires_keys():
     if not m:
         return None
     return [k.strip() for k in m.group(1).split(",") if k.strip()]
-
-
 
 
 def test_emit_dispatch_cli_registry_gating():
@@ -3992,8 +3806,6 @@ def test_emit_dispatch_cli_registry_gating():
             )
 
 
-
-
 def test_emit_dispatch_cli_bug_state_mirror():
     """Coupled-pair mirror of test_emit_dispatch_cli_registry_gating sub-scenario (a):
     bug-state.py --emit-dispatch recovery must also accept the flag and return
@@ -4073,8 +3885,6 @@ def test_emit_dispatch_cli_bug_state_mirror():
         )
 
 
-
-
 # ---------------------------------------------------------------------------
 # End of Phase 3 test definitions
 # ---------------------------------------------------------------------------
@@ -4112,15 +3922,12 @@ _HARDENING_REQUIRED_KEYS: frozenset[str] = frozenset({
 })
 
 
-
 # Resolve the harden-harness SKILL.md path relative to the repo root inferred
 # from _SCRIPTS_DIR (user/scripts).
 _HARDEN_SKILL_PATH = (
     Path(__file__).resolve().parents[3]
     / "skills" / "harden-harness" / "SKILL.md"
 )
-
-
 
 
 def test_hardening_dispatch_class_present():
@@ -4228,8 +4035,6 @@ def test_hardening_dispatch_class_present():
         "Phase 4 adds 'hardening' to DISPATCH_CLASSES; "
         "currently raises ValueError because 'hardening' is not yet registered"
     )
-
-
 
 
 def test_hardening_template_binding():
@@ -4378,8 +4183,6 @@ def test_hardening_template_binding():
                 f"under full gates on claude-config (it is NOT the standard "
                 f"no-commit dispatch); found in:\n{prompt[:500]!r}"
             )
-
-
 
 
 def test_spike_dispatch_class_registered():
@@ -4583,8 +4386,6 @@ def test_hardening_skill_file_contract():
     )
 
 
-
-
 def _read_hardening_requires_keys():
     """Return the @requires keys declared in dispatch-hardening.md line 1,
     or None if the file doesn't exist (so callers can skip gracefully).
@@ -4600,8 +4401,6 @@ def _read_hardening_requires_keys():
     if not m:
         return None
     return [k.strip() for k in m.group(1).split(",") if k.strip()]
-
-
 
 
 def test_hardening_cli_emit_and_register():
@@ -4782,7 +4581,6 @@ def test_hardening_cli_emit_and_register():
         )
 
 
-
 # ---------------------------------------------------------------------------
 # Phase 3 (F2a) test function definitions — must appear BEFORE the final
 # _TESTS re-assignment below.
@@ -4812,8 +4610,6 @@ def test_f2a_register_emission_stores_prompt_raw():
             )
         finally:
             _clear_state_dir()
-
-
 
 
 def test_f2a_resolve_emission_fresh_nonce_returns_entry():
@@ -4860,8 +4656,6 @@ def test_f2a_resolve_emission_fresh_nonce_returns_entry():
             _clear_state_dir()
 
 
-
-
 def test_f2a_resolve_emission_consumed_nonce_returns_none():
     """F2a: resolve_emission_by_nonce returns None for a nonce that has already
     been consumed (single-use enforced, TOCTOU safety).
@@ -4892,8 +4686,6 @@ def test_f2a_resolve_emission_consumed_nonce_returns_none():
             )
         finally:
             _clear_state_dir()
-
-
 
 
 def test_f2a_resolve_emission_stale_nonce_returns_none():
@@ -4931,8 +4723,6 @@ def test_f2a_resolve_emission_stale_nonce_returns_none():
             )
         finally:
             _clear_state_dir()
-
-
 
 
 def test_f2a_append_dispatch_by_reference_event_writes_ledger():
@@ -4997,8 +4787,6 @@ def test_f2a_append_dispatch_by_reference_event_writes_ledger():
             _clear_state_dir()
 
 
-
-
 def test_governing_file_set_includes_orchestrator_and_components():
     """The governing set INCLUDES lazy-batch SKILL + bug/cloud twins + the 3 components."""
     _guard()
@@ -5013,8 +4801,6 @@ def test_governing_file_set_includes_orchestrator_and_components():
     ]
     for rel in includes:
         assert rel in gset, f"governing set must include {rel}"
-
-
 
 
 def test_merged_priority_normalizes_tier_and_severity():
@@ -5040,8 +4826,6 @@ def test_merged_priority_normalizes_tier_and_severity():
     assert lazy_core.merged_priority("feature", {"tier": True}) == lazy_core.MERGED_PRIORITY_DEFAULT
 
 
-
-
 def test_merged_priority_feature_tier_enum_to_int():
     """feature-tier-strings-fall-to-merged-priority-default: NAMED feature-tier
     enums normalize to their integer priority (parallel to bug severity), while
@@ -5062,8 +4846,6 @@ def test_merged_priority_feature_tier_enum_to_int():
     assert lazy_core.merged_priority("feature", {"tier": None}) == lazy_core.MERGED_PRIORITY_DEFAULT
     # An UNKNOWN enum name still sorts last (no silent mis-priority).
     assert lazy_core.merged_priority("feature", {"tier": "not-a-tier"}) == lazy_core.MERGED_PRIORITY_DEFAULT
-
-
 
 
 def test_merged_priority_feature_multi_enum_takes_min():
@@ -5090,8 +4872,6 @@ def test_merged_priority_feature_multi_enum_takes_min():
     assert lazy_core.merged_priority("feature", {"tier": []}) == lazy_core.MERGED_PRIORITY_DEFAULT
 
 
-
-
 def test_merged_priority_prerelease_ordering_p0_before_prerelease_before_p2():
     """feature-tier-strings-fall-to-merged-priority-default LOAD-BEARING ordering
     (operator-specified): merged_priority(P0 bug)=0 < merged_priority(pre-release
@@ -5112,8 +4892,6 @@ def test_merged_priority_prerelease_ordering_p0_before_prerelease_before_p2():
     assert ids == ["p0-bug", "pre-rel-feat", "p2-bug"], ids
 
 
-
-
 def test_merged_worklist_both_populated_ordered_by_priority():
     """WU-1/WU-3: both queues populated → ordered by effective priority; a
     higher-priority feature precedes a lower-priority bug regardless of type."""
@@ -5126,8 +4904,6 @@ def test_merged_worklist_both_populated_ordered_by_priority():
     # Shape contract: each entry is {item_id, type, repo_root}.
     assert wl[0] == {"item_id": "feat-hi", "type": "feature", "repo_root": "/r"}
     assert wl[1]["type"] == "bug"
-
-
 
 
 def test_merged_worklist_bug_breaks_tie_at_equal_priority():
@@ -5168,8 +4944,6 @@ def test_merged_worklist_aged_p2_bug_sorts_behind_p1_feature():
     # But a genuine P0 bug outranks the same P1 feature.
     p0 = [{"id": "p0-bug", "severity": "P0"}]
     assert lazy_core.next_merged(feats, p0, "/r", today=today)["type"] == "bug"
-
-
 
 
 def test_merged_head_override_diverges_when_p0_bug_outranks_current_feature():
@@ -5868,34 +5642,6 @@ def test_spec_dir_would_park_predicate():
         assert not lazy_core.spec_dir_would_park(root / "nope", park_needs_input=True)
 
 
-def test_nondispatchable_item_ids_resolves_feature_and_bug_spec_dirs():
-    """nondispatchable_item_ids resolves feature (docs/features/<id>) and bug
-    (docs/bugs/<id>, or the loader spec_path) dirs and returns the parked set;
-    no facet AND no DEFERRED.md → empty set."""
-    _guard()
-    with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
-        feat_dir = root / "docs" / "features" / "feat-parked"; feat_dir.mkdir(parents=True)
-        (feat_dir / "NEEDS_INPUT.md").write_text("x", encoding="utf-8")
-        bug_dir = root / "docs" / "bugs" / "bug-parked"; bug_dir.mkdir(parents=True)
-        (bug_dir / "NEEDS_INPUT.md").write_text("x", encoding="utf-8")
-        bug_ok = root / "docs" / "bugs" / "bug-ok"; bug_ok.mkdir(parents=True)
-        (bug_ok / "SPEC.md").write_text("x", encoding="utf-8")
-
-        feats = [{"id": "feat-parked"}, {"id": "feat-none"}]
-        # Bug items may carry an absolute spec_path (the load_bug_queue shape).
-        bugs = [
-            {"id": "bug-parked", "spec_path": bug_dir},
-            {"id": "bug-ok", "spec_path": bug_ok},
-        ]
-        # No facet + no DEFERRED.md → empty (byte-identical non-defer behavior).
-        assert lazy_core.nondispatchable_item_ids(feats, bugs, str(root)) == set()
-        parked = lazy_core.nondispatchable_item_ids(
-            feats, bugs, str(root), park_needs_input=True
-        )
-        assert parked == {"feat-parked", "bug-parked"}, parked
-
-
 def test_spec_dir_operator_deferred_predicate():
     """merged-head-excludes-parked-not-operator-deferred-deadlocks: the
     UNCONDITIONAL operator-defer predicate — True iff DEFERRED.md is present,
@@ -5914,75 +5660,6 @@ def test_spec_dir_operator_deferred_predicate():
         assert not lazy_core.spec_dir_operator_deferred(clean)
         assert not lazy_core.spec_dir_operator_deferred(root / "nope")
         assert not lazy_core.spec_dir_operator_deferred(None)
-
-
-def test_nondispatchable_item_ids_excludes_operator_deferred_unconditionally():
-    """merged-head-excludes-parked-not-operator-deferred-deadlocks REGRESSION
-    fixture (a): a top operator-deferred bug (DEFERRED.md) is excluded from the
-    merged head EVEN WITH NO PARK FLAG — the Round-56 fast-path used to short-
-    circuit to empty here. The merged head becomes the lower actionable bug and
-    the actionable probe gets NO merged-head-diverged withhold (deadlock gone)."""
-    _guard()
-    with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
-        dfr = root / "docs" / "bugs" / "non-windows-audio-output-unvalidated"
-        dfr.mkdir(parents=True)
-        (dfr / "DEFERRED.md").write_text("reason: needs non-Windows host", encoding="utf-8")
-        act = root / "docs" / "bugs" / "adhoc-incident-hook-deny-a51dde"; act.mkdir(parents=True)
-        (act / "SPEC.md").write_text("x", encoding="utf-8")
-
-        bugs = [
-            {"id": "non-windows-audio-output-unvalidated", "severity": "P0",
-             "spec_path": dfr},
-            {"id": "adhoc-incident-hook-deny-a51dde", "severity": "P2", "spec_path": act},
-        ]
-        # NO park flag at all — operator-defer is unconditional.
-        excluded = lazy_core.nondispatchable_item_ids([], bugs, str(root))
-        assert excluded == {"non-windows-audio-output-unvalidated"}, excluded
-        # --next-merged surface: head is the ACTIONABLE bug, not the deferred one.
-        head = lazy_core.next_merged([], bugs, "/echo", exclude_ids=excluded)
-        assert head["item_id"] == "adhoc-incident-hook-deny-a51dde", head
-        # Emit probe for the actionable bug → NO withhold (deadlock gone).
-        override = lazy_core.dispatch.merged_head_override(
-            [], bugs, "/echo", "adhoc-incident-hook-deny-a51dde", exclude_ids=excluded,
-        )
-        assert override is None, override
-        # Without the exclusion the OLD (post-Round-56) behavior deadlocks: head is
-        # the operator-deferred P0 bug and the actionable probe is withheld behind it.
-        old = lazy_core.dispatch.merged_head_override(
-            [], bugs, "/echo", "adhoc-incident-hook-deny-a51dde",
-        )
-        assert old is not None and old["merged_head"]["item_id"] == (
-            "non-windows-audio-output-unvalidated"
-        ), old
-
-
-def test_nondispatchable_item_ids_mixed_parked_and_operator_deferred():
-    """merged-head-excludes-parked-not-operator-deferred-deadlocks REGRESSION
-    fixture (c): a mixed queue — a parked (NEEDS_INPUT.md, park mode) top P0 bug +
-    an operator-deferred (DEFERRED.md) second P0 bug + a lower actionable bug. BOTH
-    non-dispatchable items are excluded, so the merged head is the actionable one."""
-    _guard()
-    with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
-        parked = root / "docs" / "bugs" / "bug-parked"; parked.mkdir(parents=True)
-        (parked / "NEEDS_INPUT.md").write_text("x", encoding="utf-8")
-        dfr = root / "docs" / "bugs" / "bug-deferred"; dfr.mkdir(parents=True)
-        (dfr / "DEFERRED.md").write_text("x", encoding="utf-8")
-        act = root / "docs" / "bugs" / "bug-actionable"; act.mkdir(parents=True)
-        (act / "SPEC.md").write_text("x", encoding="utf-8")
-
-        bugs = [
-            {"id": "bug-parked", "severity": "P0", "spec_path": parked},
-            {"id": "bug-deferred", "severity": "P0", "spec_path": dfr},
-            {"id": "bug-actionable", "severity": "P2", "spec_path": act},
-        ]
-        excluded = lazy_core.nondispatchable_item_ids(
-            [], bugs, str(root), park_needs_input=True, park_provisional=True
-        )
-        assert excluded == {"bug-parked", "bug-deferred"}, excluded
-        head = lazy_core.next_merged([], bugs, "/echo", exclude_ids=excluded)
-        assert head["item_id"] == "bug-actionable", head
 
 
 def test_spec_dir_research_pending_predicate():
@@ -6017,175 +5694,68 @@ def test_spec_dir_research_pending_predicate():
         assert not lazy_core.spec_dir_research_pending(None)
 
 
-def test_nondispatchable_item_ids_excludes_research_pending_under_skip_flag():
-    """merged-head-research-exclusion-flag-gated-splits-cross-script REGRESSION fixture
-    (completes merged-head-diverged-withholds-on-research-skipped-head): a
-    research-pending head (NEEDS_RESEARCH.md, no RESEARCH.md) at the merged head + a
-    ready downstream feature. The research head is EXCLUDED **unconditionally** — with
-    AND without the skip flag (the on-disk sentinel IS the research-defer decision) — so
-    the merged head is the downstream item and the downstream probe gets NO
-    merged-head-diverged withhold. Excluding it always is what keeps both coupled
-    scripts' merged heads consistent (bug-state.py has no skip flag)."""
+def test_merged_head_nondispatchable_ids_excludes_parked_same_pipeline_head_no_deadlock():
+    """merged-head-includes-parked-items-deadlocks-park-run REGRESSION, via the
+    ORACLE: two top-priority P0 bugs PARKED (in the probe's own state["parked"]
+    list) + a lower-priority actionable bug (current). The oracle folds the
+    probe's parked ids into the same-pipeline exclude source, so the parked P0
+    heads are EXCLUDED and the merged head is the actionable bug — NO
+    merged-head-diverged withhold (the park-mode deadlock is gone). This is the
+    same-pipeline parked-fold the retired file predicate used to cover."""
     _guard()
-    with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
-        head_dir = root / "docs" / "features" / "subagent-wedge-backstop-hook"
-        head_dir.mkdir(parents=True)
-        (head_dir / "NEEDS_RESEARCH.md").write_text("x", encoding="utf-8")
-        act = root / "docs" / "features" / "shared-hook-lib"; act.mkdir(parents=True)
-        (act / "SPEC.md").write_text("x", encoding="utf-8")
+    bugs = [
+        {"id": "adhoc-hydra-sidecar-dist-esm-no-frames", "severity": "P0"},
+        {"id": "adhoc-hydra-load-code-mcp-tool", "severity": "P0"},
+        {"id": "adhoc-incident-hook-deny-a51dde", "severity": "P2"},
+    ]
+    # The probe's own state: park mode skipped the two P0 bugs (parked[]) and
+    # dispatched the actionable P2 bug (current). No cross-pipeline features.
+    state = {
+        "feature_id": "adhoc-incident-hook-deny-a51dde",
+        "parked": [
+            {"id": "adhoc-hydra-sidecar-dist-esm-no-frames"},
+            {"id": "adhoc-hydra-load-code-mcp-tool"},
+        ],
+    }
 
-        # Head listed first (higher merged priority by seed order at equal tier).
-        feats = [
-            {"id": "subagent-wedge-backstop-hook"},
-            {"id": "shared-hook-lib"},
-        ]
+    def _never(_id):
+        raise AssertionError(f"no cross-pipeline candidate to probe (got {_id!r})")
 
-        # The raw override (no exclude passed) still diverges — proving the withhold
-        # mechanism is intact; the CALLERS are what supply the exclude set below.
-        raw = lazy_core.dispatch.merged_head_override(
-            feats, [], "/echo", "shared-hook-lib",
-        )
-        assert raw is not None and raw["merged_head"]["item_id"] == (
-            "subagent-wedge-backstop-hook"
-        ), raw
-
-        # UNCONDITIONAL: the research head is excluded WITH the flag AND WITHOUT it
-        # (flag now inert) → identical exclude set → merged head is the downstream item
-        # → NO withhold. The flag no longer changes the result (the split-brain is gone).
-        for excluded in (
-            lazy_core.nondispatchable_item_ids(feats, [], str(root)),
-            lazy_core.nondispatchable_item_ids(
-                feats, [], str(root), skip_needs_research=True
-            ),
-        ):
-            assert excluded == {"subagent-wedge-backstop-hook"}, excluded
-            head = lazy_core.next_merged(feats, [], "/echo", exclude_ids=excluded)
-            assert head["item_id"] == "shared-hook-lib", head
-            override = lazy_core.dispatch.merged_head_override(
-                feats, [], "/echo", "shared-hook-lib", exclude_ids=excluded,
-            )
-            assert override is None, override
+    excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        [], bugs, "/echo", "adhoc-incident-hook-deny-a51dde",
+        same_pipeline="bug", same_pipeline_state=state, scoped_probe=_never,
+    )
+    assert excluded == {
+        "adhoc-hydra-sidecar-dist-esm-no-frames", "adhoc-hydra-load-code-mcp-tool",
+    }, excluded
+    # --next-merged surface: head is the actionable bug, not a parked one.
+    head = lazy_core.next_merged([], bugs, "/echo", exclude_ids=excluded)
+    assert head["item_id"] == "adhoc-incident-hook-deny-a51dde", head
+    # Emit probe for the actionable bug → NO withhold (the deadlock is gone).
+    assert lazy_core.dispatch.merged_head_override(
+        [], bugs, "/echo", "adhoc-incident-hook-deny-a51dde", exclude_ids=excluded,
+    ) is None
+    # Without the exclusion the OLD behavior deadlocks: head is a parked P0 bug.
+    old = lazy_core.dispatch.merged_head_override(
+        [], bugs, "/echo", "adhoc-incident-hook-deny-a51dde",
+    )
+    assert old is not None and old["merged_head"]["item_id"] == (
+        "adhoc-hydra-sidecar-dist-esm-no-frames"
+    ), old
 
 
-def test_research_pending_exclusion_consistent_across_state_scripts():
-    """merged-head-research-exclusion-flag-gated-splits-cross-script REGRESSION: the
-    cross-script split-brain deadlock. A research-skipped FEATURE head + a Concluded
-    on-disk BUG must yield the SAME merged head from BOTH scripts' emit-path exclude
-    computations and emit the bug route.
-
-    Pre-fix: lazy-state.py's caller passed skip_needs_research=True (excluded the
-    research feature → merged head = bug) but bug-state.py's caller passed no flag
-    (research feature NOT excluded → merged head = the undriveable feature), so each
-    withheld its own emit and neither dispatched. Post-fix the exclusion is
-    flag-independent, so the two callers compute the SAME exclude set → the SAME merged
-    head (the bug) → the bug side emits, the feature side withholds pointing at the
-    DISPATCHABLE bug (the driver follows it to the bug emit). No deadlock."""
+def test_nondispatchable_item_ids_helper_is_retired():
+    """merged-head-actionability-oracle Phase 3 (WU-4): the file-predicate
+    ``nondispatchable_item_ids`` is DELETED — absent from the lazy_core facade AND
+    from depdag. The actionability oracle is its sole replacement."""
     _guard()
-    with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
-        # Two research-pending feature heads (NEEDS_RESEARCH.md, no RESEARCH.md).
-        for fid in ("merged-head-actionability-oracle", "subagent-wedge-backstop-hook"):
-            d = root / "docs" / "features" / fid; d.mkdir(parents=True)
-            (d / "NEEDS_RESEARCH.md").write_text("x", encoding="utf-8")
-        # A ready downstream feature + a Concluded on-disk bug (dispatchable).
-        act = root / "docs" / "features" / "shared-hook-lib"; act.mkdir(parents=True)
-        (act / "SPEC.md").write_text("x", encoding="utf-8")
-        bug_dir = root / "docs" / "bugs" / "external-owner-contracts-locked-without-consultation"
-        bug_dir.mkdir(parents=True)
-        (bug_dir / "SPEC.md").write_text("x", encoding="utf-8")
-
-        feats = [
-            {"id": "merged-head-actionability-oracle"},
-            {"id": "subagent-wedge-backstop-hook"},
-            {"id": "shared-hook-lib"},
-        ]
-        bugs = [
-            {"id": "external-owner-contracts-locked-without-consultation",
-             "severity": "P2", "spec_path": bug_dir},
-        ]
-
-        # The exclude set each script's merged-head caller computes. Feature side
-        # historically passed skip_needs_research=True; bug side passes NO flag. They
-        # MUST now be equal (the flag is inert).
-        feature_side = lazy_core.nondispatchable_item_ids(
-            feats, bugs, str(root), skip_needs_research=True
-        )
-        bug_side = lazy_core.nondispatchable_item_ids(feats, bugs, str(root))
-        assert feature_side == bug_side, (feature_side, bug_side)
-        assert feature_side == {
-            "merged-head-actionability-oracle", "subagent-wedge-backstop-hook",
-        }, feature_side
-
-        # SAME merged head from both exclude sets — the dispatchable bug.
-        for excluded in (feature_side, bug_side):
-            head = lazy_core.next_merged(feats, bugs, "/echo", exclude_ids=excluded)
-            assert head is not None and head["item_id"] == (
-                "external-owner-contracts-locked-without-consultation"
-            ) and head["type"] == "bug", head
-
-        # Bug side dispatching the bug → merged head == bug → NO withhold (emit).
-        bug_emit = lazy_core.dispatch.merged_head_override(
-            feats, bugs, "/echo",
-            "external-owner-contracts-locked-without-consultation",
-            exclude_ids=bug_side,
-        )
-        assert bug_emit is None, bug_emit
-
-        # Feature side dispatching a feature → withhold now points at the DISPATCHABLE
-        # bug (correct: the driver follows it to the bug emit, no deadlock).
-        feat_withhold = lazy_core.dispatch.merged_head_override(
-            feats, bugs, "/echo", "shared-hook-lib", exclude_ids=feature_side,
-        )
-        assert feat_withhold is not None and feat_withhold["merged_head"]["item_id"] == (
-            "external-owner-contracts-locked-without-consultation"
-        ), feat_withhold
-
-
-def test_merged_head_override_excludes_parked_head_no_deadlock():
-    """merged-head-includes-parked-items-deadlocks-park-run REGRESSION: the two
-    top-priority P0 bugs parked on NEEDS_INPUT.md + a lower-priority actionable
-    bug. With the parked ids excluded, the merged head is the ACTIONABLE bug —
-    so --next-merged returns it AND the emit probe (current == actionable) gets
-    NO merged-head-diverged withhold (the deadlock is gone)."""
-    _guard()
-    with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
-        for pid in ("adhoc-hydra-sidecar-dist-esm-no-frames", "adhoc-hydra-load-code-mcp-tool"):
-            d = root / "docs" / "bugs" / pid; d.mkdir(parents=True)
-            (d / "NEEDS_INPUT.md").write_text("x", encoding="utf-8")
-        act = root / "docs" / "bugs" / "adhoc-incident-hook-deny-a51dde"; act.mkdir(parents=True)
-        (act / "SPEC.md").write_text("x", encoding="utf-8")
-
-        bugs = [
-            {"id": "adhoc-hydra-sidecar-dist-esm-no-frames", "severity": "P0",
-             "spec_path": root / "docs" / "bugs" / "adhoc-hydra-sidecar-dist-esm-no-frames"},
-            {"id": "adhoc-hydra-load-code-mcp-tool", "severity": "P0",
-             "spec_path": root / "docs" / "bugs" / "adhoc-hydra-load-code-mcp-tool"},
-            {"id": "adhoc-incident-hook-deny-a51dde", "severity": "P2", "spec_path": act},
-        ]
-        excluded = lazy_core.nondispatchable_item_ids(
-            [], bugs, str(root), park_needs_input=True, park_provisional=True
-        )
-        assert excluded == {
-            "adhoc-hydra-sidecar-dist-esm-no-frames", "adhoc-hydra-load-code-mcp-tool",
-        }, excluded
-        # --next-merged surface: head is the actionable bug, not a parked one.
-        head = lazy_core.next_merged([], bugs, "/echo", exclude_ids=excluded)
-        assert head["item_id"] == "adhoc-incident-hook-deny-a51dde", head
-        # Emit probe for the actionable bug → NO withhold (the deadlock is gone).
-        override = lazy_core.dispatch.merged_head_override(
-            [], bugs, "/echo", "adhoc-incident-hook-deny-a51dde", exclude_ids=excluded,
-        )
-        assert override is None, override
-        # Without the exclusion the OLD behavior deadlocks: head is a parked P0
-        # bug and the actionable probe is withheld behind it.
-        old = lazy_core.dispatch.merged_head_override(
-            [], bugs, "/echo", "adhoc-incident-hook-deny-a51dde",
-        )
-        assert old is not None and old["merged_head"]["item_id"] == (
-            "adhoc-hydra-sidecar-dist-esm-no-frames"
-        ), old
+    assert not hasattr(lazy_core, "nondispatchable_item_ids"), (
+        "nondispatchable_item_ids must be retired from the lazy_core facade")
+    assert not hasattr(lazy_core.depdag, "nondispatchable_item_ids"), (
+        "nondispatchable_item_ids must be deleted from depdag")
+    # The replacement exists.
+    assert callable(lazy_core.dispatch.merged_head_nondispatchable_ids)
+    assert callable(lazy_core.dispatch.is_dispatchable)
 
 
 def test_merged_worklist_exclude_ids_drops_parked_items():
@@ -6217,8 +5787,6 @@ def test_merged_worklist_only_features_matches_listed_order():
     assert lazy_core.next_merged(feats, [], "/r")["item_id"] == "feat-1"
 
 
-
-
 def test_merged_worklist_only_bugs_matches_listed_order():
     """WU-1/WU-3: only bugs queued → identical to the bug queue's listed order."""
     _guard()
@@ -6229,15 +5797,11 @@ def test_merged_worklist_only_bugs_matches_listed_order():
     assert lazy_core.next_merged([], bugs, "/r")["item_id"] == "bug-1"
 
 
-
-
 def test_merged_worklist_both_empty_returns_none():
     """WU-1/WU-3: both empty → no item (None head, empty work-list)."""
     _guard()
     assert lazy_core.merged_worklist([], [], "/r") == []
     assert lazy_core.next_merged([], [], "/r") is None
-
-
 
 
 def test_merged_worklist_stable_within_queue_for_equal_keys():
@@ -6255,16 +5819,12 @@ def test_merged_worklist_stable_within_queue_for_equal_keys():
     ], [e["item_id"] for e in wl]
 
 
-
-
 def test_merged_worklist_skips_idless_entries():
     """A malformed queue entry missing `id` is skipped — never a None-id head."""
     _guard()
     feats = [{"tier": 1}, {"id": "feat-ok", "tier": 1}]  # first is id-less
     wl = lazy_core.merged_worklist(feats, [], "/r")
     assert [e["item_id"] for e in wl] == ["feat-ok"]
-
-
 
 
 def test_age_escalated_rank_quantum_and_floor():
@@ -6288,8 +5848,6 @@ def test_age_escalated_rank_quantum_and_floor():
     assert lazy_core.age_escalated_rank(1, "2020-01-01", today) == 1
 
 
-
-
 def test_age_escalated_rank_fail_open_cases():
     """Absent/unparseable/future-dated `discovered` all fail open (unchanged
     base_rank) — never a fabricated age, never a crash."""
@@ -6303,8 +5861,6 @@ def test_age_escalated_rank_fail_open_cases():
     assert lazy_core.age_escalated_rank(2, "2026-08-01", today) == 2
     # today omitted -> uses real date.today() without raising.
     assert isinstance(lazy_core.age_escalated_rank(2, None), int)
-
-
 
 
 def test_pin_is_active_variants():
@@ -6333,8 +5889,6 @@ def test_pin_is_active_variants():
     assert lazy_core.pin_is_active("not-a-date", None, today) is False
 
 
-
-
 def test_merged_priority_bug_explicit_severity_ages():
     """An explicit recognized severity ALWAYS age-escalates (independent of
     any pin field)."""
@@ -6343,8 +5897,6 @@ def test_merged_priority_bug_explicit_severity_ages():
     today = datetime.date(2026, 7, 13)
     raw = {"severity": "P2", "discovered": "2026-06-22"}
     assert lazy_core.merged_priority("bug", raw, today=today) == 1
-
-
 
 
 def test_merged_priority_bug_active_pin_suppressed():
@@ -6359,8 +5911,6 @@ def test_merged_priority_bug_active_pin_suppressed():
         "spec_severity": "P1", "discovered": "2026-06-01",
     }
     assert lazy_core.merged_priority("bug", raw, today=today) == lazy_core.MERGED_PRIORITY_DEFAULT
-
-
 
 
 def test_merged_priority_bug_expired_pin_falls_back_to_spec_severity():
@@ -6378,8 +5928,6 @@ def test_merged_priority_bug_expired_pin_falls_back_to_spec_severity():
     assert lazy_core.merged_priority("bug", raw, today=today) == 1
 
 
-
-
 def test_merged_priority_bug_legacy_null_no_pin_unchanged():
     """A bare `severity: null` with NO `pinned_at` (every real queue entry
     committed before this feature shipped) is byte-identical to before —
@@ -6389,8 +5937,6 @@ def test_merged_priority_bug_legacy_null_no_pin_unchanged():
     today = datetime.date(2026, 7, 13)
     raw = {"severity": None, "spec_severity": "P1", "discovered": "2020-01-01"}
     assert lazy_core.merged_priority("bug", raw, today=today) == lazy_core.MERGED_PRIORITY_DEFAULT
-
-
 
 
 def test_merged_priority_aged_bug_outranks_tier2_feature_not_p0():
@@ -6414,8 +5960,6 @@ def test_merged_priority_aged_bug_outranks_tier2_feature_not_p0():
     assert ids == ["real-p0", "aged-bug", "feat-t2"], ids
 
 
-
-
 def test_bug_priority_marker_pinned():
     """bug_priority_marker renders the 📌 pinned marker while a pin is active."""
     _guard()
@@ -6426,8 +5970,6 @@ def test_bug_priority_marker_pinned():
         pinned_at="2026-07-10", pinned_until="2026-08-01", today=today,
     )
     assert "pinned" in marker and "2026-07-10" in marker
-
-
 
 
 def test_bug_priority_marker_escalated():
@@ -6443,8 +5985,6 @@ def test_bug_priority_marker_escalated():
     assert "escalated" in marker
 
 
-
-
 def test_bug_priority_marker_none_when_no_pin_no_escalation():
     """bug_priority_marker renders empty when there's no active pin and no
     escalation has occurred yet (a fresh, unescalated bug)."""
@@ -6456,8 +5996,6 @@ def test_bug_priority_marker_none_when_no_pin_no_escalation():
         pinned_at=None, pinned_until=None, today=today,
     )
     assert marker == ""
-
-
 
 
 def test_skill_declares_multi_commit_user_level_and_pseudo():
@@ -6499,8 +6037,6 @@ def test_skill_declares_multi_commit_user_level_and_pseudo():
     assert lazy_core.dispatch._CYCLE_COMMIT_BUDGET_DEFAULT == 1
 
 
-
-
 def test_skill_declares_multi_commit_repo_scoped():
     """A repo-scoped .claude/skills/<name>/SKILL.md with the commit-cadence: multi
     flag is honored when repo_root is passed (mirrors the real AlgoBooth mcp-test
@@ -6528,8 +6064,6 @@ def test_skill_declares_multi_commit_repo_scoped():
         assert lazy_core.skill_declares_multi_commit(
             "prose-only-multi-skill", repo_root=repo
         ) is False
-
-
 
 
 def test_build_hardening_emit_command_process_friction_binding():
@@ -6567,8 +6101,6 @@ def test_build_hardening_emit_command_process_friction_binding():
     assert "friction_detail=" not in cmd, cmd
 
 
-
-
 def test_process_friction_context_resolves_hardening_template():
     """Regression (broken-hardening-route defect): the context keys
     build_hardening_emit_command produces for a process-friction entry MUST
@@ -6599,8 +6131,6 @@ def test_process_friction_context_resolves_hardening_template():
     assert "unexpected-commits" in res["prompt"], res
 
 
-
-
 def test_build_hardening_emit_command_validate_deny_unchanged():
     """WU-3: a normal deny entry still emits trigger_kind=validate-deny with the
     denied_prompt_summary/denial_reason bindings (no regression)."""
@@ -6621,8 +6151,6 @@ def test_build_hardening_emit_command_validate_deny_unchanged():
     assert "trigger_kind=validate-deny" in cmd, cmd
     assert "denied_prompt_summary=" in cmd, cmd
     assert "denial_reason=" in cmd, cmd
-
-
 
 
 def test_build_hardening_emit_command_observed_friction():
@@ -6656,8 +6184,6 @@ def test_build_hardening_emit_command_observed_friction():
     assert "trigger_kind=process-friction" not in cmd, cmd
 
 
-
-
 def test_build_hardening_emit_command_observed_friction_blocking_true():
     """A run-blocking observed friction emits blocking=true (the foreground/await
     branch of the §3 block/background policy)."""
@@ -6674,8 +6200,6 @@ def test_build_hardening_emit_command_observed_friction_blocking_true():
         },
     )
     assert "blocking=true" in cmd, cmd
-
-
 
 
 def test_normalize_hardening_context_observed_friction_rebinds():
@@ -6703,8 +6227,6 @@ def test_normalize_hardening_context_observed_friction_rebinds():
     assert "denied_prompt_summary" not in original, original
 
 
-
-
 def test_normalize_hardening_context_auto_trigger_passthrough():
     """A non-observed-friction (auto-trigger) context passes through with ONLY the
     blocking default added — the shared evidence keys are untouched, so the
@@ -6724,8 +6246,6 @@ def test_normalize_hardening_context_auto_trigger_passthrough():
     assert ctx["blocking"] == "n/a (auto-trigger)", ctx
     assert ctx["denied_prompt_summary"] == "some prompt", ctx
     assert ctx["denial_reason"] == "hash mismatch", ctx
-
-
 
 
 def test_observed_friction_context_resolves_hardening_template():
@@ -6748,8 +6268,6 @@ def test_observed_friction_context_resolves_hardening_template():
     assert res.get("ok") is True, res  # must NOT refuse on a missing @requires key
     assert "observed-friction" in res["prompt"], res
     assert "verification-row recognizer inconsistency" in res["prompt"], res
-
-
 
 
 def test_read_mcp_runtime_decision_required_reason_mentions_not_required():
@@ -6777,8 +6295,6 @@ def test_read_mcp_runtime_decision_required_reason_mentions_not_required():
         assert reason is None
 
 
-
-
 def test_read_mcp_runtime_decision_not_required_value_token():
     """A genuine ``**MCP runtime:** not-required`` line resolves to no-runtime
     and extracts the post-dash reason. Guards against the anchored fix
@@ -6796,8 +6312,6 @@ def test_read_mcp_runtime_decision_not_required_value_token():
         variant, reason = lazy_core._read_mcp_runtime_decision(str(spec))
         assert variant == "no-runtime"
         assert reason == "the plan declares no MCP-reachable surface"
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -6919,8 +6433,6 @@ def test_harden_harness_overfit_prose_present():
     )
 
 
-
-
 # ---------------------------------------------------------------------------
 # dispatch-guard-denies-workstation-subsubagent-split (decision 4, 2026-07-10)
 # — the skill-declared sub-subagent capability predicate, the consumed fence,
@@ -6944,8 +6456,6 @@ def test_skill_declares_subagent_model_user_level():
     assert lazy_core.skill_declares_subagent_model("__mark_complete__") is False
     assert lazy_core.skill_declares_subagent_model("no-such-skill-xyz") is False
     assert lazy_core.skill_declares_subagent_model("../../etc/passwd") is False
-
-
 
 
 def test_skill_declares_subagent_model_repo_scoped():
@@ -6976,8 +6486,6 @@ def test_skill_declares_subagent_model_repo_scoped():
         ) is False
 
 
-
-
 def test_emission_consumed_by_nonce_fence():
     """The consumed fence: True only for an existing, consumed registry entry.
     Unconsumed, unknown, and falsy nonces all fail closed to False."""
@@ -6997,8 +6505,6 @@ def test_emission_consumed_by_nonce_fence():
             assert lazy_core.emission_consumed_by_nonce("") is False
         finally:
             _clear_state_dir()
-
-
 
 
 def test_resolve_cycle_worker_nonce_rebinds_fresh_hex():
@@ -7032,8 +6538,6 @@ def test_resolve_cycle_worker_nonce_rebinds_fresh_hex():
             _clear_state_dir()
 
 
-
-
 def test_run_end_unacked_hardening_refusal_emits_gate_refusal_bug():
     """bug-state.py mirror of the unacked-hardening refusal emission."""
     _assert_run_end_refusal_emits(
@@ -7042,16 +6546,12 @@ def test_run_end_unacked_hardening_refusal_emits_gate_refusal_bug():
     )
 
 
-
-
 def test_run_end_efficacy_flush_refusal_emits_gate_refusal_bug():
     """bug-state.py mirror of the efficacy-coverage-missing refusal emission."""
     _assert_run_end_refusal_emits(
         "bug-state.py", "bug", [], seed_deny=False,
         expected_gate="efficacy-coverage-missing",
     )
-
-
 
 
 def _assert_run_end_success_no_gate_refusal(script, pipeline):
@@ -7075,21 +6575,15 @@ def _assert_run_end_success_no_gate_refusal(script, pipeline):
             _clear_state_dir()
 
 
-
-
 def test_run_end_success_emits_run_end_not_gate_refusal_lazy():
     """Over-emission guard: a passing lazy-state.py --run-end emits run-end and
     NO gate-refusal (the emissions sit INSIDE each refusal branch)."""
     _assert_run_end_success_no_gate_refusal("lazy-state.py", "feature")
 
 
-
-
 def test_run_end_success_emits_run_end_not_gate_refusal_bug():
     """Over-emission guard mirror for bug-state.py."""
     _assert_run_end_success_no_gate_refusal("bug-state.py", "bug")
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -7111,8 +6605,6 @@ def test_standard_bindings_split_terminal_statuses():
     # forbidden_status must remain the compound (other templates depend on it).
     assert bug["forbidden_status"] == "Fixed or Won't-fix", bug
     assert feat["forbidden_status"] == "Complete", feat
-
-
 
 
 def test_apply_resolution_emits_terminal_disposition_close():
@@ -7247,14 +6739,10 @@ _TESTS = [
     ("test_merged_head_override_none_when_head_is_current_item", test_merged_head_override_none_when_head_is_current_item),
     ("test_merged_head_override_none_on_empty_queues_or_missing_id", test_merged_head_override_none_on_empty_queues_or_missing_id),
     ("test_spec_dir_would_park_predicate", test_spec_dir_would_park_predicate),
-    ("test_nondispatchable_item_ids_resolves_feature_and_bug_spec_dirs", test_nondispatchable_item_ids_resolves_feature_and_bug_spec_dirs),
     ("test_spec_dir_operator_deferred_predicate", test_spec_dir_operator_deferred_predicate),
-    ("test_nondispatchable_item_ids_excludes_operator_deferred_unconditionally", test_nondispatchable_item_ids_excludes_operator_deferred_unconditionally),
-    ("test_nondispatchable_item_ids_mixed_parked_and_operator_deferred", test_nondispatchable_item_ids_mixed_parked_and_operator_deferred),
     ("test_spec_dir_research_pending_predicate", test_spec_dir_research_pending_predicate),
-    ("test_nondispatchable_item_ids_excludes_research_pending_under_skip_flag", test_nondispatchable_item_ids_excludes_research_pending_under_skip_flag),
-    ("test_research_pending_exclusion_consistent_across_state_scripts", test_research_pending_exclusion_consistent_across_state_scripts),
-    ("test_merged_head_override_excludes_parked_head_no_deadlock", test_merged_head_override_excludes_parked_head_no_deadlock),
+    ("test_merged_head_nondispatchable_ids_excludes_parked_same_pipeline_head_no_deadlock", test_merged_head_nondispatchable_ids_excludes_parked_same_pipeline_head_no_deadlock),
+    ("test_nondispatchable_item_ids_helper_is_retired", test_nondispatchable_item_ids_helper_is_retired),
     ("test_merged_worklist_exclude_ids_drops_parked_items", test_merged_worklist_exclude_ids_drops_parked_items),
     ("test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug", test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug),
     ("test_subprocess_emit_prompt_oracle_excludes_nondispatchable_bug_head_no_withhold", test_subprocess_emit_prompt_oracle_excludes_nondispatchable_bug_head_no_withhold),
@@ -7324,9 +6812,6 @@ _TESTS = [
 ]
 
 
-
-
-
 def main() -> int:
     print("=" * 60)
     print("test_lazy_core.py — characterization tests")
@@ -7357,7 +6842,6 @@ def main() -> int:
         return 1
     print("\nAll tests passed.")
     return 0
-
 
 
 if __name__ == "__main__":

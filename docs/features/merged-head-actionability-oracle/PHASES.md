@@ -216,6 +216,8 @@ audit is the coupled-pair gate. The smoke baselines guard against any unintended
 
 ### Phase 3: Remaining-site migration + helper retirement + baseline re-pin
 
+**Status:** Complete
+
 **Scope:** Migrate the two remaining feature-side exclude-set sites (`--next-merged` `_nm_excluded`:12580,
 `research_halt` `_rh_excluded`:13935) to the oracle, then RETIRE `nondispatchable_item_ids` from the
 merged-head path. Because the planning-time grep confirmed zero non-merged consumers survive (re-confirm
@@ -232,18 +234,18 @@ anti-overfit complexity check (L7). Re-pin the full smoke baselines.
   via the oracle, then pass it to `research_halt_head` — which RE-INCLUDES the research-gated ids exactly
   as today (assert the needs-research halt still surfaces; byte-identity invariant, L3 tail). Preserve the
   existing `.discard(current)`.
-- [ ] Re-confirm (grep) that `nondispatchable_item_ids` now has ZERO callers, then DELETE it: the definition
+- [x] Re-confirm (grep) that `nondispatchable_item_ids` now has ZERO callers, then DELETE it: the definition
   in `lazy_core/depdag.py` (~1496), the `"nondispatchable_item_ids": "depdag"` entry in
   `lazy_core/__init__.py` (~492), and every `test_dispatch.py` reference. Add a `retires:` declaration
   (per L7 / the anti-overfit complexity check) naming the retired helper.
-- [ ] Update the in-code cross-references that name `nondispatchable_item_ids` in prose/docstrings
+- [x] Update the in-code cross-references that name `nondispatchable_item_ids` in prose/docstrings
   (`depdag.py:1440`, `dispatch.py:557`, `docmodel.py:2313`/`2340`) so no dangling reference to a deleted
   symbol survives — repoint them at the oracle.
-- [ ] Tests: `--next-merged` and `research_halt` migration fixtures (exclude-set built via the oracle;
+- [x] Tests: `--next-merged` and `research_halt` migration fixtures (exclude-set built via the oracle;
   research-halt surfacing byte-identical); a "helper gone" assertion (importing `nondispatchable_item_ids`
   from `lazy_core` fails / is absent from the facade map); full smoke baseline re-pin; final
   `lazy_parity_audit.py --repo-root .` exit 0.
-- [ ] Doc-drift + facade integrity: `python3 user/scripts/doc-drift-lint.py --repo-root .` clean (the
+- [x] Doc-drift + facade integrity: `python3 user/scripts/doc-drift-lint.py --repo-root .` clean (the
   retired symbol must not linger in any doc/script table), and `lint-skills.py` unaffected.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test && python3 user/scripts/bug-state.py --test`
@@ -329,4 +331,39 @@ recurrences).
   "Target shape" `<run flags>` placeholder is realized as the closure the caller (Phase 2) binds with
   those flags, so the oracle itself carries no dead run-flag parameters (constitution: no test-only
   seams). `today=` is accepted for bug-aging ordering determinism, mirroring `merged_head_override`.
+- **Phase 3 same-pipeline parked-fold (gap found + fixed in WU-4).** The oracle's same-pipeline
+  branch (L2) folds `probe_skipped_ids(state, items)`, which reads the gated/deferred skip lists but
+  NOT `state["parked"]`. A PARKED same-pipeline item ranked above the emitted item would therefore
+  fall to the "dispatchable same head" short-circuit and NOT be excluded — re-introducing the
+  park-mode merged-head deadlock the retired file predicate closed. Fix: the oracle also folds the
+  probe's OWN parked ids (`state["parked"][*]["id"]`) into the same-pipeline exclude source (still the
+  probe's own decision, L2-consistent — parked is just a separately-tracked skip list). Regression:
+  `test_merged_head_nondispatchable_ids_excludes_parked_same_pipeline_head_no_deadlock` (the rewrite of
+  the retired helper's parked-deadlock test, now exercising the oracle path). Cross-pipeline parked
+  items are already handled (scoped_probe returns a needs-input/blocked terminal → non-dispatchable).
+- **`--next-merged` is now dispatchability-aware (behavior change, plan-mandated).** Migrating
+  `--next-merged` to the oracle makes it a STATELESS type-aware scoped probe over BOTH queues — it now
+  excludes EVERY non-dispatchable head (blocked/needs-input/deferred/completion-unverified), not just
+  the old file predicate's park/operator-defer/research subset. A genuinely dispatchable item (real
+  SPEC → routes to /spec or /execute-plan) is NOT excluded. One existing fixture
+  (`test_next_merged_cli_only_features_matches_single_head`) used a bare no-SPEC dir (genuinely
+  non-dispatchable, `queue-missing`) and was updated to a realistic dispatchable feature to preserve
+  its ordering intent; a new `test_next_merged_cli_oracle_excludes_nondispatchable_head` asserts the
+  new-category exclusion.
+- **Baselines NOT re-pinned (Phase 3).** Both `lazy-state.py --test` and `bug-state.py --test` stayed
+  green against the committed frozen smoke baselines through every WU — the refactor changed no
+  `--test`-observable smoke output, so no baseline regeneration was needed.
+- **`retires:` declaration (L7) recorded in `GATE_VERDICT.md`.** `harness-gate.py --range HEAD~3..HEAD`
+  → `verdict_required: true` (exit 0, `gate_weakening_hit: false`); the complexity check's
+  `declaration-required` is satisfied by `retires: nondispatchable_item_ids`; the overfit flag is a
+  documented false positive (new function type-annotations + docstring `"""` + test-fixture string
+  literals — no production matcher/allow-list append; the diff REMOVED an enumerated predicate). Full
+  adversarial judgment: `GATE_VERDICT.md`.
 - **Spin-offs:** none this cycle.
+- **Discovered (out-of-scope, surfaced for the orchestrator — NOT fixed here):** running the full
+  `pytest user/scripts/tests/test_lazy_core/` suite mid-lazy-cycle shows ~82 spurious failures in
+  `test_pseudo.py` / `test_misc.py` (the `apply_pseudo` / `mark_complete` / `mark_fixed` /
+  `verify_ledger` family) because those tests do NOT isolate `LAZY_STATE_DIR`, so they read the LIVE
+  cycle-active marker and are refused by `refuse_if_cycle_active` (exit 3). With an isolated
+  `LAZY_STATE_DIR` all 1257 pass. This is a pre-existing test-hygiene gap (tests should set
+  `LAZY_STATE_DIR` to a temp dir), unrelated to this feature — a candidate for `/harden-harness`.

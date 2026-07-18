@@ -2310,8 +2310,11 @@ def spec_dir_operator_deferred(spec_dir: "Path") -> bool:
     (``docs/bugs/merged-head-excludes-parked-not-operator-deferred-deadlocks``).
 
     Kept SEPARATE from ``spec_dir_would_park`` precisely because it is not
-    park-flag-gated — the resolver (``depdag.nondispatchable_item_ids``) ORs the
-    two so an operator-deferred item is excluded regardless of the active facets.
+    park-flag-gated. This predicate feeds ``compute_state``'s own park/skip
+    classification; the merged-head exclude computation is now the actionability
+    oracle (``dispatch.merged_head_nondispatchable_ids``), which scoped-probes
+    ``compute_state`` per candidate — so an operator-deferred item is excluded
+    from the merged head regardless of the active facets (it is non-dispatchable).
 
     Bug-pipeline-only: the feature pipeline has no operator-``DEFERRED.md`` branch
     (a justified parity divergence), so a feature spec dir never carries the file
@@ -2336,9 +2339,10 @@ def spec_dir_research_pending(spec_dir: "Path") -> bool:
 
     This is the pure, file-only twin of the ``compute_state`` research-pending
     peek (the ``if skip_needs_research:`` branch in ``lazy-state.py`` and the
-    ``_gated_head_kind`` 'research' classifier) — the SAME predicate, factored
-    here so ``depdag.nondispatchable_item_ids`` can EXCLUDE a research-pending
-    head from the merged-head computation. The exclusion is UNCONDITIONAL: a
+    ``_gated_head_kind`` 'research' classifier) — the SAME predicate. The merged
+    head now EXCLUDES a research-pending head via the actionability oracle
+    (``dispatch.merged_head_nondispatchable_ids`` scoped-probes ``compute_state``,
+    which classifies a research-pending head non-dispatchable). The exclusion is UNCONDITIONAL: a
     research-pending head is non-dispatchable on EVERY run (it HALTS at the Step-5
     walk gate, or is SKIPPED under ``--skip-needs-research``), and the on-disk
     sentinel IS the deliberate research-defer decision — so no flag context is

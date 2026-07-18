@@ -1437,7 +1437,8 @@ def merged_worklist(
     merged-head-excludes-parked-not-operator-deferred-deadlocks): the set of ids to
     EXCLUDE from the ordering — the NON-DISPATCHABLE items the pipeline skips (parked
     items a park-mode run skips PLUS unconditional operator-deferred items; built by
-    ``nondispatchable_item_ids``). Excluding them makes the merged head the
+    ``dispatch.merged_head_nondispatchable_ids`` — the actionability oracle that
+    RETIRED the former ``nondispatchable_item_ids`` file-predicate). Excluding them makes the merged head the
     highest-priority DISPATCHABLE item, so the ``merged-head-diverged`` withhold never
     withholds behind an undriveable head. Default ``None`` → nothing excluded
     (byte-identical non-park behavior).
@@ -1492,123 +1493,6 @@ def next_merged(
     )
     return worklist[0] if worklist else None
 
-
-def nondispatchable_item_ids(
-    feature_items: list[dict],
-    bug_items: list[dict],
-    repo_root: str,
-    *,
-    park_needs_input: bool = False,
-    park_blocked: bool = False,
-    park_provisional: bool = False,
-    skip_needs_research: bool = False,  # accepted-but-INERT: research-pending is now
-    # excluded unconditionally (the sentinel is the SSOT); retained for call-site
-    # signature compatibility (merged-head-research-exclusion-flag-gated-splits-cross-script)
-) -> "set[str]":
-    """Return the set of queue-item ids that are NON-DISPATCHABLE this run — the
-    ids the merged-head computation must EXCLUDE so the merged head is the
-    highest-priority item that would actually DISPATCH, not one the pipeline just
-    skips (``docs/bugs/merged-head-excludes-parked-not-operator-deferred-deadlocks``,
-    generalizing ``merged-head-includes-parked-items-deadlocks-park-run``).
-
-    Three non-dispatchable categories, ORed per item:
-
-      * **PARK (flag-gated)** — ``docmodel.spec_dir_would_park`` (the SAME predicate
-        the probe ``parked[]`` array uses): a canonical/stray ``BLOCKED.md`` under
-        ``--park-blocked`` or an unresolved ``NEEDS_INPUT.md`` under
-        ``--park-needs-input`` (provisional-eligible routes, so not parked).
-      * **OPERATOR-DEFERRED (unconditional)** — ``docmodel.spec_dir_operator_deferred``:
-        a ``DEFERRED.md`` sentinel. ``compute_state`` skips such a bug regardless of
-        any park flag, so it is excluded on EVERY run.
-      * **RESEARCH-PENDING (UNCONDITIONAL)** — ``docmodel.spec_dir_research_pending``:
-        a ``NEEDS_RESEARCH.md`` (or a ``RESEARCH_PROMPT.md`` with no ``RESEARCH*.md``).
-        The on-disk sentinel IS the deliberate research-defer decision — a
-        research-pending head is NON-DISPATCHABLE this run on EVERY run (it either
-        HALTS at the Step-5 walk gate or is SKIPPED under ``--skip-needs-research``),
-        so it is excluded from the merged head regardless of any flag. This exclusion
-        can never suppress a legitimate ``merged-head-diverged`` withhold (the withhold
-        fires only for a higher-priority DISPATCHABLE divergence, and a research-pending
-        head is by definition not dispatchable) and on a halt state the override is not
-        reached at all. Excluding it UNCONDITIONALLY is what keeps the two coupled
-        scripts' merged-head computations CONSISTENT: ``bug-state.py``'s merged-head
-        caller reads the feature queue too but has no ``--skip-needs-research`` flag and
-        cannot fold a feature head into its bug-scoped ``probe_skipped_ids`` — so the
-        file predicate here is the ONLY reachable exclusion on the bug side. Closes
-        ``docs/bugs/merged-head-research-exclusion-flag-gated-splits-cross-script`` (the
-        cross-script split-brain deadlock, 6th facet of the merged-head exclude-set
-        class) and completes ``merged-head-diverged-withholds-on-research-skipped-head``
-        (Round 91, which flag-gated it at the ``lazy-state.py`` caller only). The
-        ``skip_needs_research`` kwarg below is retained accepted-but-INERT for call-site
-        signature compatibility. A bug spec dir never carries these files, so this
-        contributes nothing on the bug queue's own items.
-
-    Resolves each item's spec dir: feature → ``<repo_root>/docs/features/<spec_dir|id>``;
-    bug → the loader-supplied absolute ``spec_path`` when present, else
-    ``<repo_root>/docs/bugs/<spec_dir|id>``.
-
-    ``repo_root`` MUST be the on-disk repo root the queues were loaded from (NOT the
-    echoed ``active_repo_root`` string ``merged_head`` carries).
-
-    No park facet active AND no ``DEFERRED.md`` present AND no research-pending
-    sentinel → empty set (byte-identical non-defer, non-park, non-research behavior);
-    a missing/unreadable spec dir contributes nothing (all predicates fail-safe to
-    False). There is deliberately NO "no park facet → empty" fast-path: operator-defer
-    and research-pending are unconditional, so every item is checked.
-
-    **Scope boundary.** This resolver covers only the non-dispatchable states a
-    PURE, context-free file check classifies correctly (the two park families +
-    unconditional operator-defer + unconditional research-pending). A research-pending
-    head is non-dispatchable on EVERY run (it halts at the walk gate, or is skipped
-    under ``--skip-needs-research``), so it is always in scope here — the exclusion is
-    flag-independent, which is what keeps both coupled scripts' merged heads consistent.
-    Context-conditional deferrals (device / cloud / host — gated on VALIDATED /
-    phases-complete / host flags) and the remaining non-file terminal_reasons
-    (completion-unverified / stale_upstream / needs-ratification) are OUT of scope
-    here — correctly classifying them needs the scoped ``compute_state`` dispatch
-    oracle, tracked by the spun-off actionability generalization.
-    """
-    from pathlib import Path as _Path
-    from .docmodel import (
-        spec_dir_operator_deferred,
-        spec_dir_research_pending,
-        spec_dir_would_park,
-    )
-
-    root = _Path(repo_root)
-    excluded: set[str] = set()
-
-    def _nondispatchable(spec_dir: "_Path") -> bool:
-        # Operator-defer and research-pending are UNCONDITIONAL (the on-disk
-        # sentinel IS the decision — a DEFERRED.md / NEEDS_RESEARCH.md /
-        # RESEARCH_PROMPT.md-without-RESEARCH*); park families are flag-gated. Any
-        # one makes the item non-dispatchable this run.
-        if spec_dir_operator_deferred(spec_dir):
-            return True
-        if spec_dir_research_pending(spec_dir):
-            return True
-        return spec_dir_would_park(
-            spec_dir,
-            park_needs_input=park_needs_input,
-            park_blocked=park_blocked,
-            park_provisional=park_provisional,
-        )
-
-    for raw in (feature_items or []):
-        item_id = raw.get("id")
-        if not item_id:
-            continue
-        spec_dir = root / "docs" / "features" / (raw.get("spec_dir") or item_id)
-        if _nondispatchable(spec_dir):
-            excluded.add(item_id)
-    for raw in (bug_items or []):
-        item_id = raw.get("id")
-        if not item_id:
-            continue
-        _sp = raw.get("spec_path")
-        spec_dir = _Path(_sp) if _sp else root / "docs" / "bugs" / (raw.get("spec_dir") or item_id)
-        if _nondispatchable(spec_dir):
-            excluded.add(item_id)
-    return excluded
 
 def skip_ahead_ready(
     deps: list[dict] | None,
