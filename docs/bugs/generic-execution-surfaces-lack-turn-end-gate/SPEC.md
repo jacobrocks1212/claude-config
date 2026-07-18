@@ -10,7 +10,7 @@
 > lazy-dispatched cycles (cycle-base-prompt R13 TURN-END CONTRACT + SYNCHRONOUS AWAIT), but the
 > GENERIC shared execution contract carries no such gate.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-13
 **Placement:** docs/bugs/generic-execution-surfaces-lack-turn-end-gate
