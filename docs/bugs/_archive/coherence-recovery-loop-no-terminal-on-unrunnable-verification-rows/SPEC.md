@@ -1,6 +1,8 @@
 # Bug: coherence-recovery loop has no terminal when verification rows genuinely never ran
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-18
+**Fix commit:** e5d9dbab
 **Reported via:** `/harden-harness` observed-friction dispatch (2026-07-15, item in flight `managed-llm-credits`, AlgoBooth `/lazy-batch`)
 **Root-cause class:** `missing-contract` (primary) + `missing-emit-section` (secondary, producer template)
 

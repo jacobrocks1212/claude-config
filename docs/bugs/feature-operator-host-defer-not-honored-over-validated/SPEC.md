@@ -29,7 +29,7 @@ so the feature never reaches a clean Deferred/host-saturated terminal — it re-
   marker) and **#6** (corrective-coverage dispatch) — all three name the SAME managed-llm-credits
   rows (Phase 1 live-OAuth JWT, Phase 4 credits-proxy reachability, Phase 7 Purchase CTA, Phase 8
   auto-refill toggle persistence).
-- `docs/bugs/coherence-recovery-loop-no-terminal-on-unrunnable-verification-rows/` — the prior
+- `docs/bugs/_archive/coherence-recovery-loop-no-terminal-on-unrunnable-verification-rows/` — the prior
   round (hardening Round 44) that gave this exact loop a `NEEDS_INPUT.md` terminal. This spec is
   the NEXT layer: the terminal exists, but the operator's RESOLUTION of it is not machine-honored.
 - `docs/specs/host-capability-declaration-for-gated-features/` — the host-capability axis
