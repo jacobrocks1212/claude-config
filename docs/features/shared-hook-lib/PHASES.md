@@ -42,11 +42,13 @@ Per the Step 2.7 runtime-assumption gate. This feature has **no user-facing prod
 
 **Scope:** Author `user/hooks/hook-prelude.sh` — a sourced (never executed), fail-open-guarded bash prelude providing `HOOK_PYTHON` (python3→python resolution), `HOOK_SCRIPTS_DIR` (SELF-normalized, builtins-only SCRIPT_DIR derivation), and `hook_emit_error_event()` (a pure-bash `hook-events.jsonl` + `hook-error.json` writer — printf/date only, best-effort, no python needed). Wire it into the two thin prelude-only wrappers (`lazy-dispatch-guard.sh`, `lazy-route-inject.sh`) as first consumers via `. "$…/hook-prelude.sh" 2>/dev/null || exit 0`. Lands the `guard-fail-open-leaves-no-trace` fix-scope §1 (a no-python error path that leaves a trace) as a side effect.
 
+**Status:** ✅ Complete (2026-07-18)
+
 **Deliverables:**
-- [ ] `user/hooks/hook-prelude.sh` — `HOOK_PYTHON` resolution (`command -v python3` → `command -v python` → fallback breadcrumb + `exit 0`), `HOOK_SCRIPTS_DIR` derivation (backslash-normalize, builtins-only), `hook_emit_error_event(hook, signature, detail)` pure-bash JSONL append (integer `date +%s` `ts`, `kind:"error"`) + single-line `hook-error.json` overwrite, all best-effort/fail-open.
-- [ ] `user/hooks/lazy-dispatch-guard.sh` — source the prelude fail-open-guarded; replace its inline python-resolution + SCRIPT_DIR derivation with `HOOK_PYTHON` / `HOOK_SCRIPTS_DIR`. Deny/allow behavior byte-identical.
-- [ ] `user/hooks/lazy-route-inject.sh` — same prelude wiring; behavior byte-identical.
-- [ ] Tests: new pipe-tests in `test_hooks.py` — (a) sourcing a renamed-away prelude still `exit 0` allows; (b) a stripped-`PATH` no-python run leaves one bash-written `kind:"error"` line in `hook-events.jsonl`; (c) both wrappers' existing deny/allow pipe-tests still pass unchanged.
+- [x] `user/hooks/hook-prelude.sh` — `HOOK_PYTHON` resolution (`command -v python3` → `command -v python` → fallback breadcrumb + `exit 0`), `HOOK_SCRIPTS_DIR` derivation (backslash-normalize, builtins-only), `hook_emit_error_event(hook, signature, detail)` pure-bash JSONL append (integer `date +%s` `ts`, `kind:"error"`) + single-line `hook-error.json` overwrite, all best-effort/fail-open.
+- [x] `user/hooks/lazy-dispatch-guard.sh` — source the prelude fail-open-guarded; replace its inline python-resolution + SCRIPT_DIR derivation with `HOOK_PYTHON` / `HOOK_SCRIPTS_DIR`. Deny/allow behavior byte-identical.
+- [x] `user/hooks/lazy-route-inject.sh` — same prelude wiring; behavior byte-identical.
+- [x] Tests: new pipe-tests in `test_hooks.py` — (a) sourcing a renamed-away prelude still `exit 0` allows; (b) a stripped-`PATH` no-python run leaves one bash-written `kind:"error"` line in `hook-events.jsonl`; (c) both wrappers' existing deny/allow pipe-tests still pass unchanged.
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_hooks.py` passes (all existing + the 3 new prelude pipe-tests); the no-python test asserts a JSON-parseable event line with a numeric `ts` is written; the missing-prelude test asserts exit 0 with no output.
 
@@ -64,6 +66,12 @@ Per the Step 2.7 runtime-assumption gate. This feature has **no user-facing prod
 - The prelude owns the BASH-side fail-open contract (missing prelude, no python). Phase 2's `hook_lib.py` owns the PYTHON-side contract (import-failed → minimal inline allow + a prelude-written trace).
 - `HOOK_SCRIPTS_DIR` is the `sys.path` seed the Phase-3 hooks pass to `import hook_lib` — establish its exact derivation here so Phase 3 reuses it verbatim.
 - `hook_emit_error_event` emits integer-second `ts` (Open Question 1 resolved); keep it float-compatible for `incident-scan.py`.
+
+**Implementation Notes (2026-07-18):**
+- Authored `user/hooks/hook-prelude.sh` (sourced, never executed). Provides `HOOK_NAME` (basename of `$0` sans `.sh` — `$0` is preserved across `source`, so the prelude derives the CONSUMING hook's identity for the breadcrumb without the consumer setting anything), `hook_emit_error_event(hook, signature, detail)` (pure-bash `hook-error.json` overwrite + one `hook-events.jsonl` `{"ts":<int>,"kind":"error",...}` line, honoring `LAZY_STATE_DIR`; every write `2>/dev/null || true`), `HOOK_PYTHON` (`python3`→`python`→ breadcrumb + `exit 0` — the `exit 0` in a sourced file exits the consuming hook), and `HOOK_SCRIPTS_DIR` (`$_HOOK_PRELUDE_DIR/../scripts`).
+- **Irreducible bootstrap stays in each consumer:** to LOCATE the prelude, each hook derives its own dir (`SELF="${0//\\//}"` + `cd`/`pwd`) then `. "$_HOOK_DIR/hook-prelude.sh" 2>/dev/null || exit 0` (SPEC D2). This ~7-line bootstrap is not dedup-able (you can't source a file without knowing where it is); the win is the ~24-line inline no-python block + python-resolution moving into the prelude. `HOOK_SCRIPTS_DIR` is `.../hooks/../scripts` (a `..`-bearing but fully-usable path, valid both as an interpreter-path prefix and, in Phase 3, as a `sys.path` seed).
+- Both wrappers (`lazy-dispatch-guard.sh`, `lazy-route-inject.sh`) now consume `$HOOK_PYTHON` / `$HOOK_SCRIPTS_DIR`; `$PYTHON`/`$SCRIPT_DIR` deleted. Behavior byte-identical — proven by the full 261 pre-existing `test_hooks.py` pipe-tests staying green, incl. the no-python sweep (the prelude's breadcrumb uses `HOOK_NAME` = the consumer's stem, so `hook == hook_sh.stem` still holds).
+- **Gate:** `python user/scripts/test_hooks.py` → **265/265 passed** (261 existing + 4 new: `test_prelude_file_exists`, `test_wrappers_source_prelude_and_drop_inline_python_resolution`, `test_missing_prelude_source_fails_open_allows`, `test_prelude_no_python_leaves_numeric_ts_event`).
 
 ---
 

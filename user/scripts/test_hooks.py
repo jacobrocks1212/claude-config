@@ -6829,6 +6829,124 @@ def test_containment_no_python_breadcrumb_lands_in_override_dir_not_root():
         assert "no python" in crumb["error"]
 
 
+# ===========================================================================
+# shared-hook-lib Phase 1 — hook-prelude.sh + the two thin-wrapper consumers.
+#
+# The prelude is a SOURCED (never executed) bash file providing HOOK_PYTHON
+# (python3→python resolution; total absence ⇒ pure-bash breadcrumb + exit 0),
+# HOOK_SCRIPTS_DIR (SELF-normalized scripts-dir derivation), and
+# hook_emit_error_event() (pure-bash hook-events.jsonl + hook-error.json
+# append). Fail-open is the sacred invariant: a missing/broken prelude must
+# ALLOW (exit 0), never wedge.
+# ===========================================================================
+
+_PRELUDE_SH = _HOOKS_DIR / "hook-prelude.sh"
+_PRELUDE_CONSUMERS = [_GUARD_SH, _INJECT_SH]
+
+
+def test_prelude_file_exists():
+    """hook-prelude.sh must exist on disk (net-new Phase-1 deliverable).
+
+    RED reason: the prelude has not been authored yet."""
+    assert _PRELUDE_SH.exists(), (
+        f"Phase-1 deliverable missing: {_PRELUDE_SH}"
+    )
+
+
+def test_wrappers_source_prelude_and_drop_inline_python_resolution():
+    """The two thin wrappers must SOURCE the prelude fail-open-guarded and no
+    longer carry their own inline `command -v python3` resolution block (it
+    moved into the prelude). Proves the D1/D3 migration mechanically.
+
+    RED reason: the wrappers still inline the python-resolution block."""
+    for hook_sh in _PRELUDE_CONSUMERS:
+        text = hook_sh.read_text(encoding="utf-8")
+        assert "hook-prelude.sh" in text, (
+            f"{hook_sh.name} must source hook-prelude.sh"
+        )
+        # The fail-open source-site guard (SPEC D2) must be present verbatim.
+        assert "2>/dev/null || exit 0" in text, (
+            f"{hook_sh.name} must source the prelude with the "
+            "`2>/dev/null || exit 0` fail-open guard"
+        )
+        # The inline python-resolution block must be GONE — the prelude owns it.
+        assert "command -v python3" not in text, (
+            f"{hook_sh.name} must delegate python resolution to the prelude "
+            "(no inline `command -v python3`)"
+        )
+        # And it must consume the prelude-provided interpreter var.
+        assert "HOOK_PYTHON" in text, (
+            f"{hook_sh.name} must use the prelude-provided $HOOK_PYTHON"
+        )
+
+
+def test_missing_prelude_source_fails_open_allows():
+    """A hook that sources a renamed-away / absent prelude via the SPEC-D2
+    guard (`. "<path>" 2>/dev/null || exit 0`) must exit 0 with empty stdout —
+    a missing prelude ALLOWS, never wedges.
+
+    RED reason: none (validates the fail-open source-site pattern itself)."""
+    with tempfile.TemporaryDirectory() as td:
+        # A prelude that deliberately does NOT exist at this path.
+        absent_prelude = (Path(td) / "hook-prelude.sh").as_posix()
+        hook = Path(td) / "fake-hook.sh"
+        hook.write_text(
+            "#!/bin/bash\n"
+            'PAYLOAD="$(cat)"\n'
+            f'. "{absent_prelude}" 2>/dev/null || exit 0\n'
+            "echo SHOULD_NOT_REACH\n",
+            encoding="utf-8",
+        )
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_bash(hook, "{}", _base_env(state_dir))
+        assert result.returncode == 0, (
+            f"missing-prelude source must exit 0; stderr={result.stderr!r}"
+        )
+        assert result.stdout.strip() == "", (
+            f"missing-prelude source must produce no output; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_prelude_no_python_leaves_numeric_ts_event():
+    """A real prelude-backed wrapper run with a stripped PATH (no python) must
+    still exit 0 (allow), emit no deny, and write EXACTLY one JSON-parseable
+    hook-events.jsonl line with kind:"error" and a NUMERIC ts — the
+    guard-fail-open-leaves-no-trace §1 contract, now owned by the prelude.
+
+    RED reason: hook-prelude.sh does not exist, so the wrapper cannot source
+    it and the no-python event is not written through the shared writer."""
+    minimal_payload = json.dumps({
+        "tool_name": "Agent",
+        "tool_input": {"prompt": "hi"},
+        "cwd": "C:/repo",
+    })
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _no_python_env(state_dir)
+        result = _run_bash(_GUARD_SH, minimal_payload, env)
+        assert result.returncode == 0, (
+            f"no-python path must exit 0; stderr={result.stderr!r}"
+        )
+        assert _containment_decision(result) != "deny", (
+            f"no-python path must never deny; stdout={result.stdout!r}"
+        )
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, (
+            f"expected exactly one hook-events line; got {events!r}"
+        )
+        assert events[0]["kind"] == "error", events
+        assert events[0]["hook"] == _GUARD_SH.stem, events
+        assert isinstance(events[0]["ts"], (int, float)) and not isinstance(
+            events[0]["ts"], bool
+        ), (
+            f"ts must be a JSON number (integer seconds); got "
+            f"{events[0]['ts']!r}"
+        )
+
+
 def test_noncanonical_catch_all_writes_breadcrumb_and_event():
     """guard-fail-open-leaves-no-trace symptom (c): block-noncanonical-blocker
     -write.sh's generic catch-all previously had NO breadcrumb/event at all
@@ -9685,6 +9803,17 @@ _TESTS = _TESTS + [
     # size guard against the E2BIG-disarm class
     ("test_no_embedded_c_python_body_exceeds_cmdline_ceiling",
      test_no_embedded_c_python_body_exceeds_cmdline_ceiling),
+]
+
+_TESTS = _TESTS + [
+    # shared-hook-lib Phase 1 — hook-prelude.sh + the two thin-wrapper consumers
+    ("test_prelude_file_exists", test_prelude_file_exists),
+    ("test_wrappers_source_prelude_and_drop_inline_python_resolution",
+     test_wrappers_source_prelude_and_drop_inline_python_resolution),
+    ("test_missing_prelude_source_fails_open_allows",
+     test_missing_prelude_source_fails_open_allows),
+    ("test_prelude_no_python_leaves_numeric_ts_event",
+     test_prelude_no_python_leaves_numeric_ts_event),
 ]
 
 
