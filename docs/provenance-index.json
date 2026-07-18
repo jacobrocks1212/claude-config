@@ -410,6 +410,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "state-cli-contract-registry",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -13206,6 +13211,18 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/spike-pipeline-role/NEEDS_INPUT_RESOLVED_2026-07-18.md": [
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/spike-pipeline-role/PHASES.md": [
@@ -13228,6 +13245,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/spike-pipeline-role/SPEC.md": [
@@ -13262,6 +13284,11 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/spike-pipeline-role/plans/all-phases-spike-pipeline-role-part-2.md": [
@@ -13274,6 +13301,11 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/spike-pipeline-role/plans/all-phases-spike-pipeline-role-part-3.md": [
@@ -13286,6 +13318,11 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/state-cli-contract-registry/COMPLETED.md": [
@@ -16611,6 +16648,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
@@ -17873,6 +17915,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "stub-origin-provisional-exclusion",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -18067,6 +18114,11 @@
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/coupled-overlays/lazy-bug-batch.overlay.json": [
@@ -18102,6 +18154,11 @@
     },
     {
       "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spike-pipeline-role",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -18318,6 +18375,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
@@ -18515,6 +18577,11 @@
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "stub-origin-provisional-exclusion",
@@ -18786,6 +18853,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/lazy_core/_ctx.py": [
@@ -18891,6 +18963,11 @@
       "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/lazy_core/gates.py": [
@@ -18918,6 +18995,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/lazy_core/hostcaps.py": [
@@ -19429,6 +19511,11 @@
     },
     {
       "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spike-pipeline-role",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -20032,6 +20119,11 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/test_spike_tooling_loop.py": [
@@ -20044,6 +20136,11 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/test_surface_resolver.py": [
@@ -20146,6 +20243,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "stub-origin-provisional-exclusion",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -20226,6 +20328,11 @@
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "stub-origin-provisional-exclusion",
@@ -20539,6 +20646,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/tests/test_lazy_core/test_runtimeplane.py": [
@@ -21148,6 +21260,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/_components/subagent-launch.md": [
@@ -21223,6 +21340,11 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/architecture-patterns/SKILL.md": [
@@ -21868,6 +21990,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "spike-pipeline-role",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "stub-origin-provisional-exclusion",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -21976,6 +22103,11 @@
     },
     {
       "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spike-pipeline-role",
       "type": "feature",
       "provenance": "pipeline-gated"
     },

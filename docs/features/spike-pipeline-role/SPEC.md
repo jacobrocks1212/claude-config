@@ -4,7 +4,7 @@
 > system (a runtime measurement, a GO/NO-GO verdict, a confirm/deny of real behavior),
 > instead of dead-ending into a manual operator block.
 
-**Status:** In-progress (foundational round landed — routing/orchestration phased; see PHASES.md)
+**Status:** Complete
 **Priority:** P1
 **Owner:** harden-harness (originated Round 80, 2026-07-17)
 **Last updated:** 2026-07-17

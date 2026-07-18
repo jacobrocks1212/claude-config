@@ -26,7 +26,7 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Cycles per completion | 7.14 (30d) | pending | — | PENDING-BASELINE |
+| Cycles per completion | 6.31 (30d) | pending | — | PENDING-BASELINE |
 | MCP-validation round trips per feature | — | pending | — | NO-DATA |
 
 ## harness-canary
@@ -63,7 +63,7 @@
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
 | Age in days of the oldest open docs/bugs/ item `[claude-config]` | 18 (1d) | 17 (measured 2026-07-11) | — | PENDING-BASELINE |
-| Count of docs/bugs/ items at Status: Concluded (investigated, never fixed) `[claude-config]` | 33 (1d) | 23 (measured 2026-07-11) | — | PENDING-BASELINE |
+| Count of docs/bugs/ items at Status: Concluded (investigated, never fixed) `[claude-config]` | 32 (1d) | 23 (measured 2026-07-11) | — | PENDING-BASELINE |
 
 ## lazy-core
 
@@ -88,7 +88,7 @@
 
 ## Canary health
 
-- 20 canaries open, oldest 2d, 0 will no-data-close within 7d
+- 22 canaries open, oldest 2d, 0 will no-data-close within 7d
 
 ## Notes
 

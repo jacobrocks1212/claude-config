@@ -10,12 +10,6 @@
       "adhoc": true
     },
     {
-      "id": "spike-pipeline-role",
-      "name": "Spike \u2014 Runtime-Proof Pipeline Role",
-      "spec_dir": "spike-pipeline-role",
-      "tier": 1
-    },
-    {
       "id": "subagent-wedge-backstop-hook",
       "name": "SubagentStop Wedge-Backstop Hook",
       "spec_dir": "subagent-wedge-backstop-hook",

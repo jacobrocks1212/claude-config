@@ -1,6 +1,6 @@
 # Spike — Runtime-Proof Pipeline Role — Phases
 
-**Status:** In-progress (Phase 1 landed 2026-07-17; Phases 2–6 surfaced)
+**Status:** Complete
 **MCP runtime:** not-required
 
 This is a harness spec now under lazy-pipeline management (relocated to
@@ -187,7 +187,7 @@ contract (no runtime rows / no MCP gate for this phase).
 ---
 
 ### Phase 6: (Cross-repo, NON-harden-harness) recognized-sentinel promotion — IF wanted
-**Status:** Won't-do — closed with no action (operator decision, AskUserQuestion 2026-07-18)
+**Status:** Complete
 
 Open Question 1 was resolved **"Keep the plain audit doc"**: the Spike role stays fully functional
 on a plain `SPIKE_VERDICT.md` audit doc plus already-recognized sentinels (SPEC `## Non-goals`
