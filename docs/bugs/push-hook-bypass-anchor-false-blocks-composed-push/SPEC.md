@@ -2,7 +2,7 @@
 
 > The work-repo push hook only honors the `CLAUDE_PUSH_APPROVED=1` bypass when it *leads the whole command string*, so an approved push prefixed with `cd …&&` (or any other command/env) is falsely blocked.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-13
 **Placement:** docs/bugs/push-hook-bypass-anchor-false-blocks-composed-push

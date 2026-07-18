@@ -7665,11 +7665,32 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/push-hook-bypass-anchor-false-blocks-composed-push/IMPLEMENTATION_NOTES.md": [
+    {
+      "id": "push-hook-bypass-anchor-false-blocks-composed-push",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/push-hook-bypass-anchor-false-blocks-composed-push/PHASES.md": [
+    {
+      "id": "push-hook-bypass-anchor-false-blocks-composed-push",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/push-hook-bypass-anchor-false-blocks-composed-push/SPEC.md": [
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/bugs/push-hook-bypass-anchor-false-blocks-composed-push/plans/fix-composed-push-regression-test.md": [
+    {
+      "id": "push-hook-bypass-anchor-false-blocks-composed-push",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/queue.json": [
@@ -19257,6 +19278,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "push-hook-bypass-anchor-false-blocks-composed-push",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "incident-auto-capture",
