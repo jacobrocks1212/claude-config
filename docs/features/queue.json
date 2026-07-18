@@ -9,6 +9,12 @@
       "tier": 1
     },
     {
+      "id": "subagent-wedge-backstop-hook",
+      "name": "SubagentStop Wedge-Backstop Hook",
+      "spec_dir": "subagent-wedge-backstop-hook",
+      "tier": 1
+    },
+    {
       "id": "shared-hook-lib",
       "name": "Shared Hook Lib (hook-prelude.sh + hook_lib.py)",
       "spec_dir": "shared-hook-lib",

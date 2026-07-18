@@ -17,7 +17,7 @@ decisions:
   - "forward_cycles OVER-count on non-dispatch inject-hook turns: the inject-hook `--repeat-count` probe advances forward_cycles via the consume-INDEPENDENT state-change trigger on notification turns (route changes, no dispatch), ballooning forward_cycles and false-hitting max_cycles so overnight runs end early. The evidence's consume-only fix reverses the 2026-07-16 `byref-forward-cycles-frozen-on-multicycle-same-step` + Theory-1b decisions and their pinned tests (symmetric under-count catastrophe). Move the forward-advance OFF banner-emission to actual dispatch time (subsuming decision #3's under-count too), or accept? (harden Round 55, 2026-07)"
   - "Operator recovery of a CRASHED run's orphaned markers is under-served: the containment guards (`refuse_if_cycle_active` / `refuse_cycle_marker_mutation_if_subagent`) key ONLY on marker-presence + env, consulting neither the marker's recorded session_id/started_at nor process liveness, so an operator tearing down a dead run's corpse from a fresh session is refused as a 'single cycle subagent' and must climb a 4-gate cascade (containment → efficacy-flush → terminal-reason) with no chain-aware guidance and no crash/disconnect terminal reason. Add a session-liveness/ownership teardown path, a first-class `--recover-stale-marker`/`--force-run-end` op, chain-aware messages, and/or a `crashed-run` sanctioned terminal reason — all authority/gate-semantics changes? (harden Round 58, 2026-07)"
   - "A `partial` MCP_TEST_RESULTS.md whose only uncovered rows are all documented-test-exempt/build-deferred has no AUTHORABLE path to VALIDATED.md: the `observation_gap_exemptions`→scoped-VALIDATED mechanism EXISTS (gates.py/pseudo.py, wired to 3 sites) but (a) the `mcp-test` SKILL never surfaces it so the producer invents a non-promoting `carve_outs` block, (b) the results file is engine-written and 'the model NEVER authors sentinels' so no shipped path emits the spec_class-bearing exemptions block, and (c) 'build-artifact-deferred' is not the documented observation-gap class. Bless model-authored exemptions / add an emit path, and classify build-artifact-deferred? Bundles with #2 and #9. (harden Round 59, 2026-07)"
-  - "Mechanical `SubagentStop`-hook backstop for a GENUINELY-WEDGED dispatched orchestrator (child never resumes parent; work left uncommitted): a `SubagentStop` hook can BLOCK a subagent's premature stop and force it to continue. Firing semantics are FAVORABLE (fires only at genuine agentic-loop end, not at foreground-child yields), and execute-plan's existing run-marker lifecycle supplies the operator-requested paused-with-live-children opt-out for free — but (a) the loop-guard field `stop_hook_active` is GENUINELY UNDOCUMENTED (a wrong assumption risks an infinite block→continue→block loop; claude-code-guide advised not shipping load-bearing logic on it without confirmation), and (b) blocking a subagent's stop is a NEW subagent-lifecycle enforcement authority a false-positive predicate could use to force-spin a genuinely-done agent — the exact dual-writer harm. Add the hook (authority + undocumented-field dependency), or keep the wedge path prose-only? (harden Round 81, 2026-07)"
+  - "[RESOLVED 2026-07-17 → operator-authorized, enqueued as feature subagent-wedge-backstop-hook] Mechanical `SubagentStop`-hook backstop for a GENUINELY-WEDGED dispatched orchestrator (child never resumes parent; work left uncommitted): a `SubagentStop` hook can BLOCK a subagent's premature stop and force it to continue. Firing semantics are FAVORABLE (fires only at genuine agentic-loop end, not at foreground-child yields), and execute-plan's existing run-marker lifecycle supplies the operator-requested paused-with-live-children opt-out for free — but (a) the loop-guard field `stop_hook_active` is GENUINELY UNDOCUMENTED (a wrong assumption risks an infinite block→continue→block loop; claude-code-guide advised not shipping load-bearing logic on it without confirmation), and (b) blocking a subagent's stop is a NEW subagent-lifecycle enforcement authority a false-positive predicate could use to force-spin a genuinely-done agent — the exact dual-writer harm. Add the hook (authority + undocumented-field dependency), or keep the wedge path prose-only? (harden Round 81, 2026-07)"
 date: 2026-06-16
 class: product
 divergence: structural
@@ -411,7 +411,17 @@ The two named failure modes are SYMMETRIC catastrophes: DEFECT 1 (over-count →
 
 **PROVISIONALLY RESOLVED + RELOCATED (harden Round 61, 2026-07-17, park-provisional protocol).** Re-graded `divergence: contained` (the promotion gate `observation_gap_promotable` and its refusals are UNCHANGED; `spec_class` is a free-form provenance string so `build-artifact-deferred` is already admissible with no gate code change; the only change is making a SHIPPED mechanism reachable via `mcp-test/SKILL.md` prose + a narrow scoped carve-out of the "engine writes sentinels" discipline) and therefore IMPLEMENTED provisionally per option 1 rather than parked. Because this shared file bundles 13 decisions (over the 4-cap) and is graded `divergence: structural` (fail-closed / non-provisionalizable), this decision was relocated to its own provisional-eligible sentinel to be accepted independently: `docs/bugs/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/NEEDS_INPUT_PROVISIONAL.md` (`resolved_by: auto-provisional`, ratification-pending). The `mcp-test/SKILL.md` "Scoped-validated partial" subsection + the `build-artifact-deferred` regression lock (`test_gates.py::test_observation_gap_promotable_admits_build_artifact_deferred_class`) are the shipped change.
 
-### 14. Mechanical `SubagentStop`-hook backstop for a GENUINELY-WEDGED dispatched orchestrator: add the hook (new subagent-lifecycle enforcement authority + undocumented-field dependency), or keep the wedge path prose-only?
+### 14. [RESOLVED 2026-07-17 → enqueued as feature `subagent-wedge-backstop-hook`] Mechanical `SubagentStop`-hook backstop for a GENUINELY-WEDGED dispatched orchestrator: add the hook (new subagent-lifecycle enforcement authority + undocumented-field dependency), or keep the wedge path prose-only?
+
+> **RESOLVED 2026-07-17 (operator-authorized).** Jacob authorized the hook conditioned on a
+> `claude-code-guide` confirmation of the mechanism, which was obtained: `SubagentStop` fires only
+> at genuine loop-end (not yields); block via exit 2 / `{"decision":"block"}` is documented;
+> `agent_id` is a documented stable per-subagent breadcrumb key; `stop_hook_active` is UNDOCUMENTED
+> for `SubagentStop` and is NOT used. Recommended option (a)/(ii) adopted — marker-gated predicate,
+> self-managed `agent_id` breadcrumb loop-guard, fail-open. Split out of this sentinel and enqueued
+> as feature **`subagent-wedge-backstop-hook`** (`docs/features/`, queue.json tier 1, ROADMAP Tier
+> 1) for the pipeline to build. See the full Resolution note at the end of this file. Decision #12
+> (marker-teardown authority) remains parked — not re-opened by this hook (it reads state only).
 
 *(harden Round 81 — 2026-07-17, manual invocation, operator-steered. The "agent stopped waiting on a test/build" harden. The FALSE-COMPLETION half (the main session misreading a `completed` `<task-notification>` from a still-yielding orchestrator) was fixed mechanically this round as a RECEIVER-side prose contract — `user/skills/_components/dispatched-agent-liveness.md`, commit `4197e5d8`. This decision is the OTHER, genuinely-distinct half the operator asked to keep separate: a GENUINE WEDGE where a dispatched orchestrator's turn truly ends with pending work uncommitted and nothing re-invokes it. Bug: `docs/bugs/dispatched-orchestrator-completed-notification-misread-as-terminal/` (Concluded). Prior sender-side fixes of the same broad class: Rounds 39 & 45 (`turn-end-gate.md`). Directly bundles with #12 — the descendant-liveness/ownership authority.)*
 
@@ -437,3 +447,36 @@ The two named failure modes are SYMMETRIC catastrophes: DEFECT 1 (over-count →
 ## Why this is surfaced and not auto-applied
 
 Per the hardening prohibitions and decision-class tiering: D-A and D-B were applied mechanically under full gates (Round 19). D-C's mechanical half (guard deny) was ALSO applied mechanically — a bare unresolved ref token now hard-denies. The ONLY thing escalated here is the dispatch-preference contract flip, which reverses a deliberate Phase 7 design decision and trades one real failure class for another. That is a `product`-class fork, so it is surfaced via this file rather than baked silently.
+
+---
+
+## Resolution — Decision 14 (SubagentStop wedge-backstop) — 2026-07-17
+
+**Status:** RESOLVED → operator-authorized → enqueued as a pipeline feature.
+
+**Authorization:** Jacob authorized adding the hook, conditioned on a `claude-code-guide`
+confirmation that the strategy is sound. Confirmation obtained 2026-07-17:
+
+- `SubagentStop` fires ONLY at a subagent's genuine agentic-loop termination, NOT at mid-turn
+  foreground-child yields (distinct from the `<task-notification>` surface). A correct yield never
+  trips it.
+- Blocking via exit code 2 (stderr `reason`) or `{"decision":"block","reason":…}` is documented +
+  supported; the subagent continues.
+- `stop_hook_active` is **undocumented for `SubagentStop`** (Stop-only) — NOT used.
+- `agent_id` is a documented, stable per-subagent identifier — the sanctioned breadcrumb key.
+- `SubagentStop` fires at every nesting level, each with a unique `agent_id`, so per-`agent_id`
+  breadcrumbing is well-defined and nested orchestrators don't share a breadcrumb.
+
+**Decision:** adopt recommended option (a)/(ii) — a marker-gated `SubagentStop` hook with a
+self-managed `agent_id` breadcrumb loop-guard (no `stop_hook_active` dependency), fail-open, block
+at most once per subagent. The structural-divergence blocker (undocumented-field dependency) is
+removed by keying the loop-guard on the documented `agent_id`; the new enforcement authority is
+operator-authorized.
+
+**Enacted:** split out of this multi-decision sentinel into a standalone feature
+**`subagent-wedge-backstop-hook`** — `docs/features/subagent-wedge-backstop-hook/{SPEC.md,PHASES.md}`
+(Status: Ready), queue.json (tier 1) + ROADMAP.md (Tier 1). `/lazy-batch` builds it from there
+(→ `/write-plan` → `/execute-plan`).
+
+**Not re-opened:** decision #12 (descendant-liveness / marker-teardown authority) stays parked —
+this hook READS liveness/ownership state, it does not mutate marker teardown.
