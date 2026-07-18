@@ -2,7 +2,7 @@
 
 > Every pipeline gate audits *downward* (does the plan match SPEC/code anchors?) and none audits *upward* (does contradicting field evidence falsify a SPEC premise?) — so contradicting evidence that was already inside the pipeline three separate times got reconciled into local wrinkles instead of invalidating the wrong premise, which a human reviewer then refuted in one conversation.
 
-**Status:** Concluded
+**Status:** Fixed
 **Fixed:** 2026-07-10 — implemented out-of-pipeline (operator-directed subagent orchestration; fix scope in this SPEC)
 **Severity:** P1
 **Discovered:** 2026-07-10

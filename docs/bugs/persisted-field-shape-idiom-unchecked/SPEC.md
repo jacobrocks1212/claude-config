@@ -2,7 +2,7 @@
 
 > Lifecycle-state decisions are optioned by *where the flag lives*, never by *data shape*, and reuse discovery operates at capability granularity only — so 57077 locked an `IsArchived` bool while the codebase's own idiom (`EntityMeta.DateDisabled`, a nullable `[Overwatch]` DateTime) sat unexamined, forcing the Phase-7 rewrite across 9 call sites, snapshots, and typegen.
 
-**Status:** Concluded
+**Status:** Fixed
 **Fixed:** 2026-07-10 — implemented out-of-pipeline (operator-directed subagent orchestration; fix scope in this SPEC)
 **Severity:** P2
 **Discovered:** 2026-07-10

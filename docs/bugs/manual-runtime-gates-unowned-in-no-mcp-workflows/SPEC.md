@@ -2,7 +2,7 @@
 
 > `/execute-plan` flips phases/plans to `Complete` past unchecked `verification-only` runtime rows on the assumption that a downstream MCP/`__mark_complete__` gate will hold them — but in manual (non-lazy) workflows and no-MCP repos (Cognito) that gate never runs, so "complete" claims ship with the feature's central premise unverified.
 
-**Status:** Concluded
+**Status:** Fixed
 **Fixed:** 2026-07-10 — implemented out-of-pipeline (operator-directed subagent orchestration; fix scope in this SPEC)
 **Severity:** P1
 **Discovered:** 2026-07-10

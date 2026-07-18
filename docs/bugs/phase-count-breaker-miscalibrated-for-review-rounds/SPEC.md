@@ -2,7 +2,7 @@
 
 > The `/add-phase` phase-count circuit breaker fired 4 times on 57077 and was operator-overridden all 4 times; its only offered remedy (full `/realign-spec` + `/spec-phases` rebuild) is disproportionate during a normal open-PR review round, so the breaker has become a rubber-stamp ceremony — pure friction with no protective effect.
 
-**Status:** Concluded
+**Status:** Fixed
 **Fixed:** 2026-07-10 — implemented out-of-pipeline (operator-directed subagent orchestration; fix scope in this SPEC)
 **Severity:** Low
 **Discovered:** 2026-07-10

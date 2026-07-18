@@ -2,7 +2,7 @@
 
 > `/resolve-review` independently validates a reviewer's *findings* but never validates the pipeline's own *decline rationales*, and no gate anywhere checks that net-new code avoids `[Obsolete]` surfaces — so 57077 Phase 9 declined an async ask with a factually wrong rationale that missed the `[Obsolete]` attribute pointing at the exact fix, and the branch shipped a net-new caller of a deprecated API on the precise axis under review (→ corrective Phase 12).
 
-**Status:** Concluded
+**Status:** Fixed
 **Fixed:** 2026-07-10 — implemented out-of-pipeline (operator-directed subagent orchestration; fix scope in this SPEC)
 **Severity:** P2
 **Discovered:** 2026-07-10
