@@ -1,6 +1,6 @@
 # Cycle-budget counters double-count on probes + the per-turn inject hook
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-17 (captured live in the act during a `/lazy-batch` run on AlgoBooth)
 **Related:** `feature-budget-guard-and-skip-ahead` (per-feature forward cycles); Round-era fixes
