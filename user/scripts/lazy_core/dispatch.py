@@ -642,9 +642,9 @@ def merged_head_nondispatchable_ids(
     repo_root: str,
     current_item_id: str | None,
     *,
-    same_pipeline: str,
-    same_pipeline_state: dict,
     scoped_probe: "callable",
+    same_pipeline: "str | None" = None,
+    same_pipeline_state: "dict | None" = None,
     today: "datetime.date | None" = None,
 ) -> "set[str]":
     """Build the merged-head exclude set as the AUTHORITATIVE actionability
@@ -690,10 +690,25 @@ def merged_head_nondispatchable_ids(
             is the cross-pipeline queue the oracle scoped-probes).
         same_pipeline_state: the emit probe's ``compute_state`` dict — passed to
             ``probe_skipped_ids`` UNCHANGED.
-        scoped_probe: ``Callable[[str], dict]`` returning a cross-pipeline
-            candidate's scoped ``compute_state`` output. Called ONLY for
-            cross-pipeline candidates at-or-above the emitted item, and never
-            below the first dispatchable head.
+        scoped_probe: ``Callable[[str], dict]`` returning a candidate's scoped
+            ``compute_state`` output. Called for each candidate the walk must
+            classify (cross-pipeline candidates on the ``--emit-prompt`` path;
+            EVERY candidate on a stateless read-only ordering path — see
+            ``same_pipeline_state`` below), at-or-above the emitted item and never
+            below the first dispatchable head. For a stateless caller it must be
+            TYPE-AWARE (probe features via the feature ``compute_state`` and bugs
+            via the bug ``compute_state``).
+        same_pipeline: ``"feature"`` or ``"bug"`` — which queue the emit probe
+            walked. Consulted ONLY when ``same_pipeline_state`` is provided (to
+            select the same-pipeline queue for ``probe_skipped_ids``).
+        same_pipeline_state: the emit probe's ``compute_state`` dict — passed to
+            ``probe_skipped_ids`` UNCHANGED (L2, the cross-item skip-ahead
+            ordering context). **When ``None`` (a stateless read-only path such
+            as ``--next-merged``, which never ran a probe) there is no
+            same-pipeline skip context to reuse — EVERY candidate is scoped-probed
+            via ``scoped_probe`` instead. This does NOT violate L2: L2 forbids
+            LOSING a live probe's ordering context, and a stateless caller has
+            none to lose.**
         today: caller-supplied date for deterministic bug-aging in the ordering
             (mirrors ``merged_head_override``); ``None`` → ``date.today()``.
 
@@ -703,21 +718,25 @@ def merged_head_nondispatchable_ids(
     """
     from .depdag import merged_worklist
 
-    same_items = feature_items if same_pipeline == "feature" else bug_items
-    cross_items = bug_items if same_pipeline == "feature" else feature_items
-    cross_ids = {
-        (raw.get("id") if isinstance(raw, dict) else None) for raw in (cross_items or [])
-    }
-    cross_ids.discard(None)
-
     # (1) Same-pipeline skips — the current probe's own decisions, UNCHANGED (L2).
-    exclude: set[str] = set(probe_skipped_ids(same_pipeline_state, same_items))
+    # With no probe state (stateless read-only path) there are no same-pipeline
+    # skips to fold and no same-pipeline "already-chosen dispatchable head" to
+    # short-circuit on — so every candidate falls through to the scoped oracle.
+    if same_pipeline_state is not None:
+        same_items = feature_items if same_pipeline == "feature" else bug_items
+        exclude: set[str] = set(probe_skipped_ids(same_pipeline_state, same_items))
+        same_ids = {
+            raw.get("id") for raw in (same_items or [])
+            if isinstance(raw, dict) and raw.get("id")
+        }
+    else:
+        exclude = set()
+        same_ids = set()
 
-    # (2) Cross-pipeline oracle, bounded at-or-above the emitted item. Walk the
-    # merged ordering (same-pipeline skips already dropped so the walk sees the
-    # driver's view of its own queue) from the head; scoped-probe each
-    # cross-pipeline candidate until we reach the emitted item or the first
-    # dispatchable head (L5 short-circuit).
+    # (2) Walk the merged ordering (same-pipeline skips already dropped so the
+    # walk sees the driver's view of its own queue) from the head; classify each
+    # candidate until we reach the emitted item or the first dispatchable head
+    # (L5 short-circuit).
     worklist = merged_worklist(
         feature_items, bug_items, repo_root, today=today, exclude_ids=exclude
     )
@@ -727,17 +746,17 @@ def merged_head_nondispatchable_ids(
             # Reached the emitted item — nothing below it can be the diverging
             # merged head, so no lower candidate needs an oracle evaluation.
             break
-        if iid in cross_ids:
-            if is_dispatchable(scoped_probe(iid)):
-                # First dispatchable head above the emitted item — a GENUINE
-                # divergence the withhold must fire on. Stop (never exclude it).
-                break
-            exclude.add(iid)
-        else:
+        if iid in same_ids:
             # A same-pipeline item ranked above the emitted item that the probe
-            # did NOT skip is (by definition of the probe's own choice) a
-            # dispatchable same-pipeline head → the first dispatchable head.
+            # did NOT skip is (by the probe's own choice) a dispatchable
+            # same-pipeline head → the first dispatchable head (L2 fast path,
+            # no scoped re-probe of the current probe's own queue).
             break
+        if is_dispatchable(scoped_probe(iid)):
+            # First dispatchable head above the emitted item — a GENUINE
+            # divergence the withhold must fire on. Stop (never exclude it).
+            break
+        exclude.add(iid)
 
     exclude.discard(current_item_id)
     return exclude

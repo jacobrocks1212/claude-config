@@ -224,11 +224,11 @@ here), the helper is DELETED outright — its definition (`depdag.py:1496`), its
 anti-overfit complexity check (L7). Re-pin the full smoke baselines.
 
 **Deliverables:**
-- [ ] `lazy-state.py` `--next-merged` site (`_nm_excluded`, ~12580): build the exclude set via
+- [x] `lazy-state.py` `--next-merged` site (`_nm_excluded`, ~12580): build the exclude set via
   `merged_head_nondispatchable_ids` (same-pipeline features via `probe_skipped_ids` + cross-pipeline bugs
   via the scoped oracle), replacing `nondispatchable_item_ids`. `next_merged` / `merged_head_override`
   signatures unchanged (still take a pre-built `exclude_ids`).
-- [ ] `lazy-state.py` `research_halt` site (`_rh_excluded`, ~13935): build the FULL merged-head exclude set
+- [x] `lazy-state.py` `research_halt` site (`_rh_excluded`, ~13935): build the FULL merged-head exclude set
   via the oracle, then pass it to `research_halt_head` — which RE-INCLUDES the research-gated ids exactly
   as today (assert the needs-research halt still surfaces; byte-identity invariant, L3 tail). Preserve the
   existing `.discard(current)`.

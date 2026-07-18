@@ -81,7 +81,7 @@ Every phase's WUs modify the SAME core files (`dispatch.py`, the two state scrip
 
 - [x] WU-1 — Oracle core: `is_dispatchable` + `merged_head_nondispatchable_ids` + characterization tests
 - [x] WU-2 — Emit-path migration on both state scripts + parity + byte-identity/isolation tests
-- [ ] WU-3 — Migrate `--next-merged` + `research_halt` exclude-set sites to the oracle
+- [x] WU-3 — Migrate `--next-merged` + `research_halt` exclude-set sites to the oracle
 - [ ] WU-4 — Retire `nondispatchable_item_ids` (delete + prose repoint + facade map) + baseline re-pin
 
 ---

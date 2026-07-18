@@ -12598,23 +12598,63 @@ def main() -> int:
         repo_root = Path(args.repo_root)
         feature_items = load_queue(repo_root)
         bug_items = _load_bug_queue_for_merged(repo_root)
-        # merged-head-includes-parked-items-deadlocks-park-run +
-        # merged-head-excludes-parked-not-operator-deferred-deadlocks: EXCLUDE the
-        # NON-DISPATCHABLE items the pipeline skips — parked items a park-mode run
-        # skips (unresolved NEEDS_INPUT.md / BLOCKED.md) PLUS unconditional
-        # operator-deferred items (DEFERRED.md) — so the merged head is the
-        # highest-priority DISPATCHABLE item, else the orchestrator dispatches to a
-        # head that just re-parks/re-defers (deadlock). Effective
-        # (marker-authoritative) park facets so a mid-run --set-park toggle takes
-        # effect; no facet AND no DEFERRED.md → empty set → byte-identical.
+        # merged-head-actionability-oracle (SPEC L1/L5): EXCLUDE every
+        # NON-DISPATCHABLE item so the merged head is the highest-priority item
+        # that would actually DISPATCH, else the orchestrator routes to a head
+        # that just re-parks/re-defers/halts (deadlock). This is a STATELESS
+        # read-only ordering query — there is no live probe, so there is no
+        # same-pipeline skip context to reuse (L2): EVERY at-or-above candidate
+        # is scoped-probed via a TYPE-AWARE `scoped_probe` (feature → this
+        # module's `compute_state`, bug → bug-state's), honoring the SAME run
+        # flags a real probe would use. Effective (marker-authoritative) park
+        # facets so a mid-run --set-park toggle takes effect; a dispatchable head
+        # short-circuits the walk (byte-identical common path when the head is
+        # dispatchable — the head is probed once and the loop stops).
         _nm_marker = lazy_core.read_run_marker()
         _nm_ni, _nm_bl, _nm_pv = lazy_core.fold_park_flags(
             args.park_needs_input, args.park_blocked, args.park_provisional, _nm_marker
         )
-        _nm_excluded = lazy_core.nondispatchable_item_ids(
-            feature_items, bug_items, str(repo_root),
-            park_needs_input=_nm_ni, park_blocked=_nm_bl, park_provisional=_nm_pv,
-        )
+        _nm_bug_state_mod = _load_bug_state_module()
+        _nm_real_device = resolve_real_device(args.real_device)
+        _nm_types = {}
+        for _it in feature_items:
+            if isinstance(_it, dict) and _it.get("id"):
+                _nm_types[_it["id"]] = "feature"
+        for _it in bug_items:
+            if isinstance(_it, dict) and _it.get("id"):
+                _nm_types.setdefault(_it["id"], "bug")
+
+        def _nm_scoped_probe(_iid):
+            try:
+                if _nm_types.get(_iid) == "bug":
+                    if _nm_bug_state_mod is None:
+                        return {}
+                    return _nm_bug_state_mod.compute_state(
+                        repo_root, cloud=args.cloud, real_device=_nm_real_device,
+                        scope_bug_id=_iid,
+                        park_needs_input=_nm_ni, park_blocked=_nm_bl,
+                        park_provisional=_nm_pv,
+                        strict_research_halt=args.strict_research_halt,
+                    )
+                return compute_state(
+                    repo_root, cloud=args.cloud,
+                    skip_needs_research=args.skip_needs_research,
+                    real_device=_nm_real_device, scope_feature_id=_iid,
+                    park_needs_input=_nm_ni, park_blocked=_nm_bl,
+                    park_provisional=_nm_pv,
+                    strict_research_halt=args.strict_research_halt,
+                )
+            except Exception:  # noqa: BLE001 — a per-candidate probe error must not break the ordering query
+                return {}
+
+        _nm_diag_snapshot = list(lazy_core._DIAGNOSTICS)
+        try:
+            _nm_excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+                feature_items, bug_items, str(repo_root), None,
+                scoped_probe=_nm_scoped_probe,
+            )
+        finally:
+            lazy_core._DIAGNOSTICS[:] = _nm_diag_snapshot
         head = lazy_core.next_merged(
             feature_items, bug_items, lazy_core.active_repo_root(),
             exclude_ids=_nm_excluded,
@@ -13966,15 +14006,39 @@ def main() -> int:
             _rh_repo = Path(args.repo_root)
             _rh_feats = load_queue(_rh_repo)
             _rh_bugs = _load_bug_queue_for_merged(_rh_repo)
-            _rh_excluded = lazy_core.nondispatchable_item_ids(
-                _rh_feats, _rh_bugs, str(_rh_repo),
-                park_needs_input=_eff_park_ni, park_blocked=_eff_park_bl,
-                park_provisional=_eff_park_pv,
-            )
-            _rh_excluded = set(_rh_excluded) | lazy_core.dispatch.probe_skipped_ids(
-                state, _rh_feats
-            )
-            _rh_excluded.discard(state.get("feature_id"))
+            # merged-head-actionability-oracle (SPEC L1/L2/L3 tail): build the FULL
+            # merged-head exclude set via the oracle (same-pipeline = features via
+            # probe_skipped_ids unchanged; cross-pipeline = bugs via the real scoped
+            # bug probe), then pass it to research_halt_head, which RE-INCLUDES the
+            # research-gated ids exactly as today — the byte-identity invariant that
+            # keeps a research-gated merged head SURFACING its needs-research halt.
+            _rh_bug_state_mod = _load_bug_state_module()
+            _rh_real_device = resolve_real_device(args.real_device)
+
+            def _rh_bug_scoped_probe(_bug_id):
+                if _rh_bug_state_mod is None:
+                    return {}
+                try:
+                    return _rh_bug_state_mod.compute_state(
+                        _rh_repo, cloud=args.cloud, real_device=_rh_real_device,
+                        scope_bug_id=_bug_id,
+                        park_needs_input=_eff_park_ni, park_blocked=_eff_park_bl,
+                        park_provisional=_eff_park_pv,
+                        strict_research_halt=args.strict_research_halt,
+                    )
+                except Exception:  # noqa: BLE001 — a per-candidate probe error must not break the base probe
+                    return {}
+
+            _rh_diag_snapshot = list(lazy_core._DIAGNOSTICS)
+            try:
+                _rh_excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+                    _rh_feats, _rh_bugs, str(lazy_core.active_repo_root()),
+                    state.get("feature_id"),
+                    same_pipeline="feature", same_pipeline_state=state,
+                    scoped_probe=_rh_bug_scoped_probe,
+                )
+            finally:
+                lazy_core._DIAGNOSTICS[:] = _rh_diag_snapshot
             _rh_head = lazy_core.dispatch.research_halt_head(
                 state, _rh_feats, _rh_bugs, str(lazy_core.active_repo_root()),
                 exclude_ids=_rh_excluded,
