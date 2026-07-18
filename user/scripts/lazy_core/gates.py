@@ -1807,6 +1807,46 @@ def spike_escalation(meta: dict[str, Any] | None) -> bool:
     return False
 
 
+# spike-pipeline-role Phase 4 (WU-2): the machine-enforced bound on the Spike
+# tooling-existence loop. Operator-tunable default cap — SPEC Open Question 2.
+_SPIKE_TOOLING_ROUNDS_CAP = 3
+
+
+def spike_tooling_cap_exceeded(meta: dict[str, Any] | None, cap: int | None = None) -> bool:
+    """Return True when ``spike_tooling_rounds`` has reached/exceeded the cap.
+
+    spike-pipeline-role Phase 4 (WU-2) — the machine-enforced BOUND on the
+    Spike tooling-existence loop (SPEC "The tooling-existence loop (bounded)" /
+    "Loop guard (bound)"). Mirrors ``spike_escalation``'s tolerance shape
+    exactly, but is a PURE count check reused across two routing seams that
+    read different sentinels (BLOCKED.md's Step-3 blocked-resolver and
+    SPIKE_VERDICT.md's Step-9.5 header gate) — so, unlike ``spike_escalation``,
+    it does NOT gate on ``blocker_kind``.
+
+    Tolerances (identical to ``spike_escalation``):
+      - ``spike_tooling_rounds`` as an int is used directly.
+      - ``spike_tooling_rounds`` as a string of digits (quoted YAML) is coerced.
+      - Missing/malformed ``spike_tooling_rounds``, or a None/empty meta → False.
+      - YAML booleans are ints in Python (``True == 1``); they are NOT counts,
+        so bool values are explicitly rejected (checked BEFORE the int check,
+        since bool is an int subclass) rather than coerced.
+    """
+    meta = meta or {}
+    cap = _SPIKE_TOOLING_ROUNDS_CAP if cap is None else cap
+    raw = meta.get("spike_tooling_rounds")
+    # bool is an int subclass — `spike_tooling_rounds: true` must not coerce to 1.
+    if isinstance(raw, bool):
+        return False
+    if isinstance(raw, int):
+        rounds = raw
+    elif isinstance(raw, str) and raw.strip().isdigit():
+        rounds = int(raw.strip())
+    else:
+        # Missing or malformed → never exceeds the cap (never crash a caller).
+        return False
+    return rounds >= cap
+
+
 # ---------------------------------------------------------------------------
 # SPEC parsing helpers
 # ---------------------------------------------------------------------------

@@ -1518,6 +1518,29 @@ def compute_state(
         # a separate Part-3-consumed signal). Placed before the generic `blocked`
         # terminal, identical routing to the feature axis.
         if meta.get("blocker_kind") == "runtime-spike-verdict-pending":
+            # spike-pipeline-role Phase 4 (WU-2, coupled mirror): the bounded
+            # tooling-existence loop guard — a persisted spike_tooling_rounds
+            # count at/above the cap means the tooling gap keeps recurring,
+            # so route to an operator NEEDS_INPUT halt instead of dispatching
+            # another spike round (checked BEFORE the route-to-spike below).
+            if lazy_core.spike_tooling_cap_exceeded(meta):
+                lazy_core.write_spike_tooling_cap_needs_input(
+                    spec_dir, bug_name, meta.get("spike_tooling_rounds")
+                )
+                lazy_core._diag(
+                    "Step 3: spike_tooling_rounds cap exceeded → needs-input "
+                    "(loop bounded, no further spike route)"
+                )
+                return _bug_state(
+                    **common,
+                    current_step="Step 3: spike tooling-round cap exceeded",
+                    terminal_reason="needs-input",
+                    notify_message=(
+                        f"NEEDS INPUT: {bug_name} — spike tooling gap "
+                        "persists after the corrective-round cap; operator "
+                        "decision needed."
+                    ),
+                )
             lazy_core._diag(
                 "Step 3: BLOCKED.md blocker_kind=runtime-spike-verdict-pending "
                 "→ routing to spike (blocked resolver)"
@@ -1972,6 +1995,30 @@ def compute_state(
     # through byte-identically. Routing is IDENTICAL to the feature axis; only the
     # builder (_bug_state) + Step-10 terminal (__mark_fixed__) differ.
     if phases_spike_required(spec_dir) and not spike_verdict_is_pass(spec_dir):
+        # spike-pipeline-role Phase 4 (WU-2, coupled mirror): the bounded
+        # tooling-existence loop guard on this seam too — a SPIKE_VERDICT.md
+        # carrying a spike_tooling_rounds count at/above the cap means the
+        # tooling gap keeps recurring across corrective rounds; route to an
+        # operator NEEDS_INPUT halt instead of dispatching another spike round.
+        _sv_meta = parse_sentinel(spec_dir / "SPIKE_VERDICT.md") or {}
+        if lazy_core.spike_tooling_cap_exceeded(_sv_meta):
+            lazy_core.write_spike_tooling_cap_needs_input(
+                spec_dir, bug_name, _sv_meta.get("spike_tooling_rounds")
+            )
+            lazy_core._diag(
+                "Step 9.5: spike_tooling_rounds cap exceeded → needs-input "
+                "(loop bounded)"
+            )
+            return _bug_state(
+                **common,
+                current_step="Step 9.5: spike tooling-round cap exceeded",
+                terminal_reason="needs-input",
+                notify_message=(
+                    f"NEEDS INPUT: {bug_name} — spike tooling gap "
+                    "persists after the corrective-round cap; operator "
+                    "decision needed."
+                ),
+            )
         _variant, _goal = lazy_core._read_spike_decision(spec_dir)
         lazy_core._diag("Step 9.5: **Spike:** required with no PASS verdict → routing to spike")
         return _bug_state(

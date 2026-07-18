@@ -2591,6 +2591,57 @@ def provisional_eligibility(sentinel_path: Path) -> tuple[bool, str]:
     return (True, "eligible")
 
 
+def write_spike_tooling_cap_needs_input(spec_dir: Path, item_name: str, rounds: int) -> None:
+    """Write a well-formed NEEDS_INPUT.md for a Spike tooling-round cap halt.
+
+    spike-pipeline-role Phase 4 (WU-2) — the shared writer for the tooling-
+    existence loop's machine-enforced bound (SPEC "The tooling-existence loop
+    (bounded)" / "Loop guard (bound)"). Modeled on
+    ``lazy-state.py::_write_step10_needs_input`` (same NEEDS_INPUT.md schema
+    per ``~/.claude/skills/_components/sentinel-frontmatter.md``: YAML
+    frontmatter — kind, feature_id, written_by, decisions list, date — and a
+    ``## Decision Context`` body with one H3 per decision).
+
+    ``written_by: spike`` is CRITICAL: it is what makes
+    ``provisional_eligibility`` (the Spike-FAIL carve-out above) refuse to
+    auto-accept this halt under ``--park --park-provisional`` — a persistent
+    Spike tooling gap is never a "pick the recommended option" design fork.
+
+    Idempotent: overwrites an existing NEEDS_INPUT.md without error.
+    """
+    today = datetime.date.today().isoformat()
+    feature_id = spec_dir.name
+    decision_title = (
+        f"Spike tooling gap persists after {rounds} corrective rounds — "
+        "operator decision needed"
+    )
+    content = (
+        "---\n"
+        "kind: needs-input\n"
+        f"feature_id: {feature_id}\n"
+        "written_by: spike\n"
+        "spike_verdict: pending\n"
+        "decisions:\n"
+        f'  - "{decision_title}"\n'
+        f"date: {today}\n"
+        "---\n"
+        "\n"
+        "## Decision Context\n"
+        "\n"
+        f"### 1. {decision_title}\n"
+        "\n"
+        f"**Problem:** The Spike role for `{item_name}` has run through "
+        f"{rounds} corrective tooling rounds without resolving the required "
+        "tooling gap (SPEC \"The tooling-existence loop (bounded)\"). The "
+        "loop is bounded to prevent an unbounded corrective cycle — operator "
+        "input is needed to decide how to proceed (e.g. install/author the "
+        "missing tooling manually, relax the Spike's runtime-proof "
+        "requirement, or reassess the goal).\n"
+    )
+    needs_input_path = spec_dir / "NEEDS_INPUT.md"
+    _atomic_write(needs_input_path, content)
+
+
 def provisionalize_sentinel(path: Path, repo_root: Path,
                             date: str | None = None) -> dict:
     """Provisionally accept a NEEDS_INPUT.md on its recommendations (SPEC D2).

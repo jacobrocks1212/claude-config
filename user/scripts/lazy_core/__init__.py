@@ -510,6 +510,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "gate_coverage": "gates",
     "has_completion_receipt": "gates",
     "spike_escalation": "gates",
+    "spike_tooling_cap_exceeded": "gates",
     "validation_escalation": "gates",
     "write_completed_receipt": "gates",
     # Phase 5 WU-3: feature-dir state ledgers (stale-upstream, materialized, WIP/stage, decisions) + input-audit emit command.
@@ -548,6 +549,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "provisionalize_sentinel": "docmodel",
     "spec_dir_operator_deferred": "docmodel",
     "spec_dir_would_park": "docmodel",
+    "write_spike_tooling_cap_needs_input": "docmodel",
     # Phase 5 WU-3: git helpers + self-edit detection.
     "GOVERNING_FILE_SET": "runtimeplane",
     "_current_head": "runtimeplane",

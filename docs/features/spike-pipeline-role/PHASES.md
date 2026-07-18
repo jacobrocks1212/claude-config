@@ -116,15 +116,47 @@ contract (no runtime rows / no MCP gate for this phase).
 ---
 
 ### Phase 4: Tooling-existence loop + bound
-**Status:** Not started
+**Status:** Complete
 **Phase kind:** design
 
-- [ ] Spike asserts required tooling exists before the proof (reuse the `mcp-tool-catalog.md`
+- [x] Spike asserts required tooling exists before the proof (reuse the `mcp-tool-catalog.md`
   tool-existence audit); on a gap, route to `/add-phase` corrective (tagged `corrective`, carrying
   a `**Spike:**` line so control returns)
-- [ ] `spike_tooling_rounds` counter on the entry sentinel/feature state; hard cap (default 3) →
+- [x] `spike_tooling_rounds` counter on the entry sentinel/feature state; hard cap (default 3) →
   `NEEDS_INPUT.md` instead of another loop. Loop can NEVER spin forever
-- [ ] TDD: the loop fires, returns to Spike, and the cap halts
+- [x] TDD: the loop fires, returns to Spike, and the cap halts
+
+**Implementation Notes (2026-07-18, plan part 3):**
+- **WU-1 (add-phase authoring):** `/add-phase` (`user/skills/add-phase/SKILL.md`, Step 4) now carries
+  a HARD "Spike return line for a tooling-gap corrective phase" block: when the corrective route is
+  taken because a Spike's required tooling did not exist, the drafted phase tags `corrective` AND
+  carries a `**Spike:** required — <original goal verbatim>` return line, so Part-1's
+  `phases_spike_required`/`_read_spike_decision` header gate re-routes to a spike cycle once the
+  tooling phase completes. The tool-existence audit itself is NOT re-authored (the Spike subagent
+  already greps the live registry via `phases-runtime-validation.md` + the per-repo
+  `mcp-tool-catalog.md`); this WU only wires the return line. Prose-only (no unit test — validated by
+  `project-skills.py` + `lint-skills.py`).
+- **WU-2 (machine-enforced bound):** the loop can NEVER spin forever. New shared helpers in
+  `lazy_core`: `_SPIKE_TOOLING_ROUNDS_CAP = 3` + `spike_tooling_cap_exceeded(meta, cap=None)`
+  (`gates.py`, immediately after `spike_escalation`, identical int/digit-string/bool-reject/missing
+  tolerances; NOT gated on `blocker_kind` — a pure count check reused across both routing seams) and
+  `write_spike_tooling_cap_needs_input(spec_dir, item_name, rounds)` (`docmodel.py`, writes a
+  `written_by: spike` NEEDS_INPUT.md so the Part-1 provisional carve-out refuses auto-accept under
+  `--park --park-provisional`); both exported via `__init__.py`'s `_SUBMODULE_BY_NAME`. Wired at BOTH
+  spike-routing seams — Step 3 blocked-resolver (reads `BLOCKED.md` meta) and Step 9.5 header gate
+  (reads `SPIKE_VERDICT.md` meta) — in `lazy-state.py` AND coupled-mirrored into `bug-state.py`
+  (shared helpers, zero per-script divergence; `lazy_parity_audit.py --repo-root .` exit 0). At
+  `spike_tooling_rounds >= 3` the seam writes NEEDS_INPUT.md and returns `terminal_reason: needs-input`
+  instead of routing to another spike loop. The counter is stamped by the Spike subagent (prose
+  contract, the `retry_count`-on-sentinel pattern); the machine READS + caps + halts.
+- **Files:** `user/skills/add-phase/SKILL.md`, `user/scripts/lazy_core/{gates,docmodel,__init__}.py`,
+  `user/scripts/lazy-state.py`, `user/scripts/bug-state.py`, `user/scripts/test_spike_tooling_loop.py` (31 tests, both axes × both seams).
+- **Gotcha (environmental, NOT a regression):** running `pytest user/scripts/tests/test_lazy_core/`
+  from inside a live `/lazy-batch` cycle yields ~82 `SystemExit(3)` failures — `apply_pseudo` hits
+  `refuse_if_cycle_active()` against the real live `lazy-cycle-active.json` marker because those tests
+  don't isolate `LAZY_STATE_DIR`. Reproduced identically on unmodified `main`; cleared by running with
+  an isolated `LAZY_STATE_DIR` (test_pseudo.py: 1-fail-fast → 141 passed). Pre-existing test-isolation
+  gap, out of this WU's scope.
 
 ---
 
