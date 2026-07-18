@@ -3,6 +3,8 @@
 **Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-18 (harden-harness no-route dispatch during a `/lazy-batch-parallel`
+**Fixed:** 2026-07-18
+**Fix commit:** 2a6c1bfe
 serial-degrade run on claude-config; item in flight `shared-hook-lib`)
 **Related:** `docs/bugs/merged-head-diverged-stalls-on-gated-head` (excluded parked/gated heads the
 per-pipeline skip-ahead surfaces — the direct predecessor); `docs/bugs/_archive/merged-head-excludes-parked-not-operator-deferred-deadlocks`
