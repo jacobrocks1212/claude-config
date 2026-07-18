@@ -200,6 +200,7 @@ python ~/.claude/scripts/test_lazy_core.py   # full suite — NO baseline regene
 python ~/.claude/scripts/lazy-state.py --test
 python ~/.claude/scripts/bug-state.py --test
 python ~/.claude/scripts/test_hooks.py
+python ~/.claude/scripts/bug-state.py --repo-root . --fsck   # docs/bugs/ invariant check — surfaces unarchived-fixed / fixed-without-receipt / stale-queue-entry debt (read-only; runs for a cycle subagent)
 ```
 
 > **Dead-coverage guard (harness-hardening-retro-fixes Phase 5).** `test_lazy_core.py` above
@@ -219,6 +220,46 @@ Plus:
 Commit under the `harden(<area>):` prefix (see §Commit discipline below), then **`git push`** —
 claude-config's remote is always kept in sync with local (see the Push rule in
 `.claude/skill-config/commit-policy.md`); never leave a `harden(...)` commit unpushed.
+
+#### Reconcile the round's own `docs/bugs/` spec (the `docs/bugs/CLAUDE.md` OUT-OF-PIPELINE contract — MANDATORY)
+
+Your Step-2.5 bug spec lives in the **lazy-managed** `docs/bugs/<slug>/` tree — `bug-state.py`
+auto-discovers it, so the bug pipeline WILL re-drive it. When this round's Step-3 fix FULLY
+resolves that spec's scope, the fix has shipped OUT-OF-PIPELINE (a `harden(...)` commit, never the
+bug pipeline's gated `__mark_fixed__` path), so `docs/bugs/CLAUDE.md` → "Fixing a bug
+OUT-OF-PIPELINE" applies: you MUST do ONE of {finish the contract, explicit deferral} — **NEVER a
+silent `**Status:** Concluded` exit with the fix already committed.** Leaving it at `Concluded`
+is exactly the burned-cycle state this contract closes: the merged-head driver dispatches a full
+`/plan-bug` that discovers the whole fix already landed (observed 2026-07-18 — THREE consecutive
+cycles burned this way; the origin of this very step). Note `bug-state.py --fsck` does NOT catch a
+`Concluded`-with-fix-shipped spec (its checks key on `**Status:** Fixed`) — the `--fsck` gate above
+is the defence-in-depth complement, this step owns the `Concluded`-limbo state.
+
+Choose by fix completeness, then by run mode:
+
+- **Partial fix, or mid-pipeline** (the fix is incomplete, OR a `PHASES.md` already exists so the
+  bug is progressing through the normal tail): **leave `**Status:**` UNTOUCHED** (explicit
+  deferral). Record `reconcile: deferred (<reason>)` in the round + Return. Never archive a bug
+  another writer / the pipeline tail owns.
+- **Full fix, inline manual `/harden-harness`** (no cycle marker): reconcile DIRECTLY — write the
+  hand `FIXED.md` receipt (`kind: fixed`, `provenance: backfilled-unverified`, citing the fix
+  commit + green regression evidence), flip `**Status:** Concluded → Fixed`, then
+  `python3 user/scripts/bug-state.py --repo-root . --archive-fixed docs/bugs/<slug>` and
+  `python3 user/scripts/lazy-state.py --link-provenance --id <slug> --commits <fix-sha>`.
+- **Full fix, DISPATCHED harden** (the common case — you are a **meta-cycle subagent**, the run's
+  `lazy-cycle-active.json` carries `sub_skill: harden-harness`): `--archive-fixed` and
+  `--link-provenance` are ORCHESTRATOR-ONLY and are REFUSED for you (`refuse_if_cycle_active` →
+  exit 3). Do NOT try to bypass that (exempting those queue-mutating / `git mv` ops for a subagent
+  is gate-weakening — Prohibition #2). Instead: write the hand `FIXED.md` receipt + flip
+  `**Status:** → Fixed` (ordinary Write/Edit — NOT cycle-refused; satisfies `--archive-fixed`'s
+  precondition), then hand the two orchestrator-only ops back via the Return `reconcile:` field
+  (name the slug + fix sha + the exact `--archive-fixed` / `--link-provenance` commands). The
+  orchestrator honors it at the harden-return seam (`/lazy-batch` + `/lazy-bug-batch` §1d.1 — it is
+  authorized for those ops, the same ones it runs on the normal archive-on-fix path).
+  - **If you cannot rely on the orchestrator honoring the handback** (a bootstrap run predating the
+    §1d.1 honor step, or any doubt): hand the WHOLE reconciliation back — receipt included — and
+    leave `**Status:** Concluded` UNTOUCHED, so no `unarchived-fixed` debt is stranded. State this
+    explicitly in the round.
 
 #### Over-fit detector (anti-overfit reflex — runs AFTER the mechanical fix lands)
 
@@ -395,6 +436,12 @@ template (the harness's own hypothesis-ledger discipline):
   - none — fix is structural / class has not recurred; no over-fit smell tripped.
   - harden(spinoff): <smell signal(s) that tripped — e.g. "literal-phrase-to-matcher (signal 1)"> → front-enqueued <`/spec`|`/spec-bug`> `<item_id>` for the class «<one-line class boundary>». Cited instance(s): <round#(s) / file:symbol / phrase>. PushNotification sent.
 
+**Reconciliation:** <one of:>
+  - none — this round shipped no `docs/bugs/` fix (pure hard-park, or the fix was not a bug spec).
+  - done — inline manual reconciliation completed (receipt + `--archive-fixed` + `--link-provenance`).
+  - deferred (<reason>) — partial fix / mid-pipeline; `**Status:**` left untouched.
+  - handback → orchestrator: <slug(s)> — receipt written + Status flipped; `--archive-fixed` + `--link-provenance --commits <sha>` handed back via the Return `reconcile:` field.
+
 **Gates run:**
   test_lazy_core.py: <N/N>
   test_hooks.py: <N/N>
@@ -531,5 +578,6 @@ Structured summary:
 - `root_cause_class`: one of missing-emit-section | unbound-token | ambiguous-prose | script-defect | missing-contract | hook-defect
 - `action`: "mechanical-fix" (with commit hash), "provisional-resolve" (with commit hash + NEEDS_INPUT_PROVISIONAL.md path + decision_commit), or "needs-input" (gate-weakening / structural hard-park carve-out, with path)
 - `spinoff`: the over-fit spin-off, if any — `<item_id> (reason: <smell signal + one-line class>)`, or `none`. When non-`none`, the orchestrator fires a `PushNotification` ("spun off `<item_id>` — `<reason>`") and adds a D7 digest entry; the front-enqueued item is worked next.
+- `reconcile`: the `docs/bugs/CLAUDE.md` OUT-OF-PIPELINE handback for the round's own bug spec — one of: `done` (inline manual: receipt + `--archive-fixed` + `--link-provenance` already run); `deferred (<reason>)` (partial / mid-pipeline: Status left untouched); `none` (this round shipped no docs/bugs fix — e.g. a pure hard-park); or an **orchestrator handback** naming the slug + fix sha + the exact `--archive-fixed` / `--link-provenance` commands to run at the harden-return seam (`/lazy-batch` + `/lazy-bug-batch` §1d.1). When a handback is present, the orchestrator runs those script-owned ops (it is authorized — same as the normal archive-on-fix path), then commits + pushes.
 - `gates_run`: summary of counts (test_lazy_core.py N/N, test_hooks.py N/N, etc.)
 - `log_path`: path to the hardening-log round (e.g. docs/specs/turn-routing-enforcement/hardening-log/2026-06.md)
