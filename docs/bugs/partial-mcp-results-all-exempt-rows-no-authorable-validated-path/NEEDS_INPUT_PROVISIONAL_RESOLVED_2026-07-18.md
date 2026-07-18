@@ -94,3 +94,12 @@ decision_commit: 15cf1fe6715e96518b6f4d7f518175841d74382b
 
 **Choice:** Bless a narrow model-authored `observation_gap_exemptions` amendment + surface it in mcp-test/SKILL.md, admitting build-artifact-deferred as a spec_class
 **Notes:** Provisionally accepted — divergence graded contained (producer) / contained (input-audit); pending operator ratification.
+
+## Ratification
+
+- **outcome:** ratified
+- **decision:** the provisionally-accepted design stands — the narrow model-authored
+  `observation_gap_exemptions` amendment on the engine-written MCP_TEST_RESULTS.md, surfaced in
+  mcp-test/SKILL.md, with `build-artifact-deferred` admitted as a spec_class.
+- ratified_by: operator (AskUserQuestion, 2026-07-18, run wind-down)
+- date: 2026-07-18

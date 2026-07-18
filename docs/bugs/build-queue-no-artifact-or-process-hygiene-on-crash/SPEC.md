@@ -4,7 +4,7 @@
 
 > **Scope note (expanded 2026-06-30):** this spec's root theme is *the queue trusts signals that don't certify success.* Three vectors share that theme: (a) intra-worktree 0-byte/truncated artifact trusted by **timestamp**; (b) cross-worktree orphaned machine-global compiler/worker processes; (c) **result fidelity** — `exit_code=0` trusted as pass even when the run produced no test summary / matched zero tests. Vectors (a)/(b) are crash hygiene; (c) is a *successful-looking* run. All three are folded here per operator request; the directory slug is unchanged.
 
-**Status:** Concluded
+**Status:** Won't-fix
 **Severity:** P1
 **Discovered:** 2026-06-30
 **Placement:** docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash
@@ -115,3 +115,13 @@ Scope confirmed with the user as **three vectors** (artifacts + processes + resu
 
 - **Root cause of the ≥3-way-OR empty-output quirk (runtime-coupled — scheduled as a planning-time spike).** Is the ≥3-way OR filter producing empty output because it matches **zero tests** (a malformed/over-long filter string built by the caller) or because `dotnet test --verbosity normal` emits a **summary format `test-filtered.ps1`'s regex misses** for that case? The 2-way pairs print correctly, which points at filter construction, but this must be confirmed by observing a real run before any root-cause fix (beyond the defensive zero-output guard) is committed.
 - Truncated-but-nonzero artifacts: the 0-byte sweep must also catch a partially-written DLL whose size is nonzero but is not a valid PE image (`CS0009`). Decide the cheap validity check (size threshold vs. PE-header magic-bytes probe) at plan time.
+
+
+---
+
+**Won't-fix disposition (operator, 2026-07-18):** all code-authorable deliverables landed
+(plans parts 1-3 Complete; both Phase-4 defensive layers shipped via the sibling
+build-queue-false-green work). The sole remaining deliverable — the runtime spike requiring a
+PowerShell build runtime + a real Cognito worktree — is retired as not-worth-pursuing per the
+operator's AskUserQuestion choice at the 2026-07-18 run wind-down; the landed defensive layers
+stand as the full fix.

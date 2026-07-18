@@ -74,12 +74,6 @@
       "severity": null
     },
     {
-      "id": "build-queue-no-artifact-or-process-hygiene-on-crash",
-      "name": "Build queue has no artifact/process hygiene on build crash \u2014 Investigation Spec",
-      "spec_dir": "build-queue-no-artifact-or-process-hygiene-on-crash",
-      "severity": null
-    },
-    {
       "id": "build-queue-timeout-kill-reaps-detached-runner",
       "name": "Bash-Tool Timeout Tree-Kill Reaps the \"Detached\" Build-Queue Runner Mid-RED-Build Sweep \u2014 Investigation Spec",
       "spec_dir": "build-queue-timeout-kill-reaps-detached-runner",
