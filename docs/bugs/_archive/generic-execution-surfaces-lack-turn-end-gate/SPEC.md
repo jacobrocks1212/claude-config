@@ -13,6 +13,8 @@
 **Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-13
+**Fixed:** 2026-07-18
+**Fix commit:** fa8d8518
 **Placement:** docs/bugs/generic-execution-surfaces-lack-turn-end-gate
 **Related:** `docs/bugs/_archive/subagent-backgrounds-verification-ends-turn-before-green/` (the
 build-queue instance of the class), `docs/specs/turn-routing-enforcement/` (hardening stage),
