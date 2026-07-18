@@ -14,10 +14,10 @@ phases: [1]
 # Implementation Plan — harness-gate `gate_weakening` false-positives (rename + docstring/list-literal)  (v2)
 
 **PHASES.md files:**
-- `C:/Users/Jacob/source/repos/claude-config/docs/bugs/harness-gate-gate-weakening-false-positives-rename-and-docstring/PHASES.md` (1 phase)
+- `C:/Users/Jacob/source/repos/claude-config/docs/bugs/_archive/harness-gate-gate-weakening-false-positives-rename-and-docstring/PHASES.md` (1 phase)
 
 **SPEC.md files:**
-- `C:/Users/Jacob/source/repos/claude-config/docs/bugs/harness-gate-gate-weakening-false-positives-rename-and-docstring/SPEC.md`
+- `C:/Users/Jacob/source/repos/claude-config/docs/bugs/_archive/harness-gate-gate-weakening-false-positives-rename-and-docstring/SPEC.md`
 
 **Total phases:** 1
 **Plan version:** v2 (reference-based — components loaded from disk per step)
