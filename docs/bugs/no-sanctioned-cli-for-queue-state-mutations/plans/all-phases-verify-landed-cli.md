@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: no-sanctioned-cli-for-queue-state-mutations
-status: Ready
+status: Complete
 created: 2026-07-18
 complexity: mechanical
 phases: [1]
@@ -68,7 +68,7 @@ Where this plan's repo uses non-default gates or component paths (claude-config 
 
 ## Work Units
 
-- [ ] WU-1 — Regenerate CLI surface + run verification gate battery green
+- [x] WU-1 — Regenerate CLI surface + run verification gate battery green
 
 ### Phase: no-sanctioned-cli-for-queue-state-mutations P1 — Verify landed CLI fix & regenerate surface
 

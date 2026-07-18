@@ -80,6 +80,8 @@ listed-order reposition, post-hoc arbitrary dep add/remove, bug un-pin, `--list-
 landed implementation against the SPEC's Verification section and regenerates the CLI
 surface so its freshness gate is clean — the remaining pipeline work before completion.
 
+**Status:** In-progress
+
 **Deliverables** *(implementation items already landed in `8a7bc738` — verified present on
 disk this cycle; marked complete, NOT for re-implementation):*
 - [x] `depdag.py`: `set_queue_priority` (validate + set field + clear pin on explicit bug
@@ -102,9 +104,9 @@ disk this cycle; marked complete, NOT for re-implementation):*
 **Deliverables (remaining — the ONLY open work; executed & closed by `/execute-plan`, then
 committed. claude-config has NO MCP/runtime gate, so these are ordinary in-session gate-run
 + regeneration deliverables, NOT deferred runtime-verification rows):**
-- [ ] Regenerate the CLI surface — `python3 user/scripts/cli_surface_gen.py --repo-root .` — then confirm `python3 user/scripts/cli_surface_gen.py --check` exits 0 clean, and commit the regenerated `docs/cli/cli-surface.json`. NOTE: the regen ALSO sweeps in the unrelated `--set-independent` flag (see Validated Assumptions) — expected; `cli_surface_gen.py` regenerates the whole roster surface atomically.
-- [ ] Confirm the landed fix's regression suite is green — `python -m pytest user/scripts/tests/test_lazy_core/test_depdag.py -q` (asserts priority mutation actually re-orders listed position — the load-bearing atomic reorder; deps add/remove + cycle refusal; `--unpin` restore+reposition; `--operator-authorized` gate + `refuse_if_cycle_active` refusal; `--search-ops` finds the command for a natural-language query).
-- [ ] Confirm `python user/scripts/lazy-state.py --test` and `python user/scripts/bug-state.py --test` smoke suites are green, and `python3 user/scripts/lazy_parity_audit.py --repo-root .` exits 0 (no new SKILL heading was added — bug-batch + cloud inherit the prose by reference).
+- [x] Regenerate the CLI surface — `python3 user/scripts/cli_surface_gen.py --repo-root .` — then confirm `python3 user/scripts/cli_surface_gen.py --check` exits 0 clean, and commit the regenerated `docs/cli/cli-surface.json`. NOTE: the regen ALSO sweeps in the unrelated `--set-independent` flag (see Validated Assumptions) — expected; `cli_surface_gen.py` regenerates the whole roster surface atomically.
+- [x] Confirm the landed fix's regression suite is green — `python -m pytest user/scripts/tests/test_lazy_core/test_depdag.py -q` (asserts priority mutation actually re-orders listed position — the load-bearing atomic reorder; deps add/remove + cycle refusal; `--unpin` restore+reposition; `--operator-authorized` gate + `refuse_if_cycle_active` refusal; `--search-ops` finds the command for a natural-language query).
+- [x] Confirm `python user/scripts/lazy-state.py --test` and `python user/scripts/bug-state.py --test` smoke suites are green, and `python3 user/scripts/lazy_parity_audit.py --repo-root .` exits 0 (no new SKILL heading was added — bug-batch + cloud inherit the prose by reference).
 
 **Minimum Verifiable Behavior:** `python -m pytest
 user/scripts/tests/test_lazy_core/test_depdag.py` is green (28 passed) AND

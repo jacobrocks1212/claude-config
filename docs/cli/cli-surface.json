@@ -2687,6 +2687,22 @@
           "choices": null,
           "default_kind": "none",
           "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: set (or CLEAR) feature ID's `independent: true` shard-eligibility marker (the /lazy-batch-parallel claim_shardable gate) \u2014 the sanctioned replacement for h...",
+          "metavar": [
+            "ID",
+            "VALUE"
+          ],
+          "name": "--set-independent",
+          "nargs": 2,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
           "help_head": "Orchestrator-only, --operator-authorized: update the ACTIVE run marker's max_cycles to N in place (mid-run budget change).",
           "metavar": "N",
           "name": "--set-max-cycles",
