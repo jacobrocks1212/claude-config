@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: external-owner-contracts-locked-without-consultation
-status: Ready
+status: Complete
 created: 2026-07-18
 phases: [1]
 complexity: mechanical
@@ -40,8 +40,8 @@ Where this plan's repo uses non-default gates or component paths (claude-config 
 
 ## Work Units
 
-- [ ] WU-1 — Verify/author external-owner surface rule in spec/SKILL.md
-- [ ] WU-2 — Verify/author Overwatch OW-sync convention line in Cognito CLAUDE.local.md
+- [x] WU-1 — Verify/author external-owner surface rule in spec/SKILL.md
+- [x] WU-2 — Verify/author Overwatch OW-sync convention line in Cognito CLAUDE.local.md
 
 ## Plan-specific execution notes
 
