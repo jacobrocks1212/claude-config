@@ -17,3 +17,14 @@ the `/harden-harness` park-provisional structural carve-out, the fix architectur
 operator-owned. This `BLOCKED.md` keeps the bug pipeline from planning/implementing an un-ratified
 structural change; it re-enters automatically once the NEEDS_INPUT sentinel is ratified and this
 blocker is neutralized.
+
+---
+
+## Operator decision recorded (2026-07-18)
+
+The gating decision (`blocker_kind: needs-operator-decision`) is now RATIFIED. See
+`docs/specs/turn-routing-enforcement/NEEDS_INPUT_2026-07-18-merged-head-oracle-cross-pipeline-context.md`
+→ `## Resolution`: **Option A (higher-priority-of-two-full-probe-heads)** ratified for both decisions.
+Implementation is authorized — this block may be neutralized and the fix planned/executed via the
+normal bug pipeline (coupled-pair mirror across 3 exclude-set sites; `lazy_parity_audit.py` exit 0;
+re-baseline `test_dispatch.py`).

@@ -119,3 +119,25 @@ diverge). Ratify decisions 1 and 2 together.
   pre-release items; skip-ahead correctly advances past them. The ordering is not a defect — the
   no-route was (now fixed). `docs/features/queue.json` is AlgoBooth target-repo DATA, outside the
   harness's edit scope regardless.
+
+## Resolution
+
+resolved_by: operator (ratified out-of-band via AlgoBooth /lazy-batch session, 2026-07-18)
+
+- **Decision 1 — Gated-head classifier:** Option A — **route-based classification**. "Truly
+  research-gated" = the head's ACTUAL resolved route is `terminal_reason=needs-research` (Step 5). A
+  head resolving to `realign-spec` (or any actionable non-research route) is NOT research-gated, so
+  skip-ahead does not skip it — it dispatches as queue head. **Operator explicitly accepts** that
+  `inspector-sample-clip-view` → `realign-spec` (and `inspector-track-dashboard`) dispatch BEFORE
+  `hydra-overlay` (the earlier defect-4 "hydra-overlay next" expectation was formed while these heads
+  appeared as research-gated dead-ends and is superseded by defect-2's route-based definition).
+- **Decision 2 — Truly-research-gated skip-vs-halt:** Option A — **un-gate research-halt surfacing to
+  fire on default (non-park) runs**. Remove the `_park_marker is not None` restriction so a
+  truly-research-gated head (actual route `needs-research`) that is the merged/queue head — or
+  outranks the skip-ahead target — re-emits `needs-research` and surfaces its `RESEARCH_PROMPT.md` on
+  default runs. `research_halt_head` still keys on relative merged priority, so a research head
+  genuinely lower-priority than independent ready work is still skipped (no over-halt). Contingent on
+  and consistent with decision-1's route-based definition.
+
+**Implementation authorized.** Ratify/implement decisions 1 and 2 together. Pick up via the
+claude-config pipeline / a follow-up `/harden-harness` round.

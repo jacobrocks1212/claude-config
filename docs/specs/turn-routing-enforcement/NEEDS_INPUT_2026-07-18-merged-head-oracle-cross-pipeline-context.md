@@ -126,3 +126,26 @@ skip-ahead would skip it.
 - **AlgoBooth queue ordering / `queue.json`** is target-repo DATA, outside the harness's edit scope.
   The bug-queue severity-vs-position ordering (`worktree` P1 at the tail) is not changed by this fix;
   option A honors each pipeline's own head (the bug pipeline dispatches in queue order).
+
+## Resolution
+
+resolved_by: operator (ratified out-of-band via AlgoBooth /lazy-batch session, 2026-07-18)
+
+- **Decision 1 — Cross-pipeline / stateless merged-head classification:** Option A —
+  **higher-priority-of-two-full-probe-heads**. Compute each pipeline's ACTUAL full-probe dispatch
+  head once (both apply all skip-ahead / defer / gating context) and define the merged head as the
+  higher-merged-priority of the two. Retire L3's per-item scoped `compute_state`/`is_dispatchable`
+  walk. A `merged-head-diverged` withhold fires only when the OTHER pipeline's actual full-probe head
+  genuinely out-prioritizes the current item.
+- **Decision 2 — Spike-pipeline-role interaction:** Option A (resolved automatically by decision-1
+  Option A) — a spike-BLOCKED head is merged-dispatchable iff it is the pipeline's actual full-probe
+  head; no separate code path.
+
+**Implementation authorized.** Revises the COMPLETED `merged-head-actionability-oracle` feature's
+Locked Decision L3. Requirements: coupled-pair mirror across all three exclude-set construction
+sites (`lazy-state.py` + `bug-state.py`); `lazy_parity_audit.py` exit 0; re-baseline the completed
+oracle feature's characterization tests (`test_dispatch.py`). Verified to yield `managed-llm-credits`
+(the AlgoBooth checkpoint's intended next_route). Pick up via the claude-config pipeline:
+`docs/bugs/merged-head-oracle-scoped-probe-blind-to-cross-pipeline-skip-context/` (its
+`BLOCKED.md` blocker_kind:needs-operator-decision is now operator-decided) and/or a follow-up
+`/harden-harness` round.
