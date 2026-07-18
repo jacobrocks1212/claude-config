@@ -1,6 +1,6 @@
 # Research-gated head buried by default skip-ahead + merged-view fallthrough
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-17 (observed live during a `/lazy-batch` run on AlgoBooth)
 **Related:** `docs/bugs/merged-head-diverged-stalls-on-gated-head` (Round 64 — introduced
