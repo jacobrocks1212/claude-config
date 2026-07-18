@@ -9,7 +9,9 @@
 > authoring gate no-oped REPO-WIDE with zero signal — caught only by an independent reviewer
 > re-run, never by the harness itself.
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-18
+**Fix commit:** 5e0f4d7a
 **Priority:** P1
 **Last updated:** 2026-07-13
 **Related:** `docs/features/lazy-core-package-decomposition/` (the module move that triggered the disarm; Phase 1 commits `10f187b5` + `23109934`); `docs/bugs/planning-audit-blind-to-inbound-module-path-loads/` (the sibling PLANNING-time gap — why no WU covered the inbound loaders in the first place); `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` Round 37 (the hardening round that fixes this).

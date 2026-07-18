@@ -12,7 +12,7 @@
 **Priority:** P2
 **Last updated:** 2026-07-13
 **Related:** `docs/features/lazy-core-package-decomposition/` (the motivating move);
-`docs/bugs/plan-structural-backstop-silent-disarm-on-infrastructure-failure/` (the worst
+`docs/bugs/_archive/plan-structural-backstop-silent-disarm-on-infrastructure-failure/` (the worst
 downstream consequence of the miss); `user/skills/_components/phases-runtime-validation.md`
 (the planning-time audit family this extends); `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` Round 37.
 
