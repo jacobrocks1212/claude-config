@@ -23,7 +23,7 @@
 |---|------|-------|------|------|
 | 1 | [adhoc-unify-merged-head-coordinator-exemptions](docs/bugs/adhoc-unify-merged-head-coordinator-exemptions/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 2 | [adhoc-audit-obligation-fires-on-zero-commit-failed-cycle](docs/bugs/adhoc-audit-obligation-fires-on-zero-commit-failed-cycle/SPEC.md) | Complete | — | 2026-07-18 |
+| 2 | [adhoc-audit-obligation-fires-on-zero-commit-failed-cycle](docs/bugs/_archive/adhoc-audit-obligation-fires-on-zero-commit-failed-cycle/SPEC.md) | Complete | — | 2026-07-18 |
 | | status: Complete · phase 2/2 · next: done · A `/spec`-kind cycle that fails with zero commits still arms the §1d.5 input-audit obligation; the pre-composed emit command then binds `cycle_commit_sha=HEAD~1`, which points at the PREVIOUS (unrelated) item's commit — dispatching a pointless ~77k-token audit against the wrong diff. | | | |
 | 3 | [adhoc-parity-audit-blind-to-compute-state-routing-branches](docs/bugs/adhoc-parity-audit-blind-to-compute-state-routing-branches/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |

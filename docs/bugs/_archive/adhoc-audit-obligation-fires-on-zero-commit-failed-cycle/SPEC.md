@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-18
+**Fixed:** 2026-07-18
+**Fix commit:** 4683aea7
 **Placement:** docs/bugs/adhoc-audit-obligation-fires-on-zero-commit-failed-cycle
 **Related:** `docs/features/mechanize-prose-only-orchestrator-contracts/` (the D2-A audit-obligation withhold this defect lives in); `user/skills/lazy-batch/SKILL.md` §1d.5
 

@@ -8,12 +8,6 @@
       "severity": null
     },
     {
-      "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
-      "name": "Input-audit obligation fires (mis-targeted) after a zero-commit failed spec cycle",
-      "spec_dir": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
-      "severity": null
-    },
-    {
       "id": "adhoc-parity-audit-blind-to-compute-state-routing-branches",
       "name": "Parity audit misses compute_state routing-branch asymmetry between the state scripts",
       "spec_dir": "adhoc-parity-audit-blind-to-compute-state-routing-branches",
