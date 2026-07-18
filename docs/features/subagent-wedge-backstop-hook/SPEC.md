@@ -8,7 +8,12 @@
 
 **Status:** Ready
 **Priority:** P1
-**Last updated:** 2026-07-17
+**Last updated:** 2026-07-18
+**Friction-reduction feature:** yes
+
+<!-- yes: this hook's stated purpose is eliminating the wasted-cycle / manual-recovery toil a
+wedged subagent inflicts when it strands the pipeline (see "The gap this closes"). The Step-8.5
+measurability gate therefore requires the `## KPI Declaration` below. -->
 
 **Depends on:** (none)
 <!-- Composes with the already-shipped receiver contract (dispatched-agent-liveness.md, the
@@ -122,6 +127,35 @@ staleness sweep) so the `subagent-stops/` dir does not accumulate. GC failure is
 - **Does not replace** the receiver contract (`dispatched-agent-liveness.md`) or the sender
   contract (`turn-end-gate.md`) — it is the third, mechanical leg for the wedge the prose cannot
   self-enforce.
+
+## KPI Declaration
+
+This friction-reduction feature declares one KPI. It measures the recurrence of the friction the
+hook exists to eliminate: a wedged subagent stopping with pending work and stranding the pipeline
+until a human intervenes. Success = that recurrence trends **down** once the backstop is live
+(the hook forces commit+complete or an honest `BLOCKED.md` instead of a dead stop).
+
+The row rides the already-registered `deny-ledger` / `process-friction-count` selector (the
+coarse channel `incident-scan` clusters recurring tool-error / stall friction into) — so it lints
+clean with no `kpi-scorecard.py` change. Honest `pending` baseline (never a fabricated zero);
+`--capture-baseline` stamps a measured value once a real window of ledger data exists.
+
+```json
+{
+  "id": "subagent-wedge-strand-recurrence",
+  "system": "subagent-wedge-backstop",
+  "title": "Wedged-subagent pipeline-strand recurrence",
+  "friction": "A dispatched subagent whose tool calls start erroring stops/returns with uncommitted changes and unchecked work-unit checkboxes, stranding the pipeline until a human notices and does a manual TaskStop plus inline recovery.",
+  "signal": { "source": "deny-ledger", "selector": "process-friction-count" },
+  "unit": "count/30d",
+  "direction": "down-is-good",
+  "baseline": { "value": null, "captured_at": null, "window": "30d", "provenance": "pending" },
+  "band": null,
+  "review_by": "2026-11-01",
+  "repo_scope": "claude-config",
+  "notes": "v1 rides the registered deny-ledger process-friction-count selector — the coarse channel incident-scan clusters recurring tool-error / premature-stall friction into (same channel as runner-turn-end-stall-recurrence). Honest NO-DATA until such entries accrue; the field-evidence blind window (2026-06-11 to 2026-07-12, guards unregistered) undercounts, treat a low count there as partially-blind not zero. The implementation MAY register a dedicated selector (e.g. wedge-backstop block-count over the subagent-stops breadcrumb dir) and re-point this row then — the canary-trip-precision precedent (enum registered ahead of computation, NO-DATA until wired), following the same registry-follow-up pattern as build-queue-wait-time-p50."
+}
+```
 
 ## Testability
 

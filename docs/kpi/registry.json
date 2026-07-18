@@ -416,10 +416,18 @@
       "system": "generalized-runner",
       "title": "Raw heavy-gate invocation deny recurrence (AlgoBooth)",
       "friction": "Agents hand-rolling raw heavy quality gates (npm run qg -- rust|sidecar) instead of the queue-routed skills burn a hook deny plus a redirect turn each time; recurrence measures whether the generalized skill-routing lesson sticks outside Cognito.",
-      "signal": { "source": "deny-ledger", "selector": "build-queue-enforce-deny-count" },
+      "signal": {
+        "source": "deny-ledger",
+        "selector": "build-queue-enforce-deny-count"
+      },
       "unit": "count/30d",
       "direction": "down-is-good",
-      "baseline": { "value": null, "captured_at": null, "window": "30d", "provenance": "pending" },
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
       "band": null,
       "review_by": "2026-11-01",
       "repo_scope": "algobooth",
@@ -430,14 +438,44 @@
       "system": "generalized-runner",
       "title": "Premature turn-end on in-flight gate batteries (non-Cognito)",
       "friction": "Execution subagents hand-roll the claude-config 7-command battery, background it, and end their turn before the result — the exact class the Cognito banner/await/turn-end contract closed; each recurrence costs a manual resume plus a redone verification pass (4 recurrences observed in one orchestrated run, 2026-07-13).",
-      "signal": { "source": "deny-ledger", "selector": "process-friction-count" },
+      "signal": {
+        "source": "deny-ledger",
+        "selector": "process-friction-count"
+      },
       "unit": "count/30d",
       "direction": "down-is-good",
-      "baseline": { "value": null, "captured_at": null, "window": "30d", "provenance": "pending" },
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
       "band": null,
       "review_by": "2026-11-01",
       "repo_scope": "claude-config",
       "notes": "Counted from friction-class ledger entries whose signature matches premature-turn-end / hand-rolled-battery incidents (incident-scan clusters these). Honest NO-DATA where no such entries exist. The implementation MAY register a dedicated gate-battery signal source+selector (ordinary selector addition — canary-trip-precision precedent) and re-point this row then."
+    },
+    {
+      "id": "subagent-wedge-strand-recurrence",
+      "system": "subagent-wedge-backstop",
+      "title": "Wedged-subagent pipeline-strand recurrence",
+      "friction": "A dispatched subagent whose tool calls start erroring stops/returns with uncommitted changes and unchecked work-unit checkboxes, stranding the pipeline until a human notices and does a manual TaskStop plus inline recovery.",
+      "signal": {
+        "source": "deny-ledger",
+        "selector": "process-friction-count"
+      },
+      "unit": "count/30d",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-11-01",
+      "repo_scope": "claude-config",
+      "notes": "v1 rides the registered deny-ledger process-friction-count selector — the coarse channel incident-scan clusters recurring tool-error / premature-stall friction into (same channel as runner-turn-end-stall-recurrence). Honest NO-DATA until such entries accrue; the field-evidence blind window (2026-06-11 to 2026-07-12, guards unregistered) undercounts, treat a low count there as partially-blind not zero. The implementation MAY register a dedicated selector (e.g. wedge-backstop block-count over the subagent-stops breadcrumb dir) and re-point this row then — the canary-trip-precision precedent (enum registered ahead of computation, NO-DATA until wired), following the same registry-follow-up pattern as build-queue-wait-time-p50."
     }
   ]
 }
