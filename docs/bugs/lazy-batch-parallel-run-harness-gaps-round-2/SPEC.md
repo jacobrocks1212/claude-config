@@ -1,6 +1,6 @@
 # Bug: `/lazy-batch-parallel` round-2 harness gaps (serial-tail merged-head withhold for lease-held items; `--ensure-runtime` killed under background launch)
 
-**Status:** Concluded
+**Status:** Fixed
 **Reported via:** `/harden-harness` discovered-defect-batch dispatch (2026-07-18, item in flight `parallel-run-harness-gaps-round-2`, AlgoBooth `/lazy-batch-parallel` run, parent marker `2026-07-18T03:38:27Z`, blocking=true). Gap 8 is run-blocking (the coordinator serial tail cannot emit its `mcp-test` dispatch for a merged, lease-held item).
 **Root-cause class:** batch — `script-defect` (gap 8), `missing-contract` (gap 9).
 **Related:** `docs/bugs/lazy-batch-parallel-run-harness-gaps` (round-1 batch — gap 8 is the direct follow-on to that spec's Gap 1, which fixed the LANE probe form and explicitly noted lease-exclusion was insufficient *there*); `docs/bugs/dispatch-probe-and-inject-bypass-merged-head` (introduced the merged-head guard); `docs/specs/turn-routing-enforcement/` (hardening stage); `user/skills/lazy-batch-parallel/SKILL.md` (the parallel coordinator contract); `user/scripts/CLAUDE.md` (the `--ensure-runtime` reference).
