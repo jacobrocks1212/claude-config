@@ -1,18 +1,16 @@
 # Lazy Queue — claude-config   (run active 🔒)
 
-## Features (5)
+## Features (4)
 
 | # | item | state | tier |
 |---|------|-------|------|
-| 1 | [merged-head-actionability-oracle](docs/features/merged-head-actionability-oracle/SPEC.md) | Complete | T0 |
-| | status: Complete · phase 3/3 · next: done · Replace the ever-growing category-enumerated merged-head exclude set with a single per-item "would `compute_state` dispatch this item right now?" oracle, so the NEXT non-dispatchable category cannot re-introduce a merged-head-diverged stall. | | |
-| 2 | [subagent-wedge-backstop-hook](docs/features/subagent-wedge-backstop-hook/SPEC.md) | Research | T1 |
+| 1 | [subagent-wedge-backstop-hook](docs/features/subagent-wedge-backstop-hook/SPEC.md) | Research | T1 |
 | | status: Research · phase 0/1 · next: research · A `SubagentStop` hook that mechanically catches a GENUINELY-WEDGED dispatched subagent — one that tries to stop/return with pending plan work still incomplete — and blocks its premature stop once, forcing it to commit + complete (or write `BLOCKED.md`) instead of returning dead and stranding the pipeline. | | |
-| 3 | [shared-hook-lib](docs/features/shared-hook-lib/SPEC.md) | Research | T2 |
+| 2 | [shared-hook-lib](docs/features/shared-hook-lib/SPEC.md) | Research | T2 |
 | | status: Research · next: research · Extract the ~470 duplicated scaffolding lines (~20% of the 2,411-line `user/hooks/` plane) into a shared, fail-open-guarded pair — `hook-prelude.sh` (sourced bash: python resolution, SCRIPT_DIR derivation, no-python fallback breadcrumb) and `hook_lib.py` (allow/deny emitters, `_append_hook_event`, `_breadcrumb`, the shared `_ENV_PREFIX`/`_CMD_START` anchor regexes) — then migrate the seven python-bearing hooks one at a time, re-running the full 157-test `test_hooks.py` suite after each. | | |
-| 4 | [claude-config-ci](docs/features/claude-config-ci/SPEC.md) | ⬡ Needs-input | T3 |
+| 3 | [claude-config-ci](docs/features/claude-config-ci/SPEC.md) | ⬡ Needs-input | T3 |
 | | status: Needs-input · next: answer needs-input · The harness ships ~18 pytest suites, `lint-skills.py`, the parity audit, the doc-drift linter, a skill-projection check, and a Pester/PSScriptAnalyzer PowerShell family — but no `.github/workflows/`, so those integrity gates only run when someone remembers to run them locally. | | |
-| 5 | [native-android-pipeline-steering](docs/features/native-android-pipeline-steering/SPEC.md) | Research | T3 |
+| 4 | [native-android-pipeline-steering](docs/features/native-android-pipeline-steering/SPEC.md) | Research | T3 |
 | | status: Research · next: research · A real mobile client on the `mobile-queue-control` foundation: browse every lazy-enabled repo's queues, drill into SPECs and halt sentinels, and — the point — **write back** from the phone: answer `NEEDS_INPUT.md` decisions, resolve `BLOCKED.md` halts, and reorder/enqueue the queue. | | |
 
 ## Bugs (17)

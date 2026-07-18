@@ -8839,6 +8839,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "mobile-queue-control",
       "type": "feature",
       "provenance": "backfilled"
@@ -11923,6 +11928,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/features/merged-head-actionability-oracle/GATE_VERDICT.md": [
+    {
+      "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/merged-head-actionability-oracle/NEEDS_RESEARCH.md": [
     {
       "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
@@ -11943,6 +11955,13 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/features/merged-head-actionability-oracle/PHASES.md": [
+    {
+      "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/merged-head-actionability-oracle/RESEARCH.md": [
@@ -11967,6 +11986,18 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/merged-head-actionability-oracle/RESEARCH_SUMMARY.md": [
+    {
+      "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/merged-head-actionability-oracle/SPEC.md": [
@@ -11979,6 +12010,18 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/merged-head-actionability-oracle/plans/all-phases-merged-head-actionability-oracle.md": [
+    {
+      "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/mobile-queue-control/COMPLETED.md": [
@@ -17895,6 +17938,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "multi-repo-concurrent-runs",
       "type": "feature",
       "provenance": "backfilled"
@@ -18559,6 +18607,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "multi-repo-concurrent-runs",
       "type": "feature",
       "provenance": "backfilled"
@@ -18855,6 +18908,11 @@
       "provenance": "manual"
     },
     {
+      "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "spike-pipeline-role",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -18904,6 +18962,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/lazy_core/dispatch.py": [
@@ -18926,6 +18989,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/lazy_core/docmodel.py": [
@@ -18961,6 +19029,11 @@
     },
     {
       "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-actionability-oracle",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -20450,6 +20523,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/tests/test_lazy_core/test_docmodel.py": [
@@ -20605,6 +20683,11 @@
     },
     {
       "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-actionability-oracle",
       "type": "feature",
       "provenance": "pipeline-gated"
     }

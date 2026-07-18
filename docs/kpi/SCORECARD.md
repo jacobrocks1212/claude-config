@@ -26,7 +26,7 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Cycles per completion | 6.62 (30d) | pending | — | PENDING-BASELINE |
+| Cycles per completion | 6.24 (30d) | pending | — | PENDING-BASELINE |
 | MCP-validation round trips per feature | — | pending | — | NO-DATA |
 
 ## harness-canary
@@ -88,7 +88,7 @@
 
 ## Canary health
 
-- 12 canaries open, oldest 1d, 0 will no-data-close within 7d
+- 13 canaries open, oldest 1d, 0 will no-data-close within 7d
 
 ## Notes
 

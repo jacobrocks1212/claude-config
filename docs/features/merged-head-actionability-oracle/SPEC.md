@@ -4,7 +4,7 @@
 > "would `compute_state` dispatch this item right now?" oracle, so the NEXT non-dispatchable
 > category cannot re-introduce a merged-head-diverged stall.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P0
 **Last updated:** 2026-07-18
 **Friction-reduction feature:** no
