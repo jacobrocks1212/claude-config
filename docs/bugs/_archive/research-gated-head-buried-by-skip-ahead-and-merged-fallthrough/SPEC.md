@@ -3,6 +3,8 @@
 **Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-17 (observed live during a `/lazy-batch` run on AlgoBooth)
+**Fixed:** 2026-07-18
+**Fix commit:** f18c3492
 **Related:** `docs/bugs/merged-head-diverged-stalls-on-gated-head` (Round 64 — introduced
 `probe_skipped_ids`, which folds ALL gated heads incl. research-pending into the merged-head exclude
 set; this bug refines that for the research subset); `feature-budget-guard-and-skip-ahead` (the
