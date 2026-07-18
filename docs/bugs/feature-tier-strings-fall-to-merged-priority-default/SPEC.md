@@ -4,7 +4,7 @@
 **Severity:** P2
 **Discovered:** 2026-07-17
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage);
-`docs/bugs/no-sanctioned-cli-for-queue-state-mutations/` (the `--set-tier` /
+`docs/bugs/_archive/no-sanctioned-cli-for-queue-state-mutations/` (the `--set-tier` /
 `--set-severity` mutator this extends); `docs/bugs/bug-queue-aging-backpressure/`
 (the bug-severity axis of `merged_priority` that features are now unified onto).
 

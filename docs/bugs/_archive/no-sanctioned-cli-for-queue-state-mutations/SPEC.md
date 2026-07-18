@@ -3,6 +3,8 @@
 **Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-16
+**Fixed:** 2026-07-18
+**Fix commit:** 9da09f32
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage);
 `docs/bugs/lazy-batch-no-mid-run-budget-or-park-controls/` (the coupled-pair mid-run
 control precedent this fix mirrors); `docs/features/state-cli-contract-registry/`
