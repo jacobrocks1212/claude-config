@@ -1501,6 +1501,7 @@ def nondispatchable_item_ids(
     park_needs_input: bool = False,
     park_blocked: bool = False,
     park_provisional: bool = False,
+    skip_needs_research: bool = False,
 ) -> "set[str]":
     """Return the set of queue-item ids that are NON-DISPATCHABLE this run — the
     ids the merged-head computation must EXCLUDE so the merged head is the
@@ -1508,7 +1509,7 @@ def nondispatchable_item_ids(
     skips (``docs/bugs/merged-head-excludes-parked-not-operator-deferred-deadlocks``,
     generalizing ``merged-head-includes-parked-items-deadlocks-park-run``).
 
-    Two non-dispatchable categories, ORed per item:
+    Three non-dispatchable categories, ORed per item:
 
       * **PARK (flag-gated)** — ``docmodel.spec_dir_would_park`` (the SAME predicate
         the probe ``parked[]`` array uses): a canonical/stray ``BLOCKED.md`` under
@@ -1517,6 +1518,15 @@ def nondispatchable_item_ids(
       * **OPERATOR-DEFERRED (unconditional)** — ``docmodel.spec_dir_operator_deferred``:
         a ``DEFERRED.md`` sentinel. ``compute_state`` skips such a bug regardless of
         any park flag, so it is excluded on EVERY run.
+      * **RESEARCH-PENDING (flag-gated on ``skip_needs_research``)** —
+        ``docmodel.spec_dir_research_pending``: a ``NEEDS_RESEARCH.md`` (or a
+        ``RESEARCH_PROMPT.md`` with no ``RESEARCH*.md``). Under ``--skip-needs-research``
+        ``compute_state`` SKIPS such a head (``if skip_needs_research:`` branch), so it
+        is non-dispatchable this run exactly like a parked head; WITHOUT the flag it
+        HALTS (the dispatched needs-research terminal) and is NOT excluded — hence the
+        flag gate. Closes ``docs/bugs/merged-head-diverged-withholds-on-research-skipped-head``
+        (the merged-head-diverged withhold stalled behind a research-skipped head).
+        Feature-pipeline mechanic; a bug spec dir never carries these files.
 
     Resolves each item's spec dir: feature → ``<repo_root>/docs/features/<spec_dir|id>``;
     bug → the loader-supplied absolute ``spec_path`` when present, else
@@ -1525,30 +1535,40 @@ def nondispatchable_item_ids(
     ``repo_root`` MUST be the on-disk repo root the queues were loaded from (NOT the
     echoed ``active_repo_root`` string ``merged_head`` carries).
 
-    No park facet active AND no ``DEFERRED.md`` present → empty set (byte-identical
-    non-defer, non-park behavior); a missing/unreadable spec dir contributes nothing
-    (both predicates fail-safe to False). There is deliberately NO "no park facet →
+    No park facet active AND no ``DEFERRED.md`` present AND (no ``skip_needs_research``
+    OR no research-pending sentinel) → empty set (byte-identical non-defer, non-park,
+    non-research-skip behavior); a missing/unreadable spec dir contributes nothing
+    (all predicates fail-safe to False). There is deliberately NO "no park facet →
     empty" fast-path: operator-defer is unconditional, so every item is checked.
 
     **Scope boundary.** This resolver covers only the non-dispatchable states a
     PURE, context-free file check classifies correctly (the two park families +
-    unconditional operator-defer). Context-conditional deferrals (device / cloud /
-    host — gated on VALIDATED / phases-complete / host flags) and non-file
-    terminal_reasons (completion-unverified / stale_upstream / needs-research /
-    needs-ratification) are OUT of scope here — correctly classifying them needs the
-    scoped ``compute_state`` dispatch oracle, tracked by the spun-off actionability
-    generalization.
+    unconditional operator-defer + — under ``skip_needs_research`` — research-pending).
+    A research-pending head is in scope ONLY under ``skip_needs_research`` (where
+    ``compute_state`` skips it); WITHOUT the flag it HALTS and stays out of scope.
+    Context-conditional deferrals (device / cloud / host — gated on VALIDATED /
+    phases-complete / host flags) and the remaining non-file terminal_reasons
+    (completion-unverified / stale_upstream / needs-ratification) are OUT of scope
+    here — correctly classifying them needs the scoped ``compute_state`` dispatch
+    oracle, tracked by the spun-off actionability generalization.
     """
     from pathlib import Path as _Path
-    from .docmodel import spec_dir_operator_deferred, spec_dir_would_park
+    from .docmodel import (
+        spec_dir_operator_deferred,
+        spec_dir_research_pending,
+        spec_dir_would_park,
+    )
 
     root = _Path(repo_root)
     excluded: set[str] = set()
 
     def _nondispatchable(spec_dir: "_Path") -> bool:
         # Operator-defer is UNCONDITIONAL (no park flag); park families are
-        # flag-gated. Either makes the item non-dispatchable this run.
+        # flag-gated; research-pending is gated on --skip-needs-research (where the
+        # walk skips it). Any one makes the item non-dispatchable this run.
         if spec_dir_operator_deferred(spec_dir):
+            return True
+        if skip_needs_research and spec_dir_research_pending(spec_dir):
             return True
         return spec_dir_would_park(
             spec_dir,

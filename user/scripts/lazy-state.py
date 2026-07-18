@@ -14037,11 +14037,23 @@ def main() -> int:
                 # undriveable head (which deadlocks the run). Effective park facets
                 # are in scope from the emit path above; no facet AND no DEFERRED.md
                 # → empty set → byte-identical.
+                # merged-head-diverged-withholds-on-research-skipped-head: under
+                # --skip-needs-research a research-pending head (NEEDS_RESEARCH.md /
+                # RESEARCH_PROMPT.md-without-RESEARCH*) is SKIPPED by the walk (the
+                # `if skip_needs_research:` branch) but is NOT surfaced in gated_heads
+                # (that branch `continue`s before the default-on skip-ahead populates
+                # _GATED_HEADS), and a scoped --feature-id probe never visits it at all
+                # — so probe_skipped_ids can't fold it in. Pass skip_needs_research so
+                # nondispatchable_item_ids excludes it via the pure file predicate,
+                # exactly like a parked head. Feature-pipeline only (research gating is
+                # a documented feature/bug divergence — bug-state.py has no flag, so its
+                # coupled caller stays byte-identical; the shared helper is the mirror).
                 _mo_excluded = lazy_core.nondispatchable_item_ids(
                     _mo_feats, _mo_bugs, str(_mo_repo),
                     park_needs_input=_eff_park_ni,
                     park_blocked=_eff_park_bl,
                     park_provisional=_eff_park_pv,
+                    skip_needs_research=args.skip_needs_research,
                 )
                 # merged-head-diverged-stalls-on-gated-head: ALSO exclude the ids
                 # THIS feature probe already SKIPPED this cycle — research-pending

@@ -2328,6 +2328,51 @@ def spec_dir_operator_deferred(spec_dir: "Path") -> bool:
         return False
 
 
+def spec_dir_research_pending(spec_dir: "Path") -> bool:
+    """Return True iff an item whose sentinels live in ``spec_dir`` is
+    RESEARCH-PENDING — a ``NEEDS_RESEARCH.md`` is present, OR a
+    ``RESEARCH_PROMPT.md`` is present with neither ``RESEARCH.md`` nor
+    ``RESEARCH_SUMMARY.md`` filling the gap.
+
+    This is the pure, file-only twin of the ``compute_state`` research-pending
+    peek (the ``if skip_needs_research:`` branch in ``lazy-state.py`` and the
+    ``_gated_head_kind`` 'research' classifier) — the SAME predicate, factored
+    here so ``depdag.nondispatchable_item_ids`` can EXCLUDE a research-pending
+    head from the merged-head computation WHEN THE RUN SKIPS IT
+    (``--skip-needs-research``). Without that exclusion the ``merged-head-diverged``
+    withhold deadlocks a research-skip run behind an undriveable research head
+    (``docs/bugs/merged-head-diverged-withholds-on-research-skipped-head``, the
+    5th facet of the merged-head exclude-set recurring class).
+
+    CONDITIONAL by caller intent: research-pending is non-dispatchable ONLY under
+    ``--skip-needs-research`` — WITHOUT the flag a research-pending head HALTS
+    (it IS the dispatched needs-research terminal, not skippable). So this
+    predicate is a pure classifier; the flag-gating lives in the caller
+    (``nondispatchable_item_ids(..., skip_needs_research=...)``), NOT here.
+
+    Feature-pipeline mechanic: research gating is feature-only (a documented
+    parity divergence — ``bug-state.py`` has no ``--skip-needs-research``), so a
+    bug spec dir never carries these files and this contributes nothing there.
+
+    Pure + fail-safe: ``None`` / a missing or unreadable ``spec_dir`` → ``False``
+    (byte-identical non-research behavior; the caller's exclusion set stays empty).
+    """
+    if spec_dir is None:
+        return False
+    try:
+        if not spec_dir.exists():
+            return False
+        if (spec_dir / "NEEDS_RESEARCH.md").exists():
+            return True
+        return (
+            (spec_dir / "RESEARCH_PROMPT.md").exists()
+            and not (spec_dir / "RESEARCH.md").exists()
+            and not (spec_dir / "RESEARCH_SUMMARY.md").exists()
+        )
+    except OSError:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # neutralize_sentinel — WU-3: rename a resolved sentinel to the canonical
 #   *_RESOLVED_<date> form (collision-safe, git-mv-aware).

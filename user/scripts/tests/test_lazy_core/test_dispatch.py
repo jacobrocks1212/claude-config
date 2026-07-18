@@ -5426,6 +5426,84 @@ def test_nondispatchable_item_ids_mixed_parked_and_operator_deferred():
         assert head["item_id"] == "bug-actionable", head
 
 
+def test_spec_dir_research_pending_predicate():
+    """merged-head-diverged-withholds-on-research-skipped-head: the pure file
+    predicate — NEEDS_RESEARCH.md present, OR RESEARCH_PROMPT.md present with no
+    RESEARCH*.md; a completed-research or clean dir is NOT pending; missing/None
+    fail-safe to False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        nr = root / "needs-research"; nr.mkdir()
+        (nr / "NEEDS_RESEARCH.md").write_text("x", encoding="utf-8")
+        rp = root / "research-prompt"; rp.mkdir()
+        (rp / "RESEARCH_PROMPT.md").write_text("x", encoding="utf-8")
+        # RESEARCH_PROMPT satisfied by RESEARCH.md → NOT pending.
+        done = root / "research-done"; done.mkdir()
+        (done / "RESEARCH_PROMPT.md").write_text("x", encoding="utf-8")
+        (done / "RESEARCH.md").write_text("x", encoding="utf-8")
+        # RESEARCH_PROMPT satisfied by RESEARCH_SUMMARY.md → NOT pending.
+        summ = root / "research-summary"; summ.mkdir()
+        (summ / "RESEARCH_PROMPT.md").write_text("x", encoding="utf-8")
+        (summ / "RESEARCH_SUMMARY.md").write_text("x", encoding="utf-8")
+        clean = root / "clean"; clean.mkdir()
+        (clean / "SPEC.md").write_text("x", encoding="utf-8")
+
+        assert lazy_core.spec_dir_research_pending(nr)
+        assert lazy_core.spec_dir_research_pending(rp)
+        assert not lazy_core.spec_dir_research_pending(done)
+        assert not lazy_core.spec_dir_research_pending(summ)
+        assert not lazy_core.spec_dir_research_pending(clean)
+        assert not lazy_core.spec_dir_research_pending(root / "nope")
+        assert not lazy_core.spec_dir_research_pending(None)
+
+
+def test_nondispatchable_item_ids_excludes_research_pending_under_skip_flag():
+    """merged-head-diverged-withholds-on-research-skipped-head REGRESSION fixture:
+    a research-pending head (NEEDS_RESEARCH.md, no RESEARCH.md) at the merged head +
+    a ready downstream feature. Under skip_needs_research the head is EXCLUDED so the
+    merged head is the downstream item and the downstream probe gets NO
+    merged-head-diverged withhold (the no-route stall is gone). WITHOUT the flag the
+    head is NOT excluded (a needs-research head HALTS, not skips) → the withhold
+    fires — proving the fix is flag-gated, not a blanket behavior change."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        head_dir = root / "docs" / "features" / "subagent-wedge-backstop-hook"
+        head_dir.mkdir(parents=True)
+        (head_dir / "NEEDS_RESEARCH.md").write_text("x", encoding="utf-8")
+        act = root / "docs" / "features" / "shared-hook-lib"; act.mkdir(parents=True)
+        (act / "SPEC.md").write_text("x", encoding="utf-8")
+
+        # Head listed first (higher merged priority by seed order at equal tier).
+        feats = [
+            {"id": "subagent-wedge-backstop-hook"},
+            {"id": "shared-hook-lib"},
+        ]
+
+        # WITHOUT the flag: research-pending is NOT excluded (it would HALT, not skip).
+        assert lazy_core.nondispatchable_item_ids(feats, [], str(root)) == set()
+        old = lazy_core.dispatch.merged_head_override(
+            feats, [], "/echo", "shared-hook-lib",
+        )
+        assert old is not None and old["merged_head"]["item_id"] == (
+            "subagent-wedge-backstop-hook"
+        ), old
+
+        # WITH --skip-needs-research: the research head is excluded exactly like a
+        # parked head → merged head is the downstream item → NO withhold.
+        excluded = lazy_core.nondispatchable_item_ids(
+            feats, [], str(root), skip_needs_research=True
+        )
+        assert excluded == {"subagent-wedge-backstop-hook"}, excluded
+        head = lazy_core.next_merged(feats, [], "/echo", exclude_ids=excluded)
+        assert head["item_id"] == "shared-hook-lib", head
+        override = lazy_core.dispatch.merged_head_override(
+            feats, [], "/echo", "shared-hook-lib", exclude_ids=excluded,
+        )
+        assert override is None, override
+
+
 def test_merged_head_override_excludes_parked_head_no_deadlock():
     """merged-head-includes-parked-items-deadlocks-park-run REGRESSION: the two
     top-priority P0 bugs parked on NEEDS_INPUT.md + a lower-priority actionable
@@ -6535,6 +6613,8 @@ _TESTS = [
     ("test_spec_dir_operator_deferred_predicate", test_spec_dir_operator_deferred_predicate),
     ("test_nondispatchable_item_ids_excludes_operator_deferred_unconditionally", test_nondispatchable_item_ids_excludes_operator_deferred_unconditionally),
     ("test_nondispatchable_item_ids_mixed_parked_and_operator_deferred", test_nondispatchable_item_ids_mixed_parked_and_operator_deferred),
+    ("test_spec_dir_research_pending_predicate", test_spec_dir_research_pending_predicate),
+    ("test_nondispatchable_item_ids_excludes_research_pending_under_skip_flag", test_nondispatchable_item_ids_excludes_research_pending_under_skip_flag),
     ("test_merged_head_override_excludes_parked_head_no_deadlock", test_merged_head_override_excludes_parked_head_no_deadlock),
     ("test_merged_worklist_exclude_ids_drops_parked_items", test_merged_worklist_exclude_ids_drops_parked_items),
     ("test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug", test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug),

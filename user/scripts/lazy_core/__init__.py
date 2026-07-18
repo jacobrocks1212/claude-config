@@ -548,6 +548,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "provisional_eligibility": "docmodel",
     "provisionalize_sentinel": "docmodel",
     "spec_dir_operator_deferred": "docmodel",
+    "spec_dir_research_pending": "docmodel",
     "spec_dir_would_park": "docmodel",
     "write_spike_tooling_cap_needs_input": "docmodel",
     # Phase 5 WU-3: git helpers + self-edit detection.
