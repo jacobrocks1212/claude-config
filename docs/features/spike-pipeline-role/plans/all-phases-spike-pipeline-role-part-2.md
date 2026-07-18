@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: spike-pipeline-role
-status: Ready
+status: Complete
 created: 2026-07-18
 complexity: complex
 phases: [3]
@@ -61,8 +61,8 @@ Phase-1 artifacts this phase WIRES (present, complete, currently referenced by z
 
 ## Work Units
 
-- [ ] WU-1 — Spike Step in `lazy-batch/SKILL.md` (ensure-runtime pre-boot + PASS/FAIL branch + emit-dispatch)
-- [ ] WU-2 — Coupled mirror into `lazy-bug-batch` + `lazy-batch-cloud` via the overlay generator
+- [x] WU-1 — Spike Step in `lazy-batch/SKILL.md` (ensure-runtime pre-boot + PASS/FAIL branch + emit-dispatch)
+- [x] WU-2 — Coupled mirror into `lazy-bug-batch` + `lazy-batch-cloud` via the overlay generator
 
 ---
 

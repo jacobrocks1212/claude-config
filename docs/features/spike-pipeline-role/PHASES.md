@@ -81,17 +81,37 @@ Wire the parse primitive into live routing. RISK: changes what the live state ma
 ---
 
 ### Phase 3: Orchestrator-loop wiring (lazy-batch + coupled mirrors)
-**Status:** Not started
+**Status:** Complete
 **Phase kind:** design
 
-- [ ] A Spike Step in `lazy-batch/SKILL.md`: ensure-runtime pre-boot for `spike` cycles (reuse
+- [x] A Spike Step in `lazy-batch/SKILL.md`: ensure-runtime pre-boot for `spike` cycles (reuse
   `--ensure-runtime`, orchestrator-owned), PASS→continue / FAIL→NEEDS_INPUT+halt branching, the
   `--park --park-provisional` PARK-not-accept path for FAIL
-- [ ] Emit the spike dispatch via `--emit-dispatch spike` (the registered class from Phase 1) using
+- [x] Emit the spike dispatch via `--emit-dispatch spike` (the registered class from Phase 1) using
   the `spike-dispatch.md` component
-- [ ] **Coupled mirror into `lazy-bug-batch` + `lazy-batch-cloud`** via the overlay generator
+- [x] **Coupled mirror into `lazy-bug-batch` + `lazy-batch-cloud`** via the overlay generator
   (`generate-coupled-skills.py --write`; then `--check`). Cloud defers the runtime spike to
   workstation (like `/investigate` / `/mcp-test`)
+
+**Implementation Notes (2026-07-18, plan part 2):** Added a new **§1c.7 "Spike cycle handling"**
+section to the canonical `user/skills/lazy-batch/SKILL.md` (between §1c.5 pseudo-skill handling and
+§1d), intercepting a probe `sub_skill == "spike"` (routed by Phase-2 `compute_state` Step 9.5 /
+Step 3): Step A pre-boots the orchestrator-owned runtime via `lazy-state.py --ensure-runtime`
+(reusing §1d.0's exact conjunction `state==READY AND health_code==200 AND mcp_tools_present`);
+Step B emits `--emit-dispatch spike` and dispatches the returned prompt VERBATIM (Opus, cycle-marker
+bracketed, `dispatch_prompt_ref`-preferred); Step C branches PASS→continue / FAIL→halt (spike wrote
+`NEEDS_INPUT.md` `written_by: spike`), with the explicit **PARK-not-accept** rule for a Spike FAIL
+under `--park --park-provisional` (agreeing with the already-implemented `lazy_core.provisional_
+eligibility` fail-closed carve-out). Tooling-gap routing is deferred to Phase 4 (referenced, not
+implemented). Added a matching **State Machine Summary** bullet. **Coupled mirror (WU-2):** authored
+the axis-appropriate §1c.7 into both derived skills — `lazy-bug-batch` (bug vocab: `bug-state.py` /
+`bug_id` / `bug_name` / mark-fixed gate; `--ensure-runtime` correctly kept on `lazy-state.py`, the
+feature-hosted subcommand) and `lazy-batch-cloud` (**defer-to-workstation** divergence: record trigger
++ PENDING `SPIKE_VERDICT.md`, never boot a runtime / dispatch / fabricate a verdict) — then
+`generate-coupled-skills.py --extract` → `--write` → `--check` (byte-identical, exit 0). Registered
+§1c.7 in `lazy-parity-manifest.json` `headings[]` (bug=restated, cloud=divergence+reason). Raised the
+three `skill-size-baseline.json` ceilings for the deliberate legitimate growth. Docs-only orchestrator
+contract (no runtime rows / no MCP gate for this phase).
 
 ---
 

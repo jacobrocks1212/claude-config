@@ -585,6 +585,25 @@
     },
     {
       "op": "verbatim",
+      "heading": "### 1c.7. Spike cycle handling (dispatch-class `sub_skill == \"spike\"` — cloud DEFERS the runtime proof to workstation)",
+      "lines": [
+        "### 1c.7. Spike cycle handling (dispatch-class `sub_skill == \"spike\"` — cloud DEFERS the runtime proof to workstation)\r",
+        "\r",
+        "If the probe returns `sub_skill == \"spike\"`, handle it HERE and return to Step 1a — do **NOT** fall through to the §1d real-skill dispatch. `spike` is a registered dispatch CLASS (`--emit-dispatch spike`, always Opus), the runtime-proof stage single-sourced in `~/.claude/skills/_components/spike-dispatch.md`. `compute_state` (via `lazy-state.py --cloud`) routes `sub_skill == \"spike\"` from two on-disk signals: a `**Spike:** required` PHASES.md line with no PASS `SPIKE_VERDICT.md` (Step 9.5), or a `BLOCKED.md` `blocker_kind: runtime-spike-verdict-pending` (Step 3, blocked resolver).\r",
+        "\r",
+        "**Cloud DEFERS the runtime spike to a workstation run (the same discipline as `/investigate` and `/mcp-test`).** A runtime spike needs the live Tauri/MCP runtime, which is UNAVAILABLE in cloud — so the cloud orchestrator does **NOT** boot a runtime (there is no Step 1d.0 `--ensure-runtime` pre-boot in cloud), does **NOT** emit `--emit-dispatch spike` / dispatch a `spike` cycle cloud-side, and **NEVER** fabricates a verdict from static reasoning. Instead, RECORD the trigger and DEFER:\r",
+        "\r",
+        "1. Write/append a PENDING note to the spike results doc — `SPIKE_VERDICT.md` in `{spec_path}` with `verdict: PENDING` + the proof goal + \"deferred to workstation (cloud has no runtime)\" (sentinel-scope write; HARD CONSTRAINT 1 holds).\r",
+        "2. Add one cycle-log line recording the spike trigger + defer; for the **blocked-resolver** signal, also note the defer in the `BLOCKED.md` `## Resolution`/notes (do NOT neutralize `BLOCKED.md` — the block stands until a workstation proves the verdict).\r",
+        "3. Do NOT dispatch. Return to Step 1a. The runtime proof is workstation-class: the feature advances only on a workstation `/lazy-batch` run that boots the runtime and produces a PASS/FAIL verdict (exactly as cloud defers `/mcp-test` via `__write_deferred_non_cloud__`). If the same spike re-routes on the next cloud probe, the in-session loop-guard surfaces it — the feature is genuinely workstation-blocked (park it / let the run reach `cloud-queue-exhausted`), never a cloud dispatch.\r",
+        "\r",
+        "The runtime pre-boot, the PASS/FAIL orchestrator branching, and the provisional-eligibility carve-out (a Spike FAIL is NEVER provisionally auto-accepted, `written_by: spike` / `spike_verdict: fail` fail-closed in `lazy_core.provisional_eligibility`) are WORKSTATION concerns — see `/lazy-batch` §1c.7. The cloud orchestrator only records + defers; it never runs the proof.\r",
+        "\r",
+        ""
+      ]
+    },
+    {
+      "op": "verbatim",
       "heading": "### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)",
       "lines": [
         "### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)\r",
