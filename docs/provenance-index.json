@@ -4171,6 +4171,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/harden-rounds-skip-docs-bugs-reconciliation-contract/SPEC.md": [
+    {
+      "id": "merged-head-includes-parked-items-deadlocks-park-run",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/hardening-blind-to-process-friction/PHASES.md": [
     {
       "id": "hardening-blind-to-process-friction",
@@ -5092,6 +5099,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "merged-head-includes-parked-items-deadlocks-park-run",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/merged-head-includes-parked-items-deadlocks-park-run/SPEC.md": [
@@ -11322,6 +11334,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "merged-head-includes-parked-items-deadlocks-park-run",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/interventions/harden-2026-07-r86.md": [
@@ -11334,6 +11351,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "merged-head-includes-parked-items-deadlocks-park-run",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/interventions/harden-2026-07-r87.md": [
@@ -11346,6 +11368,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "merged-head-includes-parked-items-deadlocks-park-run",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/interventions/harden-2026-07-r89.md": [
@@ -11358,6 +11385,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "merged-head-includes-parked-items-deadlocks-park-run",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/interventions/hardening-intervention-records-unmeasurable-or-missing.md": [
@@ -11731,6 +11763,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "merged-head-includes-parked-items-deadlocks-park-run",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "skip-mcp-test-frontmatter-unquoted-colon",
@@ -15570,6 +15607,11 @@
       "provenance": "manual"
     },
     {
+      "id": "merged-head-includes-parked-items-deadlocks-park-run",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -15809,6 +15851,11 @@
       "provenance": "manual"
     },
     {
+      "id": "merged-head-includes-parked-items-deadlocks-park-run",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "operator-checkpoint-resume-counter-reset",
       "type": "bug",
       "provenance": "backfilled"
@@ -15939,6 +15986,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "merged-head-includes-parked-items-deadlocks-park-run",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "park-mode-halts-on-blocked",

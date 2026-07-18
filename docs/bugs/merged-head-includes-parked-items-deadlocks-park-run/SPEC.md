@@ -1,6 +1,6 @@
 # Merged-head computation includes PARKED items → park-mode run deadlocks
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P0
 **Discovered:** 2026-07-17
 **Related:** `docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/` (Round 54 — the

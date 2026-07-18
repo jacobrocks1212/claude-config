@@ -4,7 +4,7 @@
 
 **MCP runtime:** not-required — pure state-script / `lazy_core` dispatch-ordering logic with no MCP-reachable app surface (per `docs/features/mcp-testing/SPEC.md`, this is harness Python whose behavior is fully observable through deterministic pytest, not the live Tauri+MCP runtime).
 
-**Status:** In-progress
+**Status:** Fixed
 
 > **Provenance — fix landed out-of-pipeline.** The complete fix for this bug shipped as a
 > `/harden-harness` round in commit **`a8140ff8`** ("harden(script): exclude PARKED items from
