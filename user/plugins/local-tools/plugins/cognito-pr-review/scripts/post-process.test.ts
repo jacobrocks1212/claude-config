@@ -10,6 +10,8 @@ const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const fxPath = join(scriptsDir, "test-fixtures", "phase1-combined-findings.json");
 const mfPath = join(scriptsDir, "test-fixtures", "phase1-manifest.json");
 const wtPath = join(scriptsDir, "test-fixtures", "phase1-weights.yaml");
+const mfIterPath = join(scriptsDir, "test-fixtures", "phase1-manifest-iter.json");
+const prevReviewPath = join(scriptsDir, "test-fixtures", "phase1-previous-review.md");
 
 interface CliPayload {
 	processed_findings: ProcessedFinding[];
@@ -46,6 +48,61 @@ function findAllByFile(findings: ProcessedFinding[], file: string): ProcessedFin
 function approx(a: number, b: number): boolean {
 	return Math.abs(a - b) < 1e-9;
 }
+
+interface Lifespan {
+	raised_in: number;
+	total_iterations: number;
+}
+
+function runCliLifespan(manifestPath: string, previousReviewPath: string | null): CliPayload {
+	const prevArg = previousReviewPath ? ` --previous-review "${previousReviewPath}"` : "";
+	const cmd = `npx tsx post-process.ts --input "${fxPath}" --manifest "${manifestPath}" --weights "${wtPath}"${prevArg}`;
+	const out = execSync(cmd, { cwd: scriptsDir, encoding: "utf-8" });
+	return JSON.parse(out);
+}
+
+describe("post-process lifespan counter fidelity (RC-1a / RC-1b)", () => {
+	test("total_iterations equals manifest.pr.iterationId and raised_in ≤ total_iterations (not prevMatch.iteration + 1)", () => {
+		const result = runCliLifespan(mfIterPath, prevReviewPath);
+		const a = findByFile(result.processed_findings, "A.cs");
+		assert.ok(a !== undefined, "carried-forward A.cs finding must be present");
+		const ls = a!.lifespan as Lifespan | undefined;
+		assert.ok(ls !== undefined, "A.cs finding must carry a lifespan annotation (matched previous review)");
+		assert.strictEqual(ls!.total_iterations, 5, `total_iterations must equal manifest pr.iterationId (5), got ${ls!.total_iterations}`);
+		assert.ok(ls!.raised_in <= ls!.total_iterations, `raised_in (${ls!.raised_in}) must be ≤ total_iterations (${ls!.total_iterations})`);
+	});
+
+	test("inflated raised_in: 777 marker in the previous review does NOT feed back into the new run (RC-1b feedback loop closed)", () => {
+		const result = runCliLifespan(mfIterPath, prevReviewPath);
+		for (const f of result.processed_findings) {
+			const ls = f.lifespan as Lifespan | undefined;
+			if (!ls) continue;
+			assert.notStrictEqual(ls.raised_in, 777, `raised_in must not read back the previous review's own 777 marker (${f.file})`);
+			assert.notStrictEqual(ls.raised_in, 778, `raised_in must not read back the previous review's own 778 marker (${f.file})`);
+			assert.ok(ls.raised_in <= ls.total_iterations, `raised_in (${ls.raised_in}) must be bounded by total_iterations (${ls.total_iterations}) on ${f.file}`);
+			assert.ok(ls.total_iterations <= 5, `total_iterations (${ls.total_iterations}) must be bounded by the real iterationId (5) on ${f.file}`);
+		}
+	});
+
+	test("missing pr.iterationId / no --previous-review degrades without throwing", () => {
+		// No --previous-review at all: no lifespan annotations, no throw.
+		const noPrev = runCliLifespan(mfPath, null);
+		assert.ok(Array.isArray(noPrev.processed_findings), "runs cleanly with no previous review");
+		for (const f of noPrev.processed_findings) {
+			assert.strictEqual(f.lifespan, undefined, "no lifespan annotation without a previous review");
+		}
+		// Previous review present but manifest lacks pr.iterationId (phase1-manifest.json): must not throw,
+		// and any emitted lifespan stays bounded (raised_in never the inflated 777/778).
+		const legacyManifest = runCliLifespan(mfPath, prevReviewPath);
+		assert.ok(Array.isArray(legacyManifest.processed_findings), "degrades cleanly with a legacy manifest (no pr.iterationId)");
+		for (const f of legacyManifest.processed_findings) {
+			const ls = f.lifespan as Lifespan | undefined;
+			if (!ls) continue;
+			assert.notStrictEqual(ls.raised_in, 777, "legacy-manifest path must still not feed back the 777 marker");
+			assert.ok(ls.raised_in <= ls.total_iterations, "legacy-manifest lifespan stays internally bounded");
+		}
+	});
+});
 
 describe("post-process weight generalization", () => {
 	let result: ReturnType<typeof runCli>;

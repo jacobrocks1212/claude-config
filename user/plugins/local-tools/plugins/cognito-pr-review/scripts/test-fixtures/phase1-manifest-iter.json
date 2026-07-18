@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "pr": {
+    "id": 42,
+    "iterationId": 5
+  },
+  "files": [
+    { "path": "A.cs" },
+    { "path": "B.cs" },
+    { "path": "C.cs" },
+    { "path": "D.cs" },
+    { "path": "E.cs" },
+    { "path": "F.cs" },
+    { "path": "G.cs" },
+    { "path": "H.cs" },
+    { "path": "I.cs" },
+    { "path": "J.cs" },
+    { "path": "K.cs" }
+  ]
+}

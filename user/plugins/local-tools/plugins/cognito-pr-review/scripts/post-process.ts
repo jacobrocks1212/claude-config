@@ -132,6 +132,10 @@ interface WeightsConfig {
 
 interface Manifest {
 	version: number;
+	pr?: {
+		iterationId?: number;
+		[key: string]: unknown;
+	};
 	files: Array<{
 		path: string;
 		[key: string]: unknown;
@@ -281,7 +285,7 @@ function computeEffectiveWeight(
 
 // ── Previous review parsing ────────────────────────────────────────────────────
 
-function parsePreviousReview(filePath: string): PreviousFindingRef[] {
+function parsePreviousReview(filePath: string, totalIterations?: number): PreviousFindingRef[] {
 	let content: string;
 	try {
 		content = readFileSync(filePath, "utf-8");
@@ -292,13 +296,22 @@ function parsePreviousReview(filePath: string): PreviousFindingRef[] {
 
 	const refs: PreviousFindingRef[] = [];
 
-	// Extract iteration count from existing lifespan markers or section headers
-	// Default to 1 if we can't determine
+	// The iteration a carried-forward finding was first raised in. Derive it ONLY from
+	// structural `### Iteration N` review-round headers — NOT from the review's own
+	// emitted `raised_in:` / `total_iterations:` lifespan markers. Scraping those markers
+	// was RC-1b: each run read back its prior `raised_in`, incrementing it every re-review
+	// (777 → 778 → …). The old regex `/(?:Iteration|raised_in)\D*(\d+)/` also caught the
+	// emitted `total_iterations:` value via the `Iteration` substring. Anchoring on the
+	// `### Iteration N` header (the same durable signal detectReReview uses) closes both.
+	// Default to 1 if no header is present; clamp to the real total when known.
 	let maxIteration = 1;
-	const iterMatches = content.matchAll(/(?:Iteration|raised_in)\D*(\d+)/gi);
+	const iterMatches = content.matchAll(/^#{1,6}\s*Iteration\s+(\d+)/gim);
 	for (const m of iterMatches) {
 		const n = parseInt(m[1], 10);
 		if (n > maxIteration) maxIteration = n;
+	}
+	if (totalIterations !== undefined && maxIteration > totalIterations) {
+		maxIteration = totalIterations;
 	}
 
 	// Pattern 1: Critical/Investigation findings - "**File:** path/to/file.cs:42"
@@ -639,9 +652,10 @@ function step5_filterOutOfScope(
 
 function step6_annotateLifespan(
 	findings: ProcessedFinding[],
-	previousReviewPath: string
+	previousReviewPath: string,
+	iterationId?: number
 ): { findings: ProcessedFinding[]; lifespanAnnotations: number } {
-	const previousRefs = parsePreviousReview(previousReviewPath);
+	const previousRefs = parsePreviousReview(previousReviewPath, iterationId);
 	if (previousRefs.length === 0) {
 		return { findings, lifespanAnnotations: 0 };
 	}
@@ -651,9 +665,16 @@ function step6_annotateLifespan(
 	for (const f of findings) {
 		const prevMatch = matchesPreviousFinding(f, previousRefs);
 		if (prevMatch) {
+			// total_iterations is the real PR iteration count (manifest.pr.iterationId).
+			// When it is unavailable (legacy manifest) degrade to the prior +1 behavior —
+			// now bounded, since prevMatch.iteration no longer amplifies via the scrape.
+			const total = iterationId ?? prevMatch.iteration + 1;
+			// raised_in is a real, bounded value: the iteration the finding was first
+			// raised in, never exceeding the total.
+			const raised = Math.min(prevMatch.iteration, total);
 			f.lifespan = {
-				raised_in: prevMatch.iteration,
-				total_iterations: prevMatch.iteration + 1,
+				raised_in: raised,
+				total_iterations: total,
 			};
 			lifespanAnnotations++;
 		}
@@ -729,7 +750,7 @@ function main(): void {
 	let lifespanAnnotations = 0;
 
 	if (previousReviewPath) {
-		const result = step6_annotateLifespan(scoped, previousReviewPath);
+		const result = step6_annotateLifespan(scoped, previousReviewPath, manifest.pr?.iterationId);
 		final = result.findings;
 		lifespanAnnotations = result.lifespanAnnotations;
 	}

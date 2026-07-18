@@ -40,11 +40,18 @@ The SPEC's four Open Questions are fix-shape sizing decisions, not user-visible 
 **Scope:** Make `processed-findings.json` lifespan counters real and bounded. Source `total_iterations` from the actual PR iteration count and stop the self-amplifying `raised_in` scrape, so re-reviews no longer compound (`777/778` → real values ≤ the PR's true iteration count). Structure of the `lifespan` object is unchanged.
 
 **Deliverables:**
-- [ ] Thread `manifest.pr.iterationId` from `main()` (`post-process.ts:717`) into `step6_annotateLifespan` (`:640`) and `parsePreviousReview` (`:284`).
-- [ ] `total_iterations` sourced from `manifest.pr.iterationId` (real count), replacing `prevMatch.iteration + 1` at `:656`.
-- [ ] Replace the `maxIteration` derivation (`:298`) so the previous review's own emitted `raised_in:` markers no longer feed back into a new `raised_in` (RC-1b feedback loop broken). `raised_in` is clamped to `≤ total_iterations`.
-- [ ] Guard the no-previous / missing-`iterationId` paths (existing empty-refs early return at `:645` preserved; a missing `iterationId` degrades to the prior behavior without throwing).
-- [ ] Tests: `post-process.test.ts` cases — (a) a carried-forward finding gets `total_iterations` equal to the fixture manifest's `pr.iterationId` and `raised_in ≤ total_iterations`; (b) a previous-review fixture containing an inflated `raised_in: 777` marker does NOT produce `raised_in: 777` on the new run (feedback loop closed).
+- [x] Thread `manifest.pr.iterationId` from `main()` (`post-process.ts:717`) into `step6_annotateLifespan` (`:640`) and `parsePreviousReview` (`:284`).
+- [x] `total_iterations` sourced from `manifest.pr.iterationId` (real count), replacing `prevMatch.iteration + 1` at `:656`.
+- [x] Replace the `maxIteration` derivation (`:298`) so the previous review's own emitted `raised_in:` markers no longer feed back into a new `raised_in` (RC-1b feedback loop broken). `raised_in` is clamped to `≤ total_iterations`.
+- [x] Guard the no-previous / missing-`iterationId` paths (existing empty-refs early return at `:645` preserved; a missing `iterationId` degrades to the prior behavior without throwing).
+- [x] Tests: `post-process.test.ts` cases — (a) a carried-forward finding gets `total_iterations` equal to the fixture manifest's `pr.iterationId` and `raised_in ≤ total_iterations`; (b) a previous-review fixture containing an inflated `raised_in: 777` marker does NOT produce `raised_in: 777` on the new run (feedback loop closed).
+
+**Implementation Notes (2026-07-18):**
+- `Manifest` interface extended with an optional `pr?: { iterationId?: number }`; `main()` passes `manifest.pr?.iterationId` into `step6_annotateLifespan`, which threads it to `parsePreviousReview`.
+- `total_iterations = iterationId ?? prevMatch.iteration + 1` (legacy fallback preserved but now bounded); `raised_in = Math.min(prevMatch.iteration, total)` — always ≤ total.
+- **RC-1b root fix:** the scrape regex changed from `/(?:Iteration|raised_in)\D*(\d+)/gi` to `/^#{1,6}\s*Iteration\s+(\d+)/gim` — it now reads ONLY structural `Iteration N` round headers, never the review's own emitted `raised_in:`/`total_iterations:` markers (the old alternation also caught `total_iterations` via the `Iteration` substring — both feedback variants closed). Clamped to `≤ total_iterations`.
+- **Fixture gotcha (for Phase 2/3 authors):** `parsePreviousReview`'s `titleFilePattern` (`/###\s+(.+)\n.../`) lazily associates the nearest **preceding `###` (h3)** heading as a finding's title. A round header must therefore be `## Iteration N` (h2) so it is not mis-read as a finding title and does not break the title-based match for the first finding. Each finding carries its real `### {title}` (h3) heading in the fixture.
+- Files: `scripts/post-process.ts` (Manifest, `parsePreviousReview`, `step6_annotateLifespan`, `main`); tests `scripts/post-process.test.ts` (+3 cases); fixtures `test-fixtures/phase1-manifest-iter.json`, `test-fixtures/phase1-previous-review.md`. Gate: `npx tsx --test post-process.test.ts` → 19 pass / 0 fail.
 
 **Minimum Verifiable Behavior:** `npx tsx --test scripts/post-process.test.ts` (or `node --test`) passes, including the two new lifespan cases; running `post-process.ts` against a fixture whose previous review carries `raised_in: 777` emits a `lifespan` with `total_iterations = <fixture iterationId>` and `raised_in ≤` that value.
 
