@@ -235,3 +235,15 @@ merged-head-diverged-withholds-on-research-skipped-head}` plus the
 `merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone` in-code references. The 5th
 facet's SPEC (`merged-head-diverged-withholds-on-research-skipped-head`, Non-goals) explicitly
 spun off this generalization.
+
+## MCP Coverage Exemptions
+
+claude-config has no app/MCP surface (no `src-tauri/`, no `package.json`) — the pipeline granted a structural `SKIP_MCP_TEST.md` (`granted_by: pipeline-structural`). Every Locked Decision below is a pure internal state-machine/routing decision with no Tauri/MCP surface to drive; each is validated by the repo's Python unit-test suite instead. Untestable class: **standalone — no app integration (no Tauri/MCP surface in repo)**. Alternative validation for all: `test_dispatch.py` (171 pass), `lazy-state.py --test` / `bug-state.py --test` smoke suites, `lazy_parity_audit.py --repo-root .` (exit 0), `doc-drift-lint.py` (exit 0) — all green per plan part before commit.
+
+- L1: no MCP surface — the oracle replaces an internal file-predicate; covered by `test_dispatch.py` (is_dispatchable + merged-head exclude-set unit tests).
+- L2: no MCP surface — same-pipeline `probe_skipped_ids` retention is an internal ordering decision; covered by the state-script `--test` smoke suites.
+- L3: no MCP surface — `is_dispatchable` closed predicate; covered by `test_dispatch.py` predicate + terminal-reason unit tests.
+- L4: no MCP surface — Open Question deferred to implementation (in-process vs subprocess), resolved in-cycle to in-process with snapshot/restore; covered by cross-probe isolation unit tests, no operator-visible surface.
+- L5: no MCP surface — at-or-above bound + first-dispatchable short-circuit is an internal optimization; covered by `test_dispatch.py`.
+- L6: no MCP surface — coupled-pair mirror parity is asserted by `lazy_parity_audit.py --repo-root .` (exit 0), not an MCP scenario.
+- L7: no MCP surface — `nondispatchable_item_ids` retirement is code hygiene; zero-caller retirement confirmed by grep + `doc-drift-lint.py` (exit 0).
