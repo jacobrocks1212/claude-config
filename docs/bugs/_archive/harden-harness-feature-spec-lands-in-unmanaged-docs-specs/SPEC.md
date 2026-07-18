@@ -12,11 +12,13 @@
 > result is a feature deliverable that silently falls out of the pipeline and must be relocated
 > + enqueued by hand.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2 (process-integrity — a feature-scope harden deliverable is authored in a
 directory the pipeline cannot see, so it is silently dropped from `/lazy-batch` until a human
 notices and relocates it. No data loss; the cost is manual rework + a stranded, undriven spec.)
 **Discovered:** 2026-07-17
+**Fixed:** 2026-07-18
+**Fix commit:** 3d699742
 **Placement:** docs/bugs/harden-harness-feature-spec-lands-in-unmanaged-docs-specs
 **Related:**
 - `user/skills/harden-harness/SKILL.md` Step 2.5 (`**Where:**` bullet) — the defective prose.
