@@ -1,6 +1,6 @@
 # A non-P0 bug outranks a P1 feature at an age-escalated priority tie
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-17 (observed live during a `/lazy-batch` run on AlgoBooth)
 **Related:** `docs/bugs/feature-tier-strings-fall-to-merged-priority-default` (Round 63 — unified
