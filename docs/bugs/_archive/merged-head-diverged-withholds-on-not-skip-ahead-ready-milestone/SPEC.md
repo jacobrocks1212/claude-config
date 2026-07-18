@@ -1,9 +1,11 @@
 # merged-head-diverged withholds the route pointing at a not-skip-ahead-ready (dep-blocked) item → no-route
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P0 (immediate blocker — the probe returns NO forward route: null `cycle_prompt`
 AND null `terminal_reason`)
 **Discovered:** 2026-07-17 (observed live during a `/lazy-batch` run on AlgoBooth, item in
+**Fixed:** 2026-07-18
+**Fix commit:** b82bf97d
 flight `inspector-sample-clip-view`)
 **Related:** `docs/bugs/merged-head-diverged-stalls-on-gated-head` (Round 64 — introduced
 `probe_skipped_ids`, which this bug extends); `docs/bugs/research-gated-head-buried-by-skip-ahead-and-merged-fallthrough`
