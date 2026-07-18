@@ -1,6 +1,6 @@
 # test_lazy_core apply_pseudo tests read the live cycle marker (no `LAZY_STATE_DIR` isolation)
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-18
 **Related:** `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` (this round);
