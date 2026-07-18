@@ -80,7 +80,7 @@ listed-order reposition, post-hoc arbitrary dep add/remove, bug un-pin, `--list-
 landed implementation against the SPEC's Verification section and regenerates the CLI
 surface so its freshness gate is clean — the remaining pipeline work before completion.
 
-**Status:** In-progress
+**Status:** Fixed
 
 **Deliverables** *(implementation items already landed in `8a7bc738` — verified present on
 disk this cycle; marked complete, NOT for re-implementation):*

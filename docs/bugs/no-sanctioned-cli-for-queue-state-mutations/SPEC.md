@@ -1,6 +1,6 @@
 # No sanctioned CLI for many feature/bug queue/state mutations
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-16
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage);

@@ -320,6 +320,11 @@
       "provenance": "manual"
     },
     {
+      "id": "no-sanctioned-cli-for-queue-state-mutations",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "per-feature-cycle-cap-defers-incomplete-work",
       "type": "bug",
       "provenance": "backfilled"
@@ -7073,6 +7078,20 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/no-sanctioned-cli-for-queue-state-mutations/IMPLEMENTATION_NOTES.md": [
+    {
+      "id": "no-sanctioned-cli-for-queue-state-mutations",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/no-sanctioned-cli-for-queue-state-mutations/PHASES.md": [
+    {
+      "id": "no-sanctioned-cli-for-queue-state-mutations",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/no-sanctioned-cli-for-queue-state-mutations/SPEC.md": [
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
@@ -7083,6 +7102,13 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/bugs/no-sanctioned-cli-for-queue-state-mutations/plans/all-phases-verify-landed-cli.md": [
+    {
+      "id": "no-sanctioned-cli-for-queue-state-mutations",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/no-sanctioned-queue-reorder-command/PHASES.md": [
@@ -8446,6 +8472,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "no-sanctioned-cli-for-queue-state-mutations",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "bug-queue-aging-backpressure",
