@@ -134,19 +134,37 @@ Operator directive (Jacob, 2026-07-11): "every /harden-harness invocation [must]
 bug spec (or /spec if scope warrants, but unlikely) in claude-config before implementation
 begins. This ensures the fix is well investigated beforehand, and serves as an audit trail."
 
-- **Where:** `docs/bugs/<slug>/SPEC.md` in the claude-config repo (descriptive kebab slug;
-  same investigation-spec contract as `/spec-bug` — see `docs/bugs/CLAUDE.md`). Use `/spec`
-  under `docs/specs/` ONLY when the change is a genuine new feature/capability whose scope
-  warrants it (rare — most harness friction is a defect → `/spec-bug`).
+- **Where (choose the directory by SCOPE — land it where the pipeline can manage it):**
+  - **Defect / regression / friction (the common case)** → `docs/bugs/<slug>/SPEC.md` in the
+    claude-config repo (descriptive kebab slug; same investigation-spec contract as `/spec-bug`
+    — see `docs/bugs/CLAUDE.md`). `docs/bugs/` is lazy-managed (drained by the bug pipeline).
+  - **Genuine new feature / capability (rare — most harness friction is a defect)** → author it
+    under **`docs/features/<slug>/`** (the lazy-managed home) via `/spec`, **AND enqueue it**:
+    add a `queue.json` entry **and** a `ROADMAP.md` row so `/lazy-batch` can drive it. A
+    feature-scope deliverable that is not both in `docs/features/` AND enqueued is invisible to
+    the pipeline.
+  - **NEVER land a feature-scope deliverable under `docs/specs/`.** That directory is the
+    historical / manually-authored spec ARCHIVE and is explicitly NOT under pipeline management
+    (per `docs/features/ROADMAP.md`; `depdag.py` resolves a queue `spec_dir` only under
+    `docs/features/`). A spec left in `docs/specs/` cannot be driven and must be relocated +
+    enqueued by hand later (observed 2026-07-17: the `spike-pipeline-role` feature spec landed
+    in `docs/specs/` and had to be manually `git mv`'d to `docs/features/` + given a queue.json
+    tier-1 entry + ROADMAP row before `/lazy-batch` could pick it up — commit `be8acba4`).
+  - **The ONE sanctioned `docs/specs/` use for this skill** is the harness's own
+    manually-maintained contract/audit area under `docs/specs/turn-routing-enforcement/` — the
+    Step-4 hardening-log and the Step-3 design-fork `NEEDS_INPUT(_PROVISIONAL).md` sentinels.
+    Those are NOT pipeline-driven deliverables and correctly stay there.
 - **Contents:** the reconstructed route (Step 1) + the root-cause classification (Step 2) +
   the verified symptom + the proposed fix scope. `**Status:** Investigating` while root cause
   is unproven; `**Status:** Concluded` once proven and the fix scope is understood. This is
   the durable investigation record; the Step-4 HARDENING.md round CITES its slug.
-- **How to produce it:** in a dispatched/subagent harden, invoke `/spec-bug` (batch) so the
-  investigation is a real skill pass; when running inline with the investigation already done
-  this session, author the equivalent `docs/bugs/<slug>/SPEC.md` directly (the artifact is the
-  deliverable, not the interactive pass). Commit it under `harden(docs):` BEFORE the fix
-  commit, so the audit trail predates the change.
+- **How to produce it:** for a **defect**, in a dispatched/subagent harden invoke `/spec-bug`
+  (batch) so the investigation is a real skill pass; when running inline with the investigation
+  already done this session, author the equivalent `docs/bugs/<slug>/SPEC.md` directly (the
+  artifact is the deliverable, not the interactive pass). For a **feature-scope** change, invoke
+  `/spec` and enqueue (queue.json + ROADMAP.md), or — inline — author `docs/features/<slug>/`
+  directly and add the queue.json + ROADMAP entries yourself. Commit the deliverable under
+  `harden(docs):` BEFORE the fix commit, so the audit trail predates the change.
 - **Proportionality:** even a trivial one-line fix gets a SHORT bug spec (verified symptom +
   root cause + fix scope in a few lines) — "every invocation" is literal, but the spec scales
   to the fix. A design-fork round still authors the bug spec (Status: Investigating /
