@@ -434,20 +434,28 @@ _FEATURE_DIR_RE = re.compile(r"docs/(?:features|bugs)/([^/]+)/")
 def _path_under_feature(path, feature_id):
     """True iff *path* lies within *feature_id*'s own docs dir, group-aware.
 
-    Matches both layouts the queue produces:
-      - ungrouped: docs/(features|bugs)/<feature_id>/...
-      - grouped:   docs/(features|bugs)/<group>/<feature_id>/...
-    The optional single `(?:[^/]+/)?` group segment plus the trailing `/` anchor
-    the (re.escape'd) feature_id as a FULL path segment, so it can never
-    partial-match a longer sibling slug. An empty/None feature_id → False (nothing
-    owns the path). Multi-level grouping is deliberately out of scope — the queue
-    does not produce it (see docs/bugs/lazy-cycle-containment-misparses-grouped-
-    feature-paths)."""
+    Matches every layout the queue produces:
+      - ungrouped:        docs/(features|bugs)/<feature_id>/...
+      - single-level:     docs/(features|bugs)/<group>/<feature_id>/...
+      - multi-level:      docs/(features|bugs)/<g1>/<g2>/.../<feature_id>/...
+    The zero-or-more `(?:[^/]+/)*` grouping prefix plus the trailing `/` anchor
+    the (re.escape'd) feature_id as a FULL path segment at ANY grouping depth, so
+    it can never partial-match a longer sibling slug. An empty/None feature_id →
+    False (nothing owns the path).
+
+    lazy-batch-parallel-run-harness-gaps gap 6 (harden 2026-07): the queue now
+    produces DEEP grouping (e.g. `docs/features/ui/secondary-ui-v2/domains/<slug>/`
+    — three grouping segments before the slug). The prior single-optional-segment
+    `(?:[^/]+/)?` matched at most one group segment and false-denied a legitimate
+    same-feature commit under a deeper group — a regression of the concluded bug
+    `lazy-cycle-containment-misparses-grouped-feature-paths`, which had explicitly
+    scoped multi-level grouping OUT ("the queue does not produce it"). It does now,
+    so the grouping prefix is generalized to zero-or-more."""
     if not feature_id:
         return False
     norm = path.replace("\\", "/")
     return re.search(
-        r"docs/(?:features|bugs)/(?:[^/]+/)?" + re.escape(feature_id) + r"/",
+        r"docs/(?:features|bugs)/(?:[^/]+/)*" + re.escape(feature_id) + r"/",
         norm,
     ) is not None
 
@@ -741,6 +749,17 @@ def main():
                 + CORRECTIVE,
                 "commit-count-backstop",
             )
+        # lazy-batch-parallel-run-harness-gaps gap 7 (harden 2026-07): a
+        # SANCTIONED BATCH docs-writer cycle legitimately spans N features in one
+        # commit, so the single-feature_id tripwire must not police it. The only
+        # such cycle today is /ingest-research (batch mode writes RESEARCH.md /
+        # RESEARCH_SUMMARY.md + clears stub markers across every pending-research
+        # feature — docs/features/<slug>/ artifacts only, never source). Keyed on
+        # the cycle marker's own sub_skill (set by the --cycle-begin --sub-skill
+        # ingest-research bracket — zero orchestrator change). The commit-count
+        # backstop above STILL applies (a runaway ingest cannot commit unbounded).
+        sub_skill = marker.get("sub_skill")
+        _batch_docs_writer = sub_skill in ("ingest-research",)
         # Second-feature tripwire. A path is a 2nd-feature commit iff it is under
         # SOME feature/bug dir (_FEATURE_DIR_RE, used purely as a tree predicate)
         # but NOT a carve-out for THIS feature. _is_carve_out is now the sole
@@ -748,7 +767,7 @@ def main():
         # `.group(1) != feature_id` comparison — which mis-parsed grouped features
         # — is gone.
         staged = _staged_paths()
-        offending = [
+        offending = [] if _batch_docs_writer else [
             p for p in staged
             if _FEATURE_DIR_RE.search(p.replace("\\", "/"))
             and not _is_carve_out(p, feature_id)

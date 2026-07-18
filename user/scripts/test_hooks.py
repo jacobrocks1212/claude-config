@@ -3158,13 +3158,17 @@ def _write_cycle_marker_in_dir(
     state_dir: Path,
     feature_id: str = "feat-A",
     commit_tally: int = 0,
+    sub_skill: str | None = None,
 ) -> None:
     """Write a cycle-subagent marker into *state_dir* via lazy_core, optionally
     overriding commit_tally (lazy_core always writes 0; tests that exercise the
-    ceiling patch the value on disk after writing)."""
+    ceiling patch the value on disk after writing) and/or sub_skill (the
+    second-feature tripwire's ingest-research batch-writer exemption reads it)."""
     _set_state_dir(state_dir)
     try:
-        lazy_core.write_cycle_marker(feature_id, "deadbeef", now=time.time())
+        lazy_core.write_cycle_marker(
+            feature_id, "deadbeef", sub_skill=sub_skill, now=time.time()
+        )
     finally:
         _clear_state_dir()
     if commit_tally != 0:
@@ -3541,6 +3545,103 @@ def test_containment_denies_second_feature_commit_grouped():
         )
         assert _containment_decision(result) == "deny", (
             f"grouped 2nd-feature commit must deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_allows_same_feature_commit_grouped_multilevel():
+    """lazy-batch-parallel-run-harness-gaps gap 6: a `git commit` staging the
+    marker feature's own DEEPLY-grouped dir (three grouping segments before the
+    slug: docs/features/ui/secondary-ui-v2/domains/<slug>/…) → ALLOW. The prior
+    single-optional-group `(?:[^/]+/)?` matched at most one group segment and
+    false-denied this legitimate same-feature commit; the zero-or-more
+    `(?:[^/]+/)*` fix anchors the slug at any grouping depth."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="clip-inspector-panel")
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'work'"),
+            state_dir,
+            staged_paths=[
+                "docs/features/ui/secondary-ui-v2/domains/clip-inspector-panel/SPEC.md",
+                "docs/features/ui/secondary-ui-v2/domains/clip-inspector-panel/PHASES.md",
+            ],
+        )
+        assert _containment_decision(result) != "deny", (
+            f"deep-grouped same-feature commit must NOT deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_second_feature_commit_grouped_multilevel():
+    """lazy-batch-parallel-run-harness-gaps gap 6 (non-weakening): the deep-group
+    fix must NOT weaken the tripwire — a `git commit` staging a DIFFERENT feature
+    under a deep group than the marker's feature_id → still DENY."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="clip-inspector-panel")
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'work'"),
+            state_dir,
+            # A different slug at the SAME deep grouping depth.
+            staged_paths=[
+                "docs/features/ui/secondary-ui-v2/domains/waveform-overview/SPEC.md"
+            ],
+        )
+        assert _containment_decision(result) == "deny", (
+            f"deep-grouped 2nd-feature commit must deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_allows_ingest_research_multifeature_commit():
+    """lazy-batch-parallel-run-harness-gaps gap 7: an /ingest-research cycle
+    (sub_skill == 'ingest-research') legitimately writes RESEARCH.md across N
+    features in one commit. Staged paths spanning MULTIPLE feature dirs — none of
+    which is the marker's single feature_id — must NOT deny (the sanctioned
+    batch-docs-writer exemption)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(
+            state_dir, feature_id="hydra-overlay", sub_skill="ingest-research"
+        )
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'ingest research'"),
+            state_dir,
+            staged_paths=[
+                "docs/features/polyphonic-parameter-modulation/RESEARCH.md",
+                "docs/features/managed-llm-credits/RESEARCH.md",
+                "docs/features/managed-llm-credits/RESEARCH_SUMMARY.md",
+            ],
+        )
+        assert _containment_decision(result) != "deny", (
+            f"ingest-research multi-feature commit must NOT deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_multifeature_commit_non_ingest():
+    """lazy-batch-parallel-run-harness-gaps gap 7 (non-weakening): the
+    ingest-research exemption is sub_skill-scoped — a NON-ingest cycle
+    (sub_skill 'execute-plan') staging a different feature's dir than the marker
+    feature_id still DENIES (a runaway cycle is still contained)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(
+            state_dir, feature_id="hydra-overlay", sub_skill="execute-plan"
+        )
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'work'"),
+            state_dir,
+            staged_paths=["docs/features/managed-llm-credits/SPEC.md"],
+        )
+        assert _containment_decision(result) == "deny", (
+            f"non-ingest 2nd-feature commit must deny; stdout: {result.stdout!r}"
         )
 
 
@@ -7115,6 +7216,14 @@ _TESTS = [
      test_containment_allows_same_feature_commit_grouped),
     ("test_containment_denies_second_feature_commit_grouped",
      test_containment_denies_second_feature_commit_grouped),
+    ("test_containment_allows_same_feature_commit_grouped_multilevel",
+     test_containment_allows_same_feature_commit_grouped_multilevel),
+    ("test_containment_denies_second_feature_commit_grouped_multilevel",
+     test_containment_denies_second_feature_commit_grouped_multilevel),
+    ("test_containment_allows_ingest_research_multifeature_commit",
+     test_containment_allows_ingest_research_multifeature_commit),
+    ("test_containment_denies_multifeature_commit_non_ingest",
+     test_containment_denies_multifeature_commit_non_ingest),
     ("test_containment_increments_commit_tally_on_allow",
      test_containment_increments_commit_tally_on_allow),
     ("test_containment_commit_count_backstop_denies",
