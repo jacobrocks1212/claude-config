@@ -20,6 +20,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -41,6 +46,11 @@
     }
   ],
   ".claude/skill-config/gate-battery.json": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -89,6 +99,11 @@
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -278,6 +293,11 @@
       "id": "external-owner-contracts-locked-without-consultation",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -659,6 +679,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -672,6 +697,11 @@
   "docs/bugs/_archive/block-terminal-kill-false-denies-heredoc-body-tokens/FIXED.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -693,6 +723,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -706,6 +741,11 @@
   "docs/bugs/_archive/block-terminal-kill-false-denies-heredoc-body-tokens/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -874,6 +914,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -887,6 +932,11 @@
   "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/FIXED.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -908,6 +958,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -921,6 +976,11 @@
   "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/PHASES.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -942,6 +1002,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -955,6 +1020,11 @@
   "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -976,6 +1046,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -989,6 +1064,11 @@
   "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-2.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1010,6 +1090,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -1022,12 +1107,22 @@
   ],
   "docs/bugs/_archive/build-queue-eta-marker-mojibake-on-redirected-stdout/FIXED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/build-queue-eta-marker-mojibake-on-redirected-stdout/IMPLEMENTED.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -1036,6 +1131,11 @@
   ],
   "docs/bugs/_archive/build-queue-eta-marker-mojibake-on-redirected-stdout/PHASES.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -1043,12 +1143,22 @@
   ],
   "docs/bugs/_archive/build-queue-eta-marker-mojibake-on-redirected-stdout/SKIP_MCP_TEST.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/build-queue-eta-marker-mojibake-on-redirected-stdout/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -1058,6 +1168,11 @@
   "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/BLOCKED_RESOLVED_2026-07-13.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1079,6 +1194,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -1092,6 +1212,11 @@
   "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/IMPLEMENTED.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1113,6 +1238,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -1126,6 +1256,11 @@
   "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/SKIP_MCP_TEST.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1147,6 +1282,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -1160,6 +1300,11 @@
   "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-1.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1181,6 +1326,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -1194,6 +1344,11 @@
   "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-3.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1215,6 +1370,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -1228,6 +1388,11 @@
   "docs/bugs/_archive/build-queue-foreground-wait-blocks-past-terminal-outcome/GATE_VERDICT.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1249,6 +1414,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -1262,6 +1432,11 @@
   "docs/bugs/_archive/build-queue-foreground-wait-blocks-past-terminal-outcome/PHASES.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1283,6 +1458,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -1296,6 +1476,11 @@
   "docs/bugs/_archive/build-queue-foreground-wait-blocks-past-terminal-outcome/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1317,6 +1502,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -1329,12 +1519,22 @@
   ],
   "docs/bugs/_archive/build-queue-runner-tests-dual-beforeall-fails-pester6/FIXED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/build-queue-runner-tests-dual-beforeall-fails-pester6/GATE_VERDICT.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -1343,12 +1543,22 @@
   ],
   "docs/bugs/_archive/build-queue-runner-tests-dual-beforeall-fails-pester6/IMPLEMENTED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/build-queue-runner-tests-dual-beforeall-fails-pester6/PHASES.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -1357,12 +1567,22 @@
   ],
   "docs/bugs/_archive/build-queue-runner-tests-dual-beforeall-fails-pester6/SKIP_MCP_TEST.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/build-queue-runner-tests-dual-beforeall-fails-pester6/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -1420,12 +1640,22 @@
   ],
   "docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/FIXED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/GATE_VERDICT.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -1434,12 +1664,22 @@
   ],
   "docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/IMPLEMENTED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/NEEDS_INPUT_RESOLVED_2026-07-14.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -1448,6 +1688,11 @@
   ],
   "docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/PHASES.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -1455,12 +1700,22 @@
   ],
   "docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/SKIP_MCP_TEST.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -1656,6 +1911,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
       "type": "bug",
       "provenance": "manual"
@@ -1673,6 +1933,11 @@
   ],
   "docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/IMPLEMENTED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -1681,6 +1946,11 @@
   "docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/NEEDS_INPUT.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1703,6 +1973,11 @@
   "docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1941,12 +2216,22 @@
   ],
   "docs/bugs/_archive/external-owner-contracts-locked-without-consultation/FIXED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/external-owner-contracts-locked-without-consultation/IMPLEMENTATION_NOTES.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -1955,12 +2240,22 @@
   ],
   "docs/bugs/_archive/external-owner-contracts-locked-without-consultation/IMPLEMENTED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/external-owner-contracts-locked-without-consultation/PHASES.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -1969,6 +2264,11 @@
   ],
   "docs/bugs/_archive/external-owner-contracts-locked-without-consultation/SKIP_MCP_TEST.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -1976,12 +2276,22 @@
   ],
   "docs/bugs/_archive/external-owner-contracts-locked-without-consultation/SPEC.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/external-owner-contracts-locked-without-consultation/plans/fix-external-owner-consultation-gate.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -2030,9 +2340,35 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/generic-execution-surfaces-lack-turn-end-gate/FIXED.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/generic-execution-surfaces-lack-turn-end-gate/NEEDS_INPUT.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/generic-execution-surfaces-lack-turn-end-gate/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/harden-rounds-skip-docs-bugs-reconciliation-contract/FIXED.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -2054,6 +2390,11 @@
   ],
   "docs/bugs/_archive/harden-rounds-skip-docs-bugs-reconciliation-contract/IMPLEMENTED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -2062,6 +2403,11 @@
   "docs/bugs/_archive/harden-rounds-skip-docs-bugs-reconciliation-contract/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -2270,12 +2616,29 @@
   ],
   "docs/bugs/_archive/manual-runtime-gates-unowned-in-no-mcp-workflows/FIXED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
+  "docs/bugs/_archive/manual-runtime-gates-unowned-in-no-mcp-workflows/IMPLEMENTED.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/manual-runtime-gates-unowned-in-no-mcp-workflows/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -2462,6 +2825,11 @@
   ],
   "docs/bugs/_archive/merged-head-diverged-withholds-on-research-skipped-head/FIXED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -2474,12 +2842,22 @@
   ],
   "docs/bugs/_archive/merged-head-diverged-withholds-on-research-skipped-head/IMPLEMENTED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/merged-head-diverged-withholds-on-research-skipped-head/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -2494,6 +2872,11 @@
   "docs/bugs/_archive/merged-head-excludes-parked-not-operator-deferred-deadlocks/FIXED.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -2515,6 +2898,11 @@
   ],
   "docs/bugs/_archive/merged-head-excludes-parked-not-operator-deferred-deadlocks/IMPLEMENTED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -2523,6 +2911,11 @@
   "docs/bugs/_archive/merged-head-excludes-parked-not-operator-deferred-deadlocks/NEEDS_INPUT.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -2549,6 +2942,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
       "type": "bug",
       "provenance": "manual"
@@ -2566,12 +2964,22 @@
   ],
   "docs/bugs/_archive/merged-head-includes-parked-items-deadlocks-park-run/FIXED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/merged-head-includes-parked-items-deadlocks-park-run/IMPLEMENTED.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -2580,6 +2988,11 @@
   ],
   "docs/bugs/_archive/merged-head-includes-parked-items-deadlocks-park-run/PHASES.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -2587,12 +3000,22 @@
   ],
   "docs/bugs/_archive/merged-head-includes-parked-items-deadlocks-park-run/SKIP_MCP_TEST.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/merged-head-includes-parked-items-deadlocks-park-run/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -2604,6 +3027,11 @@
       "id": "external-owner-contracts-locked-without-consultation",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
@@ -2618,6 +3046,11 @@
   ],
   "docs/bugs/_archive/merged-head-research-exclusion-flag-gated-splits-cross-script/IMPLEMENTED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -2628,6 +3061,11 @@
       "id": "external-owner-contracts-locked-without-consultation",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
@@ -2913,12 +3351,22 @@
   ],
   "docs/bugs/_archive/persisted-field-shape-idiom-unchecked/FIXED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/persisted-field-shape-idiom-unchecked/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -2927,12 +3375,22 @@
   ],
   "docs/bugs/_archive/phase-count-breaker-miscalibrated-for-review-rounds/FIXED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/phase-count-breaker-miscalibrated-for-review-rounds/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -2941,12 +3399,22 @@
   ],
   "docs/bugs/_archive/plan-skills-lack-targeted-phase-scoped-read/FIXED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/plan-skills-lack-targeted-phase-scoped-read/IMPLEMENTED.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -2955,12 +3423,22 @@
   ],
   "docs/bugs/_archive/plan-skills-lack-targeted-phase-scoped-read/PHASES.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/plan-skills-lack-targeted-phase-scoped-read/SKIP_MCP_TEST.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -2969,12 +3447,22 @@
   ],
   "docs/bugs/_archive/plan-skills-lack-targeted-phase-scoped-read/SPEC.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/planning-validation-misses-serving-path-and-data-reach/FIXED.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -2983,6 +3471,11 @@
   ],
   "docs/bugs/_archive/planning-validation-misses-serving-path-and-data-reach/SPEC.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -2990,12 +3483,22 @@
   ],
   "docs/bugs/_archive/premise-contradictions-demoted-not-escalated/FIXED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/premise-contradictions-demoted-not-escalated/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -3172,12 +3675,22 @@
   ],
   "docs/bugs/_archive/review-decline-rationales-and-deprecated-apis-unverified/FIXED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/review-decline-rationales-and-deprecated-apis-unverified/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -3187,6 +3700,11 @@
   "docs/bugs/_archive/sh-exe-crash-masks-successful-build-queue-run/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -3346,6 +3864,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -3405,6 +3928,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/adhoc-bug-pickup-routes-superseded-specs/ADHOC_BRIEF.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/adhoc-checkpoint-resume-field-complete-continuity/ADHOC_BRIEF.md": [
     {
       "id": "adhoc-checkpoint-resume-field-complete-continuity",
@@ -3442,12 +3972,22 @@
   ],
   "docs/bugs/adhoc-cli-surface-registry-stale-set-independent/ADHOC_BRIEF.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/adhoc-containment-hook-e2big-fails-open-windows-native/ADHOC_BRIEF.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -3696,6 +4236,11 @@
   ],
   "docs/bugs/adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker/ADHOC_BRIEF.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -3741,6 +4286,13 @@
       "id": "adhoc-parity-merged-view-fixture-stale-archive-fixed",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/adhoc-plan-bug-no-guard-for-fixed-annotated-specs/ADHOC_BRIEF.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/adhoc-stale-state-script-parity-test-fixtures/ADHOC_BRIEF.md": [
@@ -3792,6 +4344,11 @@
   ],
   "docs/bugs/agpl-sidecar-framing-strudel-only-second-sidecar/SPEC.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -3800,6 +4357,11 @@
   "docs/bugs/archive-fixed-relative-spec-path-valueerror/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -3821,9 +4383,21 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/block-terminal-kill-matches-separators-inside-quoted-args/DEFERRED.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/block-terminal-kill-matches-separators-inside-quoted-args/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -3841,6 +4415,11 @@
   "docs/bugs/blocked-add-phase-strands-originating-in-progress-plan/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -4017,6 +4596,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -4141,6 +4725,11 @@
   ],
   "docs/bugs/byref-forward-cycles-frozen-on-multicycle-same-step/SPEC.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -4149,6 +4738,11 @@
   "docs/bugs/byref-updatedinput-unapplied-on-background-agent-dispatch/NEEDS_INPUT.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -4170,6 +4764,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -4182,12 +4781,22 @@
   ],
   "docs/bugs/canary-revert-harden-2026-07-r31/ADHOC_BRIEF.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/canary-revert-harden-2026-07-r31/EVIDENCE.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -4196,12 +4805,22 @@
   ],
   "docs/bugs/canary-revert-harden-2026-07-r32/ADHOC_BRIEF.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/canary-revert-harden-2026-07-r32/EVIDENCE.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -4210,12 +4829,22 @@
   ],
   "docs/bugs/canary-revert-harden-2026-07-r44/ADHOC_BRIEF.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/canary-revert-harden-2026-07-r44/EVIDENCE.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -4225,6 +4854,11 @@
   "docs/bugs/canary-revert-harden-2026-07-r64/ADHOC_BRIEF.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -4242,6 +4876,11 @@
   "docs/bugs/canary-revert-harden-2026-07-r64/EVIDENCE.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -4264,6 +4903,11 @@
     }
   ],
   "docs/bugs/coherence-recovery-loop-no-terminal-on-unrunnable-verification-rows/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -4378,6 +5022,11 @@
   ],
   "docs/bugs/consumed-fence-dies-on-reemit-after-cycle-begin/SPEC.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -4438,6 +5087,11 @@
   "docs/bugs/cycle-budget-counters-double-count-on-probes-and-inject-hook/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -4523,6 +5177,11 @@
     }
   ],
   "docs/bugs/cycle-subagent-over-cap-aggregate-gate-auto-backgrounds/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -4625,6 +5284,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -4638,6 +5302,11 @@
   "docs/bugs/dispatched-orchestrator-completed-notification-misread-as-terminal/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -4673,6 +5342,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -4686,6 +5360,11 @@
   "docs/bugs/end-of-run-flush-commit-absorbs-concurrent-writer-staged-files/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -4927,6 +5606,11 @@
   ],
   "docs/bugs/feature-operator-host-defer-not-honored-over-validated/SPEC.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -4974,6 +5658,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -4987,6 +5676,11 @@
   "docs/bugs/feature-tier-strings-fall-to-merged-priority-default/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -5074,6 +5768,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -5146,6 +5845,11 @@
   "docs/bugs/harden-harness-feature-spec-lands-in-unmanaged-docs-specs/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -5318,6 +6022,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -5403,12 +6112,22 @@
   ],
   "docs/bugs/kpi-drafted-row-never-promoted-to-registry/SPEC.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/lazy-batch-no-mid-run-budget-or-park-controls/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -5418,6 +6137,11 @@
   "docs/bugs/lazy-batch-parallel-run-harness-gaps/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -5476,6 +6200,11 @@
   ],
   "docs/bugs/lazy-cycle-containment-misparses-grouped-feature-paths/SPEC.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -5484,6 +6213,11 @@
   "docs/bugs/lazy-run-marker-park-arm-and-forward-cycle-inflation/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -5558,6 +6292,11 @@
   "docs/bugs/live-settings-probe-false-positive-in-consumer-repo/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -5771,6 +6510,11 @@
   "docs/bugs/long-build-ownership-guard-misses-qg-gates/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -6107,6 +6851,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -6120,6 +6869,11 @@
   "docs/bugs/merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -6321,6 +7075,11 @@
   ],
   "docs/bugs/no-sanctioned-cli-for-queue-state-mutations/SPEC.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -6364,6 +7123,11 @@
   "docs/bugs/non-p0-bug-outranks-p1-feature-on-aged-tie/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -6462,6 +7226,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -6536,6 +7305,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -6549,6 +7323,11 @@
   "docs/bugs/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -6880,6 +7659,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
@@ -7149,6 +7933,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -7162,6 +7951,11 @@
   "docs/bugs/research-gated-head-buried-by-skip-ahead-and-merged-fallthrough/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -7542,6 +8336,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -7567,6 +8366,11 @@
     }
   ],
   "docs/bugs/verify-ledger-planning-scope-and-file-arg/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -7629,6 +8433,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -7669,6 +8478,11 @@
   "docs/features/ROADMAP.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -8183,6 +8997,11 @@
   "docs/features/build-queue-eta-priority-lanes/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -9228,6 +10047,11 @@
   ],
   "docs/features/generalized-build-test-runner-skills/ADHOC_BRIEF.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -9240,12 +10064,22 @@
   ],
   "docs/features/generalized-build-test-runner-skills/COMPLETED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/features/generalized-build-test-runner-skills/IMPLEMENTATION_NOTES.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -9258,6 +10092,11 @@
     }
   ],
   "docs/features/generalized-build-test-runner-skills/IMPLEMENTED.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -9273,12 +10112,22 @@
   ],
   "docs/features/generalized-build-test-runner-skills/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-14.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/features/generalized-build-test-runner-skills/PHASES.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -9292,6 +10141,11 @@
   ],
   "docs/features/generalized-build-test-runner-skills/RESEARCH_SUMMARY.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -9304,6 +10158,11 @@
   ],
   "docs/features/generalized-build-test-runner-skills/RUNTIME_GATES.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -9311,12 +10170,22 @@
   ],
   "docs/features/generalized-build-test-runner-skills/SKIP_MCP_TEST.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/features/generalized-build-test-runner-skills/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -9330,6 +10199,11 @@
   ],
   "docs/features/generalized-build-test-runner-skills/plans/all-phases-generalized-build-test-runner-skills-part-1.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -9341,6 +10215,11 @@
     }
   ],
   "docs/features/generalized-build-test-runner-skills/plans/all-phases-generalized-build-test-runner-skills-part-2.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -9354,6 +10233,11 @@
   ],
   "docs/features/generalized-build-test-runner-skills/plans/all-phases-generalized-build-test-runner-skills-part-3.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -9366,6 +10250,11 @@
   ],
   "docs/features/generalized-build-test-runner-skills/plans/all-phases-generalized-build-test-runner-skills-part-4.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -9377,6 +10266,11 @@
     }
   ],
   "docs/features/generalized-build-test-runner-skills/plans/realign-2026-07-14.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -9942,6 +10836,11 @@
   ],
   "docs/features/lazy-core-package-decomposition/COMPLETED.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -9949,12 +10848,22 @@
   ],
   "docs/features/lazy-core-package-decomposition/GATE_VERDICT.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/features/lazy-core-package-decomposition/IMPLEMENTATION_NOTES.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -9967,6 +10876,11 @@
     }
   ],
   "docs/features/lazy-core-package-decomposition/IMPLEMENTED.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -9989,12 +10903,22 @@
   ],
   "docs/features/lazy-core-package-decomposition/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-14.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/features/lazy-core-package-decomposition/PHASES.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -10015,12 +10939,22 @@
   ],
   "docs/features/lazy-core-package-decomposition/SKIP_MCP_TEST.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/features/lazy-core-package-decomposition/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
@@ -10103,6 +11037,11 @@
   ],
   "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-3.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -10114,6 +11053,11 @@
     }
   ],
   "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-4.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -10127,6 +11071,11 @@
   ],
   "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-5.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -10138,6 +11087,11 @@
     }
   ],
   "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-6.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -10732,12 +11686,22 @@
   ],
   "docs/features/merged-head-actionability-oracle/ADHOC_BRIEF.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/features/merged-head-actionability-oracle/NEEDS_RESEARCH.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -10746,12 +11710,22 @@
   ],
   "docs/features/merged-head-actionability-oracle/RESEARCH_PROMPT.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/features/merged-head-actionability-oracle/SPEC.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -11331,6 +12305,11 @@
       "id": "feature-queue-lacks-on-disk-autodiscovery",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
@@ -11941,6 +12920,11 @@
   ],
   "docs/features/spike-pipeline-role/NEEDS_INPUT.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -11949,6 +12933,11 @@
   "docs/features/spike-pipeline-role/PHASES.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11970,6 +12959,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -11982,6 +12976,11 @@
   ],
   "docs/features/spike-pipeline-role/plans/all-phases-spike-pipeline-role-part-1.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -11989,12 +12988,22 @@
   ],
   "docs/features/spike-pipeline-role/plans/all-phases-spike-pipeline-role-part-2.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/features/spike-pipeline-role/plans/all-phases-spike-pipeline-role-part-3.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -12126,6 +13135,11 @@
   ],
   "docs/features/subagent-wedge-backstop-hook/NEEDS_RESEARCH.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12134,6 +13148,11 @@
   "docs/features/subagent-wedge-backstop-hook/PHASES.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -12150,6 +13169,11 @@
   ],
   "docs/features/subagent-wedge-backstop-hook/RESEARCH_PROMPT.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12158,6 +13182,11 @@
   "docs/features/subagent-wedge-backstop-hook/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -12447,6 +13476,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12484,6 +13518,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12501,6 +13540,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12514,6 +13558,11 @@
   "docs/interventions/adhoc-lane-plan-single-lane-seam-classification.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -12555,6 +13604,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12592,6 +13646,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12605,6 +13664,11 @@
   "docs/interventions/bug-queue-aging-backpressure.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -12626,6 +13690,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12639,6 +13708,11 @@
   "docs/interventions/build-queue-enforce-cd-prefix-bypass.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -12660,6 +13734,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12673,6 +13752,11 @@
   "docs/interventions/build-queue-false-green-on-silent-build-failure.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -12694,6 +13778,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12711,6 +13800,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12723,6 +13817,11 @@
   ],
   "docs/interventions/build-queue-runner-tests-dual-beforeall-fails-pester6.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12731,6 +13830,11 @@
   "docs/interventions/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -12748,6 +13852,11 @@
   "docs/interventions/coupled-pair-generation.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -12776,6 +13885,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12800,6 +13914,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12812,12 +13931,22 @@
   ],
   "docs/interventions/external-owner-contracts-locked-without-consultation.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/interventions/generalized-build-test-runner-skills.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -12834,6 +13963,11 @@
   "docs/interventions/harden-2026-07-r15.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -12860,6 +13994,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -12882,6 +14021,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12895,6 +14039,11 @@
   "docs/interventions/harden-2026-07-r18.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -12921,6 +14070,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12934,6 +14088,11 @@
   "docs/interventions/harden-2026-07-r20.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -12960,6 +14119,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -12982,6 +14146,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -12995,6 +14164,11 @@
   "docs/interventions/harden-2026-07-r23.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13016,6 +14190,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13033,6 +14212,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13046,6 +14230,11 @@
   "docs/interventions/harden-2026-07-r26.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13069,12 +14258,22 @@
   ],
   "docs/interventions/harden-2026-07-r31.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r32.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -13102,6 +14301,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13119,6 +14323,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13131,6 +14340,11 @@
   ],
   "docs/interventions/harden-2026-07-r39.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13138,12 +14352,22 @@
   ],
   "docs/interventions/harden-2026-07-r40.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r41.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -13153,6 +14377,11 @@
   "docs/interventions/harden-2026-07-r42.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13174,12 +14403,22 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r44.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -13188,6 +14427,11 @@
   ],
   "docs/interventions/harden-2026-07-r45.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13195,12 +14439,22 @@
   ],
   "docs/interventions/harden-2026-07-r48.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r49.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -13210,6 +14464,11 @@
   "docs/interventions/harden-2026-07-r5.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13231,12 +14490,22 @@
   ],
   "docs/interventions/harden-2026-07-r50.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r51.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -13245,12 +14514,22 @@
   ],
   "docs/interventions/harden-2026-07-r52.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r53.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -13260,6 +14539,11 @@
   "docs/interventions/harden-2026-07-r54.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13276,6 +14560,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13288,6 +14577,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13296,6 +14590,11 @@
   "docs/interventions/harden-2026-07-r57.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13317,6 +14616,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13330,6 +14634,11 @@
   "docs/interventions/harden-2026-07-r61.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13351,6 +14660,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13364,6 +14678,11 @@
   "docs/interventions/harden-2026-07-r63.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13385,6 +14704,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13398,6 +14722,11 @@
   "docs/interventions/harden-2026-07-r65.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13419,6 +14748,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13436,6 +14770,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13449,6 +14788,11 @@
   "docs/interventions/harden-2026-07-r7.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13475,6 +14819,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13488,6 +14837,11 @@
   "docs/interventions/harden-2026-07-r72.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13509,6 +14863,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13522,6 +14881,11 @@
   "docs/interventions/harden-2026-07-r74.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13543,6 +14907,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13556,6 +14925,11 @@
   "docs/interventions/harden-2026-07-r76.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13577,6 +14951,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13590,6 +14969,11 @@
   "docs/interventions/harden-2026-07-r78.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13611,6 +14995,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13624,6 +15013,11 @@
   "docs/interventions/harden-2026-07-r80.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13645,6 +15039,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13662,6 +15061,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13675,6 +15079,11 @@
   "docs/interventions/harden-2026-07-r85.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13701,6 +15110,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13719,6 +15133,11 @@
   "docs/interventions/harden-2026-07-r87.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13745,6 +15164,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13762,12 +15186,22 @@
   ],
   "docs/interventions/harden-2026-07-r90.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r91.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -13779,6 +15213,11 @@
       "id": "external-owner-contracts-locked-without-consultation",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
@@ -13798,6 +15237,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13810,6 +15254,11 @@
   ],
   "docs/interventions/intervention-efficacy-tracking.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13818,6 +15267,11 @@
   "docs/interventions/interventions-telemetry-repo-scope-split-brain.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13839,6 +15293,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13852,6 +15311,11 @@
   "docs/interventions/lazy-core-package-decomposition.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13873,6 +15337,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13886,6 +15355,11 @@
   "docs/interventions/live-settings-split-brain-disarms-enforcement-plane.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13914,6 +15388,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13925,6 +15404,11 @@
     }
   ],
   "docs/interventions/merged-head-includes-parked-items-deadlocks-park-run.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -13940,6 +15424,11 @@
   ],
   "docs/interventions/operator-halt-notifications.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13948,6 +15437,11 @@
   "docs/interventions/park-provisional-acceptance.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13969,6 +15463,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -13981,12 +15480,22 @@
   ],
   "docs/interventions/plan-skills-lack-targeted-phase-scoped-read.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/interventions/plan-skills-redesign.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -14003,6 +15512,11 @@
   "docs/interventions/run-end-gate-refusals-no-telemetry-event.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -14031,6 +15545,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -14044,6 +15563,11 @@
   "docs/interventions/spec-excerpt-scoped-plans.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -14065,6 +15589,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -14078,6 +15607,11 @@
   "docs/interventions/stub-origin-provisional-exclusion.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -14099,6 +15633,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -14112,6 +15651,11 @@
   "docs/kpi/SCORECARD.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -14143,6 +15687,11 @@
   ],
   "docs/kpi/registry.json": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -14170,6 +15719,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
       "type": "bug",
       "provenance": "manual"
@@ -14192,6 +15746,11 @@
   ],
   "docs/specs/machine-keyed-manifest-projection/SPEC.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -14200,6 +15759,11 @@
   "docs/specs/spec-buddy/PHASES.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -14217,6 +15781,11 @@
   "docs/specs/turn-routing-enforcement/NEEDS_INPUT.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -14239,6 +15808,11 @@
   "docs/specs/turn-routing-enforcement/NEEDS_INPUT_2026-07-17-research-gated-classification-and-skip-vs-halt.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -14324,6 +15898,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
       "type": "bug",
       "provenance": "manual"
@@ -14376,6 +15955,11 @@
   ],
   "manifest.psd1": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -14388,6 +15972,11 @@
   ],
   "repos/algobooth/.claude/skill-config/MANIFEST.json": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -14399,6 +15988,11 @@
     }
   ],
   "repos/algobooth/.claude/skill-config/build-queue-ops.json": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -14413,6 +16007,11 @@
     }
   ],
   "repos/algobooth/.claude/skill-config/cycle-prompt-addenda.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -14448,6 +16047,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -14470,6 +16074,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -14487,6 +16096,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -14499,6 +16113,11 @@
   ],
   "repos/algobooth/.claude/skill-config/skill-catalog.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -14507,6 +16126,11 @@
   "repos/algobooth/.claude/skill-config/spec-testing-guidance.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -14523,6 +16147,11 @@
   ],
   "repos/algobooth/.claude/skill-config/touchpoint-audit-gate.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -14531,6 +16160,11 @@
   "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -14679,6 +16313,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -14696,12 +16335,22 @@
   ],
   "repos/algobooth/.claude/skills/qg-rust/SKILL.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "repos/algobooth/.claude/skills/qg-sidecar/SKILL.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -15012,6 +16661,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -15051,6 +16705,11 @@
   ],
   "ruff.toml": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -15063,6 +16722,11 @@
   ],
   "setup.ps1": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -15074,6 +16738,11 @@
     }
   ],
   "setup.py": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -15110,6 +16779,11 @@
   "user/hooks/CLAUDE.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -15165,6 +16839,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -15187,6 +16866,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -15200,6 +16884,11 @@
   "user/hooks/build-queue-enforce.sh": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -15249,6 +16938,11 @@
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -15320,6 +17014,11 @@
   "user/hooks/long-build-ownership-guard.sh": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -15406,6 +17105,11 @@
       "id": "feature-queue-lacks-on-disk-autodiscovery",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
@@ -15565,6 +17269,11 @@
   ],
   "user/scripts/benchmark_lazy_core_import.py": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -15598,6 +17307,11 @@
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -15729,6 +17443,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -15751,6 +17470,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -15762,6 +17486,11 @@
     }
   ],
   "user/scripts/build-queue-runner.Tests.ps1": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -15776,6 +17505,11 @@
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -15802,6 +17536,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -15814,12 +17553,22 @@
   ],
   "user/scripts/cli_surface.py": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "user/scripts/cli_surface_gen.py": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -15834,6 +17583,11 @@
   "user/scripts/coupled-overlays/lazy-batch-cloud.overlay.json": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -15866,6 +17620,11 @@
   "user/scripts/coupled-overlays/lazy-bug-batch.overlay.json": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -15923,6 +17682,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "hardening-intervention-records-unmeasurable-or-missing",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -15967,6 +17731,11 @@
   ],
   "user/scripts/gate-battery.py": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -15987,6 +17756,11 @@
   "user/scripts/harness-gate.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -16014,6 +17788,11 @@
     }
   ],
   "user/scripts/kpi-scorecard.py": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -16062,6 +17841,11 @@
   ],
   "user/scripts/lazy-parity-manifest.json": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -16090,6 +17874,11 @@
   "user/scripts/lazy-queue-doc.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -16149,6 +17938,11 @@
       "id": "feature-queue-lacks-on-disk-autodiscovery",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "hardening-blind-to-process-friction",
@@ -16505,6 +18299,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -16517,7 +18316,19 @@
   ],
   "user/scripts/lazy_core/_ctx.py": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/lazy_core/_monolith.py": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     }
@@ -16534,6 +18345,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -16547,6 +18363,11 @@
   "user/scripts/lazy_core/dispatch.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -16578,6 +18399,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -16605,6 +18431,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -16617,6 +18448,11 @@
   ],
   "user/scripts/lazy_core/hostcaps.py": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -16625,6 +18461,11 @@
   "user/scripts/lazy_core/ledgers.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -16646,6 +18487,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -16657,6 +18503,11 @@
     }
   ],
   "user/scripts/lazy_core/notifyplane.py": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -16670,6 +18521,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -16677,12 +18533,22 @@
   ],
   "user/scripts/lazy_core/runtimeplane.py": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "user/scripts/lazy_core/statedir.py": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -16713,6 +18579,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -16731,6 +18602,11 @@
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -16771,6 +18647,11 @@
     }
   ],
   "user/scripts/lint-skill-config.py": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -17033,6 +18914,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -17122,6 +19008,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -17150,6 +19041,11 @@
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -17207,6 +19103,11 @@
     }
   ],
   "user/scripts/test_kpi_scorecard.py": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -17278,6 +19179,11 @@
       "id": "ensure-runtime-recovery-starves-cold-compile",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "hardening-blind-to-process-friction",
@@ -17498,6 +19404,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -17583,6 +19494,11 @@
   ],
   "user/scripts/test_setup_py.py": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -17609,12 +19525,22 @@
   ],
   "user/scripts/test_spike_state_routing.py": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "user/scripts/test_spike_tooling_loop.py": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -17664,6 +19590,11 @@
       "id": "descoped-row-recognition-needs-canonical-marker",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "hardening-intervention-records-unmeasurable-or-missing",
@@ -17726,6 +19657,11 @@
       "id": "feature-queue-lacks-on-disk-autodiscovery",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "hardening-intervention-records-unmeasurable-or-missing",
@@ -17805,12 +19741,22 @@
   ],
   "user/scripts/tests/test_gate_battery.py": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "user/scripts/tests/test_lazy_core/__init__.py": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -17819,12 +19765,22 @@
   ],
   "user/scripts/tests/test_lazy_core/_util.py": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "user/scripts/tests/test_lazy_core/conftest.py": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -17834,6 +19790,11 @@
   "user/scripts/tests/test_lazy_core/test_depdag.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -17860,6 +19821,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -17878,6 +19844,11 @@
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -17904,6 +19875,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -17916,6 +19892,11 @@
   ],
   "user/scripts/tests/test_lazy_core/test_hostcaps.py": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -17924,6 +19905,11 @@
   "user/scripts/tests/test_lazy_core/test_ledgers.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -17945,6 +19931,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -17958,6 +19949,11 @@
   "user/scripts/tests/test_lazy_core/test_misc.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -17979,6 +19975,11 @@
   ],
   "user/scripts/tests/test_lazy_core/test_notifyplane.py": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -17996,6 +19997,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -18008,6 +20014,11 @@
   ],
   "user/scripts/tests/test_lazy_core/test_runtimeplane.py": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -18016,6 +20027,11 @@
   "user/scripts/tests/test_lazy_core/test_statedir.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -18114,6 +20130,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -18132,6 +20153,11 @@
     }
   ],
   "user/skills/_components/completion-integrity-gate.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -18153,6 +20179,11 @@
   "user/skills/_components/dispatched-agent-liveness.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -18213,6 +20244,11 @@
       "id": "cycle-subagent-leaves-work-uncommitted-or-unticked",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
@@ -18277,6 +20313,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -18299,6 +20340,11 @@
   ],
   "user/skills/_components/lazy-batch-prompts/dispatch-coherence-recovery.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -18307,6 +20353,11 @@
   "user/skills/_components/lazy-batch-prompts/dispatch-hardening.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -18331,6 +20382,11 @@
   "user/skills/_components/lazy-batch-prompts/dispatch-spike.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -18360,6 +20416,11 @@
   "user/skills/_components/lazy-batch-prompts/research-halt-announcement.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -18434,6 +20495,11 @@
     }
   ],
   "user/skills/_components/runner-outcome-contract.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -18518,6 +20584,11 @@
   ],
   "user/skills/_components/spec-friction-kpi-gate.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -18531,6 +20602,11 @@
   "user/skills/_components/spike-dispatch.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -18588,6 +20664,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -18599,6 +20680,11 @@
     }
   ],
   "user/skills/add-phase/SKILL.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -18744,6 +20830,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -18798,6 +20889,11 @@
   ],
   "user/skills/gate-battery/SKILL.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -18850,6 +20946,11 @@
   "user/skills/harden-harness/SKILL.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -18989,6 +21090,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -19096,6 +21202,11 @@
       "id": "ensure-runtime-recovery-starves-cold-compile",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "hardening-blind-to-process-friction",
@@ -19236,6 +21347,11 @@
   "user/skills/lazy-bug-batch/SKILL.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -19726,6 +21842,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -19797,6 +21918,11 @@
       "provenance": "manual"
     },
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -19843,6 +21969,11 @@
   ],
   "user/skills/spec-phases/SKILL.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -19866,6 +21997,11 @@
   "user/skills/spec/SKILL.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
     },
@@ -20051,6 +22187,11 @@
   ],
   "user/skills/write-plan/SKILL.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -20082,12 +22223,22 @@
   ],
   "workspace/CLAUDE.DESKTOP-GHTC5K6.md": [
     {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "workspace/CLAUDE.md": [
+    {
+      "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
