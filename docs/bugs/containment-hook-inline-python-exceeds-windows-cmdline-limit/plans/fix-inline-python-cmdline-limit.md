@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: containment-hook-inline-python-exceeds-windows-cmdline-limit
-status: Ready
+status: Complete
 created: 2026-07-18
 complexity: complex
 phases: [1, 2, 3]
@@ -58,7 +58,7 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 
 - [x] WU-1 — Temp-file invocation + traced fail-open in `lazy-cycle-containment.sh`
 - [x] WU-2 — Convert `build-queue-enforce.sh` to the temp-file invocation shape
-- [ ] WU-3 — Plane-wide embedded-`-c`-body size-guard test in `test_hooks.py`
+- [x] WU-3 — Plane-wide embedded-`-c`-body size-guard test in `test_hooks.py`
 
 ---
 

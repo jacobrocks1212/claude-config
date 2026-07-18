@@ -168,6 +168,8 @@ identical deny/allow behavior, only the invocation mechanism changed.
 
 ### Phase 3: Plane-wide recurrence guard — embedded-`-c`-body size ceiling test
 
+**Status:** Complete
+
 **Scope:** Make the E2BIG class mechanically impossible to reintroduce silently. Add a test (in
 `test_hooks.py`) that scans every hook still invoking `"$PYTHON" -c "$_<VAR>"`, measures the
 corresponding embedded heredoc body, and FAILS if any body exceeds a conservative ceiling well
@@ -176,18 +178,23 @@ no `-c` body and are exempt by construction. This is the guard that would have c
 `build-queue-enforce.sh` before it tripped.
 
 **Deliverables:**
-- [ ] `user/scripts/test_hooks.py`: a new test that, for each hook file invoking `"$PYTHON" -c "$_..._PY"`, extracts the named heredoc body and asserts `len(body) <= CEILING` (a module constant, e.g. `25000`, with an explanatory comment citing the 32,767 Windows limit and this bug). The test discovers hooks generically (glob `user/hooks/*.sh`), so a new `-c`-invoking hook is covered automatically.
-- [ ] The ceiling and its rationale are documented inline (why 25,000, the 32,767 limit, the env-prefix/quoting overhead margin, and the `docs/bugs/containment-hook-inline-python-exceeds-windows-cmdline-limit` reference).
-- [ ] Tests: the new size-guard test passes (green) because Phases 1–2 removed both over-/near-limit `-c` bodies; the full `test_hooks.py` run is green.
+- [x] `user/scripts/test_hooks.py`: a new test that, for each hook file invoking `"$PYTHON" -c "$_..._PY"`, extracts the named heredoc body and asserts `len(body) <= CEILING` (a module constant, e.g. `25000`, with an explanatory comment citing the 32,767 Windows limit and this bug). The test discovers hooks generically (glob `user/hooks/*.sh`), so a new `-c`-invoking hook is covered automatically.
+- [x] The ceiling and its rationale are documented inline (why 25,000, the 32,767 limit, the env-prefix/quoting overhead margin, and the `docs/bugs/containment-hook-inline-python-exceeds-windows-cmdline-limit` reference).
+- [x] Tests: the new size-guard test passes (green) because Phases 1–2 removed both over-/near-limit `-c` bodies; the full `test_hooks.py` run is green.
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_hooks.py` — the new size-guard test is
 present and passes; temporarily bloating any `-c`-invoking hook's body past the ceiling makes it
 FAIL (demonstrated once during authoring, then reverted).
 
 **Runtime Verification** *(checked by the pytest gate):*
-- [ ] <!-- verification-only --> The size-guard test FAILS when an embedded `-c` body is inflated past the ceiling and PASSES for the shipped hooks — i.e. it actually gates, not tautologically green.
+- [x] <!-- verification-only --> The size-guard test FAILS when an embedded `-c` body is inflated past the ceiling and PASSES for the shipped hooks — i.e. it actually gates, not tautologically green.
 
 **MCP Integration Test Assertions:** N/A — pure static/pytest guard, no runtime surface.
+
+**Implementation Notes (2026-07-18):**
+- Added `_EMBEDDED_PY_CEILING = 25000` (module constant, `test_hooks.py:49`, with a comment citing the 32,767 `CreateProcess` limit, the env-prefix/quoting margin, and this bug slug) + `test_no_embedded_c_python_body_exceeds_cmdline_ceiling` (`test_hooks.py:9625`).
+- The test globs `_HOOKS_DIR.glob("*.sh")`, regex-detects a `"$PYTHON" -c "$_<VAR>"` invocation, extracts the named `read -r -d '' _<VAR> <<'PYEOF' … PYEOF` heredoc body, measures its utf-8 byte length, and collects every offender over the ceiling (asserts none). A temp-file-converted hook (no `-c` invocation) is skipped by construction; an `assert scanned` guards against the whole-shape retiring silently. Generic discovery ⇒ a FUTURE `-c`-invoking hook is covered automatically.
+- **Non-vacuity proven** (not tautologically green): demonstrated FAIL when the ceiling is lowered below the max remaining body (`long-build-ownership-guard.sh` 19,805 B), then restored to `25000` — final state green. Shipped tree passes: `-k "ceiling or embedded_c or cmdline"` 1 passed; full `test_hooks.py` 273 passed.
 
 **Prerequisites:**
 - Phase 1 and Phase 2: both large `-c` bodies converted to temp-file, so the ceiling can sit below every remaining `-c` body without a false failure.

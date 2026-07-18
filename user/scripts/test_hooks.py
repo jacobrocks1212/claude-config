@@ -40,6 +40,14 @@ _GUARD_SH    = _HOOKS_DIR / "lazy-dispatch-guard.sh"
 _INJECT_SH   = _HOOKS_DIR / "lazy-route-inject.sh"
 _GUARD_PY    = _SCRIPTS_DIR / "lazy_guard.py"
 
+# Conservative ceiling on an embedded `-c "$_..._PY"` python body size. Windows
+# CreateProcess caps a command line at 32,767 chars; a body near that limit silently
+# fails to spawn (E2BIG) and disarms the hook. 25,000 leaves margin for the env-prefix
+# (`FOO=bar `) + `python -c ` + shell quoting overhead on top of the body, while sitting
+# above every hook currently left on `-c` (max: long-build-ownership-guard.sh ~19,805 B).
+# See docs/bugs/containment-hook-inline-python-exceeds-windows-cmdline-limit.
+_EMBEDDED_PY_CEILING = 25000
+
 # ---------------------------------------------------------------------------
 # Bash resolver — finds a POSIX-capable bash.exe on Windows (Git Bash),
 # or the system bash on any other platform.  Never returns System32\bash.exe
@@ -9597,6 +9605,86 @@ _TESTS = _TESTS + [
      test_wedge_sessionend_gcs_session_breadcrumbs),
     ("test_wedge_staleness_sweep_removes_old_breadcrumb",
      test_wedge_staleness_sweep_removes_old_breadcrumb),
+]
+
+
+# ---------------------------------------------------------------------------
+# Embedded `-c "$_..._PY"` python-body cmdline-length guard
+#
+# Recurrence prevention for the E2BIG class that silently disarmed
+# lazy-cycle-containment.sh / build-queue-enforce.sh: a hook that still invokes
+# python via `"$PYTHON" -c "$_<VAR>_PY"` puts its ENTIRE heredoc body on the OS
+# command line. Windows CreateProcess caps a command line at 32,767 chars; a
+# body near that limit fails to spawn (E2BIG) with no visible error, and the
+# hook silently stops firing. A hook converted to temp-file invocation (no
+# longer matching the `-c "$_..._PY"` shape) ships its body in a file instead
+# and is correctly exempt -- this scan is generic over every hook in
+# _HOOKS_DIR, so a FUTURE hook regressed back onto `-c` is covered for free.
+# ---------------------------------------------------------------------------
+
+def test_no_embedded_c_python_body_exceeds_cmdline_ceiling():
+    """No hook still invoking python via `"$PYTHON" -c "$_<VAR>_PY"` may embed a
+    heredoc body larger than _EMBEDDED_PY_CEILING bytes.
+
+    Discovery is generic (globs every *.sh in _HOOKS_DIR) so this covers any
+    hook -- present or future -- that invokes python this way, not just the
+    two hooks this guard was written after. A hook with no `-c "$_..._PY"`
+    invocation (e.g. converted to temp-file invocation) is skipped: its body
+    ships in a file, never on the command line, so it can't E2BIG.
+    """
+    import re
+
+    invoke_re = re.compile(r'"\$PYTHON"\s+-c\s+"\$(_[A-Z_]+)"')
+
+    offenders: list[str] = []
+    scanned: list[str] = []
+
+    for hook_path in sorted(_HOOKS_DIR.glob("*.sh")):
+        text = hook_path.read_text(encoding="utf-8")
+        m = invoke_re.search(text)
+        if not m:
+            continue  # no -c invocation here -- body ships in a file, not the cmdline
+
+        var = m.group(1)
+        heredoc_re = re.compile(r"read -r -d '' " + re.escape(var) + r" <<'PYEOF'\n")
+        hm = heredoc_re.search(text)
+        assert hm is not None, (
+            f"{hook_path.name} invokes \"$PYTHON\" -c \"${var}\" but no matching "
+            f"read -r -d '' {var} <<'PYEOF' heredoc was found -- can't measure its "
+            f"embedded body size"
+        )
+
+        start = hm.end()
+        terminator_idx = text.index("\nPYEOF\n", start)
+        body = text[start:terminator_idx]
+        body_len = len(body.encode("utf-8"))
+
+        scanned.append(hook_path.name)
+        if body_len > _EMBEDDED_PY_CEILING:
+            offenders.append(
+                f"{hook_path.name}: embedded -c python body is {body_len} bytes "
+                f"(var ${var}, ceiling {_EMBEDDED_PY_CEILING} bytes) -- risks "
+                f"silently exceeding Windows's 32,767-char CreateProcess "
+                f"command-line limit (E2BIG); convert to temp-file invocation"
+            )
+
+    assert scanned, (
+        "expected at least one hook in _HOOKS_DIR to still invoke python via "
+        "\"$PYTHON\" -c \"$_..._PY\" -- if this legitimately becomes zero, this "
+        "assertion documents that the whole -c invocation shape has been retired"
+    )
+    assert not offenders, (
+        "hook(s) embed a -c python body that risks the Windows CreateProcess "
+        "32,767-char command-line limit (silent E2BIG disarm):\n"
+        + "\n".join(offenders)
+    )
+
+
+_TESTS = _TESTS + [
+    # containment-hook-inline-python-exceeds-windows-cmdline-limit — plane-wide
+    # size guard against the E2BIG-disarm class
+    ("test_no_embedded_c_python_body_exceeds_cmdline_ceiling",
+     test_no_embedded_c_python_body_exceeds_cmdline_ceiling),
 ]
 
 
