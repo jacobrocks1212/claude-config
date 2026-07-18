@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-13
+**Fixed:** 2026-07-18
+**Fix commit:** c3b46699
 **Placement:** docs/bugs/pr-review-rereview-low-fidelity-metadata
 **Related:** `user/plugins/local-tools/plugins/cognito-pr-review/` (review-pr command + prep-pr.ts, post-process.ts)
 
