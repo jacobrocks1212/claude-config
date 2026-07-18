@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: shared-hook-lib
-status: Ready
+status: In-progress
 created: 2026-07-18
 complexity: complex
 phases: [3]
