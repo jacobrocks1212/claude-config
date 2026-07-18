@@ -3,6 +3,8 @@
 **Status:** Fixed
 **Severity:** P0
 **Discovered:** 2026-07-16
+**Fixed:** 2026-07-18
+**Fix commit:** e1ce1f9c
 **Related:** `docs/features/unified-pipeline-orchestrator/` (the merged-view / type-dispatch
 contract this violates); `docs/specs/turn-routing-enforcement/` (hardening stage);
 `docs/bugs/lazy-batch-unified-driver-parity-and-accounting/` (`_load_bug_queue_for_merged`

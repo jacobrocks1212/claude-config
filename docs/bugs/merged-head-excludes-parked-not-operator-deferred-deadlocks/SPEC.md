@@ -5,7 +5,7 @@
 **Discovered:** 2026-07-17
 **Related:** `docs/bugs/merged-head-includes-parked-items-deadlocks-park-run/` (Round 56 — the
 direct precedent; this bug is the "later round widens the boundary" case its own §Fix scope
-invited); `docs/bugs/dispatch-probe-and-inject-bypass-merged-head/` (Round 54 — the
+invited); `docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/` (Round 54 — the
 `merged-head-diverged` withhold this interacts badly with); `docs/features/unified-pipeline-orchestrator/`
 (the merged-view / type-dispatch contract); `docs/specs/turn-routing-enforcement/` (hardening stage).
 

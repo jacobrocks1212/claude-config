@@ -3,7 +3,7 @@
 **Status:** Concluded
 **Severity:** P0
 **Discovered:** 2026-07-17
-**Related:** `docs/bugs/dispatch-probe-and-inject-bypass-merged-head/` (Round 54 — the
+**Related:** `docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/` (Round 54 — the
 merged-head-diverged withhold this bug interacts badly with); `docs/features/unified-pipeline-orchestrator/`
 (the merged-view / type-dispatch contract); `docs/specs/turn-routing-enforcement/` (hardening
 stage); `docs/bugs/lazy-batch-no-mid-run-budget-or-park-controls/` (park-mode facets).
@@ -29,7 +29,7 @@ dispatchable).
 
 ## Reconstructed route (divergence point)
 
-The Round-54 merged-view harden (`docs/bugs/dispatch-probe-and-inject-bypass-merged-head/`) added
+The Round-54 merged-view harden (`docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/`) added
 `lazy_core.dispatch.merged_head_override` + the `--emit-prompt` `route_overridden_by:
 merged-head-diverged` withhold: when the merged work-list head is a DIFFERENT item than the one a
 dispatch-bound probe would emit for, the probe withholds the (wrong-item) forward route so the

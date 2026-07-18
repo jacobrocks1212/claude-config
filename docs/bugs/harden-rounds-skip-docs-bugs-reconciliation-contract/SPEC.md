@@ -4,7 +4,7 @@
 **Severity:** P1
 **Discovered:** 2026-07-18
 **Related:** `docs/bugs/CLAUDE.md` (the "Fixing a bug OUT-OF-PIPELINE" reconciliation contract this
-bug is about); `docs/bugs/dispatch-probe-and-inject-bypass-merged-head/`,
+bug is about); `docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/`,
 `docs/bugs/merged-head-excludes-parked-not-operator-deferred-deadlocks/`,
 `docs/bugs/merged-head-includes-parked-items-deadlocks-park-run/` (the three un-reconciled harden
 bug specs that surfaced this class); `docs/specs/turn-routing-enforcement/` (the hardening stage);

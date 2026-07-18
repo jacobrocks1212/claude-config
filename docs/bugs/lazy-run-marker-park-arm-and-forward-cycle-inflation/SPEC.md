@@ -3,7 +3,7 @@
 **Status:** Concluded
 **Trigger:** observed-friction (orchestrator-observed mid-run, live overnight `/lazy-batch 25 --park --park-provisional`, 2026-07-17)
 **Item in flight:** adhoc-hydra-sidecar-dist-esm-no-frames
-**Related:** `docs/specs/turn-routing-enforcement/` (hardening stage), `docs/bugs/dispatch-probe-and-inject-bypass-merged-head/` (same run, Round 54), `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` Round 55
+**Related:** `docs/specs/turn-routing-enforcement/` (hardening stage), `docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/` (same run, Round 54), `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` Round 55
 
 Two independent run-marker defects observed during ONE overnight autonomous run. They are
 unrelated in mechanism (park arming vs. forward-cycle counting) but were both surfaced by the
