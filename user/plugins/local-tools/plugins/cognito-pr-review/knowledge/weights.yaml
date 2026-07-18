@@ -391,3 +391,6 @@ rule_weights:
   no-internals-visible-to-for-tests:
     weight: 0.7
     data_points: 0
+  no-test-only-production-seam:
+    weight: 0.7
+    data_points: 0
