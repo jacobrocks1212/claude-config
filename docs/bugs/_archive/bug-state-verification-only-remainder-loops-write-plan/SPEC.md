@@ -17,7 +17,7 @@ The bug pipeline loops `probe → write-plan → no-op → probe → write-plan`
 implementation deliverables are all checked but whose PHASES.md still carries at least one
 unchecked **verification-only** row and has **no plan file on disk**.
 
-Concrete live case (`docs/bugs/dispatched-harden-record-intervention-refused-by-containment/`):
+Concrete live case (`docs/bugs/_archive/dispatched-harden-record-intervention-refused-by-containment/`):
 
 - PHASES.md (authored cycle 25) has all 6 implementation deliverables `- [x]` — the fix landed
   OUT-OF-PIPELINE in commit `1cb997e0`, and the PHASES author ticked the impl rows to reflect it.
