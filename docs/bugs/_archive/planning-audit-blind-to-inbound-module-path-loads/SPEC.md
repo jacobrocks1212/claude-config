@@ -8,7 +8,9 @@
 > (`validate-plan.py::_load_lazy_core`, `test_validate_plan.py:28-38` module-scope
 > `spec_from_file_location`) broke at execution, one of them silently disarming a gate.
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-18
+**Fix commit:** 5dee2edb
 **Priority:** P2
 **Last updated:** 2026-07-13
 **Related:** `docs/features/lazy-core-package-decomposition/` (the motivating move);
