@@ -3281,6 +3281,99 @@ def test_p7_run_end_terminal_nonsanctioned_reason_with_auth_allowed():
 
 
 
+def test_sanctioned_lane_park_terminal_membership():
+    """lazy-batch-parallel-run-harness-gaps gap 4: the lane-park terminal set
+    exists, contains the P6 park + budget-deferred reasons (bare AND scoped
+    forms), and is DISJOINT from SANCTIONED_STOP_TERMINAL (these are lane-only —
+    a serial park stays a real, authorization-owing halt)."""
+    _guard()
+    lane = lazy_core.SANCTIONED_LANE_PARK_TERMINAL
+    for r in ("needs-input", "needs-input-scoped", "blocked", "blocked-scoped",
+              "budget-deferred", "needs-ratification", "needs-ratification-scoped"):
+        assert r in lane, f"{r!r} must be a sanctioned lane park terminal"
+    assert lane.isdisjoint(lazy_core.SANCTIONED_STOP_TERMINAL), (
+        "lane-park terminals must NOT leak into the serial sanctioned set"
+    )
+
+
+def test_p7_run_end_lane_park_terminal_allowed_and_skips_efficacy():
+    """lazy-batch-parallel-run-harness-gaps gaps 4+5: a LANE marker (parent_run
+    set) retiring on a park-class terminal (needs-input-scoped) must SUCCEED
+    without --operator-authorized (gap 4) AND without an efficacy breadcrumb
+    seeded (gap 5 — the parent owes the trio, not the lane). exit 0, marker
+    deleted."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "p7-lane-park"
+        state_dir.mkdir()
+        repo_dir = Path(td) / "p7-lane-park-repo"
+        repo_dir.mkdir()
+        env = dict(_os_env_p7.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        # Arm a LANE marker: parent-stamped.
+        parent = json.dumps({"repo_root": str(repo_dir), "started_at": "2026-07-18T03:38:27Z"})
+        r_start = run(["--run-start", "--max-cycles", "10", "--parent-run", parent])
+        assert r_start.returncode == 0, f"lane --run-start must succeed; {r_start.stderr!r}"
+
+        # Deliberately DO NOT seed the efficacy breadcrumb (gap 5: lane skips it),
+        # and DO NOT pass --operator-authorized (gap 4: lane park sanctioned).
+        r = run(["--run-end", "--reason", "terminal",
+                 "--terminal-reason", "needs-input-scoped"])
+        assert r.returncode == 0, (
+            f"lane park terminal must exit 0 without auth/efficacy; "
+            f"got {r.returncode}; stdout={r.stdout!r}; stderr={r.stderr!r}"
+        )
+        out = json.loads(r.stdout)
+        assert out.get("run_marker_deleted") is True, (
+            f"lane park terminal must delete the lane marker; got {out!r}"
+        )
+
+
+def test_p7_run_end_serial_park_terminal_still_refused():
+    """lazy-batch-parallel-run-harness-gaps gap 4 (non-weakening): the lane-park
+    sanction is parent_run-gated — a SERIAL marker (no parent_run) retiring on
+    needs-input-scoped without --operator-authorized is STILL refused (exit 1,
+    marker kept)."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "p7-serial-park"
+        state_dir.mkdir()
+        repo_dir = Path(td) / "p7-serial-park-repo"
+        repo_dir.mkdir()
+        env = dict(_os_env_p7.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        r_start = run(["--run-start", "--max-cycles", "10"])  # serial → parent_run: null
+        assert r_start.returncode == 0
+        _seed_efficacy_breadcrumb(state_dir)  # isolate the terminal-reason gate
+
+        r = run(["--run-end", "--reason", "terminal",
+                 "--terminal-reason", "needs-input-scoped"])
+        assert r.returncode == 1, (
+            f"serial park terminal without auth must exit 1; got {r.returncode}; "
+            f"stdout={r.stdout!r}"
+        )
+        out = json.loads(r.stdout)
+        assert out.get("run_marker_deleted") is False
+        assert "Stop-authorization gate" in out.get("refused", "")
+        assert (state_dir / "lazy-run-marker.json").exists()
+
+
 def test_p7_run_end_terminal_no_terminal_reason_adds_deprecation():
     """--run-end --reason terminal WITHOUT --terminal-reason (legacy form)
     must SUCCEED with a 'deprecation' note in the output — backward-compatible
@@ -8213,6 +8306,9 @@ _TESTS = [
     ("test_p7_run_end_terminal_sanctioned_reason_allowed", test_p7_run_end_terminal_sanctioned_reason_allowed),
     ("test_p7_run_end_terminal_nonsanctioned_reason_refuses_without_auth", test_p7_run_end_terminal_nonsanctioned_reason_refuses_without_auth),
     ("test_p7_run_end_terminal_nonsanctioned_reason_with_auth_allowed", test_p7_run_end_terminal_nonsanctioned_reason_with_auth_allowed),
+    ("test_sanctioned_lane_park_terminal_membership", test_sanctioned_lane_park_terminal_membership),
+    ("test_p7_run_end_lane_park_terminal_allowed_and_skips_efficacy", test_p7_run_end_lane_park_terminal_allowed_and_skips_efficacy),
+    ("test_p7_run_end_serial_park_terminal_still_refused", test_p7_run_end_serial_park_terminal_still_refused),
     ("test_p7_run_end_terminal_no_terminal_reason_adds_deprecation", test_p7_run_end_terminal_no_terminal_reason_adds_deprecation),
     ("test_p7_emit_dispatch_includes_dispatch_prompt_ref", test_p7_emit_dispatch_includes_dispatch_prompt_ref),
     ("test_per_repo_marker_independence_when_unset", test_per_repo_marker_independence_when_unset),

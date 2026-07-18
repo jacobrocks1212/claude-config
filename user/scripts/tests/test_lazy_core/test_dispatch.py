@@ -2766,6 +2766,85 @@ def test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug():
                 "a withheld route must NOT register a cycle emission")
 
 
+def test_subprocess_emit_prompt_lane_marker_skips_merged_head_withhold():
+    """lazy-batch-parallel-run-harness-gaps gap 1: the SAME divergent-head fixture
+    as above, but with a LANE marker (parent_run set), must NOT withhold — the
+    merged-head divergence guard is exempt for a coordinator-authorized lane probe
+    (claim_shardable owns lane arbitration). route_overridden_by must NOT be
+    'merged-head-diverged'; the lane emits its own route normally."""
+    _guard()
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        features = td_path / "fixture-repo" / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-c", "name": "Feature C", "spec_dir": "feat-c", "tier": 1}
+            ]
+        }), encoding="utf-8")
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        fdir = features / "feat-c"
+        fdir.mkdir()
+        (fdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+        (fdir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n",
+            encoding="utf-8")
+        (fdir / "plans").mkdir()
+        (fdir / "plans" / "all-phases-c.md").write_text("# Plan\n", encoding="utf-8")
+        fixture_repo = td_path / "fixture-repo"
+
+        # Same P0 bug at the merged head that WOULD withhold in a serial run.
+        bug_dir = fixture_repo / "docs" / "bugs" / "bug-z"
+        (bug_dir / "plans").mkdir(parents=True)
+        (fixture_repo / "docs" / "bugs" / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-z", "name": "Bug Z", "spec_dir": "bug-z", "severity": "P0"}
+            ]
+        }), encoding="utf-8")
+        (bug_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (bug_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Fix the thing\n- [ ] Tests\n", encoding="utf-8")
+        (bug_dir / "plans" / "all-phases-z.md").write_text("# Plan\n", encoding="utf-8")
+
+        state_dir = td_path / "lazy-state-dir"
+        state_dir.mkdir()
+
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            # LANE marker: parent_run stamped (the coordinator identity).
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(fixture_repo), max_cycles=10, now=_time.time(),
+                parent_run={"repo_root": str(fixture_repo),
+                            "started_at": "2026-07-18T03:38:27Z"},
+            )
+        finally:
+            _clear_state_dir()
+
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        result = subprocess.run(
+            [sys.executable, str(lazy_state_script),
+             "--repeat-count", "--probe", "--emit-prompt",
+             "--repo-root", str(fixture_repo), "--feature-id", "feat-c"],
+            capture_output=True, text=True, env=env,
+        )
+        assert result.returncode == 0, (
+            f"lazy-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
+        state_json = json.loads(result.stdout)
+        assert state_json.get("route_overridden_by") != "merged-head-diverged", (
+            f"a LANE probe (parent_run set) must NOT withhold on merged-head "
+            f"divergence; got route_overridden_by="
+            f"{state_json.get('route_overridden_by')!r}")
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -6459,6 +6538,7 @@ _TESTS = [
     ("test_merged_head_override_excludes_parked_head_no_deadlock", test_merged_head_override_excludes_parked_head_no_deadlock),
     ("test_merged_worklist_exclude_ids_drops_parked_items", test_merged_worklist_exclude_ids_drops_parked_items),
     ("test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug", test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug),
+    ("test_subprocess_emit_prompt_lane_marker_skips_merged_head_withhold", test_subprocess_emit_prompt_lane_marker_skips_merged_head_withhold),
     ("test_probe_skipped_ids_collects_all_skip_lists_and_resolves_names", test_probe_skipped_ids_collects_all_skip_lists_and_resolves_names),
     ("test_merged_head_override_gated_head_excluded_no_false_withhold", test_merged_head_override_gated_head_excluded_no_false_withhold),
     ("test_subprocess_emit_prompt_skips_blocked_gated_head_no_withhold", test_subprocess_emit_prompt_skips_blocked_gated_head_no_withhold),

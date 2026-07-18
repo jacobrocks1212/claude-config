@@ -675,6 +675,34 @@ SANCTIONED_STOP_TERMINAL: frozenset[str] = frozenset({
 })
 
 
+# ---------------------------------------------------------------------------
+# SANCTIONED_LANE_PARK_TERMINAL — the park-class terminal reasons a
+# /lazy-batch-parallel LANE marker (one whose `parent_run` is non-null) may
+# retire on WITHOUT --operator-authorized (lazy-batch-parallel-run-harness-gaps
+# gap 4).
+#
+# A lane is a coordinator-authorized CHILD: SKILL P6 makes park-on-sentinel the
+# parallel mode's DEFINING failure isolation ("not an opt-in"), and a lane that
+# exhausts its budget slice parks as budget-deferred. A `--feature-id`-scoped
+# lane probe emits the SCOPED park terminals (`needs-input-scoped` /
+# `blocked-scoped` / `needs-ratification-scoped`), so both the bare and scoped
+# forms are sanctioned. This set is consulted ONLY when the run marker carries a
+# non-null `parent_run`; a SERIAL run (parent_run: null) parking is a real halt
+# that still needs authorization, so these reasons stay OUT of
+# SANCTIONED_STOP_TERMINAL. Both state scripts read it (coupled-pair surface —
+# a lane marker is pipeline-agnostic).
+# ---------------------------------------------------------------------------
+SANCTIONED_LANE_PARK_TERMINAL: frozenset[str] = frozenset({
+    "needs-input",            # P6 park on NEEDS_INPUT.md (bare)
+    "needs-input-scoped",     # …as emitted by a --feature-id lane probe
+    "blocked",                # P6 park on BLOCKED.md (bare)
+    "blocked-scoped",         # …as emitted by a --feature-id lane probe
+    "needs-ratification",     # unratified NEEDS_INPUT_PROVISIONAL.md park (bare)
+    "needs-ratification-scoped",  # …scoped lane form
+    "budget-deferred",        # lane slice exhausted → parked (P4/Step 3)
+})
+
+
 def write_run_marker(
     pipeline: str,
     cloud: bool,

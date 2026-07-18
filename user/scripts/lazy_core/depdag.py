@@ -1333,6 +1333,74 @@ def mutate_queue_deps(
     }
 
 
+def set_independent_marker(
+    queue_path: "Path", item_id: str, value: bool, *,
+    queue_label: str = "queue.json",
+) -> dict:
+    """Set or CLEAR a queue entry's ``independent: true`` shard-eligibility marker
+    IN PLACE — the operator-facing sibling of ``set_queue_priority`` /
+    ``mutate_queue_deps`` for the isolation marker
+    (``parse_independent_marker`` READS it from either the SPEC frontmatter or the
+    queue entry; this is the WRITE side, backing lazy-state.py
+    ``--set-independent``). ``value=True`` writes ``independent: true``;
+    ``value=False`` REMOVES the key (restoring the byte-clean no-marker shape —
+    ``parse_independent_marker`` treats absent and false identically, so removal is
+    the canonical "not independent" state, mirroring how ``mutate_queue_deps``
+    drops an emptied ``deps``).
+
+    The ``independent`` marker gates ``/lazy-batch-parallel`` shard eligibility
+    (``claim_shardable``'s ``no-independent-marker`` hold), NOT ``merged_priority``
+    — so this does NOT reposition the entry (unlike ``set_queue_priority``).
+
+    A missing ``item_id`` or malformed queue JSON ``_die``s (exit 2, zero
+    mutation). A change that leaves the entry byte-identical (e.g. clearing an
+    already-absent marker, or setting an already-true one) is a ``noop: true`` ZERO
+    write (byte-stable, mirroring ``mutate_queue_deps``).
+
+    Returns ``{"mutated": bool, "noop": bool, "item_id", "independent": bool,
+    "queue_length"}``.
+    """
+    data, items = _load_queue_for_mutation(queue_path, queue_label)
+    idx = next(
+        (i for i, e in enumerate(items)
+         if isinstance(e, dict) and e.get("id") == item_id),
+        None,
+    )
+    if idx is None:
+        _die(f"item not queued: {item_id}", queue_path)
+        return {}  # pragma: no cover
+    entry = items[idx]
+
+    had_marker = "independent" in entry
+    prior_value = entry.get("independent")
+    if value:
+        would_change = prior_value is not True
+    else:
+        # Clearing: a change iff the key is present at all (any truthiness).
+        would_change = had_marker
+    if not would_change:
+        return {
+            "mutated": True, "noop": True, "item_id": item_id,
+            "independent": bool(value), "queue_length": len(items),
+        }
+
+    if value:
+        entry["independent"] = True
+    else:
+        entry.pop("independent", None)
+
+    data["queue"] = items
+    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+    _diag(
+        f"set_independent_marker: {item_id} independent {prior_value!r} -> "
+        f"{value!r} in {queue_label}"
+    )
+    return {
+        "mutated": True, "noop": False, "item_id": item_id,
+        "independent": bool(value), "queue_length": len(items),
+    }
+
+
 def merged_worklist(
     feature_items: list[dict],
     bug_items: list[dict],

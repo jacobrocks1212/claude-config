@@ -710,6 +710,61 @@ def test_mutate_queue_deps_add_remove_and_empty_drops_key(tmp_path):
     assert "deps" not in entry
 
 
+def test_set_independent_marker_set_clear_and_noop(tmp_path):
+    """lazy-batch-parallel-run-harness-gaps gap 3: set writes independent: true;
+    clear REMOVES the key (byte-clean not-independent shape); an unchanged set is a
+    ZERO-write noop; no repositioning (independent is not a priority field)."""
+    _guard()
+    feats = tmp_path / "docs" / "features"
+    feats.mkdir(parents=True)
+    qp = feats / "queue.json"
+    qp.write_text(json.dumps({"queue": [
+        {"id": "f-a", "name": "f-a", "spec_dir": "f-a", "tier": 0},
+        {"id": "f-b", "name": "f-b", "spec_dir": "f-b", "tier": 1},
+    ]}, indent=2) + "\n", encoding="utf-8")
+
+    # Set true.
+    r1 = lazy_core.set_independent_marker(qp, "f-a", True, queue_label="queue.json")
+    assert r1["noop"] is False and r1["independent"] is True
+    entry = next(e for e in json.loads(qp.read_text())["queue"] if e["id"] == "f-a")
+    assert entry.get("independent") is True
+    # No repositioning: f-a stays at listed index 0.
+    assert [e["id"] for e in json.loads(qp.read_text())["queue"]] == ["f-a", "f-b"]
+
+    # Set true again → byte-stable noop, no write.
+    before = qp.read_bytes()
+    r2 = lazy_core.set_independent_marker(qp, "f-a", True, queue_label="queue.json")
+    assert r2["noop"] is True and qp.read_bytes() == before
+
+    # Clear → key removed entirely.
+    r3 = lazy_core.set_independent_marker(qp, "f-a", False, queue_label="queue.json")
+    assert r3["noop"] is False and r3["independent"] is False
+    entry = next(e for e in json.loads(qp.read_text())["queue"] if e["id"] == "f-a")
+    assert "independent" not in entry
+
+    # Clear an already-absent marker → byte-stable noop.
+    before = qp.read_bytes()
+    r4 = lazy_core.set_independent_marker(qp, "f-b", False, queue_label="queue.json")
+    assert r4["noop"] is True and qp.read_bytes() == before
+
+
+def test_set_independent_marker_missing_item_dies(tmp_path):
+    """lazy-batch-parallel-run-harness-gaps gap 3: an unknown item_id _die()s
+    (exit 2) with ZERO mutation — parity with the other queue mutators."""
+    _guard()
+    import pytest as _pytest
+    feats = tmp_path / "docs" / "features"
+    feats.mkdir(parents=True)
+    qp = feats / "queue.json"
+    qp.write_text(json.dumps({"queue": [
+        {"id": "f-a", "name": "f-a", "spec_dir": "f-a", "tier": 0},
+    ]}, indent=2) + "\n", encoding="utf-8")
+    before = qp.read_bytes()
+    with _pytest.raises(SystemExit):
+        lazy_core.set_independent_marker(qp, "nope", True, queue_label="queue.json")
+    assert qp.read_bytes() == before
+
+
 def test_mutate_queue_deps_cycle_and_self_dep_refused(tmp_path):
     """A post-mutation cycle, or a self-dep, _die()s (exit 2) with ZERO
     mutation — the queue graph is never left in a bricked state."""

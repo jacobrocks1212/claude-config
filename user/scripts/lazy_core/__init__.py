@@ -405,6 +405,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "RUN_CONTINUITY_FIELDS": "markers",
     "RUN_FRESH_FIELDS": "markers",
     "SANCTIONED_STOP_TERMINAL": "markers",
+    "SANCTIONED_LANE_PARK_TERMINAL": "markers",
     "_CHECKPOINT_FILENAME": "markers",
     "_CYCLE_MARKER_FILENAME": "markers",
     "_EXECUTE_PLAN_BOOKEND_COMMITS": "markers",
@@ -495,6 +496,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "reposition_by_priority": "depdag",
     "set_queue_priority": "depdag",
     "mutate_queue_deps": "depdag",
+    "set_independent_marker": "depdag",
     "skip_ahead_ready": "depdag",
     # Phase 5 WU-3: receipt writers, validation escalation, archive-on-fix, gate-coverage plane.
     "VALIDATION_ESCALATION_SUFFIX": "gates",

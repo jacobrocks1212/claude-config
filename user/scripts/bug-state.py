@@ -8495,6 +8495,20 @@ def main() -> int:
         if reason not in ("terminal", "checkpoint"):
             _die("--run-end --reason must be 'terminal' or 'checkpoint'")
 
+        # lazy-batch-parallel-run-harness-gaps gaps 4+5 (coupled-pair mirror of
+        # lazy-state.py): a LANE marker carries a non-null `parent_run` — a
+        # coordinator-authorized child retirement, not a top-level run boundary. It
+        # does NOT owe the efficacy/canary/incident trio (gap 5; the parent owes it
+        # once at flush) and may retire on a park-class terminal without
+        # --operator-authorized (gap 4). Parallel mode is feature-only v1, so a bug
+        # lane marker does not occur in practice today; the mirror keeps the coupled
+        # pair from drifting and is correct for any future bug-parallel. Read the
+        # marker RAW (non-deleting) once here.
+        _re_marker = lazy_core.read_run_marker()
+        _is_lane_marker = bool(
+            isinstance(_re_marker, dict) and _re_marker.get("parent_run")
+        )
+
         # WU-7.1: refuse to retire the marker while unacked guard denials remain,
         # unless --ack-unhardened was passed (the override is recorded for retros).
         # INDEPENDENT of the Phase 7 stop-authorization gate below.
@@ -8548,7 +8562,11 @@ def main() -> int:
         # checkpoint run-ends too. The check reads the marker RAW (non-deleting).
         # -----------------------------------------------------------------------
         efficacy_skip_note = None
-        if not lazy_core.efficacy_breadcrumb_present():
+        if _is_lane_marker:
+            # gap 5 (coupled-pair mirror): a lane child never owes the trio — the
+            # parent coordinator flushes it once. Skip keeps lane retirement clean.
+            pass
+        elif not lazy_core.efficacy_breadcrumb_present():
             if not args.efficacy_skip_authorized:
                 sys.stdout.write(json.dumps({
                     "run_marker_deleted": False,
@@ -8635,7 +8653,14 @@ def main() -> int:
         elif reason == "terminal":
             terminal_reason = getattr(args, "terminal_reason", None)
             if terminal_reason is not None:
+                # gap 4 (coupled-pair mirror): a lane marker (parent_run set) may
+                # retire on a park-class terminal without --operator-authorized.
+                _lane_sanctioned = (
+                    _is_lane_marker
+                    and terminal_reason in lazy_core.SANCTIONED_LANE_PARK_TERMINAL
+                )
                 if (terminal_reason not in lazy_core.SANCTIONED_STOP_TERMINAL
+                        and not _lane_sanctioned
                         and not args.operator_authorized):
                     sys.stdout.write(json.dumps({
                         "run_marker_deleted": False,
@@ -9350,8 +9375,19 @@ def main() -> int:
         # the bug this probe would emit for (a higher-priority item — bug or
         # feature — jumped the merged head mid-bug-run). Marker-gated +
         # fail-safe. Reuses the SAME next_merged ordering.
+        #
+        # lazy-batch-parallel-run-harness-gaps gap 1 (coupled-pair mirror of
+        # lazy-state.py): EXEMPT the lane probe form. A lane marker carries a
+        # non-null `parent_run`; the coordinator's claim_shardable already applied
+        # the queue arbitration when it assigned the lane its item, so the serial
+        # merged-head guard's premise is void and must not withhold. Parallel mode
+        # is feature-only v1 (no bug lanes today) — the mirror keeps the pair from
+        # drifting and is correct for any future bug-parallel.
+        _emit_is_lane = bool(
+            isinstance(_emit_marker, dict) and _emit_marker.get("parent_run")
+        )
         _merged_override = None
-        if _emit_marker is not None:
+        if _emit_marker is not None and not _emit_is_lane:
             try:
                 _mo_repo = Path(args.repo_root)
                 _mo_feats = _load_feature_queue_for_merged(_mo_repo)
@@ -9422,6 +9458,15 @@ def main() -> int:
                         state["diagnostics"].append(_diag_line)
             except Exception:  # noqa: BLE001 — divergence probe must never break the base probe
                 _merged_override = None
+        elif _emit_is_lane:
+            # gap 1 observability (coupled-pair mirror): merged-head divergence
+            # guard SKIPPED — coordinator-authorized lane probe (parent_run set).
+            if isinstance(state.get("diagnostics"), list):
+                state["diagnostics"].append(
+                    "merged-head: skipped divergence guard — lane probe "
+                    "(parent_run set); lane arbitration is coordinator-owned "
+                    "(claim_shardable)."
+                )
         if _emit_marker is not None and _emit_debt > 0:
             # Withhold: no cycle_prompt, no cycle_model, no registration.
             _oldest = lazy_core.oldest_unacked_deny()

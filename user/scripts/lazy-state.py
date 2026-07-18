@@ -11599,6 +11599,15 @@ def build_parser() -> argparse.ArgumentParser:
                               "comma-separated list of those (a multi-enum feature — "
                               "merged priority is the MIN). "
                               "refuse_if_cycle_active (exit 3 for a cycle subagent)."))
+    parser.add_argument("--set-independent", dest="set_independent", nargs=2,
+                        metavar=("ID", "VALUE"), default=None,
+                        help=("Orchestrator-only, --operator-authorized: set (or CLEAR) "
+                              "feature ID's `independent: true` shard-eligibility marker "
+                              "(the /lazy-batch-parallel claim_shardable gate) — the "
+                              "sanctioned replacement for hand-editing queue.json. VALUE is "
+                              "true|false (false REMOVES the key, the byte-clean not-"
+                              "independent state). Does NOT reposition (independent is an "
+                              "isolation marker, not priority). refuse_if_cycle_active FIRST."))
     parser.add_argument("--add-deps", dest="add_deps", metavar="ID", default=None,
                         help=("Orchestrator-only, --operator-authorized: add the --deps "
                               "id list as hard queue dependencies on feature ID (post-hoc, "
@@ -12722,6 +12731,19 @@ def main() -> int:
         if reason not in ("terminal", "checkpoint"):
             _die("--run-end --reason must be 'terminal' or 'checkpoint'")
 
+        # lazy-batch-parallel-run-harness-gaps gaps 4+5: a /lazy-batch-parallel
+        # LANE marker carries a non-null `parent_run` (the coordinator's identity).
+        # A lane is a coordinator-authorized CHILD retirement, not a top-level run
+        # boundary — so (gap 5) it does NOT owe the efficacy/canary/incident trio
+        # (the PARENT owes it once at the coordinator flush, SKILL Step 6.3), and
+        # (gap 4) it may retire on a park-class terminal without
+        # --operator-authorized (SKILL P6 park is the parallel mode's defining
+        # failure isolation). Read the marker RAW (non-deleting) once here.
+        _re_marker = lazy_core.read_run_marker()
+        _is_lane_marker = bool(
+            isinstance(_re_marker, dict) and _re_marker.get("parent_run")
+        )
+
         # WU-7.1: refuse to retire the marker while unacked guard denials remain,
         # unless --ack-unhardened was passed (the override is recorded for retros).
         # This gate is INDEPENDENT of the Phase 7 stop-authorization gate below —
@@ -12778,7 +12800,12 @@ def main() -> int:
         # perturbs the idempotent teardown below.
         # -----------------------------------------------------------------------
         efficacy_skip_note = None
-        if not lazy_core.efficacy_breadcrumb_present():
+        if _is_lane_marker:
+            # gap 5: a lane child never owes the trio — the parent coordinator
+            # flushes it once at Step 6.3. Skipping keeps lane retirement clean
+            # (a lane cannot run the trio; it retires before the serial tail).
+            pass
+        elif not lazy_core.efficacy_breadcrumb_present():
             if not args.efficacy_skip_authorized:
                 sys.stdout.write(json.dumps({
                     "run_marker_deleted": False,
@@ -12888,7 +12915,18 @@ def main() -> int:
             # is allowed but adds a deprecation note (the caller should migrate).
             terminal_reason = getattr(args, "terminal_reason", None)
             if terminal_reason is not None:
+                # gap 4: a lane marker (parent_run set) may retire on a park-class
+                # terminal (SKILL P6 park / budget-deferred) WITHOUT
+                # --operator-authorized — the coordinator authorized the lane, and
+                # park-on-sentinel is the parallel mode's defining failure
+                # isolation. Serial runs (not a lane marker) are unaffected: the
+                # lane set is consulted only when _is_lane_marker holds.
+                _lane_sanctioned = (
+                    _is_lane_marker
+                    and terminal_reason in lazy_core.SANCTIONED_LANE_PARK_TERMINAL
+                )
                 if (terminal_reason not in lazy_core.SANCTIONED_STOP_TERMINAL
+                        and not _lane_sanctioned
                         and not args.operator_authorized):
                     # REFUSE: non-sanctioned reason without authorization.
                     # Marker LEFT IN PLACE.
@@ -13414,6 +13452,28 @@ def main() -> int:
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 
+    if args.set_independent is not None:
+        # no-sanctioned-cli-for-queue-state-mutations /
+        # lazy-batch-parallel-run-harness-gaps gap 3: operator-directed in-place
+        # independent-marker change (the sanctioned replacement for hand-editing
+        # queue.json's shard-eligibility marker). Refuse FIRST (exit 3, zero side
+        # effects for a cycle subagent — the --set-tier contract), then require
+        # --operator-authorized. VALUE is true|false; false CLEARS the marker.
+        lazy_core.refuse_if_cycle_active("--set-independent")
+        if not args.operator_authorized:
+            _die("--set-independent requires --operator-authorized (the operator must "
+                 "have approved the shard-eligibility change).")
+        _id, _raw = args.set_independent
+        _norm = _raw.strip().lower()
+        if _norm not in ("true", "false"):
+            _die(f"--set-independent VALUE must be 'true' or 'false', got {_raw!r}.")
+        result = lazy_core.set_independent_marker(
+            Path(args.repo_root) / "docs" / "features" / "queue.json",
+            _id, _norm == "true", queue_label="queue.json",
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
     if args.add_deps or args.remove_deps:
         # no-sanctioned-cli-for-queue-state-mutations: post-hoc arbitrary deps
         # edit (the non-SPEC sibling of --sync-deps). Refuse FIRST + require
@@ -13748,8 +13808,23 @@ def main() -> int:
         # Marker-gated + fail-safe (any error → None → emit normally; never a
         # spurious withhold). Reuses the SAME next_merged ordering the
         # --next-merged surface uses — never a second ordering rule.
+        #
+        # lazy-batch-parallel-run-harness-gaps gap 1: EXEMPT the lane probe form.
+        # A /lazy-batch-parallel lane marker carries a non-null `parent_run`; the
+        # coordinator's claim_shardable ALREADY applied the queue-order +
+        # independent:true + lease arbitration when it assigned this lane its
+        # --feature-id. The merged-head guard's serial premise ("only one item is
+        # active and it must be the global head") is void by design in a parallel
+        # run — every lane whose item is not the global head would otherwise
+        # withhold forever (observed live: lanes wt-01/wt-02 stalled behind the
+        # serial-held head hydra-overlay, which — being unsharded — holds no lease,
+        # so lease-exclusion alone would not have cleared it). Lane arbitration is
+        # coordinator-owned, not a per-lane-probe concern.
+        _emit_is_lane = bool(
+            isinstance(_emit_marker, dict) and _emit_marker.get("parent_run")
+        )
         _merged_override = None
-        if _emit_marker is not None:
+        if _emit_marker is not None and not _emit_is_lane:
             try:
                 _mo_repo = Path(args.repo_root)
                 _mo_feats = load_queue(_mo_repo)
@@ -13814,6 +13889,16 @@ def main() -> int:
                         state["diagnostics"].append(_diag_line)
             except Exception:  # noqa: BLE001 — divergence probe must never break the base probe
                 _merged_override = None
+        elif _emit_is_lane:
+            # gap 1 observability: record that the merged-head divergence guard was
+            # SKIPPED because this is a coordinator-authorized lane probe (never
+            # withheld — lane arbitration is claim_shardable's job).
+            if isinstance(state.get("diagnostics"), list):
+                state["diagnostics"].append(
+                    "merged-head: skipped divergence guard — lane probe "
+                    "(parent_run set); lane arbitration is coordinator-owned "
+                    "(claim_shardable)."
+                )
         if _emit_marker is not None and _emit_debt > 0:
             # Withhold: no cycle_prompt, no cycle_model, no registration.
             _oldest = lazy_core.oldest_unacked_deny()
