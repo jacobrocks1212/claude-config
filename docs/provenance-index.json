@@ -240,6 +240,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-bug-pickup-routes-superseded-specs",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "adhoc-checkpoint-resume-field-complete-continuity",
       "type": "bug",
       "provenance": "backfilled"
@@ -450,6 +455,27 @@
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/adhoc-bug-pickup-routes-superseded-specs/ADHOC_BRIEF.md": [
+    {
+      "id": "adhoc-bug-pickup-routes-superseded-specs",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/adhoc-bug-pickup-routes-superseded-specs/FIXED.md": [
+    {
+      "id": "adhoc-bug-pickup-routes-superseded-specs",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/adhoc-bug-pickup-routes-superseded-specs/SPEC.md": [
+    {
+      "id": "adhoc-bug-pickup-routes-superseded-specs",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/adhoc-checkpoint-resume-field-complete-continuity/ADHOC_BRIEF.md": [
@@ -4504,6 +4530,11 @@
   ],
   "docs/bugs/block-terminal-kill-matches-separators-inside-quoted-args/DEFERRED.md": [
     {
+      "id": "adhoc-bug-pickup-routes-superseded-specs",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
@@ -7834,6 +7865,11 @@
     }
   ],
   "docs/bugs/queue.json": [
+    {
+      "id": "adhoc-bug-pickup-routes-superseded-specs",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "adhoc-checkpoint-resume-field-complete-continuity",
       "type": "bug",
@@ -15667,6 +15703,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/interventions/harden-2026-07-r97.md": [
+    {
+      "id": "adhoc-bug-pickup-routes-superseded-specs",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/hardening-intervention-records-unmeasurable-or-missing.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -16328,6 +16371,11 @@
       "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "adhoc-bug-pickup-routes-superseded-specs",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker",
