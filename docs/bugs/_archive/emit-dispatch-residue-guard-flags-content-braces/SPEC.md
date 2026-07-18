@@ -1,7 +1,9 @@
 # Bug: emit_dispatch_prompt residue guard flags literal braces inside injected context VALUES
 
-**Status:** Concluded
+**Status:** Fixed
 **Discovered:** 2026-07-17 — observed mid-run on a live `/lazy-batch` run (item in flight: `hydra-overlay`)
+**Fixed:** 2026-07-18
+**Fix commit:** ca8ca8b1
 **Root-cause class:** script-defect
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage); hardening-log Round 31 (2026-07)
 
