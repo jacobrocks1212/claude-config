@@ -21,8 +21,8 @@
 
 | # | item | state | sev | aging |
 |---|------|-------|------|------|
-| 1 | [adhoc-audit-obligation-fires-on-zero-commit-failed-cycle](docs/bugs/adhoc-audit-obligation-fires-on-zero-commit-failed-cycle/SPEC.md) | Spec | — |  |
-| | status: Spec · next: spec | | | |
+| 1 | [adhoc-audit-obligation-fires-on-zero-commit-failed-cycle](docs/bugs/adhoc-audit-obligation-fires-on-zero-commit-failed-cycle/SPEC.md) | Implement | — | 2026-07-18 |
+| | status: Implement · phase 0/2 · next: execute plan · A `/spec`-kind cycle that fails with zero commits still arms the §1d.5 input-audit obligation; the pre-composed emit command then binds `cycle_commit_sha=HEAD~1`, which points at the PREVIOUS (unrelated) item's commit — dispatching a pointless ~77k-token audit against the wrong diff. | | | |
 | 2 | [adhoc-parity-audit-blind-to-compute-state-routing-branches](docs/bugs/adhoc-parity-audit-blind-to-compute-state-routing-branches/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
 | 3 | [adhoc-bug-pickup-routes-superseded-specs](docs/bugs/adhoc-bug-pickup-routes-superseded-specs/SPEC.md) | Spec | — |  |
