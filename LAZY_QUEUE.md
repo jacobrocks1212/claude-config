@@ -1,4 +1,4 @@
-# Lazy Queue — claude-config   (run active 🔒)
+# Lazy Queue — .   (run active 🔒)
 
 ## Features (4)
 
@@ -13,7 +13,7 @@
 | 4 | [native-android-pipeline-steering](docs/features/native-android-pipeline-steering/SPEC.md) | Research | T3 |
 | | status: Research · next: research · A real mobile client on the `mobile-queue-control` foundation: browse every lazy-enabled repo's queues, drill into SPECs and halt sentinels, and — the point — **write back** from the phone: answer `NEEDS_INPUT.md` decisions, resolve `BLOCKED.md` halts, and reorder/enqueue the queue. | | |
 
-## Bugs (17)
+## Bugs (16)
 
 | # | item | state | sev | aging |
 |---|------|-------|------|------|
@@ -31,25 +31,23 @@
 | | status: Spec · next: spec | | | |
 | 7 | [adhoc-parity-audit-blind-to-compute-state-routing-branches](docs/bugs/adhoc-parity-audit-blind-to-compute-state-routing-branches/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 8 | [adhoc-bug-pickup-routes-superseded-specs](docs/bugs/_archive/adhoc-bug-pickup-routes-superseded-specs/SPEC.md) | Spec | — |  |
+| 8 | [adhoc-plan-bug-no-guard-for-fixed-annotated-specs](docs/bugs/adhoc-plan-bug-no-guard-for-fixed-annotated-specs/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 9 | [adhoc-plan-bug-no-guard-for-fixed-annotated-specs](docs/bugs/adhoc-plan-bug-no-guard-for-fixed-annotated-specs/SPEC.md) | Spec | — |  |
+| 9 | [adhoc-cli-surface-registry-stale-set-independent](docs/bugs/adhoc-cli-surface-registry-stale-set-independent/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 10 | [adhoc-cli-surface-registry-stale-set-independent](docs/bugs/adhoc-cli-surface-registry-stale-set-independent/SPEC.md) | Spec | — |  |
+| 10 | [adhoc-containment-hook-e2big-fails-open-windows-native](docs/bugs/adhoc-containment-hook-e2big-fails-open-windows-native/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 11 | [adhoc-containment-hook-e2big-fails-open-windows-native](docs/bugs/adhoc-containment-hook-e2big-fails-open-windows-native/SPEC.md) | Spec | — |  |
+| 11 | [canary-revert-harden-2026-07-r64](docs/bugs/canary-revert-harden-2026-07-r64/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 12 | [canary-revert-harden-2026-07-r64](docs/bugs/canary-revert-harden-2026-07-r64/SPEC.md) | Spec | — |  |
+| 12 | [canary-revert-harden-2026-07-r44](docs/bugs/canary-revert-harden-2026-07-r44/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 13 | [canary-revert-harden-2026-07-r44](docs/bugs/canary-revert-harden-2026-07-r44/SPEC.md) | Spec | — |  |
+| 13 | [canary-revert-harden-2026-07-r32](docs/bugs/canary-revert-harden-2026-07-r32/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 14 | [canary-revert-harden-2026-07-r32](docs/bugs/canary-revert-harden-2026-07-r32/SPEC.md) | Spec | — |  |
+| 14 | [canary-revert-harden-2026-07-r31](docs/bugs/canary-revert-harden-2026-07-r31/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 15 | [canary-revert-harden-2026-07-r31](docs/bugs/canary-revert-harden-2026-07-r31/SPEC.md) | Spec | — |  |
+| 15 | [adhoc-incident-hook-deny-19343d-r3](docs/bugs/adhoc-incident-hook-deny-19343d-r3/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 16 | [adhoc-incident-hook-deny-19343d-r3](docs/bugs/adhoc-incident-hook-deny-19343d-r3/SPEC.md) | Spec | — |  |
-| | status: Spec · next: spec | | | |
-| 17 | [build-queue-timeout-kill-reaps-detached-runner](docs/bugs/build-queue-timeout-kill-reaps-detached-runner/SPEC.md) | Plan | — | 2026-07-10 |
+| 16 | [build-queue-timeout-kill-reaps-detached-runner](docs/bugs/build-queue-timeout-kill-reaps-detached-runner/SPEC.md) | Plan | — | 2026-07-10 |
 | | status: Plan · next: plan · A foreground `build-queue.ps1` call that hits its Bash-tool timeout is tree-killed (exit 143), and the kill takes the supposedly-detached runner with it. | | | |
 
 ## Needs attention
