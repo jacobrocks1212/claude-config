@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress — all three phases implemented (2026-07-18); validation tail pending (gate-owned `__mark_fixed__`).
+**Status:** Fixed
 
 **MCP runtime:** not-required — the fix is deterministic TypeScript CLI tooling in the `cognito-pr-review` plugin (`scripts/*.ts` run via `npx tsx`, verified by `node:test` fixtures) plus a markdown command-doc schema change. No Tauri desktop / MCP HTTP surface exists to exercise; this is the "build tooling / standalone script" untestable class per `docs/features/mcp-testing/SPEC.md`. Verification is by runnable `node --test` fixture assertions, not MCP.
 

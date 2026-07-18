@@ -2,7 +2,7 @@
 
 > On re-reviews, `/cognito-pr-review:review-pr` produces an iteration-diff that omits genuinely-changed files (and includes unrelated merge churn) and lifespan counters that are numerically absurd — both forcing downstream agents/humans to distrust and manually compensate for the re-review metadata.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-13
 **Placement:** docs/bugs/pr-review-rereview-low-fidelity-metadata

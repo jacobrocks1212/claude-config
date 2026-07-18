@@ -330,6 +330,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "pr-review-rereview-low-fidelity-metadata",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "research-prompt-leaks-identity-doc-meta",
       "type": "bug",
       "provenance": "backfilled"
@@ -7547,11 +7552,25 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/pr-review-rereview-low-fidelity-metadata/PHASES.md": [
+    {
+      "id": "pr-review-rereview-low-fidelity-metadata",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/pr-review-rereview-low-fidelity-metadata/SPEC.md": [
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/bugs/pr-review-rereview-low-fidelity-metadata/plans/all-phases-rereview-metadata.md": [
+    {
+      "id": "pr-review-rereview-low-fidelity-metadata",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/probe-full-read-before-dispatch/PHASES.md": [
@@ -17136,6 +17155,83 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "user/plugins/local-tools/plugins/cognito-pr-review/commands/review-pr.md": [
+    {
+      "id": "pr-review-rereview-low-fidelity-metadata",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/plugins/local-tools/plugins/cognito-pr-review/scripts/post-process.test.ts": [
+    {
+      "id": "pr-review-rereview-low-fidelity-metadata",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/plugins/local-tools/plugins/cognito-pr-review/scripts/post-process.ts": [
+    {
+      "id": "pr-review-rereview-low-fidelity-metadata",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/plugins/local-tools/plugins/cognito-pr-review/scripts/prep-pr.test.ts": [
+    {
+      "id": "pr-review-rereview-low-fidelity-metadata",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/plugins/local-tools/plugins/cognito-pr-review/scripts/prep-pr.ts": [
+    {
+      "id": "pr-review-rereview-low-fidelity-metadata",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/plugins/local-tools/plugins/cognito-pr-review/scripts/test-fixtures/phase1-manifest-iter.json": [
+    {
+      "id": "pr-review-rereview-low-fidelity-metadata",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/plugins/local-tools/plugins/cognito-pr-review/scripts/test-fixtures/phase1-previous-review.md": [
+    {
+      "id": "pr-review-rereview-low-fidelity-metadata",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/plugins/local-tools/plugins/cognito-pr-review/scripts/test-fixtures/rereview-legacy/PR-102-journey.md": [
+    {
+      "id": "pr-review-rereview-low-fidelity-metadata",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/plugins/local-tools/plugins/cognito-pr-review/scripts/test-fixtures/rereview-legacy/REVIEWED.md": [
+    {
+      "id": "pr-review-rereview-low-fidelity-metadata",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/plugins/local-tools/plugins/cognito-pr-review/scripts/test-fixtures/rereview-with-sha/PR-101-journey.md": [
+    {
+      "id": "pr-review-rereview-low-fidelity-metadata",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/plugins/local-tools/plugins/cognito-pr-review/scripts/test-fixtures/rereview-with-sha/REVIEWED.md": [
+    {
+      "id": "pr-review-rereview-low-fidelity-metadata",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/CLAUDE.md": [
