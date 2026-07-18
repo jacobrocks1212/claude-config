@@ -1672,16 +1672,38 @@ def compute_state(
     # already dispatched spec-bug above.  If PHASES.md exists but no plan → write-plan.)
     if unchecked > 0:
         plans = find_implementation_plans(spec_dir)
-        if not plans and _has_any_complete_plan(spec_dir) and \
-                remaining_unchecked_are_verification_only(phases_text):
-            # All implementation plans are Complete; remaining PHASES.md
-            # unchecked rows are verification-only (e.g. per-phase Runtime
-            # Verification / MCP-assertion subsections ticked at MCP test
-            # time).  Fall through to Step 8 (retro) → Step 9 (/mcp-test),
-            # which is the dispatch that actually ticks them.  Without this
-            # carve-out the script loops: find_implementation_plans filters
-            # out Complete plans → plans is empty → write-plan dispatched
-            # forever.  Mirrors the identical bypass in lazy-state.py.
+        verification_only = remaining_unchecked_are_verification_only(phases_text)
+        # Step 7 bypass — fall through to the Step 9 MCP gate instead of
+        # write-plan/execute-plan. Byte-faithful mirror of lazy-state.py's
+        # two-discriminator gate (the mcp-testing deadlock fix, 2026-06-15):
+        #
+        # Cloud: bypass when implementation is provably done (>=1 Complete plan
+        # on disk) — cloud can't tick ANY workstation row regardless of whether
+        # it's a verification or implementation row, so the verification-only
+        # predicate can't serve as the "impl done" proxy; we need the explicit
+        # Complete-plan receipt.
+        #
+        # Workstation: bypass when the unchecked remainder is ENTIRELY
+        # verification-only rows — and crucially WITHOUT requiring a Complete
+        # plan on disk. A verification-only remainder is itself proof that no
+        # implementation work remains (write-plan is banned, Step 1c.5, from
+        # emitting a verification-only re-run-/mcp-test WU), so there is nothing
+        # for write-plan to plan. Requiring _has_any_complete_plan here was the
+        # write-plan routing loop (harden Round 93): a bug whose fix landed
+        # OUT-OF-PIPELINE (PHASES impl rows [x], NO plans/ dir) with a sole
+        # verification-only unchecked row has _has_any_complete_plan False, so
+        # control fell to `elif not plans` -> write-plan, which /write-plan
+        # Step 1c.5 refuses (verification-only rows are not plannable WUs) ->
+        # identical state -> infinite write-plan loop. Any bug implemented
+        # without a plans/ receipt whose only remaining unchecked rows are
+        # verification-only could never reach the Step-9 MCP gate. This
+        # parity-completes the feature-side fix that bug-state.py's prior
+        # comment CLAIMED to mirror but did not (it mirrored the pre-fix
+        # combined form). The legacy Complete-plan-exists case is preserved —
+        # it is a subset of verification_only True.
+        cloud_bypass = cloud and not plans and _has_any_complete_plan(spec_dir)
+        workstation_bypass = not cloud and not plans and verification_only
+        if cloud_bypass or workstation_bypass:
             pass
         elif not plans:
             return _bug_state(
@@ -2825,6 +2847,42 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             "- [x] Add regression test\n",
             encoding="utf-8",
         )
+
+    elif name == "verification-only-remainder-no-plan":
+        # Regression (bug-state-verification-only-remainder-loops-write-plan,
+        # harden Round 93): all IMPLEMENTATION deliverables [x] (fix landed
+        # OUT-OF-PIPELINE, so there is NO plans/ dir), and the SOLE unchecked
+        # row is verification-only (owned by the Step-9 validation tail). The
+        # Step-7 predicate must NOT route write-plan here — /write-plan Step 1c.5
+        # excludes verification-only rows so it can author zero WUs and the probe
+        # loops forever. Expected: the workstation verification-only bypass fires
+        # (no _has_any_complete_plan required) -> fall through to Step 9 mcp-test.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-vonp", "name": "Verification-Only Remainder No Plan",
+                 "spec_dir": "bug-vonp"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-vonp"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Verification-Only Remainder No Plan\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-07-18\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n"
+            "\n"
+            "**Runtime Verification** *(checked by the validation tail):*\n"
+            "- [ ] <!-- verification-only --> Serving-path regression test passes.\n",
+            encoding="utf-8",
+        )
+        # Deliberately NO plans/ dir — the fix landed out-of-pipeline.
 
     elif name == "phases-complete-no-mcp-surface":
         # All PHASES checked; PHASES declares `**MCP runtime:** not-required` and
@@ -4429,6 +4487,20 @@ def run_smoke_tests() -> int:
             "phases-complete-no-retro", False, True,
             {
                 "feature_id": "bug-pcnr",
+                "sub_skill": SKILL_MCP_TEST,
+                "current_step": STEP_MCP,
+            },
+        ),
+        # 4a. Verification-only remainder + NO plan (harden Round 93 regression,
+        # bug-state-verification-only-remainder-loops-write-plan): all impl rows
+        # [x], sole unchecked row is <!-- verification-only -->, no plans/ dir.
+        # Must route PAST write-plan to Step 9 mcp-test (the workstation
+        # verification-only bypass, no _has_any_complete_plan required) — NOT
+        # loop write-plan forever.
+        (
+            "verification-only-remainder-no-plan", False, True,
+            {
+                "feature_id": "bug-vonp",
                 "sub_skill": SKILL_MCP_TEST,
                 "current_step": STEP_MCP,
             },

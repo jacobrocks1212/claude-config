@@ -8,6 +8,7 @@
   PASS [plan-structural-backstop-mid-execution-warns] cloud=False real_device=True: Step 7a: execute plan
   PASS [bug-stale-plan-flips] cloud=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)
   PASS [phases-complete-no-retro] cloud=False real_device=True: Step 9: run MCP tests
+  PASS [verification-only-remainder-no-plan] cloud=False real_device=True: Step 9: run MCP tests
   PASS [phases-complete-no-mcp-surface] cloud=False real_device=True: Step 9: structural MCP-skip (no app surface)
   PASS [retro-done-needs-mcp] cloud=False real_device=True: Step 9: run MCP tests
   PASS [ready-to-mark-fixed] cloud=False real_device=True: Step 10: mark fixed
