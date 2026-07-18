@@ -55,3 +55,25 @@ Any SPEC for a feature touching **pattern/visual evaluation, a public AGPL sidec
 - **(d)** Does it introduce a new AGPL dependency (e.g. `hydra-synth`) or any server-side execution of a sidecar's AGPL library (Strudel, hydra, …)? → manifest entry first.
 
 Features with no contact with pattern/visual evaluation, a public AGPL sidecar, or IPC may omit the section. Downstream gates enforce this: `/spec-phases`' AGPL / IP Placement audit refuses to draft phases against a touching SPEC that lacks the section, and the planning/fix touchpoint gate refuses unjustified new files under any public AGPL sidecar (`strudel-sidecar/`, `hydra-sidecar/`).
+
+## Runtime-Proof Spikes (when behavior rests on an unproven runtime fact)
+
+When a SPEC's design rests on a runtime fact that is not yet PROVEN — a sustained
+measurement (fps/latency/throughput), a GO/NO-GO architectural fork whose choice depends on
+real runtime cost, or a confirm/deny of how the running system actually behaves — do NOT bake
+the assumption into the design silently. Note in the SPEC that a **Spike** (the pipeline's
+runtime-proof stage) will prove it at runtime, and document the two courses the proof selects
+between:
+
+- **On PASS** — the prescribed baseline design proceeds (name it).
+- **On FAIL / NO-GO** — the prescribed fallback (name it); the Spike halts with a
+  `NEEDS_INPUT.md` presenting exactly this fork, and is NEVER auto-accepted.
+
+A Spike verdict MUST be backed by REAL observed evidence (a measured number, a test result, an
+`/investigate` ledger) — NEVER an inferred or fabricated value, NEVER a static-trace substitute
+for the real measurement. Spike is the general "prove it at runtime, honestly" role; a
+behavior-confirmation spike may use `/investigate`. See
+`docs/specs/spike-pipeline-role/SPEC.md` (originating incident:
+`docs/features/visuals/hydra-overlay/SPIKE_PROJECTOR_FPS.md`, where a missing runtime-proof
+stage dead-ended into a manual block). `/spec-phases` turns this into a `**Spike:** required`
+phase declaration.

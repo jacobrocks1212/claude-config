@@ -3782,9 +3782,10 @@ def test_hardening_dispatch_class_present():
     emit_dispatch_prompt('hardening', ...) does NOT raise ValueError.
 
     The tuple length grew from 7 (Phase 4) to 9 when harden Round 44 (2026-06-29)
-    appended 'corrective-coverage' + 'ingest-research' BEFORE 'hardening' (so the
-    last-entry invariant is preserved). The exact count is asserted to catch an
-    accidental class drop; bump it deliberately when adding a class.
+    appended 'corrective-coverage' + 'ingest-research' BEFORE 'hardening', and to
+    10 when harden Round 80 (2026-07-17) appended 'spike' BEFORE 'hardening' (so
+    the last-entry invariant is preserved). The exact count is asserted to catch
+    an accidental class drop; bump it deliberately when adding a class.
 
     RED reasons:
       - DISPATCH_MODELS['hardening'] absent → KeyError.
@@ -3809,9 +3810,9 @@ def test_hardening_dispatch_class_present():
     assert isinstance(classes, tuple), (
         f"DISPATCH_CLASSES must be a tuple, got {type(classes).__name__}"
     )
-    assert len(classes) == 9, (
-        f"DISPATCH_CLASSES must have 9 entries (7 Phase-4 + Round-44 "
-        f"'corrective-coverage' + 'ingest-research'); "
+    assert len(classes) == 10, (
+        f"DISPATCH_CLASSES must have 10 entries (7 Phase-4 + Round-44 "
+        f"'corrective-coverage' + 'ingest-research' + Round-80 'spike'); "
         f"got {len(classes)}: {classes}"
     )
 
@@ -4032,6 +4033,103 @@ def test_hardening_template_binding():
             )
 
 
+
+
+def test_spike_dispatch_class_registered():
+    """harden Round 80: 'spike' is a registered dispatch class (Opus), inserted
+    BEFORE 'hardening' so the last-entry invariant is preserved, and
+    emit_dispatch_prompt('spike', ...) does NOT raise the unknown-class ValueError.
+    """
+    _guard()
+    classes = lazy_core.DISPATCH_CLASSES
+    assert "spike" in classes, f"'spike' must be in DISPATCH_CLASSES; got {classes}"
+    assert classes[-1] == "hardening", (
+        f"'hardening' must remain the LAST entry (spike inserted before it); "
+        f"got last={classes[-1]!r}"
+    )
+    assert classes.index("spike") < classes.index("hardening"), (
+        "'spike' must precede 'hardening' in DISPATCH_CLASSES"
+    )
+    assert lazy_core.DISPATCH_MODELS["spike"] == "opus", (
+        f"DISPATCH_MODELS['spike'] must be 'opus' (runtime-proof judgment); "
+        f"got {lazy_core.DISPATCH_MODELS.get('spike')!r}"
+    )
+    # Unknown-class ValueError must NOT fire for a registered class.
+    raised = False
+    try:
+        lazy_core.emit_dispatch_prompt(
+            "spike", {}, pipeline="feature", cloud=False,
+            template_dir=_REAL_TEMPLATE_DIR,
+        )
+    except ValueError:
+        raised = True
+    except Exception:
+        pass
+    assert not raised, "emit_dispatch_prompt('spike', ...) must not raise ValueError"
+
+
+def test_spike_template_binding():
+    """harden Round 80: the real dispatch-spike.md template exists, declares its
+    @requires keys, binds cleanly across feature/bug × workstation/cloud, emits an
+    Opus prompt with no unbound residue, and carries the load-bearing honesty +
+    orchestrator-owned-runtime prose.
+    """
+    _guard()
+    tpl_path = _REAL_TEMPLATE_DIR / "dispatch-spike.md"
+    assert tpl_path.exists(), (
+        f"dispatch-spike.md must exist at {tpl_path} "
+        f"(user/skills/_components/lazy-batch-prompts/)"
+    )
+    text = tpl_path.read_text(encoding="utf-8")
+    first_line = next((ln for ln in text.splitlines() if ln.strip()), "")
+    m = re.match(r"^<!-- @requires ([a-z0-9_,]+) -->$", first_line)
+    assert m, f"dispatch-spike.md line 1 must be a valid @requires decl; got {first_line!r}"
+    declared = frozenset(k.strip() for k in m.group(1).split(",") if k.strip())
+    expected = {"item_name", "spec_path", "spike_goal", "next_on_pass", "item_id", "cwd"}
+    assert expected <= declared, (
+        f"dispatch-spike.md @requires missing {sorted(expected - declared)}; "
+        f"declared: {sorted(declared)}"
+    )
+    context = {k: f"test-{k}" for k in declared}
+    for pipeline in ("feature", "bug"):
+        for cloud in (False, True):
+            ctx_label = f"pipeline={pipeline} cloud={cloud}"
+            result = lazy_core.emit_dispatch_prompt(
+                "spike", context, pipeline=pipeline, cloud=cloud,
+                template_dir=_REAL_TEMPLATE_DIR,
+            )
+            assert result.get("ok") is True, f"{ctx_label}: expected ok=True; got {result!r}"
+            prompt = result["prompt"]
+            residue = _TOKEN_RESIDUE_RE.findall(prompt)
+            assert not residue, f"{ctx_label}: unbound token residue {residue}"
+            assert result.get("model") == "opus", (
+                f"{ctx_label}: spike dispatch model must be 'opus'; got {result.get('model')!r}"
+            )
+            # Honesty invariant prose (all-mode section) — the anti-fabrication rule.
+            assert "fabricat" in prompt.lower(), (
+                f"{ctx_label}: spike prompt must carry the anti-fabrication honesty rule"
+            )
+            assert "PENDING" in prompt, (
+                f"{ctx_label}: spike prompt must offer the PENDING (no-fabricated-verdict) path"
+            )
+            # Tooling-existence loop must be described.
+            assert "tooling" in prompt.lower(), (
+                f"{ctx_label}: spike prompt must describe the tooling-existence check"
+            )
+    # Workstation-only section: orchestrator-owned runtime must appear for a
+    # workstation dispatch (and the cloud dispatch must instead defer).
+    ws = lazy_core.emit_dispatch_prompt(
+        "spike", context, pipeline="feature", cloud=False,
+        template_dir=_REAL_TEMPLATE_DIR,
+    )["prompt"]
+    assert "ORCHESTRATOR-OWNED" in ws, (
+        "workstation spike prompt must state the runtime is ORCHESTRATOR-OWNED"
+    )
+    cloud = lazy_core.emit_dispatch_prompt(
+        "spike", context, pipeline="feature", cloud=True,
+        template_dir=_REAL_TEMPLATE_DIR,
+    )["prompt"]
+    assert "CLOUD RUN" in cloud, "cloud spike prompt must carry the defer-to-workstation note"
 
 
 def test_hardening_skill_file_contract():
@@ -6408,6 +6506,8 @@ _TESTS = [
     ("test_run_end_success_emits_run_end_not_gate_refusal_bug", test_run_end_success_emits_run_end_not_gate_refusal_bug),
     ("test_standard_bindings_split_terminal_statuses", test_standard_bindings_split_terminal_statuses),
     ("test_apply_resolution_emits_terminal_disposition_close", test_apply_resolution_emits_terminal_disposition_close),
+    ("test_spike_dispatch_class_registered", test_spike_dispatch_class_registered),
+    ("test_spike_template_binding", test_spike_template_binding),
 ]
 
 

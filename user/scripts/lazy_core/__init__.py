@@ -64,6 +64,8 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "repo_has_no_app_surface": "docmodel",
     "repo_uses_cognito_planner": "docmodel",
     "phases_mcp_runtime_not_required": "docmodel",
+    "phases_spike_required": "docmodel",          # harden Round 80 — spike header parse
+    "_read_spike_decision": "docmodel",           # harden Round 80 — spike variant + goal
     "skip_waiver_refusal": "docmodel",
     "spec_status": "docmodel",
     "PROVISIONAL_SENTINEL": "docmodel",

@@ -3215,6 +3215,97 @@ def test_phases_mcp_runtime_not_required_false_when_required_or_absent():
 
 
 
+# --- harden Round 80 — Spike header parse + Spike-FAIL provisional carve-out ---
+
+
+def _write_spike_phases(spec: Path, line: str) -> None:
+    spec.mkdir(exist_ok=True)
+    (spec / "PHASES.md").write_text(
+        f"# Phases\n\n{line}\n\n### Phase 1\n- [ ] x\n", encoding="utf-8"
+    )
+
+
+def test_phases_spike_required_true():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec = Path(td) / "spec"
+        _write_spike_phases(spec, "**Spike:** required — measure sustained projector fps")
+        assert lazy_core.phases_spike_required(spec) is True
+
+
+def test_phases_spike_required_false_when_absent_or_prose_only():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # Absent line → False.
+        spec = Path(td) / "spec"
+        _write_spike_phases(spec, "### Notes")
+        assert lazy_core.phases_spike_required(spec) is False
+        # ANCHOR discipline: "required" only in REASON PROSE, not the value token → False.
+        spec2 = Path(td) / "spec2"
+        _write_spike_phases(spec2, "**Spike:** optional — no runtime proof required here")
+        assert lazy_core.phases_spike_required(spec2) is False
+        # Missing dir → False (never raises).
+        assert lazy_core.phases_spike_required(Path(td) / "nope") is False
+
+
+def test_read_spike_decision_required_value_token_and_goal():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec = Path(td) / "spec"
+        _write_spike_phases(spec, "**Spike:** required — prove 60fps at the representative pattern")
+        variant, goal = lazy_core._read_spike_decision(spec)
+        assert variant == "spike-required"
+        assert goal == "prove 60fps at the representative pattern"
+        # Non-required value / absent → ("no-spike", None).
+        spec2 = Path(td) / "spec2"
+        _write_spike_phases(spec2, "**Spike:** none")
+        assert lazy_core._read_spike_decision(spec2) == ("no-spike", None)
+        assert lazy_core._read_spike_decision(None) == ("no-spike", None)
+
+
+def _write_needs_input(path: Path, *, written_by: str, extra: str = "") -> None:
+    """Minimal NEEDS_INPUT.md whose frontmatter reaches the written_by/spike_verdict
+    exclusion checks in provisional_eligibility (kind + non-empty decisions present)."""
+    path.write_text(
+        "---\n"
+        "kind: needs-input\n"
+        "feature_id: feat-spike-test\n"
+        f"written_by: {written_by}\n"
+        "decisions:\n"
+        "  - pick an architecture on NO-GO\n"
+        f"{extra}"
+        "date: 2026-07-17\n"
+        "---\n\n"
+        "## Decision Context\n\n"
+        "### 1. pick an architecture on NO-GO\n\n"
+        "**Problem:** the proof failed.\n\n"
+        "**Options:**\n- **a** — x\n- **b** — y\n\n"
+        "**Recommendation:** a\n",
+        encoding="utf-8",
+    )
+
+
+def test_provisional_eligibility_excludes_spike_written_by():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "NEEDS_INPUT.md"
+        _write_needs_input(p, written_by="spike")
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is False
+        assert "spike" in reason.lower()
+
+
+def test_provisional_eligibility_excludes_spike_verdict_fail():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "NEEDS_INPUT.md"
+        # written_by not spike, but spike_verdict: fail → still excluded.
+        _write_needs_input(p, written_by="mcp-test", extra="spike_verdict: fail\n")
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is False
+        assert "spike" in reason.lower()
+
+
 def test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo():
     _guard()
     with tempfile.TemporaryDirectory() as td:
@@ -3651,6 +3742,11 @@ _TESTS = [
     ("test_repo_has_no_app_surface_false_with_src_tauri", test_repo_has_no_app_surface_false_with_src_tauri),
     ("test_phases_mcp_runtime_not_required_true", test_phases_mcp_runtime_not_required_true),
     ("test_phases_mcp_runtime_not_required_false_when_required_or_absent", test_phases_mcp_runtime_not_required_false_when_required_or_absent),
+    ("test_phases_spike_required_true", test_phases_spike_required_true),
+    ("test_phases_spike_required_false_when_absent_or_prose_only", test_phases_spike_required_false_when_absent_or_prose_only),
+    ("test_read_spike_decision_required_value_token_and_goal", test_read_spike_decision_required_value_token_and_goal),
+    ("test_provisional_eligibility_excludes_spike_written_by", test_provisional_eligibility_excludes_spike_written_by),
+    ("test_provisional_eligibility_excludes_spike_verdict_fail", test_provisional_eligibility_excludes_spike_verdict_fail),
     ("test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo", test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo),
     ("test_skip_waiver_refusal_pipeline_structural_refuses_app_repo", test_skip_waiver_refusal_pipeline_structural_refuses_app_repo),
     ("test_skip_waiver_refusal_pipeline_structural_refuses_without_repo_root", test_skip_waiver_refusal_pipeline_structural_refuses_without_repo_root),

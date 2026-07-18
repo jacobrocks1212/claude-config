@@ -74,3 +74,29 @@ For EACH old path the plan retires, grep the whole repo for literal-path loads �
 **Step B — Justify every sidecar-side deliverable.** Any phase deliverable that creates or grows a file under a public AGPL sidecar (`strudel-sidecar/`, `hydra-sidecar/`) must map to a sidecar-side piece the section's question (b) justifies (why it can't be host-side computation over data that already crosses the wire). An unjustified sidecar-side deliverable is a placement change — move it host-side into the proprietary app or route the placement question back to the SPEC; never draft it as-is.
 
 **Step C — Schedule the coupled legal artifacts.** A phase adding a new kind of payload to `audio_event.capnp` must carry `docs/legal/AGPL_ISOLATION.md` updated **in the same commit** as an explicit deliverable. A phase introducing a new AGPL dependency (e.g. `hydra-synth`) or any server-side execution of a sidecar's AGPL library (Strudel, hydra, …) must be preceded by a `docs/legal/AGPL_PUBLICATION_MANIFEST.md` entry deliverable (manifest entry first).
+
+---
+
+#### Prescribe a Spike instead of another blind corrective (harden Round 80; docs/specs/spike-pipeline-role)
+
+> **Why this gate exists.** `hydra-overlay` dead-ended into a manual block
+> (`blocker_kind: runtime-spike-verdict-pending`) because a runtime FPS measurement was needed to
+> choose a frame-delivery architecture and the pipeline had no stage to run the proof. Repeated
+> corrective phases against an unproven runtime-coupled assumption churn without ever proving it.
+
+When drafting a CORRECTIVE phase (`/add-phase`, or a corrective phase in `/spec-phases`), check
+whether the phase is the **second-or-later corrective against the SAME runtime-coupled
+assumption** (same seam/behavior a prior corrective already tried to fix). If so, do NOT draft
+another blind corrective — prescribe a **Spike** to definitively PROVE the assumption at runtime
+first. Give the corrective phase a `**Spike:** required — <what must be proven>` header (see
+`phases-runtime-verification.md`); the Spike proves GO/NO-GO with REAL observed evidence (a
+measurement, a test, or an `/investigate` ledger — never a fabricated value), and its verdict
+directs which corrective is actually warranted (PASS → the prescribed fix; FAIL → `NEEDS_INPUT.md`,
+never auto-accepted).
+
+**Tooling-existence loop.** A Spike FIRST ensures the tooling it needs exists (the same
+MCP tool-existence audit above). On a gap, the Spike routes BACK to this `/add-phase` corrective
+path to build the missing tooling (a corrective phase carrying a `**Spike:**` line so control
+RETURNS to the Spike once built) — exactly the "add corrective phase → build tooling → run the
+spike" loop hydra-overlay ran by hand. The loop is BOUNDED (a hard cap on tooling rounds) so it
+can never spin forever.

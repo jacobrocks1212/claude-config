@@ -227,6 +227,76 @@ def phases_mcp_runtime_not_required(spec_path: Path) -> bool:
     return bool(re.search(r"(?mi)^\*\*MCP runtime:\*\*\s*not-required\b", text))
 
 
+# harden Round 80 (docs/specs/spike-pipeline-role) — the ``**Spike:**`` PHASES
+# header parse primitive. Mirrors ``phases_mcp_runtime_not_required`` /
+# ``_read_mcp_runtime_decision`` exactly: an ANCHORED value-token match so a
+# ``**Spike:**`` line whose REASON PROSE mentions "required"/"not-required" as a
+# substring is not mis-classified. INERT until Phase 2 wires it into
+# ``compute_state`` — shipped now as the tested primitive routing will consume.
+def _read_spike_decision(spec_path: "Path | str | None") -> tuple[str, str | None]:
+    """Decide the spike routing variant + proof goal from PHASES.md.
+
+    Reads ``{spec_path}/PHASES.md`` and looks for a line starting ``**Spike:**``:
+      - ``**Spike:** required`` → ``("spike-required", <goal>)`` where ``<goal>``
+        is the text after the first ``-``/``—`` dash on that line (or a fallback
+        when no dash is present). This phase's completion rests on a runtime
+        proof — the state machine routes it through a ``spike`` cycle.
+      - any other value, line absent, or file/dir absent → ``("no-spike", None)``.
+
+    Never raises: an unreadable file is treated as "line absent" → no-spike.
+    A phase whose completion rests on a runtime proof carries the ``required``
+    value; a phase that merely mentions a spike in prose does not (the anchor is
+    what keeps prose out of the routing decision).
+    """
+    fallback_goal = "the phase declares a runtime proof but names no goal"
+    if not spec_path:
+        return ("no-spike", None)
+    phases = Path(spec_path) / "PHASES.md"
+    try:
+        text = phases.read_text(encoding="utf-8")
+    except OSError:
+        return ("no-spike", None)
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("**Spike:**"):
+            # ANCHORED value-token test — mirror phases_mcp_runtime_not_required.
+            # Match ``required`` ONLY as the VALUE token right after the marker
+            # (word-boundary terminated), NOT as a substring anywhere on the line.
+            if re.match(r"(?i)\*\*Spike:\*\*\s*required\b", stripped):
+                goal = fallback_goal
+                for dash in ("—", "-"):
+                    idx = stripped.find(dash)
+                    if idx != -1:
+                        candidate = stripped[idx + len(dash):].strip()
+                        if candidate:
+                            goal = candidate
+                        break
+                return ("spike-required", goal)
+            # Line present but not the required value → no-spike.
+            return ("no-spike", None)
+    # No **Spike:** line at all → no-spike.
+    return ("no-spike", None)
+
+
+def phases_spike_required(spec_path: Path) -> bool:
+    """True iff ``spec_path/PHASES.md`` declares ``**Spike:** required``.
+
+    The boolean companion to ``_read_spike_decision`` (mirrors the
+    ``phases_mcp_runtime_not_required`` / ``_read_mcp_runtime_decision`` pairing):
+    a phase whose completion rests on a runtime proof carries this header, and the
+    state machine (Phase 2) routes that phase's completion through a ``spike``
+    cycle before the phase is considered done. ROUTING, not a waiver.
+    """
+    phases_path = spec_path / "PHASES.md"
+    if not phases_path.exists():
+        return False
+    try:
+        text = phases_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return bool(re.search(r"(?mi)^\*\*Spike:\*\*\s*required\b", text))
+
+
 def skip_waiver_refusal(
     meta: dict[str, Any] | None, repo_root: Path | None = None
 ) -> str | None:
@@ -2444,6 +2514,21 @@ def provisional_eligibility(sentinel_path: Path) -> tuple[bool, str]:
         return (False, f"{len(decisions)} decisions exceeds the 4-decision cap")
     if str(meta.get("written_by", "")).strip() == "completion-integrity-gate":
         return (False, "written_by completion-integrity-gate — never provisional")
+    # Spike-FAIL carve-out (harden Round 80, docs/specs/spike-pipeline-role):
+    # a Spike is a runtime PROOF — a FAIL means the running system did not exhibit
+    # the proven-required behavior, which is NEVER a "pick the recommended option"
+    # design fork. A Spike-authored NEEDS_INPUT (written_by: spike) or one carrying
+    # spike_verdict: fail is NEVER auto-accepted, even under --park --park-provisional
+    # (the feature PARKS instead). This is a deliberate carve-out from the normal
+    # park-provisional path — both callers (the park-mode routing peek and the
+    # --provisionalize-sentinel CLI action) re-run this predicate, so it is airtight.
+    if str(meta.get("written_by", "")).strip() == "spike":
+        return (False, "written_by spike — Spike FAIL is never auto-accepted "
+                       "(park, do not provisionally accept)")
+    _sv = str(meta.get("spike_verdict", "")).strip().lower()
+    if _sv == "fail":
+        return (False, "spike_verdict: fail — Spike FAIL is never auto-accepted "
+                       "(park, do not provisionally accept)")
     # stub-origin-provisional-exclusion: decisions that shaped a baseline the
     # operator never saw (park-mode stub-spec /spec Phase-1 round, /spec-bug
     # pre-conclusion halt) are NEVER provisionally accepted, regardless of
