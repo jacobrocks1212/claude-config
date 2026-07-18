@@ -4,8 +4,8 @@
 
 | # | item | state | tier |
 |---|------|-------|------|
-| 1 | [spike-pipeline-role](docs/features/spike-pipeline-role/SPEC.md) | Plan | T1 |
-| | status: Plan · phase 5/6 · next: plan · A first-class lazy-pipeline stage that definitively PROVES things about the running system (a runtime measurement, a GO/NO-GO verdict, a confirm/deny of real behavior), instead of dead-ending into a manual operator block. | | |
+| 1 | [spike-pipeline-role](docs/features/spike-pipeline-role/SPEC.md) | ⬡ Needs-input | T1 |
+| | status: Needs-input · phase 5/6 · next: answer needs-input · A first-class lazy-pipeline stage that definitively PROVES things about the running system (a runtime measurement, a GO/NO-GO verdict, a confirm/deny of real behavior), instead of dead-ending into a manual operator block. | | |
 | 2 | [subagent-wedge-backstop-hook](docs/features/subagent-wedge-backstop-hook/SPEC.md) | Research | T1 |
 | | status: Research · phase 0/1 · next: research · A `SubagentStop` hook that mechanically catches a GENUINELY-WEDGED dispatched subagent — one that tries to stop/return with pending plan work still incomplete — and blocks its premature stop once, forcing it to commit + complete (or write `BLOCKED.md`) instead of returning dead and stranding the pipeline. | | |
 | 3 | [shared-hook-lib](docs/features/shared-hook-lib/SPEC.md) | Research | T2 |
@@ -15,30 +15,33 @@
 | 5 | [native-android-pipeline-steering](docs/features/native-android-pipeline-steering/SPEC.md) | Research | T3 |
 | | status: Research · next: research · A real mobile client on the `mobile-queue-control` foundation: browse every lazy-enabled repo's queues, drill into SPECs and halt sentinels, and — the point — **write back** from the phone: answer `NEEDS_INPUT.md` decisions, resolve `BLOCKED.md` halts, and reorder/enqueue the queue. | | |
 
-## Bugs (9)
+## Bugs (10)
 
 | # | item | state | sev | aging |
 |---|------|-------|------|------|
-| 1 | [adhoc-cli-surface-registry-stale-set-independent](docs/bugs/adhoc-cli-surface-registry-stale-set-independent/SPEC.md) | Spec | — |  |
+| 1 | [adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker](docs/bugs/adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 2 | [adhoc-containment-hook-e2big-fails-open-windows-native](docs/bugs/adhoc-containment-hook-e2big-fails-open-windows-native/SPEC.md) | Spec | — |  |
+| 2 | [adhoc-cli-surface-registry-stale-set-independent](docs/bugs/adhoc-cli-surface-registry-stale-set-independent/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 3 | [canary-revert-harden-2026-07-r64](docs/bugs/canary-revert-harden-2026-07-r64/SPEC.md) | Spec | — |  |
+| 3 | [adhoc-containment-hook-e2big-fails-open-windows-native](docs/bugs/adhoc-containment-hook-e2big-fails-open-windows-native/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 4 | [canary-revert-harden-2026-07-r44](docs/bugs/canary-revert-harden-2026-07-r44/SPEC.md) | Spec | — |  |
+| 4 | [canary-revert-harden-2026-07-r64](docs/bugs/canary-revert-harden-2026-07-r64/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 5 | [canary-revert-harden-2026-07-r32](docs/bugs/canary-revert-harden-2026-07-r32/SPEC.md) | Spec | — |  |
+| 5 | [canary-revert-harden-2026-07-r44](docs/bugs/canary-revert-harden-2026-07-r44/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 6 | [canary-revert-harden-2026-07-r31](docs/bugs/canary-revert-harden-2026-07-r31/SPEC.md) | Spec | — |  |
+| 6 | [canary-revert-harden-2026-07-r32](docs/bugs/canary-revert-harden-2026-07-r32/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 7 | [adhoc-incident-hook-deny-19343d-r3](docs/bugs/adhoc-incident-hook-deny-19343d-r3/SPEC.md) | Spec | — |  |
+| 7 | [canary-revert-harden-2026-07-r31](docs/bugs/canary-revert-harden-2026-07-r31/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 8 | [build-queue-no-artifact-or-process-hygiene-on-crash](docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash/SPEC.md) | ⛔ Blocked | — | 2026-06-30 |
+| 8 | [adhoc-incident-hook-deny-19343d-r3](docs/bugs/adhoc-incident-hook-deny-19343d-r3/SPEC.md) | Spec | — |  |
+| | status: Spec · next: spec | | | |
+| 9 | [build-queue-no-artifact-or-process-hygiene-on-crash](docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash/SPEC.md) | ⛔ Blocked | — | 2026-06-30 |
 | | status: Blocked · phase 0/5 · next: resolve blocker · A crashed or killed build leaves orphaned compiler/test child processes and a truncated 0-byte output artifact behind. | | | |
-| 9 | [build-queue-timeout-kill-reaps-detached-runner](docs/bugs/build-queue-timeout-kill-reaps-detached-runner/SPEC.md) | Plan | — | 2026-07-10 |
+| 10 | [build-queue-timeout-kill-reaps-detached-runner](docs/bugs/build-queue-timeout-kill-reaps-detached-runner/SPEC.md) | Plan | — | 2026-07-10 |
 | | status: Plan · next: plan · A foreground `build-queue.ps1` call that hits its Bash-tool timeout is tree-killed (exit 143), and the kill takes the supposedly-detached runner with it. | | | |
 
 ## Needs attention
 
+- ⬡ spike-pipeline-role — needs-input
 - ⬡ claude-config-ci — needs-input
 - ⛔ build-queue-no-artifact-or-process-hygiene-on-crash — blocked
