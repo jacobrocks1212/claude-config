@@ -480,3 +480,15 @@ operator-authorized.
 
 **Not re-opened:** decision #12 (descendant-liveness / marker-teardown authority) stays parked —
 this hook READS liveness/ownership state, it does not mutate marker teardown.
+
+## Resolution (decision #1 ONLY — dispatch-preference contract; decisions #2-#5 remain open)
+
+- **Decision #1:** RESOLVED by the operator (AskUserQuestion, 2026-07-18): **by-reference stays
+  the preferred dispatch form**, with prompt DELIVERY moved to a subagent-side resolve — a
+  sanctioned `--resolve-ref` consumed-nonce read the subagent runs as its contractual first
+  step. Platform basis: updatedInput rewrite confirmed broken for the Agent tool
+  (anthropics/claude-code#39814, closed not-planned; see
+  docs/bugs/byref-updatedinput-unapplied-on-background-agent-dispatch/PLATFORM_CONFIRMATION.md).
+  Verbatim dispatch is the interim behavior until the resolver ships (fix scope locked on that
+  bug). This file's decisions #2-#5 are NOT resolved and this sentinel stays live for them.
+- date: 2026-07-18

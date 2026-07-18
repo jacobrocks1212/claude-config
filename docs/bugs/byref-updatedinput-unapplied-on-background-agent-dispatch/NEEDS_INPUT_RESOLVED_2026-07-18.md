@@ -72,3 +72,22 @@ no registry/marker edited by this round.
 - **Propagation:** the orchestrator runs a read-only `claude-code-guide` confirmation immediately after this run's `--run-end` (unmarked session state; the guide dispatch is then guard-exempt) and records the finding in this bug dir. The (b)/(c) fix choice is then decided by the operator TOGETHER with the parked dispatch-preference decision #1 at `docs/specs/turn-routing-enforcement/NEEDS_INPUT.md`, with facts in hand. This sentinel stays live (bug remains open) until that joint decision.
 - resolved_by: operator (AskUserQuestion, Step 1g decision-resume; partial resolution — confirmation step authorized, fix fork intentionally still open)
 - date: 2026-07-18
+
+## Resolution (final — fix fork)
+
+- **Decision (b)/(c) fork:** **Build the subagent-side resolve (option c, designed-contract form)** —
+  chosen by the operator via AskUserQuestion on 2026-07-18 after the option-(a) platform
+  confirmation landed (PLATFORM_CONFIRMATION.md: updatedInput confirmed broken for the Agent
+  tool as a class, upstream anthropics/claude-code#39814 closed not-planned).
+- **Fix scope this locks:** (1) a sanctioned consumed-nonce read on both state scripts
+  (`--resolve-ref <nonce>` — returns the registered prompt bytes for a nonce the guard already
+  ALLOW+consumed this run; read-only, run-scoped, never un-consumes); (2) the emitted dispatch
+  templates gain a contractual FIRST STEP for by-ref dispatches ("your instructions are
+  registered under nonce X; resolve them via --resolve-ref X before anything else"); (3) coupled
+  dispatch-skill prose updated (lazy-batch ↔ lazy-bug-batch ↔ lazy-batch-cloud) — by-reference
+  stays PREFERRED with the new delivery mechanism; verbatim remains the documented fallback;
+  (4) regression tests incl. the zero-tool-use dead-return near-miss.
+- **Interim behavior until the resolver ships:** verbatim dispatch (the de-facto mitigation the
+  2026-07-18 run used; guard hash-validation unchanged).
+- resolved_by: operator (AskUserQuestion, Step 1g decision-resume)
+- date: 2026-07-18
