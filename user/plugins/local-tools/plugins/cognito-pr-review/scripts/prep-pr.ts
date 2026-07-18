@@ -742,14 +742,36 @@ function getEnhancedThreadStatuses(timelineData: TimelineData): EnhancedThreadSt
   }));
 }
 
-async function computeIterationDiff(
+// One changed-file entry from a GitHub `/compare` response (the subset we consume).
+interface CompareFile {
+  filename: string;
+  status: string;
+  sha?: string;
+}
+
+// Injectable compare fetcher — returns the changed-file set between two refs (three-dot
+// `base...head` semantics). Default hits the GitHub API; tests inject a deterministic stub
+// so the base-relative computation is asserted without a live call.
+type FetchCompare = (base: string, head: string) => Promise<CompareFile[]>;
+
+interface IterationDiffOptions {
+  // The PR base ref (target-branch commit). When present, the diff is computed base-relative
+  // (RC-2b): the branch's changed-file set up to `current` MINUS what was already changed up
+  // to `previous`, so merged-in `main` churn — present relative to base at BOTH endpoints —
+  // cancels, and genuine branch-only changes remain. Absent → legacy three-dot fallback.
+  baseRef?: string;
+  fetchCompare?: FetchCompare;
+}
+
+export async function computeIterationDiff(
   prNumber: number,
   currentIterationId: number,
   previousIterationId: number,
   token: string,
   cacheDir: string,
   iterations: Iteration[],
-  previousShaOverride?: string
+  previousShaOverride?: string,
+  opts: IterationDiffOptions = {}
 ): Promise<IterationDiffData> {
   console.error(`Computing iteration diff: iteration ${previousIterationId} → ${currentIterationId}...`);
 
@@ -765,14 +787,15 @@ async function computeIterationDiff(
     return { previousIterationId, currentIterationId, filesAdded: [], filesRemoved: [], filesModified: [] };
   }
 
-  const comparison = await ghFetch<any>(`/compare/${previousSha}...${currentSha}`, token);
-  const files = comparison.files || [];
+  const fetchCompare: FetchCompare = opts.fetchCompare ?? (async (base, head) => {
+    const cmp = await ghFetch<any>(`/compare/${base}...${head}`, token);
+    return (cmp.files || []) as CompareFile[];
+  });
 
   const filesAdded: string[] = [];
   const filesRemoved: string[] = [];
   const filesModified: string[] = [];
-
-  for (const file of files) {
+  const classify = (file: CompareFile) => {
     if (file.status === "added" || file.status === "renamed") {
       filesAdded.push(file.filename);
     } else if (file.status === "removed") {
@@ -780,6 +803,30 @@ async function computeIterationDiff(
     } else {
       filesModified.push(file.filename);
     }
+  };
+
+  if (opts.baseRef) {
+    // Base-relative delta (RC-2b): compare each endpoint against the PR base, then take the
+    // set of files whose branch change differs between previous and current. A file changed
+    // identically at both endpoints (same blob sha) — e.g. merged-in main churn, which is
+    // excluded from a base-relative compare entirely — is dropped; a file re-modified since
+    // previous (different blob sha) or newly changed is retained.
+    const currentFiles = await fetchCompare(opts.baseRef, currentSha);
+    const previousFiles = await fetchCompare(opts.baseRef, previousSha);
+    const prevByName = new Map(previousFiles.map((f) => [f.filename, f]));
+    for (const file of currentFiles) {
+      const prev = prevByName.get(file.filename);
+      // Unchanged since previous when present with an identical blob sha. If sha is absent
+      // (older API shape), treat mere presence-at-both-endpoints as unchanged.
+      if (prev && (prev.sha === undefined || file.sha === undefined || prev.sha === file.sha)) {
+        continue;
+      }
+      classify(file);
+    }
+  } else {
+    // Legacy fallback: direct three-dot compare of the two branch endpoints.
+    const comparison = await fetchCompare(previousSha, currentSha);
+    for (const file of comparison) classify(file);
   }
 
   const diffData: IterationDiffData = {
@@ -1655,7 +1702,8 @@ async function prepPR(prId: number, force = false, contextLines = DEFAULT_CONTEX
   if (reReviewInfo.isReReview && iterationId && (reReviewInfo.reviewedSha || reReviewInfo.previousIterationId)) {
     iterationDiffData = await computeIterationDiff(
       prId, iterationId, reReviewInfo.previousIterationId ?? 0, token, cacheDir, iterations,
-      reReviewInfo.reviewedSha ?? undefined
+      reReviewInfo.reviewedSha ?? undefined,
+      { baseRef: targetCommit }
     );
   }
 

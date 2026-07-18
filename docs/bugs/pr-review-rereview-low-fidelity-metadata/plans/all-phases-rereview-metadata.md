@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: pr-review-rereview-low-fidelity-metadata
-status: In-progress
+status: Complete
 created: 2026-07-18
 complexity: complex
 phases: [1, 2, 3]
@@ -76,7 +76,7 @@ No contradiction (anchor- or premise-grade). All paths `exists: yes` except the 
 
 - [x] WU-1 — Lifespan counter fidelity (post-process.ts + tests)
 - [x] WU-2 — Reviewed-SHA re-review anchor (review-pr.md + prep-pr.ts + net-new test)
-- [ ] WU-3 — Merge-safe base-relative iteration diff (prep-pr.ts + test)
+- [x] WU-3 — Merge-safe base-relative iteration diff (prep-pr.ts + test)
 
 ---
 

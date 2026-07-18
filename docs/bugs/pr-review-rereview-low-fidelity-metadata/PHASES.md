@@ -2,6 +2,8 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress — all three phases implemented (2026-07-18); validation tail pending (gate-owned `__mark_fixed__`).
+
 **MCP runtime:** not-required — the fix is deterministic TypeScript CLI tooling in the `cognito-pr-review` plugin (`scripts/*.ts` run via `npx tsx`, verified by `node:test` fixtures) plus a markdown command-doc schema change. No Tauri desktop / MCP HTTP surface exists to exercise; this is the "build tooling / standalone script" untestable class per `docs/features/mcp-testing/SPEC.md`. Verification is by runnable `node --test` fixture assertions, not MCP.
 
 ## Validated Assumptions
@@ -109,10 +111,17 @@ The SPEC's four Open Questions are fix-shape sizing decisions, not user-visible 
 **Scope:** Replace the three-dot `/compare/a...b` merge-base semantics (`prep-pr.ts:757`) — which, when the head iteration is a merge commit that pulled `main`, is dominated by unrelated main-branch churn and drops genuine branch-only changes — with a base-relative file-set delta that reports what actually changed on the PR branch between the previously-reviewed state and the current head.
 
 **Deliverables:**
-- [ ] Refactor `computeIterationDiff` (`prep-pr.ts:739-787`) to compute a base-relative delta: the set of files changed on the branch up to `currentSha` minus those already changed up to `previousSha`, mirroring the correct base-branch compare pattern at `prep-pr.ts:352`. Merged-in `main` churn (present relative to base at BOTH endpoints) cancels out; genuine branch-only changes are retained.
-- [ ] Preserve the emitted `IterationDiffData` shape (`filesAdded` / `filesRemoved` / `filesModified`) and the `iteration-diff.json` write (`:782-783`) so downstream `reReviewScope` / triage consumers are unchanged.
-- [ ] Preserve the existing empty-diff guard (`:752-755`) when either endpoint SHA is unresolved.
-- [ ] Tests: `prep-pr.test.ts` — a fixture where the head iteration is a merge commit that pulled `main`; assert genuine branch files (e.g. the `Cognito/*` rewrite class from the SPEC repro) appear in the delta and unrelated main-branch churn does NOT.
+- [x] Refactor `computeIterationDiff` (`prep-pr.ts:739-787`) to compute a base-relative delta: the set of files changed on the branch up to `currentSha` minus those already changed up to `previousSha`, mirroring the correct base-branch compare pattern at `prep-pr.ts:352`. Merged-in `main` churn (present relative to base at BOTH endpoints) cancels out; genuine branch-only changes are retained.
+- [x] Preserve the emitted `IterationDiffData` shape (`filesAdded` / `filesRemoved` / `filesModified`) and the `iteration-diff.json` write (`:782-783`) so downstream `reReviewScope` / triage consumers are unchanged.
+- [x] Preserve the existing empty-diff guard (`:752-755`) when either endpoint SHA is unresolved.
+- [x] Tests: `prep-pr.test.ts` — a fixture where the head iteration is a merge commit that pulled `main`; assert genuine branch files (e.g. the `Cognito/*` rewrite class from the SPEC repro) appear in the delta and unrelated main-branch churn does NOT.
+
+**Implementation Notes (2026-07-18):**
+- `computeIterationDiff` refactored to a base-relative delta. New optional `opts: { baseRef?, fetchCompare? }` param. When `baseRef` is set (call site passes the PR base commit `targetCommit`), it fetches `base...current` and `base...previous` changed-file sets and keeps files whose branch change DIFFERS between the endpoints — compared by per-file blob `sha` (a re-modified file with a changed blob is retained; a file identical at both endpoints, including merged-in `main` churn which a base-relative compare excludes entirely, is dropped). Absent `sha` (older API shape) falls back to presence-at-both-endpoints = unchanged.
+- `fetchCompare` is an injectable `(base, head) => Promise<CompareFile[]>` defaulting to a `ghFetch('/compare/base...head')` wrapper — this is the test seam (no live network). `computeIterationDiff` is now exported.
+- Legacy fallback (no `baseRef`) preserves the original direct three-dot `previous...current` compare. Empty-diff guard (unresolved endpoint SHA) unchanged. Emitted `IterationDiffData` shape + `iteration-diff.json` write unchanged.
+- **Known fidelity bound (accepted, PHASES Q2):** the delta is a changed-file-set difference by blob sha, not a full content re-diff; a file modified identically at both endpoints is treated as unchanged. This is the chosen bar — it excludes merged-in main churn (the reported symptom) while retaining genuine branch re-modifications.
+- Files: `scripts/prep-pr.ts` (`computeIterationDiff`, call site); tests `scripts/prep-pr.test.ts` (+3 cases, injected compare stub). Gate: `npx tsx --test *.test.ts` → 37 pass / 0 fail; `tsc --noEmit` clean.
 
 **Minimum Verifiable Behavior:** `npx tsx --test scripts/prep-pr.test.ts` passes the merge-commit-head case: the computed delta includes the branch-only changed files and excludes the merged-in `main` churn that the three-dot compare previously surfaced.
 
