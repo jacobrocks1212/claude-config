@@ -8,7 +8,7 @@
 - `docs/bugs/_archive/interventions-telemetry-repo-scope-split-brain/` — the ALREADY-FIXED split-brain (Phase-1 merged READ). This bug is the residual WRITE-side / attribution manifestation the archived fix did not cover.
 - `docs/bugs/lazy-batch-parallel-run-harness-gaps/` Gap 5 — the sibling efficacy-gate refusal, but for PARALLEL lanes (`parent_run` non-null). Distinct: this bug is a NON-parallel top-level run.
 - `docs/specs/turn-routing-enforcement/` — owns the `--run-end` efficacy-coverage gate + the two-scope flush prose (`§1c.6`).
-- `docs/bugs/gate-scope-folds-concurrent-harden-commits/` — adjacent concurrent-writer class (commit-scoping, not breadcrumb-attribution).
+- `docs/bugs/_archive/gate-scope-folds-concurrent-harden-commits/` — adjacent concurrent-writer class (commit-scoping, not breadcrumb-attribution).
 
 ## Context
 

@@ -125,7 +125,7 @@ The instance is NOT hard-blocked — the worker's documented fallback ("When you
 
 Round 36 mechanically fixed the **run-blocking** half of this dispatch — the completion-gate scope
 derivation was folding a concurrent harden workstream's commits into the active feature's scope
-(`docs/bugs/gate-scope-folds-concurrent-harden-commits/`), so a feature whose OWN commits touch
+(`docs/bugs/_archive/gate-scope-folds-concurrent-harden-commits/`), so a feature whose OWN commits touch
 zero control surfaces is no longer dragged into `gate_verdict_ok` scope. The two forks below are the
 **latent** half the mechanical fix deliberately does NOT close — they bite a feature whose OWN
 commits genuinely touch a control surface, and they are operator-owned, not mechanical defects.
