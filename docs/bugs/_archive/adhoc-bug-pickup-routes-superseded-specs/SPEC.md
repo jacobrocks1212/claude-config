@@ -65,7 +65,7 @@ be excluded from pickup identically.
 
 ## Verified symptom
 
-- `docs/bugs/block-terminal-kill-matches-separators-inside-quoted-args/SPEC.md` → `**Status:** Superseded`,
+- `docs/bugs/_archive/block-terminal-kill-matches-separators-inside-quoted-args/SPEC.md` → `**Status:** Superseded`,
   `DEFERRED.md` present, not archived.
 - `_find_open_bug_dirs` returns that dir (no `Superseded` filter) → merged head → every
   `--emit-prompt` probe withholds `route_overridden_by: merged-head-diverged`.

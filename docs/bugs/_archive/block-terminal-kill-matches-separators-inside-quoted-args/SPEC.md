@@ -5,6 +5,8 @@
 **Status:** Superseded
 **Severity:** P1
 **Discovered:** 2026-07-13
+**Fixed:** 2026-07-18
+**Fix commit:** 0b6051e8
 **Superseded by:** the shipped `_mask_quoted` fix — `docs/bugs/block-terminal-kill-false-denies-quoted-argument-tokens` (already on `main`)
 
 > **Duplicate — superseded 2026-07-15 (rebase reconciliation).** origin/main independently shipped
