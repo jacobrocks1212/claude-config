@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: spike-pipeline-role
-status: Ready
+status: In-progress
 created: 2026-07-18
 complexity: complex
 phases: [2]
