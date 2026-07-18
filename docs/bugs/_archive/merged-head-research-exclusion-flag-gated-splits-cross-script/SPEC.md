@@ -1,8 +1,10 @@
 # Merged-head research-pending exclusion is flag-gated → cross-script split-brain deadlock
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-18 (observed live during a `/lazy-batch-parallel` run on AlgoBooth; no-route)
+**Fixed:** 2026-07-18
+**Fix commit:** 981191ae
 **Related:** `docs/bugs/_archive/merged-head-diverged-withholds-on-research-skipped-head` (Round 91 /
 commit `baf07a6d` — the immediately-prior facet this bug is the follow-up incompleteness of);
 `docs/bugs/merged-head-diverged-stalls-on-gated-head`,
