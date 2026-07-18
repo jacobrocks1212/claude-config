@@ -5781,6 +5781,72 @@ def test_bqe_denies_real_build_after_heredoc():
         )
 
 
+def test_bqe_temp_write_failure_fails_open_traced():
+    """windows-32k-cmdline-e2big-silently-disarms-containment (bqe leg): the
+    hook's embedded ~32KB python body is invoked via `-c "$_BQE_PY"` (line
+    ~841), ~800B under Windows CreateProcess's 32,767-char limit — one
+    accretion from the SAME E2BIG silent-disarm Phase 1 fixed on
+    lazy-cycle-containment.sh. The FIXED hook must invoke its body via a
+    `mktemp`'d temp FILE (not `-c`), mirroring the lazy-cycle-containment.sh
+    conversion exactly (see test_containment_temp_write_failure_fails_open_traced).
+
+    This test forces the mktemp/temp-write step itself to fail (via TMPDIR
+    pointed at a non-existent parent directory — confirmed on this host to
+    make `mktemp` fail: `TMPDIR=/does/not/exist/x mktemp --suffix=.py` exits
+    1 with "No such file or directory") and asserts the NEW traced fail-open
+    contract: exit 0, decision NOT "deny" (fail-OPEN — a temp-write failure
+    must never wedge a build), AND a traced breadcrumb (hook-error.json +
+    exactly one kind:"error" hook-events.jsonl line) naming
+    hook: "build-queue-enforce" — mirroring every other hook's no-python
+    fail-open path (guard-fail-open-leaves-no-trace).
+
+    RED against the CURRENT `-c`-invocation hook: there is no mktemp step at
+    all, so TMPDIR has no effect on it — python runs fine via `-c` and the
+    hook DENIES the dotnet build normally (no failure, no breadcrumb). So
+    this test's "not deny" + "traced breadcrumb exists" assertions fail for
+    the correct reason (the temp-file branch + its traced fail-open don't
+    exist yet), not because of a broken fixture.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        env = _base_env(state_dir)
+        # Point TMPDIR at a path whose PARENT does not exist, so mktemp can
+        # never create a file there — confirmed to force a mktemp failure on
+        # this host (same injection seam as the lazy-cycle-containment.sh fix).
+        env["TMPDIR"] = str(state_dir / "no_such_dir" / "tmp")
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("dotnet build ./Cognito.sln", str(repo)),
+            env,
+        )
+        assert result.returncode == 0, (
+            f"temp-write failure must still fail-OPEN (exit 0); "
+            f"stderr={result.stderr!r}"
+        )
+        assert _containment_decision(result) != "deny", (
+            "a temp-write failure must fail-OPEN (never deny) — a broken "
+            f"hook must not wedge the build; stdout={result.stdout!r}"
+        )
+        err_path = state_dir / "hook-error.json"
+        assert err_path.exists(), (
+            "temp-write failure must write a traced hook-error.json "
+            "breadcrumb (guard-fail-open-leaves-no-trace) — the fail-open "
+            "must be OBSERVABLE, not silent"
+        )
+        crumb = json.loads(err_path.read_text(encoding="utf-8"))
+        assert crumb.get("hook") == "build-queue-enforce", crumb
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, (
+            f"expected exactly one hook-events.jsonl line for the traced "
+            f"temp-write failure; got {events!r}"
+        )
+        assert events[0]["kind"] == "error", events
+        assert events[0]["hook"] == "build-queue-enforce", events
+
+
 def test_bqe_bash_dash_c_wrapper_reference_accepted_residual():
     """D2 (documented-limitation, shared across the anchor-pair family, NOT
     fixed this round): a `bash -c "dotnet build ..."` string-wrap smuggles a

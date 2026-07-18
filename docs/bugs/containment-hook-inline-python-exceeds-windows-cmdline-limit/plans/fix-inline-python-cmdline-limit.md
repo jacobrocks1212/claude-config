@@ -57,7 +57,7 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 ## Work Units
 
 - [x] WU-1 — Temp-file invocation + traced fail-open in `lazy-cycle-containment.sh`
-- [ ] WU-2 — Convert `build-queue-enforce.sh` to the temp-file invocation shape
+- [x] WU-2 — Convert `build-queue-enforce.sh` to the temp-file invocation shape
 - [ ] WU-3 — Plane-wide embedded-`-c`-body size-guard test in `test_hooks.py`
 
 ---

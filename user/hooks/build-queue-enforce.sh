@@ -836,7 +836,58 @@ except Exception as exc:
     sys.exit(0)
 PYEOF
 
+# windows-32k-cmdline-e2big-silently-disarms-containment: write the captured
+# body to a mktemp'd temp file and invoke python against THAT PATH (not `-c`)
+# so the spawned command line stays short regardless of body size. Plain
+# `mktemp` honors TMPDIR (the standard POSIX seam) so a test can force this
+# step to fail by pointing TMPDIR at a non-existent parent. Both the mktemp
+# step AND the subsequent write are guarded — either failing takes the SAME
+# traced fail-open branch (breadcrumb + hook-events line), distinct from the
+# no-python breadcrumb above by its `detail` text.
+_bqe_tmpwrite_failed=0
+tmpfile="$(mktemp --suffix=.py 2>/dev/null)"
+if [ -z "$tmpfile" ] || [ ! -f "$tmpfile" ]; then
+  _bqe_tmpwrite_failed=1
+else
+  trap 'rm -f "$tmpfile"' EXIT
+  if ! printf '%s' "$_BQE_PY" > "$tmpfile" 2>/dev/null; then
+    _bqe_tmpwrite_failed=1
+  fi
+fi
+
+if [ "$_bqe_tmpwrite_failed" = "1" ]; then
+  # Traced fail-open (guard-fail-open-leaves-no-trace): identical shape to the
+  # no-python breadcrumb above, but a DISTINCT detail string so the two fail-
+  # open causes are distinguishable in hook-error.json / hook-events.jsonl.
+  _HOOK_TMPWRITE_BASE="${LAZY_STATE_DIR:-$HOME/.claude/state}"
+  _HOOK_TMPWRITE_TS="$(date +%s 2>/dev/null || echo 0)"
+  mkdir -p "$_HOOK_TMPWRITE_BASE" 2>/dev/null
+  printf '{"hook":"build-queue-enforce","error":"temp-file write failed","at":"%s"}' \
+    "$_HOOK_TMPWRITE_TS" > "$_HOOK_TMPWRITE_BASE/hook-error.json" 2>/dev/null || true
+  printf '{"ts":%s,"kind":"error","hook":"build-queue-enforce","repo_root":"","signature":"","detail":"temp-file write failed"}\n' \
+    "$_HOOK_TMPWRITE_TS" >> "$_HOOK_TMPWRITE_BASE/hook-events.jsonl" 2>/dev/null || true
+  exit 0
+fi
+
+# Windows Git Bash's `/tmp/...` MSYS path may not resolve for a native
+# python.exe — convert to a Windows path when `cygpath` is available (a no-op
+# elsewhere: WSL/Linux/macOS python reads the raw path fine, and `cygpath`
+# simply won't be on PATH there).
+if command -v cygpath >/dev/null 2>&1; then
+  tmppath="$(cygpath -w "$tmpfile")"
+else
+  tmppath="$tmpfile"
+fi
+
+# Invoke python against the temp-file PATH, not `-c`. The hook's real stdin
+# (the PreToolUse payload) still flows straight through to python's
+# sys.stdin — nothing pipes into this invocation on stdin, so it is
+# untouched, exactly as the old `-c` form preserved it.
+#
 # BQE_SCRIPTS_DIR is threaded via env (D2) so the inline appender can import
 # lazy_core for the keyed hook-events append.
-BQE_SCRIPTS_DIR="$BQE_SCRIPTS_DIR" "$PYTHON" -c "$_BQE_PY"
+BQE_SCRIPTS_DIR="$BQE_SCRIPTS_DIR" "$PYTHON" "$tmppath"
+
+# Always exit 0 from the shell side: a non-zero PreToolUse exit is a hard
+# blocking error in Claude Code; deny is expressed in JSON, never an exit code.
 exit 0

@@ -106,6 +106,8 @@ Run the existing Phase-4 containment suite; it must go from 22-red to green on t
 
 ### Phase 2: Remediate the near-limit sibling (`build-queue-enforce.sh`) with the same temp-file shape
 
+**Status:** Complete
+
 **Scope:** The plane-wide audit (SPEC Sibling Check) found `build-queue-enforce.sh`'s embedded
 `_BQE_PY` body at **31,966 bytes** — ~800 B under the hard limit before its env-prefix + `-c ` +
 quoting overhead is even counted. It is one accretion from the identical silent E2BIG fail-open.
@@ -116,9 +118,9 @@ Convert it proactively to the Phase-1 temp-file pattern. The remaining `-c`-invo
 under the limit and are left on `-c` — the Phase-3 size guard keeps them honest.
 
 **Deliverables:**
-- [ ] `user/hooks/build-queue-enforce.sh`: replace the line-841 `-c "$_BQE_PY"` with the Phase-1 temp-file invocation (mktemp `.py`, `cygpath -w` where available, payload on stdin, `trap` cleanup, traced fail-open on write failure), preserving the `BQE_SCRIPTS_DIR` env passthrough and the fail-OPEN-via-JSON contract.
-- [ ] Audit ledger recorded in this phase's Integration Notes: one row per `-c`-invoking hook with its measured body size and disposition (convert vs. leave-on-`-c`).
-- [ ] Tests: `build-queue-enforce.sh`'s existing `test_hooks.py` coverage (deny/allow/bypass/fail-open) stays green after conversion; add/confirm a Windows drive proving it still DENIES a manifested build token under the ops manifest.
+- [x] `user/hooks/build-queue-enforce.sh`: replace the line-841 `-c "$_BQE_PY"` with the Phase-1 temp-file invocation (mktemp `.py`, `cygpath -w` where available, payload on stdin, `trap` cleanup, traced fail-open on write failure), preserving the `BQE_SCRIPTS_DIR` env passthrough and the fail-OPEN-via-JSON contract.
+- [x] Audit ledger recorded in this phase's Integration Notes: one row per `-c`-invoking hook with its measured body size and disposition (convert vs. leave-on-`-c`).
+- [x] Tests: `build-queue-enforce.sh`'s existing `test_hooks.py` coverage (deny/allow/bypass/fail-open) stays green after conversion; add/confirm a Windows drive proving it still DENIES a manifested build token under the ops manifest.
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_hooks.py` — the `build-queue-enforce`
 test group stays green post-conversion; a direct Windows drive of a raw manifested build token
@@ -126,7 +128,7 @@ test group stays green post-conversion; a direct Windows drive of a raw manifest
 the op's skill), not a fail-open.
 
 **Runtime Verification** *(checked by the pytest gate / direct hook drive):*
-- [ ] <!-- verification-only --> Post-conversion, `build-queue-enforce.sh` under a manifested repo still DENIES a raw build token beginning a command segment, and still ALLOWS the safe variants + the `BUILD_QUEUE_BYPASS=1` override + the `build-queue.ps1` wrapper.
+- [x] <!-- verification-only --> Post-conversion, `build-queue-enforce.sh` under a manifested repo still DENIES a raw build token beginning a command segment, and still ALLOWS the safe variants + the `BUILD_QUEUE_BYPASS=1` override + the `build-queue.ps1` wrapper.
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface.
 
@@ -142,6 +144,25 @@ identical deny/allow behavior, only the invocation mechanism changed.
 
 **Integration Notes for Next Phase:**
 - Record the final embedded-`-c`-body census here so Phase 3's size-guard ceiling can be set below every *remaining* `-c` body. After Phases 1–2, the two large bodies no longer ship via `-c`; the max remaining `-c` body is `long-build-ownership-guard.sh` at 19,805 B → a ceiling of ~25,000 B leaves comfortable headroom while still catching any future body that creeps toward 32,767.
+
+**Implementation Notes (2026-07-18):**
+- `user/hooks/build-queue-enforce.sh` converted to the temp-file invocation, mirroring WU-1 byte-shape: `tmpfile="$(mktemp --suffix=.py 2>/dev/null)"` (line ~848), `trap 'rm -f "$tmpfile"' EXIT` (~852), traced fail-open with distinct `detail:"temp-file write failed"` and `hook:"build-queue-enforce"` (~865-867), `cygpath -w` guarded (~876-877), `BQE_SCRIPTS_DIR="$BQE_SCRIPTS_DIR" "$PYTHON" "$tmppath"` with payload on stdin (~889). Embedded `_BQE_PY` body byte-unchanged; fail-OPEN-via-JSON + silently-inert-off-Windows contract preserved.
+- New test `test_bqe_temp_write_failure_fails_open_traced` (`test_hooks.py`) pins the traced fail-open via the same TMPDIR failure-injection seam (`_init_cognito_worktree` so the scope gate passes). bqe group `-k "bqe or build_queue_enforce"` 57 passed (was 1 red / 56); full `test_hooks.py` 272 passed.
+
+**Audit ledger — embedded-`-c`-body census (measured 2026-07-18, post-Phase-1/2 conversions):**
+
+| Hook | Body size | Disposition |
+|------|-----------|-------------|
+| `lazy-cycle-containment.sh` | (was 33,575 B) | **converted → temp-file (Phase 1)** |
+| `build-queue-enforce.sh` | (was 31,966 B) | **converted → temp-file (Phase 2)** |
+| `long-build-ownership-guard.sh` | 19,805 B | leave-on-`-c` (max remaining; well under 32,767) |
+| `block-terminal-kill.sh` | 11,323 B | leave-on-`-c` |
+| `subagent-wedge-backstop.sh` | 8,424 B | leave-on-`-c` |
+| `block-sentinel-write-on-stray-branch.sh` | 7,673 B | leave-on-`-c` |
+| `block-noncanonical-blocker-write.sh` | 6,115 B | leave-on-`-c` |
+| `block-work-repo-git-push.sh` | 2,597 B | leave-on-`-c` |
+
+→ Phase 3 ceiling of **25,000 B** sits above the max remaining `-c` body (19,805) and below the 32,767 `CreateProcess` limit — gates future creep without false-failing today's tree.
 
 ---
 
