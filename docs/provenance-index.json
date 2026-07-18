@@ -15,6 +15,16 @@
   ],
   ".claude/skill-config/commit-policy.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "lazy-pipeline-visualizer",
       "type": "feature",
       "provenance": "backfilled"
@@ -53,6 +63,11 @@
   ],
   "CLAUDE.md": [
     {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "concurrent-same-branch-walkers-no-arbitration",
       "type": "bug",
       "provenance": "backfilled"
@@ -63,9 +78,19 @@
       "provenance": "backfilled"
     },
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "no-gemini-sprint-staging-in-claude-config",
@@ -176,11 +201,6 @@
       "id": "unified-pipeline-orchestrator",
       "type": "feature",
       "provenance": "backfilled"
-    },
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
     }
   ],
   "LAZY_QUEUE.md": [
@@ -215,9 +235,19 @@
       "provenance": "backfilled"
     },
     {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "descoped-row-recognition-needs-canonical-marker",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "ensure-runtime-false-hijacked-on-owned-serving-runtime",
@@ -238,6 +268,11 @@
       "id": "mcp-tooling-not-predetermined-at-planning",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "per-feature-cycle-cap-defers-incomplete-work",
@@ -317,11 +352,6 @@
     {
       "id": "state-cli-contract-registry",
       "type": "feature",
-      "provenance": "pipeline-gated"
-    },
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
       "provenance": "pipeline-gated"
     }
   ],
@@ -597,6 +627,54 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/block-terminal-kill-false-denies-heredoc-body-tokens/ADHOC_BRIEF.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/block-terminal-kill-false-denies-heredoc-body-tokens/FIXED.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/block-terminal-kill-false-denies-heredoc-body-tokens/SKIP_MCP_TEST.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/block-terminal-kill-false-denies-heredoc-body-tokens/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/budget-guard-defers-near-complete-feature/FIXED.md": [
     {
       "id": "budget-guard-defers-near-complete-feature",
@@ -742,6 +820,306 @@
       "id": "bug-state-scoped-query-loses-deferred-bug-identity",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/BLOCKED_RESOLVED_2026-07-13.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/FIXED.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/IMPLEMENTED.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/PHASES.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/SKIP_MCP_TEST.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-1.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-2.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-3.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/BLOCKED_RESOLVED_2026-07-13.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/FIXED.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/IMPLEMENTED.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/PHASES.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/SKIP_MCP_TEST.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-1.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-2.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-3.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-foreground-wait-blocks-past-terminal-outcome/FIXED.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-foreground-wait-blocks-past-terminal-outcome/GATE_VERDICT.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-foreground-wait-blocks-past-terminal-outcome/IMPLEMENTED.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-foreground-wait-blocks-past-terminal-outcome/PHASES.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-foreground-wait-blocks-past-terminal-outcome/SKIP_MCP_TEST.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-foreground-wait-blocks-past-terminal-outcome/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-recycle-kills-concurrent-worktree-build/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/byref-dispatch-undercounts-forward-cycles/FIXED.md": [
@@ -966,6 +1344,57 @@
       "id": "cycle-subagent-runs-orchestrator-work",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/FIXED.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/NEEDS_INPUT.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/ensure-runtime-false-hijacked-on-owned-serving-runtime/FIXED.md": [
@@ -1225,6 +1654,40 @@
       "id": "feature-queue-lacks-on-disk-autodiscovery",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/harden-rounds-skip-docs-bugs-reconciliation-contract/FIXED.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/harden-rounds-skip-docs-bugs-reconciliation-contract/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/hardening-blind-to-process-friction/FIXED.md": [
@@ -1548,6 +2011,57 @@
       "id": "mcp-tooling-not-predetermined-at-planning",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/merged-head-excludes-parked-not-operator-deferred-deadlocks/FIXED.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/merged-head-excludes-parked-not-operator-deferred-deadlocks/NEEDS_INPUT.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/merged-head-excludes-parked-not-operator-deferred-deadlocks/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/no-gemini-sprint-staging-in-claude-config/ADHOC_BRIEF.md": [
@@ -1947,6 +2461,18 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/sh-exe-crash-masks-successful-build-queue-run/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/single-slot-marker-ownership-race-disarms-owning-run/FIXED.md": [
     {
       "id": "single-slot-marker-ownership-race-disarms-owning-run",
@@ -2083,6 +2609,18 @@
       "id": "stub-spec-route-loops-until-queue-stub-cleared",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/test-filtered-stale-check-hardcodes-bin-debug/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/windows-portability-in-probe-glue-and-field-validators/FIXED.md": [
@@ -2488,6 +3026,42 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/archive-fixed-relative-spec-path-valueerror/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/block-terminal-kill-matches-separators-inside-quoted-args/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/blocked-add-phase-strands-originating-in-progress-plan/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/budget-guard-defers-near-complete-feature/PHASES.md": [
     {
       "id": "budget-guard-defers-near-complete-feature",
@@ -2617,6 +3191,65 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/BLOCKED.md": [
+    {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/PHASES.md": [
+    {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/SKIP_MCP_TEST.md": [
+    {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/VALIDATED.md": [
+    {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-1.md": [
+    {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-2.md": [
+    {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-3.md": [
+    {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/build-queue-enforce-cd-prefix-bypass/PHASES.md": [
     {
       "id": "build-queue-enforce-cd-prefix-bypass",
@@ -2627,6 +3260,34 @@
   "docs/bugs/build-queue-enforce-cd-prefix-bypass/plans/all-phases-2026-07-06.md": [
     {
       "id": "build-queue-enforce-cd-prefix-bypass",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/GATE_VERDICT.md": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/PHASES.md": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/SKIP_MCP_TEST.md": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/SPEC.md": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
       "type": "bug",
       "provenance": "pipeline-gated"
     }
@@ -2671,6 +3332,54 @@
       "id": "byref-dispatch-undercounts-forward-cycles",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/byref-updatedinput-unapplied-on-background-agent-dispatch/NEEDS_INPUT.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/byref-updatedinput-unapplied-on-background-agent-dispatch/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/canary-revert-harden-2026-07-r64/ADHOC_BRIEF.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/canary-revert-harden-2026-07-r64/EVIDENCE.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/checkpoint-resume-false-loop-flips-complex-part-to-sonnet/SPEC.md": [
@@ -2838,6 +3547,18 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/cycle-budget-counters-double-count-on-probes-and-inject-hook/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/cycle-containment-allows-background-subagent-dispatch-deadlock/SPEC.md": [
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
@@ -2990,6 +3711,30 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/dispatched-harden-record-intervention-refused-by-containment/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/dispatched-orchestrator-completed-notification-misread-as-terminal/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/doc-drift-lint-single-event-model-blocks-multi-event-hooks/SPEC.md": [
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
@@ -3002,6 +3747,30 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/emit-dispatch-residue-guard-flags-content-braces/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/end-of-run-flush-commit-absorbs-concurrent-writer-staged-files/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/ensure-runtime-false-hijacked-on-owned-serving-runtime/PHASES.md": [
@@ -3243,6 +4012,30 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/feature-tier-strings-fall-to-merged-priority-default/NEEDS_INPUT_PROVISIONAL.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/feature-tier-strings-fall-to-merged-priority-default/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/fixed-bugs-unarchived-fsck/SPEC.md": [
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
@@ -3302,6 +4095,18 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/gemini-prompt-char-cap-above-hard-truncation-limit/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/guard-fail-open-leaves-no-trace/SPEC.md": [
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
@@ -3352,6 +4157,18 @@
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/harden-harness-feature-spec-lands-in-unmanaged-docs-specs/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/hardening-blind-to-process-friction/PHASES.md": [
@@ -3498,6 +4315,18 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/harness-gate-gate-weakening-false-positives-rename-and-docstring/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/interventions-telemetry-repo-scope-split-brain/PHASES.md": [
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -3571,6 +4400,18 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/lazy-batch-parallel-run-harness-gaps/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/lazy-batch-unified-driver-parity-and-accounting/FIXED.md": [
     {
       "id": "lazy-batch-unified-driver-parity-and-accounting",
@@ -3611,6 +4452,23 @@
       "id": "lazy-batch-unified-driver-parity-and-accounting",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/lazy-run-marker-park-arm-and-forward-cycle-inflation/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/legacy-tool-input-env-hooks-dead/SPEC.md": [
@@ -3663,6 +4521,18 @@
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/live-settings-probe-false-positive-in-consumer-repo/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/live-settings-split-brain-disarms-enforcement-plane/NEEDS_INPUT.md": [
@@ -3859,6 +4729,18 @@
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/long-build-ownership-guard-misses-qg-gates/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/loop-detected-false-positives-from-probe-and-reboot-churn/FIXED.md": [
@@ -4176,6 +5058,59 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/merged-head-diverged-stalls-on-gated-head/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/merged-head-includes-parked-items-deadlocks-park-run/PHASES.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/merged-head-includes-parked-items-deadlocks-park-run/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/meta-dispatch-not-by-reference-and-ack-overpriced/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
@@ -4362,6 +5297,18 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/non-p0-bug-outranks-p1-feature-on-aged-tie/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/noncanonical-blocker-filename-invisible-to-state-machine/PHASES.md": [
     {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
@@ -4439,6 +5386,18 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/operator-recovery-of-crashed-run-orphaned-markers-underserved/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/park-mode-halts-on-blocked/FIXED.md": [
     {
       "id": "park-mode-halts-on-blocked",
@@ -4494,6 +5453,30 @@
       "id": "park-mode-halts-on-blocked",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/NEEDS_INPUT_PROVISIONAL.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/per-feature-cycle-cap-defers-incomplete-work/PHASES.md": [
@@ -4749,6 +5732,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "build-queue-copy-lock-stale-dll-false-success",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "byref-dispatch-undercounts-forward-cycles",
       "type": "bug",
       "provenance": "backfilled"
@@ -4767,6 +5755,11 @@
       "id": "cycle-subagent-leaves-work-uncommitted-or-unticked",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "env-transient-counts-against-validation-retry-budget",
@@ -4807,6 +5800,11 @@
       "id": "mcp-tooling-not-predetermined-at-planning",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
@@ -4932,11 +5930,6 @@
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
-    },
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
-      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/recovery-self-certifies-verification-rows-without-evidence/PHASES.md": [
@@ -5029,6 +6022,30 @@
       "id": "research-gate-ignores-existing-phases",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/research-gated-head-buried-by-skip-ahead-and-merged-fallthrough/NEEDS_INPUT_PROVISIONAL.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/research-gated-head-buried-by-skip-ahead-and-merged-fallthrough/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/research-prompt-leaks-identity-doc-meta/PHASES.md": [
@@ -5390,6 +6407,18 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/test-only-production-seams/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/unqueued-fixed-without-receipt-dirs-perpetual-diagnostic-noise/SPEC.md": [
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
@@ -5455,6 +6484,16 @@
   ],
   "docs/cli/cli-surface.json": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "bug-queue-aging-backpressure",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5484,9 +6523,19 @@
   ],
   "docs/features/ROADMAP.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "anti-overfit-design-gate",
@@ -5903,6 +6952,16 @@
     }
   ],
   "docs/features/build-queue-eta-priority-lanes/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "code-doc-provenance-linkage",
       "type": "feature",
@@ -8518,9 +9577,19 @@
   ],
   "docs/features/queue.json": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "feature-queue-lacks-on-disk-autodiscovery",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "operator-checkpoint-resume-counter-reset",
@@ -9057,6 +10126,30 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/spike-pipeline-role/PHASES.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/spike-pipeline-role/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/state-cli-contract-registry/PHASES.md": [
     {
       "id": "lazy-core-package-decomposition",
@@ -9133,6 +10226,30 @@
       "id": "stub-origin-provisional-exclusion",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/subagent-wedge-backstop-hook/PHASES.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/subagent-wedge-backstop-hook/SPEC.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/features/toolify-auto-promotion/COMPLETED.md": [
@@ -9400,6 +10517,16 @@
   ],
   "docs/interventions/adhoc-containment-denies-mandated-explore-fanout.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "execute-plan-skill-diet",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -9420,7 +10547,41 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/interventions/adhoc-cycle-begin-real-requires-sub-skill.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/adhoc-incident-hook-deny-4b767b.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/adhoc-lane-plan-single-lane-seam-classification.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "execute-plan-skill-diet",
       "type": "feature",
@@ -9444,6 +10605,16 @@
   ],
   "docs/interventions/adhoc-write-plan-cognito-planner-contract-read.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "execute-plan-skill-diet",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -9464,6 +10635,150 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/interventions/anti-overfit-design-gate.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/bug-queue-aging-backpressure.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/build-queue-copy-lock-stale-dll-false-success.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/build-queue-enforce-cd-prefix-bypass.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/build-queue-eta-marker-mojibake-on-redirected-stdout.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/build-queue-false-green-on-silent-build-failure.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/build-queue-foreground-wait-blocks-past-terminal-outcome.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/build-queue-hygiene-dot-source-discarded-in-child-scope.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/coupled-pair-generation.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/descoped-row-recognition-needs-canonical-marker.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/execute-plan-skill-diet.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/harden-2026-07-r14.md": [
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -9473,37 +10788,171 @@
   ],
   "docs/interventions/harden-2026-07-r15.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r16.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r17.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r18.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r19.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r20.md": [
     {
-      "id": "interventions-telemetry-repo-scope-split-brain",
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/interventions/harden-2026-07-r21.md": [
+      "provenance": "manual"
+    },
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r21.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "interventions-telemetry-repo-scope-split-brain",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r22.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r23.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r24.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r25.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r26.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r27.md": [
@@ -9511,6 +10960,42 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r37.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r38.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r42.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r43.md": [
@@ -9522,19 +11007,550 @@
   ],
   "docs/interventions/harden-2026-07-r5.md": [
     {
-      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/interventions/harden-2026-07-r7.md": [
+      "provenance": "manual"
+    },
     {
       "id": "hardening-intervention-records-unmeasurable-or-missing",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r54.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r55.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r56.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r57.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r6.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r61.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r62.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r63.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r64.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r65.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r66.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r67.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r7.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "hardening-intervention-records-unmeasurable-or-missing",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r71.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r72.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r73.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r74.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r75.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r76.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r77.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r78.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r79.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r80.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r81.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r82.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r85.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r86.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r87.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r89.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/hardening-intervention-records-unmeasurable-or-missing.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/interventions-telemetry-repo-scope-split-brain.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/lazy-batch-skill-deflation.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/lazy-core-package-decomposition.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/lean-plan-files.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/live-settings-split-brain-disarms-enforcement-plane.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/mechanize-prose-only-orchestrator-contracts.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/park-provisional-acceptance.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/phases-slice-scoped-reads.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/run-end-gate-refusals-no-telemetry-event.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/skip-mcp-test-frontmatter-unquoted-colon.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/spec-excerpt-scoped-plans.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/state-cli-contract-registry.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/stub-origin-provisional-exclusion.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/workstation-recursive-subagent-dispatch.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/kpi/SCORECARD.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "bug-queue-aging-backpressure",
       "type": "feature",
@@ -9570,16 +11586,65 @@
   ],
   "docs/provenance-index.json": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "code-doc-provenance-linkage",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/specs/spec-buddy/PHASES.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/specs/turn-routing-enforcement/NEEDS_INPUT.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/specs/turn-routing-enforcement/NEEDS_INPUT_2026-07-17-research-gated-classification-and-skip-vs-halt.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/specs/turn-routing-enforcement/SPEC.md": [
@@ -9643,6 +11708,16 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "hardening-intervention-records-unmeasurable-or-missing",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -9651,6 +11726,11 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "skip-mcp-test-frontmatter-unquoted-colon",
@@ -9708,12 +11788,63 @@
   ],
   "repos/algobooth/.claude/skill-config/long-build-ownership.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "long-build-and-runtime-ownership",
       "type": "feature",
       "provenance": "backfilled"
     }
   ],
+  "repos/algobooth/.claude/skill-config/phases-runtime-validation.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "repos/algobooth/.claude/skill-config/phases-runtime-verification.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "repos/algobooth/.claude/skill-config/spec-testing-guidance.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
@@ -9723,6 +11854,11 @@
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "operator-checkpoint-resume-counter-reset",
@@ -9843,6 +11979,16 @@
     }
   ],
   "repos/algobooth/.claude/skills/mcp-test/SKILL.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "harness-hardening-retro-fixes",
       "type": "feature",
@@ -10129,6 +12275,16 @@
   ],
   "repos/cognito-forms/Cognito/CLAUDE.local.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "execute-plan-skill-diet",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -10194,6 +12350,16 @@
   ],
   "user/hooks/CLAUDE.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
@@ -10230,12 +12396,44 @@
   ],
   "user/hooks/block-terminal-kill.sh": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "state-cli-contract-registry",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
+  "user/hooks/block-work-repo-git-push.sh": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/hooks/build-queue-enforce.sh": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "incident-auto-capture",
       "type": "feature",
@@ -10271,9 +12469,19 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "execute-plan-skill-diet",
@@ -10327,6 +12535,16 @@
   ],
   "user/hooks/long-build-ownership-guard.sh": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
@@ -10374,6 +12592,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "ensure-runtime-false-hijacked-on-owned-serving-runtime",
       "type": "bug",
       "provenance": "backfilled"
@@ -10387,6 +12610,11 @@
       "id": "feature-queue-lacks-on-disk-autodiscovery",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "operator-checkpoint-resume-counter-reset",
@@ -10563,6 +12791,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
@@ -10581,6 +12814,11 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
@@ -10668,6 +12906,74 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/build-queue-foreground-outcome.Tests.ps1": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/build-queue-hygiene.ps1": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/build-queue-runner.ps1": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/build-queue.ps1": [
+    {
+      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/scripts/cli_surface_gen.py": [
     {
       "id": "generalized-build-test-runner-skills",
@@ -10676,6 +12982,16 @@
     }
   ],
   "user/scripts/coupled-overlays/lazy-batch-cloud.overlay.json": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -10693,6 +13009,16 @@
     }
   ],
   "user/scripts/coupled-overlays/lazy-bug-batch.overlay.json": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "coupled-pair-generation",
       "type": "feature",
@@ -10732,6 +13058,11 @@
   ],
   "user/scripts/doc-drift-lint.py": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "hardening-intervention-records-unmeasurable-or-missing",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -10740,6 +13071,11 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "doc-drift-linter",
@@ -10779,6 +13115,16 @@
     }
   ],
   "user/scripts/harness-gate.py": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "anti-overfit-design-gate",
       "type": "feature",
@@ -10858,6 +13204,16 @@
   ],
   "user/scripts/lazy-queue-doc.py": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "bug-queue-aging-backpressure",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -10890,6 +13246,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "ensure-runtime-recovery-starves-cold-compile",
       "type": "bug",
       "provenance": "backfilled"
@@ -10918,6 +13279,11 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
@@ -11232,6 +13598,40 @@
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/lazy_core/depdag.py": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/lazy_core/dispatch.py": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/scripts/lazy_core/docmodel.py": [
@@ -11239,6 +13639,16 @@
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "lazy-core-package-decomposition",
@@ -11251,6 +13661,40 @@
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/lazy_core/ledgers.py": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/lazy_core/markers.py": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/scripts/lazy_core/pseudo.py": [
@@ -11277,11 +13721,33 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/scripts/lazy_inject.py": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/scripts/lazy_parity_audit.py": [
     {
       "id": "bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "intervention-efficacy-tracking",
@@ -11557,6 +14023,16 @@
   ],
   "user/scripts/skill-size-baseline.json": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -11631,6 +14107,16 @@
   ],
   "user/scripts/test_harness_gate.py": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -11648,6 +14134,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
@@ -11656,6 +14147,11 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "incident-auto-capture",
@@ -11965,6 +14461,18 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/scripts/test_live_settings_probe.py": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/scripts/test_phases_slice.py": [
     {
       "id": "execute-plan-skill-diet",
@@ -12221,11 +14729,45 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/tests/test_lazy_core/test_depdag.py": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/tests/test_lazy_core/test_dispatch.py": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/scripts/tests/test_lazy_core/test_docmodel.py": [
     {
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/scripts/tests/test_lazy_core/test_gates.py": [
@@ -12233,9 +14775,53 @@
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/tests/test_lazy_core/test_ledgers.py": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/tests/test_lazy_core/test_markers.py": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/scripts/tests/test_lazy_core/test_misc.py": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
@@ -12247,6 +14833,28 @@
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/tests/test_lazy_core/test_statedir.py": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/scripts/toolify-miner.py": [
@@ -12321,6 +14929,18 @@
       "provenance": "backfilled"
     }
   ],
+  "user/skills/_components/blocked-resolution.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/skills/_components/completeness-policy.md": [
     {
       "id": "descoped-row-recognition-needs-canonical-marker",
@@ -12340,6 +14960,18 @@
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/skills/_components/dispatched-agent-liveness.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/skills/_components/execution-completion-summary.md": [
@@ -12435,6 +15067,16 @@
   ],
   "user/skills/_components/lazy-batch-prompts/dispatch-apply-resolution.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -12445,11 +15087,35 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/skills/_components/lazy-batch-prompts/dispatch-hardening.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/skills/_components/lazy-batch-prompts/dispatch-recovery.md": [
     {
       "id": "lazy-cycle-containment",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/skills/_components/lazy-batch-prompts/dispatch-spike.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/skills/_components/lazy-batch-prompts/input-audit-prompt.md": [
@@ -12462,6 +15128,18 @@
       "id": "stub-origin-provisional-exclusion",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/_components/lazy-batch-prompts/research-halt-announcement.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/skills/_components/lazy-dispatch-template.md": [
@@ -12599,6 +15277,18 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/skills/_components/spike-dispatch.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/skills/_components/touchpoint-audit-gate.md": [
     {
       "id": "execute-plan-skill-diet",
@@ -12619,6 +15309,18 @@
       "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/_components/turn-end-gate.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/skills/architecture-patterns/SKILL.md": [
@@ -12755,6 +15457,16 @@
   ],
   "user/skills/execute-plan/SKILL.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "execute-plan-skill-diet",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -12843,9 +15555,19 @@
   ],
   "user/skills/harden-harness/SKILL.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "hardening-intervention-records-unmeasurable-or-missing",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "anti-overfit-design-gate",
@@ -12958,6 +15680,16 @@
   ],
   "user/skills/lazy-batch-parallel/SKILL.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "execute-plan-skill-diet",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -13037,6 +15769,11 @@
   ],
   "user/skills/lazy-batch/SKILL.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "ensure-runtime-false-hijacked-on-owned-serving-runtime",
       "type": "bug",
       "provenance": "backfilled"
@@ -13065,6 +15802,11 @@
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "operator-checkpoint-resume-counter-reset",
@@ -13174,6 +15916,11 @@
   ],
   "user/skills/lazy-bug-batch/SKILL.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
@@ -13187,6 +15934,11 @@
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "park-mode-halts-on-blocked",
@@ -13640,6 +16392,16 @@
   ],
   "user/skills/restart-windows-claude/SKILL.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "stub-origin-provisional-exclusion",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -13696,6 +16458,16 @@
   ],
   "user/skills/spec-buddy/SKILL.md": [
     {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "execute-plan-skill-diet",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -13748,6 +16520,16 @@
     }
   ],
   "user/skills/spec/SKILL.md": [
+    {
+      "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "research-prompt-leaks-identity-doc-meta",
       "type": "bug",
@@ -13954,111 +16736,6 @@
     {
       "id": "spec-excerpt-scoped-plans",
       "type": "feature",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/BLOCKED.md": [
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/PHASES.md": [
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/SKIP_MCP_TEST.md": [
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/VALIDATED.md": [
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-1.md": [
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-2.md": [
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-3.md": [
-    {
-      "id": "build-queue-copy-lock-stale-dll-false-success",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/GATE_VERDICT.md": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/PHASES.md": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/SKIP_MCP_TEST.md": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "docs/bugs/build-queue-foreground-wait-blocks-past-terminal-outcome/SPEC.md": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "user/scripts/build-queue-foreground-outcome.Tests.ps1": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "user/scripts/build-queue-hygiene.ps1": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "user/scripts/build-queue-runner.ps1": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
-      "provenance": "pipeline-gated"
-    }
-  ],
-  "user/scripts/build-queue.ps1": [
-    {
-      "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
-      "type": "bug",
       "provenance": "pipeline-gated"
     }
   ]
