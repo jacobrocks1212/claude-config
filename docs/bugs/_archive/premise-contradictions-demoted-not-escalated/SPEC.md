@@ -3,9 +3,10 @@
 > Every pipeline gate audits *downward* (does the plan match SPEC/code anchors?) and none audits *upward* (does contradicting field evidence falsify a SPEC premise?) — so contradicting evidence that was already inside the pipeline three separate times got reconciled into local wrinkles instead of invalidating the wrong premise, which a human reviewer then refuted in one conversation.
 
 **Status:** Fixed
-**Fixed:** 2026-07-10 — implemented out-of-pipeline (operator-directed subagent orchestration; fix scope in this SPEC)
+**Fixed:** 2026-07-18
 **Severity:** P1
 **Discovered:** 2026-07-10
+**Fix commit:** 262f5484
 **Placement:** docs/bugs/premise-contradictions-demoted-not-escalated
 **Related:** 57077 case study, `_components/touchpoint-audit-gate.md`, `user/skills/spec/SKILL.md` (Step 9), sibling bugs `planning-validation-misses-serving-path-and-data-reach`, `external-owner-contracts-locked-without-consultation`
 
