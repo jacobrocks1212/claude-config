@@ -73,6 +73,13 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cli_surface
 
+# lazy_coord owns the coordinator leases.json (worktree-pool fencing). Imported
+# for the read-only has_live_lease() helper used by the --emit-prompt merged-head
+# divergence guard's serial-tail lease exemption (lazy-batch-parallel-run-harness-
+# gaps round-2 gap 8). lazy_coord is stdlib-only and never imports lazy_core, so
+# there is no import cycle.
+import lazy_coord
+
 # Domain-agnostic helpers live in lazy_core (WU-1.2 extraction). Import the
 # module itself so lazy_core._DIAGNOSTICS is the canonical list object and
 # lazy-state.py's _state() / compute_state() always reference the same list.
@@ -12781,10 +12788,25 @@ def main() -> int:
         # /spec or plan-feature cycle. record_audit_obligation is a no-op on
         # a non-audited sub_skill and marker-gated (no-op with no live run),
         # so this is byte-identical unless the withhold actually applies.
+        # adhoc-audit-obligation-fires-on-zero-commit-failed-cycle: pass the
+        # commit-delta signal (begin vs current HEAD) so a ZERO-COMMIT (failed /
+        # no-op) close arms NO obligation, and a real-commit close records the
+        # bracket's ACTUAL end sha + subject. The summary git call is skipped on
+        # the zero-commit path (the hot failed-cycle path this bug targets).
         if _tl_cycle is not None:
+            _aud_begin = _tl_cycle.get("begin_head_sha")
+            _aud_end = lazy_core.head_sha_snapshot(Path(args.repo_root))
+            _aud_summary = (
+                lazy_core.head_commit_subject(Path(args.repo_root))
+                if _aud_end and _aud_end != _aud_begin
+                else None
+            )
             lazy_core.record_audit_obligation(
                 item_id=_tl_cycle.get("feature_id"),
                 cycle_kind=_tl_cycle.get("sub_skill"),
+                begin_head_sha=_aud_begin,
+                end_sha=_aud_end,
+                cycle_summary=_aud_summary,
             )
         friction = lazy_core.cycle_end_friction_check(repo_root=Path(args.repo_root))
         # code-doc-provenance-linkage Phase 1 (D4-A): record this cycle's commit
@@ -14021,8 +14043,39 @@ def main() -> int:
         _emit_is_lane = bool(
             isinstance(_emit_marker, dict) and _emit_marker.get("parent_run")
         )
+        # lazy-batch-parallel-run-harness-gaps round-2 gap 8: EXEMPT the
+        # coordinator's SERIAL-TAIL probe whose OWN feature_id holds a LIVE
+        # coordinator lease. Round-1 gap 1 (above) exempted the LANE probe form
+        # (parent_run set), but the post-merge validation TAIL probes run at the
+        # MAIN root against the PARENT marker (parent_run null → not a lane), so
+        # the serial guard still fired: when a freshly-dispatchable head (e.g. a
+        # research-ingested feature) became the merged head, the tail's
+        # --emit-prompt for a merged, lease-held item was WITHHELD
+        # (route_overridden_by: merged-head-diverged) even though completing that
+        # lease-held item is the coordinator's obligation BEFORE any new head
+        # work. A live lease on the PROBED item means it is actively-owned
+        # in-flight work (heartbeat fresh) — never the stale route the guard
+        # exists to catch — so redirecting away from it would orphan the
+        # lease-held tail. This is the exact analog of the lane exemption: a lane
+        # exempts on the coordinator-arbitrated claim (parent_run); the tail
+        # exempts on the probed item's OWN live lease (coordinator-owned in-flight
+        # completion). Fail-safe: any read error / no leases.json / no live lease
+        # → False → the guard runs exactly as before (byte-identical for every
+        # non-parallel serial run, which has no leases.json). Note lease-EXCLUSION
+        # (dropping other leased ids from the merged head) would NOT fix this — the
+        # divergent head here is a fresh non-leased item, so it stays the head;
+        # only exempting the probe for its OWN live lease clears the withhold.
+        _emit_is_lease_held = False
+        if _emit_marker is not None and not _emit_is_lane and state.get("feature_id"):
+            try:
+                _emit_is_lease_held = lazy_coord.has_live_lease(
+                    lazy_core.claude_state_dir() / "leases.json",
+                    state.get("feature_id"),
+                )
+            except Exception:  # noqa: BLE001 — lease probe must never break the base probe
+                _emit_is_lease_held = False
         _merged_override = None
-        if _emit_marker is not None and not _emit_is_lane:
+        if _emit_marker is not None and not _emit_is_lane and not _emit_is_lease_held:
             try:
                 _mo_repo = Path(args.repo_root)
                 _mo_feats = load_queue(_mo_repo)
@@ -14109,6 +14162,18 @@ def main() -> int:
                     "(parent_run set); lane arbitration is coordinator-owned "
                     "(claim_shardable)."
                 )
+        elif _emit_is_lease_held:
+            # gap 8 observability: the merged-head divergence guard was SKIPPED
+            # because this serial-tail probe's OWN feature_id holds a live
+            # coordinator lease — completing the lease-held, lane-merged item is
+            # the coordinator's obligation before new head work (never withheld).
+            if isinstance(state.get("diagnostics"), list):
+                state["diagnostics"].append(
+                    "merged-head: skipped divergence guard — serial-tail probe "
+                    "for a lease-held item (feature_id holds a live coordinator "
+                    "lease); completing the merged, lease-held item is the "
+                    "coordinator's in-flight obligation (round-2 gap 8)."
+                )
         if _emit_marker is not None and _emit_debt > 0:
             # Withhold: no cycle_prompt, no cycle_model, no registration.
             _oldest = lazy_core.oldest_unacked_deny()
@@ -14152,6 +14217,11 @@ def main() -> int:
                 spec_path=_aud_spec_path,
                 cycle_kind=_obligation.get("cycle_kind") or "",
                 cwd=str(args.repo_root),
+                # adhoc-audit-obligation-fires-on-zero-commit-failed-cycle P2:
+                # bind the emit command to the bracket's ACTUAL end commit
+                # (recorded on the obligation in P1), never positional HEAD~1.
+                cycle_commit_sha=_obligation.get("cycle_commit_sha"),
+                cycle_summary=_obligation.get("cycle_summary"),
             )
         elif _merged_override is not None:
             # dispatch-probe-and-inject-bypass-merged-head: the MERGED head is a

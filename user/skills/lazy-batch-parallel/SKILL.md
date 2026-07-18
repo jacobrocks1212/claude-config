@@ -288,6 +288,22 @@ queue trim, exactly as today) → `python3 ~/.claude/scripts/lazy-queue-doc.py -
 root>` riding the coordinator commit → `release_lease` → `scrub_slot` the freed slot. Tail
 cycles debit the parent budget.
 
+> **`--ensure-runtime` is FOREGROUND-ONLY (round-2 gap 9).** The tail's `--ensure-runtime` call
+> is a FOREGROUND, blocking `Bash` call — NEVER `run_in_background`. It owns its own background
+> `dev:restart` + a synchronous multi-minute health poll; backgrounding it under the active
+> parent marker lets the recovery `dev:restart` → `kill-dev.js` sweep kill the background
+> launcher's own process tree (observed: two instant zero-byte kills). See
+> `user/scripts/CLAUDE.md` → `--ensure-runtime` FOREGROUND-ONLY CONTRACT.
+
+> **Serial-tail `--emit-prompt` is lease-exempt from the merged-head guard (round-2 gap 8).** The
+> tail's `--emit-prompt --feature-id <merged item>` runs at the MAIN root against the PARENT
+> marker (`parent_run: null`), so the round-1 lane exemption does NOT apply. Because the probed
+> item still holds its LIVE lease until `release_lease` (below), `lazy-state.py` exempts it from
+> the `merged-head-diverged` withhold — completing the merged, lease-held item is the
+> coordinator's obligation before any new head work, so a freshly-dispatchable merged head does
+> NOT redirect the tail away from it. This is automatic (keyed on the item's own live lease); the
+> coordinator does nothing special beyond keeping the lease held across the validation cycle.
+
 ## Step 5: Demoted serial re-runs
 
 For each `demoted: serial` item, in queue order, while parent budget remains: run ordinary

@@ -904,6 +904,48 @@ def claim_shardable(candidates, leases_path, *, now=None) -> dict:
 	return {"claimed": claimed, "held": held}
 
 
+def has_live_lease(leases_path, wi_id, *, now=None) -> bool:
+	"""Return True iff ``wi_id`` holds a LIVE (non-expired) lease in
+	``leases_path`` — the same liveness predicate ``claim_shardable`` applies as
+	its third rail, factored out for the merged-head divergence exemption.
+
+	READ-ONLY (never mutates leases.json; run ``reclaim_expired`` first for a
+	sweep). Fail-safe by construction:
+
+	  * missing file / missing ``wi_id`` key        → False (no lease held)
+	  * present key, unreadable heartbeat/ttl fields → True  (conservative —
+	    mirrors ``claim_shardable``: an unreadable entry is assumed live so a
+	    genuinely-held item is never treated as free)
+
+	Used by the ``--emit-prompt`` merged-head divergence guard
+	(lazy-batch-parallel-run-harness-gaps round-2 gap 8): a serial-tail probe
+	whose OWN ``feature_id`` holds a live lease is discharging the coordinator's
+	in-flight (lane-merged, lease-held) obligation, so the guard must NOT withhold
+	its forward route behind a freshly-dispatchable global head — the exact analog
+	of a lane probe (``parent_run`` set) being exempted. Distinct from that lane
+	exemption: a lane exempts on the coordinator-arbitrated claim (``parent_run``);
+	the serial tail exempts on the probed item's OWN live lease.
+
+	Args:
+	    leases_path: Path to the coordinator leases.json (``claude_state_dir() /
+	        "leases.json"`` in production).
+	    wi_id: Work-item ID (int or str) to test.
+	    now: Optional epoch float override for deterministic testing.
+
+	Returns:
+	    True iff a live lease for ``wi_id`` exists.
+	"""
+	ts_now = now if now is not None else time.time()
+	entry = _read_leases(leases_path).get(str(wi_id))
+	if entry is None:
+		return False
+	try:
+		return _parse_iso(entry["heartbeat_timestamp"]) + entry["ttl_seconds"] >= ts_now
+	except (KeyError, TypeError, ValueError):
+		# Unreadable entry → assume live (conservative), exactly as claim_shardable.
+		return True
+
+
 def read_lanes(lanes_path) -> dict:
 	"""Read lanes.json, returning the empty ledger shape if absent."""
 	p = Path(lanes_path)
@@ -2393,6 +2435,63 @@ def run_smoke_tests() -> int:
 			failures.append(f"[{fix21_name}] FAIL: unexpected exception: {exc!r}")
 			fix21_ok = False
 		print(f"  {'PASS' if fix21_ok else 'FAIL'} [{fix21_name}]")
+
+		# -------------------------------------------------------------------
+		# Fixture 22: has-live-lease-predicate
+		#
+		# has_live_lease mirrors claim_shardable's third-rail liveness check
+		# (lazy-batch-parallel-run-harness-gaps round-2 gap 8 — the serial-tail
+		# merged-head exemption). Assert: a live lease → True; an expired lease
+		# → False; a missing key → False; a missing file → False; an
+		# unreadable-entry key → True (conservative, as claim_shardable).
+		# -------------------------------------------------------------------
+		fix22_name = "has-live-lease-predicate"
+		fix22_ok = True
+		try:
+			fix22_dir = td_path / "fix22"
+			fix22_dir.mkdir()
+			leases_path_22 = fix22_dir / "leases.json"
+			now_22 = 3_000_000.0
+			live_ts = datetime.fromtimestamp(now_22, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+			# expired: heartbeat + ttl strictly before now.
+			expired_ts = datetime.fromtimestamp(
+				now_22 - 1000, tz=timezone.utc
+			).strftime("%Y-%m-%dT%H:%M:%SZ")
+			seed_22 = {
+				"live-item": {
+					"worker_pid": 1234,
+					"worktree_slot": "wt-00",
+					"term_token": 1,
+					"heartbeat_timestamp": live_ts,
+					"ttl_seconds": 300,
+				},
+				"expired-item": {
+					"worker_pid": 1235,
+					"worktree_slot": "wt-01",
+					"term_token": 1,
+					"heartbeat_timestamp": expired_ts,
+					"ttl_seconds": 300,
+				},
+				# Present key but unreadable fields → conservative True.
+				"broken-item": {"worker_pid": 1236},
+			}
+			leases_path_22.write_text(json.dumps(seed_22), encoding="utf-8")
+			checks_22 = [
+				("live lease → True", has_live_lease(leases_path_22, "live-item", now=now_22) is True),
+				("expired lease → False", has_live_lease(leases_path_22, "expired-item", now=now_22) is False),
+				("missing key → False", has_live_lease(leases_path_22, "absent-item", now=now_22) is False),
+				("unreadable entry → True", has_live_lease(leases_path_22, "broken-item", now=now_22) is True),
+				("missing file → False", has_live_lease(fix22_dir / "nope.json", "live-item", now=now_22) is False),
+				("int wi_id coerced → True", has_live_lease(leases_path_22, "live-item", now=now_22) is True),
+			]
+			for label, ok in checks_22:
+				if not ok:
+					failures.append(f"[{fix22_name}] FAIL: {label}")
+					fix22_ok = False
+		except Exception as exc:  # noqa: BLE001
+			failures.append(f"[{fix22_name}] FAIL: unexpected exception: {exc!r}")
+			fix22_ok = False
+		print(f"  {'PASS' if fix22_ok else 'FAIL'} [{fix22_name}]")
 
 	if failures:
 		print("\nFAILURES:")

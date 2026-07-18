@@ -2845,6 +2845,139 @@ def test_subprocess_emit_prompt_lane_marker_skips_merged_head_withhold():
             f"{state_json.get('route_overridden_by')!r}")
 
 
+def _gap8_build_divergent_fixture(td_path):
+    """Shared fixture for the gap-8 serial-tail lease exemption tests: a
+    dispatchable feature `feat-c` (tier 1) with a P0 bug `bug-z` at the merged
+    head that WOULD withhold a serial `--feature-id feat-c` probe. Returns the
+    fixture repo path."""
+    features = td_path / "fixture-repo" / "docs" / "features"
+    features.mkdir(parents=True)
+    (features / "queue.json").write_text(json.dumps({
+        "queue": [
+            {"id": "feat-c", "name": "Feature C", "spec_dir": "feat-c", "tier": 1}
+        ]
+    }), encoding="utf-8")
+    (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+    fdir = features / "feat-c"
+    fdir.mkdir()
+    (fdir / "SPEC.md").write_text(
+        "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+    (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+    (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+    (fdir / "PHASES.md").write_text(
+        "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n",
+        encoding="utf-8")
+    (fdir / "plans").mkdir()
+    (fdir / "plans" / "all-phases-c.md").write_text("# Plan\n", encoding="utf-8")
+    fixture_repo = td_path / "fixture-repo"
+    bug_dir = fixture_repo / "docs" / "bugs" / "bug-z"
+    (bug_dir / "plans").mkdir(parents=True)
+    (fixture_repo / "docs" / "bugs" / "queue.json").write_text(json.dumps({
+        "queue": [
+            {"id": "bug-z", "name": "Bug Z", "spec_dir": "bug-z", "severity": "P0"}
+        ]
+    }), encoding="utf-8")
+    (bug_dir / "SPEC.md").write_text(
+        "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n", encoding="utf-8")
+    (bug_dir / "PHASES.md").write_text(
+        "# Phases\n\n### Phase 1\n- [ ] Fix the thing\n- [ ] Tests\n", encoding="utf-8")
+    (bug_dir / "plans" / "all-phases-z.md").write_text("# Plan\n", encoding="utf-8")
+    return fixture_repo
+
+
+def _gap8_run_emit_probe(lazy_state_script, fixture_repo, state_dir):
+    """Run the serial-tail-shape `--emit-prompt --feature-id feat-c` probe (SERIAL
+    parent marker, parent_run null) and return the parsed state JSON."""
+    env = dict(_os_env.environ)
+    env["LAZY_STATE_DIR"] = str(state_dir)
+    result = subprocess.run(
+        [sys.executable, str(lazy_state_script),
+         "--repeat-count", "--probe", "--emit-prompt",
+         "--repo-root", str(fixture_repo), "--feature-id", "feat-c"],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, (
+        f"lazy-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
+    return json.loads(result.stdout)
+
+
+def test_subprocess_emit_prompt_serial_tail_lease_held_skips_merged_head_withhold():
+    """lazy-batch-parallel-run-harness-gaps round-2 gap 8: a SERIAL parent-marker
+    (parent_run null) tail probe for `feat-c` whose OWN feature_id holds a LIVE
+    coordinator lease in leases.json must NOT withhold on merged-head divergence —
+    completing the merged, lease-held item is the coordinator's obligation. The
+    round-1 lane exemption keys on parent_run (null here), so only the gap-8 own-
+    lease exemption clears this. route_overridden_by must NOT be
+    'merged-head-diverged'."""
+    _guard()
+    import lazy_coord  # type: ignore[import]
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = _gap8_build_divergent_fixture(td_path)
+        state_dir = td_path / "lazy-state-dir"
+        state_dir.mkdir()
+
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            # SERIAL parent marker: parent_run null (the main-root tail marker).
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(fixture_repo), max_cycles=10, now=_time.time(),
+            )
+        finally:
+            _clear_state_dir()
+
+        # Live lease on the PROBED item, in the state dir's leases.json.
+        lazy_coord.acquire_lease(
+            state_dir / "leases.json", "feat-c", os.getpid(), "wt-00", 3600,
+            now=_time.time(),
+        )
+
+        state_json = _gap8_run_emit_probe(lazy_state_script, fixture_repo, state_dir)
+        assert state_json.get("route_overridden_by") != "merged-head-diverged", (
+            f"a serial-tail probe whose feature_id holds a LIVE lease must NOT "
+            f"withhold on merged-head divergence; got route_overridden_by="
+            f"{state_json.get('route_overridden_by')!r}")
+
+
+def test_subprocess_emit_prompt_serial_tail_no_lease_still_withholds():
+    """lazy-batch-parallel-run-harness-gaps round-2 gap 8 (negative control /
+    lease-gating proof): the SAME divergent fixture + SERIAL marker but with NO
+    live lease on `feat-c` must STILL withhold (route_overridden_by ==
+    'merged-head-diverged') — proving the exemption is gated on the probed item's
+    OWN live lease, not merely on the --feature-id scoping."""
+    _guard()
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = _gap8_build_divergent_fixture(td_path)
+        state_dir = td_path / "lazy-state-dir"
+        state_dir.mkdir()
+
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(fixture_repo), max_cycles=10, now=_time.time(),
+            )
+        finally:
+            _clear_state_dir()
+
+        # No lease written → the serial guard must run and withhold.
+        state_json = _gap8_run_emit_probe(lazy_state_script, fixture_repo, state_dir)
+        assert state_json.get("route_overridden_by") == "merged-head-diverged", (
+            f"a serial-tail probe with NO live lease must WITHHOLD over a P0-bug "
+            f"merged head; got route_overridden_by="
+            f"{state_json.get('route_overridden_by')!r}")
+        assert state_json.get("merged_head") == {"item_id": "bug-z", "type": "bug"}, (
+            f"merged_head must name the P0 bug; got {state_json.get('merged_head')!r}")
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -6699,6 +6832,8 @@ _TESTS = [
     ("test_merged_worklist_exclude_ids_drops_parked_items", test_merged_worklist_exclude_ids_drops_parked_items),
     ("test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug", test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug),
     ("test_subprocess_emit_prompt_lane_marker_skips_merged_head_withhold", test_subprocess_emit_prompt_lane_marker_skips_merged_head_withhold),
+    ("test_subprocess_emit_prompt_serial_tail_lease_held_skips_merged_head_withhold", test_subprocess_emit_prompt_serial_tail_lease_held_skips_merged_head_withhold),
+    ("test_subprocess_emit_prompt_serial_tail_no_lease_still_withholds", test_subprocess_emit_prompt_serial_tail_no_lease_still_withholds),
     ("test_probe_skipped_ids_collects_all_skip_lists_and_resolves_names", test_probe_skipped_ids_collects_all_skip_lists_and_resolves_names),
     ("test_merged_head_override_gated_head_excluded_no_false_withhold", test_merged_head_override_gated_head_excluded_no_false_withhold),
     ("test_subprocess_emit_prompt_skips_blocked_gated_head_no_withhold", test_subprocess_emit_prompt_skips_blocked_gated_head_no_withhold),
