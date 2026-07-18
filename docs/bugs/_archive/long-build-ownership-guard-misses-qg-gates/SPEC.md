@@ -1,6 +1,8 @@
 # Bug: long-build-ownership guard does not redirect the heavy qg quality gates
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-18
+**Fix commit:** 716dfd3f
 **Reported via:** `/harden-harness` observed-friction dispatch (2026-07-17, item in flight `hydra-overlay`, AlgoBooth `/lazy-batch` execute-plan part 6, blocking=true)
 **Root-cause class:** `missing-contract` (the enforcement layer under an already-advised rule)
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage); `user/hooks/long-build-ownership-guard.sh`; `repos/algobooth/.claude/skill-config/long-build-ownership.md`; `user/skills/lazy-batch/SKILL.md` Step 1d; hardening-log Round 45 (`cycle-subagent-over-cap-aggregate-gate-auto-backgrounds` — the PROSE layer this round enforces).
