@@ -13,12 +13,14 @@
 > impl sub-subagents on `src-tauri/src/hydra/mod.rs`. Only a coincidental `TaskStop` failure
 > (target already superseded) prevented the interference.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1 (integrity/single-writer — the misread invites the main session to `TaskStop` a
 live single-writer lineage and dual-write its owned files, the exact catastrophic failure the
 one-writer discipline exists to prevent. No on-disk corruption occurred this time only by
 coincidence.)
 **Discovered:** 2026-07-17
+**Fixed:** 2026-07-18
+**Fix commit:** 6c2e9700
 **Placement:** docs/bugs/dispatched-orchestrator-completed-notification-misread-as-terminal
 **Related:**
 - `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` — this investigation is the
