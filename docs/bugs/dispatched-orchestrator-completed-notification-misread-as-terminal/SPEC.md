@@ -117,6 +117,17 @@ Author the RECEIVER-side counterpart to `turn-end-gate.md`:
   false-positive risk (blocking legitimate operator recovery). The raw non-skill-running
   interactive main session is therefore the acknowledged residual reach gap, to be closed (if at
   all) when decision #12 lands.
+- **The GENUINE-WEDGE mechanical backstop (operator-steered `SubagentStop` hook).** After the
+  false-completion (receiver) fix above landed, the operator steered evaluation of a
+  `SubagentStop` hook as the lead mechanical candidate for the DISTINCT genuine-wedge variant (a
+  dispatched orchestrator whose turn truly ends with pending work uncommitted, nothing
+  re-invoking it). Evaluation outcome: firing semantics are FAVORABLE (the hook fires only at a
+  subagent's genuine loop-end, not at foreground-child yields) and `/execute-plan`'s existing
+  run-marker lifecycle supplies the paused-with-live-children opt-out for free — but the
+  loop-guard field `stop_hook_active` is genuinely UNDOCUMENTED and the block is a new
+  subagent-lifecycle enforcement authority, making it a `divergence: structural` fork.
+  HARD-PARKED (nothing implemented) as `docs/specs/turn-routing-enforcement/NEEDS_INPUT.md`
+  decision #14, with a concrete recommendation-first design for operator ratification.
 - Any new sentinel/heartbeat field on the run marker: unnecessary. The marker's mere presence is
   already the "paused-not-done" signal, and `TaskList` already enumerates live descendants;
   resume-on-child-completion already works (the harness re-invokes the parent per completion).
