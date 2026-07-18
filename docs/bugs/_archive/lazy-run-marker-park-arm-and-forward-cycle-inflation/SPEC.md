@@ -1,6 +1,8 @@
 # Bug: run marker never arms park at run-start + forward_cycles inflates on non-dispatch inject turns
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-18
+**Fix commit:** beae3aa0
 **Trigger:** observed-friction (orchestrator-observed mid-run, live overnight `/lazy-batch 25 --park --park-provisional`, 2026-07-17)
 **Item in flight:** adhoc-hydra-sidecar-dist-esm-no-frames
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage), `docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/` (same run, Round 54), `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` Round 55
