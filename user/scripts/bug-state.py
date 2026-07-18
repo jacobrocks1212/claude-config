@@ -120,6 +120,8 @@ from lazy_core import (
     skip_waiver_refusal,
     repo_has_no_app_surface,
     phases_mcp_runtime_not_required,
+    phases_spike_required,
+    spike_verdict_is_pass,
     spec_status,
     commit_drift_verdict,
     observation_gap_promotable,
@@ -1509,6 +1511,28 @@ def compute_state(
     blocked_file = spec_dir / "BLOCKED.md"
     if blocked_file.exists():
         meta = parse_sentinel(blocked_file) or {}
+        # spike-pipeline-role Phase 2 (WU-3 — coupled mirror of lazy-state.py's
+        # WU-2 blocked-resolver): a BLOCKED.md naming Spike as its resolver routes
+        # to a `spike` cycle instead of the generic manual-block terminal. Fires
+        # unconditionally on the blocker_kind (the `spike_escalation` predicate is
+        # a separate Part-3-consumed signal). Placed before the generic `blocked`
+        # terminal, identical routing to the feature axis.
+        if meta.get("blocker_kind") == "runtime-spike-verdict-pending":
+            lazy_core._diag(
+                "Step 3: BLOCKED.md blocker_kind=runtime-spike-verdict-pending "
+                "→ routing to spike (blocked resolver)"
+            )
+            return _bug_state(
+                **common,
+                current_step="Step 3: spike verdict pending (blocked resolver)",
+                sub_skill="spike",
+                sub_skill_args=(
+                    f"resolve the spike blocker for {bug_name}: run the runtime "
+                    f"proof and write SPIKE_VERDICT.md (verdict: PASS|FAIL, with "
+                    f"observed evidence) in {spec_dir_str}, then neutralize "
+                    f"BLOCKED.md. See {spec_dir_str}/SPEC.md."
+                ),
+            )
         phase = meta.get("phase", "unknown")
         notify_message = f"BLOCKED: {bug_name} — {phase}. Awaiting input."
         # Validation-escalation payload (Phase 11 WU-1a) — exact mirror of
@@ -1938,6 +1962,28 @@ def compute_state(
                 sub_skill=SKILL_MCP_TEST,
                 sub_skill_args=f"validate {bug_name} — see {spec_dir_str}/SPEC.md",
             )
+
+    # Step 9.5: spike verdict gate (spike-pipeline-role Phase 2, WU-3 — coupled
+    # mirror of lazy-state.py's Step 9.5). Control reaches here only when the
+    # Step-9 MCP gate fell through (VALIDATED.md present). If the active PHASES.md
+    # declares `**Spike:** required` and no PASS spike verdict is on disk yet, the
+    # bug's completion rests on an un-run runtime proof: route to a `spike` cycle
+    # BEFORE Step 10 mark-fixed. A PASS verdict / no `**Spike:**` line falls
+    # through byte-identically. Routing is IDENTICAL to the feature axis; only the
+    # builder (_bug_state) + Step-10 terminal (__mark_fixed__) differ.
+    if phases_spike_required(spec_dir) and not spike_verdict_is_pass(spec_dir):
+        _variant, _goal = lazy_core._read_spike_decision(spec_dir)
+        lazy_core._diag("Step 9.5: **Spike:** required with no PASS verdict → routing to spike")
+        return _bug_state(
+            **common,
+            current_step="Step 9.5: spike verdict pending",
+            sub_skill="spike",
+            sub_skill_args=(
+                f"run the runtime proof for {bug_name} — goal: {_goal}. "
+                f"Write SPIKE_VERDICT.md (verdict: PASS|FAIL, with observed "
+                f"evidence) in {spec_dir_str}; see {spec_dir_str}/SPEC.md."
+            ),
+        )
 
     # Step 10: Mark fixed.
     # Entry: VALIDATED.md (+ Status not yet Fixed). (Retro unwired — no
@@ -4103,6 +4149,70 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             "a co-present stray\n", encoding="utf-8"
         )
 
+    elif name == "spike-required-no-verdict":
+        # spike-pipeline-role Phase 2 (WU-3, bug-axis mirror of lazy-state.py's
+        # Step 9.5 gate). Phases complete + VALIDATED.md present (RETRO_DONE.md
+        # not required — retro is unwired, see "phases-complete-no-retro"
+        # above) + PHASES.md declares `**Spike:** required` + NO
+        # SPIKE_VERDICT.md on disk. Expected: sub_skill == "spike" at the
+        # Step-9.5 seam, NOT __mark_fixed__.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-spike-nv", "name": "Spike Required No Verdict Bug",
+                 "spec_dir": "bug-spike-nv"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-spike-nv"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Spike Required No Verdict Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-07-17\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "**Spike:** required — prove the fix holds under load\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "VALIDATED.md", "validated",
+            bug_id="bug-spike-nv", date="2026-07-17", result="all-passing",
+        )
+        # Intentionally NO SPIKE_VERDICT.md.
+
+    elif name == "spike-blocker-resolver":
+        # spike-pipeline-role Phase 2 (WU-3, bug-axis mirror of lazy-state.py's
+        # Step-3 BLOCKED.md blocker_kind resolver). A BLOCKED.md carrying
+        # blocker_kind: runtime-spike-verdict-pending must route to sub_skill
+        # "spike" (non-terminal — no terminal_reason) at the dedicated
+        # blocked-resolver current_step, NOT the generic terminal `blocked`.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-spike-br", "name": "Spike Blocker Resolver Bug",
+                 "spec_dir": "bug-spike-br"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-spike-br"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Spike Blocker Resolver Bug\n\n"
+            "**Status:** Investigating\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-07-17\n",
+            encoding="utf-8",
+        )
+        _write_yaml_blocked_sentinel(
+            bdir / "BLOCKED.md",
+            feature_id="bug-spike-br", phase="Investigation",
+            blocker_kind="runtime-spike-verdict-pending",
+            blocked_at="2026-07-17T12:00:00Z", retry_count=0,
+        )
+
     else:
         raise ValueError(f"Unknown fixture name: {name!r}")
 
@@ -4675,6 +4785,44 @@ def run_smoke_tests() -> int:
                 "sub_skill": SKILL_INVESTIGATE,
                 "current_step": STEP_INVESTIGATE,
             },
+        ),
+        # 33. spike-pipeline-role Phase 2 (WU-3, bug-axis mirror of
+        #     lazy-state.py's Step 9.5 gate): a bug whose PHASES.md declares
+        #     `**Spike:** required` with no PASS SPIKE_VERDICT.md on disk must
+        #     route to sub_skill "spike" at the Step-9.5 seam instead of
+        #     falling through to __mark_fixed__. RED against pre-WU-3 code
+        #     (falls straight through to Step 10).
+        (
+            "spike-required-no-verdict", False, True,
+            {
+                "feature_id": "bug-spike-nv",
+                "sub_skill": "spike",
+                "current_step": "Step 9.5: spike verdict pending",
+            },
+        ),
+        # 34. spike-pipeline-role Phase 2 (WU-3, bug-axis mirror of
+        #     lazy-state.py's Step-3 BLOCKED.md blocker_kind resolver): a
+        #     BLOCKED.md carrying blocker_kind: runtime-spike-verdict-pending
+        #     must route to sub_skill "spike" (non-terminal — no
+        #     terminal_reason) at the dedicated Step-3 blocked-resolver
+        #     current_step, instead of the generic terminal_reason="blocked"
+        #     halt. RED against pre-WU-3 code.
+        (
+            "spike-blocker-resolver", False, True,
+            {
+                "feature_id": "bug-spike-br",
+                "sub_skill": "spike",
+                "current_step": "Step 3: spike verdict pending (blocked resolver)",
+            },
+            lambda got, failures, name: (
+                failures.append(
+                    f"[{name}] the spike blocked-resolver route must be "
+                    f"NON-terminal; got terminal_reason="
+                    f"{got.get('terminal_reason')!r}"
+                )
+                if got.get("terminal_reason") is not None
+                else None
+            ),
         ),
     ]
 

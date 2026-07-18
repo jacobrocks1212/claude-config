@@ -2810,6 +2810,105 @@ def test_validation_escalation_string_digit_retry_count():
 
 
 
+# ---- spike_escalation() unit tests (spike-pipeline-role WU-2) ----
+#
+# Faithful shape-mirror of validation_escalation() above — same threshold
+# (retry_count >= 2) and the same int / string-digit / bool-reject / missing
+# tolerances, but keyed on blocker_kind == "runtime-spike-verdict-pending"
+# instead of "mcp-validation". A completely independent predicate (its own
+# blocker_kind never fires the mcp-validation one and vice versa).
+
+def test_spike_escalation_retry_1_not_escalated():
+    """blocker_kind runtime-spike-verdict-pending + retry_count 1 → below
+    the threshold, no escalation."""
+    _guard()
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": 1}
+    ) is False
+
+
+def test_spike_escalation_retry_0_not_escalated():
+    """retry_count 0 (or missing) is also below the threshold."""
+    _guard()
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": 0}
+    ) is False
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending"}
+    ) is False
+
+
+def test_spike_escalation_retry_2_escalated():
+    """blocker_kind runtime-spike-verdict-pending + retry_count 2 →
+    escalation fires (>= 2)."""
+    _guard()
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": 2}
+    ) is True
+    # And anything above the threshold also escalates.
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": 3}
+    ) is True
+
+
+def test_spike_escalation_other_blocker_kind_not_escalated():
+    """retry_count 5 but a NON-spike blocker_kind (e.g. the mcp-validation
+    escalation's own kind) → never escalates. spike_escalation fires ONLY
+    on its own blocker_kind."""
+    _guard()
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "mcp-validation", "retry_count": 5}
+    ) is False
+
+
+def test_spike_escalation_missing_fields_not_escalated():
+    """Missing blocker_kind / missing retry_count / malformed retry_count /
+    None / empty meta → no escalation (mirrors validation_escalation's
+    backward-compatibility tolerances)."""
+    _guard()
+    # Missing blocker_kind entirely.
+    assert lazy_core.spike_escalation({"retry_count": 5}) is False
+    # Missing retry_count entirely.
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending"}
+    ) is False
+    # Malformed retry_count (non-numeric string).
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": "many"}
+    ) is False
+    # None meta (defensive caller convenience).
+    assert lazy_core.spike_escalation(None) is False
+    # Empty meta.
+    assert lazy_core.spike_escalation({}) is False
+
+
+def test_spike_escalation_string_digit_retry_count():
+    """retry_count as a string of digits is tolerated ("2" escalates, "1"
+    not)."""
+    _guard()
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": "2"}
+    ) is True
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": "1"}
+    ) is False
+
+
+def test_spike_escalation_bool_retry_count_rejected():
+    """YAML booleans are ints in Python (True == 1) — retry_count: true must
+    NOT coerce to 1 and must not escalate, even though bool is an int
+    subclass."""
+    _guard()
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": True}
+    ) is False
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": False}
+    ) is False
+
+
+
+
 # ---- WU-5d: apply_pseudo __mark_complete__ retro-staleness backstop ----
 
 def test_apply_pseudo_mark_complete_refuses_stale_retro_zero_writes():
@@ -4351,6 +4450,13 @@ _TESTS = [
     ("test_validation_escalation_other_blocker_kind_not_escalated", test_validation_escalation_other_blocker_kind_not_escalated),
     ("test_validation_escalation_missing_fields_not_escalated", test_validation_escalation_missing_fields_not_escalated),
     ("test_validation_escalation_string_digit_retry_count", test_validation_escalation_string_digit_retry_count),
+    ("test_spike_escalation_retry_1_not_escalated", test_spike_escalation_retry_1_not_escalated),
+    ("test_spike_escalation_retry_0_not_escalated", test_spike_escalation_retry_0_not_escalated),
+    ("test_spike_escalation_retry_2_escalated", test_spike_escalation_retry_2_escalated),
+    ("test_spike_escalation_other_blocker_kind_not_escalated", test_spike_escalation_other_blocker_kind_not_escalated),
+    ("test_spike_escalation_missing_fields_not_escalated", test_spike_escalation_missing_fields_not_escalated),
+    ("test_spike_escalation_string_digit_retry_count", test_spike_escalation_string_digit_retry_count),
+    ("test_spike_escalation_bool_retry_count_rejected", test_spike_escalation_bool_retry_count_rejected),
     ("test_apply_pseudo_mark_complete_refuses_stale_retro_zero_writes", test_apply_pseudo_mark_complete_refuses_stale_retro_zero_writes),
     ("test_apply_pseudo_mark_complete_grandfathered_retro_completes", test_apply_pseudo_mark_complete_grandfathered_retro_completes),
     ("test_apply_pseudo_mark_complete_receipted_noop_beats_stale_retro", test_apply_pseudo_mark_complete_receipted_noop_beats_stale_retro),

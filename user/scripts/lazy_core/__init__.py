@@ -66,6 +66,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "phases_mcp_runtime_not_required": "docmodel",
     "phases_spike_required": "docmodel",          # harden Round 80 — spike header parse
     "_read_spike_decision": "docmodel",           # harden Round 80 — spike variant + goal
+    "spike_verdict_is_pass": "docmodel",          # spike-pipeline-role Phase 2 WU-1 — verdict PASS reader
     "skip_waiver_refusal": "docmodel",
     "spec_status": "docmodel",
     "PROVISIONAL_SENTINEL": "docmodel",
@@ -508,6 +509,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "archive_fixed": "gates",
     "gate_coverage": "gates",
     "has_completion_receipt": "gates",
+    "spike_escalation": "gates",
     "validation_escalation": "gates",
     "write_completed_receipt": "gates",
     # Phase 5 WU-3: feature-dir state ledgers (stale-upstream, materialized, WIP/stage, decisions) + input-audit emit command.

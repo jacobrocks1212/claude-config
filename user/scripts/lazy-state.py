@@ -106,6 +106,8 @@ from lazy_core import (
     repo_has_no_app_surface,
     repo_uses_cognito_planner,
     phases_mcp_runtime_not_required,
+    phases_spike_required,
+    spike_verdict_is_pass,
     spec_status,
     commit_drift_verdict,
     observation_gap_promotable,
@@ -3042,6 +3044,28 @@ def compute_state(
     blocked_file = spec_path / "BLOCKED.md"
     if blocked_file.exists():
         meta = parse_sentinel(blocked_file) or {}
+        # spike-pipeline-role Phase 2 (WU-2): a BLOCKED.md naming Spike as its
+        # resolver routes to a `spike` cycle instead of the generic manual-block
+        # terminal — the second spike entry signal (the ad-hoc / blocked one).
+        # Fires unconditionally on the blocker_kind (the retry-past-threshold
+        # `spike_escalation` predicate is a separate Part-3-consumed signal, not
+        # a gate on this routing). Placed before the generic `blocked` terminal.
+        if meta.get("blocker_kind") == "runtime-spike-verdict-pending":
+            lazy_core._diag(
+                "Step 3: BLOCKED.md blocker_kind=runtime-spike-verdict-pending "
+                "→ routing to spike (blocked resolver)"
+            )
+            return _state(
+                **common,
+                current_step="Step 3: spike verdict pending (blocked resolver)",
+                sub_skill="spike",
+                sub_skill_args=(
+                    f"resolve the spike blocker for {feature_name}: run the "
+                    f"runtime proof and write SPIKE_VERDICT.md (verdict: "
+                    f"PASS|FAIL, with observed evidence) in {spec_path_str}, "
+                    f"then neutralize BLOCKED.md. See {spec_path_str}/SPEC.md."
+                ),
+            )
         phase = meta.get("phase", "unknown")
         notify_message = f"BLOCKED: {feature_name} — {phase}. Awaiting input."
         # Validation-escalation payload (Phase 11 WU-1a): blocker_kind
@@ -3803,6 +3827,28 @@ def compute_state(
                 sub_skill_args=f"validate {feature_name} — see {spec_path_str}/SPEC.md",
             )
 
+    # Step 9.5: spike verdict gate (spike-pipeline-role Phase 2, WU-1).
+    # Control reaches here only when the Step-9 MCP gate fell through — i.e.
+    # VALIDATED.md exists (or the cloud/deferred entry holds). If the active
+    # PHASES.md declares `**Spike:** required` and no PASS spike verdict is on
+    # disk yet, the phase's completion rests on an un-run runtime proof: route
+    # to a `spike` cycle BEFORE Step 10 mark-complete instead of completing.
+    # A `verdict: PASS` SPIKE_VERDICT.md (or no `**Spike:**` line at all) falls
+    # through byte-identically to today's Step-10 path.
+    if phases_spike_required(spec_path) and not spike_verdict_is_pass(spec_path):
+        _variant, _goal = lazy_core._read_spike_decision(spec_path)
+        lazy_core._diag("Step 9.5: **Spike:** required with no PASS verdict → routing to spike")
+        return _state(
+            **common,
+            current_step="Step 9.5: spike verdict pending",
+            sub_skill="spike",
+            sub_skill_args=(
+                f"run the runtime proof for {feature_name} — goal: {_goal}. "
+                f"Write SPIKE_VERDICT.md (verdict: PASS|FAIL, with observed "
+                f"evidence) in {spec_path_str}; see {spec_path_str}/SPEC.md."
+            ),
+        )
+
     # Step 10: Mark complete.
     # Entry: VALIDATED.md OR (cloud AND DEFERRED_NON_CLOUD.md). (Retro is
     # unwired — there is no longer a RETRO_DONE.md precondition.)
@@ -3953,6 +3999,26 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         _write_yaml_sentinel(
             fdir / "BLOCKED.md", "blocked",
             feature_id="feat-b", phase="MCP Validation",
+            blocked_at="2026-05-19T12:00:00Z", retry_count=0,
+        )
+    elif name == "spike-blocker-resolver":
+        # spike-pipeline-role WU-2: same shape as the "blocker" fixture
+        # above, but blocker_kind is runtime-spike-verdict-pending — the
+        # Step-3 BLOCKED block must route this to sub_skill "spike"
+        # (non-terminal) instead of the generic terminal "blocked" halt.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-spkb", "name": "Feature SpikeBlocker", "spec_dir": "feat-spkb", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        fdir = features / "feat-spkb"
+        fdir.mkdir()
+        (fdir / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        _write_yaml_sentinel(
+            fdir / "BLOCKED.md", "blocked",
+            feature_id="feat-spkb", phase="MCP Validation",
+            blocker_kind="runtime-spike-verdict-pending",
             blocked_at="2026-05-19T12:00:00Z", retry_count=0,
         )
     elif name == "mid-implementation":
@@ -4718,6 +4784,64 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         (p / "RESEARCH_SUMMARY.md").write_text("# S\n")
         (p / "PHASES.md").write_text(
             "# Phases\n\n**MCP runtime:** not-required\n\n### Phase 1\n- [x] Done\n"
+        )
+    elif name == "spike-required-no-verdict":
+        # spike-pipeline-role Phase 2 (WU-1): PHASES.md declares a
+        # `**Spike:** required` header and VALIDATED.md is present (Step 9
+        # satisfied, non-cloud) but NO SPIKE_VERDICT.md exists on disk. The
+        # Step 9.5 spike-routing gate must intercept BEFORE Step 10 and route
+        # to sub_skill "spike" instead of falling through to mark-complete.
+        # RED today: the Step 9.5 gate does not exist — this fixture falls
+        # straight through to Step 10 (sub_skill: "__mark_complete__").
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-spk", "name": "Feature SPK",
+                 "spec_dir": "feat-spk", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        p = features / "feat-spk"
+        p.mkdir()
+        (p / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (p / "RESEARCH.md").write_text("# R\n")
+        (p / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (p / "PHASES.md").write_text(
+            "# Phases\n\n**Spike:** required — prove projector holds 30fps\n\n"
+            "### Phase 1\n- [x] Done\n"
+        )
+        _write_yaml_sentinel(
+            p / "VALIDATED.md", "validated",
+            feature_id="feat-spk", date="2026-07-17",
+            mcp_scenarios=[], result="all-passing",
+        )
+    elif name == "spike-required-pass-verdict":
+        # Same shape, but a SPIKE_VERDICT.md with verdict: PASS is already on
+        # disk — the gate must fall through to Step 10 exactly as it would
+        # with no **Spike:** header at all (sub_skill: "__mark_complete__").
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-spkp", "name": "Feature SPKP",
+                 "spec_dir": "feat-spkp", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        p = features / "feat-spkp"
+        p.mkdir()
+        (p / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (p / "RESEARCH.md").write_text("# R\n")
+        (p / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (p / "PHASES.md").write_text(
+            "# Phases\n\n**Spike:** required — prove projector holds 30fps\n\n"
+            "### Phase 1\n- [x] Done\n"
+        )
+        _write_yaml_sentinel(
+            p / "VALIDATED.md", "validated",
+            feature_id="feat-spkp", date="2026-07-17",
+            mcp_scenarios=[], result="all-passing",
+        )
+        _write_yaml_sentinel(
+            p / "SPIKE_VERDICT.md", "spike-verdict",
+            feature_id="feat-spkp", verdict="PASS",
         )
     elif name == "phases-complete-retro-done":
         # All phases complete + a stale RETRO_DONE.md on disk, no VALIDATED.md
@@ -6156,6 +6280,14 @@ def run_smoke_tests() -> int:
             # (fixture_name, cloud, skip_needs_research, expectations dict)
             ("fresh-queue", False, False, {"terminal_reason": "needs-spec-input"}),
             ("blocker", False, False, {"terminal_reason": "blocked", "feature_id": "feat-b"}),
+            # spike-pipeline-role WU-2: a BLOCKED.md carrying blocker_kind:
+            # runtime-spike-verdict-pending routes to the spike blocked-
+            # resolver (sub_skill "spike", NON-terminal) instead of the
+            # generic terminal_reason="blocked" halt above.
+            ("spike-blocker-resolver", False, False, {
+                "sub_skill": "spike", "feature_id": "feat-spkb",
+                "current_step": "Step 3: spike verdict pending (blocked resolver)",
+            }),
             # noncanonical-blocker-filename-invisible-to-state-machine: a stray
             # blocker (non-canonical name, no canonical BLOCKED.md) → distinct
             # `blocked-misnamed` terminal (loop-risk fix).
@@ -6420,6 +6552,25 @@ def run_smoke_tests() -> int:
                 "sub_skill": "__write_deferred_non_cloud__",
                 "feature_id": "feat-pcrdc",
                 "current_step": "Step 9: cloud defers MCP test",
+            }),
+            # spike-pipeline-role Phase 2 (WU-1): PHASES.md declares
+            # `**Spike:** required` and NO SPIKE_VERDICT.md exists — the
+            # Step 9.5 gate must route to sub_skill "spike" instead of
+            # falling through to Step 10 mark-complete.
+            # RED today: no Step 9.5 gate exists yet — this fixture reaches
+            # Step 10 directly (sub_skill: "__mark_complete__").
+            ("spike-required-no-verdict", False, False, {
+                "sub_skill": "spike",
+                "feature_id": "feat-spk",
+                "current_step": "Step 9.5: spike verdict pending",
+            }),
+            # Same PHASES.md, but a SPIKE_VERDICT.md with verdict: PASS is
+            # already on disk — must fall through to Step 10 exactly as
+            # today (sub_skill: "__mark_complete__"), never routed to spike.
+            ("spike-required-pass-verdict", False, False, {
+                "sub_skill": "__mark_complete__",
+                "feature_id": "feat-spkp",
+                "current_step": "Step 10: mark complete",
             }),
             # Cloud-saturation gate: In-progress plan whose only unchecked
             # WU is documented in DEFERRED_NON_CLOUD.md → flip pseudo-skill.

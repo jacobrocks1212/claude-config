@@ -1768,6 +1768,45 @@ def validation_escalation(meta: dict[str, Any] | None) -> bool:
     return False
 
 
+def spike_escalation(meta: dict[str, Any] | None) -> bool:
+    """Return True when a BLOCKED.md sentinel shows repeated spike-verdict failure.
+
+    spike-pipeline-role Phase 2 (WU-2) mirror of ``validation_escalation`` above,
+    for the tooling-round escalation signal consumed by Part 3's tooling-round
+    cap. This predicate is NOT itself a gate on the blocked→spike routing (that
+    routing fires unconditionally on the blocker_kind, see the Step-3 BLOCKED
+    block in ``compute_state``) — it is a separate signal a caller consults to
+    decide whether repeated spike-tooling-round failures warrant escalation.
+
+    Gated on ``blocker_kind == "runtime-spike-verdict-pending"`` AND
+    ``retry_count >= 2`` — same threshold as ``validation_escalation``, for the
+    same reason: each retry round is expected to make exactly one more round of
+    progress before escalation is warranted.
+
+    Tolerances (mirrors ``validation_escalation`` exactly):
+      - ``retry_count`` as an int is used directly.
+      - ``retry_count`` as a string of digits (quoted YAML) is coerced.
+      - Missing/malformed ``retry_count``, missing ``blocker_kind``, a non-
+        runtime-spike-verdict-pending ``blocker_kind``, or a None/empty meta →
+        False.
+      - YAML booleans are ints in Python (``True == 1``); they are NOT counts,
+        so bool values are explicitly rejected rather than coerced.
+    """
+    meta = meta or {}
+    if meta.get("blocker_kind") != "runtime-spike-verdict-pending":
+        return False
+    raw = meta.get("retry_count")
+    # bool is an int subclass — `retry_count: true` must not coerce to 1.
+    if isinstance(raw, bool):
+        return False
+    if isinstance(raw, int):
+        return raw >= 2
+    if isinstance(raw, str) and raw.strip().isdigit():
+        return int(raw.strip()) >= 2
+    # Missing or malformed → no escalation (never crash the blocked terminal).
+    return False
+
+
 # ---------------------------------------------------------------------------
 # SPEC parsing helpers
 # ---------------------------------------------------------------------------

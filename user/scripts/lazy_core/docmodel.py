@@ -297,6 +297,29 @@ def phases_spike_required(spec_path: Path) -> bool:
     return bool(re.search(r"(?mi)^\*\*Spike:\*\*\s*required\b", text))
 
 
+def spike_verdict_is_pass(spec_path: "Path | str | None") -> bool:
+    """True iff ``{spec_path}/SPIKE_VERDICT.md`` carries a ``verdict: PASS`` field.
+
+    Tolerant, never raises: absent dir/file, unreadable file, missing/other
+    verdict value ⇒ False (route to spike). PASS match is case-insensitive on
+    the value token (mirrors ``_read_spike_decision``'s anchored-value
+    discipline). Shared by both state scripts (lazy-state.py Step 9.5 +
+    bug-state.py mirror).
+    """
+    if not spec_path:
+        return False
+    verdict_path = Path(spec_path) / "SPIKE_VERDICT.md"
+    try:
+        text = verdict_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if re.match(r"(?i)verdict:\s*PASS\b", stripped):
+            return True
+    return False
+
+
 def skip_waiver_refusal(
     meta: dict[str, Any] | None, repo_root: Path | None = None
 ) -> str | None:

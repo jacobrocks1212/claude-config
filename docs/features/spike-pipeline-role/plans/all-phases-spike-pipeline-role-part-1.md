@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: spike-pipeline-role
-status: In-progress
+status: Complete
 created: 2026-07-18
 complexity: complex
 phases: [2]
@@ -63,9 +63,9 @@ Phase-1 foundational artifacts this phase CONSUMES (already landed, in-repo, ver
 
 ## Work Units
 
-- [ ] WU-1 — compute_state Step 9.5: prescribed `**Spike:**` header gate (lazy-state.py)
-- [ ] WU-2 — blocker_kind `runtime-spike-verdict-pending` routing + escalation predicate (lazy-state.py + gates.py)
-- [ ] WU-3 — coupled mirror into bug-state.py + parity audit
+- [x] WU-1 — compute_state Step 9.5: prescribed `**Spike:**` header gate (lazy-state.py)
+- [x] WU-2 — blocker_kind `runtime-spike-verdict-pending` routing + escalation predicate (lazy-state.py + gates.py)
+- [x] WU-3 — coupled mirror into bug-state.py + parity audit
 
 ---
 

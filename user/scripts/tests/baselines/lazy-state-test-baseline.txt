@@ -1,5 +1,6 @@
   [fresh-queue] cloud=False skip_nr=False real_device=True: Step 4: no SPEC, no research
   [blocker] cloud=False skip_nr=False real_device=True: Step 3: blocked
+  [spike-blocker-resolver] cloud=False skip_nr=False real_device=True: Step 3: spike verdict pending (blocked resolver)
   [misnamed-blocker-stray] cloud=False skip_nr=False real_device=True: Step 3: mis-named blocker
   [misnamed-blocker-resolved-only] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
   [misnamed-blocker-canonical-precedence] cloud=False skip_nr=False real_device=True: Step 3: blocked
@@ -44,6 +45,8 @@
   [phases-complete-retro-done] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
   [phases-complete-no-retro-done-cloud] cloud=True skip_nr=False real_device=True: Step 9: cloud defers MCP test
   [phases-complete-retro-done-cloud] cloud=True skip_nr=False real_device=True: Step 9: cloud defers MCP test
+  [spike-required-no-verdict] cloud=False skip_nr=False real_device=True: Step 9.5: spike verdict pending
+  [spike-required-pass-verdict] cloud=False skip_nr=False real_device=True: Step 10: mark complete
   [cloud-saturated-in-progress-plan] cloud=True skip_nr=False real_device=True: Step 7a: flip plan Complete (cloud-saturated)
   [cloud-in-progress-plan-not-saturated] cloud=True skip_nr=False real_device=True: Step 7a: execute plan
   [workstation-in-progress-plan-with-deferred] cloud=False skip_nr=False real_device=True: Step 7a: execute plan

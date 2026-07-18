@@ -39,21 +39,44 @@ new parse yet), so it ships safely in one round under full gates.
 ---
 
 ### Phase 2: State-machine routing (`compute_state` Step 9.5)
-**Status:** Not started
+**Status:** Complete
 **Phase kind:** design
 
 Wire the parse primitive into live routing. RISK: changes what the live state machine returns.
 
-- [ ] `compute_state` Step 9.5 (`lazy-state.py`, between the Step 9 MCP-gate returns and the
+- [x] `compute_state` Step 9.5 (`lazy-state.py`, between the Step 9 MCP-gate returns and the
   Step 10 `entry_ok` check): emit `sub_skill="spike"` when a phase declares `**Spike:** required`
   and the spike verdict is not yet PASS; gate Step 10 `entry_ok` on the spike verdict doc
-- [ ] `blocker_kind: runtime-spike-verdict-pending` routes to a `spike` cycle (not the generic
+- [x] `blocker_kind: runtime-spike-verdict-pending` routes to a `spike` cycle (not the generic
   manual-block terminal); a `runtime-spike-verdict-pending` escalation branch beside
   `validation_escalation` (`gates.py` / `lazy-state.py:~3055`)
-- [ ] **Coupled mirror into `bug-state.py`** (the `lazy-state.py` ↔ `bug-state.py` pair; run
+- [x] **Coupled mirror into `bug-state.py`** (the `lazy-state.py` ↔ `bug-state.py` pair; run
   `lazy_parity_audit.py`)
-- [ ] TDD: state-machine tests for both entry signals (prescribed header + blocked resolver) and
+- [x] TDD: state-machine tests for both entry signals (prescribed header + blocked resolver) and
   the Step-10 gate
+
+**Implementation Notes (2026-07-18, plan part 1):**
+- **New shared helper** `spike_verdict_is_pass(spec_path)` in `lazy_core/docmodel.py` (exported via
+  `__init__.py`), beside the Phase-1 `phases_spike_required`/`_read_spike_decision`. Tolerant frontmatter
+  read of `{spec_dir}/SPIKE_VERDICT.md` — True only on `verdict: PASS` (case-insensitive); absent/unreadable
+  ⇒ False ⇒ route to spike. No new recognized sentinel (SPEC non-goal preserved).
+- **New predicate** `spike_escalation(meta)` in `lazy_core/gates.py` (exported) — faithful shape-mirror of
+  `validation_escalation` (bool-reject, str-digit tolerance, `>= 2` threshold) gated to
+  `blocker_kind == "runtime-spike-verdict-pending"`. Standalone/unit-tested; its CONSUMPTION (tooling-round
+  cap) is deferred to Part 3. The Step-3 routing itself fires UNCONDITIONALLY on the blocker_kind (not gated
+  on escalation).
+- **Two routing seams, both state scripts (coupled pair, byte-identical routing):**
+  Step 9.5 header gate (`lazy-state.py` ~3806 / `bug-state.py` ~1976, between the Step-9 MCP returns and
+  Step-10) → `current_step="Step 9.5: spike verdict pending"`; Step-3 blocked-resolver
+  (`lazy-state.py` ~3053 / `bug-state.py` ~1520, before the generic `blocked` terminal) →
+  `current_step="Step 3: spike verdict pending (blocked resolver)"`, non-terminal. Only the builder
+  (`_state`/`_bug_state`) + Step-10 terminal (`__mark_complete__`/`__mark_fixed__`) diverge.
+- **Tests:** new `user/scripts/test_spike_state_routing.py` (14 pytest cases, feature+bug axes) + in-file
+  `--test` fixtures on both scripts (spike-required-no-verdict, spike-required-pass-verdict,
+  spike-blocker-resolver) with both baselines regenerated + `spike_escalation` units in
+  `tests/test_lazy_core/test_pseudo.py` (7). `lazy_parity_audit.py --repo-root .` exits 0 — no parity-manifest
+  change needed (spike routing is not yet a registered surface token; the `--test` scenarios driving both
+  scripts to identical routing are the real body-parity guard).
 
 ---
 
