@@ -1,6 +1,8 @@
 # Bug: First `/lazy-batch-parallel` run surfaced seven harness gaps (lease-blind merged-head withhold, self-locking claim snippet, missing `--set-independent`, lane run-end gate refusals, grouped/multi-feature containment misparse)
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-18
+**Fix commit:** e04753f6
 **Reported via:** `/harden-harness` discovered-defect-batch dispatch (2026-07-18, item in flight `parallel-run-harness-gaps`, AlgoBooth first `/lazy-batch-parallel` run, parent marker `2026-07-18T03:38:27Z`, blocking=true). Gap 1 is run-blocking (lanes wt-01/wt-02 withheld).
 **Root-cause class:** batch — `script-defect` (gaps 1, 4, 5, 6), `ambiguous-prose` (gap 2), `missing-contract` (gaps 3, 7).
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage); `user/skills/lazy-batch-parallel/SKILL.md` (the parallel coordinator contract); the concluded bug `docs/bugs/lazy-cycle-containment-misparses-grouped-feature-paths` (gap 6 is a regression class of it); `docs/bugs/dispatch-probe-and-inject-bypass-merged-head` (gap 1 touches the guard that bug introduced).
