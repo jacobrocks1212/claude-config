@@ -1,6 +1,8 @@
 # Bug: live-settings probe false-reports "missing settings" in a consumer repo
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-18
+**Fix commit:** 2be204cb
 **Reported via:** `/harden-harness` observed-friction dispatch (2026-07-17, item in flight `hydra-overlay`, AlgoBooth `/lazy-batch`, blocking=true)
 **Root-cause class:** `script-defect` (cross-repo SSOT resolution)
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage); `user/scripts/doc-drift-lint.py` (`check_live_settings` / `live_settings_status`); `user/scripts/lazy-state.py` (`live_settings_probe`, `--probe`); `user/scripts/lazy_inject.py` (`_live_settings_banner`); bug `live-settings-split-brain-disarms-enforcement-plane` (the probe this facet mis-scopes).
