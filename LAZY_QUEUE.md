@@ -4,8 +4,8 @@
 
 | # | item | state | tier |
 |---|------|-------|------|
-| 1 | [spike-pipeline-role](docs/features/spike-pipeline-role/SPEC.md) | Implement | T1 |
-| | status: Implement · phase 4/6 · next: execute plan · A first-class lazy-pipeline stage that definitively PROVES things about the running system (a runtime measurement, a GO/NO-GO verdict, a confirm/deny of real behavior), instead of dead-ending into a manual operator block. | | |
+| 1 | [spike-pipeline-role](docs/features/spike-pipeline-role/SPEC.md) | Plan | T1 |
+| | status: Plan · phase 5/6 · next: plan · A first-class lazy-pipeline stage that definitively PROVES things about the running system (a runtime measurement, a GO/NO-GO verdict, a confirm/deny of real behavior), instead of dead-ending into a manual operator block. | | |
 | 2 | [subagent-wedge-backstop-hook](docs/features/subagent-wedge-backstop-hook/SPEC.md) | Research | T1 |
 | | status: Research · phase 0/1 · next: research · A `SubagentStop` hook that mechanically catches a GENUINELY-WEDGED dispatched subagent — one that tries to stop/return with pending plan work still incomplete — and blocks its premature stop once, forcing it to commit + complete (or write `BLOCKED.md`) instead of returning dead and stranding the pipeline. | | |
 | 3 | [shared-hook-lib](docs/features/shared-hook-lib/SPEC.md) | Research | T2 |

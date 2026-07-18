@@ -94,6 +94,39 @@ looping again, so the loop can NEVER spin forever.
 - **completion gate:** a prescribed Spike's PASS is the runtime evidence the gated phase's
   completion rests on; the verdict doc is a permanent audit artifact.
 
+### Verdict machinery reuse (which evidence shape a spike produces)
+
+A spike's verdict is backed by evidence, but the SHAPE of that evidence depends on whether the
+proof has a deterministic, replayable scenario. This is the claude-config-side contract — it tells
+a spike author which shape applies and, crucially, where the boundary to AlgoBooth engine code
+sits so the whole role stays inside claude-config (harden-harness Prohibition #1).
+
+- **(a) Deterministic-scenario spike → reuse the mcp-test verdict shape (referenced, NOT vendored).**
+  When the proof is a repeatable scenario with a machine-checkable pass/fail (e.g. a scripted MCP
+  measurement run), reuse the mcp-test engine's **compact-verdict + sibling raw-payload** shape: a
+  small verdict doc (the `SPIKE_VERDICT.md` `verdict: PASS|FAIL|PENDING` + `evidence:` list) beside
+  a raw-artifact file carrying the full observed payload the verdict distills. The engine that
+  produces that shape is the AlgoBooth-side `scripts/mcp-test/run.ts` / `verdict.ts` — it is
+  **REFERENCED, never copied here**. Those `.ts` files do NOT exist in claude-config and MUST NOT be
+  created in this repo: vendoring them would drag runtime engine code into the harness repo. A
+  claude-config spike that needs a deterministic engine invokes the AlgoBooth engine from an
+  AlgoBooth session; claude-config only owns the verdict-doc contract, not the engine.
+- **(b) `/investigate`- or manual-measurement-form spike → the results doc + ledger IS the evidence,
+  no engine.** Most spikes have no replayable scenario — a one-off runtime FPS read off a HUD, a
+  GO/NO-GO confirm/deny, an `/investigate` conclusion. For these there is NO engine and none is
+  built: the `SPIKE_VERDICT.md` results doc (the real observed number/result in its `evidence:`
+  list) plus, when investigation drove it, the `INVESTIGATION.md` hypothesis ledger (its `confirmed`
+  rows cited as the runtime evidence) ARE the audit evidence. The honesty rule above is the only
+  gate — a verdict with an inferred/fabricated `value` is VOID (return `PENDING`), exactly as a
+  unit-green-on-an-internal-target claim is PLAUSIBLE, not VERIFIED.
+- **(c) The engine boundary is an AlgoBooth-repo deliverable — surfaced, not built here.** A bespoke
+  deterministic spike engine (beyond reusing the mcp-test runner shape) is **optional and phased**,
+  and any engine code that would live in AlgoBooth is an AlgoBooth-repo deliverable OUTSIDE
+  harden-harness scope. If a future spike genuinely warrants a dedicated engine, that is a normal
+  AlgoBooth session's work; the claude-config side surfaces the need (in the spike's results doc /
+  PHASES), it does not vendor or author the engine. This is the seam that keeps the Spike role fully
+  inside claude-config while leaving the optional engine where it belongs.
+
 ### Coupling note
 
 Consumed by: `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`,

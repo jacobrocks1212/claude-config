@@ -161,14 +161,27 @@ contract (no runtime rows / no MCP gate for this phase).
 ---
 
 ### Phase 5: Verdict machinery reuse (optional engine)
-**Status:** Not started
+**Status:** Complete
 **Phase kind:** design
 
-- [ ] Where a spike has a deterministic scenario, reuse the mcp-test `run.ts`/`verdict.ts` shape
+- [x] Where a spike has a deterministic scenario, reuse the mcp-test `run.ts`/`verdict.ts` shape
   (compact verdict + sibling raw-payload artifact). For `/investigate`- or manual-measurement-form
   spikes, the results doc + INVESTIGATION.md ledger is the evidence — no engine
-- [ ] Note: any engine code that lives in the AlgoBooth repo is an AlgoBooth-repo deliverable
+- [x] Note: any engine code that lives in the AlgoBooth repo is an AlgoBooth-repo deliverable
   (outside harden-harness scope) — this phase scopes only the claude-config-side contract
+
+**Implementation Notes (2026-07-18, plan part 3):**
+- **WU-3 (claude-config-side verdict/engine-reuse contract):** added a "Verdict machinery reuse"
+  section to `user/skills/_components/spike-dispatch.md` (before the Coupling note) stating the three
+  evidence-shape rules: (a) a deterministic-scenario spike reuses the mcp-test compact-verdict +
+  sibling-raw-payload shape, with the AlgoBooth-side `scripts/mcp-test/run.ts`/`verdict.ts` engine
+  REFERENCED not vendored — those `.ts` files do NOT exist in claude-config and must NOT be created
+  here; (b) an `/investigate`/manual-measurement spike's `SPIKE_VERDICT.md` results doc +
+  `INVESTIGATION.md` ledger IS the evidence, no engine; (c) any engine code is an AlgoBooth-repo
+  deliverable surfaced-not-built (harden-harness Prohibition #1 — keeps the role fully inside
+  claude-config). Documentation-only (no `.ts` engine authored here, per the SPEC Non-goal); validated
+  by `project-skills.py` + `lint-skills.py` + the doc battery.
+- **Files:** `user/skills/_components/spike-dispatch.md`.
 
 ---
 

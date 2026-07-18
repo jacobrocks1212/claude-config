@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: spike-pipeline-role
-status: In-progress
+status: Complete
 created: 2026-07-18
 complexity: complex
 phases: [4, 5]
@@ -59,7 +59,7 @@ Where this plan's repo uses non-default gates or component paths (a harness-conf
 
 - [x] WU-1 — Tooling-existence assertion → `/add-phase` corrective route (add-phase `**Spike:**` authoring)
 - [x] WU-2 — `spike_tooling_rounds` counter + hard cap (default 3) → `NEEDS_INPUT.md`
-- [ ] WU-3 — Phase 5: claude-config-side verdict/engine-reuse contract
+- [x] WU-3 — Phase 5: claude-config-side verdict/engine-reuse contract
 
 ---
 
