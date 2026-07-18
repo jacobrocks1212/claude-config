@@ -20,9 +20,9 @@
 **Scope:** Add a `test_hooks.py` case asserting that a composed approved push — `cd "…" && CLAUDE_PUSH_APPROVED=1 git push origin main` — is ALLOWED (not denied) in a work-email repo. This locks in the already-landed hook fix and pins against any future re-anchoring of the bypass detector. No production hook code changes in this phase (the hook fix is already on `main`).
 
 **Deliverables:**
-- [ ] Add `test_push_allows_with_bypass_token_after_cd_prefix` to `user/scripts/test_hooks.py`, adjacent to the existing push-hook block. It builds a work-email repo via `_init_email_repo(td, "jacob@cognitoforms.com")`, fires `_run_bash(_PUSH_HOOK_SH, _hook_payload('cd "<repo>" && CLAUDE_PUSH_APPROVED=1 git push origin main', cwd=str(repo)), _base_env(state_dir))`, and asserts `_hook_decision(result) is None` (allow). The composed form fails against the pre-`365df0b9` `^`-anchored `re.match` and passes against the current unanchored `_BYPASS_RE.search`.
-- [ ] Register the new test in the `_TESTS` list so the runner executes it.
-- [ ] Tests: the new case is the test; verify the whole `test_hooks.py` suite is green (`python user/scripts/test_hooks.py`).
+- [x] Add `test_push_allows_with_bypass_token_after_cd_prefix` to `user/scripts/test_hooks.py`, adjacent to the existing push-hook block. It builds a work-email repo via `_init_email_repo(td, "jacob@cognitoforms.com")`, fires `_run_bash(_PUSH_HOOK_SH, _hook_payload('cd "<repo>" && CLAUDE_PUSH_APPROVED=1 git push origin main', cwd=str(repo)), _base_env(state_dir))`, and asserts `_hook_decision(result) is None` (allow). The composed form fails against the pre-`365df0b9` `^`-anchored `re.match` and passes against the current unanchored `_BYPASS_RE.search`.
+- [x] Register the new test in the `_TESTS` list so the runner executes it.
+- [x] Tests: the new case is the test; verify the whole `test_hooks.py` suite is green (`python user/scripts/test_hooks.py`).
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_hooks.py` runs the new `test_push_allows_with_bypass_token_after_cd_prefix` and the case reports PASS (composed approved push → allow), with the full suite still green.
 

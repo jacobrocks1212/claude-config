@@ -7941,6 +7941,31 @@ def test_push_allows_with_bypass_token():
         )
 
 
+def test_push_allows_with_bypass_token_after_cd_prefix():
+    """Composed 'cd "…" && CLAUDE_PUSH_APPROVED=1 git push origin main' in a work repo
+    → allow (the anchor regression this locks — pre-365df0b9 this would have denied)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        repo = _init_email_repo(td, "jacob@cognitoforms.com")
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload(f'cd "{repo}" && CLAUDE_PUSH_APPROVED=1 git push origin main',
+                          cwd=str(repo)),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"composed/cd-prefixed bypass-token push must allow; stdout={result.stdout!r}"
+        )
+
+
+_TESTS = _TESTS + [
+    # push-hook-bypass-anchor-false-blocks-composed-push — composed approved-push regression
+    ("test_push_allows_with_bypass_token_after_cd_prefix",
+     test_push_allows_with_bypass_token_after_cd_prefix),
+]
+
+
 def test_push_allows_in_non_work_repo():
     """`git push origin main` from a non-work-email repo → allow."""
     with tempfile.TemporaryDirectory() as td:

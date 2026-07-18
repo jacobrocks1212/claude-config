@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: push-hook-bypass-anchor-false-blocks-composed-push
-status: Ready
+status: Complete
 created: 2026-07-18
 complexity: mechanical
 phases: [1]
@@ -51,7 +51,7 @@ Where this plan's repo uses non-default gates or component paths (claude-config 
 
 ## Work Units
 
-- [ ] WU-1 — Composed approved-push allow-case regression test
+- [x] WU-1 — Composed approved-push allow-case regression test
 
 ## Phase: push-hook-bypass-anchor-false-blocks-composed-push P1 — Regression coverage for composed approved pushes
 
@@ -78,7 +78,7 @@ Where this plan's repo uses non-default gates or component paths (claude-config 
 | 1     | WU-1      | Solo      | None            |
 
 **Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `python user/scripts/test_hooks.py` reports the full hook suite green, including the new `test_push_allows_with_bypass_token_after_cd_prefix` case (composed approved push → allow).
+- [x] <!-- verification-only --> `python user/scripts/test_hooks.py` reports the full hook suite green, including the new `test_push_allows_with_bypass_token_after_cd_prefix` case (composed approved push → allow). **Verified 2026-07-18:** `test_push_allows_with_bypass_token_after_cd_prefix` — PASS. Full suite: 226/248 passed, 0 skipped, 22 failed (the 22 failures are pre-existing `test_containment_*`/`test_events_containment_*` cases in the unrelated `lazy-cycle-containment.sh` coverage — confirmed identical, same 22 names, via an A/B `git stash`/`stash pop` compare against this change; no regression introduced by this WU).
 
 **MCP Integration Test Assertions:** N/A — no runtime-observable app behavior; verified by the `test_hooks.py` subprocess harness (`**MCP runtime:** not-required`).
 
