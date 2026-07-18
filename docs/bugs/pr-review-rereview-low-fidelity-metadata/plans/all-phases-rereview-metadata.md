@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: pr-review-rereview-low-fidelity-metadata
-status: Ready
+status: In-progress
 created: 2026-07-18
 complexity: complex
 phases: [1, 2, 3]
