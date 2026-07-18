@@ -93,5 +93,6 @@
   PASS [record-intervention-hardening-undeclared-explicit-ok] (non-regression guard for the explicit escape hatch)
   PASS [record-intervention-unknown-event-rejected]
   PASS [did-you-mean-cli-suggestion]
+  PASS [superseded-dir-excluded-from-pickup] found=['bug-open']
 
 All smoke tests passed.

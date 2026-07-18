@@ -270,6 +270,12 @@ BUG_STATUS_INVESTIGATING = "Investigating"
 BUG_STATUS_IN_PROGRESS = "In-progress"
 BUG_STATUS_FIXED = "Fixed"
 BUG_STATUS_WONT_FIX = "Won't-fix"
+# Operator-directed retirement without a fix — the bug-side analog of a
+# Superseded feature (successor work shipped elsewhere). Receipt-exempt and
+# NON-actionable, exactly like Won't-fix: the on-disk pickup must skip it so a
+# resolved-but-unarchived Superseded dir never re-enters the work list / merged
+# head (adhoc-bug-pickup-routes-superseded-specs — feature-loader parity).
+BUG_STATUS_SUPERSEDED = "Superseded"
 
 # Terminal statuses — a bug with one of these (plus valid receipt/exemption)
 # is genuinely done and should be skipped.
@@ -727,6 +733,15 @@ def _find_open_bug_dirs(
         status = spec_status(child)
         if status == BUG_STATUS_WONT_FIX:
             # Receipt-exempt: retired without fix — always skip.
+            continue
+        if status == BUG_STATUS_SUPERSEDED:
+            # Receipt-exempt: retired without fix (successor work shipped
+            # elsewhere) — always skip, exactly as the feature-side loader
+            # _find_open_feature_dirs skips a Superseded feature. Without this a
+            # resolved-but-unarchived Superseded bug dir is auto-discovered as
+            # open work, enters merged_worklist, becomes the merged head, and
+            # triggers a universal merged-head-diverged withhold that wedges the
+            # run (adhoc-bug-pickup-routes-superseded-specs).
             continue
         if status == BUG_STATUS_FIXED:
             if has_completion_receipt(child, filename="FIXED.md"):
@@ -7746,6 +7761,63 @@ def run_smoke_tests() -> int:
                              f"{dym_stderr!r}")
             dym_ok = False
     print(f"  {'PASS' if dym_ok else 'FAIL'} [{dym_name}]")
+
+    # -------------------------------------------------------------------
+    # superseded-dir-excluded-from-pickup
+    # (adhoc-bug-pickup-routes-superseded-specs): a resolved-but-unarchived
+    # Superseded bug dir MUST NOT be returned by _find_open_bug_dirs (mirrors
+    # the feature-side _find_open_feature_dirs Superseded skip). If it were, it
+    # would enter merged_worklist, become the merged head, and trigger a
+    # universal merged-head-diverged withhold that wedges the run.
+    # -------------------------------------------------------------------
+    sup_name = "superseded-dir-excluded-from-pickup"
+    with tempfile.TemporaryDirectory() as sup_td:
+        sup_bugs = Path(sup_td) / "docs" / "bugs"
+        sup_bugs.mkdir(parents=True, exist_ok=True)
+        # A Superseded dir (resolved-but-unarchived; carries a DEFERRED.md as the
+        # live incident did) — MUST be excluded.
+        sup_dir = sup_bugs / "bug-superseded"
+        sup_dir.mkdir()
+        (sup_dir / "SPEC.md").write_text(
+            "# Superseded Bug\n\n"
+            "**Status:** Superseded\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-07-01\n",
+            encoding="utf-8",
+        )
+        (sup_dir / "DEFERRED.md").write_text(
+            "---\nkind: deferred\nbug_id: bug-superseded\n---\nRetired.\n",
+            encoding="utf-8",
+        )
+        # A genuinely-open control dir — MUST still be returned (proves the filter
+        # is not over-broad).
+        open_dir = sup_bugs / "bug-open"
+        open_dir.mkdir()
+        (open_dir / "SPEC.md").write_text(
+            "# Open Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-07-01\n",
+            encoding="utf-8",
+        )
+        found_names = {p.name for p in _find_open_bug_dirs(sup_bugs, set())}
+        sup_ok = True
+        if "bug-superseded" in found_names:
+            failures.append(
+                f"[{sup_name}] Superseded dir 'bug-superseded' must be EXCLUDED "
+                f"from _find_open_bug_dirs; got {sorted(found_names)!r}"
+            )
+            sup_ok = False
+        if "bug-open" not in found_names:
+            failures.append(
+                f"[{sup_name}] open control dir 'bug-open' must be RETURNED "
+                f"(filter not over-broad); got {sorted(found_names)!r}"
+            )
+            sup_ok = False
+    print(
+        f"  {'PASS' if sup_ok else 'FAIL'} [{sup_name}] "
+        f"found={sorted(found_names)!r}"
+    )
 
     # Summary
     if failures:
