@@ -106,6 +106,20 @@ Root-cause classes (pick the most specific that applies):
 - **hook-defect:** a bug in `lazy-route-inject.sh` or `lazy-dispatch-guard.sh` produced an
   incorrect allow/deny/inject or an error breadcrumb on a run that should have proceeded.
 
+**Confirm Claude Code platform behavior before relying on it — consult `claude-code-guide`.**
+When the root cause OR the proposed fix hinges on how the Claude Code PLATFORM itself behaves —
+hook firing rules (which of `Stop` / `SubagentStop` / `PreToolUse` / … fires, and exactly when),
+the subagent / tool lifecycle, the fields a hook receives on stdin, the `settings.json` hook
+schema, or any SDK/runtime field — and that behavior is NOT authoritatively documented in this
+repo, do NOT ship load-bearing logic on an assumption. Dispatch the **`claude-code-guide`** agent
+to confirm the mechanism first, and CITE its finding in the Step-4 round (and in the Step-2.5 bug
+spec). Treat anything it reports as UNDOCUMENTED as a risk: prefer a design that does not depend
+on the undocumented behavior (e.g. a self-managed substitute) over one that does, and if an
+undocumented dependency is unavoidable, hard-park it for the operator per Step 3 rather than
+shipping on the assumption. (Origin: harden Round 81 — the `SubagentStop` wedge-backstop leaned on
+the undocumented `stop_hook_active`; the guide's caution against shipping load-bearing logic on
+that field is exactly why this check exists.)
+
 State your classification and cite the evidence (file path + line or field, transcript
 artifact, probe JSON field, or registry entry).
 
