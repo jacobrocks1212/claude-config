@@ -223,6 +223,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "subagent-wedge-backstop-hook",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "toolify-auto-promotion",
       "type": "feature",
       "provenance": "backfilled"
@@ -431,6 +436,11 @@
     },
     {
       "id": "state-cli-contract-registry",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "subagent-wedge-backstop-hook",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -7171,6 +7181,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/merged-head-oracle-scoped-probe-blind-to-cross-pipeline-skip-context/BLOCKED.md": [
+    {
+      "id": "subagent-wedge-backstop-hook",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/meta-dispatch-not-by-reference-and-ack-overpriced/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
@@ -8318,6 +8335,13 @@
       "id": "research-prompt-leaks-identity-doc-meta",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/run-end-efficacy-breadcrumb-misattributed-under-concurrent-cross-repo-run/SPEC.md": [
+    {
+      "id": "subagent-wedge-backstop-hook",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/run-end-gate-refusals-no-telemetry-event/PHASES.md": [
@@ -13640,6 +13664,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "subagent-wedge-backstop-hook",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/subagent-wedge-backstop-hook/RESEARCH.md": [
@@ -13664,6 +13693,18 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "subagent-wedge-backstop-hook",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/subagent-wedge-backstop-hook/RESEARCH_SUMMARY.md": [
+    {
+      "id": "subagent-wedge-backstop-hook",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/subagent-wedge-backstop-hook/SPEC.md": [
@@ -13686,6 +13727,18 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "subagent-wedge-backstop-hook",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/subagent-wedge-backstop-hook/plans/all-phases-subagent-wedge-backstop.md": [
+    {
+      "id": "subagent-wedge-backstop-hook",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/toolify-auto-promotion/COMPLETED.md": [
@@ -16233,6 +16286,11 @@
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "subagent-wedge-backstop-hook",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/provenance-index.json": [
@@ -16348,6 +16406,18 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "subagent-wedge-backstop-hook",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/specs/turn-routing-enforcement/NEEDS_INPUT_2026-07-18-merged-head-oracle-cross-pipeline-context.md": [
+    {
+      "id": "subagent-wedge-backstop-hook",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/specs/turn-routing-enforcement/SPEC.md": [
@@ -17376,6 +17446,11 @@
       "id": "state-cli-contract-registry",
       "type": "feature",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "subagent-wedge-backstop-hook",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/hooks/block-noncanonical-blocker-write.sh": [
@@ -17621,6 +17696,13 @@
       "id": "long-build-and-runtime-ownership",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/hooks/subagent-wedge-backstop.sh": [
+    {
+      "id": "subagent-wedge-backstop-hook",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/plugins/local-tools/plugins/cognito-pr-review/commands/review-pr-buddy.md": [
@@ -19918,6 +20000,11 @@
       "id": "state-cli-contract-registry",
       "type": "feature",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "subagent-wedge-backstop-hook",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/test_incident_scan.py": [
@@ -20997,6 +21084,11 @@
       "id": "long-build-and-runtime-ownership",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "subagent-wedge-backstop-hook",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/skills/CLAUDE.md": [

@@ -6,7 +6,7 @@
 > and stranding the pipeline. The mechanical complement to the SENDER-side `turn-end-gate.md`
 > prose (which a wedged/erroring agent cannot self-enforce).
 
-**Status:** Ready
+**Status:** Complete
 **Priority:** P1
 **Last updated:** 2026-07-18
 **Friction-reduction feature:** yes

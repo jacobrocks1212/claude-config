@@ -1,6 +1,6 @@
 # SubagentStop Wedge-Backstop Hook — Phases
 
-**Status:** In-progress
+**Status:** Complete
 
 Single-phase feature — a contained hook + its registration + hermetic tests. The design is fully
 specified in SPEC.md (operator-authorized decision #14, claude-code-guide-confirmed mechanism), so
