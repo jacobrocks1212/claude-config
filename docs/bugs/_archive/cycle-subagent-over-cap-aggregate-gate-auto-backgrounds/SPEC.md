@@ -1,6 +1,8 @@
 # Bug: cycle subagent auto-backgrounds an over-10min-cap aggregate gate and pauses at its turn boundary
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-18
+**Fix commit:** b4308f01
 **Reported via:** `/harden-harness` observed-friction dispatch (2026-07-16, item in flight `d8-signal-flow-viz`, AlgoBooth `/lazy-batch`, blocking=false)
 **Root-cause class:** `missing-contract`
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage); `user/skills/_components/turn-end-gate.md` (Round 39 — the canonical turn-end gate this round completes); hardening-log Round 39/44.
