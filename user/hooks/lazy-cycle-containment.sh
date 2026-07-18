@@ -110,10 +110,21 @@ fi
 # non-zero on an internal error: a PreToolUse non-zero exit is a hard blocking
 # error in Claude Code, so the contract is fail-OPEN-via-empty-output.
 #
-# The Python body is passed via `-c` (NOT a heredoc): a heredoc would BIND the
-# python process's stdin to the script body, swallowing the PreToolUse JSON
-# piped into this hook.  With `-c`, the hook's real stdin (the payload) flows
-# straight through to python's sys.stdin.
+# windows-32k-cmdline-e2big-silently-disarms-containment: the Python body is
+# handed to the interpreter via a `mktemp`'d TEMP FILE, NOT `-c "$_LCC_PY"`.
+# The body is ~34KB; on Windows (Git Bash -> native python.exe) a `-c`
+# invocation this large exceeds CreateProcess's 32,767-char command-line
+# limit, so the process silently fails to spawn (E2BIG) and the hook falls
+# through to its unconditional `exit 0` -- the containment guard is disarmed
+# with NO trace. Writing the body to a temp file keeps the invoked command
+# line short (interpreter + one path) regardless of body size.
+#
+# The PreToolUse JSON payload STAYS ON STDIN (it is never written into the
+# temp file, and the temp file's path is never fed on stdin): a heredoc-bound
+# stdin would swallow the payload the embedded body reads via
+# `sys.stdin.read()` below, so python is invoked as `python <tmpfile>` with
+# the hook's real stdin flowing straight through untouched -- the same
+# stdin-preservation the old `-c` form provided.
 read -r -d '' _LCC_PY <<'PYEOF'
 import json
 import os
@@ -797,8 +808,54 @@ except Exception as exc:  # noqa: BLE001 — fail-OPEN on ANY error.
 PYEOF
 
 # `read -d ''` returns non-zero at EOF even on success — that is expected; the
-# variable is populated.  Run python with the captured body via -c so the
-# hook's real stdin (the PreToolUse payload) reaches python untouched.
+# variable is populated.
+#
+# windows-32k-cmdline-e2big-silently-disarms-containment: write the captured
+# body to a mktemp'd temp file and invoke python against THAT PATH (not `-c`)
+# so the spawned command line stays short regardless of body size. Plain
+# `mktemp` honors TMPDIR (the standard POSIX seam) so a test can force this
+# step to fail by pointing TMPDIR at a non-existent parent. Both the mktemp
+# step AND the subsequent write are guarded — either failing takes the SAME
+# traced fail-open branch (breadcrumb + hook-events line), distinct from the
+# no-python breadcrumb above by its `detail` text.
+_lcc_tmpwrite_failed=0
+tmpfile="$(mktemp --suffix=.py 2>/dev/null)"
+if [ -z "$tmpfile" ] || [ ! -f "$tmpfile" ]; then
+  _lcc_tmpwrite_failed=1
+else
+  trap 'rm -f "$tmpfile"' EXIT
+  if ! printf '%s' "$_LCC_PY" > "$tmpfile" 2>/dev/null; then
+    _lcc_tmpwrite_failed=1
+  fi
+fi
+
+if [ "$_lcc_tmpwrite_failed" = "1" ]; then
+  # Traced fail-open (guard-fail-open-leaves-no-trace): identical shape to the
+  # no-python breadcrumb above, but a DISTINCT detail string so the two fail-
+  # open causes are distinguishable in hook-error.json / hook-events.jsonl.
+  _HOOK_TMPWRITE_TS="$(date +%s 2>/dev/null || echo 0)"
+  mkdir -p "$LCC_BASE_DIR" 2>/dev/null
+  printf '{"hook":"lazy-cycle-containment","error":"temp-file write failed","at":"%s"}' \
+    "$_HOOK_TMPWRITE_TS" > "$LCC_BASE_DIR/hook-error.json" 2>/dev/null || true
+  printf '{"ts":%s,"kind":"error","hook":"lazy-cycle-containment","repo_root":"","signature":"","detail":"temp-file write failed"}\n' \
+    "$_HOOK_TMPWRITE_TS" >> "$LCC_BASE_DIR/hook-events.jsonl" 2>/dev/null || true
+  exit 0
+fi
+
+# Windows Git Bash's `/tmp/...` MSYS path may not resolve for a native
+# python.exe — convert to a Windows path when `cygpath` is available (a no-op
+# elsewhere: WSL/Linux/macOS python reads the raw path fine, and `cygpath`
+# simply won't be on PATH there).
+if command -v cygpath >/dev/null 2>&1; then
+  tmppath="$(cygpath -w "$tmpfile")"
+else
+  tmppath="$tmpfile"
+fi
+
+# Invoke python against the temp-file PATH, not `-c`. The hook's real stdin
+# (the PreToolUse payload) still flows straight through to python's
+# sys.stdin — nothing pipes into this invocation on stdin, so it is
+# untouched, exactly as the old `-c` form preserved it.
 #
 # multi-repo-concurrent-runs (Phase 2 / WU-2.3): do NOT force-export
 # LAZY_STATE_DIR — the embedded Python must see whether it was genuinely set
@@ -806,7 +863,7 @@ PYEOF
 # LAZY_STATE_DIR (if set in this hook's environment) already passes through to
 # the child. We export LCC_SCRIPTS_DIR so the Python can import lazy_core for the
 # keyed resolution; the embedded body resolves the keyed marker path itself.
-LCC_SCRIPTS_DIR="$LCC_SCRIPTS_DIR" "$PYTHON" -c "$_LCC_PY"
+LCC_SCRIPTS_DIR="$LCC_SCRIPTS_DIR" "$PYTHON" "$tmppath"
 
 # Always exit 0 from the shell side: a non-zero PreToolUse exit is a hard
 # blocking error in Claude Code; deny is expressed in JSON, never an exit code.

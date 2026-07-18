@@ -57,6 +57,8 @@ move/rename/delete; N/A.
 
 ### Phase 1: Convert the containment hook to a temp-file python invocation (restore the guard on Windows)
 
+**Status:** Complete
+
 **Scope:** Stop passing the ~33.7 KB `$_LCC_PY` body as a `-c` argument. Write it to a temporary
 `.py` file and invoke `"$PYTHON" "$tmpfile"` with the PreToolUse payload still on real stdin —
 neither is bounded by the command-line limit — so the containment guard spawns and DENIES on
@@ -64,11 +66,11 @@ Windows again. Add a **traced** fail-open for the new failure mode (mktemp/temp-
 closing the observability gap the SPEC flagged.
 
 **Deliverables:**
-- [ ] `user/hooks/lazy-cycle-containment.sh`: replace the line-809 `-c "$_LCC_PY"` invocation with a temp-file invocation — `mktemp` a `.py` file, write `$_LCC_PY` into it, run `LCC_SCRIPTS_DIR="$LCC_SCRIPTS_DIR" "$PYTHON" "$tmpfile"` with the payload on stdin, and `trap`-remove the temp file on EXIT.
-- [ ] Windows path handling: convert the temp path with `cygpath -w "$tmpfile"` when `cygpath` is available (Git Bash on Windows), falling back to the raw path otherwise — per the Validated Assumption. `LAZY_STATE_DIR`/`LCC_SCRIPTS_DIR` env passthrough preserved unchanged.
-- [ ] **Traced fail-open** on mktemp/temp-write failure: on any failure to create or write the temp file, write the existing `hook-error.json` breadcrumb + `hook-events.jsonl` append (reuse the no-python block shape at lines 99–107, with a distinct `detail`) then `exit 0` — so this residual fail-open path is observable, unlike the E2BIG one it replaces.
-- [ ] Preserve the fail-OPEN-via-empty-output contract and the unconditional `exit 0` (line 813); the embedded python body (117–797), including the stdin payload read at line 630, is otherwise untouched.
-- [ ] Tests: the 22 previously-red `test_containment_*` in `user/scripts/test_hooks.py` pass; a direct drive (marker present + subagent routing-op payload) emits a `permissionDecision: deny` block.
+- [x] `user/hooks/lazy-cycle-containment.sh`: replace the line-809 `-c "$_LCC_PY"` invocation with a temp-file invocation — `mktemp` a `.py` file, write `$_LCC_PY` into it, run `LCC_SCRIPTS_DIR="$LCC_SCRIPTS_DIR" "$PYTHON" "$tmpfile"` with the payload on stdin, and `trap`-remove the temp file on EXIT.
+- [x] Windows path handling: convert the temp path with `cygpath -w "$tmpfile"` when `cygpath` is available (Git Bash on Windows), falling back to the raw path otherwise — per the Validated Assumption. `LAZY_STATE_DIR`/`LCC_SCRIPTS_DIR` env passthrough preserved unchanged.
+- [x] **Traced fail-open** on mktemp/temp-write failure: on any failure to create or write the temp file, write the existing `hook-error.json` breadcrumb + `hook-events.jsonl` append (reuse the no-python block shape at lines 99–107, with a distinct `detail`) then `exit 0` — so this residual fail-open path is observable, unlike the E2BIG one it replaces.
+- [x] Preserve the fail-OPEN-via-empty-output contract and the unconditional `exit 0` (line 813); the embedded python body (117–797), including the stdin payload read at line 630, is otherwise untouched.
+- [x] Tests: the 22 previously-red `test_containment_*` in `user/scripts/test_hooks.py` pass; a direct drive (marker present + subagent routing-op payload) emits a `permissionDecision: deny` block.
 
 **Minimum Verifiable Behavior:** `python user/scripts/test_hooks.py` shows the `test_containment_*`
 group green (was 22 failing); driving `bash user/hooks/lazy-cycle-containment.sh` with a cycle
@@ -76,8 +78,8 @@ marker + a subagent lifecycle-op payload prints a deny JSON on stdout (no `Argum
 on stderr).
 
 **Runtime Verification** *(checked by the pytest gate / direct hook drive — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> Under a cycle marker on Windows, the containment hook DENIES a subagent routing/lifecycle op (emits `permissionDecision: deny`) instead of fast-path-allowing — the exact reproduction inverted.
-- [ ] <!-- verification-only --> A forced temp-file-write failure fails OPEN **and** leaves a `hook-error.json` + `hook-events.jsonl` breadcrumb (traced), not a silent exit 0.
+- [x] <!-- verification-only --> Under a cycle marker on Windows, the containment hook DENIES a subagent routing/lifecycle op (emits `permissionDecision: deny`) instead of fast-path-allowing — the exact reproduction inverted.
+- [x] <!-- verification-only --> A forced temp-file-write failure fails OPEN **and** leaves a `hook-error.json` + `hook-events.jsonl` breadcrumb (traced), not a silent exit 0.
 
 **MCP Integration Test Assertions:** N/A — no MCP-reachable surface; verification is the `test_hooks.py` pytest gate.
 
@@ -93,6 +95,12 @@ Run the existing Phase-4 containment suite; it must go from 22-red to green on t
 **Integration Notes for Next Phase:**
 - The temp-file invocation shape established here (mktemp `.py` + `cygpath -w` where available + `trap` cleanup + traced fail-open on write failure) is the **reusable pattern** Phase 2 applies to `build-queue-enforce.sh`. Keep it factored simply enough to copy faithfully across hooks.
 - Do NOT feed the body on stdin (`- <<<"$_LCC_PY"`) — stdin carries the PreToolUse payload (py body line 630); that option is falsified. Temp-file only.
+
+**Implementation Notes (2026-07-18):**
+- `user/hooks/lazy-cycle-containment.sh` converted from `-c "$_LCC_PY"` to a temp-file invocation. Actual landed shape: `tmpfile="$(mktemp --suffix=.py 2>/dev/null)"` (plain `mktemp`, honors `TMPDIR` — the standard POSIX seam the test exploits), `trap 'rm -f "$tmpfile"' EXIT` set right after a successful mktemp, `printf '%s' "$_LCC_PY" > "$tmpfile"`, `cygpath -w` conversion guarded by `command -v cygpath`, then `LCC_SCRIPTS_DIR="$LCC_SCRIPTS_DIR" "$PYTHON" "$tmppath"` with the PreToolUse payload untouched on real stdin. Invocation site now ~line 866; unconditional `exit 0` at ~870.
+- **Traced fail-open** on mktemp/write failure reuses the no-python breadcrumb block shape byte-for-byte with a DISTINCT `detail: "temp-file write failed"` (both `hook-error.json` and one `hook-events.jsonl` `kind:"error"` line), then `exit 0`. Line/offset references in the deliverables above (809/813/630/99–107) are pre-fix; the embedded python body (incl. `raw = sys.stdin.read()`, now ~line 641) is byte-unchanged — only the comment block above it and the invocation footer moved.
+- **Seam agreement:** test (`test_containment_temp_write_failure_fails_open_traced`, `test_hooks.py:4307`) forces failure via `TMPDIR=<non-existent-parent>`; confirmed on this host that `mktemp` honors TMPDIR and fails there (`rc=1`, "No such file or directory").
+- **Gates:** `python -m pytest user/scripts/test_hooks.py -k containment -q` → 54 passed (was 23 red / 31 passed); full `test_hooks.py` → 271 passed; `lint-skills.py` clean.
 
 ---
 

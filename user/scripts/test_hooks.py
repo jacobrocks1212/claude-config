@@ -4304,6 +4304,77 @@ def test_containment_skill_fail_open_null_skill_field():
             )
 
 
+def test_containment_temp_write_failure_fails_open_traced():
+    """windows-32k-cmdline-e2big-silently-disarms-containment: the FIXED hook
+    must invoke its embedded Python body via a `mktemp`'d temp FILE (not the
+    current `-c "$_LCC_PY"`, which exceeds Windows CreateProcess's 32,767-char
+    limit and silently fails to spawn — the E2BIG symptom this bug fixes).
+
+    This test forces the mktemp/temp-write step itself to fail (via TMPDIR
+    pointed at a non-existent parent directory — confirmed on this host to
+    make `mktemp` fail: `TMPDIR=/does/not/exist/x mktemp --suffix=.py` exits
+    1 with "No such file or directory") and asserts the NEW traced fail-open
+    contract: exit 0, no deny, AND a traced breadcrumb (hook-error.json +
+    a kind:"error" hook-events.jsonl line) — the fail-open must be OBSERVABLE,
+    not silent, mirroring every other hook's no-python fail-open path
+    (guard-fail-open-leaves-no-trace).
+
+    RED against the CURRENT `-c`-invocation hook: there is no mktemp step at
+    all, so setting TMPDIR has no effect on it, and (on this Windows/Git-Bash
+    host) the *existing* E2BIG symptom already fails the hook open, but
+    UNTRACED — no hook-error.json, no hook-events.jsonl line is written by
+    that path. So this test's traced-breadcrumb assertions fail for the
+    correct reason (no trace exists yet), not because of a broken fixture.
+
+    FAILURE-INJECTION SEAM (coordinate with the fix): the fix must `mktemp` a
+    `.py` file honoring the `TMPDIR` env var (the standard POSIX mktemp
+    seam). If the implementation ends up NOT honoring TMPDIR, this test's
+    injection must be updated to whatever seam it DOES honor — TMPDIR is the
+    expected/intended one.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        env = _base_env(state_dir)
+        # Point TMPDIR at a path whose PARENT does not exist, so mktemp can
+        # never create a file there — confirmed to force a mktemp failure on
+        # this host (see docstring above).
+        env["TMPDIR"] = str(state_dir / "no_such_dir" / "tmp")
+        result = _run_bash(
+            _CONTAINMENT_SH,
+            _bash_preToolUse_json(
+                "python3 ~/.claude/scripts/lazy-state.py --probe",
+                agent_id=_SUBAGENT_AGENT_ID,
+            ),
+            env,
+        )
+        assert result.returncode == 0, (
+            f"temp-write failure must still fail-OPEN (exit 0); "
+            f"stderr={result.stderr!r}"
+        )
+        assert _containment_decision(result) != "deny", (
+            "a temp-write failure must fail-OPEN (never deny) — a broken "
+            f"hook must not wedge the pipeline; stdout={result.stdout!r}"
+        )
+        err_path = state_dir / "hook-error.json"
+        assert err_path.exists(), (
+            "temp-write failure must write a traced hook-error.json "
+            "breadcrumb (guard-fail-open-leaves-no-trace) — the fail-open "
+            "must be OBSERVABLE, not silent"
+        )
+        crumb = json.loads(err_path.read_text(encoding="utf-8"))
+        assert crumb.get("hook") == "lazy-cycle-containment", crumb
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, (
+            f"expected exactly one hook-events.jsonl line for the traced "
+            f"temp-write failure; got {events!r}"
+        )
+        assert events[0]["kind"] == "error", events
+        assert events[0]["hook"] == "lazy-cycle-containment", events
+
+
 # ---------------------------------------------------------------------------
 # multi-repo-concurrent-runs (Phase 2 / WU-2.4) — two-repo isolation harness.
 #
