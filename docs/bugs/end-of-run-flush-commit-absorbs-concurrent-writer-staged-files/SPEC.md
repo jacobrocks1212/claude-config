@@ -1,6 +1,6 @@
 # End-of-run efficacy flush commit absorbs a concurrent writer's staged files (one-writer coordination gap)
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-17 (observed live: commit `115a991a` "docs(interventions): efficacy verdicts" swallowed a concurrently-running harden agent's Fix-1/2 `docs/bugs/.../SPEC.md` files; Rounds 65-67 each had to isolate their own commit range to clear the resulting whole-range `harness-gate` noise)
 **Related:** `intervention-efficacy-tracking` (the efficacy/canary flush); `efficacy-signal-integrity` (KPI scorecard regen); `hardening-intervention-records-unmeasurable-or-missing` (intervention-coverage lint); the `orchestration` one-writer-per-file constitution rule; the coupled trio `/lazy-batch`, `/lazy-bug-batch`, `/lazy-batch-cloud` §1c.6.
