@@ -76,6 +76,8 @@ to contradict them — the oracle must keep every facet excluded, by constructio
 
 ### Phase 1: Oracle core (pure, hermetic)
 
+**Status:** Complete
+
 **Scope:** Introduce the actionability oracle as a pure, dependency-injected function pair in
 `lazy_core.dispatch` — no state-script wiring yet. `is_dispatchable(scoped_state)` (the small closed
 classifier, L3) plus `merged_head_nondispatchable_ids(...)` (the hybrid exclude-set builder: same-pipeline
@@ -86,26 +88,26 @@ categories (cloud-deferred / completion-unverified). Resolve the in-process isol
 Question 1) with a real-`compute_state` isolation characterization test.
 
 **Deliverables:**
-- [ ] `is_dispatchable(scoped_state: dict) -> bool` in `lazy_core/dispatch.py` — dispatchable iff
+- [x] `is_dispatchable(scoped_state: dict) -> bool` in `lazy_core/dispatch.py` — dispatchable iff
   `sub_skill` is a non-empty, non-`__`-prefixed real skill AND `terminal_reason` is not a
   skip/defer/park/gate/halt reason. Derive the non-dispatch `terminal_reason` set EXHAUSTIVELY from
   `compute_state`'s terminal vocabulary (Open Question 3 — do NOT hand-list a drift-prone enumeration;
   key off the closed terminal-reason surface / sanctioned-stop + halt sets already in `lazy_core`).
-- [ ] `merged_head_nondispatchable_ids(feature_items, bug_items, repo_root, current_item_id, *,
+- [x] `merged_head_nondispatchable_ids(feature_items, bug_items, repo_root, current_item_id, *,
   same_pipeline, same_pipeline_state, scoped_probe, <run flags>) -> set[str]` in `lazy_core/dispatch.py`,
   building the exclude set as: (1) same-pipeline → `probe_skipped_ids(same_pipeline_state,
   same_pipeline_items)` UNCHANGED (L2 — do NOT replace); (2) cross-pipeline → the INJECTED `scoped_probe`
   callable per candidate, classified non-dispatchable iff `is_dispatchable(scoped_state)` is false, with
   the SAME run flags the emit probe used; (3) `.discard(current_item_id)` (invariant preserved).
-- [ ] Bound the cross-pipeline oracle to candidates ranked at-or-above the emitted item in the merged
+- [x] Bound the cross-pipeline oracle to candidates ranked at-or-above the emitted item in the merged
   ordering, short-circuiting at the first dispatchable head (L5) — reuse the canonical `next_merged` /
   `merged_worklist` ordering, never a second ordering rule.
-- [ ] The research-surface preservation contract (L3 tail): a `needs-research` head WITHOUT
+- [x] The research-surface preservation contract (L3 tail): a `needs-research` head WITHOUT
   `--skip-needs-research` classifies non-dispatchable here (it halts) and is excluded — `research_halt_head`
   RE-INCLUDES it in Phase 3 exactly as today (assert the oracle EXCLUDES it here; the re-include is Phase 3).
-- [ ] `probe_skipped_ids`, `merged_head_override`, `research_halt_head` signatures UNCHANGED (they still
+- [x] `probe_skipped_ids`, `merged_head_override`, `research_halt_head` signatures UNCHANGED (they still
   accept a pre-built `exclude_ids` set) — verified by a no-signature-change assertion in the test.
-- [ ] Tests: in `tests/test_lazy_core/test_dispatch.py` — the five/six enumerated-facet regressions
+- [x] Tests: in `tests/test_lazy_core/test_dispatch.py` — the five/six enumerated-facet regressions
   (parked / operator-deferred / device-deferred / dep-unready / research-skipped / research-exclusion)
   each still excluded UNDER THE ORACLE (with a stub `scoped_probe` returning the facet's non-dispatch
   state); NEW coverage for a previously-uncovered category (cloud-deferred / completion-unverified head
@@ -295,4 +297,19 @@ recurrences).
   Phase 1 isolation characterization test (in-process preferred, subprocess documented fallback). OQ3
   (`is_dispatchable` terminal set) — derived exhaustively from `compute_state`'s vocabulary in Phase 1,
   never hand-listed.
+- **Phase 1 resolved isolation strategy (OQ1 / L4).** The in-process isolation characterization test
+  (`test_merged_head_nondispatchable_ids_in_process_isolation_characterization`) drives the REAL
+  `compute_state` scoped N times and confirms: **reading only the returned dict SUFFICES — no
+  snapshot/restore of module globals is required.** `compute_state` resets its module accumulators
+  (`_GATED_HEADS` / `_SKIP_AHEAD_BLOCKED` / `_DEP_GATED` / `_DEVICE_DEFERRED` / `_HOST_DEFERRED`) at
+  entry, and `_state()` returns a FRESH dict with `list()`-copied accumulator snapshots + `lazy_core._DIAGNOSTICS`
+  is reset per invocation — so a subsequent scoped probe cannot corrupt the primary emit probe's
+  already-captured `state`. Phase 2 therefore binds `scoped_probe` to a plain in-process cross-pipeline
+  `compute_state` call and reads its returned dict (no defensive globals snapshot). The subprocess
+  `--bug-id`/`--feature-id` fallback is NOT needed.
+- **Phase 1 oracle signature (mechanical-internal choice).** The Phase-1 pure form takes the
+  `scoped_probe` callable INJECTED (the hermetic seam) rather than raw run-flag kwargs — the SPEC
+  "Target shape" `<run flags>` placeholder is realized as the closure the caller (Phase 2) binds with
+  those flags, so the oracle itself carries no dead run-flag parameters (constitution: no test-only
+  seams). `today=` is accepted for bug-aging ordering determinism, mirroring `merged_head_override`.
 - **Spin-offs:** none this cycle.

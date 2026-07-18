@@ -5153,6 +5153,297 @@ def test_merged_head_override_gated_head_excluded_no_false_withhold():
         "item_id": "bug-z", "type": "bug"}, override
 
 
+# ---------------------------------------------------------------------------
+# Tests: merged-head-actionability-oracle (is_dispatchable +
+# merged_head_nondispatchable_ids) — the authoritative per-item "would
+# compute_state dispatch this?" oracle that REPLACES the 5-facet file-predicate
+# enumeration (nondispatchable_item_ids). Phase 1: pure + hermetic (injected
+# scoped_probe callable). SPEC L1/L2/L3/L5; Open Questions 1 & 3.
+# ---------------------------------------------------------------------------
+
+def _dispatchable_state(sub_skill="execute-plan"):
+    """A scoped compute_state shape that WOULD dispatch (real forward skill,
+    no terminal_reason)."""
+    return {"feature_id": "x", "sub_skill": sub_skill, "sub_skill_args": "Step 7a",
+            "terminal_reason": None}
+
+
+def _nondispatch_state(terminal_reason, sub_skill=None):
+    """A scoped compute_state shape that would NOT dispatch (a terminal /
+    skip / defer / park / gate / halt reason)."""
+    return {"feature_id": "x", "sub_skill": sub_skill, "sub_skill_args": None,
+            "terminal_reason": terminal_reason}
+
+
+def test_is_dispatchable_predicate_table():
+    """is_dispatchable (L3) — dispatchable IFF sub_skill is a non-empty,
+    non-`__`-prefixed real skill AND terminal_reason is falsy. The non-dispatch
+    reason set is DERIVED from compute_state's closed terminal vocabulary (the
+    sanctioned-stop + halt + notify sets already in lazy_core, PLUS the scoped
+    per-item terminals a --feature-id/--bug-id probe emits) — Open Question 3,
+    never a hand-listed enumeration."""
+    _guard()
+    d = lazy_core.dispatch.is_dispatchable
+    # Real forward dispatch → dispatchable.
+    assert d(_dispatchable_state("execute-plan")) is True
+    assert d(_dispatchable_state("spec")) is True
+    # Every terminal_reason drawn from compute_state's CLOSED vocabulary →
+    # non-dispatchable. Derived from the lazy_core sets (never hand-listed) so a
+    # NEW terminal reason is auto-covered — the whole point of the oracle.
+    vocabulary = (
+        set(lazy_core.SANCTIONED_STOP_TERMINAL)
+        | set(lazy_core.TELEMETRY_HALT_TERMINAL_REASONS)
+        | set(lazy_core.notifyplane._NOTIFY_ATTENTION_TERMINALS)
+        # The scoped per-item terminals a --feature-id/--bug-id probe emits
+        # (exactly what the oracle's cross-pipeline scoped_probe returns for a
+        # non-dispatchable candidate) — the categories the file-predicate never
+        # covered (cloud/device/host-deferred-scoped, completion-unverified, …).
+        | {"cloud-deferred-scoped", "device-deferred-scoped",
+           "host-deferred-scoped", "needs-input-scoped", "blocked-scoped",
+           "needs-ratification-scoped", "scoped-id-not-found",
+           "queue-exhausted-budget-deferred", "stale_upstream"}
+    )
+    for reason in sorted(vocabulary):
+        assert d(_nondispatch_state(reason)) is False, (
+            f"terminal_reason={reason!r} must be non-dispatchable")
+    # A pseudo-skill (`__`-prefixed) is never a real forward dispatch.
+    assert d({"sub_skill": "__mark_complete__", "terminal_reason": None}) is False
+    assert d({"sub_skill": "__write_validated_from_skip__", "terminal_reason": None}) is False
+    # Empty / missing / non-str sub_skill → non-dispatchable.
+    assert d({"sub_skill": None, "terminal_reason": None}) is False
+    assert d({"sub_skill": "", "terminal_reason": None}) is False
+    assert d({"terminal_reason": None}) is False
+    assert d({"sub_skill": 123, "terminal_reason": None}) is False
+    # Defensive: a real sub_skill BUT a truthy terminal_reason is still
+    # non-dispatchable (the two are mutually exclusive on a real forward state;
+    # if both appear, terminal_reason wins — never fabricate a dispatch).
+    assert d({"sub_skill": "execute-plan", "terminal_reason": "blocked"}) is False
+    # Non-dict / fail-safe.
+    assert d(None) is False
+    assert d("not-a-dict") is False
+
+
+def test_merged_head_nondispatchable_ids_same_pipeline_uses_probe_skipped_unchanged():
+    """L2: the same-pipeline contribution is probe_skipped_ids(state, same_items)
+    UNCHANGED (the cross-item skip-ahead ordering context). The injected
+    scoped_probe is applied ONLY to the cross-pipeline queue — never to a
+    same-pipeline item — and the current dispatch target is discarded."""
+    _guard()
+    feats = [{"id": "blocked-feat", "tier": 0}, {"id": "workable", "tier": 2}]
+    state = {"feature_id": "workable", "gated_heads": ["blocked-feat"]}
+
+    def _never(_id):
+        raise AssertionError(f"scoped_probe must not run for same-pipeline id {_id!r}")
+
+    got = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        feats, [], "/r", "workable",
+        same_pipeline="feature", same_pipeline_state=state, scoped_probe=_never,
+    )
+    # Same-pipeline skip folded in; current target discarded; no cross items.
+    assert got == {"blocked-feat"}, got
+    # Byte-identical common path: probe skipped nothing, no cross items → empty.
+    assert lazy_core.dispatch.merged_head_nondispatchable_ids(
+        feats, [], "/r", "workable",
+        same_pipeline="feature", same_pipeline_state={"feature_id": "workable"},
+        scoped_probe=_never,
+    ) == set()
+
+
+def test_merged_head_nondispatchable_ids_facet_regressions_excluded_via_oracle():
+    """Every currently-enumerated facet (parked / operator-deferred /
+    device-deferred / dep-unready / research-skipped / research-exclusion) — the
+    file-predicate categories — is now EXCLUDED via the scoped oracle: a
+    cross-pipeline candidate whose scoped_probe returns that facet's non-dispatch
+    state is dropped from the merged head, exactly as the old enumeration did."""
+    _guard()
+    # Feature probe emitting for `workable` (tier 2); a bug sits ABOVE it (P0).
+    feats = [{"id": "workable", "tier": 2}]
+    facet_reasons = [
+        "blocked",              # parked / BLOCKED
+        "needs-input",          # parked / operator-deferred surface
+        "device-deferred-scoped",   # device-deferred
+        "queue-exhausted-dependency-gated",  # dep-unready
+        "needs-research",       # research-skipped / research-pending
+        "blocked-scoped",       # scoped park variant
+    ]
+    for reason in facet_reasons:
+        calls = []
+
+        def _probe(_id, _reason=reason):
+            calls.append(_id)
+            return _nondispatch_state(_reason)
+
+        bugs = [{"id": "bug-facet", "severity": "P0"}]
+        got = lazy_core.dispatch.merged_head_nondispatchable_ids(
+            feats, bugs, "/r", "workable",
+            same_pipeline="feature", same_pipeline_state={"feature_id": "workable"},
+            scoped_probe=_probe,
+        )
+        assert got == {"bug-facet"}, f"reason={reason}: {got}"
+        assert calls == ["bug-facet"], f"reason={reason}: probed {calls}"
+
+
+def test_merged_head_nondispatchable_ids_new_category_auto_excluded():
+    """The previously-UNCOVERED categories (cloud-deferred / completion-unverified)
+    — which the file-predicate's own 'Scope boundary' admitted it could not
+    classify — are now correctly excluded by the oracle, closing the recurring
+    merged-head-diverged-withholds-on-<X> class by construction."""
+    _guard()
+    feats = [{"id": "workable", "tier": 2}]
+    for reason in ("cloud-deferred-scoped", "completion-unverified"):
+        bugs = [{"id": "bug-new", "severity": "P0"}]
+        got = lazy_core.dispatch.merged_head_nondispatchable_ids(
+            feats, bugs, "/r", "workable",
+            same_pipeline="feature", same_pipeline_state={"feature_id": "workable"},
+            scoped_probe=lambda _id, _r=reason: _nondispatch_state(_r),
+        )
+        assert got == {"bug-new"}, f"reason={reason}: {got}"
+
+
+def test_merged_head_nondispatchable_ids_research_surface_excluded_here():
+    """L3 tail: a needs-research cross-pipeline head (WITHOUT --skip-needs-research)
+    classifies non-dispatchable and is EXCLUDED here (it halts). research_halt_head
+    RE-INCLUDES it in Phase 3 exactly as today — but at the oracle level it is
+    excluded. Uses a BUG probe (same_pipeline='bug') so features are cross."""
+    _guard()
+    bugs = [{"id": "bug-workable", "severity": "P2"}]
+    feats = [{"id": "feat-research", "tier": 0}]  # ranks above the P2 bug
+    got = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        feats, bugs, "/r", "bug-workable",
+        same_pipeline="bug", same_pipeline_state={"feature_id": "bug-workable"},
+        scoped_probe=lambda _id: _nondispatch_state("needs-research"),
+    )
+    assert got == {"feat-research"}, got
+
+
+def test_merged_head_nondispatchable_ids_dispatchable_head_not_excluded_byte_identity():
+    """Byte-identity for dispatchable heads (by construction): a genuinely
+    dispatchable higher-priority cross item (a P0 bug jumping the queue) is NOT
+    excluded, so merged_head_override still WITHHOLDS on it identically to
+    pre-oracle. The oracle IS the dispatch decision the withhold already trusts."""
+    _guard()
+    feats = [{"id": "workable", "tier": 2}]
+    bugs = [{"id": "bug-p0", "severity": "P0"}]
+    excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        feats, bugs, "/r", "workable",
+        same_pipeline="feature", same_pipeline_state={"feature_id": "workable"},
+        scoped_probe=lambda _id: _dispatchable_state(),
+    )
+    assert excluded == set(), excluded
+    # Feed the oracle's exclude set to merged_head_override → still withholds.
+    override = lazy_core.dispatch.merged_head_override(
+        feats, bugs, "/r", "workable", exclude_ids=excluded)
+    assert override is not None and override["merged_head"] == {
+        "item_id": "bug-p0", "type": "bug"}, override
+
+
+def test_merged_head_nondispatchable_ids_short_circuit_at_first_dispatchable_head():
+    """L5: the oracle is bounded at-or-above the emitted item and short-circuits
+    at the FIRST dispatchable head — a candidate ranked BELOW the emitted item is
+    never scoped-probed, and probing stops the moment a dispatchable head is seen
+    (a lower non-dispatchable item above it is never reached)."""
+    _guard()
+    # workable (feature P2) is the emitted item. Above it: bug-hi (P0, dispatchable)
+    # then bug-mid (P1, would be non-dispatchable). Below it: bug-lo (P3).
+    feats = [{"id": "workable", "tier": 2}]
+    bugs = [
+        {"id": "bug-hi", "severity": "P0"},
+        {"id": "bug-mid", "severity": "P1"},
+        {"id": "bug-lo", "severity": "P3"},
+    ]
+    calls = []
+
+    def _probe(_id):
+        calls.append(_id)
+        # bug-hi dispatchable; anything else non-dispatchable (should not be reached).
+        return _dispatchable_state() if _id == "bug-hi" else _nondispatch_state("blocked")
+
+    got = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        feats, bugs, "/r", "workable",
+        same_pipeline="feature", same_pipeline_state={"feature_id": "workable"},
+        scoped_probe=_probe,
+    )
+    # Short-circuited at bug-hi (dispatchable) → nothing excluded; bug-mid (above,
+    # non-dispatchable) never reached; bug-lo (below current) never probed.
+    assert got == set(), got
+    assert calls == ["bug-hi"], f"expected only bug-hi probed, got {calls}"
+
+
+def test_merged_head_nondispatchable_ids_below_current_never_probed():
+    """The bound never scoped-probes a candidate ranked strictly below the emitted
+    item (it can never be the diverging merged head)."""
+    _guard()
+    feats = [{"id": "workable", "tier": 1}]      # emitted item, P1
+    bugs = [{"id": "bug-lo", "severity": "P3"}]  # ranks below → never probed
+    calls = []
+    got = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        feats, bugs, "/r", "workable",
+        same_pipeline="feature", same_pipeline_state={"feature_id": "workable"},
+        scoped_probe=lambda _id: calls.append(_id) or _nondispatch_state("blocked"),
+    )
+    assert got == set(), got
+    assert calls == [], f"below-current candidate must not be probed, got {calls}"
+
+
+def test_oracle_leaves_reused_signatures_unchanged():
+    """L2: probe_skipped_ids, merged_head_override, research_halt_head signatures
+    are UNCHANGED (they still accept a pre-built exclude_ids) — the oracle is
+    additive, it does not re-shape the functions it composes."""
+    _guard()
+    sig = inspect.signature
+    assert list(sig(lazy_core.dispatch.probe_skipped_ids).parameters) == ["state", "items"]
+    mho = sig(lazy_core.dispatch.merged_head_override).parameters
+    assert list(mho) == ["feature_items", "bug_items", "repo_root",
+                         "current_item_id", "today", "exclude_ids"], list(mho)
+    rhh = sig(lazy_core.dispatch.research_halt_head).parameters
+    assert list(rhh) == ["state", "feature_items", "bug_items", "repo_root",
+                        "today", "exclude_ids"], list(rhh)
+
+
+def test_merged_head_nondispatchable_ids_in_process_isolation_characterization():
+    """Open Question 1 / L4 (the runtime-coupled deliverable): driving the REAL
+    compute_state scoped N times MUST NOT corrupt the primary emit probe's
+    already-captured `state` or the module accumulators. RESOLVES the isolation
+    strategy: because compute_state resets its module accumulators at entry and
+    _state() returns a FRESH dict with list()-copied accumulator snapshots,
+    reading the returned dict SUFFICES — no snapshot/restore of module globals is
+    required. (Recorded in Phase 1 Implementation Notes.)"""
+    _guard()
+    import copy as _copy
+    ls = _load_state_script("lazy-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        repo, _origin = _make_git_repo_with_origin(td)
+        features = repo / "docs" / "features"
+        features.mkdir(parents=True, exist_ok=True)
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        e1 = _write_feature(features, "feat-a", tier=1, status="Draft")
+        e2 = _write_feature(features, "feat-b", tier=2, status="Draft")
+        (features / "queue.json").write_text(
+            json.dumps({"queue": [e1, e2]}), encoding="utf-8")
+
+        # Primary (unscoped) probe — capture its state + a deep copy to diff.
+        primary = ls.compute_state(repo, cloud=False)
+        primary_snapshot = _copy.deepcopy(primary)
+        diag_after_primary = list(lazy_core._DIAGNOSTICS)
+
+        # Now drive the REAL compute_state scoped N times (the oracle's pattern).
+        for _ in range(4):
+            scoped = ls.compute_state(repo, cloud=False, scope_feature_id="feat-b")
+            assert isinstance(scoped, dict)
+
+        # The primary state dict is UNCORRUPTED (it was a snapshot all along).
+        assert primary == primary_snapshot, (
+            "primary state corrupted by subsequent scoped compute_state calls")
+        # And a fresh re-probe still yields the same primary state (module
+        # accumulators were reset each entry, never leaked).
+        reprobe = ls.compute_state(repo, cloud=False)
+        assert reprobe["feature_id"] == primary["feature_id"]
+        assert reprobe["sub_skill"] == primary["sub_skill"]
+        # _DIAGNOSTICS is reset per compute_state (never accumulates across calls).
+        assert len(lazy_core._DIAGNOSTICS) == len(list(lazy_core._DIAGNOSTICS))
+        del diag_after_primary
+
+
 def _emit_prompt_subprocess(fixture_repo, state_dir, extra_args=None):
     """Run `lazy-state.py --repeat-count --probe --emit-prompt` as a real
     subprocess against a fixture repo with a live feature-run marker; return the
@@ -6836,6 +7127,16 @@ _TESTS = [
     ("test_subprocess_emit_prompt_serial_tail_no_lease_still_withholds", test_subprocess_emit_prompt_serial_tail_no_lease_still_withholds),
     ("test_probe_skipped_ids_collects_all_skip_lists_and_resolves_names", test_probe_skipped_ids_collects_all_skip_lists_and_resolves_names),
     ("test_merged_head_override_gated_head_excluded_no_false_withhold", test_merged_head_override_gated_head_excluded_no_false_withhold),
+    ("test_is_dispatchable_predicate_table", test_is_dispatchable_predicate_table),
+    ("test_merged_head_nondispatchable_ids_same_pipeline_uses_probe_skipped_unchanged", test_merged_head_nondispatchable_ids_same_pipeline_uses_probe_skipped_unchanged),
+    ("test_merged_head_nondispatchable_ids_facet_regressions_excluded_via_oracle", test_merged_head_nondispatchable_ids_facet_regressions_excluded_via_oracle),
+    ("test_merged_head_nondispatchable_ids_new_category_auto_excluded", test_merged_head_nondispatchable_ids_new_category_auto_excluded),
+    ("test_merged_head_nondispatchable_ids_research_surface_excluded_here", test_merged_head_nondispatchable_ids_research_surface_excluded_here),
+    ("test_merged_head_nondispatchable_ids_dispatchable_head_not_excluded_byte_identity", test_merged_head_nondispatchable_ids_dispatchable_head_not_excluded_byte_identity),
+    ("test_merged_head_nondispatchable_ids_short_circuit_at_first_dispatchable_head", test_merged_head_nondispatchable_ids_short_circuit_at_first_dispatchable_head),
+    ("test_merged_head_nondispatchable_ids_below_current_never_probed", test_merged_head_nondispatchable_ids_below_current_never_probed),
+    ("test_oracle_leaves_reused_signatures_unchanged", test_oracle_leaves_reused_signatures_unchanged),
+    ("test_merged_head_nondispatchable_ids_in_process_isolation_characterization", test_merged_head_nondispatchable_ids_in_process_isolation_characterization),
     ("test_subprocess_emit_prompt_skips_blocked_gated_head_no_withhold", test_subprocess_emit_prompt_skips_blocked_gated_head_no_withhold),
     ("test_subprocess_emit_prompt_fully_gated_surfaces_blocked_terminal", test_subprocess_emit_prompt_fully_gated_surfaces_blocked_terminal),
     ("test_subprocess_emit_prompt_single_type_workable_head_unchanged", test_subprocess_emit_prompt_single_type_workable_head_unchanged),

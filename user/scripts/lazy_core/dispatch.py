@@ -598,6 +598,151 @@ def research_halt_head(
     return None
 
 
+def is_dispatchable(scoped_state: "dict | None") -> bool:
+    """Return True iff an item's SCOPED ``compute_state`` output would yield a
+    real forward dispatch RIGHT NOW — the authoritative "would this item be
+    worked?" oracle (merged-head-actionability-oracle, SPEC L3).
+
+    Dispatchable IFF ``sub_skill`` is a non-empty, non-``__``-prefixed real skill
+    AND ``terminal_reason`` is falsy. This is deliberately NOT a hand-listed
+    enumeration of non-dispatch reasons (Open Question 3 — such an enumeration is
+    exactly the drift-prone thing this feature retires). It keys off the CLOSED
+    ``compute_state`` output contract instead:
+
+      * A real forward dispatch sets a real ``sub_skill`` and leaves
+        ``terminal_reason`` ``None`` (see the ``lazy-state.py`` output schema).
+      * EVERY skip / defer / park / gate / halt / exhaustion outcome — the whole
+        sanctioned-stop + halt vocabulary (``SANCTIONED_STOP_TERMINAL``,
+        ``TELEMETRY_HALT_TERMINAL_REASONS``, the notify attention set) PLUS the
+        scoped per-item terminals a ``--feature-id`` / ``--bug-id`` probe emits
+        (``*-deferred-scoped`` / ``*-scoped`` / ``completion-unverified`` / …) —
+        sets a truthy ``terminal_reason`` and a ``None`` / ``__pseudo__``
+        ``sub_skill``.
+
+    So "any truthy ``terminal_reason`` ⇒ non-dispatchable" auto-covers every
+    future non-dispatchable category the enumeration never listed — which is the
+    entire point (the next ``merged-head-diverged-withholds-on-<X>`` category
+    cannot recur). A ``__``-prefixed pseudo-skill is never a real forward
+    dispatch. Fail-safe: a non-dict / missing keys → non-dispatchable (never
+    fabricate a dispatch from a malformed state).
+    """
+    if not isinstance(scoped_state, dict):
+        return False
+    sub_skill = scoped_state.get("sub_skill")
+    if not isinstance(sub_skill, str) or not sub_skill or sub_skill.startswith("__"):
+        return False
+    if scoped_state.get("terminal_reason"):
+        return False
+    return True
+
+
+def merged_head_nondispatchable_ids(
+    feature_items: list[dict],
+    bug_items: list[dict],
+    repo_root: str,
+    current_item_id: str | None,
+    *,
+    same_pipeline: str,
+    same_pipeline_state: dict,
+    scoped_probe: "callable",
+    today: "datetime.date | None" = None,
+) -> "set[str]":
+    """Build the merged-head exclude set as the AUTHORITATIVE actionability
+    oracle (merged-head-actionability-oracle, SPEC L1/L2/L5) — the single
+    replacement for ``nondispatchable_item_ids`` ∪ ``probe_skipped_ids``.
+
+    The exclude set is the union of two sources, current dispatch target
+    discarded:
+
+      1. **Same-pipeline → :func:`probe_skipped_ids` UNCHANGED (L2).** The
+         current probe's own skip decisions are the authoritative, context-rich
+         source for its OWN queue (they carry the cross-item skip-ahead ordering,
+         ``--strict-research-halt``, the two-key readiness predicate, the
+         fully-gated terminal). NOT replaced by the oracle — a per-item oracle
+         would lose that ordering context.
+      2. **Cross-pipeline → the injected ``scoped_probe`` oracle.** For each
+         cross-pipeline candidate ranked AT-OR-ABOVE the emitted item in the
+         merged ordering (L5 bound), run its scoped ``compute_state`` (via the
+         INJECTED ``scoped_probe`` callable — the seam that keeps ``--test``
+         hermetic; production binds it to the real cross-pipeline scoped probe
+         carrying the SAME run flags the emit probe used) and EXCLUDE it iff
+         :func:`is_dispatchable` is false. Short-circuit at the FIRST dispatchable
+         head — a lower-priority item can never be the diverging merged head, so
+         it is never scoped-probed (the bound + short-circuit are what make the
+         oracle cheap: one scoped probe per non-dispatchable head above current,
+         then stop).
+
+    Byte-identical for dispatchable heads BY CONSTRUCTION: the oracle IS the
+    dispatch decision the ``merged-head-diverged`` withhold already trusts, so a
+    genuinely dispatchable higher-priority item (a P0 bug jumping the queue) is
+    never excluded and the withhold fires on it exactly as before. Currently
+    non-dispatchable categories the file predicate never covered
+    (cloud/completion-unverified/…) are now correctly excluded.
+
+    Args:
+        feature_items: feature ``queue.json`` items (from ``load_queue``).
+        bug_items: bug ``queue.json`` items (from ``load_bug_queue``).
+        repo_root: echoed into the merged ordering; does not affect the result.
+        current_item_id: the id the dispatch-bound probe would emit for
+            (``state["feature_id"]`` in both scripts — always a same-pipeline id).
+        same_pipeline: ``"feature"`` or ``"bug"`` — which queue the emit probe
+            walked (its own skips come from ``probe_skipped_ids``; the OTHER queue
+            is the cross-pipeline queue the oracle scoped-probes).
+        same_pipeline_state: the emit probe's ``compute_state`` dict — passed to
+            ``probe_skipped_ids`` UNCHANGED.
+        scoped_probe: ``Callable[[str], dict]`` returning a cross-pipeline
+            candidate's scoped ``compute_state`` output. Called ONLY for
+            cross-pipeline candidates at-or-above the emitted item, and never
+            below the first dispatchable head.
+        today: caller-supplied date for deterministic bug-aging in the ordering
+            (mirrors ``merged_head_override``); ``None`` → ``date.today()``.
+
+    Returns:
+        The exclude set (never contains ``current_item_id``); empty on the
+        byte-identical common path (nothing skipped, no non-dispatchable head).
+    """
+    from .depdag import merged_worklist
+
+    same_items = feature_items if same_pipeline == "feature" else bug_items
+    cross_items = bug_items if same_pipeline == "feature" else feature_items
+    cross_ids = {
+        (raw.get("id") if isinstance(raw, dict) else None) for raw in (cross_items or [])
+    }
+    cross_ids.discard(None)
+
+    # (1) Same-pipeline skips — the current probe's own decisions, UNCHANGED (L2).
+    exclude: set[str] = set(probe_skipped_ids(same_pipeline_state, same_items))
+
+    # (2) Cross-pipeline oracle, bounded at-or-above the emitted item. Walk the
+    # merged ordering (same-pipeline skips already dropped so the walk sees the
+    # driver's view of its own queue) from the head; scoped-probe each
+    # cross-pipeline candidate until we reach the emitted item or the first
+    # dispatchable head (L5 short-circuit).
+    worklist = merged_worklist(
+        feature_items, bug_items, repo_root, today=today, exclude_ids=exclude
+    )
+    for entry in worklist:
+        iid = entry.get("item_id")
+        if iid == current_item_id:
+            # Reached the emitted item — nothing below it can be the diverging
+            # merged head, so no lower candidate needs an oracle evaluation.
+            break
+        if iid in cross_ids:
+            if is_dispatchable(scoped_probe(iid)):
+                # First dispatchable head above the emitted item — a GENUINE
+                # divergence the withhold must fire on. Stop (never exclude it).
+                break
+            exclude.add(iid)
+        else:
+            # A same-pipeline item ranked above the emitted item that the probe
+            # did NOT skip is (by definition of the probe's own choice) a
+            # dispatchable same-pipeline head → the first dispatchable head.
+            break
+
+    exclude.discard(current_item_id)
+    return exclude
+
+
 def emit_cycle_prompt(
     repo_root: Path,
     state: dict,
