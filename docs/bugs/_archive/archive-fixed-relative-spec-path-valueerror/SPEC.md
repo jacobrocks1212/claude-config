@@ -13,7 +13,7 @@
 > `repo_root` in a `relative_to()` call, so they are unaffected — the inconsistency is
 > `archive_fixed`-specific and surprising.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2 (correctness/robustness — the scripted `__mark_fixed__ → --archive-fixed`
 mover crashes on a documented, sibling-accepted invocation form; the run's archive step aborts
 rather than completing or refusing cleanly. Not data-destructive — the crash occurs before or
@@ -21,6 +21,8 @@ during the move, and the operation is re-runnable — but it defeats the whole p
 the archive mechanics to a deterministic script, and forces an undocumented "pass absolute
 paths" workaround.)
 **Discovered:** 2026-07-17
+**Fixed:** 2026-07-18
+**Fix commit:** 962c06a2
 **Placement:** docs/bugs/archive-fixed-relative-spec-path-valueerror
 **Related:**
 - `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` (Round 62) — this
