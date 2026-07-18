@@ -3,6 +3,8 @@
 **Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-17 (observed live during a `/lazy-batch` run on AlgoBooth)
+**Fixed:** 2026-07-18
+**Fix commit:** 44a30484
 **Related:** `docs/bugs/dispatch-probe-and-inject-bypass-merged-head` (introduced the
 `merged-head-diverged` withhold this bug refines); `docs/bugs/merged-head-excludes-parked-not-operator-deferred-deadlocks`
 (the file-predicate exclude set + the SPUN-OFF "make the merged head fully actionability-aware"
