@@ -3,6 +3,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-18
+**Fixed:** 2026-07-18
+**Fix commit:** d91e2570
 **Related:** `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` (this round);
 `user/scripts/CLAUDE.md` → "Hermetic subprocess tests MUST … isolate `LAZY_STATE_DIR`" (the
 contributor convention this defect violates at the pytest-package scope);

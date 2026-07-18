@@ -33,7 +33,7 @@
 | | status: Spec · next: spec | | | |
 | 8 | [adhoc-plan-bug-no-guard-for-fixed-annotated-specs](docs/bugs/adhoc-plan-bug-no-guard-for-fixed-annotated-specs/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 9 | [adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker](docs/bugs/adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker/SPEC.md) | Spec | — |  |
+| 9 | [adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker](docs/bugs/_archive/adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
 | 10 | [adhoc-cli-surface-registry-stale-set-independent](docs/bugs/adhoc-cli-surface-registry-stale-set-independent/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |

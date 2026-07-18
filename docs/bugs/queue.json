@@ -50,12 +50,6 @@
       "severity": null
     },
     {
-      "id": "adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker",
-      "name": "test_lazy_core apply_pseudo tests hit the live cycle marker (no LAZY_STATE_DIR isolation)",
-      "spec_dir": "adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker",
-      "severity": null
-    },
-    {
       "id": "adhoc-cli-surface-registry-stale-set-independent",
       "name": "cli-surface.json stale: --set-independent shipped without registry regen",
       "spec_dir": "adhoc-cli-surface-registry-stale-set-independent",
