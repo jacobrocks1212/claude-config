@@ -4,8 +4,8 @@
 
 | # | item | state | tier |
 |---|------|-------|------|
-| 1 | [subagent-wedge-backstop-hook](docs/features/subagent-wedge-backstop-hook/SPEC.md) | Validate | T1 |
-| | status: Validate · phase 1/1 · next: run mcp-test · A `SubagentStop` hook that mechanically catches a GENUINELY-WEDGED dispatched subagent — one that tries to stop/return with pending plan work still incomplete — and blocks its premature stop once, forcing it to commit + complete (or write `BLOCKED.md`) instead of returning dead and stranding the pipeline. | | |
+| 1 | [subagent-wedge-backstop-hook](docs/features/subagent-wedge-backstop-hook/SPEC.md) | Complete | T1 |
+| | status: Complete · phase 1/1 · next: done · A `SubagentStop` hook that mechanically catches a GENUINELY-WEDGED dispatched subagent — one that tries to stop/return with pending plan work still incomplete — and blocks its premature stop once, forcing it to commit + complete (or write `BLOCKED.md`) instead of returning dead and stranding the pipeline. | | |
 | 2 | [shared-hook-lib](docs/features/shared-hook-lib/SPEC.md) | Research | T2 |
 | | status: Research · next: research · Extract the ~470 duplicated scaffolding lines (~20% of the 2,411-line `user/hooks/` plane) into a shared, fail-open-guarded pair — `hook-prelude.sh` (sourced bash: python resolution, SCRIPT_DIR derivation, no-python fallback breadcrumb) and `hook_lib.py` (allow/deny emitters, `_append_hook_event`, `_breadcrumb`, the shared `_ENV_PREFIX`/`_CMD_START` anchor regexes) — then migrate the seven python-bearing hooks one at a time, re-running the full 157-test `test_hooks.py` suite after each. | | |
 | 3 | [claude-config-ci](docs/features/claude-config-ci/SPEC.md) | ⬡ Needs-input | T3 |
