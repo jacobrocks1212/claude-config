@@ -40,3 +40,18 @@ final message:**
 valid final messages. If you genuinely cannot drive an item to a result (hard tool-timeout
 ceiling, orphaned job), say so explicitly — report verification as INCOMPLETE and name what is
 still running; never imply the result will arrive after your turn ends.
+
+**Legitimate parallel fan-out is NOT a turn-end-gate violation.** Dispatching several FOREGROUND
+`Agent` calls in one turn and ending that turn to await them IS dispatch-and-await — the harness
+re-invokes you as each child completes, and their reports arrive as the `Agent` calls' own
+results. That is the mandated pattern (sub-subagents must be foreground; `lazy-cycle-containment.sh`
+denies background sub-subagent dispatch). The gate forbids ending your turn on a wait that will
+NOT re-invoke you (a backgrounded shell job, a "watcher", a child→parent message a backgrounded
+child can never send) — not the ordinary foreground-await pause.
+
+**Receiver counterpart.** Because a fan-out orchestrator has no *background* children at those
+foreground-await pauses, the harness fires a `status=completed` `<task-notification>` at each
+one. A party that DISPATCHED you (a main/dispatcher session) must not misread that as terminal
+completion and interfere with your live lineage. The receiver-side interpretation contract —
+`completed` is advisory, the run marker / plan status is authoritative, and how to tell a pause
+from a genuine wedge before any `TaskStop`/takeover — is `~/.claude/skills/_components/dispatched-agent-liveness.md`.

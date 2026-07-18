@@ -110,6 +110,8 @@ mkdir -p ~/.claude/state/execute-plan && root=$(git rev-parse --show-toplevel 2>
 
 Forward slashes in the plan path (backslashes corrupt the JSON). Do NOT write it on no-op paths (`Complete`, `Draft`, cloud-saturated flip). **Lifecycle:** removed at Step 4 completion and on any `BLOCKED.md`/`NEEDS_INPUT.md` halt; the resume invocation rewrites it. The hook self-heals a stale marker whose plan is `Complete`, but clear it yourself — don't rely on that.
 
+> **Dispatcher's note (RECEIVER contract — for whoever backgrounded THIS run and watches it via `<task-notification>`s).** This orchestrator fans out FOREGROUND sub-subagents and ends its turn at every inter-dispatch pause to await them, so it has no *background* children and the harness fires a `status=completed` notification at each pause — that is a PAUSE, not terminal completion (the harness re-invokes it when a child returns). This run marker (present ⇒ in-flight) plus the plan frontmatter (`status: Complete` ⇒ done) is the AUTHORITATIVE completion signal; the notification is only advisory. While the marker is present do NOT `TaskStop` this orchestrator or `Edit`/`Write` any file its lineage owns — that is a dual-writer collision against the live impl/test sub-subagents. Full receiver contract + genuine-wedge recovery: `~/.claude/skills/_components/dispatched-agent-liveness.md`.
+
 ---
 
 ## Step 2: Initialize Task Tracking (MANDATORY — BEFORE ANY EXECUTION)
