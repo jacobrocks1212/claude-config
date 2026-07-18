@@ -5,7 +5,9 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-13
-**Placement:** docs/bugs/test-only-production-seams/
+**Fixed:** 2026-07-18
+**Fix commit:** 1873ac45
+**Placement:** docs/bugs/_archive/test-only-production-seams/
 **Related:** `user/skills/test-driven-development/testing-anti-patterns.md` (Anti-Pattern 2); `user/plugins/local-tools/plugins/cognito-pr-review/knowledge/rules/testing.yaml`; `user/skills/_components/subagent-review.md`
 
 <!-- Status lifecycle: Investigating → Concluded (root cause + fix scope proven; ready for /plan-bug). -->
