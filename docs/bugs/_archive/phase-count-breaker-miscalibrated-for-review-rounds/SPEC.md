@@ -3,9 +3,10 @@
 > The `/add-phase` phase-count circuit breaker fired 4 times on 57077 and was operator-overridden all 4 times; its only offered remedy (full `/realign-spec` + `/spec-phases` rebuild) is disproportionate during a normal open-PR review round, so the breaker has become a rubber-stamp ceremony — pure friction with no protective effect.
 
 **Status:** Fixed
-**Fixed:** 2026-07-10 — implemented out-of-pipeline (operator-directed subagent orchestration; fix scope in this SPEC)
+**Fixed:** 2026-07-18
 **Severity:** Low
 **Discovered:** 2026-07-10
+**Fix commit:** 7b117eac
 **Placement:** docs/bugs/phase-count-breaker-miscalibrated-for-review-rounds
 **Related:** 57077 case study (Phases 8–12 context blocks), `user/skills/add-phase/SKILL.md` (Step 2.5), sibling bug `premise-contradictions-demoted-not-escalated` (source of the middle-remedy this fix offers)
 
