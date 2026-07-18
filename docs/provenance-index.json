@@ -260,6 +260,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref",
       "type": "bug",
       "provenance": "backfilled"
@@ -592,6 +597,27 @@
       "id": "adhoc-ensure-runtime-test-injects-signal-under-test",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker/ADHOC_BRIEF.md": [
+    {
+      "id": "adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker/FIXED.md": [
+    {
+      "id": "adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker/SPEC.md": [
+    {
+      "id": "adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/adhoc-parity-merged-view-fixture-stale-archive-fixed/ADHOC_BRIEF.md": [
@@ -5149,6 +5175,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/containment-hook-inline-python-exceeds-windows-cmdline-limit/SPEC.md": [
+    {
+      "id": "adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/coord-lock-no-stale-reclaim/SPEC.md": [
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
@@ -7815,6 +7848,11 @@
       "id": "adhoc-ensure-runtime-test-injects-signal-under-test",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "adhoc-parity-merged-view-fixture-stale-archive-fixed",
@@ -15622,6 +15660,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/interventions/harden-2026-07-r96.md": [
+    {
+      "id": "adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/hardening-intervention-records-unmeasurable-or-missing.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -16042,6 +16087,11 @@
   ],
   "docs/kpi/SCORECARD.md": [
     {
+      "id": "adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -16278,6 +16328,11 @@
       "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "bug-state-verification-only-remainder-loops-write-plan",
