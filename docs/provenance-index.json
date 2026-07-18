@@ -20,6 +20,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -36,6 +41,11 @@
     }
   ],
   ".claude/skill-config/gate-battery.json": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
@@ -86,6 +96,11 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
@@ -268,6 +283,11 @@
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "mcp-tooling-not-predetermined-at-planning",
@@ -639,6 +659,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -647,6 +672,11 @@
   "docs/bugs/_archive/block-terminal-kill-false-denies-heredoc-body-tokens/FIXED.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -663,6 +693,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -671,6 +706,11 @@
   "docs/bugs/_archive/block-terminal-kill-false-denies-heredoc-body-tokens/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -834,6 +874,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -842,6 +887,11 @@
   "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/FIXED.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -858,6 +908,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -866,6 +921,11 @@
   "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/PHASES.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -882,6 +942,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -890,6 +955,11 @@
   "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -906,6 +976,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -914,6 +989,11 @@
   "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-2.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -930,7 +1010,47 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-eta-marker-mojibake-on-redirected-stdout/FIXED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-eta-marker-mojibake-on-redirected-stdout/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-eta-marker-mojibake-on-redirected-stdout/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-eta-marker-mojibake-on-redirected-stdout/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-eta-marker-mojibake-on-redirected-stdout/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -938,6 +1058,11 @@
   "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/BLOCKED_RESOLVED_2026-07-13.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -954,6 +1079,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -962,6 +1092,11 @@
   "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/IMPLEMENTED.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -978,6 +1113,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -986,6 +1126,11 @@
   "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/SKIP_MCP_TEST.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1002,6 +1147,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -1010,6 +1160,11 @@
   "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-1.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1026,6 +1181,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -1034,6 +1194,11 @@
   "docs/bugs/_archive/build-queue-false-green-on-silent-build-failure/plans/all-phases-false-green-part-3.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1050,6 +1215,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -1058,6 +1228,11 @@
   "docs/bugs/_archive/build-queue-foreground-wait-blocks-past-terminal-outcome/GATE_VERDICT.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1074,6 +1249,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -1082,6 +1262,11 @@
   "docs/bugs/_archive/build-queue-foreground-wait-blocks-past-terminal-outcome/PHASES.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1098,6 +1283,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -1106,6 +1296,11 @@
   "docs/bugs/_archive/build-queue-foreground-wait-blocks-past-terminal-outcome/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1122,7 +1317,54 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-runner-tests-dual-beforeall-fails-pester6/FIXED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-runner-tests-dual-beforeall-fails-pester6/GATE_VERDICT.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-runner-tests-dual-beforeall-fails-pester6/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-runner-tests-dual-beforeall-fails-pester6/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-runner-tests-dual-beforeall-fails-pester6/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-runner-tests-dual-beforeall-fails-pester6/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -1174,6 +1416,62 @@
       "id": "byref-dispatch-undercounts-forward-cycles",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/FIXED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/GATE_VERDICT.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/NEEDS_INPUT_RESOLVED_2026-07-14.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/completion-gate-refusal-opacity/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/concurrent-same-branch-walkers-no-arbitration/FIXED.md": [
@@ -1363,7 +1661,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -1376,6 +1686,11 @@
     },
     {
       "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1393,6 +1708,11 @@
     },
     {
       "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1619,6 +1939,55 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/external-owner-contracts-locked-without-consultation/FIXED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/external-owner-contracts-locked-without-consultation/IMPLEMENTATION_NOTES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/external-owner-contracts-locked-without-consultation/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/external-owner-contracts-locked-without-consultation/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/external-owner-contracts-locked-without-consultation/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/external-owner-contracts-locked-without-consultation/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/external-owner-contracts-locked-without-consultation/plans/fix-external-owner-consultation-gate.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/feature-queue-lacks-on-disk-autodiscovery/FIXED.md": [
     {
       "id": "feature-queue-lacks-on-disk-autodiscovery",
@@ -1673,7 +2042,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/harden-rounds-skip-docs-bugs-reconciliation-contract/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -1686,6 +2067,11 @@
     },
     {
       "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -1798,6 +2184,48 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/long-build-and-build-queue-matcher-bypasses/FIXED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/long-build-and-build-queue-matcher-bypasses/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/long-build-and-build-queue-matcher-bypasses/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/long-build-and-build-queue-matcher-bypasses/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/long-build-and-build-queue-matcher-bypasses/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/long-build-and-build-queue-matcher-bypasses/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/loop-detected-false-positives-from-probe-and-reboot-churn/FIXED.md": [
     {
       "id": "loop-detected-false-positives-from-probe-and-reboot-churn",
@@ -1838,6 +2266,20 @@
       "id": "loop-detected-false-positives-from-probe-and-reboot-churn",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/manual-runtime-gates-unowned-in-no-mcp-workflows/FIXED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/manual-runtime-gates-unowned-in-no-mcp-workflows/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/mark-complete-skips-roadmap-strike-and-followups-queue-trim/FIXED.md": [
@@ -2020,12 +2462,29 @@
   ],
   "docs/bugs/_archive/merged-head-diverged-withholds-on-research-skipped-head/FIXED.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-diverged-withholds-on-research-skipped-head",
       "type": "bug",
       "provenance": "manual"
     }
   ],
+  "docs/bugs/_archive/merged-head-diverged-withholds-on-research-skipped-head/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/merged-head-diverged-withholds-on-research-skipped-head/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "merged-head-diverged-withholds-on-research-skipped-head",
       "type": "bug",
@@ -2044,7 +2503,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/merged-head-excludes-parked-not-operator-deferred-deadlocks/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -2057,6 +2528,11 @@
     },
     {
       "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -2078,7 +2554,47 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/merged-head-includes-parked-items-deadlocks-park-run/FIXED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/merged-head-includes-parked-items-deadlocks-park-run/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/merged-head-includes-parked-items-deadlocks-park-run/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/merged-head-includes-parked-items-deadlocks-park-run/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/merged-head-includes-parked-items-deadlocks-park-run/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -2090,7 +2606,19 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-research-exclusion-flag-gated-splits-cross-script",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/merged-head-research-exclusion-flag-gated-splits-cross-script/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -2102,7 +2630,54 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-research-exclusion-flag-gated-splits-cross-script",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/meta-dispatch-not-by-reference-and-ack-overpriced/FIXED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/meta-dispatch-not-by-reference-and-ack-overpriced/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/meta-dispatch-not-by-reference-and-ack-overpriced/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/meta-dispatch-not-by-reference-and-ack-overpriced/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/meta-dispatch-not-by-reference-and-ack-overpriced/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/meta-dispatch-not-by-reference-and-ack-overpriced/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -2336,6 +2911,97 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/persisted-field-shape-idiom-unchecked/FIXED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/persisted-field-shape-idiom-unchecked/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/phase-count-breaker-miscalibrated-for-review-rounds/FIXED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/phase-count-breaker-miscalibrated-for-review-rounds/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/plan-skills-lack-targeted-phase-scoped-read/FIXED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/plan-skills-lack-targeted-phase-scoped-read/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/plan-skills-lack-targeted-phase-scoped-read/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/plan-skills-lack-targeted-phase-scoped-read/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/plan-skills-lack-targeted-phase-scoped-read/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/planning-validation-misses-serving-path-and-data-reach/FIXED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/planning-validation-misses-serving-path-and-data-reach/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/premise-contradictions-demoted-not-escalated/FIXED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/premise-contradictions-demoted-not-escalated/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/probe-full-read-before-dispatch/FIXED.md": [
     {
       "id": "probe-full-read-before-dispatch",
@@ -2504,9 +3170,28 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/review-decline-rationales-and-deprecated-apis-unverified/FIXED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/review-decline-rationales-and-deprecated-apis-unverified/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/sh-exe-crash-masks-successful-build-queue-run/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -2661,6 +3346,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -2748,6 +3438,20 @@
       "id": "adhoc-checkpoint-resume-field-complete-continuity",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/adhoc-cli-surface-registry-stale-set-independent/ADHOC_BRIEF.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/adhoc-containment-hook-e2big-fails-open-windows-native/ADHOC_BRIEF.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/adhoc-cycle-begin-real-requires-sub-skill/PHASES.md": [
@@ -2862,6 +3566,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -2912,6 +3621,11 @@
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
@@ -2978,6 +3692,13 @@
       "id": "adhoc-incident-hook-deny-4b767b",
       "type": "bug",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker/ADHOC_BRIEF.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/adhoc-parity-merged-view-fixture-stale-archive-fixed/ADHOC_BRIEF.md": [
@@ -3069,9 +3790,21 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/agpl-sidecar-framing-strudel-only-second-sidecar/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/archive-fixed-relative-spec-path-valueerror/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -3081,9 +3814,21 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/block-terminal-kill-false-denies-quoted-argument-tokens/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/block-terminal-kill-matches-separators-inside-quoted-args/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -3096,6 +3841,11 @@
   "docs/bugs/blocked-add-phase-strands-originating-in-progress-plan/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -3267,6 +4017,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -3335,6 +4090,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/build-queue-timeout-kill-reaps-detached-runner/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/byref-dispatch-undercounts-forward-cycles/PHASES.md": [
     {
       "id": "byref-dispatch-undercounts-forward-cycles",
@@ -3377,9 +4139,21 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/byref-forward-cycles-frozen-on-multicycle-same-step/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/byref-updatedinput-unapplied-on-background-agent-dispatch/NEEDS_INPUT.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -3396,7 +4170,54 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/canary-revert-harden-2026-07-r31/ADHOC_BRIEF.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/canary-revert-harden-2026-07-r31/EVIDENCE.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/canary-revert-harden-2026-07-r32/ADHOC_BRIEF.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/canary-revert-harden-2026-07-r32/EVIDENCE.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/canary-revert-harden-2026-07-r44/ADHOC_BRIEF.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/canary-revert-harden-2026-07-r44/EVIDENCE.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -3404,6 +4225,11 @@
   "docs/bugs/canary-revert-harden-2026-07-r64/ADHOC_BRIEF.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -3420,6 +4246,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -3430,6 +4261,13 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/coherence-recovery-loop-no-terminal-on-unrunnable-verification-rows/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/GATE_VERDICT.md": [
@@ -3538,6 +4376,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/consumed-fence-dies-on-reemit-after-cycle-begin/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/coord-lock-no-stale-reclaim/SPEC.md": [
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
@@ -3593,6 +4438,11 @@
   "docs/bugs/cycle-budget-counters-double-count-on-probes-and-inject-hook/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -3672,6 +4522,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/cycle-subagent-over-cap-aggregate-gate-auto-backgrounds/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/cycle-subagent-runs-orchestrator-work/FIXED.md": [
     {
       "id": "cycle-subagent-runs-orchestrator-work",
@@ -3726,6 +4583,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/descoped-marker-blind-completion-coherence-gate/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/descoped-row-recognition-needs-canonical-marker/PHASES.md": [
     {
       "id": "descoped-row-recognition-needs-canonical-marker",
@@ -3761,6 +4625,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -3769,6 +4638,11 @@
   "docs/bugs/dispatched-orchestrator-completed-notification-misread-as-terminal/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -3799,6 +4673,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -3807,6 +4686,11 @@
   "docs/bugs/end-of-run-flush-commit-absorbs-concurrent-writer-staged-files/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -4041,6 +4925,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/feature-operator-host-defer-not-honored-over-validated/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/feature-queue-lacks-on-disk-autodiscovery/PHASES.md": [
     {
       "id": "feature-queue-lacks-on-disk-autodiscovery",
@@ -4083,6 +4974,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -4091,6 +4987,11 @@
   "docs/bugs/feature-tier-strings-fall-to-merged-priority-default/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -4159,6 +5060,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/gate-scope-folds-concurrent-harden-commits/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/gemini-prompt-char-cap-above-hard-truncation-limit/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -4166,7 +5074,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/generic-execution-surfaces-lack-turn-end-gate/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -4226,6 +5146,11 @@
   "docs/bugs/harden-harness-feature-spec-lands-in-unmanaged-docs-specs/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -4393,6 +5318,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -4471,9 +5401,28 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/kpi-drafted-row-never-promoted-to-registry/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/lazy-batch-no-mid-run-budget-or-park-controls/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/lazy-batch-parallel-run-harness-gaps/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -4525,6 +5474,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/lazy-cycle-containment-misparses-grouped-feature-paths/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/lazy-run-marker-park-arm-and-forward-cycle-inflation/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -4533,6 +5489,11 @@
     },
     {
       "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -4597,6 +5558,11 @@
   "docs/bugs/live-settings-probe-false-positive-in-consumer-repo/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -4805,6 +5771,11 @@
   "docs/bugs/long-build-ownership-guard-misses-qg-gates/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -5136,6 +6107,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -5144,6 +6120,11 @@
   "docs/bugs/merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -5338,6 +6319,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/no-sanctioned-cli-for-queue-state-mutations/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/no-sanctioned-queue-reorder-command/PHASES.md": [
     {
       "id": "no-sanctioned-queue-reorder-command",
@@ -5376,6 +6364,11 @@
   "docs/bugs/non-p0-bug-outranks-p1-feature-on-aged-tie/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -5469,6 +6462,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -5538,6 +6536,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -5546,6 +6549,11 @@
   "docs/bugs/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -5599,6 +6607,11 @@
   ],
   "docs/bugs/phases-slice-heading-regex-sync-unpinned/SPEC.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -5620,12 +6633,22 @@
   ],
   "docs/bugs/plan-structural-backstop-silent-disarm-on-infrastructure-failure/SPEC.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/planning-audit-blind-to-inbound-module-path-loads/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
@@ -5682,6 +6705,13 @@
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/pr-review-rereview-low-fidelity-metadata/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/probe-full-read-before-dispatch/PHASES.md": [
@@ -5776,6 +6806,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/push-hook-bypass-anchor-false-blocks-composed-push/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/queue.json": [
     {
       "id": "adhoc-checkpoint-resume-field-complete-continuity",
@@ -5861,6 +6898,11 @@
       "id": "loop-detected-false-positives-from-probe-and-reboot-churn",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "mark-complete-skips-roadmap-strike-and-followups-queue-trim",
@@ -6107,6 +7149,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -6115,6 +7162,11 @@
   "docs/bugs/research-gated-head-buried-by-skip-ahead-and-merged-fallthrough/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -6490,6 +7542,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -6507,6 +7564,13 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/verify-ledger-planning-scope-and-file-arg/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/windows-portability-in-probe-glue-and-field-validators/FIXED.md": [
@@ -6565,6 +7629,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -6607,6 +7676,11 @@
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
@@ -6784,6 +7858,27 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/anti-overfit-design-gate/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/anti-overfit-design-gate/GATE_VERDICT.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/anti-overfit-design-gate/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/anti-overfit-design-gate/NEEDS_INPUT.md": [
     {
       "id": "anti-overfit-design-gate",
@@ -6803,6 +7898,11 @@
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
@@ -6852,6 +7952,11 @@
   ],
   "docs/features/anti-overfit-design-gate/PHASES.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -6872,6 +7977,11 @@
     }
   ],
   "docs/features/anti-overfit-design-gate/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "anti-overfit-design-gate",
       "type": "feature",
@@ -6895,6 +8005,27 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/bug-queue-aging-backpressure/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/bug-queue-aging-backpressure/GATE_VERDICT.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/bug-queue-aging-backpressure/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/bug-queue-aging-backpressure/NEEDS_INPUT_PROVISIONAL.md": [
     {
       "id": "bug-queue-aging-backpressure",
@@ -6907,6 +8038,11 @@
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
@@ -6956,6 +8092,11 @@
   ],
   "docs/features/bug-queue-aging-backpressure/PHASES.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "bug-queue-aging-backpressure",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -6968,11 +8109,23 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/bug-queue-aging-backpressure/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/bug-queue-aging-backpressure/SPEC.md": [
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "bug-queue-aging-backpressure",
@@ -7030,6 +8183,11 @@
   "docs/features/build-queue-eta-priority-lanes/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -7216,6 +8374,27 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/coupled-pair-generation/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/coupled-pair-generation/GATE_VERDICT.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/coupled-pair-generation/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/coupled-pair-generation/NEEDS_INPUT_PROVISIONAL.md": [
     {
       "id": "coupled-pair-generation",
@@ -7228,6 +8407,11 @@
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
@@ -7277,6 +8461,11 @@
   ],
   "docs/features/coupled-pair-generation/PHASES.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -7301,6 +8490,11 @@
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "bug-queue-aging-backpressure",
@@ -7449,6 +8643,20 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/cycle-prompt-environment-dialect/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/cycle-prompt-environment-dialect/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/cycle-prompt-environment-dialect/NEEDS_INPUT_PROVISIONAL.md": [
     {
       "id": "cycle-prompt-environment-dialect",
@@ -7461,6 +8669,11 @@
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
@@ -7510,6 +8723,11 @@
   ],
   "docs/features/cycle-prompt-environment-dialect/PHASES.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "cycle-prompt-environment-dialect",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -7522,11 +8740,23 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/cycle-prompt-environment-dialect/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/cycle-prompt-environment-dialect/SPEC.md": [
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "bug-queue-aging-backpressure",
@@ -7628,6 +8858,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/efficacy-signal-integrity/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/efficacy-signal-integrity/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/efficacy-signal-integrity/NEEDS_INPUT_PROVISIONAL.md": [
     {
       "id": "efficacy-signal-integrity",
@@ -7640,6 +8884,11 @@
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
@@ -7689,6 +8938,11 @@
   ],
   "docs/features/efficacy-signal-integrity/PHASES.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "efficacy-signal-integrity",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -7713,6 +8967,11 @@
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "bug-queue-aging-backpressure",
@@ -7765,6 +9024,41 @@
       "id": "efficacy-signal-integrity",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/execute-plan-skill-diet/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/execute-plan-skill-diet/GATE_VERDICT.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/execute-plan-skill-diet/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/execute-plan-skill-diet/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/execute-plan-skill-diet/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/features/execute-plan-skill-diet/SPEC.md": [
@@ -7934,16 +9228,40 @@
   ],
   "docs/features/generalized-build-test-runner-skills/ADHOC_BRIEF.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/generalized-build-test-runner-skills/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/generalized-build-test-runner-skills/IMPLEMENTATION_NOTES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/generalized-build-test-runner-skills/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/features/generalized-build-test-runner-skills/NEEDS_INPUT_PROVISIONAL.md": [
@@ -7953,7 +9271,19 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/generalized-build-test-runner-skills/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-14.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/generalized-build-test-runner-skills/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
@@ -7962,12 +9292,36 @@
   ],
   "docs/features/generalized-build-test-runner-skills/RESEARCH_SUMMARY.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/generalized-build-test-runner-skills/RUNTIME_GATES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/generalized-build-test-runner-skills/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/generalized-build-test-runner-skills/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
@@ -7976,12 +9330,22 @@
   ],
   "docs/features/generalized-build-test-runner-skills/plans/all-phases-generalized-build-test-runner-skills-part-1.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
   "docs/features/generalized-build-test-runner-skills/plans/all-phases-generalized-build-test-runner-skills-part-2.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
@@ -7990,6 +9354,11 @@
   ],
   "docs/features/generalized-build-test-runner-skills/plans/all-phases-generalized-build-test-runner-skills-part-3.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -7997,12 +9366,22 @@
   ],
   "docs/features/generalized-build-test-runner-skills/plans/all-phases-generalized-build-test-runner-skills-part-4.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
   "docs/features/generalized-build-test-runner-skills/plans/realign-2026-07-14.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
@@ -8386,6 +9765,27 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/lazy-batch-skill-deflation/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/lazy-batch-skill-deflation/GATE_VERDICT.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/lazy-batch-skill-deflation/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/lazy-batch-skill-deflation/NEEDS_INPUT_PROVISIONAL.md": [
     {
       "id": "lazy-batch-skill-deflation",
@@ -8398,6 +9798,11 @@
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
@@ -8447,6 +9852,11 @@
   ],
   "docs/features/lazy-batch-skill-deflation/PHASES.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -8471,6 +9881,11 @@
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "bug-queue-aging-backpressure",
@@ -8525,11 +9940,37 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/lazy-core-package-decomposition/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/lazy-core-package-decomposition/GATE_VERDICT.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/lazy-core-package-decomposition/IMPLEMENTATION_NOTES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/lazy-core-package-decomposition/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/features/lazy-core-package-decomposition/NEEDS_INPUT.md": [
@@ -8546,7 +9987,19 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/lazy-core-package-decomposition/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-14.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/lazy-core-package-decomposition/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
@@ -8560,11 +10013,23 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/lazy-core-package-decomposition/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/lazy-core-package-decomposition/SPEC.md": [
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "bug-queue-aging-backpressure",
@@ -8614,12 +10079,22 @@
   ],
   "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-1.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
   "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-2.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
@@ -8628,12 +10103,22 @@
   ],
   "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-3.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
   "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-4.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
@@ -8642,12 +10127,22 @@
   ],
   "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-5.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
   "docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-6.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
@@ -8877,6 +10372,41 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/lean-plan-files/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/lean-plan-files/GATE_VERDICT.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/lean-plan-files/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/lean-plan-files/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/lean-plan-files/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/lean-plan-files/SPEC.md": [
     {
       "id": "execute-plan-skill-diet",
@@ -9027,6 +10557,27 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/mechanize-prose-only-orchestrator-contracts/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/mechanize-prose-only-orchestrator-contracts/GATE_VERDICT.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/mechanize-prose-only-orchestrator-contracts/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/mechanize-prose-only-orchestrator-contracts/NEEDS_INPUT_PROVISIONAL.md": [
     {
       "id": "mechanize-prose-only-orchestrator-contracts",
@@ -9036,12 +10587,22 @@
   ],
   "docs/features/mechanize-prose-only-orchestrator-contracts/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
   "docs/features/mechanize-prose-only-orchestrator-contracts/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
@@ -9060,6 +10621,11 @@
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
@@ -9114,6 +10680,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "bug-queue-aging-backpressure",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -9157,6 +10728,34 @@
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/merged-head-actionability-oracle/ADHOC_BRIEF.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/merged-head-actionability-oracle/NEEDS_RESEARCH.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/merged-head-actionability-oracle/RESEARCH_PROMPT.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/merged-head-actionability-oracle/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/features/mobile-queue-control/COMPLETED.md": [
@@ -9443,6 +11042,41 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/phases-slice-scoped-reads/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/phases-slice-scoped-reads/GATE_VERDICT.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/phases-slice-scoped-reads/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/phases-slice-scoped-reads/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/phases-slice-scoped-reads/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/phases-slice-scoped-reads/SPEC.md": [
     {
       "id": "execute-plan-skill-diet",
@@ -9465,6 +11099,20 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/plan-structure-authoring-gate/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/plan-structure-authoring-gate/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/plan-structure-authoring-gate/NEEDS_INPUT_PROVISIONAL.md": [
     {
       "id": "plan-structure-authoring-gate",
@@ -9477,6 +11125,11 @@
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
@@ -9526,6 +11179,11 @@
   ],
   "docs/features/plan-structure-authoring-gate/PHASES.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "plan-structure-authoring-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -9538,11 +11196,23 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/plan-structure-authoring-gate/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/plan-structure-authoring-gate/SPEC.md": [
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "bug-queue-aging-backpressure",
@@ -9661,6 +11331,11 @@
       "id": "feature-queue-lacks-on-disk-autodiscovery",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
@@ -9925,6 +11600,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "bug-queue-aging-backpressure",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -9970,7 +11650,19 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/skill-config-schema-and-reference-lint/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/skill-config-schema-and-reference-lint/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
@@ -9989,6 +11681,11 @@
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "meta-dispatch-not-by-reference-and-ack-overpriced",
@@ -10062,6 +11759,11 @@
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "bug-queue-aging-backpressure",
@@ -10180,6 +11882,41 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/features/spec-excerpt-scoped-plans/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/spec-excerpt-scoped-plans/GATE_VERDICT.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/spec-excerpt-scoped-plans/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/spec-excerpt-scoped-plans/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/spec-excerpt-scoped-plans/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/spec-excerpt-scoped-plans/SPEC.md": [
     {
       "id": "execute-plan-skill-diet",
@@ -10202,9 +11939,21 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/spike-pipeline-role/NEEDS_INPUT.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/spike-pipeline-role/PHASES.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -10221,12 +11970,64 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
     }
   ],
+  "docs/features/spike-pipeline-role/plans/all-phases-spike-pipeline-role-part-1.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/spike-pipeline-role/plans/all-phases-spike-pipeline-role-part-2.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/spike-pipeline-role/plans/all-phases-spike-pipeline-role-part-3.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/state-cli-contract-registry/COMPLETED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/state-cli-contract-registry/IMPLEMENTED.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/features/state-cli-contract-registry/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-13.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/state-cli-contract-registry/PHASES.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
@@ -10238,11 +12039,23 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/state-cli-contract-registry/SKIP_MCP_TEST.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/state-cli-contract-registry/SPEC.md": [
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "bug-queue-aging-backpressure",
@@ -10290,6 +12103,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/state-cli-contract-registry/plans/all-phases-state-cli-contract-registry-part-1.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/stub-origin-provisional-exclusion/PHASES.md": [
     {
       "id": "stub-origin-provisional-exclusion",
@@ -10304,9 +12124,21 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/subagent-wedge-backstop-hook/NEEDS_RESEARCH.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/subagent-wedge-backstop-hook/PHASES.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -10316,9 +12148,21 @@
       "provenance": "manual"
     }
   ],
+  "docs/features/subagent-wedge-backstop-hook/RESEARCH_PROMPT.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/features/subagent-wedge-backstop-hook/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -10552,6 +12396,11 @@
   ],
   "docs/gate/control-surfaces.json": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "anti-overfit-design-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -10598,6 +12447,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -10630,6 +12484,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -10642,6 +12501,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -10650,6 +12514,11 @@
   "docs/interventions/adhoc-lane-plan-single-lane-seam-classification.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -10686,6 +12555,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -10718,6 +12592,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -10726,6 +12605,11 @@
   "docs/interventions/bug-queue-aging-backpressure.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -10742,6 +12626,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -10750,6 +12639,11 @@
   "docs/interventions/build-queue-enforce-cd-prefix-bypass.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -10766,6 +12660,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -10774,6 +12673,11 @@
   "docs/interventions/build-queue-false-green-on-silent-build-failure.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -10790,6 +12694,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -10802,7 +12711,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/build-queue-runner-tests-dual-beforeall-fails-pester6.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -10810,6 +12731,11 @@
   "docs/interventions/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -10826,7 +12752,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/cycle-prompt-environment-dialect.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -10838,7 +12776,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/efficacy-signal-integrity.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -10850,7 +12800,26 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/external-owner-contracts-locked-without-consultation.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/generalized-build-test-runner-skills.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -10874,6 +12843,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -10891,6 +12865,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -10899,6 +12878,11 @@
   "docs/interventions/harden-2026-07-r17.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -10920,6 +12904,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -10928,6 +12917,11 @@
   "docs/interventions/harden-2026-07-r19.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -10949,6 +12943,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -10966,6 +12965,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -10974,6 +12978,11 @@
   "docs/interventions/harden-2026-07-r22.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -10990,6 +12999,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -10998,6 +13012,11 @@
   "docs/interventions/harden-2026-07-r24.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11014,6 +13033,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11022,6 +13046,11 @@
   "docs/interventions/harden-2026-07-r26.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11038,9 +13067,42 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/interventions/harden-2026-07-r31.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r32.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r35.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r36.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/harden-2026-07-r37.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11057,7 +13119,33 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r39.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r40.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r41.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -11065,6 +13153,11 @@
   "docs/interventions/harden-2026-07-r42.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11079,6 +13172,39 @@
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r44.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r45.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r48.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r49.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r5.md": [
@@ -11093,7 +13219,40 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r50.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r51.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r52.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r53.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -11103,11 +13262,21 @@
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r55.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -11117,11 +13286,21 @@
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r57.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11138,6 +13317,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11146,6 +13330,11 @@
   "docs/interventions/harden-2026-07-r61.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11162,6 +13351,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11170,6 +13364,11 @@
   "docs/interventions/harden-2026-07-r63.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11186,6 +13385,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11194,6 +13398,11 @@
   "docs/interventions/harden-2026-07-r65.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11210,6 +13419,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11218,6 +13432,11 @@
   "docs/interventions/harden-2026-07-r67.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11239,6 +13458,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11247,6 +13471,11 @@
   "docs/interventions/harden-2026-07-r71.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11263,6 +13492,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11271,6 +13505,11 @@
   "docs/interventions/harden-2026-07-r73.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11287,6 +13526,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11295,6 +13539,11 @@
   "docs/interventions/harden-2026-07-r75.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11311,6 +13560,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11319,6 +13573,11 @@
   "docs/interventions/harden-2026-07-r77.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11335,6 +13594,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11343,6 +13607,11 @@
   "docs/interventions/harden-2026-07-r79.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11359,6 +13628,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11367,6 +13641,11 @@
   "docs/interventions/harden-2026-07-r81.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11383,6 +13662,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11391,6 +13675,11 @@
   "docs/interventions/harden-2026-07-r85.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11412,6 +13701,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11425,6 +13719,11 @@
   "docs/interventions/harden-2026-07-r87.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11446,6 +13745,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11456,11 +13760,30 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/interventions/harden-2026-07-r90.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r91.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/harden-2026-07-r92.md": [
     {
       "id": "external-owner-contracts-locked-without-consultation",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "merged-head-research-exclusion-flag-gated-splits-cross-script",
@@ -11475,7 +13798,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/intervention-efficacy-tracking.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -11483,6 +13818,11 @@
   "docs/interventions/interventions-telemetry-repo-scope-split-brain.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11499,6 +13839,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11507,6 +13852,11 @@
   "docs/interventions/lazy-core-package-decomposition.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11523,6 +13873,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11535,7 +13890,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/long-build-and-build-queue-matcher-bypasses.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -11547,7 +13914,33 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/merged-head-includes-parked-items-deadlocks-park-run.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/meta-dispatch-not-by-reference-and-ack-overpriced.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/operator-halt-notifications.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -11555,6 +13948,11 @@
   "docs/interventions/park-provisional-acceptance.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11571,7 +13969,33 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/plan-skills-lack-targeted-phase-scoped-read.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/plan-skills-redesign.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/plan-structure-authoring-gate.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -11583,7 +14007,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/skill-config-schema-and-reference-lint.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -11591,6 +14027,11 @@
   "docs/interventions/skip-mcp-test-frontmatter-unquoted-colon.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11607,6 +14048,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11615,6 +14061,11 @@
   "docs/interventions/state-cli-contract-registry.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11631,6 +14082,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11643,6 +14099,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11651,6 +14112,11 @@
   "docs/kpi/SCORECARD.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11676,6 +14142,11 @@
     }
   ],
   "docs/kpi/registry.json": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "bug-queue-aging-backpressure",
       "type": "feature",
@@ -11704,6 +14175,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11714,9 +14190,21 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/specs/machine-keyed-manifest-projection/SPEC.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/specs/spec-buddy/PHASES.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11738,6 +14226,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11746,6 +14239,11 @@
   "docs/specs/turn-routing-enforcement/NEEDS_INPUT_2026-07-17-research-gated-classification-and-skip-vs-halt.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -11841,6 +14339,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-diverged-withholds-on-research-skipped-head",
       "type": "bug",
       "provenance": "manual"
@@ -11873,6 +14376,11 @@
   ],
   "manifest.psd1": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "doc-drift-linter",
       "type": "feature",
       "provenance": "backfilled"
@@ -11880,9 +14388,21 @@
   ],
   "repos/algobooth/.claude/skill-config/MANIFEST.json": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "repos/algobooth/.claude/skill-config/build-queue-ops.json": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "repos/algobooth/.claude/skill-config/commit-policy.md": [
@@ -11890,6 +14410,13 @@
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "repos/algobooth/.claude/skill-config/cycle-prompt-addenda.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "repos/algobooth/.claude/skill-config/execute-plan-repo-gates.md": [
@@ -11921,6 +14448,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11938,6 +14470,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -11950,7 +14487,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "repos/algobooth/.claude/skill-config/skill-catalog.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -11962,7 +14511,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "repos/algobooth/.claude/skill-config/touchpoint-audit-gate.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -11982,6 +14543,11 @@
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
@@ -12113,6 +14679,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -12121,6 +14692,20 @@
       "id": "harness-hardening-retro-fixes",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "repos/algobooth/.claude/skills/qg-rust/SKILL.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "repos/algobooth/.claude/skills/qg-sidecar/SKILL.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "repos/cognito-forms/.claude/settings.local.json": [
@@ -12179,6 +14764,20 @@
       "id": "plan-skills-lack-targeted-phase-scoped-read",
       "type": "bug",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "repos/cognito-forms/.claude/skills/write-plan-cognito/execution-contract-cognito-lanes.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "repos/cognito-forms/.claude/skills/write-plan-cognito/lane-agent-briefing.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "repos/cognito-forms/Cognito.Core/CLAUDE.local.md": [
@@ -12248,6 +14847,11 @@
     }
   ],
   "repos/cognito-forms/Cognito.UnitTests/CLAUDE.local.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "execute-plan-skill-diet",
       "type": "feature",
@@ -12408,6 +15012,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -12433,7 +15042,19 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "repos/overwatch/CLAUDE.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "ruff.toml": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
@@ -12445,9 +15066,19 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "setup.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "cross-platform-setup",
       "type": "feature",
@@ -12479,6 +15110,11 @@
   "user/hooks/CLAUDE.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -12529,6 +15165,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -12546,6 +15187,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -12554,6 +15200,11 @@
   "user/hooks/build-queue-enforce.sh": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -12605,6 +15256,11 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
@@ -12668,6 +15324,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -12681,6 +15342,13 @@
       "id": "long-build-and-runtime-ownership",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/plugins/local-tools/plugins/cognito-pr-review/commands/review-pr-buddy.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/scripts/CLAUDE.md": [
@@ -12738,6 +15406,11 @@
       "id": "feature-queue-lacks-on-disk-autodiscovery",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
@@ -12892,6 +15565,11 @@
   ],
   "user/scripts/benchmark_lazy_core_import.py": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -12942,6 +15620,11 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
@@ -13046,6 +15729,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -13063,7 +15751,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/build-queue-runner.Tests.ps1": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -13076,6 +15776,11 @@
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13097,12 +15802,29 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
     }
   ],
+  "user/scripts/cli_surface.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/scripts/cli_surface_gen.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
@@ -13112,6 +15834,11 @@
   "user/scripts/coupled-overlays/lazy-batch-cloud.overlay.json": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13139,6 +15866,11 @@
   "user/scripts/coupled-overlays/lazy-bug-batch.overlay.json": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13201,6 +15933,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -13230,6 +15967,11 @@
   ],
   "user/scripts/gate-battery.py": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -13245,6 +15987,11 @@
   "user/scripts/harness-gate.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13267,6 +16014,11 @@
     }
   ],
   "user/scripts/kpi-scorecard.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "anti-overfit-design-gate",
       "type": "feature",
@@ -13310,6 +16062,11 @@
   ],
   "user/scripts/lazy-parity-manifest.json": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "coupled-pair-generation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -13333,6 +16090,11 @@
   "user/scripts/lazy-queue-doc.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13407,6 +16169,11 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
@@ -13581,6 +16348,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
       "type": "bug",
       "provenance": "backfilled"
@@ -13733,7 +16505,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/lazy_core/_ctx.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -13750,6 +16534,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -13758,6 +16547,11 @@
   "user/scripts/lazy_core/dispatch.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13784,6 +16578,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -13806,7 +16605,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/lazy_core/hostcaps.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -13814,6 +16625,11 @@
   "user/scripts/lazy_core/ledgers.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13830,7 +16646,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/lazy_core/notifyplane.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -13840,6 +16668,25 @@
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/lazy_core/runtimeplane.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/lazy_core/statedir.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/scripts/lazy_guard.py": [
@@ -13866,6 +16713,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -13879,6 +16731,11 @@
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -13915,6 +16772,11 @@
   ],
   "user/scripts/lint-skill-config.py": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -13938,6 +16800,11 @@
     }
   ],
   "user/scripts/phases-slice.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "execute-plan-skill-diet",
       "type": "feature",
@@ -14166,6 +17033,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -14250,6 +17122,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -14285,6 +17162,11 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
@@ -14325,6 +17207,11 @@
     }
   ],
   "user/scripts/test_kpi_scorecard.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "bug-queue-aging-backpressure",
       "type": "feature",
@@ -14411,6 +17298,11 @@
       "id": "live-settings-split-brain-disarms-enforcement-plane",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
@@ -14606,12 +17498,22 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "user/scripts/test_phases_slice.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "execute-plan-skill-diet",
       "type": "feature",
@@ -14681,6 +17583,11 @@
   ],
   "user/scripts/test_setup_py.py": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "cross-platform-setup",
       "type": "feature",
       "provenance": "backfilled"
@@ -14698,6 +17605,20 @@
       "id": "skill-usage-miner",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/test_spike_state_routing.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/test_spike_tooling_loop.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/scripts/test_surface_resolver.py": [
@@ -14728,6 +17649,11 @@
   ],
   "user/scripts/test_validate_plan.py": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "plan-structure-authoring-gate",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -14743,6 +17669,11 @@
       "id": "hardening-intervention-records-unmeasurable-or-missing",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
@@ -14800,6 +17731,11 @@
       "id": "hardening-intervention-records-unmeasurable-or-missing",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "noncanonical-blocker-filename-invisible-to-state-machine",
@@ -14867,9 +17803,42 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/tests/test_gate_battery.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/tests/test_lazy_core/__init__.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/tests/test_lazy_core/_util.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/tests/test_lazy_core/conftest.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/scripts/tests/test_lazy_core/test_depdag.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -14891,6 +17860,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -14904,6 +17878,11 @@
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -14925,7 +17904,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/tests/test_lazy_core/test_hostcaps.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -14933,6 +17924,11 @@
   "user/scripts/tests/test_lazy_core/test_ledgers.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -14949,6 +17945,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -14957,6 +17958,11 @@
   "user/scripts/tests/test_lazy_core/test_misc.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -14971,6 +17977,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/scripts/tests/test_lazy_core/test_notifyplane.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/scripts/tests/test_lazy_core/test_pseudo.py": [
     {
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
@@ -14983,7 +17996,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/tests/test_lazy_core/test_runtimeplane.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -14991,6 +18016,11 @@
   "user/scripts/tests/test_lazy_core/test_statedir.py": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -15020,6 +18050,11 @@
     }
   ],
   "user/scripts/validate-plan.py": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "plan-structure-authoring-gate",
       "type": "feature",
@@ -15079,6 +18114,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -15092,6 +18132,11 @@
     }
   ],
   "user/skills/_components/completion-integrity-gate.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "park-provisional-acceptance",
       "type": "feature",
@@ -15108,6 +18153,11 @@
   "user/skills/_components/dispatched-agent-liveness.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -15139,6 +18189,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/skills/_components/execution-contract.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/skills/_components/harness-change-gate.md": [
     {
       "id": "anti-overfit-design-gate",
@@ -15156,6 +18213,11 @@
       "id": "cycle-subagent-leaves-work-uncommitted-or-unticked",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "code-doc-provenance-linkage",
@@ -15215,6 +18277,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -15230,9 +18297,21 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/skills/_components/lazy-batch-prompts/dispatch-coherence-recovery.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/skills/_components/lazy-batch-prompts/dispatch-hardening.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -15252,6 +18331,11 @@
   "user/skills/_components/lazy-batch-prompts/dispatch-spike.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -15276,6 +18360,11 @@
   "user/skills/_components/lazy-batch-prompts/research-halt-announcement.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -15323,6 +18412,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/skills/_components/phases-runtime-validation.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/skills/_components/plan-structural-gate.md": [
     {
       "id": "plan-structure-authoring-gate",
@@ -15335,6 +18431,13 @@
       "id": "park-provisional-acceptance",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/_components/runner-outcome-contract.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/skills/_components/sentinel-frontmatter.md": [
@@ -15415,6 +18518,11 @@
   ],
   "user/skills/_components/spec-friction-kpi-gate.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -15427,7 +18535,26 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/skills/_components/subagent-launch.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/skills/_components/subagent-review.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -15461,7 +18588,19 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/skills/add-phase/SKILL.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     }
@@ -15605,6 +18744,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -15650,6 +18794,13 @@
       "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "user/skills/gate-battery/SKILL.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/skills/gemini/SKILL.md": [
@@ -15706,6 +18857,11 @@
       "id": "hardening-intervention-records-unmeasurable-or-missing",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
@@ -15833,6 +18989,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -15950,6 +19111,11 @@
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
@@ -16087,6 +19253,11 @@
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
@@ -16555,6 +19726,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -16621,6 +19797,11 @@
       "provenance": "manual"
     },
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -16662,6 +19843,11 @@
   ],
   "user/skills/spec-phases/SKILL.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "code-doc-provenance-linkage",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -16680,6 +19866,11 @@
   "user/skills/spec/SKILL.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -16860,6 +20051,11 @@
   ],
   "user/skills/write-plan/SKILL.md": [
     {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "plan-skills-lack-targeted-phase-scoped-read",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -16870,7 +20066,33 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/skills/write-pr-comments/SKILL.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/skills/write-pr-description/SKILL.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "workspace/CLAUDE.DESKTOP-GHTC5K6.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "workspace/CLAUDE.md": [
+    {
+      "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "execute-plan-skill-diet",
       "type": "feature",
