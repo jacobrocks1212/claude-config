@@ -1,6 +1,6 @@
 # Merged-head excludes PARKED but not OPERATOR-DEFERRED items → deadlock persists
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P0
 **Discovered:** 2026-07-17
 **Related:** `docs/bugs/merged-head-includes-parked-items-deadlocks-park-run/` (Round 56 — the

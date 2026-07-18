@@ -1,6 +1,6 @@
 # Harden rounds fix docs/bugs items out-of-pipeline but never complete the docs/bugs/CLAUDE.md reconciliation contract
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-18
 **Related:** `docs/bugs/CLAUDE.md` (the "Fixing a bug OUT-OF-PIPELINE" reconciliation contract this

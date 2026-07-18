@@ -1,6 +1,6 @@
 # Dispatch-bound enriched probe + inject hook bypass the merged-view head
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P0
 **Discovered:** 2026-07-16
 **Related:** `docs/features/unified-pipeline-orchestrator/` (the merged-view / type-dispatch
