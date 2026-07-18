@@ -2078,6 +2078,20 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/_archive/merged-head-research-exclusion-flag-gated-splits-cross-script/FIXED.md": [
+    {
+      "id": "merged-head-research-exclusion-flag-gated-splits-cross-script",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/merged-head-research-exclusion-flag-gated-splits-cross-script/SPEC.md": [
+    {
+      "id": "merged-head-research-exclusion-flag-gated-splits-cross-script",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/no-gemini-sprint-staging-in-claude-config/ADHOC_BRIEF.md": [
     {
       "id": "no-gemini-sprint-staging-in-claude-config",
@@ -11406,6 +11420,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/interventions/harden-2026-07-r92.md": [
+    {
+      "id": "merged-head-research-exclusion-flag-gated-splits-cross-script",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/hardening-intervention-records-unmeasurable-or-missing.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -11787,6 +11808,11 @@
       "id": "merged-head-includes-parked-items-deadlocks-park-run",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-research-exclusion-flag-gated-splits-cross-script",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "skip-mcp-test-frontmatter-unquoted-colon",
