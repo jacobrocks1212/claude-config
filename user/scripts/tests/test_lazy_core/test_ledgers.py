@@ -1495,10 +1495,15 @@ def test_probe_withholds_forward_route_on_audit_obligation():
         assert "route_overridden_by" not in out0, out0.get("route_overridden_by")
 
         # --- (2) arm the obligation directly on the marker (simulating a
-        # --cycle-end after a /spec cycle), then re-probe -> withheld ---
+        # --cycle-end after a /spec cycle that COMMITTED — a non-empty delta),
+        # then re-probe -> withheld ---
         _set_state_dir(state_dir)
         try:
-            lazy_core.record_audit_obligation(item_id="feat-c", cycle_kind="spec")
+            lazy_core.record_audit_obligation(
+                item_id="feat-c", cycle_kind="spec",
+                begin_head_sha="begin000", end_sha="end111feat",
+                cycle_summary="spec: feat-c baseline",
+            )
         finally:
             _clear_state_dir()
 
@@ -1516,6 +1521,13 @@ def test_probe_withholds_forward_route_on_audit_obligation():
         assert "--emit-dispatch input-audit" in cmd, cmd
         assert "item_id=feat-c" in cmd, cmd
         assert "cycle_kind=spec" in cmd, cmd
+        # adhoc-audit-obligation-fires-on-zero-commit-failed-cycle P2: the emit
+        # command binds the bracket's ACTUAL recorded end commit, never the
+        # positional HEAD~1 proxy.
+        assert "cycle_commit_sha=end111feat" in cmd, cmd
+        assert "HEAD~1" not in cmd, (
+            "a recorded end sha must replace the HEAD~1 proxy: " + cmd
+        )
 
         # --- (3) discharge via a REGISTERED --emit-dispatch input-audit ---
         r_discharge = subprocess.run(
@@ -1583,19 +1595,33 @@ def test_audit_obligation_helpers_no_marker_and_non_audited_kind():
             # 1d.5 skip-condition prose: "plan-bug is a planning step, not a
             # SPEC/PHASES-authoring cycle — skip audit for plan-bug") — only
             # spec-bug/spec-phases are audited on the bug pipeline.
-            lazy_core.record_audit_obligation("bug-1", "plan-bug")
+            # adhoc-audit-obligation-fires-on-zero-commit-failed-cycle: arming now
+            # ALSO requires a non-empty commit delta (begin != end) — a real commit
+            # landed. The armed obligation carries the end sha + subject.
+            lazy_core.record_audit_obligation(
+                "bug-1", "plan-bug", begin_head_sha="b0", end_sha="b1",
+            )
             assert lazy_core.pending_audit_obligation() is None
-            lazy_core.record_audit_obligation("bug-1", "spec-bug")
+            lazy_core.record_audit_obligation(
+                "bug-1", "spec-bug",
+                begin_head_sha="b0", end_sha="b1", cycle_summary="fix the thing",
+            )
             assert lazy_core.pending_audit_obligation() == {
                 "item_id": "bug-1", "cycle_kind": "spec-bug",
+                "cycle_commit_sha": "b1", "cycle_summary": "fix the thing",
             }
             assert lazy_core.discharge_audit_obligation() is True
 
-            # An audited kind arms it; discharge clears it; a second
-            # discharge is a no-op (False, not an error).
-            lazy_core.record_audit_obligation("f1", "plan-feature")
+            # An audited kind on a real delta arms it; discharge clears it; a
+            # second discharge is a no-op (False, not an error).
+            lazy_core.record_audit_obligation(
+                "f1", "plan-feature", begin_head_sha="c0", end_sha="c1",
+            )
             obligation = lazy_core.pending_audit_obligation()
-            assert obligation == {"item_id": "f1", "cycle_kind": "plan-feature"}
+            assert obligation == {
+                "item_id": "f1", "cycle_kind": "plan-feature",
+                "cycle_commit_sha": "c1", "cycle_summary": "",
+            }
             assert lazy_core.discharge_audit_obligation() is True
             assert lazy_core.pending_audit_obligation() is None
             assert lazy_core.discharge_audit_obligation() is False
@@ -1603,6 +1629,46 @@ def test_audit_obligation_helpers_no_marker_and_non_audited_kind():
             _clear_state_dir()
 
 
+
+
+def test_build_input_audit_emit_command_binds_supplied_cycle_commit_sha():
+    """adhoc-audit-obligation-fires-on-zero-commit-failed-cycle P2: when the
+    obligation supplies cycle_commit_sha (+ cycle_summary), the emit command
+    binds them and does NOT emit the positional HEAD~1 proxy — closing the
+    mis-targeted-diff half of the defect."""
+    _guard()
+    cmd = lazy_core.build_input_audit_emit_command(
+        "lazy-state.py",
+        item_id="feat-a", item_name="Feature A",
+        spec_path="/repo/docs/features/feat-a", cycle_kind="spec",
+        cwd="/repo",
+        cycle_commit_sha="deadbeefcafe",
+        cycle_summary="spec: feat-a baseline",
+    )
+    assert "cycle_commit_sha=deadbeefcafe" in cmd, cmd
+    assert "HEAD~1" not in cmd, (
+        "a supplied end sha must REPLACE the positional HEAD~1 proxy: " + cmd
+    )
+    assert "cycle_summary=" in cmd and "feat-a baseline" in cmd, cmd
+
+
+def test_build_input_audit_emit_command_falls_back_to_head1_without_sha():
+    """adhoc-audit-obligation-fires-on-zero-commit-failed-cycle P2: with no
+    cycle_commit_sha supplied (a legacy/partial obligation), the command retains
+    the ready-to-run HEAD~1 default + the git-log latest-subject fallback so it
+    stays runnable."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # A non-git cwd → the latest-subject git call fails gracefully (empty
+        # summary), but the HEAD~1 default is still emitted so the command runs.
+        cmd = lazy_core.build_input_audit_emit_command(
+            "lazy-state.py",
+            item_id="feat-a", item_name="Feature A",
+            spec_path="/repo/docs/features/feat-a", cycle_kind="spec",
+            cwd=td,
+        )
+    assert "HEAD~1" in cmd, ("absent-sha fallback must keep HEAD~1: " + cmd)
+    assert "cycle_summary=" in cmd, cmd
 
 
 def test_record_decision_and_read_round_trip():
@@ -4014,6 +4080,8 @@ _TESTS = [
     ("test_probe_withholds_forward_route_on_pending_debt", test_probe_withholds_forward_route_on_pending_debt),
     ("test_probe_withholds_forward_route_on_audit_obligation", test_probe_withholds_forward_route_on_audit_obligation),
     ("test_audit_obligation_helpers_no_marker_and_non_audited_kind", test_audit_obligation_helpers_no_marker_and_non_audited_kind),
+    ("test_build_input_audit_emit_command_binds_supplied_cycle_commit_sha", test_build_input_audit_emit_command_binds_supplied_cycle_commit_sha),
+    ("test_build_input_audit_emit_command_falls_back_to_head1_without_sha", test_build_input_audit_emit_command_falls_back_to_head1_without_sha),
     ("test_record_decision_and_read_round_trip", test_record_decision_and_read_round_trip),
     ("test_bind_decision_record_context_refuses_without_record_and_binds_when_present", test_bind_decision_record_context_refuses_without_record_and_binds_when_present),
     ("test_emit_dispatch_hardening_no_longer_acks", test_emit_dispatch_hardening_no_longer_acks),

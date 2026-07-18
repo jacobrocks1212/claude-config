@@ -439,6 +439,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "fold_park_flags": "markers",
     "fold_run_counters": "markers",
     "head_sha_snapshot": "markers",
+    "head_commit_subject": "markers",
     "marker_owner_status": "markers",
     "marker_work_branch": "markers",
     "parse_parent_run_arg": "markers",

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: adhoc-audit-obligation-fires-on-zero-commit-failed-cycle
-status: Ready
+status: Complete
 created: 2026-07-18
 complexity: complex
 phases: [1, 2]
@@ -68,8 +68,8 @@ python3 user/scripts/lazy_parity_audit.py --repo-root .
 
 ## Work Units
 
-- [ ] WU-1 — Fix Site A: gate `record_audit_obligation` on a non-empty commit delta + record the real end sha (P1)
-- [ ] WU-2 — Fix Site B: bind `build_input_audit_emit_command` to the recorded end commit (P2)
+- [x] WU-1 — Fix Site A: gate `record_audit_obligation` on a non-empty commit delta + record the real end sha (P1)
+- [x] WU-2 — Fix Site B: bind `build_input_audit_emit_command` to the recorded end commit (P2)
 
 ---
 

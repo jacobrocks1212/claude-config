@@ -8239,6 +8239,102 @@ def test_fold_park_flags_marker_authoritative_with_legacy_fallback():
     assert lazy_core.fold_park_flags(True, False, False, legacy) == (True, False, False)
 
 
+def test_record_audit_obligation_real_commit_delta_arms_with_end_sha():
+    """adhoc-audit-obligation-fires-on-zero-commit-failed-cycle P1: a real-commit
+    delta (begin != end) with an audited cycle_kind arms the obligation carrying
+    cycle_commit_sha == end_sha and the supplied cycle_summary."""
+    _guard()
+    now = _t.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=now,
+            )
+            lazy_core.record_audit_obligation(
+                "feat-a", "spec",
+                begin_head_sha="aaa111", end_sha="bbb222",
+                cycle_summary="did the spec thing",
+            )
+            assert lazy_core.pending_audit_obligation() == {
+                "item_id": "feat-a", "cycle_kind": "spec",
+                "cycle_commit_sha": "bbb222",
+                "cycle_summary": "did the spec thing",
+            }
+        finally:
+            _clear_state_dir()
+
+
+def test_record_audit_obligation_zero_commit_delta_arms_nothing_preserves_prior():
+    """adhoc-audit-obligation-fires-on-zero-commit-failed-cycle P1: a zero-commit
+    delta (begin == end, or a missing end sha) with an audited cycle_kind arms
+    NOTHING and leaves a pre-seeded prior obligation untouched (arm nothing,
+    clear nothing)."""
+    _guard()
+    now = _t.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=now,
+            )
+            # No prior obligation: a zero-commit close (begin == end) arms nothing.
+            lazy_core.record_audit_obligation(
+                "feat-a", "spec",
+                begin_head_sha="ccc333", end_sha="ccc333",
+                cycle_summary="unchanged HEAD",
+            )
+            assert lazy_core.pending_audit_obligation() is None, (
+                "a zero-commit (begin == end) close must arm no obligation"
+            )
+            # A missing end sha (degraded / non-git snapshot) also arms nothing.
+            lazy_core.record_audit_obligation(
+                "feat-a", "spec", begin_head_sha="ddd444", end_sha=None,
+            )
+            assert lazy_core.pending_audit_obligation() is None, (
+                "a missing end sha must arm no obligation"
+            )
+            # Pre-seed a prior obligation via a REAL-commit arm, then a zero-commit
+            # close must PRESERVE it (clear nothing).
+            lazy_core.record_audit_obligation(
+                "feat-a", "spec",
+                begin_head_sha="e0", end_sha="e1", cycle_summary="first arm",
+            )
+            prior = lazy_core.pending_audit_obligation()
+            assert prior is not None and prior["cycle_commit_sha"] == "e1"
+            lazy_core.record_audit_obligation(
+                "feat-a", "spec", begin_head_sha="f0", end_sha="f0",
+            )
+            assert lazy_core.pending_audit_obligation() == prior, (
+                "a zero-commit close must not clear a pre-existing obligation"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_record_audit_obligation_non_audited_kind_noop_regardless_of_delta():
+    """adhoc-audit-obligation-fires-on-zero-commit-failed-cycle P1: a non-audited
+    cycle_kind remains a no-op regardless of the commit delta (unchanged
+    behavior — only the four audited kinds ever arm)."""
+    _guard()
+    now = _t.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=now,
+            )
+            lazy_core.record_audit_obligation(
+                "feat-a", "execute-plan",
+                begin_head_sha="aaa", end_sha="bbb", cycle_summary="real commit",
+            )
+            assert lazy_core.pending_audit_obligation() is None, (
+                "a non-audited cycle_kind must never arm, even on a real delta"
+            )
+        finally:
+            _clear_state_dir()
+
+
 _TESTS = [
     ("test_lazy_state_test_output_matches_baseline", test_lazy_state_test_output_matches_baseline),
     ("test_bug_state_test_output_matches_baseline", test_bug_state_test_output_matches_baseline),
@@ -8297,6 +8393,9 @@ _TESTS = [
     ("test_advance_run_counters_consume_gated", test_advance_run_counters_consume_gated),
     ("test_advance_meta_cycle_increments_meta", test_advance_meta_cycle_increments_meta),
     ("test_emit_dispatch_real_templates_exist_and_declare_requires", test_emit_dispatch_real_templates_exist_and_declare_requires),
+    ("test_record_audit_obligation_real_commit_delta_arms_with_end_sha", test_record_audit_obligation_real_commit_delta_arms_with_end_sha),
+    ("test_record_audit_obligation_zero_commit_delta_arms_nothing_preserves_prior", test_record_audit_obligation_zero_commit_delta_arms_nothing_preserves_prior),
+    ("test_record_audit_obligation_non_audited_kind_noop_regardless_of_delta", test_record_audit_obligation_non_audited_kind_noop_regardless_of_delta),
     ("test_p7_write_run_marker_defaults_attended", test_p7_write_run_marker_defaults_attended),
     ("test_p7_write_run_marker_attended_false", test_p7_write_run_marker_attended_false),
     ("test_p7_marker_missing_attended_defaults_true", test_p7_marker_missing_attended_defaults_true),

@@ -1936,6 +1936,29 @@ def head_sha_snapshot(repo_root: Path | None = None) -> str | None:
     return None
 
 
+def head_commit_subject(repo_root: Path | None = None) -> str | None:
+    """Best-effort ``git log -1 --format=%s`` (HEAD commit subject) against
+    repo_root (cwd default).
+
+    Returns the subject line of the current HEAD commit, or None when not a git
+    tree / git fails / the subject is empty. Used by --cycle-end to record the
+    arming cycle's end-commit subject on the audit obligation
+    (adhoc-audit-obligation-fires-on-zero-commit-failed-cycle) so the downstream
+    input-audit emit command binds ``cycle_summary`` to the bracket's ACTUAL end
+    commit, never a positional proxy. Callers treat None as a degraded snapshot
+    (the obligation records an empty summary, never fabricated prose).
+    """
+    from .runtimeplane import _git  # deferred (runtime/git plane; function-local avoids import cycle)
+    root = repo_root or Path.cwd()
+    try:
+        proc = _git(root, "log", "-1", "--format=%s")
+        if proc.returncode == 0:
+            return (proc.stdout or "").strip() or None
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def current_branch_snapshot(repo_root: Path | None = None) -> str | None:
     """Best-effort ``git rev-parse --abbrev-ref HEAD`` against repo_root (cwd default).
 
@@ -3381,7 +3404,14 @@ AUDITED_CYCLE_KINDS: frozenset = frozenset({
 })
 
 
-def record_audit_obligation(item_id: str | None, cycle_kind: str | None) -> dict | None:
+def record_audit_obligation(
+    item_id: str | None,
+    cycle_kind: str | None,
+    *,
+    begin_head_sha: str | None = None,
+    end_sha: str | None = None,
+    cycle_summary: str | None = None,
+) -> dict | None:
     """Record the post-cycle input-audit obligation on the run marker (D2-A).
 
     Called from --cycle-end immediately after a /spec or plan-feature (or the
@@ -3391,13 +3421,30 @@ def record_audit_obligation(item_id: str | None, cycle_kind: str | None) -> dict
     no-op (returns the marker UNCHANGED, no write) — only the four audited
     kinds ever arm the obligation.
 
-    Overwrites any PRIOR obligation (there is at most one outstanding
-    obligation at a time — cycles are serial, and the withhold this powers
-    forces discharge before the next cycle can begin).
+    Commit-delta gate (adhoc-audit-obligation-fires-on-zero-commit-failed-cycle):
+    a zero-commit close of an audited cycle — a FAILED/no-op /spec or plan cycle
+    that committed nothing — arms NOTHING (and clears nothing: a pre-existing
+    obligation is preserved). The oracle reuses ``record_cycle_commit_bracket``'s
+    exact zero-commit semantics — a missing ``end_sha`` OR ``end_sha ==
+    begin_head_sha`` is an empty bracket, so the obligation is NOT armed. Only a
+    NON-EMPTY delta (a real commit landed) arms, recording the bracket's ACTUAL
+    end commit (``cycle_commit_sha``) + its subject (``cycle_summary``) on the
+    obligation dict so the downstream input-audit emit command binds to the real
+    end commit instead of a positional ``HEAD~1`` guess.
+
+    When it does arm, overwrites any PRIOR obligation (there is at most one
+    outstanding obligation at a time — cycles are serial, and the withhold this
+    powers forces discharge before the next cycle can begin).
 
     Args:
         item_id: the feature/bug id the obligation is owed for.
         cycle_kind: the sub_skill of the cycle that just ended.
+        begin_head_sha: the cycle bracket's begin HEAD (from the cycle marker's
+            ``begin_head_sha`` snapshot); None on a degraded/legacy snapshot.
+        end_sha: the resolved end commit (current HEAD at --cycle-end); None on a
+            non-git / degraded snapshot — treated as a zero-commit close.
+        cycle_summary: the end commit's ``%s`` subject, recorded on the armed
+            obligation (empty string when unresolvable).
 
     Returns:
         The updated marker dict; None when no marker is present.
@@ -3407,7 +3454,17 @@ def record_audit_obligation(item_id: str | None, cycle_kind: str | None) -> dict
         return None
     if cycle_kind not in AUDITED_CYCLE_KINDS:
         return marker
-    marker["audit_obligation"] = {"item_id": item_id, "cycle_kind": cycle_kind}
+    # Commit-delta gate: an empty bracket (no end sha, or begin == end) is a
+    # zero-commit close — arm nothing, clear nothing (preserve any prior
+    # obligation). Mirrors record_cycle_commit_bracket's skip oracle exactly.
+    if not end_sha or end_sha == begin_head_sha:
+        return marker
+    marker["audit_obligation"] = {
+        "item_id": item_id,
+        "cycle_kind": cycle_kind,
+        "cycle_commit_sha": end_sha,
+        "cycle_summary": cycle_summary or "",
+    }
     marker_path = claude_state_dir() / _MARKER_FILENAME
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
     return marker

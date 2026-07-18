@@ -3726,18 +3726,27 @@ def build_input_audit_emit_command(
     spec_path: str,
     cycle_kind: str,
     cwd: str,
+    cycle_commit_sha: str | None = None,
+    cycle_summary: str | None = None,
 ) -> str:
     """Pre-compose the single-line shell command that discharges the D2-A
     audit obligation (mirrors ``build_hardening_emit_command``'s shape for
     the pending-hardening-debt withhold).
 
-    ``cycle_summary`` and ``cycle_commit_sha`` are NOT script-derivable
-    narrative fields per se, but a mechanical proxy is available and used so
-    the command is genuinely ready-to-run (never a hand-fill placeholder):
-    ``cycle_commit_sha`` defaults to the SKILL.md-sanctioned fallback
-    ``"HEAD~1"``; ``cycle_summary`` defaults to the subject line of the most
-    recent commit at ``cwd`` (``git log -1 --format=%s``) when resolvable,
-    else an empty string (never fabricated prose).
+    ``cycle_commit_sha`` / ``cycle_summary`` bind the audit's diff to the cycle
+    bracket's ACTUAL end commit — the values recorded on the obligation dict at
+    --cycle-end arming time (adhoc-audit-obligation-fires-on-zero-commit-failed-
+    cycle P1). When supplied, they are emitted verbatim: this is the correct
+    binding, replacing the positional ``HEAD~1`` guess that (after a zero-commit
+    or an intervening cycle) resolved to a previous, unrelated item's commit.
+
+    When a param is ABSENT (None/empty — a legacy/partial obligation that
+    predates the recorded sha), the command falls back so it stays genuinely
+    ready-to-run (never a hand-fill placeholder): ``cycle_commit_sha`` falls
+    back to the SKILL.md-sanctioned ``"HEAD~1"``; ``cycle_summary`` falls back to
+    the subject line of the most recent commit at ``cwd``
+    (``git log -1 --format=%s``) when resolvable, else an empty string (never
+    fabricated prose).
 
     Returns:
         A single shell command string, safe to paste into bash.
@@ -3745,16 +3754,22 @@ def build_input_audit_emit_command(
     def _ctx(key: str, value: str) -> str:
         return f"--context {key}={shlex.quote(value)}"
 
-    cycle_summary = ""
-    try:
-        proc = subprocess.run(
-            ["git", "-C", str(cwd), "log", "-1", "--format=%s"],
-            capture_output=True, text=True, timeout=10,
-        )
-        if proc.returncode == 0:
-            cycle_summary = proc.stdout.strip()
-    except Exception:  # noqa: BLE001 — best-effort proxy, never fatal
-        pass
+    # The bracket's recorded end commit is the authoritative binding; HEAD~1 is
+    # only the absent-sha fallback (legacy/partial obligation).
+    resolved_commit_sha = cycle_commit_sha or "HEAD~1"
+
+    resolved_summary = cycle_summary or ""
+    if not resolved_summary:
+        # Absent recorded summary: fall back to the latest-commit subject proxy.
+        try:
+            proc = subprocess.run(
+                ["git", "-C", str(cwd), "log", "-1", "--format=%s"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if proc.returncode == 0:
+                resolved_summary = proc.stdout.strip()
+        except Exception:  # noqa: BLE001 — best-effort proxy, never fatal
+            pass
 
     parts = [
         f"python3 ~/.claude/scripts/{state_script_name}",
@@ -3762,8 +3777,8 @@ def build_input_audit_emit_command(
         _ctx("item_name", item_name or ""),
         _ctx("spec_path", spec_path or ""),
         _ctx("cycle_kind", cycle_kind or ""),
-        _ctx("cycle_summary", cycle_summary),
-        _ctx("cycle_commit_sha", "HEAD~1"),
+        _ctx("cycle_summary", resolved_summary),
+        _ctx("cycle_commit_sha", resolved_commit_sha),
         _ctx("item_id", item_id or ""),
         _ctx("cwd", cwd or ""),
     ]
