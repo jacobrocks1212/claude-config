@@ -387,7 +387,7 @@ ONLY uncovered `Runtime Verification` rows are each a **documented-untestable cl
 end. Left as a bare `partial` it loops forever — `__write_validated_from_results__` refuses any
 non-`all-passing` result, so the state machine re-dispatches `/mcp-test` every cycle and the item
 never reaches `__mark_complete__` / `__mark_fixed__` (the deadlock behind
-`docs/bugs/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/`). There is a shipped
+`docs/bugs/_archive/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/`). There is a shipped
 escape hatch, and this is the ONE narrow case where you author onto the engine-written results file.
 
 - **The mechanism.** `observation_gap_promotable` (`lazy_core/gates.py`) promotes such a partial to a

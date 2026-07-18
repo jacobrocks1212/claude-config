@@ -1,6 +1,8 @@
 # A `partial` MCP_TEST_RESULTS.md whose only uncovered rows are all test-exempt/deferred has no *authorable* path to VALIDATED.md
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-18
+**Fix commit:** ed37a2d5
 **Class:** product (workflow-contract + gate-semantics fork — operator-owned)
 **Date:** 2026-07-17
 **Related:** `docs/specs/lazy-validation-readiness/`, `docs/specs/turn-routing-enforcement/NEEDS_INPUT.md` decisions #2 (Round 45) + #9 (Round 47) — adjacent open observation-gap / partial-VALIDATED forks. Origin: AlgoBooth bugs `sidecar-integrity-gate-blocks-user-modified-sidecar` and `adhoc-hydra-load-code-mcp-tool` (both flagged this class "for a future claude-config harden" in their `NEEDS_INPUT.md`).
