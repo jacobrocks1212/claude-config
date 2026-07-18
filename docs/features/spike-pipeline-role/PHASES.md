@@ -186,13 +186,18 @@ contract (no runtime rows / no MCP gate for this phase).
 ---
 
 ### Phase 6: (Cross-repo, NON-harden-harness) recognized-sentinel promotion — IF wanted
-**Status:** Not started — surfaced only
-**Phase kind:** design
+**Status:** Won't-do — closed with no action (operator decision, AskUserQuestion 2026-07-18)
+
+Open Question 1 was resolved **"Keep the plain audit doc"**: the Spike role stays fully functional
+on a plain `SPIKE_VERDICT.md` audit doc plus already-recognized sentinels (SPEC `## Non-goals`
+stands as written). This "IF wanted" phase is closed with no action; recognized-sentinel promotion
+remains available later as a separate AlgoBooth-scoped follow-up (the AlgoBooth half is outside
+harden-harness scope — Prohibition #1). Deliverables descoped so the router's unchecked count clears.
 
 - [ ] IF the operator wants full lint/gate coverage of the verdict schema (Open Question 1),
   promote `SPIKE_VERDICT.md` to a recognized sentinel: add its schema to
   `sentinel-frontmatter.md` (claude-config) AND to AlgoBooth's
   `scripts/check-docs-consistency.ts SENTINEL_SCHEMAS` (**AlgoBooth repo — outside harden-harness
-  scope; a normal AlgoBooth session must make this edit**)
+  scope; a normal AlgoBooth session must make this edit**) <!-- descoped -->
 - [ ] Until then, the verdict rides on a plain audit doc + already-recognized sentinels (Phase 1
-  design), which is fully functional
+  design), which is fully functional <!-- descoped -->
