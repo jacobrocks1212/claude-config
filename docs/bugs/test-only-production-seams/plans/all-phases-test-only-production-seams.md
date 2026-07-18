@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: test-only-production-seams
-status: Ready
+status: In-progress
 created: 2026-07-18
 complexity: complex
 phases: [1, 2]
