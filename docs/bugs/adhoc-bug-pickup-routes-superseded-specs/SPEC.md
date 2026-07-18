@@ -1,8 +1,10 @@
 # On-disk bug pickup routes Superseded SPECs into the merged head → universal dispatch withhold
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P0
 **Discovered:** 2026-07-18
+**Fixed:** 2026-07-18
+**Fix commit:** 04ecf963
 **Related:** `docs/features/merged-head-actionability-oracle/` (the generalization this is the
 7th/8th facet of); `docs/bugs/_archive/merged-head-excludes-parked-not-operator-deferred-deadlocks/`
 (Round 57 — operator-defer exclusion); `docs/bugs/_archive/merged-head-includes-parked-items-deadlocks-park-run/`
