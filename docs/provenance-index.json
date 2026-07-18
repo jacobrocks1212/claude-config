@@ -260,6 +260,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "external-owner-contracts-locked-without-consultation",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -2080,12 +2085,22 @@
   ],
   "docs/bugs/_archive/merged-head-research-exclusion-flag-gated-splits-cross-script/FIXED.md": [
     {
+      "id": "external-owner-contracts-locked-without-consultation",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "merged-head-research-exclusion-flag-gated-splits-cross-script",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/merged-head-research-exclusion-flag-gated-splits-cross-script/SPEC.md": [
+    {
+      "id": "external-owner-contracts-locked-without-consultation",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "merged-head-research-exclusion-flag-gated-splits-cross-script",
       "type": "bug",
@@ -4003,6 +4018,27 @@
       "id": "env-transient-counts-against-validation-retry-budget",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/external-owner-contracts-locked-without-consultation/IMPLEMENTATION_NOTES.md": [
+    {
+      "id": "external-owner-contracts-locked-without-consultation",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/external-owner-contracts-locked-without-consultation/PHASES.md": [
+    {
+      "id": "external-owner-contracts-locked-without-consultation",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/external-owner-contracts-locked-without-consultation/plans/fix-external-owner-consultation-gate.md": [
+    {
+      "id": "external-owner-contracts-locked-without-consultation",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/feature-queue-lacks-on-disk-autodiscovery/PHASES.md": [
@@ -11422,6 +11458,11 @@
   ],
   "docs/interventions/harden-2026-07-r92.md": [
     {
+      "id": "external-owner-contracts-locked-without-consultation",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "merged-head-research-exclusion-flag-gated-splits-cross-script",
       "type": "bug",
       "provenance": "manual"
@@ -11778,6 +11819,11 @@
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "external-owner-contracts-locked-without-consultation",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "harden-rounds-skip-docs-bugs-reconciliation-contract",
@@ -13699,6 +13745,11 @@
       "provenance": "manual"
     },
     {
+      "id": "external-owner-contracts-locked-without-consultation",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
@@ -13726,6 +13777,11 @@
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "external-owner-contracts-locked-without-consultation",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
@@ -14828,6 +14884,11 @@
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "external-owner-contracts-locked-without-consultation",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
