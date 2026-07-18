@@ -15,14 +15,15 @@ a hook, make every error path fall through to allow — and drop a `hook-error.j
 `guard-fail-open-leaves-no-trace`).
 
 **Fail-open observability, including the no-python case.** A dead guard plane must never be
-silent. Every one of the 7 python-bearing hooks (`lazy-cycle-containment.sh`,
+silent. Every one of the 8 python-bearing hooks (`lazy-cycle-containment.sh`,
 `block-noncanonical-blocker-write.sh`, `block-sentinel-write-on-stray-branch.sh`,
 `long-build-ownership-guard.sh`, `build-queue-enforce.sh`, `lazy-dispatch-guard.sh`,
-`lazy-route-inject.sh`) writes a breadcrumb in its no-python fail-open branch too — the severest
+`lazy-route-inject.sh`, `subagent-wedge-backstop.sh`) writes a breadcrumb in its no-python
+fail-open branch too — the severest
 failure class (neither `python3` nor `python` resolvable) is exactly the one no python-side
 appender can record, so a small **pure-bash** fallback (only `date`/`mkdir`/`printf`, every write
 `2>/dev/null || true`) writes both `hook-error.json` and one `hook-events.jsonl` line before
-`exit 0`. Kept as an identical copied block across all 7 hooks (interim — no shared-hook-lib
+`exit 0`. Kept as an identical copied block across all 8 hooks (interim — no shared-hook-lib
 feature exists in this repo yet; keep the copies in lockstep by inspection, same discipline as the
 `_normalize_ps_syntax` triple). Pipe-tested by forcing `PATH=""` via the properly-resolved Git
 Bash executable — **not** a bare `"bash"` subprocess token, which Windows `CreateProcess` resolves
@@ -214,9 +215,10 @@ routes through the queue wrapper, which the enforce hook exempts (locked D5 — 
 Every deny site in the five enforcement hooks (`lazy-cycle-containment.sh`,
 `block-noncanonical-blocker-write.sh`, `block-sentinel-write-on-stray-branch.sh`,
 `long-build-ownership-guard.sh`, `build-queue-enforce.sh`) and every `hook-error.json` breadcrumb
-site — the generic catch-all `except Exception` tail of ALL 7 python-bearing hooks (per
+site — the generic catch-all `except Exception` tail of ALL 8 python-bearing hooks (per
 `guard-fail-open-leaves-no-trace`, every hook's tail now calls `_breadcrumb(exc)`; previously two
-of the seven, the Write/Edit sentinel pair, had no catch-all observability at all), plus each
+of the original seven, the Write/Edit sentinel pair, had no catch-all observability at all; the
+8th is the `subagent-wedge-backstop.sh` SubagentStop hook), plus each
 hook's pure-bash no-python fallback, plus `lazy_guard.py` — ALSO appends one
 `{ts, kind: "error"|"deny", hook, repo_root, signature, detail}` line to **`hook-events.jsonl`**
 (incident-auto-capture D2; keyed state dir when the repo resolves, else the base dir). The
@@ -228,7 +230,7 @@ ledger — double-writing would double-count one incident across two signal clas
 deny site, pass a **stable signature token** (the collector's cluster key), not free text.
 Pipe-tested in `test_hooks.py` (`test_events_*`: event-on-deny, byte-identical output with the
 append failing, no event on allow; `test_all_python_bearing_hooks_breadcrumb_on_no_python` sweeps
-the no-python path across all 7 hooks in one test).
+the no-python path across all 8 hooks in one test).
 
 ## Write-time complements
 

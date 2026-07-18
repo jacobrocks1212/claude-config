@@ -3080,6 +3080,7 @@ def test_p7_meta_dispatch_by_reference_via_guard():
 # ===========================================================================
 
 _CONTAINMENT_SH = _HOOKS_DIR / "lazy-cycle-containment.sh"
+_WEDGE_SH = _HOOKS_DIR / "subagent-wedge-backstop.sh"
 
 # A synthetic subagent identifier — its mere PRESENCE in a PreToolUse payload
 # marks the call as coming from within a dispatched subagent (D4 trip).
@@ -6599,6 +6600,7 @@ _ALL_PYTHON_BEARING_HOOKS = [
     _BQE_HOOK_SH,
     _GUARD_SH,
     _INJECT_SH,
+    _WEDGE_SH,
 ]
 
 
@@ -6616,7 +6618,8 @@ def test_all_python_bearing_hooks_breadcrumb_on_no_python():
     emit no deny, and write BOTH hook-error.json (hook field matches) and a
     single kind:error hook-events.jsonl line — closing guard-fail-open-leaves
     -no-trace symptom (a) (silent total disarm of the entire guard plane) for
-    all 7 hooks in one sweep."""
+    all 8 python-bearing hooks in one sweep (7 original + the SubagentStop
+    wedge-backstop hook)."""
     minimal_payload = json.dumps({
         "tool_name": "Bash",
         "tool_input": {"command": "echo hi"},
@@ -9078,6 +9081,385 @@ _TESTS = _TESTS + [
      test_bqe_qg_allows_bypass_token_on_qg_rust),
     ("test_bqe_qg_allows_reference_only_mention",
      test_bqe_qg_allows_reference_only_mention),
+]
+
+
+# ===========================================================================
+# subagent-wedge-backstop-hook — the SubagentStop wedge-backstop hook.
+#
+# A fail-open SubagentStop hook that BLOCKS a genuinely-wedged dispatched
+# subagent AT MOST ONCE (breadcrumb keyed on the documented `agent_id`), forcing
+# commit+complete or a BLOCKED.md instead of a dead stop. Blocking is exit-code 2
+# (the documented SubagentStop mechanism), NOT the PreToolUse deny-JSON — so
+# these tests read the SUBPROCESS EXIT CODE (2 = block, 0 = allow), not stdout
+# JSON. The loop-guard breadcrumb lives OUTSIDE any repo, in
+# <claude-state>/subagent-stops/<agent_id>.json (LAZY_STATE_DIR override in
+# tests). Every error path fails OPEN (exit 0 / allow) — a backstop hook that
+# could itself wedge the pipeline is worse than the wedge it prevents.
+# ===========================================================================
+
+_WEDGE_STOPS_SUBDIR = "subagent-stops"
+
+
+def _subagentstop_json(
+    agent_id: str,
+    session_id: str | None = None,
+    cwd: str | None = None,
+) -> str:
+    """Return a SubagentStop hook-input JSON payload (the fields the platform
+    confirmation enumerates: session_id, transcript_path, cwd, agent_id,
+    agent_type, permission_mode)."""
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+    if cwd is None:
+        cwd = "C:\\\\Users\\\\Jacob\\\\AppData\\\\Local\\\\Temp\\\\spike-wedge"
+    payload = {
+        "session_id": session_id,
+        "transcript_path": f"C:\\\\Users\\\\Jacob\\\\.claude\\\\projects\\\\test\\\\{session_id}.jsonl",
+        "cwd": cwd,
+        "permission_mode": "default",
+        "hook_event_name": "SubagentStop",
+        "agent_id": agent_id,
+        "agent_type": "general-purpose",
+    }
+    return json.dumps(payload)
+
+
+def _sessionend_json(session_id: str, cwd: str | None = None) -> str:
+    """Return a SessionEnd hook-input JSON payload (no agent_id — the field
+    whose ABSENCE routes the hook into the breadcrumb-GC branch)."""
+    if cwd is None:
+        cwd = "C:\\\\Users\\\\Jacob\\\\AppData\\\\Local\\\\Temp\\\\spike-wedge"
+    payload = {
+        "session_id": session_id,
+        "transcript_path": f"C:\\\\Users\\\\Jacob\\\\.claude\\\\projects\\\\test\\\\{session_id}.jsonl",
+        "cwd": cwd,
+        "permission_mode": "default",
+        "hook_event_name": "SessionEnd",
+        "reason": "clear",
+    }
+    return json.dumps(payload)
+
+
+def _wedge_git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], capture_output=True, text=True,
+    )
+
+
+def _init_wedge_repo(
+    parent: Path,
+    *,
+    plan_status: str = "In-progress",
+    wu_checked: bool = False,
+    dirty: bool = False,
+) -> Path:
+    """Build a temp git repo carrying ONE feature plan at the given status /
+    checkbox state. Committed clean first, so `dirty=True` adds an untracked
+    file (the ONLY porcelain signal) — otherwise the tree is genuinely clean."""
+    repo = parent / "wedge-repo"
+    plans = repo / "docs" / "features" / "wedge-feat" / "plans"
+    plans.mkdir(parents=True)
+    mark = "x" if wu_checked else " "
+    (plans / "plan.md").write_text(
+        "---\n"
+        "kind: implementation-plan\n"
+        "feature_id: wedge-feat\n"
+        f"status: {plan_status}\n"
+        "---\n\n"
+        "## Work Units\n\n"
+        f"- [{mark}] WU-1 — do the thing\n",
+        encoding="utf-8",
+    )
+    _wedge_git(repo, "init", "-q")
+    _wedge_git(repo, "add", "-A")
+    _wedge_git(
+        repo, "-c", "user.email=t@t", "-c", "user.name=t",
+        "commit", "-q", "-m", "init",
+    )
+    if dirty:
+        (repo / "dirty.txt").write_text("uncommitted\n", encoding="utf-8")
+    return repo
+
+
+def _run_wedge(stdin_text: str, state_dir: Path) -> subprocess.CompletedProcess:
+    return _run_bash(_WEDGE_SH, stdin_text, _base_env(state_dir))
+
+
+def _wedge_breadcrumb_path(state_dir: Path, agent_id: str) -> Path:
+    return state_dir / _WEDGE_STOPS_SUBDIR / f"{agent_id}.json"
+
+
+def test_wedge_hook_file_exists():
+    """The SubagentStop wedge-backstop hook must exist on disk."""
+    assert _WEDGE_SH.exists(), (
+        f"subagent-wedge-backstop.sh missing — WU-1 not implemented: {_WEDGE_SH}"
+    )
+
+
+def test_wedge_blocks_once_predicate_true():
+    """marker present + non-Complete plan + DIRTY tree → BLOCK (exit 2) with an
+    actionable reason, and the loop-guard breadcrumb is written."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 2, (
+            f"predicate-true must BLOCK (exit 2); got {result.returncode}; "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        reason = (result.stderr or "") + (result.stdout or "")
+        assert "BLOCKED.md" in reason and "commit" in reason.lower(), (
+            f"block reason must be actionable (commit/BLOCKED.md); got {reason!r}"
+        )
+        assert _wedge_breadcrumb_path(state_dir, agent_id).exists(), (
+            "the loop-guard breadcrumb must be written before blocking"
+        )
+
+
+def test_wedge_second_attempt_same_agent_allows():
+    """Second stop with the SAME agent_id (breadcrumb present) → ALLOW (exit 0):
+    block at most once, no infinite block→continue→block loop."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        first = _run_wedge(_subagentstop_json(agent_id, cwd=str(repo)), state_dir)
+        assert first.returncode == 2, f"first attempt must block; got {first.returncode}"
+        second = _run_wedge(_subagentstop_json(agent_id, cwd=str(repo)), state_dir)
+        assert second.returncode == 0, (
+            f"second attempt (breadcrumb present) must ALLOW; got {second.returncode}; "
+            f"stderr={second.stderr!r}"
+        )
+
+
+def test_wedge_malformed_json_allows():
+    """Malformed input JSON → fail-open ALLOW (exit 0)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_wedge("{ not valid json", state_dir)
+        assert result.returncode == 0, (
+            f"malformed JSON must fail-open (exit 0); got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+
+
+def test_wedge_missing_agent_id_allows():
+    """SubagentStop-shaped payload MISSING agent_id → ALLOW (exit 0): no key to
+    loop-guard on, and a marker-less GC path never blocks."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        # SubagentStop shape but with agent_id stripped.
+        payload = json.loads(_subagentstop_json("x", cwd=str(repo)))
+        del payload["agent_id"]
+        result = _run_wedge(json.dumps(payload), state_dir)
+        assert result.returncode == 0, (
+            f"missing agent_id must fail-open (exit 0); got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+
+
+def test_wedge_clean_tree_all_checked_allows():
+    """Clean tree AND all WUs checked (plan In-progress) → ALLOW (exit 0):
+    no pending work, so no wedge to catch."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(
+            td, plan_status="In-progress", wu_checked=True, dirty=False
+        )
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 0, (
+            f"clean tree + all WUs checked must ALLOW; got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert not _wedge_breadcrumb_path(state_dir, agent_id).exists(), (
+            "an allowed stop must NOT write a loop-guard breadcrumb"
+        )
+
+
+def test_wedge_plan_complete_allows():
+    """Plan status Complete → ALLOW (exit 0) EVEN with a dirty tree — predicate
+    condition 2 (status != Complete) is false, so the block never fires."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(td, plan_status="Complete", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 0, (
+            f"Complete plan must ALLOW even when dirty; got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+
+
+def test_wedge_no_marker_allows():
+    """No run marker for the repo → ALLOW (exit 0): not a pipeline subagent."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        # No _write_marker_in_dir call — marker absent.
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 0, (
+            f"no marker must ALLOW; got {result.returncode}; stderr={result.stderr!r}"
+        )
+
+
+def test_wedge_two_distinct_agents_independent_breadcrumbs():
+    """Two distinct agent_ids under one predicate-true state → each blocks ONCE,
+    with its own independent breadcrumb (nested subagents never share)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        agent_a = "agent_" + uuid.uuid4().hex[:16]
+        agent_b = "agent_" + uuid.uuid4().hex[:16]
+        r_a1 = _run_wedge(_subagentstop_json(agent_a, cwd=str(repo)), state_dir)
+        r_b1 = _run_wedge(_subagentstop_json(agent_b, cwd=str(repo)), state_dir)
+        assert r_a1.returncode == 2, f"agent A first stop must block; {r_a1.returncode}"
+        assert r_b1.returncode == 2, f"agent B first stop must block; {r_b1.returncode}"
+        assert _wedge_breadcrumb_path(state_dir, agent_a).exists()
+        assert _wedge_breadcrumb_path(state_dir, agent_b).exists()
+        # Each blocks only ONCE — A's second attempt allows, B's remains armed.
+        r_a2 = _run_wedge(_subagentstop_json(agent_a, cwd=str(repo)), state_dir)
+        assert r_a2.returncode == 0, f"agent A second stop must allow; {r_a2.returncode}"
+
+
+def test_wedge_breadcrumb_write_failure_allows():
+    """Breadcrumb dir unwritable (I/O failure) → fail-open ALLOW (exit 0): the
+    hook can never wedge the pipeline even when its own loop-guard write fails."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        # Plant a FILE where the breadcrumb DIR must live → makedirs raises.
+        (state_dir / _WEDGE_STOPS_SUBDIR).write_text("blocker\n", encoding="utf-8")
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 0, (
+            f"breadcrumb write failure must fail-open (exit 0), never block; "
+            f"got {result.returncode}; stderr={result.stderr!r}"
+        )
+
+
+def test_wedge_sessionend_gcs_session_breadcrumbs():
+    """SessionEnd (agent_id absent, session_id present) → GC breadcrumbs recorded
+    under THAT session_id; a breadcrumb for a different session survives. Exit 0."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        stops = state_dir / _WEDGE_STOPS_SUBDIR
+        stops.mkdir(parents=True)
+        sess = str(uuid.uuid4())
+        other = str(uuid.uuid4())
+        mine = stops / "agent_mine.json"
+        theirs = stops / "agent_theirs.json"
+        mine.write_text(
+            json.dumps({"agent_id": "agent_mine", "session_id": sess,
+                        "written_at": time.time()}),
+            encoding="utf-8",
+        )
+        theirs.write_text(
+            json.dumps({"agent_id": "agent_theirs", "session_id": other,
+                        "written_at": time.time()}),
+            encoding="utf-8",
+        )
+        result = _run_wedge(_sessionend_json(sess), state_dir)
+        assert result.returncode == 0, (
+            f"SessionEnd must ALLOW (exit 0); got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert not mine.exists(), "SessionEnd must GC this session's breadcrumb"
+        assert theirs.exists(), "SessionEnd must NOT GC another session's breadcrumb"
+
+
+def test_wedge_staleness_sweep_removes_old_breadcrumb():
+    """A stale breadcrumb (old written_at / mtime) is swept on entry; GC failure
+    is non-fatal and the invocation still exits 0."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        stops = state_dir / _WEDGE_STOPS_SUBDIR
+        stops.mkdir(parents=True)
+        old = stops / "agent_old.json"
+        old.write_text(
+            json.dumps({"agent_id": "agent_old", "session_id": "s",
+                        "written_at": time.time() - 72 * 3600}),
+            encoding="utf-8",
+        )
+        old_epoch = time.time() - 72 * 3600
+        os.utime(old, (old_epoch, old_epoch))
+        # A no-marker SubagentStop call (allows) still runs the entry sweep.
+        result = _run_wedge(
+            _subagentstop_json("agent_" + uuid.uuid4().hex[:16]), state_dir
+        )
+        assert result.returncode == 0
+        assert not old.exists(), "the entry staleness sweep must remove the stale breadcrumb"
+
+
+_TESTS = _TESTS + [
+    # subagent-wedge-backstop-hook — SubagentStop wedge-backstop hook (WU-1)
+    ("test_wedge_hook_file_exists", test_wedge_hook_file_exists),
+    ("test_wedge_blocks_once_predicate_true", test_wedge_blocks_once_predicate_true),
+    ("test_wedge_second_attempt_same_agent_allows",
+     test_wedge_second_attempt_same_agent_allows),
+    ("test_wedge_malformed_json_allows", test_wedge_malformed_json_allows),
+    ("test_wedge_missing_agent_id_allows", test_wedge_missing_agent_id_allows),
+    ("test_wedge_clean_tree_all_checked_allows",
+     test_wedge_clean_tree_all_checked_allows),
+    ("test_wedge_plan_complete_allows", test_wedge_plan_complete_allows),
+    ("test_wedge_no_marker_allows", test_wedge_no_marker_allows),
+    ("test_wedge_two_distinct_agents_independent_breadcrumbs",
+     test_wedge_two_distinct_agents_independent_breadcrumbs),
+    ("test_wedge_breadcrumb_write_failure_allows",
+     test_wedge_breadcrumb_write_failure_allows),
+    ("test_wedge_sessionend_gcs_session_breadcrumbs",
+     test_wedge_sessionend_gcs_session_breadcrumbs),
+    ("test_wedge_staleness_sweep_removes_old_breadcrumb",
+     test_wedge_staleness_sweep_removes_old_breadcrumb),
 ]
 
 

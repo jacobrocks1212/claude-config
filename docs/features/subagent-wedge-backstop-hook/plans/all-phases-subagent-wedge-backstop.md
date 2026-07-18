@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: subagent-wedge-backstop-hook
-status: Ready
+status: Complete
 created: 2026-07-18
 complexity: complex
 phases: [1]
@@ -75,8 +75,8 @@ There is NO `/msbuild` / `/mstest` in this repo. Do NOT route gates through any 
 
 ## Work Units
 
-- [ ] WU-1 — `subagent-wedge-backstop.sh` hook + hermetic tests
-- [ ] WU-2 — Register `SubagentStop` (+ `SessionEnd` GC) in `user/settings.json`
+- [x] WU-1 — `subagent-wedge-backstop.sh` hook + hermetic tests
+- [x] WU-2 — Register `SubagentStop` (+ `SessionEnd` GC) in `user/settings.json`
 
 ### Phase: subagent-wedge-backstop-hook P1 — SubagentStop wedge-backstop hook + loop-guard + registration + tests
 

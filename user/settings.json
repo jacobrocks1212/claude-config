@@ -166,6 +166,30 @@
         ]
       }
     ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/subagent-wedge-backstop.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/subagent-wedge-backstop.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PostToolUse": []
   },
   "statusLine": {
