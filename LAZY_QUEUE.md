@@ -1,11 +1,11 @@
-# Lazy Queue — .   (run active 🔒)
+# Lazy Queue — claude-config   (run active 🔒)
 
 ## Features (5)
 
 | # | item | state | tier |
 |---|------|-------|------|
-| 1 | [merged-head-actionability-oracle](docs/features/merged-head-actionability-oracle/SPEC.md) | Research | T0 |
-| | status: Research · next: research · Replace the ever-growing category-enumerated merged-head exclude set with a single per-item "would `compute_state` dispatch this item right now?" oracle, so the NEXT non-dispatchable category cannot re-introduce a merged-head-diverged stall. | | |
+| 1 | [merged-head-actionability-oracle](docs/features/merged-head-actionability-oracle/SPEC.md) | Validate | T0 |
+| | status: Validate · phase 3/3 · next: run mcp-test · Replace the ever-growing category-enumerated merged-head exclude set with a single per-item "would `compute_state` dispatch this item right now?" oracle, so the NEXT non-dispatchable category cannot re-introduce a merged-head-diverged stall. | | |
 | 2 | [subagent-wedge-backstop-hook](docs/features/subagent-wedge-backstop-hook/SPEC.md) | Research | T1 |
 | | status: Research · phase 0/1 · next: research · A `SubagentStop` hook that mechanically catches a GENUINELY-WEDGED dispatched subagent — one that tries to stop/return with pending plan work still incomplete — and blocks its premature stop once, forcing it to commit + complete (or write `BLOCKED.md`) instead of returning dead and stranding the pipeline. | | |
 | 3 | [shared-hook-lib](docs/features/shared-hook-lib/SPEC.md) | Research | T2 |
