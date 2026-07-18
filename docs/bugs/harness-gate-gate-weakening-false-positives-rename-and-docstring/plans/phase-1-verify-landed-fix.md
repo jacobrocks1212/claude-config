@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: harness-gate-gate-weakening-false-positives-rename-and-docstring
-status: Ready
+status: Complete
 created: 2026-07-18
 complexity: complex
 phases: [1]
@@ -51,7 +51,7 @@ Upstream plans and PHASES.md files this plan was authored against.
 
 ## Work Units
 
-- [ ] WU-1 — Verify landed `detect_gate_weakening` FP fix + regression fixtures, run the suite green
+- [x] WU-1 — Verify landed `detect_gate_weakening` FP fix + regression fixtures, run the suite green
 
 ---
 

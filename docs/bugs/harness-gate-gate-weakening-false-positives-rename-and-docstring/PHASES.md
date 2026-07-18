@@ -20,20 +20,22 @@ Because the implementation and its regression coverage already shipped, this pla
 
 ### Phase 1: Verify the landed gate_weakening FP fix + confirm regression coverage locks it
 
+**Status:** Complete — verified 2026-07-18 (all fix elements + 7 named fixtures present; suite 32 passed).
+
 **Scope:** Confirm — against the live tree — that the four heuristic tightenings from the SPEC's `## Fix scope` are present in `harness-gate.py::detect_gate_weakening`, that the FP-false and TP-true regression fixtures exist in `test_harness_gate.py`, and that the full suite passes. No code changes: the fix landed via commits `7dd6ad78` + `cf105d9a`; this phase certifies it and locks the regression guarantee that is the bug's honest measurement target (`gate_weakening` has no run-time ledger event, per the SPEC).
 
 **Deliverables:**
-- [ ] Confirm the rename/strengthen NET-count guard for `def test_*` removals is present (`harness-gate.py` — per-file `removed − added > 0` gate; a 1/1 rename and 1/2 split do NOT HIT, a 1/0 removal still HITs).
-- [ ] Confirm the deny-construct reformat NET-count guard is present (`_DENY_BRANCH_RE` per-file match counts, `removed > added` gate; a single-line→multi-line `refuse_*(...)` reformat does NOT HIT).
-- [ ] Confirm the docstring exclusion (`_TRIPLE_QUOTE_RE`) skips a triple-quoted line before the `_LIST_ELEMENT_RE` membership check in `detect_gate_weakening`.
-- [ ] Confirm the collection-opening requirement (`_exemption_opens_collection`) gates the membership-addition HIT to a DEFINITION/EXTENSION position, so a bare `in`/reference near an exemption name does not trip.
-- [ ] Confirm all FP-false and TP-true regression fixtures named in the SPEC's "Verified symptom → target signal" section exist in `test_harness_gate.py`.
-- [ ] Tests: `python -m pytest user/scripts/test_harness_gate.py` passes with every named fixture green (baseline observed 2026-07-18: 32 passed).
+- [x] Confirm the rename/strengthen NET-count guard for `def test_*` removals is present (`harness-gate.py` — per-file `removed − added > 0` gate; a 1/1 rename and 1/2 split do NOT HIT, a 1/0 removal still HITs).
+- [x] Confirm the deny-construct reformat NET-count guard is present (`_DENY_BRANCH_RE` per-file match counts, `removed > added` gate; a single-line→multi-line `refuse_*(...)` reformat does NOT HIT).
+- [x] Confirm the docstring exclusion (`_TRIPLE_QUOTE_RE`) skips a triple-quoted line before the `_LIST_ELEMENT_RE` membership check in `detect_gate_weakening`.
+- [x] Confirm the collection-opening requirement (`_exemption_opens_collection`) gates the membership-addition HIT to a DEFINITION/EXTENSION position, so a bare `in`/reference near an exemption name does not trip.
+- [x] Confirm all FP-false and TP-true regression fixtures named in the SPEC's "Verified symptom → target signal" section exist in `test_harness_gate.py`.
+- [x] Tests: `python -m pytest user/scripts/test_harness_gate.py` passes with every named fixture green (baseline observed 2026-07-18: 32 passed).
 
 **Minimum Verifiable Behavior:** `python -m pytest user/scripts/test_harness_gate.py -q` exits 0 with all FP-false fixtures asserting `gate_weakening` result `pass`/no-hit and all TP-true fixtures asserting a HIT — the deterministic proof the FP class is closed without blunting the true-positive path.
 
 **Runtime Verification** *(checked by running the suite — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `python -m pytest user/scripts/test_harness_gate.py` returns exit 0, all tests pass (the FP-false fixtures prove the false positives are gone; the TP-true fixtures prove a genuine weakening still HITs).
+- [x] <!-- verification-only --> `python -m pytest user/scripts/test_harness_gate.py` returns exit 0, all tests pass (the FP-false fixtures prove the false positives are gone; the TP-true fixtures prove a genuine weakening still HITs). — VERIFIED 2026-07-18: 32 passed.
 
 **MCP Integration Test Assertions:** N/A — no runtime-observable behavior; the gate is a deterministic diff checker validated entirely by its hermetic pytest suite.
 
