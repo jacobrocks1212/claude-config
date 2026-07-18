@@ -4582,6 +4582,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/bug-state-verification-only-remainder-loops-write-plan/FIXED.md": [
+    {
+      "id": "dispatched-harden-record-intervention-refused-by-containment",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/bug-state-verification-only-remainder-loops-write-plan/SPEC.md": [
+    {
+      "id": "dispatched-harden-record-intervention-refused-by-containment",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/build-queue-copy-lock-stale-dll-false-success/BLOCKED.md": [
     {
       "id": "build-queue-copy-lock-stale-dll-false-success",
@@ -5292,6 +5306,13 @@
   "docs/bugs/descoped-row-recognition-needs-canonical-marker/plans/all-phases-descoped-row-marker-part-2.md": [
     {
       "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/dispatched-harden-record-intervention-refused-by-containment/PHASES.md": [
+    {
+      "id": "dispatched-harden-record-intervention-refused-by-containment",
       "type": "bug",
       "provenance": "pipeline-gated"
     }
@@ -15280,6 +15301,11 @@
       "id": "bug-state-verification-only-remainder-loops-write-plan",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "dispatched-harden-record-intervention-refused-by-containment",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/interventions/hardening-intervention-records-unmeasurable-or-missing.md": [
@@ -15948,6 +15974,11 @@
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "dispatched-harden-record-intervention-refused-by-containment",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "external-owner-contracts-locked-without-consultation",
@@ -17366,6 +17397,11 @@
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "dispatched-harden-record-intervention-refused-by-containment",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
@@ -19645,6 +19681,11 @@
   "user/scripts/tests/baselines/bug-state-test-baseline.txt": [
     {
       "id": "descoped-row-recognition-needs-canonical-marker",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatched-harden-record-intervention-refused-by-containment",
       "type": "bug",
       "provenance": "pipeline-gated"
     },

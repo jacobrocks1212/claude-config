@@ -1,6 +1,6 @@
 # Dispatched harden-harness cannot record its own intervention (containment refuses `--record-intervention`)
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-17 (surfaced by the prior dispatched harden-harness run, Rounds 65-67; the depth-1 self-recursion guard blocked that run from hardening its own machinery)
 **Related:** `turn-routing-enforcement` (cycle containment C3); `intervention-efficacy-tracking` (the `--record-intervention` capture contract); `hardening-blind-to-process-friction` (the `refuse_if_cycle_active` / `LAZY_ORCHESTRATOR` identity plane); the `/harden-harness` SKILL "Intervention record for the round" contract.
