@@ -23,6 +23,8 @@ bug_id: lazy-batch-prose-entices-orchestrator-subagent-split
 **Status:** Fixed
 **Severity:** Low
 **Discovered:** 2026-07-19
+**Fixed:** 2026-07-19
+**Fix commit:** 4a76c8d4
 **Placement:** docs/bugs/lazy-batch-prose-entices-orchestrator-subagent-split
 **Related:** `docs/bugs/_archive/dispatch-guard-improvisation-deny-not-self-announcing` (Round 112 — shipped the self-announcing guard deny, but DEFERRED this prose fix, betting the mechanical deny would suffice); `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` Rounds 9/10 (added the workstation sub-subagent exemption + consumed fence) + Round 112 + this Round 114; `user/scripts/lazy_guard.py` (the 2b(improv) branch — CORRECT, not a fix site); `user/skills/lazy-batch/SKILL.md` line 42 "Cycle-subagent execution model" paragraph (the fix site); `user/skills/lazy-bug-batch/SKILL.md` lines 85–91 (coupled-pair reference)
 
