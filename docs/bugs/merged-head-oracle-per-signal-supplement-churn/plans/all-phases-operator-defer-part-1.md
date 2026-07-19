@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: merged-head-oracle-per-signal-supplement-churn
-status: Ready
+status: In-progress
 created: 2026-07-19
 complexity: complex
 phases: [1, 2]
