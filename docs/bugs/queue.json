@@ -26,12 +26,6 @@
       "severity": null
     },
     {
-      "id": "adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose",
-      "name": "harness-gate.py gate_weakening/overfit false-positives on generated docs + PHASES.md prose",
-      "spec_dir": "adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose",
-      "severity": null
-    },
-    {
       "id": "canary-revert-harden-2026-07-r54",
       "name": "Revert-or-redesign canary trip: harden-2026-07-r54",
       "spec_dir": "canary-revert-harden-2026-07-r54",

@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-18
+**Fixed:** 2026-07-19
+**Fix commit:** 2a2fb10b
 **Placement:** docs/bugs/adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose
 **Related:** docs/features/anti-overfit-design-gate/SPEC.md · user/skills/_components/harness-change-gate.md · user/scripts/harness-gate.py
 

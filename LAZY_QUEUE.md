@@ -21,7 +21,7 @@
 | | status: Needs-input · next: answer needs-input · A completion cycle that reaches Step 10 with `VALIDATED.md` present but a matrix-incomplete PHASES.md unconditionally dispatches `__mark_complete__`, which the completion-coherence gate then refuses — with NO re-route back to `mcp-test` to finish (or author) the missing coverage. | | | |
 | 4 | [decision-11-dispatch-time-forward-advance](docs/bugs/decision-11-dispatch-time-forward-advance/SPEC.md) | ⬡ Needs-input | — | 2026-07-18 |
 | | status: Needs-input · phase 1/1 · next: answer needs-input · Implement turn-routing-enforcement NEEDS_INPUT decision 11: `forward_cycles` must advance at the real dispatch bracket, never on the every-turn inject-hook `--repeat-count` probe. | | | |
-| 5 | [adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose](docs/bugs/adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose/SPEC.md) | Implement | — | 2026-07-18 |
+| 5 | [adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose](docs/bugs/_archive/adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose/SPEC.md) | Implement | — | 2026-07-18 |
 | | status: Implement · phase 0/2 · next: execute plan · harness-gate.py runs its structural detectors over EVERY file in the diff range, so off-manifest generated docs (LAZY_QUEUE.md), PHASES.md prose rows, and unrelated bug/feature SPEC.md files swept into a range produce `gate_weakening=hit` / `overfit=flag` false positives — forcing redundant operator sign-off on plane-strengthening changes. | | | |
 | 6 | [canary-revert-harden-2026-07-r54](docs/bugs/canary-revert-harden-2026-07-r54/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
