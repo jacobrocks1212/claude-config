@@ -92,7 +92,7 @@ claude-config is the primary home (the harness owns the contracts); AlgoBooth co
 
 ## Implementation Phases
 
-(Phased breakdown drafted at `/spec-phases`; high-level: awareness injection → git-safety wiring → cross-platform FIFO lock → conflict-routing + provisional carve-out → temp-worktree merge-back + cross-agent channel → AlgoBooth mirror.)
+See [`PHASES.md`](./PHASES.md) for the detailed phase breakdown. High-level: (1) awareness injection + reconcile "One writer per file" → (2) git-safety wiring + process-friction carve-out → (3) cross-platform FIFO lock → (4) conflict-routing + provisional carve-out → (5) temp-worktree merge-back + cross-agent trailer channel → (6) retire the orchestrator's self_edit_mode foreground-await defensiveness (R7).
 
 ## Validation Criteria
 
