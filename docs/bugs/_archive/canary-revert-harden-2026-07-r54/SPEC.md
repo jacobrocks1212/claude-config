@@ -31,7 +31,7 @@
 
 ## Reproduction Steps
 
-1. Read the trip evidence: `docs/bugs/canary-revert-harden-2026-07-r54/EVIDENCE.md` (band numbers,
+1. Read the trip evidence: `docs/bugs/_archive/canary-revert-harden-2026-07-r54/EVIDENCE.md` (band numbers,
    commit set, empty pair scope, "plain `git revert` expected to back the change out").
 2. Read the intervention record: `docs/interventions/harden-2026-07-r54.md` — note
    `target_signal: event:gate-refusal`, `expected_direction: decrease`,

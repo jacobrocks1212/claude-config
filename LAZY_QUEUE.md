@@ -23,7 +23,7 @@
 | | status: Needs-input · phase 1/1 · next: answer needs-input · Implement turn-routing-enforcement NEEDS_INPUT decision 11: `forward_cycles` must advance at the real dispatch bracket, never on the every-turn inject-hook `--repeat-count` probe. | | | |
 | 5 | [adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose](docs/bugs/_archive/adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose/SPEC.md) | Implement | — | 2026-07-18 |
 | | status: Implement · phase 0/2 · next: execute plan · harness-gate.py runs its structural detectors over EVERY file in the diff range, so off-manifest generated docs (LAZY_QUEUE.md), PHASES.md prose rows, and unrelated bug/feature SPEC.md files swept into a range produce `gate_weakening=hit` / `overfit=flag` false positives — forcing redundant operator sign-off on plane-strengthening changes. | | | |
-| 6 | [canary-revert-harden-2026-07-r54](docs/bugs/canary-revert-harden-2026-07-r54/SPEC.md) | Spec | — |  |
+| 6 | [canary-revert-harden-2026-07-r54](docs/bugs/_archive/canary-revert-harden-2026-07-r54/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
 | 7 | [canary-revert-harden-2026-07-r53](docs/bugs/_archive/canary-revert-harden-2026-07-r53/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |

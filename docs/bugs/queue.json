@@ -62,12 +62,6 @@
       "severity": null
     },
     {
-      "id": "canary-revert-harden-2026-07-r54",
-      "name": "Revert-or-redesign canary trip: harden-2026-07-r54",
-      "spec_dir": "canary-revert-harden-2026-07-r54",
-      "severity": null
-    },
-    {
       "id": "adhoc-unify-merged-head-coordinator-exemptions",
       "name": "Unify merged-head coordinator-emission exemptions",
       "spec_dir": "adhoc-unify-merged-head-coordinator-exemptions",
