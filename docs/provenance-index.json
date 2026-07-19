@@ -83,6 +83,11 @@
   ],
   "CLAUDE.md": [
     {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -3999,6 +4004,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/_archive/orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap/IMPLEMENTED.md": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap/SPEC.md": [
     {
       "id": "orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap",
@@ -5190,11 +5202,51 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke/GATE_VERDICT.md": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke/NEEDS_INPUT.md": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke/PHASES.md": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke/SPEC.md": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke/plans/all-phases-recovery-discriminator-part-1.md": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "claude-attribution-trailers-not-globally-disabled",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke/plans/all-phases-recovery-discriminator-part-2.md": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/adhoc-parity-merged-view-fixture-stale-archive-fixed/ADHOC_BRIEF.md": [
@@ -5918,6 +5970,13 @@
   "docs/bugs/checkpoint-resume-false-loop-flips-complex-part-to-sonnet/SPEC.md": [
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/claude-attribution-trailers-not-globally-disabled/SPEC.md": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
       "type": "bug",
       "provenance": "pipeline-gated"
     }
@@ -8366,6 +8425,11 @@
   ],
   "docs/bugs/orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap/SPEC.md": [
     {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "claude-attribution-trailers-not-globally-disabled",
       "type": "bug",
       "provenance": "manual"
@@ -9526,6 +9590,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/subagent-wedge-backstop-dirty-tree-predicate-repo-wide/SPEC.md": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/test-only-production-seams/PHASES.md": [
     {
       "id": "test-only-production-seams",
@@ -9638,6 +9709,11 @@
     }
   ],
   "docs/cli/cli-surface.json": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -17399,6 +17475,11 @@
   ],
   "docs/provenance-index.json": [
     {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "adhoc-subagent-wedge-hook-overfires-globs-all-plans",
       "type": "bug",
       "provenance": "manual"
@@ -18782,6 +18863,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/hooks/cycle-subagent-bg-gate-guard.sh": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/hooks/execute-plan-compact-reorient.sh": [
     {
       "id": "execute-plan-skill-diet",
@@ -19318,6 +19406,11 @@
     },
     {
       "id": "adhoc-cycle-begin-real-requires-sub-skill",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
       "type": "bug",
       "provenance": "pipeline-gated"
     },
@@ -20012,6 +20105,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "budget-guard-defers-near-complete-feature",
       "type": "bug",
       "provenance": "backfilled"
@@ -20428,6 +20526,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -20721,6 +20824,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -20854,6 +20962,11 @@
     }
   ],
   "user/scripts/lazy_parity_audit.py": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref",
       "type": "bug",
@@ -21258,6 +21371,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/scripts/test_execute_plan_liveness.py": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/scripts/test_generate_coupled_skills.py": [
     {
       "id": "coupled-pair-generation",
@@ -21307,6 +21427,11 @@
   "user/scripts/test_hooks.py": [
     {
       "id": "adhoc-incident-hook-deny-4b767b",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
       "type": "bug",
       "provenance": "pipeline-gated"
     },
@@ -21638,6 +21763,11 @@
     }
   ],
   "user/scripts/test_lazy_parity.py": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "adhoc-parity-merged-view-fixture-stale-archive-fixed",
       "type": "bug",
@@ -22500,6 +22630,11 @@
   ],
   "user/settings.json": [
     {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "cycle-subagent-fabricates-policy-or-stray-branch",
       "type": "bug",
       "provenance": "backfilled"
@@ -22611,6 +22746,11 @@
   ],
   "user/skills/_components/dispatched-agent-liveness.md": [
     {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -22668,6 +22808,11 @@
     }
   ],
   "user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "cycle-subagent-fabricates-policy-or-stray-branch",
       "type": "bug",
@@ -22946,6 +23091,11 @@
   ],
   "user/skills/_components/sentinel-frontmatter.md": [
     {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "ensure-runtime-false-hijacked-on-owned-serving-runtime",
       "type": "bug",
       "provenance": "backfilled"
@@ -23111,6 +23261,11 @@
     }
   ],
   "user/skills/_components/turn-end-gate.md": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -23652,6 +23807,11 @@
   ],
   "user/skills/lazy-batch/SKILL.md": [
     {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -23823,6 +23983,11 @@
     }
   ],
   "user/skills/lazy-bug-batch/SKILL.md": [
+    {
+      "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",

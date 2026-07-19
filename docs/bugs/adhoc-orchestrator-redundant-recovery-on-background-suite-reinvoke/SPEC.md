@@ -2,7 +2,7 @@
 
 > A cycle /execute-plan subagent backgrounds its long verification suite and returns "holding, will re-invoke" instead of foreground-awaiting; the orchestrator, unable to distinguish that pause from a resultless return, dispatches a redundant recovery cycle that collides (one-writer) with the harness-re-invoked agent.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-19
 **Placement:** docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke
