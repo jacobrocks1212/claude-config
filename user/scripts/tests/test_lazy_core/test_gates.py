@@ -2999,6 +2999,105 @@ def test_uncovered_predicate_is_evidence_driven_not_validated_gated():
         assert res["reroute"] is True, res
 
 
+# ---------------------------------------------------------------------------
+# Tests: is_fixed_unreconciled / format_fixed_unreconciled_blocker
+# (adhoc-plan-bug-no-guard-for-fixed-annotated-specs Phase 1) — the
+# already-implemented-but-unreconciled predicate + its canonical BLOCKED.md.
+# ---------------------------------------------------------------------------
+
+
+def _write_valid_fixed_receipt(spec_dir: Path) -> None:
+    """Write a content-valid FIXED.md receipt (kind: fixed + non-empty provenance)."""
+    (spec_dir / "FIXED.md").write_text(
+        "---\n"
+        "kind: fixed\n"
+        "feature_id: some-bug\n"
+        "provenance: pipeline-gated\n"
+        "---\n\n"
+        "# Fixed\n",
+        encoding="utf-8",
+    )
+
+
+def _write_concluded_fixed_annotated_spec(spec_dir: Path) -> None:
+    (spec_dir / "SPEC.md").write_text(
+        "**Status:** Concluded\n"
+        "**Fixed:** 2026-07-18 - implemented out-of-pipeline\n\n"
+        "## Proven Findings\n\nTraced.\n",
+        encoding="utf-8",
+    )
+
+
+def test_is_fixed_unreconciled_true_concluded_annotated_no_receipt():
+    """Concluded + **Fixed:** annotation + no FIXED.md → True."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _write_concluded_fixed_annotated_spec(spec_dir)
+        assert lazy_core.is_fixed_unreconciled(spec_dir, spec_dir) is True
+
+
+def test_is_fixed_unreconciled_false_status_already_fixed():
+    """A status already flipped to Fixed → False (past planning)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(
+            "**Status:** Fixed\n"
+            "**Fixed:** 2026-07-18 - implemented out-of-pipeline\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.is_fixed_unreconciled(spec_dir, spec_dir) is False
+
+
+def test_is_fixed_unreconciled_false_no_annotation():
+    """Concluded but NO **Fixed:** annotation → False (ordinary plannable bug)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(
+            "**Status:** Concluded\n\n## Proven Findings\n\nTraced.\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.is_fixed_unreconciled(spec_dir, spec_dir) is False
+
+
+def test_is_fixed_unreconciled_false_valid_receipt_present():
+    """A valid FIXED.md receipt present → False (already reconciled)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _write_concluded_fixed_annotated_spec(spec_dir)
+        _write_valid_fixed_receipt(spec_dir)
+        assert lazy_core.is_fixed_unreconciled(spec_dir, spec_dir) is False
+
+
+def test_is_fixed_unreconciled_false_archived_dir():
+    """A dir under docs/bugs/_archive/ → False (defensively excluded)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "docs" / "bugs" / "_archive" / "some-bug"
+        spec_dir.mkdir(parents=True)
+        _write_concluded_fixed_annotated_spec(spec_dir)
+        assert lazy_core.is_fixed_unreconciled(spec_dir, Path(td)) is False
+
+
+def test_format_fixed_unreconciled_blocker_shape():
+    """The formatter returns valid sentinel frontmatter (kind: blocked +
+    blocker_kind: fixed-unreconciled) and a body naming the reconciliation remedy."""
+    _guard()
+    body = lazy_core.format_fixed_unreconciled_blocker(
+        "some-bug", "2026-07-18 - implemented out-of-pipeline",
+    )
+    assert body.startswith("---\n"), body[:20]
+    assert "kind: blocked\n" in body, body
+    assert "blocker_kind: fixed-unreconciled\n" in body, body
+    assert "feature_id: some-bug\n" in body, body
+    # Body carries the remedy vocabulary (reconcile-or-clear).
+    assert "--archive-fixed" in body, body
+    assert "FIXED.md" in body, body
+
+
 _TESTS = [
     ("test_uncovered_rows_partial_evidence_reroutes_true", test_uncovered_rows_partial_evidence_reroutes_true),
     ("test_uncovered_rows_full_evidence_terminates", test_uncovered_rows_full_evidence_terminates),
@@ -3006,6 +3105,12 @@ _TESTS = [
     ("test_uncovered_observation_gap_partial_excluded_terminates", test_uncovered_observation_gap_partial_excluded_terminates),
     ("test_uncovered_superseded_and_descoped_rows_terminate", test_uncovered_superseded_and_descoped_rows_terminate),
     ("test_uncovered_predicate_is_evidence_driven_not_validated_gated", test_uncovered_predicate_is_evidence_driven_not_validated_gated),
+    ("test_is_fixed_unreconciled_true_concluded_annotated_no_receipt", test_is_fixed_unreconciled_true_concluded_annotated_no_receipt),
+    ("test_is_fixed_unreconciled_false_status_already_fixed", test_is_fixed_unreconciled_false_status_already_fixed),
+    ("test_is_fixed_unreconciled_false_no_annotation", test_is_fixed_unreconciled_false_no_annotation),
+    ("test_is_fixed_unreconciled_false_valid_receipt_present", test_is_fixed_unreconciled_false_valid_receipt_present),
+    ("test_is_fixed_unreconciled_false_archived_dir", test_is_fixed_unreconciled_false_archived_dir),
+    ("test_format_fixed_unreconciled_blocker_shape", test_format_fixed_unreconciled_blocker_shape),
     ("test_verify_ledger_spec_md_file_arg_normalizes_to_parent_dir", test_verify_ledger_spec_md_file_arg_normalizes_to_parent_dir),
     ("test_verify_ledger_all_green_passes", test_verify_ledger_all_green_passes),
     ("test_verify_ledger_dirty_tree_fails", test_verify_ledger_dirty_tree_fails),

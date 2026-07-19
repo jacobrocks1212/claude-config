@@ -2121,6 +2121,108 @@ def has_completion_receipt(spec_path: Path | None, filename: str = "COMPLETED.md
     return True
 
 
+# ---------------------------------------------------------------------------
+# Already-implemented-out-of-pipeline detection
+# (adhoc-plan-bug-no-guard-for-fixed-annotated-specs Phase 1). Both fix sites —
+# bug-state.py Step 4 (route diversion) and /plan-bug Step 0.4 (belt-and-
+# suspenders) — consume these shared helpers so the pipeline never burns a
+# plan-bug dispatch re-planning a fix that already landed on disk.
+# ---------------------------------------------------------------------------
+
+# Statuses that mean the bug is PAST fix-planning already — the predicate is
+# ONLY about a pre-fix status carrying an unreconciled fix annotation.
+_FIXED_TERMINAL_STATUSES = frozenset({"Fixed", "Won't-fix"})
+
+
+def is_fixed_unreconciled(spec_dir: Path | None, repo_root: Path | None = None) -> bool:
+    """True iff a bug SPEC is already-implemented-out-of-pipeline but unreconciled.
+
+    The partially-reconciled debt state (docs/bugs/CLAUDE.md → "Fixing a bug
+    OUT-OF-PIPELINE"): the fix landed and a ``**Fixed:**`` evidence annotation was
+    added, but ``**Status:**`` was left at a pre-fix status (typically ``Concluded``)
+    and ``--archive-fixed`` never ran — so no ``FIXED.md`` receipt exists and the
+    dir is not archived. Routing/planning key ONLY on ``**Status:**``
+    (``spec_status``), so such an item routes to ``/plan-bug`` and burns a full
+    spec-phases + write-plan dispatch re-planning work already on disk.
+
+    Reuses the existing receipt/archive vocabulary rather than inventing a new
+    is-fixed heuristic: predicate = status is a PRE-FIX status (not
+    ``Fixed``/``Won't-fix``) AND a ``**Fixed:**`` annotation is present AND no valid
+    ``FIXED.md`` receipt (``has_completion_receipt(..., filename="FIXED.md")``) AND
+    the dir is not under ``docs/bugs/_archive/`` (defensively-redundant on the
+    bug-state Step-4 path, where ``load_bug_queue`` never returns ``_archive/``
+    dirs; retained for direct callers such as ``/plan-bug`` invoked by hand).
+
+    ``repo_root`` is accepted for signature stability across both fix sites; the
+    archive check is path-structural and does not require it.
+    """
+    if spec_dir is None:
+        return False
+    status = spec_status(spec_dir)
+    if status in _FIXED_TERMINAL_STATUSES:
+        return False
+    if not docmodel.spec_fixed_annotation(spec_dir):
+        return False
+    if has_completion_receipt(spec_dir, filename="FIXED.md"):
+        return False
+    try:
+        parts = Path(spec_dir).parts
+    except (TypeError, ValueError):
+        return False
+    if "_archive" in parts:
+        return False
+    return True
+
+
+def format_fixed_unreconciled_blocker(
+    bug_id: str, fixed_annotation: str | None
+) -> str:
+    """Build the FULL canonical ``BLOCKED.md`` (frontmatter + body) for the
+    ``fixed-unreconciled`` divert.
+
+    Modeled on ``depdag.format_unknown_dependency_blocker``'s shape, but returns
+    the ENTIRE file (frontmatter included) — the Step-4 caller writes it directly
+    via ``_atomic_write`` rather than through a ``_write_yaml_blocked_sentinel``
+    helper. Frontmatter conforms to sentinel-frontmatter.md (``kind: blocked`` +
+    the ``blocker_kind: fixed-unreconciled`` classifier); the body keeps the
+    ``## Details`` / ``## What was tried`` / ``## Recovery Suggestion`` sections a
+    human reads directly. The remedy names BOTH reconciliation paths: finish the
+    receipt+archive contract, OR clear the stray annotation to re-plan.
+    """
+    from .hostcaps import utc_now_iso  # deferred: avoid a top-level import edge
+
+    annotation = (fixed_annotation or "(no annotation value captured)").strip()
+    return (
+        "---\n"
+        "kind: blocked\n"
+        f"feature_id: {bug_id}\n"
+        "phase: routing — already-implemented-out-of-pipeline (fixed-unreconciled) detection\n"
+        f"blocked_at: {utc_now_iso()}\n"
+        "retry_count: 0\n"
+        "blocker_kind: fixed-unreconciled\n"
+        "---\n\n"
+        "# Blocked — fix already implemented out-of-pipeline (unreconciled)\n\n"
+        "## Details\n\n"
+        f"Bug `{bug_id}` carries a `**Fixed:** {annotation}` evidence annotation "
+        "(the fix already landed out-of-pipeline — a `/harden-harness` round or a "
+        "manual in-session fix), but its `**Status:**` is still a pre-fix status "
+        "and there is no valid `FIXED.md` completion receipt. The fix is on disk; "
+        "re-planning it would burn a full `/plan-bug` spec-phases + write-plan "
+        "dispatch on work that is already done (blocker_kind: fixed-unreconciled).\n\n"
+        "## What was tried\n\n"
+        "During routing (bug-state.py Step 4 / `/plan-bug` Step 0.4) the pipeline "
+        "detected the `**Fixed:**` annotation with no `FIXED.md` receipt and "
+        "diverted here instead of dispatching the planning round.\n\n"
+        "## Recovery Suggestion\n\n"
+        "Reconcile via the `docs/bugs/CLAUDE.md` receipt + `--archive-fixed` "
+        "contract: write the `FIXED.md` receipt, then run "
+        f"`python3 user/scripts/bug-state.py --repo-root . --archive-fixed docs/bugs/{bug_id}` "
+        "(the one script-owned mover). OR — if the `**Fixed:**` annotation is "
+        "stray and the bug genuinely still needs planning — clear the annotation "
+        "from SPEC.md to re-plan. Then rename/neutralize this BLOCKED.md.\n"
+    )
+
+
 def write_completed_receipt(
     path: Path,
     feature_id: str,

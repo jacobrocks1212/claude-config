@@ -33,13 +33,17 @@ The one decision that *looks* product-class — should the pre-gate **HALT** for
 
 ### Phase 1: Shared `**Fixed:**`-annotation reader + `fixed-unreconciled` detector/formatter (TDD)
 
+**Status:** Complete
+
 **Scope:** Add the domain-agnostic building blocks in `lazy_core` that both fix sites consume: a `**Fixed:**`-annotation reader, the "already-implemented-but-unreconciled" predicate, and the canonical `BLOCKED.md` body formatter. No routing change yet — pure helpers, unit-tested in isolation.
 
 **Deliverables:**
-- [ ] `spec_fixed_annotation(spec_path)` in `lazy_core/docmodel.py` — sibling of `spec_status`, returns the first `**Fixed:**` line's value (or `None`), mirroring `spec_status`'s read + `re.match(r"^\*\*Fixed:\*\*\s*(.+?)\s*$", …)` shape.
-- [ ] `is_fixed_unreconciled(spec_dir, repo_root)` in `lazy_core/gates.py` — `True` iff the SPEC's status is a pre-fix status (not `Fixed`/`Won't-fix`) AND `spec_fixed_annotation` is present AND `has_completion_receipt(spec_dir, filename="FIXED.md")` is `False` AND the dir is not under `docs/bugs/_archive/` (defensively-redundant on the Step-4 path; see Validated Assumptions).
-- [ ] `format_fixed_unreconciled_blocker(bug_id, fixed_annotation)` in `lazy_core/gates.py` — canonical `BLOCKED.md` frontmatter+body (`blocker_kind: fixed-unreconciled`) modeled on `depdag.format_unknown_dependency_blocker`; body names the remedy: reconcile via the `docs/bugs/CLAUDE.md` receipt+`--archive-fixed` contract, OR clear the stray `**Fixed:**` annotation to re-plan.
-- [ ] Tests: `test_docmodel.py` (annotation present / absent / multi-line-first-wins) + `test_gates.py` (`is_fixed_unreconciled` true-case, plus each false-case: status `Fixed`, no annotation, receipt present, archived) + a `format_*_blocker` shape assertion. Register in the seam `_TESTS` runners.
+- [x] `spec_fixed_annotation(spec_path)` in `lazy_core/docmodel.py` — sibling of `spec_status`, returns the first `**Fixed:**` line's value (or `None`), mirroring `spec_status`'s read + `re.match(r"^\*\*Fixed:\*\*\s*(.+?)\s*$", …)` shape.
+- [x] `is_fixed_unreconciled(spec_dir, repo_root)` in `lazy_core/gates.py` — `True` iff the SPEC's status is a pre-fix status (not `Fixed`/`Won't-fix`) AND `spec_fixed_annotation` is present AND `has_completion_receipt(spec_dir, filename="FIXED.md")` is `False` AND the dir is not under `docs/bugs/_archive/` (defensively-redundant on the Step-4 path; see Validated Assumptions).
+- [x] `format_fixed_unreconciled_blocker(bug_id, fixed_annotation)` in `lazy_core/gates.py` — canonical `BLOCKED.md` frontmatter+body (`blocker_kind: fixed-unreconciled`) modeled on `depdag.format_unknown_dependency_blocker`; body names the remedy: reconcile via the `docs/bugs/CLAUDE.md` receipt+`--archive-fixed` contract, OR clear the stray `**Fixed:**` annotation to re-plan.
+- [x] Tests: `test_docmodel.py` (annotation present / absent / multi-line-first-wins) + `test_gates.py` (`is_fixed_unreconciled` true-case, plus each false-case: status `Fixed`, no annotation, receipt present, archived) + a `format_*_blocker` shape assertion. Register in the seam `_TESTS` runners.
+
+**Implementation Notes (2026-07-19):** Added `spec_fixed_annotation` to `docmodel.py` (byte-parallel to `spec_status`, regex `^\*\*Fixed:\*\*\s*(.+?)\s*$`, first-occurrence wins); `is_fixed_unreconciled` + `format_fixed_unreconciled_blocker` to `gates.py` (`_FIXED_TERMINAL_STATUSES = {"Fixed","Won't-fix"}`; the formatter returns the FULL BLOCKED.md incl. frontmatter — Phase 2 writes it directly via `_atomic_write`, distinct from `depdag.format_unknown_dependency_blocker` which returns body-only; `utc_now_iso` imported function-locally from `.hostcaps`). Registered all three names in the `lazy_core` facade `__init__.py`. 10 new unit tests (4 docmodel + 6 gates), all green; full `lazy_core` suite 1328 passed.
 
 **Minimum Verifiable Behavior:** `python3 -m pytest user/scripts/tests/test_lazy_core/test_docmodel.py user/scripts/tests/test_lazy_core/test_gates.py` passes, with the new predicate returning `True` for a Concluded-`+`-`**Fixed:**`-`+`-no-receipt fixture and `False` for every negative fixture.
 

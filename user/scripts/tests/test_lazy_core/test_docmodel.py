@@ -1682,6 +1682,60 @@ def test_spec_status_superseded():
 
 
 # ---------------------------------------------------------------------------
+# Tests: spec_fixed_annotation (adhoc-plan-bug-no-guard-for-fixed-annotated-specs
+# Phase 1) — sibling of spec_status reading the **Fixed:** evidence annotation.
+# ---------------------------------------------------------------------------
+
+
+def test_spec_fixed_annotation_none_path():
+    """spec_fixed_annotation(None) → None."""
+    _guard()
+    assert lazy_core.spec_fixed_annotation(None) is None
+
+
+def test_spec_fixed_annotation_absent():
+    """A SPEC with no **Fixed:** line → None."""
+    _guard()
+    spec_text = "**Status:** Concluded\n\n## Proven Findings\n\nCause.\n"
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(spec_text, encoding="utf-8")
+        assert lazy_core.spec_fixed_annotation(spec_dir) is None
+
+
+def test_spec_fixed_annotation_present():
+    """The **Fixed:** line's value is returned (stripped)."""
+    _guard()
+    spec_text = (
+        "**Status:** Concluded\n"
+        "**Fixed:** 2026-07-18 - implemented out-of-pipeline\n\n"
+        "## Findings\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(spec_text, encoding="utf-8")
+        result = lazy_core.spec_fixed_annotation(spec_dir)
+    assert result == "2026-07-18 - implemented out-of-pipeline", f"got {result!r}"
+
+
+def test_spec_fixed_annotation_first_occurrence_wins():
+    """Only the FIRST **Fixed:** line is used (mirrors spec_status first-wins)."""
+    _guard()
+    spec_text = (
+        "**Fixed:** 2026-07-18 - first\n\n"
+        "## Implementation Notes\n\n"
+        "Later note **Fixed:** 2026-07-19 - second\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(spec_text, encoding="utf-8")
+        result = lazy_core.spec_fixed_annotation(spec_dir)
+    assert result == "2026-07-18 - first", f"got {result!r}"
+
+
+
+
+# ---------------------------------------------------------------------------
 # Tests: _parse_plan_frontmatter / _plan_status / _plan_lowest_phase / _plan_phase_set
 # ---------------------------------------------------------------------------
 
@@ -4025,6 +4079,10 @@ _TESTS = [
     ("test_spec_status_in_progress", test_spec_status_in_progress),
     ("test_spec_status_first_occurrence_wins", test_spec_status_first_occurrence_wins),
     ("test_spec_status_superseded", test_spec_status_superseded),
+    ("test_spec_fixed_annotation_none_path", test_spec_fixed_annotation_none_path),
+    ("test_spec_fixed_annotation_absent", test_spec_fixed_annotation_absent),
+    ("test_spec_fixed_annotation_present", test_spec_fixed_annotation_present),
+    ("test_spec_fixed_annotation_first_occurrence_wins", test_spec_fixed_annotation_first_occurrence_wins),
     ("test_parse_plan_frontmatter_absent", test_parse_plan_frontmatter_absent),
     ("test_parse_plan_frontmatter_no_fence", test_parse_plan_frontmatter_no_fence),
     ("test_parse_plan_frontmatter_with_data", test_parse_plan_frontmatter_with_data),

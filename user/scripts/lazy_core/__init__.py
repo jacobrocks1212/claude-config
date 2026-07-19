@@ -69,6 +69,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "spike_verdict_is_pass": "docmodel",          # spike-pipeline-role Phase 2 WU-1 — verdict PASS reader
     "skip_waiver_refusal": "docmodel",
     "spec_status": "docmodel",
+    "spec_fixed_annotation": "docmodel",
     "PROVISIONAL_SENTINEL": "docmodel",
     "_PROVISIONAL_ELIGIBLE_GRADES": "docmodel",
     "build_parked_entry": "docmodel",
@@ -521,6 +522,8 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "archive_fixed": "gates",
     "gate_coverage": "gates",
     "has_completion_receipt": "gates",
+    "is_fixed_unreconciled": "gates",
+    "format_fixed_unreconciled_blocker": "gates",
     "spike_escalation": "gates",
     "spike_tooling_cap_exceeded": "gates",
     "validation_escalation": "gates",

@@ -423,6 +423,36 @@ def spec_status(spec_path: Path | None) -> str | None:
         pass
     return None
 
+def spec_fixed_annotation(spec_path: Path | None) -> str | None:
+    """Return the bug SPEC.md ``**Fixed:**`` evidence-annotation value, or None.
+
+    Sibling of ``spec_status`` — reads the ``**Fixed:** <date> - ...`` evidence
+    line that marks a fix already implemented OUT-OF-PIPELINE (a ``/harden-harness``
+    round or a manual in-session fix; see docs/bugs/CLAUDE.md → "Fixing a bug
+    OUT-OF-PIPELINE" and _components/mark-fixed-archive.md). The FIRST ``**Fixed:**``
+    line wins, mirroring ``spec_status``'s first-occurrence rule.
+
+    ``spec_status`` reads ONLY ``**Status:**`` and never consults this annotation,
+    so a ``Concluded`` SPEC whose fix already landed is invisible to it — this
+    reader is the load-bearing signal the ``is_fixed_unreconciled`` predicate uses
+    to divert such an item to reconciliation instead of a wasted plan-bug dispatch.
+    Read+regex shape is byte-parallel to ``spec_status`` (do NOT re-open the file
+    with a divergent reader).
+    """
+    if spec_path is None:
+        return None
+    spec_md = spec_path / "SPEC.md"
+    if not spec_md.exists():
+        return None
+    try:
+        for line in spec_md.read_text(encoding="utf-8").splitlines():
+            m = re.match(r"^\*\*Fixed:\*\*\s*(.+?)\s*$", line)
+            if m:
+                return m.group(1).strip()
+    except OSError:
+        pass
+    return None
+
 # park-provisional-acceptance: the filename state a provisionally-accepted
 # NEEDS_INPUT.md is renamed to by provisionalize_sentinel(). It stays
 # `kind: needs-input` in frontmatter — the FILENAME is the state carrier
