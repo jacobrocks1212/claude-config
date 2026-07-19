@@ -13,7 +13,7 @@
 
 | # | item | state | sev | aging |
 |---|------|-------|------|------|
-| 1 | [merged-head-oracle-per-signal-supplement-churn](docs/bugs/merged-head-oracle-per-signal-supplement-churn/SPEC.md) | ⬡ Needs-input | — | 2026-07-19 |
+| 1 | [merged-head-oracle-per-signal-supplement-churn](docs/bugs/_archive/merged-head-oracle-per-signal-supplement-churn/SPEC.md) | ⬡ Needs-input | — | 2026-07-19 |
 | | status: Needs-input · phase 3/3 · next: answer needs-input · The merged-head actionability oracle re-adds a per-signal `DEFERRED.md` file-predicate every recurrence (R56/R57/R101/R102) because the FEATURE `compute_state` has no operator-defer branch, so the oracle's `is_dispatchable` re-inference is structurally blind to operator-deferred features. | | | |
 | 2 | [adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move](docs/bugs/adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move/SPEC.md) | ⬡ Needs-input | — | 2026-07-18 |
 | | status: Needs-input · next: answer needs-input · `detect_gate_weakening`'s per-file net-count reconciliation flags a false-positive `hit` when a behavior-preserving refactor MOVES a gate-refusal construct out of one file into a shared sibling within the same change. | | | |

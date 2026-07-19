@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-19
+**Fixed:** 2026-07-19
+**Fix commit:** 5750c829
 **Placement:** docs/bugs/merged-head-oracle-per-signal-supplement-churn
 **Related:** `docs/bugs/_archive/merged-head-oracle-blind-to-operator-deferred-cross-pipeline-feature/` (R102, fix `a1f98e4d` — the immediate origin that HANDED BACK this durable generalization; re-applied the file-predicate at the oracle site); `docs/bugs/_archive/merged-head-excludes-parked-not-operator-deferred-deadlocks/` (R57, `c5a3b385` — the ORIGINAL file-predicate); `docs/bugs/_archive/merged-head-includes-parked-items-deadlocks-park-run/` (R56 — park progenitor); `docs/bugs/_archive/merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head/` (R101, `1b7d420f`); `docs/features/unified-pipeline-orchestrator/` (merged-view / type-dispatch contract)
 

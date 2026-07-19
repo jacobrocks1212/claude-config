@@ -12,18 +12,18 @@ phases: [3]
 > This plan is fully self-contained. The executing session needs no additional context.
 
 > **Plan series:** part 2 of 2. Sibling parts:
-> - part 1: `C:/Users/Jacob/source/repos/claude-config/docs/bugs/merged-head-oracle-per-signal-supplement-churn/plans/all-phases-operator-defer-part-1.md`
-> - part 2: `C:/Users/Jacob/source/repos/claude-config/docs/bugs/merged-head-oracle-per-signal-supplement-churn/plans/all-phases-operator-defer-part-2.md` (this file)
+> - part 1: `C:/Users/Jacob/source/repos/claude-config/docs/bugs/_archive/merged-head-oracle-per-signal-supplement-churn/plans/all-phases-operator-defer-part-1.md`
+> - part 2: `C:/Users/Jacob/source/repos/claude-config/docs/bugs/_archive/merged-head-oracle-per-signal-supplement-churn/plans/all-phases-operator-defer-part-2.md` (this file)
 >
 > Execute parts strictly in order. Each part is self-contained — do NOT cross-reference siblings during execution.
 
 # Implementation Plan — merged-head-oracle-per-signal-supplement-churn (part 2: docstrings, parity, battery)  (v2)
 
 **PHASES.md files:**
-- `C:/Users/Jacob/source/repos/claude-config/docs/bugs/merged-head-oracle-per-signal-supplement-churn/PHASES.md` (Phase 3 of 3)
+- `C:/Users/Jacob/source/repos/claude-config/docs/bugs/_archive/merged-head-oracle-per-signal-supplement-churn/PHASES.md` (Phase 3 of 3)
 
 **SPEC.md files:**
-- `C:/Users/Jacob/source/repos/claude-config/docs/bugs/merged-head-oracle-per-signal-supplement-churn/SPEC.md`
+- `C:/Users/Jacob/source/repos/claude-config/docs/bugs/_archive/merged-head-oracle-per-signal-supplement-churn/SPEC.md`
 
 **Total phases in this part:** 1 (Phase 3)
 **Plan version:** v2 (reference-based — components loaded from disk per step)
