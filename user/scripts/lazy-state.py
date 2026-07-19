@@ -119,6 +119,7 @@ from lazy_core import (
     spec_status,
     commit_drift_verdict,
     observation_gap_promotable,
+    uncovered_verification_rows_remain,
     _coerce_evidence_count,
 )
 
@@ -4082,6 +4083,45 @@ def compute_state(
             ),
         )
 
+    # decision-2-6-uncovered-row-reroute-to-mcp-test: before dispatching the
+    # terminal __mark_complete__, re-route back to /mcp-test when a matrix-
+    # incomplete VALIDATED.md leaves uncovered, non-exempt, non-host-deferred
+    # runtime-verification rows (the partial-VALIDATED oscillation / stranded-
+    # coverage symptoms). SHARED predicate (uncovered_verification_rows_remain)
+    # — the bug-state.py Step-10 twin mirrors this branch. TERMINATION is
+    # load-bearing: the re-route fires ONLY while such a row remains, then falls
+    # through to __mark_complete__ once every row is covered/host-deferred/exempt.
+    #
+    # NO-MCP-SURFACE GUARD (load-bearing): suppress the re-route on a
+    # structurally-MCP-skipped feature — `**MCP runtime:** not-required` AND a
+    # repo with no app surface (the SAME condition the Step-9 structural skip
+    # uses). Such a feature has NO /mcp-test surface to re-route to (its
+    # VALIDATED.md was granted by the structural skip, not a real run), so
+    # firing here would loop forever. This is exactly claude-config's own bugs.
+    _structurally_skipped = phases_mcp_runtime_not_required(spec_path) and \
+        repo_has_no_app_surface(repo_root)
+    _reroute = (
+        {} if _structurally_skipped
+        else uncovered_verification_rows_remain(spec_path, phases_text, repo_root)
+    )
+    if _reroute.get("reroute"):
+        _uncov = _reroute.get("uncovered") or []
+        lazy_core._diag(
+            "Step 10: uncovered verification rows over a partial VALIDATED.md → "
+            f"re-route to mcp-test ({_reroute.get('reason')})"
+        )
+        return _state(
+            **common,
+            current_step="Step 10: re-route to mcp-test (uncovered verification rows)",
+            sub_skill="mcp-test",
+            sub_skill_args=(
+                f"finish the runtime-verification matrix for {feature_name} — "
+                f"{len(_uncov)} uncovered row(s) remain after a partial "
+                f"VALIDATED.md; author/run the missing scenario(s) then "
+                f"re-validate. See {spec_path_str}/SPEC.md and PHASES.md."
+            ),
+        )
+
     # Mark complete via the orchestrator's __mark_complete__ pseudo-skill
     # (ROADMAP edit + sentinel cleanup + commit).
     return _state(
@@ -4533,6 +4573,101 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             "status: Complete\ncreated: 2026-05-01\nphases: [9]\n---\n\n"
             "# Plan (complete)\n"
         )
+    elif name in (
+        "step10-uncovered-reroute",
+        "step10-covered-terminates",
+        "step10-host-deferred-terminates",
+        "step10-no-mcp-surface-no-reroute",
+    ):
+        # decision-2-6-uncovered-row-reroute-to-mcp-test WU-3: all share a
+        # feature that reaches Step 10 with VALIDATED.md present (plans Complete,
+        # PHASES has only verification-only unchecked rows so the workstation
+        # bypass falls through Step 7 → Step 9 → Step 10 entry gate).
+        _fid = {
+            "step10-uncovered-reroute": "feat-d26re",
+            "step10-covered-terminates": "feat-d26term",
+            "step10-host-deferred-terminates": "feat-d26host",
+            "step10-no-mcp-surface-no-reroute": "feat-d26nomcp",
+        }[name]
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": _fid, "name": _fid, "spec_dir": _fid, "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        d = features / _fid
+        d.mkdir()
+        (d / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (d / "RESEARCH.md").write_text("# R\n")
+        (d / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        plans = d / "plans"
+        plans.mkdir()
+        (plans / f"all-phases-{_fid}.md").write_text(
+            f"---\nkind: implementation-plan\nfeature_id: {_fid}\n"
+            "status: Complete\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
+            "# Plan (complete)\n"
+        )
+        _write_yaml_sentinel(
+            d / "VALIDATED.md", "validated",
+            feature_id=_fid, date="2026-07-19",
+            mcp_scenarios=[], result="all-passing",
+        )
+        if name == "step10-uncovered-reroute":
+            # Two unchecked verification rows, but recorded evidence covers only
+            # a SUBSET (pass_count=1) → autotick's cardinality lock would abort →
+            # both rows uncovered → re-route to mcp-test (NOT __mark_complete__).
+            (d / "PHASES.md").write_text(
+                "# Phases\n\n### Phase 1\n- [x] implement\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> scenario A passes\n"
+                "- [ ] <!-- verification-only --> scenario B passes\n"
+            )
+            _write_yaml_sentinel(
+                d / "MCP_TEST_RESULTS.md", "mcp-test-results",
+                feature_id=_fid, result="all-passing",
+                pass_count=1, total_count=1,
+            )
+        elif name == "step10-covered-terminates":
+            # Two unchecked verification rows, evidence covers both
+            # (pass_count=2) → autotick would tick them all → TERMINATION:
+            # falls through to __mark_complete__ (no re-route).
+            (d / "PHASES.md").write_text(
+                "# Phases\n\n### Phase 1\n- [x] implement\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> scenario A passes\n"
+                "- [ ] <!-- verification-only --> scenario B passes\n"
+            )
+            _write_yaml_sentinel(
+                d / "MCP_TEST_RESULTS.md", "mcp-test-results",
+                feature_id=_fid, result="all-passing",
+                pass_count=2, total_count=2,
+            )
+        elif name == "step10-host-deferred-terminates":
+            # The sole uncovered verification row is host-deferred
+            # (<!-- requires-host: real-audio-device -->) → excluded from the
+            # re-route (clause b) → TERMINATION: __mark_complete__ (never loops
+            # /mcp-test on a row that cannot pass on this host). No results file
+            # → pass_count 0, so the row is genuinely uncovered but host-deferred.
+            (d / "PHASES.md").write_text(
+                "# Phases\n\n### Phase 1\n- [x] implement\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> "
+                "<!-- requires-host: real-audio-device --> real-device timing\n"
+            )
+        else:  # step10-no-mcp-surface-no-reroute
+            # NO-MCP-SURFACE GUARD regression: `**MCP runtime:** not-required` +
+            # a fixture repo with no app surface = the Step-9 structural-skip
+            # condition. Two uncovered verification rows + a skip-granted
+            # VALIDATED.md (no MCP_TEST_RESULTS.md) — WITHOUT the guard the
+            # predicate would fire (pass_count 0, 2 uncovered) and loop /mcp-test
+            # forever. The guard suppresses the re-route → __mark_complete__.
+            (d / "PHASES.md").write_text(
+                "# Phases\n\n**MCP runtime:** not-required\n\n"
+                "### Phase 1\n- [x] implement\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> scenario A passes\n"
+                "- [ ] <!-- verification-only --> scenario B passes\n"
+            )
     elif name == "cloud-saturated-in-progress-plan":
         # In-progress plan whose only unchecked WU is documented in
         # DEFERRED_NON_CLOUD.md as workstation-only. Cloud Step 7a should emit
@@ -6606,6 +6741,36 @@ def run_smoke_tests() -> int:
                 "sub_skill": "mcp-test",
                 "feature_id": "feat-sup",
                 "current_step": "Step 9: run MCP tests",
+            }),
+            # decision-2-6-uncovered-row-reroute-to-mcp-test WU-3: at Step 10 with
+            # VALIDATED.md present but a matrix-incomplete PHASES, re-route back to
+            # /mcp-test (partial evidence covers 1 of 2 verification rows).
+            ("step10-uncovered-reroute", False, False, {
+                "sub_skill": "mcp-test",
+                "feature_id": "feat-d26re",
+                "current_step": "Step 10: re-route to mcp-test (uncovered verification rows)",
+            }),
+            # TERMINATION: evidence covers both verification rows → __mark_complete__
+            # (the re-route does NOT fire — the load-bearing termination contract).
+            ("step10-covered-terminates", False, False, {
+                "sub_skill": "__mark_complete__",
+                "feature_id": "feat-d26term",
+                "current_step": "Step 10: mark complete",
+            }),
+            # TERMINATION: the sole uncovered row is host-deferred (requires-host)
+            # → excluded → __mark_complete__ (never loops /mcp-test on this host).
+            ("step10-host-deferred-terminates", False, False, {
+                "sub_skill": "__mark_complete__",
+                "feature_id": "feat-d26host",
+                "current_step": "Step 10: mark complete",
+            }),
+            # NO-MCP-SURFACE GUARD: MCP-not-required + no-app-surface repo (e.g.
+            # claude-config itself) has no /mcp-test surface → re-route suppressed
+            # → __mark_complete__ (else it would loop /mcp-test forever).
+            ("step10-no-mcp-surface-no-reroute", False, False, {
+                "sub_skill": "__mark_complete__",
+                "feature_id": "feat-d26nomcp",
+                "current_step": "Step 10: mark complete",
             }),
             # Ad-hoc enqueue: ADHOC_BRIEF.md present, no SPEC.md → /spec with
             # the ad-hoc-specific arg (Step 4 ad-hoc branch).

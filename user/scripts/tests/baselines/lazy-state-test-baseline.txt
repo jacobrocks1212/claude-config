@@ -13,6 +13,10 @@
   [workstation-verification-only-bold-marker] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
   [workstation-all-plans-complete-real-unchecked] cloud=False skip_nr=False real_device=True: Step 7a: write plan
   [superseded-phase-unchecked] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
+  [step10-uncovered-reroute] cloud=False skip_nr=False real_device=True: Step 10: re-route to mcp-test (uncovered verification rows)
+  [step10-covered-terminates] cloud=False skip_nr=False real_device=True: Step 10: mark complete
+  [step10-host-deferred-terminates] cloud=False skip_nr=False real_device=True: Step 10: mark complete
+  [step10-no-mcp-surface-no-reroute] cloud=False skip_nr=False real_device=True: Step 10: mark complete
   [adhoc-brief] cloud=False skip_nr=False real_device=True: Step 4: ad-hoc brief → spec
   [all-complete] cloud=False skip_nr=False real_device=True: all-features-complete
   [needs-research] cloud=False skip_nr=False real_device=True: Step 5: prompt exists, awaiting research

@@ -12,6 +12,10 @@
   PASS [phases-complete-no-mcp-surface] cloud=False real_device=True: Step 9: structural MCP-skip (no app surface)
   PASS [retro-done-needs-mcp] cloud=False real_device=True: Step 9: run MCP tests
   PASS [ready-to-mark-fixed] cloud=False real_device=True: Step 10: mark fixed
+  PASS [step10-uncovered-reroute-bug] cloud=False real_device=True: Step 10: re-route to mcp-test (uncovered verification rows)
+  PASS [step10-covered-terminates-bug] cloud=False real_device=True: Step 10: mark fixed
+  PASS [step10-host-deferred-terminates-bug] cloud=False real_device=True: Step 10: mark fixed
+  PASS [step10-no-mcp-surface-no-reroute-bug] cloud=False real_device=True: Step 10: mark fixed
   PASS [device-deferred] cloud=False real_device=False: device-queue-exhausted
   PASS [hybrid-ordering] cloud=False real_device=True: Step 4: investigate bug
   PASS [wont-fix-exempt] cloud=False real_device=True: all-bugs-fixed

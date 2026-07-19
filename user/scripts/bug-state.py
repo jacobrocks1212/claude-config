@@ -131,6 +131,7 @@ from lazy_core import (
     spec_status,
     commit_drift_verdict,
     observation_gap_promotable,
+    uncovered_verification_rows_remain,
     _coerce_evidence_count,
 )
 
@@ -2145,6 +2146,45 @@ def compute_state(
                 "redirect the provisional decision(s) first."
             ),
         )
+    # decision-2-6-uncovered-row-reroute-to-mcp-test (coupled-pair mirror of
+    # lazy-state.py's Step-10 branch): before dispatching the terminal
+    # __mark_fixed__, re-route back to /mcp-test when a matrix-incomplete
+    # VALIDATED.md leaves uncovered, non-exempt, non-host-deferred runtime-
+    # verification rows. SHARED predicate (uncovered_verification_rows_remain);
+    # structurally identical to the feature branch modulo the terminal
+    # pseudo-skill name. TERMINATION is load-bearing (falls through to
+    # __mark_fixed__ once every row is covered/host-deferred/exempt).
+    #
+    # NO-MCP-SURFACE GUARD (load-bearing, mirrors lazy-state.py): suppress the
+    # re-route on a structurally-MCP-skipped bug — `**MCP runtime:** not-required`
+    # AND a repo with no app surface (the SAME Step-9 structural-skip condition).
+    # Such a bug has NO /mcp-test surface to re-route to (VALIDATED.md granted by
+    # the structural skip, not a real run), so firing here would loop forever.
+    # This is exactly claude-config's own bugs (this very bug included).
+    _structurally_skipped = phases_mcp_runtime_not_required(spec_dir) and \
+        repo_has_no_app_surface(repo_root)
+    _reroute = (
+        {} if _structurally_skipped
+        else uncovered_verification_rows_remain(spec_dir, phases_text, repo_root)
+    )
+    if _reroute.get("reroute"):
+        _uncov = _reroute.get("uncovered") or []
+        lazy_core._diag(
+            "Step 10: uncovered verification rows over a partial VALIDATED.md → "
+            f"re-route to mcp-test ({_reroute.get('reason')})"
+        )
+        return _bug_state(
+            **common,
+            current_step="Step 10: re-route to mcp-test (uncovered verification rows)",
+            sub_skill="mcp-test",
+            sub_skill_args=(
+                f"finish the runtime-verification matrix for {bug_name} — "
+                f"{len(_uncov)} uncovered row(s) remain after a partial "
+                f"VALIDATED.md; author/run the missing scenario(s) then "
+                f"re-validate. See {spec_dir_str}/SPEC.md and PHASES.md."
+            ),
+        )
+
     return _bug_state(
         **common,
         current_step=STEP_MARK_FIXED,
@@ -3031,6 +3071,84 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             bdir / "VALIDATED.md", "validated",
             bug_id="bug-rtmf", date="2026-05-26", result="all-passing",
         )
+
+    elif name in (
+        "step10-uncovered-reroute-bug",
+        "step10-covered-terminates-bug",
+        "step10-host-deferred-terminates-bug",
+        "step10-no-mcp-surface-no-reroute-bug",
+    ):
+        # decision-2-6-uncovered-row-reroute-to-mcp-test WU-3 (bug-pipeline
+        # mirror): a bug that reaches Step 10 with VALIDATED.md present but a
+        # matrix-incomplete PHASES (impl rows [x], verification rows unchecked,
+        # no plans/ dir so the verification-only bypass falls through to Step 9
+        # → Step 10 entry gate). Mirrors lazy-state.py's Step-10 twin.
+        _bid = {
+            "step10-uncovered-reroute-bug": "bug-d26re",
+            "step10-covered-terminates-bug": "bug-d26term",
+            "step10-host-deferred-terminates-bug": "bug-d26host",
+            "step10-no-mcp-surface-no-reroute-bug": "bug-d26nomcp",
+        }[name]
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [{"id": _bid, "name": _bid, "spec_dir": _bid}]
+        }), encoding="utf-8")
+        bdir = bugs_dir / _bid
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            f"# {_bid}\n\n**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n**Discovered:** 2026-07-18\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "VALIDATED.md", "validated",
+            bug_id=_bid, date="2026-07-19", result="all-passing",
+        )
+        if name == "step10-uncovered-reroute-bug":
+            (bdir / "PHASES.md").write_text(
+                "# Phases\n\n### Phase 1\n- [x] Implement fix\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> scenario A passes\n"
+                "- [ ] <!-- verification-only --> scenario B passes\n",
+                encoding="utf-8",
+            )
+            _write_yaml_sentinel(
+                bdir / "MCP_TEST_RESULTS.md", "mcp-test-results",
+                bug_id=_bid, result="all-passing", pass_count=1, total_count=1,
+            )
+        elif name == "step10-covered-terminates-bug":
+            (bdir / "PHASES.md").write_text(
+                "# Phases\n\n### Phase 1\n- [x] Implement fix\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> scenario A passes\n"
+                "- [ ] <!-- verification-only --> scenario B passes\n",
+                encoding="utf-8",
+            )
+            _write_yaml_sentinel(
+                bdir / "MCP_TEST_RESULTS.md", "mcp-test-results",
+                bug_id=_bid, result="all-passing", pass_count=2, total_count=2,
+            )
+        elif name == "step10-host-deferred-terminates-bug":
+            (bdir / "PHASES.md").write_text(
+                "# Phases\n\n### Phase 1\n- [x] Implement fix\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> "
+                "<!-- requires-host: real-audio-device --> real-device timing\n",
+                encoding="utf-8",
+            )
+        else:  # step10-no-mcp-surface-no-reroute-bug
+            # NO-MCP-SURFACE GUARD regression (mirrors lazy-state.py): MCP-not-
+            # required + no-app-surface fixture repo = the structural-skip
+            # condition. WITHOUT the guard the predicate fires (2 uncovered rows,
+            # pass_count 0) and loops /mcp-test forever — the guard suppresses it
+            # → __mark_fixed__. This is exactly claude-config's own bugs.
+            (bdir / "PHASES.md").write_text(
+                "# Phases\n\n**MCP runtime:** not-required\n\n"
+                "### Phase 1\n- [x] Implement fix\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> scenario A passes\n"
+                "- [ ] <!-- verification-only --> scenario B passes\n",
+                encoding="utf-8",
+            )
 
     elif name == "device-deferred":
         # RETRO_DONE.md + DEFERRED_REQUIRES_DEVICE.md present, no VALIDATED.md.
@@ -4584,6 +4702,46 @@ def run_smoke_tests() -> int:
             "ready-to-mark-fixed", False, True,
             {
                 "feature_id": "bug-rtmf",
+                "sub_skill": SKILL_MARK_FIXED,
+                "current_step": STEP_MARK_FIXED,
+            },
+        ),
+        # decision-2-6-uncovered-row-reroute-to-mcp-test WU-3 (bug mirror): at
+        # Step 10 with VALIDATED.md over a matrix-incomplete PHASES (partial
+        # evidence covers 1 of 2 verification rows) → re-route to /mcp-test.
+        (
+            "step10-uncovered-reroute-bug", False, True,
+            {
+                "feature_id": "bug-d26re",
+                "sub_skill": "mcp-test",
+                "current_step": "Step 10: re-route to mcp-test (uncovered verification rows)",
+            },
+        ),
+        # TERMINATION: evidence covers both rows → __mark_fixed__ (no re-route).
+        (
+            "step10-covered-terminates-bug", False, True,
+            {
+                "feature_id": "bug-d26term",
+                "sub_skill": SKILL_MARK_FIXED,
+                "current_step": STEP_MARK_FIXED,
+            },
+        ),
+        # TERMINATION: sole uncovered row is host-deferred → excluded → __mark_fixed__.
+        (
+            "step10-host-deferred-terminates-bug", False, True,
+            {
+                "feature_id": "bug-d26host",
+                "sub_skill": SKILL_MARK_FIXED,
+                "current_step": STEP_MARK_FIXED,
+            },
+        ),
+        # NO-MCP-SURFACE GUARD: MCP-not-required + no-app-surface repo (e.g.
+        # claude-config itself) has no /mcp-test surface → re-route suppressed →
+        # __mark_fixed__ (else it would loop /mcp-test forever).
+        (
+            "step10-no-mcp-surface-no-reroute-bug", False, True,
+            {
+                "feature_id": "bug-d26nomcp",
                 "sub_skill": SKILL_MARK_FIXED,
                 "current_step": STEP_MARK_FIXED,
             },

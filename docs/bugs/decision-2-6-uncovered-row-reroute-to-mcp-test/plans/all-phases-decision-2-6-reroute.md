@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: decision-2-6-uncovered-row-reroute-to-mcp-test
-status: In-progress
+status: Complete
 created: 2026-07-19
 complexity: complex
 phases: [1, 2, 3]
@@ -62,7 +62,7 @@ Upstream plans and PHASES.md files this plan was authored against.
 
 - [x] WU-1 — `row_requires_host` per-row host-defer recognizer (Phase 1)
 - [x] WU-2 — `uncovered_verification_rows_remain` shared predicate (Phase 2)
-- [ ] WU-3 — Wire the shared re-route into both state scripts + `--test` fixtures + parity (Phase 3)
+- [x] WU-3 — Wire the shared re-route into both state scripts + `--test` fixtures + parity (Phase 3)
 
 ---
 
