@@ -2732,6 +2732,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/execute-plan-strict-order-prereq-ignores-series-index-reschedule/FIXED.md": [
+    {
+      "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/execute-plan-strict-order-prereq-ignores-series-index-reschedule/SPEC.md": [
+    {
+      "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/external-owner-contracts-locked-without-consultation/FIXED.md": [
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
@@ -4738,6 +4752,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/_archive/subagent-wedge-backstop-blocks-nested-wu-workers/IMPLEMENTED.md": [
+    {
+      "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/subagent-wedge-backstop-blocks-nested-wu-workers/SPEC.md": [
     {
       "id": "subagent-wedge-backstop-blocks-nested-wu-workers",
@@ -6498,14 +6519,45 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test/GATE_VERDICT.md": [
+    {
+      "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test/PHASES.md": [
+    {
+      "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "subagent-wedge-backstop-blocks-nested-wu-workers",
       "type": "bug",
       "provenance": "manual"
     }
   ],
+  "docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test/SKIP_MCP_TEST.md": [
+    {
+      "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test/VALIDATED.md": [
+    {
+      "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test/plans/all-phases-decision-2-6-reroute.md": [
+    {
+      "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "subagent-wedge-backstop-blocks-nested-wu-workers",
       "type": "bug",
@@ -15889,6 +15941,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/interventions/harden-2026-07-r110.md": [
+    {
+      "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/harden-2026-07-r14.md": [
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -17740,6 +17799,11 @@
       "provenance": "manual"
     },
     {
+      "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
@@ -18023,6 +18087,11 @@
       "id": "dispatched-harden-record-intervention-refused-by-containment",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "external-owner-contracts-locked-without-consultation",
@@ -19744,6 +19813,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
@@ -20442,6 +20516,11 @@
       "id": "ensure-runtime-recovery-starves-cold-compile",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "feature-queue-lacks-on-disk-autodiscovery",
@@ -22427,6 +22506,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
@@ -22492,6 +22576,11 @@
       "id": "budget-guard-defers-near-complete-feature",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "feature-queue-lacks-on-disk-autodiscovery",
