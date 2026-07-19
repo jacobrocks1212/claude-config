@@ -69,7 +69,7 @@ No contradictions surfaced — every planned path exists; the predicate's home +
 
 ## Work Units
 
-- [ ] WU-1 — Add `coordinator_arbitrated_emission` predicate + unit tests (Phase 1)
+- [x] WU-1 — Add `coordinator_arbitrated_emission` predicate + unit tests (Phase 1)
 - [ ] WU-2 — Switch both state-script callers to the predicate; parity + baselines green (Phase 2)
 
 ---
@@ -83,10 +83,10 @@ No contradictions surfaced — every planned path exists; the predicate's home +
 #### WU-1 — Add `coordinator_arbitrated_emission` predicate + unit tests
 
 - **Scope (PHASES.md Phase 1 deliverables):**
-  - [ ] `coordinator_arbitrated_emission(marker, feature_id, leases_path)` added to `lazy_core/dispatch.py`, adjacent to `merged_head_override` [VERIFY: grep -n "def merged_head_override" user/scripts/lazy_core/dispatch.py], returning `None | "lane" | "lease"` (lane precedence over lease — matches the current `not _emit_is_lane` guard on the lease compute).
-  - [ ] Fail-safe by construction: a `parent_run`/marker read error → not a lane; a lease-check exception / unavailable `lazy_coord` / no `leases.json` / no live lease → not a lease → `None`. The predicate must NEVER raise into the base probe.
-  - [ ] Docstring recording this predicate as the single home for coordinator-arbitration exemptions and that a future third exemption (demoted-serial-rerun) is a one-line addition HERE returning a new reason string (the anti-accretion contract).
-  - [ ] Tests covering all four outcomes + lane precedence + fail-safe paths.
+  - [x] `coordinator_arbitrated_emission(marker, feature_id, leases_path)` added to `lazy_core/dispatch.py`, adjacent to `merged_head_override` [VERIFY: grep -n "def merged_head_override" user/scripts/lazy_core/dispatch.py], returning `None | "lane" | "lease"` (lane precedence over lease — matches the current `not _emit_is_lane` guard on the lease compute).
+  - [x] Fail-safe by construction: a `parent_run`/marker read error → not a lane; a lease-check exception / unavailable `lazy_coord` / no `leases.json` / no live lease → not a lease → `None`. The predicate must NEVER raise into the base probe.
+  - [x] Docstring recording this predicate as the single home for coordinator-arbitration exemptions and that a future third exemption (demoted-serial-rerun) is a one-line addition HERE returning a new reason string (the anti-accretion contract).
+  - [x] Tests covering all four outcomes + lane precedence + fail-safe paths.
 - **TDD:** yes.
 - **Files to create/modify:**
   - `user/scripts/lazy_core/dispatch.py` — add the predicate next to `merged_head_override`. Reuse the fail-safe idiom; delegate the lease facet to `lazy_coord.has_live_lease(leases_path, feature_id)` [VERIFY: grep -n "def has_live_lease" user/scripts/lazy_coord.py] via a LOCAL `import lazy_coord` inside the lease branch's `try/except` (ImportError / any read error → no lease). Do NOT add a top-level `import lazy_coord` to `dispatch.py` (layering: `lazy_coord` is a top-level module, not under `lazy_core/`).

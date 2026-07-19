@@ -431,6 +431,107 @@ def merged_head_override(
     }
 
 
+# ---------------------------------------------------------------------------
+# Coordinator-arbitration exemptions — the SINGLE home for the reasons the
+# serial merged-head divergence premise does not apply to (a coordinator has
+# already arbitrated the emission).  Both state-script --emit-prompt callers
+# consult this ONE predicate; adding a future exemption (e.g. a demoted-serial
+# rerun) is a one-line addition HERE returning a new reason string — never a
+# fourth ad-hoc boolean re-accreted at each caller.
+# ---------------------------------------------------------------------------
+
+# reason -> observability diagnostic (byte-identical to the two messages the
+# callers historically emitted inline).  A reason NOT in this map resolves to a
+# generic coordinator-arbitrated exemption diag via coordinator_exemption_diag,
+# so a reason rename / a new exemption can never silently drop a diagnostic.
+_COORDINATOR_EXEMPTION_DIAGS = {
+    "lane": (
+        "merged-head: skipped divergence guard — lane probe "
+        "(parent_run set); lane arbitration is coordinator-owned "
+        "(claim_shardable)."
+    ),
+    "lease": (
+        "merged-head: skipped divergence guard — serial-tail probe "
+        "for a lease-held item (feature_id holds a live coordinator "
+        "lease); completing the merged, lease-held item is the "
+        "coordinator's in-flight obligation (round-2 gap 8)."
+    ),
+}
+
+
+def coordinator_arbitrated_emission(marker, feature_id, leases_path) -> "str | None":
+    """Return the exemption reason (``"lane"`` | ``"lease"``) when THIS
+    ``--emit-prompt`` probe is a coordinator-arbitrated emission the serial
+    merged-head divergence guard must NOT withhold — else ``None`` (the common
+    serial case: run the guard exactly as before).
+
+    This is the SINGLE, unified home for the two coordinator-arbitration
+    exemptions that had accreted as ad-hoc booleans at BOTH state-script
+    callers (``lazy-state.py`` / ``bug-state.py``):
+
+      * ``"lane"`` — the marker carries a non-null ``parent_run``: a
+        ``/lazy-batch-parallel`` LANE probe whose queue arbitration the
+        coordinator's ``claim_shardable`` already applied when it assigned the
+        lane its ``--feature-id`` (round-1 gap 1). Lane arbitration is
+        coordinator-owned, not a per-lane-probe concern.
+      * ``"lease"`` — a non-lane marker whose ``feature_id`` holds a LIVE
+        coordinator lease: the post-merge SERIAL-TAIL probe at the main root
+        (``parent_run`` null) discharging the coordinator's in-flight,
+        lane-merged, lease-held obligation before any new head work
+        (round-2 gap 8).
+
+    **Lane precedence over lease** — lane is evaluated FIRST (matching the
+    legacy ``not _emit_is_lane`` guard on the lease compute), so the lease I/O
+    is not even consulted for a lane probe.
+
+    **Fail-safe by construction — NEVER raises into the base probe.** A
+    ``marker`` that is not a dict / has no ``parent_run`` is not a lane; a
+    missing/empty ``feature_id``, an unavailable ``lazy_coord``, a missing
+    ``leases.json``, or ANY lease-read error means "not a lease" → the reason
+    stays ``None`` (fail toward running the guard, never toward a spurious
+    exemption). A future third exemption (demoted-serial-rerun) is a one-line
+    addition here returning a new reason string.
+
+    Args:
+        marker: the run marker dict (``read_run_marker()`` result), or ``None``.
+        feature_id: the id this probe would emit for (``state["feature_id"]``).
+        leases_path: path to the coordinator ``leases.json``
+            (``claude_state_dir() / "leases.json"`` in production).
+
+    Returns:
+        ``"lane"`` / ``"lease"`` when exempt; ``None`` otherwise.
+    """
+    # Lane exemption (highest precedence) — coordinator-arbitrated claim.
+    if isinstance(marker, dict) and marker.get("parent_run"):
+        return "lane"
+    # Lease exemption — only for a non-lane marker whose feature_id is set.
+    if marker is not None and feature_id:
+        try:
+            import lazy_coord  # local: lazy_coord is a top-level module, not under lazy_core/
+
+            if lazy_coord.has_live_lease(leases_path, feature_id):
+                return "lease"
+        except Exception:  # noqa: BLE001 — lease probe must never break the base probe
+            return None
+    return None
+
+
+def coordinator_exemption_diag(reason: str) -> str:
+    """Resolve a coordinator-arbitration exemption ``reason`` to its
+    observability diagnostic. Recognized reasons (``"lane"``/``"lease"``) map to
+    their historical byte-identical text; an UNRECOGNIZED reason maps to a
+    generic coordinator-arbitrated exemption diagnostic naming the reason
+    (forward-compat for a future exemption — a rename can never silently drop a
+    diagnostic)."""
+    diag = _COORDINATOR_EXEMPTION_DIAGS.get(reason)
+    if diag is not None:
+        return diag
+    return (
+        "merged-head: skipped divergence guard — coordinator-arbitrated "
+        f"emission (exemption reason: {reason})."
+    )
+
+
 def probe_skipped_ids(state: dict, items: list[dict] | None) -> "set[str]":
     """Return the set of queue IDS the CURRENT per-pipeline probe already
     SKIPPED this cycle (advanced past without dispatching) — reusing the probe's

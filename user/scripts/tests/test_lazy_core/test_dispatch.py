@@ -5212,6 +5212,116 @@ def test_merged_head_override_none_on_empty_queues_or_missing_id():
     ) is None
 
 
+# ---------------------------------------------------------------------------
+# Tests: coordinator_arbitrated_emission — the unified merged-head coordinator
+# exemption predicate (adhoc-unify-merged-head-coordinator-exemptions Phase 1).
+# One predicate answers "is this a coordinator-arbitrated emission the serial
+# merged-head divergence premise does not apply to?" returning None | "lane" |
+# "lease". Lane (parent_run) has precedence over lease. Fully fail-safe — it
+# must NEVER raise into the base probe.
+# ---------------------------------------------------------------------------
+
+
+def test_coordinator_arbitrated_emission_lane():
+    """A lane marker (non-null parent_run) → "lane", regardless of feature_id or
+    leases_path (lane arbitration is coordinator-owned; the lease I/O is not even
+    consulted)."""
+    _guard()
+    marker = {"parent_run": {"repo_root": "/main", "started_at": "2026-07-19T00:00:00Z"}}
+    assert lazy_core.dispatch.coordinator_arbitrated_emission(
+        marker, "any-id", "/nonexistent/leases.json"
+    ) == "lane"
+
+
+def test_coordinator_arbitrated_emission_lease():
+    """A non-lane marker whose feature_id holds a LIVE coordinator lease → "lease"
+    (the serial-tail exemption). Seed a live lease via lazy_coord.acquire_lease."""
+    _guard()
+    import lazy_coord  # type: ignore[import]
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        leases_path = Path(td) / "leases.json"
+        lazy_coord.acquire_lease(
+            leases_path, "feat-c", os.getpid(), "wt-00", 3600, now=_time.time(),
+        )
+        marker = {}  # non-lane marker (no parent_run)
+        assert lazy_core.dispatch.coordinator_arbitrated_emission(
+            marker, "feat-c", leases_path
+        ) == "lease"
+
+
+def test_coordinator_arbitrated_emission_none():
+    """A non-lane marker with no live lease (absent/expired leases.json) → None,
+    so the caller runs the merged-head guard exactly as before."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        leases_path = Path(td) / "leases.json"  # never created → no lease
+        assert lazy_core.dispatch.coordinator_arbitrated_emission(
+            {}, "feat-c", leases_path
+        ) is None
+
+
+def test_coordinator_arbitrated_emission_lane_precedes_lease():
+    """When BOTH a parent_run (lane) AND a live lease would qualify, lane wins —
+    it is evaluated first and the lease read is never required."""
+    _guard()
+    import lazy_coord  # type: ignore[import]
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        leases_path = Path(td) / "leases.json"
+        lazy_coord.acquire_lease(
+            leases_path, "feat-c", os.getpid(), "wt-00", 3600, now=_time.time(),
+        )
+        marker = {"parent_run": {"repo_root": "/main", "started_at": "t"}}
+        assert lazy_core.dispatch.coordinator_arbitrated_emission(
+            marker, "feat-c", leases_path
+        ) == "lane"
+
+
+def test_coordinator_arbitrated_emission_failsafe():
+    """The predicate NEVER raises into the base probe: a None marker, a
+    missing/empty feature_id, and a leases_path that raises on read each return
+    None (no lane, no lease)."""
+    _guard()
+
+    class _Boom:
+        # A leases_path whose str()/read explodes — has_live_lease must be
+        # shielded so the predicate returns None rather than propagating.
+        def __fspath__(self):
+            raise OSError("boom")
+
+    # None marker → not a lane, no lease branch → None.
+    assert lazy_core.dispatch.coordinator_arbitrated_emission(
+        None, "feat-c", "/nonexistent/leases.json"
+    ) is None
+    # Missing / empty feature_id → no lease compute → None (marker non-None).
+    assert lazy_core.dispatch.coordinator_arbitrated_emission(
+        {}, "", "/nonexistent/leases.json"
+    ) is None
+    assert lazy_core.dispatch.coordinator_arbitrated_emission(
+        {}, None, "/nonexistent/leases.json"
+    ) is None
+    # A leases_path that raises on read → shielded → None (never raises).
+    assert lazy_core.dispatch.coordinator_arbitrated_emission(
+        {}, "feat-c", _Boom()
+    ) is None
+
+
+def test_coordinator_exemption_diag_maps_reason_to_text():
+    """The caller-facing reason→diagnostic map resolves "lane"/"lease" to their
+    existing diag substances and an UNRECOGNIZED reason to a generic
+    coordinator-arbitrated exemption diag (forward-compat for a future third
+    exemption) — so a reason rename can never silently drop a diagnostic."""
+    _guard()
+    lane_diag = lazy_core.dispatch.coordinator_exemption_diag("lane")
+    lease_diag = lazy_core.dispatch.coordinator_exemption_diag("lease")
+    assert "lane probe" in lane_diag and "claim_shardable" in lane_diag
+    assert "lease-held" in lease_diag and "round-2 gap 8" in lease_diag
+    other = lazy_core.dispatch.coordinator_exemption_diag("demoted-serial-rerun")
+    assert "coordinator-arbitrated" in other
+    assert "demoted-serial-rerun" in other
+
+
 def test_probe_skipped_ids_collects_all_skip_lists_and_resolves_names():
     """merged-head-diverged-stalls-on-gated-head: probe_skipped_ids folds the
     per-pipeline probe's OWN same-cycle skip lists into one id set — gated_heads /
@@ -7187,6 +7297,12 @@ _TESTS = [
     ("test_merged_head_override_diverges_when_higher_sev_bug_jumps_head", test_merged_head_override_diverges_when_higher_sev_bug_jumps_head),
     ("test_merged_head_override_none_when_head_is_current_item", test_merged_head_override_none_when_head_is_current_item),
     ("test_merged_head_override_none_on_empty_queues_or_missing_id", test_merged_head_override_none_on_empty_queues_or_missing_id),
+    ("test_coordinator_arbitrated_emission_lane", test_coordinator_arbitrated_emission_lane),
+    ("test_coordinator_arbitrated_emission_lease", test_coordinator_arbitrated_emission_lease),
+    ("test_coordinator_arbitrated_emission_none", test_coordinator_arbitrated_emission_none),
+    ("test_coordinator_arbitrated_emission_lane_precedes_lease", test_coordinator_arbitrated_emission_lane_precedes_lease),
+    ("test_coordinator_arbitrated_emission_failsafe", test_coordinator_arbitrated_emission_failsafe),
+    ("test_coordinator_exemption_diag_maps_reason_to_text", test_coordinator_exemption_diag_maps_reason_to_text),
     ("test_spec_dir_would_park_predicate", test_spec_dir_would_park_predicate),
     ("test_spec_dir_operator_deferred_predicate", test_spec_dir_operator_deferred_predicate),
     ("test_spec_dir_research_pending_predicate", test_spec_dir_research_pending_predicate),
