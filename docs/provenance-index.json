@@ -2009,6 +2009,37 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/_archive/claude-attribution-trailers-not-globally-disabled/FIXED.md": [
+    {
+      "id": "claude-attribution-trailers-not-globally-disabled",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/claude-attribution-trailers-not-globally-disabled/IMPLEMENTED.md": [
+    {
+      "id": "orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/claude-attribution-trailers-not-globally-disabled/SPEC.md": [
+    {
+      "id": "claude-attribution-trailers-not-globally-disabled",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/coherence-recovery-loop-no-terminal-on-unrunnable-verification-rows/FIXED.md": [
     {
       "id": "shared-hook-lib",
@@ -3961,6 +3992,20 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/_archive/orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap/FIXED.md": [
+    {
+      "id": "orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap/SPEC.md": [
+    {
+      "id": "orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/park-mode-halts-on-blocked/FIXED.md": [
     {
       "id": "park-mode-halts-on-blocked",
@@ -5141,6 +5186,13 @@
     },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke/plans/all-phases-recovery-discriminator-part-1.md": [
+    {
+      "id": "claude-attribution-trailers-not-globally-disabled",
       "type": "bug",
       "provenance": "manual"
     }
@@ -8301,6 +8353,20 @@
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap/FIXED.md": [
+    {
+      "id": "claude-attribution-trailers-not-globally-disabled",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap/SPEC.md": [
+    {
+      "id": "claude-attribution-trailers-not-globally-disabled",
       "type": "bug",
       "provenance": "manual"
     }
@@ -17368,6 +17434,11 @@
       "provenance": "manual"
     },
     {
+      "id": "orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "code-doc-provenance-linkage",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -17569,6 +17640,11 @@
       "provenance": "manual"
     },
     {
+      "id": "claude-attribution-trailers-not-globally-disabled",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -17660,6 +17736,11 @@
     },
     {
       "id": "orchestrator-misroutes-on-grandchild-subagent-notifications",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap",
       "type": "bug",
       "provenance": "manual"
     },
@@ -24643,6 +24724,11 @@
     }
   ],
   "workspace/CLAUDE.DESKTOP-GHTC5K6.md": [
+    {
+      "id": "claude-attribution-trailers-not-globally-disabled",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
