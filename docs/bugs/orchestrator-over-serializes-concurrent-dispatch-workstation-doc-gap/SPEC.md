@@ -1,6 +1,6 @@
 # orchestrator-over-serializes-concurrent-dispatch-workstation-doc-gap
 
-**Status:** Concluded
+**Status:** Fixed
 **Kind:** bug (harness friction — missing durable contract)
 **Pipeline:** claude-config (out-of-pipeline `/harden-harness` fix)
 
