@@ -580,9 +580,15 @@ Hard contract (sentinel + git hygiene + report):
      when none was needed, a skip disclosure: "no NEEDS_INPUT — {N} reviewed, all
      {mechanical-internal | scope-class (D7) | none arose}; {≤12-word reason}".
      The no-sentinel outcome is NEVER silent (sentinel-frontmatter.md Producer
-     responsibilities #7). On /execute-plan or /retro-feature cycles, also confirm
-     you executed INLINE (zero Agent() calls) and wrote failing tests before
-     implementing each batch (test-first).
+     responsibilities #7). On a decision-bearing cycle (/spec, /spec-phases,
+     /write-plan, /add-phase, /plan-feature, /spec-bug, /plan-bug), the return
+     summary MUST also carry a `### Decision-Classification Ledger` section per
+     that skill's own ledger mandate (empty-ledger fallback:
+     `_(no decisions surfaced this cycle — auto-finalized)_` when none arose) —
+     this is what lets the Step 1d.5 input-audit run its stronger diff-vs-ledger
+     cross-check instead of the diff-only fallback. On /execute-plan or
+     /retro-feature cycles, also confirm you executed INLINE (zero Agent() calls)
+     and wrote failing tests before implementing each batch (test-first).
 
 <!-- @section hard-contract pipelines=feature,bug modes=cloud skills=all -->
 Hard contract (sentinel + git hygiene + cloud push + report):
@@ -626,9 +632,16 @@ Hard contract (sentinel + git hygiene + cloud push + report):
      when none was needed, a skip disclosure: "no NEEDS_INPUT — {N} reviewed, all
      {mechanical-internal | scope-class (D7) | none arose}; {≤12-word reason}".
      The no-sentinel outcome is NEVER silent (sentinel-frontmatter.md Producer
-     responsibilities #7). On /execute-plan or /retro cycles, also confirm
-     you executed INLINE (zero Agent() calls), wrote failing tests before
-     implementing each batch (test-first), and pushed each batch as it landed.
+     responsibilities #7). On a decision-bearing cycle (/spec, /spec-phases,
+     /write-plan, /add-phase, /plan-feature, /spec-bug, /plan-bug), the return
+     summary MUST also carry a `### Decision-Classification Ledger` section per
+     that skill's own ledger mandate (empty-ledger fallback:
+     `_(no decisions surfaced this cycle — auto-finalized)_` when none arose) —
+     this is what lets the Step 1d.5 input-audit run its stronger diff-vs-ledger
+     cross-check instead of the diff-only fallback. On /execute-plan or /retro
+     cycles, also confirm you executed INLINE (zero Agent() calls), wrote failing
+     tests before implementing each batch (test-first), and pushed each batch as
+     it landed.
 
 <!-- @section terminal-stop pipelines=feature,bug modes=workstation,cloud skills=all -->
 TERMINAL STOP (HARD — your dispatch is ONE cycle):

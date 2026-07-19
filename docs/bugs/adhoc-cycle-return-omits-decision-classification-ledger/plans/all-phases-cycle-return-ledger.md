@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: adhoc-cycle-return-omits-decision-classification-ledger
-status: Ready
+status: In-progress
 created: 2026-07-19
 complexity: mechanical
 phases: [1, 2]
@@ -56,7 +56,7 @@ python3 ~/.claude/scripts/validate-plan.py --structural docs/bugs/adhoc-cycle-re
 
 ## Work Units
 
-- [ ] WU-1 — Add Decision-Classification Ledger to cycle-base-prompt.md item 4 REPORT (both hard-contract blocks)
+- [x] WU-1 — Add Decision-Classification Ledger to cycle-base-prompt.md item 4 REPORT (both hard-contract blocks)
 - [ ] WU-2 — Add ledger return mandate to spec-bug/SKILL.md
 - [ ] WU-3 — Add ledger return mandate to plan-bug/SKILL.md + confirm bug-axis parity
 

@@ -26,12 +26,14 @@
 
 ### Phase 1: Add the ledger to the authoritative return contract (root fix)
 
+**Status:** Complete
+
 **Scope:** Add the Decision-Classification Ledger as a required return element of `cycle-base-prompt.md` item 4 "REPORT" in BOTH `@section hard-contract` blocks (workstation, L575–585; cloud, L621–631), scoped to the decision-bearing cycles (`/spec`, `/spec-phases`, `/write-plan`, `/add-phase`, `/plan-feature`, `/spec-bug`, `/plan-bug`). The requirement mirrors how the NEEDS_INPUT disposition is already mandated in the same item: the return summary MUST carry a `### Decision-Classification Ledger` section (or the explicit empty-ledger line `_(no decisions surfaced this cycle — auto-finalized)_`) on those cycles. This is the load-bearing fix — the base return contract, not the skill body, is authoritative for the batch return shape.
 
 **Deliverables:**
-- [ ] `cycle-base-prompt.md` item 4 REPORT (workstation `@section hard-contract`, ~L575–585): append a sentence requiring the `### Decision-Classification Ledger` section on decision-bearing cycles (naming the seven skills), with the empty-ledger fallback line; keep it consistent with the existing NEEDS_INPUT-disposition mandate directly above it.
-- [ ] `cycle-base-prompt.md` item 4 REPORT (cloud `@section hard-contract`, ~L621–631): the identical requirement mirrored into the cloud block (the cloud block already lists `/retro` in its NEEDS_INPUT skill set — keep the cloud's own skill enumeration convention).
-- [ ] Re-project + lint: run `python ~/.claude/scripts/project-skills.py` then `python ~/.claude/scripts/lint-skills.py` — both clean (the component expands into the projected cycle prompts without a broken `!cat`/embedded-pattern finding).
+- [x] `cycle-base-prompt.md` item 4 REPORT (workstation `@section hard-contract`, ~L575–585): append a sentence requiring the `### Decision-Classification Ledger` section on decision-bearing cycles (naming the seven skills), with the empty-ledger fallback line; keep it consistent with the existing NEEDS_INPUT-disposition mandate directly above it.
+- [x] `cycle-base-prompt.md` item 4 REPORT (cloud `@section hard-contract`, ~L621–631): the identical requirement mirrored into the cloud block (the cloud block already lists `/retro` in its NEEDS_INPUT skill set — keep the cloud's own skill enumeration convention).
+- [x] Re-project + lint: run `python ~/.claude/scripts/project-skills.py` then `python ~/.claude/scripts/lint-skills.py` — both clean (the component expands into the projected cycle prompts without a broken `!cat`/embedded-pattern finding).
 
 **Minimum Verifiable Behavior:** `grep -c "Decision-Classification Ledger" user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` returns ≥ 2 (one per hard-contract block), where before it returned 0 for the return-contract sections.
 
