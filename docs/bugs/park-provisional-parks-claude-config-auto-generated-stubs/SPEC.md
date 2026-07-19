@@ -2,7 +2,7 @@
 
 > `lazy_core.provisional_eligibility` fail-closes provisional acceptance for EVERY `stub_origin: true` NEEDS_INPUT — correct for an operator-requested feature stub, but it ALSO parks HARNESS-AUTO-GENERATED bug stubs (canary-revert-* from `efficacy-eval.py --canary`, adhoc-incident-* from `incident-scan.py`), flooding a `--park-provisional` run with operator decisions on machine-generated triage noise.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-19
 **Placement:** docs/bugs/park-provisional-parks-claude-config-auto-generated-stubs

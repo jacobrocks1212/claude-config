@@ -2,7 +2,7 @@
 
 > `efficacy-eval.py --canary` auto-enqueues a `canary-revert-<id>` bug stub on an aggregate band swing of a high-volume SELF-EMITTED signal (e.g. `event:containment-refusal`) with ZERO surface attribution and no confound guard — generating ~11 noise stubs in one cycle. Surfacing a trip for triage is by-design (D4, never silent-revert); the DEFECT is the trip sensitivity / missing confound guard BEFORE the auto-enqueue.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-19
 **Placement:** docs/bugs/canary-band-only-trip-auto-enqueues-without-attribution
