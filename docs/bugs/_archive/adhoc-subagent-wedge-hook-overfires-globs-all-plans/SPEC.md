@@ -10,6 +10,8 @@ written_by: harden-harness
 # SubagentStop wedge-backstop over-fires: counts unchecked WUs in stray plans
 
 **Status:** Fixed
+**Fixed:** 2026-07-18
+**Fix commit:** 9e8e0db2
 
 **Fix:** `subagent-wedge-backstop.sh::_active_plan_unchecked` now scopes the
 plan-WU signal to ONLY the active cycle's plan (via the cycle marker's

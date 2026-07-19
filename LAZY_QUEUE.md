@@ -25,7 +25,7 @@
 | | status: Spec · next: spec | | | |
 | 4 | [adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose](docs/bugs/adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 5 | [adhoc-subagent-wedge-hook-overfires-globs-all-plans](docs/bugs/adhoc-subagent-wedge-hook-overfires-globs-all-plans/SPEC.md) | Spec | — |  |
+| 5 | [adhoc-subagent-wedge-hook-overfires-globs-all-plans](docs/bugs/_archive/adhoc-subagent-wedge-hook-overfires-globs-all-plans/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
 | 6 | [canary-revert-harden-2026-07-r54](docs/bugs/canary-revert-harden-2026-07-r54/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
