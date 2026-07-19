@@ -17,7 +17,7 @@
 **Severity:** P3 (latent/non-blocking — the run is not hard-blocked; the deny withholds the route and routes the hardening stage, which surfaces + drains it; the feature's real deliverable is not defeated because the emitted `cycle_prompt` is still available for the orchestrator to dispatch verbatim)
 **Discovered:** 2026-07-19
 **Fixed:** 2026-07-19
-**Fix commit:** 66151de6 (Step-2.5 spec: 7eb5cbb7)
+**Fix commit:** 9a61672d
 **Placement:** docs/bugs/dispatch-guard-improvisation-deny-not-self-announcing
 **Related:** `docs/specs/turn-routing-enforcement/` (harden stage — this spec is the Step-2.5 audit trail for harden Round 112); `docs/bugs/_archive/dispatch-guard-denies-workstation-subsubagent-split/` (Rounds 9/10 — the ORIGIN of the 2b exemption + its consumed fence; this spec is the natural successor covering the exemption's DENY fall-through, not its absence); `user/scripts/lazy_guard.py` (branch 2b + `_default_deny_reason`); `user/scripts/lazy_core/dispatch.py` (`emission_consumed_by_nonce` — the consumed fence whose FALSE branch this spec self-announces)
 
