@@ -3,16 +3,19 @@ kind: bug-investigation
 bug_id: subagent-wedge-backstop-blocks-nested-wu-workers
 severity: P2
 discovered: 2026-07-19
-status: Concluded
+status: Fixed
 written_by: harden-harness
 ---
 
 # SubagentStop wedge-backstop false-fires on nested execute-plan WU workers — the predicate is cycle-scoped but not AGENT-scoped
 
-**Status:** Concluded (root cause proven; **fix is OPERATOR-PARKED** — see
-`docs/specs/turn-routing-enforcement/NEEDS_INPUT.md`, decision
-`wedge-backstop-integrator-vs-worker-identity`). No fix has shipped. This spec is the durable
-investigation record cited by hardening Round 108.
+**Status:** Fixed (root cause proven; recommended **Option A shipped** in commit `5312b9db`,
+hardening Round 109, and PROVISIONALLY accepted — see
+`docs/specs/turn-routing-enforcement/NEEDS_INPUT_PROVISIONAL_2026-07-19-wedge-backstop-integrator-vs-worker-identity.md`,
+decision `wedge-backstop-integrator-vs-worker-identity`, ratification-pending). Round 108
+originally CONCLUDED this spec and operator-parked the fix; Round 109 self-resolved the platform
+blocker via a `claude-code-guide` consultation and implemented Option A. This spec is the durable
+investigation record cited by hardening Rounds 108–109.
 
 **Root-cause class:** hook-defect (predicate-scope gap on a NEW axis) + missing-contract (no
 harness mechanism distinguishes the cycle integrator from its nested WU workers at
@@ -92,13 +95,26 @@ marked run**. Per the skill's Step-2 platform-confirmation rule (whose ORIGIN is
 `SubagentStop`/`stop_hook_active` incident), load-bearing discrimination logic must NOT be shipped
 on an unconfirmed platform field.
 
-## Fix scope (operator-parked — design fork)
+## Fix scope — Option A shipped (Round 109, provisionally accepted)
 
-Every viable option to exempt nested WU workers while preserving integrator-wedge coverage falls
-into a `/harden-harness` **hard-park carve-out** (structural divergence, coverage-semantics change,
-or an unconfirmed-platform dependency), so nothing was implemented this round. The options are
-enumerated with a recommendation in
-`docs/specs/turn-routing-enforcement/NEEDS_INPUT.md`
+**RESOLVED (2026-07-19, hardening Round 109).** Round 108 parked all options because each hit a
+`/harden-harness` hard-park carve-out (structural divergence, coverage change, or an unconfirmed
+platform dependency). Round 109's operator-authorized protocol change replaced the Round-81 blanket
+"marked-run harden may not confirm platform assumptions" rule with a self-resolve-then-provisional
+flow: the harden agent CONSULTED `claude-code-guide` itself, which **confirmed `SubagentStop`
+exposes `agent_id`/`agent_type` but NO parent/depth lineage field** — eliminating Option B and
+confirming the recommended **Option A** is non-platform-dependent. Option A was implemented in commit
+`5312b9db` and provisionally accepted (ratification-pending sentinel
+`NEEDS_INPUT_PROVISIONAL_2026-07-19-wedge-backstop-integrator-vs-worker-identity.md`).
+
+**Shipped mechanism (Option A):** `lazy-cycle-containment.sh` (PreToolUse, already receives
+`agent_id`) records the FIRST `agent_id` seen under each cycle nonce as the integrator, keyed by the
+marker nonce, into `<state>/cycle-integrator/<nonce>.json` (first-writer-wins). `subagent-wedge-backstop.sh`
+(SubagentStop) then BLOCKS only when the stopping `agent_id` IS the recorded integrator; a nested WU
+worker (distinct `agent_id`) is EXEMPTED, and an unattributable stop (no breadcrumb) biases to ALLOW.
+
+The options as originally enumerated (recommendation-first) in
+`docs/specs/turn-routing-enforcement/NEEDS_INPUT_PROVISIONAL_2026-07-19-wedge-backstop-integrator-vs-worker-identity.md`
 (decision `wedge-backstop-integrator-vs-worker-identity`):
 
 - **Option A (recommended): self-managed integrator-`agent_id` breadcrumb.** A PreToolUse hook

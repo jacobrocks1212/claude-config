@@ -125,3 +125,38 @@ the coverage loss.
 2. Pick the mechanism (A / B / C) for a follow-on implementation round.
 3. Until resolved, the wedge-backstop keeps its current behavior — the false-fire is non-blocking
    (bounded to once per `agent_id`), so no interim degradation is shipped.
+
+## Resolution
+
+*Recorded on 2026-07-19. Provisionally auto-accepted on recommendation (harden Round 109,
+operator-authorized self-resolve-then-provisional-accept flow). Ratify or redirect via the
+provisional-ratification affordance before completion.*
+
+resolved_by: auto-provisional
+decision_commit: 5312b9dba365251cd42a9a5328dd3eef1bfeb733
+
+**Platform blocker cleared by self-consultation.** Per the Round-109 protocol change
+(`docs/bugs/harden-hard-parks-on-unconfirmed-platform-assumptions/`), the marked-run harden
+agent CONSULTED `claude-code-guide` itself (2026-07-19) to resolve the platform assumption that
+blocked Round 108. The guide **independently confirmed**: the `SubagentStop` hook input exposes the
+documented, stable `agent_id` and `agent_type`, `session_id` is shared across the session, but there
+is **NO lineage field** — `parent_agent_id` / `parent_tool_use_id` / nesting `depth` are undocumented
+and absent from the schema (source: code.claude.com/docs/en/agent-sdk/hooks.md). This eliminates
+**Option B** (no platform lineage field exists to block only the top-level integrator) and confirms
+**Option A** is non-platform-dependent (it uses only the documented `agent_id` plus the serial-tool-call
+ordering the guard's consumed-fence already relies on).
+
+**Operator authorization.** The operator explicitly authorized both this protocol change and the
+provisional acceptance of Option A, which overrides the standing `structural`-divergence hard-park
+carve-out for this instance (the platform blocker is resolved and Option B is eliminated, so only the
+recommended Option A remains viable). Recorded here for operator ratification.
+
+### 1. Decision 1 — Mechanism to exempt nested WU workers from the wedge block
+
+**Choice:** Option A — Self-managed integrator-`agent_id` breadcrumb.
+**Notes:** Provisionally accepted (operator-authorized) — divergence graded `structural` (producer);
+platform blocker cleared via claude-code-guide self-consultation (Option B eliminated). Implemented in
+commit `5312b9db`: `lazy-cycle-containment.sh` records the FIRST `agent_id` under each cycle nonce as
+the integrator (`<state>/cycle-integrator/<nonce>.json`); `subagent-wedge-backstop.sh` blocks ONLY the
+recorded integrator and exempts nested WU workers. Pending operator ratification via the
+provisional-ratification affordance.
