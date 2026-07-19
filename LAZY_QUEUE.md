@@ -17,7 +17,7 @@
 | | status: Validate · phase 3/3 · next: run mcp-test · The merged-head actionability oracle re-adds a per-signal `DEFERRED.md` file-predicate every recurrence (R56/R57/R101/R102) because the FEATURE `compute_state` has no operator-defer branch, so the oracle's `is_dispatchable` re-inference is structurally blind to operator-deferred features. | | | |
 | 2 | [adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move](docs/bugs/adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 3 | [adhoc-process-friction-detector-counts-concurrent-session-commits](docs/bugs/adhoc-process-friction-detector-counts-concurrent-session-commits/SPEC.md) | Spec | — |  |
+| 3 | [adhoc-process-friction-detector-counts-concurrent-session-commits](docs/bugs/_archive/adhoc-process-friction-detector-counts-concurrent-session-commits/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
 | 4 | [decision-2-6-uncovered-row-reroute-to-mcp-test](docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |

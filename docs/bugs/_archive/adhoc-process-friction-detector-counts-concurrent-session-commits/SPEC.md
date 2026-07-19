@@ -8,6 +8,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-18
+**Fixed:** 2026-07-19
+**Fix commit:** eb597d04
 **Placement:** docs/bugs/adhoc-process-friction-detector-counts-concurrent-session-commits
 **Related:**
 - `docs/bugs/_archive/gate-scope-folds-concurrent-harden-commits` — sibling concurrent-commit blind spot in `harness-gate` scope (adjacent, already fixed).

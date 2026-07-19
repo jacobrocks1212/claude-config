@@ -14,12 +14,6 @@
       "severity": null
     },
     {
-      "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
-      "name": "process-friction unexpected-commits detector counts concurrent same-branch session commits",
-      "spec_dir": "adhoc-process-friction-detector-counts-concurrent-session-commits",
-      "severity": null
-    },
-    {
       "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
       "name": "Implement decisions 2+6: Step-10 re-route to mcp-test on uncovered non-exempt verification rows (shared predicate)",
       "spec_dir": "decision-2-6-uncovered-row-reroute-to-mcp-test",
