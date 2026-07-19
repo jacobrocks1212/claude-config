@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: adhoc-unify-merged-head-coordinator-exemptions
-status: Ready
+status: In-progress
 created: 2026-07-19
 complexity: complex
 phases: [1, 2]
