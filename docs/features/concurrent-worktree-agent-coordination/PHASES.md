@@ -2,6 +2,8 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress — all 6 phases' implementation landed (2026-07-19); validation pending. MCP runtime not-required, so the state machine routes directly to the `__mark_complete__` gate, which owns the flip to Complete + COMPLETED.md.
+
 **MCP runtime:** not-required — the entire deliverable is claude-config harness surface (Python state-machine helpers, a PowerShell lock, skill/component prose, and docs). It crosses none of the AlgoBooth MCP boundary taxonomy (no sidecar↔Rust, capnp/N-API, Tauri command, or audio-callback surface); it is validated by the in-file `--test` smoke harnesses, `pytest tests/test_lazy_core/`, PowerShell Pester, and the 7-command gate battery — never the Tauri+MCP HTTP runtime. (Per `docs/features/mcp-testing/SPEC.md`, this is the "no app integration / build-tooling / docs" untestable class.)
 
 ## Cross-feature Integration Notes
@@ -187,14 +189,16 @@ Load-bearing assumptions for this plan, classified per the Step 2.7 gate. This f
 
 ### Phase 6: Orchestrator parallel-dispatch trust — retire the self_edit_mode foreground-await coupling
 
+**Status:** Complete (2026-07-19) — implementation landed; the `self_edit_mode → foreground/await` coupling retired from `/lazy-batch` + `/lazy-bug-batch` + `/lazy-batch-cloud`, governing-file RELOAD discipline retained (grep-anchored); lint/doc-drift/parity/projection green. MCP runtime not-required (prose-only).
+
 **Scope:** The orchestrator MUST rely on the coordination layer (Phases 2–5) to resolve write conflicts, not prevent parallel work by pre-serializing dispatches (Requirement 7, Validation row 6). Retire the `self_edit_mode → foreground/await` coupling: a background harden (or any dispatch) that touches claude-config while the run is itself editing claude-config now runs CONCURRENTLY on the shared tree, trusting the FIFO lock + conflict-routing to serialize genuine contention and to halt only on a true semantic conflict. Retire the coupling at `/lazy-batch` §1d.1 (the Concurrency EXCEPTION @899) and its coupled twins `lazy-bug-batch` (@709) and `lazy-batch-cloud`. The awareness note (Phase 1) documents the new trust contract so the defensiveness is not reintroduced.
 
 **Deliverables:**
-- [ ] `user/skills/lazy-batch/SKILL.md` §1d.1 Concurrency EXCEPTION (@899): the `self_edit_mode → force foreground/await` serialization is REMOVED and replaced with coordination-layer-trusted concurrent dispatch prose ("no monsters-in-the-closet serialization"; the FIFO lock + conflict-routing own conflict correctness). **The governing-file RELOAD discipline (self-edit C8, @666) is RETAINED UNCHANGED** — a self-edit commit still staleifies the in-context copy; only the pre-serialization is retired.
-- [ ] `user/skills/lazy-bug-batch/SKILL.md` (@709) — mirror the retirement (coupled twin; keep the governing-file reload).
-- [ ] `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — mirror (coupled twin; keep the reload discipline).
-- [ ] Cross-check the coupled-pair prose parity: `python3 user/scripts/lazy_parity_audit.py --repo-root .` stays exit 0; diff each twin after editing (the Coupled Skill Pairs discipline).
-- [ ] Tests: lint + doc-drift + projection green; a grep-anchor that the `self_edit_mode → foreground/await` phrasing is GONE from all three sites AND the governing-file reload phrasing is still PRESENT.
+- [x] `user/skills/lazy-batch/SKILL.md` §1d.1 Concurrency EXCEPTION (@899): the `self_edit_mode → force foreground/await` serialization is REMOVED and replaced with coordination-layer-trusted concurrent dispatch prose ("no monsters-in-the-closet serialization"; the FIFO lock + conflict-routing own conflict correctness). **The governing-file RELOAD discipline (self-edit C8, @666) is RETAINED UNCHANGED** — a self-edit commit still staleifies the in-context copy; only the pre-serialization is retired.
+- [x] `user/skills/lazy-bug-batch/SKILL.md` (@709) — mirror the retirement (coupled twin; keep the governing-file reload).
+- [x] `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` — mirror (coupled twin; keep the reload discipline).
+- [x] Cross-check the coupled-pair prose parity: `python3 user/scripts/lazy_parity_audit.py --repo-root .` stays exit 0; diff each twin after editing (the Coupled Skill Pairs discipline).
+- [x] Tests: lint + doc-drift + projection green; a grep-anchor that the `self_edit_mode → foreground/await` phrasing is GONE from all three sites AND the governing-file reload phrasing is still PRESENT.
 
 **Minimum Verifiable Behavior:** `python3 ~/.claude/scripts/lint-skills.py --check-projected --check-capabilities && python3 ~/.claude/scripts/doc-drift-lint.py --repo-root . && python3 user/scripts/lazy_parity_audit.py --repo-root .` exits 0; a grep confirms the foreground-await coupling is removed from lazy-batch/lazy-bug-batch/lazy-batch-cloud while the governing-file reload discipline remains.
 

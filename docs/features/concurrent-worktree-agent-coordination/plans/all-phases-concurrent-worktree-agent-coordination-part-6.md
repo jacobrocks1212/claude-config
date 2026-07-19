@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: concurrent-worktree-agent-coordination
-status: In-progress
+status: Complete
 complexity: complex
 created: 2026-07-18
 phases: [6]
@@ -57,8 +57,8 @@ Where this plan's repo uses non-default gates (claude-config — lint/doc-drift/
 
 ## Work Units
 
-- [ ] WU-1 — Retire foreground-await coupling in lazy-batch (keep governing-file reload)
-- [ ] WU-2 — Mirror the retirement in lazy-bug-batch + lazy-batch-cloud
+- [x] WU-1 — Retire foreground-await coupling in lazy-batch (keep governing-file reload)
+- [x] WU-2 — Mirror the retirement in lazy-bug-batch + lazy-batch-cloud
 
 ### Phase: concurrent-worktree-agent-coordination P6 — Retire self_edit_mode foreground-await
 
