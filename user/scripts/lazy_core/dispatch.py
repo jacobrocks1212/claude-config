@@ -2360,6 +2360,74 @@ def append_worker_subdispatch_event(
         return False
 
 
+def append_claude_code_guide_consult_event(
+    *,
+    tool_use_id: str,
+    sha12: str,
+    item_id: str | None = None,
+    sub_skill: str | None = None,
+    now: float | None = None,
+) -> bool:
+    """Append one ``claude_code_guide_consult: true`` audit event to the deny ledger.
+
+    harden-hard-parks-on-unconfirmed-platform-assumptions (operator-authorized
+    2026-07-19): the harden-harness self-resolve protocol requires a marked-run
+    harden agent to CONSULT the read-only ``claude-code-guide`` agent to confirm a
+    platform/Claude-Code capability before provisionally accepting a design fork.
+    That consultation is an UNREGISTERED Agent dispatch, so ``lazy_guard.py`` admits
+    it through a narrow, sanctioned exemption (``subagent_type == "claude-code-guide"``
+    under a bound, non-cloud marker). Every such allow writes this auditable record
+    to the SAME deny ledger used by denies, auto-readmits, by-reference dispatches,
+    and the workstation sub-subagent exemption, so the consultation path is
+    retro-gradable and distinguishable from a registered-prompt allow.
+
+    Event shape (mirrors ``append_worker_subdispatch_event`` for reader
+    uniformity)::
+
+        {"ts": <epoch float>, "tool_use_id": <str>,
+         "claude_code_guide_consult": true, "sha12": <12 hex chars>,
+         "item_id": <str|None>, "sub_skill": <str|None>, "acked": true}
+
+    ``acked`` is True because a read-only claude-code-guide consultation is a
+    sanctioned dispatch path, NOT a harness gap — it owes no hardening debt and
+    must never inflate ``pending_hardening()`` or block ``--run-end``.
+
+    Best-effort / fail-open: swallows its own write errors and returns False
+    rather than raising (a ledger failure must never affect the allow).
+
+    Args:
+        tool_use_id: the dispatched Agent tool_use_id.
+        sha12: first 12 hex chars of the dispatched prompt's sha256.
+        item_id: the active cycle marker's feature/bug id (optional).
+        sub_skill: the active cycle marker's sub_skill (optional).
+        now: epoch float for ts (injectable for hermetic tests).
+
+    Returns:
+        True if the line was appended; False on any write failure (fail-open).
+    """
+    if now is None:
+        now = time.time()
+    try:
+        event = {
+            "ts": now,
+            "tool_use_id": tool_use_id,
+            # Discriminator field: retro readers filter on this to see sanctioned
+            # claude-code-guide consultations separately from other allow paths.
+            "claude_code_guide_consult": True,
+            "sha12": sha12,
+            "item_id": item_id,
+            "sub_skill": sub_skill,
+            # Pre-acked: a sanctioned read-only consultation owes no hardening debt.
+            "acked": True,
+        }
+        ledger_path = claude_state_dir() / _DENY_LEDGER_FILENAME
+        with ledger_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(event) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def consume_nonce(nonce: str, consumer: str | None = None) -> bool:
     """Mark a registry entry's nonce as consumed (one dispatch per emission).
 

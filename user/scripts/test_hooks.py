@@ -8152,6 +8152,161 @@ _TESTS = _TESTS + [
 
 
 # ===========================================================================
+# claude-code-guide consultation exemption
+# (harden-hard-parks-on-unconfirmed-platform-assumptions, operator-authorized
+# 2026-07-19). The /harden-harness self-resolve protocol must be able to CONSULT
+# the read-only claude-code-guide agent during a marked run. lazy_guard.py admits
+# an UNREGISTERED Agent dispatch whose subagent_type == "claude-code-guide" under a
+# bound, non-cloud marker (a read-only agent that cannot advance the pipeline), and
+# audits it as a pre-acked claude_code_guide_consult ledger event (no hardening
+# debt). These tests pin the allow, the audit, and the fences (subagent_type,
+# cloud, unbound).
+# ===========================================================================
+
+def _guide_preToolUse_json(
+    prompt: str = "Does the SubagentStop hook input expose a parent_agent_id / "
+                  "nesting-depth lineage field?",
+    *,
+    subagent_type: str = "claude-code-guide",
+    tool_use_id: str | None = None,
+    session_id: str | None = None,
+    cwd: str = "C:\\\\Users\\\\Jacob\\\\fixture-repo",
+) -> str:
+    """A PreToolUse Agent-dispatch payload with an overridable subagent_type — the
+    one field _e1_preToolUse_json hardcodes to 'general-purpose'."""
+    if tool_use_id is None:
+        tool_use_id = "toolu_" + uuid.uuid4().hex[:24]
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+    payload = {
+        "session_id": session_id,
+        "cwd": cwd,
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Agent",
+        "tool_input": {
+            "description": "confirm SubagentStop lineage capability",
+            "prompt": prompt,
+            "subagent_type": subagent_type,
+        },
+        "tool_use_id": tool_use_id,
+    }
+    return json.dumps(payload)
+
+
+def _guide_ledger_events(state_dir: Path) -> list[dict]:
+    ledger = state_dir / "lazy-deny-ledger.jsonl"
+    if not ledger.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in ledger.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def test_guard_claude_code_guide_consult_allowed_and_audited():
+    """An UNREGISTERED claude-code-guide dispatch under a BOUND, non-cloud marker
+    is ALLOWED and audited as a pre-acked claude_code_guide_consult event (no
+    hardening debt). A same-marker NON-guide unregistered dispatch stays DENIED."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        session = str(uuid.uuid4())
+        # Bound, non-cloud marker (no cycle marker at all — the exemption must not
+        # depend on subagent_model, unlike the branch-2b worker exemption).
+        _write_marker_in_dir(state_dir, session_id=session)
+
+        result = _run_guard_py(
+            _guide_preToolUse_json(session_id=session), env
+        )
+        assert result.returncode == 0, result.stderr
+        hso = json.loads(result.stdout.strip()).get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "allow", (
+            f"claude-code-guide consultation must be ALLOWED; got: {hso}"
+        )
+        assert "claude-code-guide" in hso.get("permissionDecisionReason", ""), hso
+
+        events = _guide_ledger_events(state_dir)
+        consults = [e for e in events if e.get("claude_code_guide_consult")]
+        assert len(consults) == 1, events
+        assert consults[0].get("acked") is True, consults[0]
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.pending_hardening() == 0, (
+                "a sanctioned consultation allow must never book hardening debt"
+            )
+        finally:
+            _clear_state_dir()
+
+        # A non-guide unregistered dispatch under the same marker still denies.
+        result2 = _run_guard_py(
+            _guide_preToolUse_json(
+                prompt="totally unregistered improvised prompt",
+                subagent_type="general-purpose", session_id=session,
+            ),
+            env,
+        )
+        hso2 = json.loads(result2.stdout.strip()).get("hookSpecificOutput", {})
+        assert hso2.get("permissionDecision") == "deny", (
+            f"a non-guide unregistered dispatch must still DENY; got: {hso2}"
+        )
+
+
+def test_guard_claude_code_guide_consult_fenced_on_cloud_and_unbound():
+    """The exemption is fenced: a claude-code-guide dispatch is NOT admitted under
+    a cloud marker, nor under an unbound (pre-bind) marker."""
+    _guard()
+    # Cloud marker → the read-only exemption never fires (cloud keeps the ban).
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        session = str(uuid.uuid4())
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=True,
+                repo_root=str(state_dir / "fixture-repo"), max_cycles=10,
+                now=time.time(), session_id=session,
+            )
+        finally:
+            _clear_state_dir()
+        result = _run_guard_py(_guide_preToolUse_json(session_id=session), env)
+        hso = json.loads(result.stdout.strip()).get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "deny", (
+            f"cloud run must NOT admit the consultation; got: {hso}"
+        )
+
+    # Unbound marker → pre-bind window: the exemption must not fire.
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir)  # unbound (no session_id)
+        result = _run_guard_py(_guide_preToolUse_json(session_id=session), env)
+        out = result.stdout.strip()
+        # Under an unbound marker the generic deny is a pre-bind no-debt deny; the
+        # important assertion is that it is NOT an allow.
+        if out:
+            hso = json.loads(out).get("hookSpecificOutput", {})
+            assert hso.get("permissionDecision") != "allow", (
+                f"unbound (pre-bind) marker must NOT admit the consultation; got: {hso}"
+            )
+
+
+_TESTS = _TESTS + [
+    ("test_guard_claude_code_guide_consult_allowed_and_audited",
+     test_guard_claude_code_guide_consult_allowed_and_audited),
+    ("test_guard_claude_code_guide_consult_fenced_on_cloud_and_unbound",
+     test_guard_claude_code_guide_consult_fenced_on_cloud_and_unbound),
+]
+
+
+# ===========================================================================
 # legacy-tool-input-env-hooks-dead — the two REVIVED stdin-JSON hooks
 #
 # block-terminal-kill.sh + block-work-repo-git-push.sh were dead code: both read

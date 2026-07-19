@@ -536,6 +536,78 @@ def _try_auto_readmit(
         return None
 
 
+def _try_claude_code_guide_consult(
+    tool_input: dict,
+    marker: dict,
+    tool_use_id: str,
+    sha: str,
+    session_id: str | None,
+) -> str | None:
+    """harden-hard-parks-on-unconfirmed-platform-assumptions (operator-authorized
+    2026-07-19): ALLOW an unregistered Agent dispatch whose ``subagent_type`` is
+    ``claude-code-guide``, so the ``/harden-harness`` self-resolve protocol can
+    CONSULT the read-only claude-code-guide agent to confirm a platform /
+    Claude-Code capability before provisionally accepting a design fork.
+
+    Why this is a SANCTIONED path, NOT a gate-weakening (Prohibition #2): the
+    validate-deny gate exists to stop a runaway subagent from improvising
+    pipeline-ADVANCING dispatches / routing ops.  ``claude-code-guide`` is a
+    read-only agent (Glob / Grep / Read / WebFetch / WebSearch) that cannot commit,
+    route the pipeline, or mutate state — admitting it advances nothing.  It is the
+    direct analog of the 2026-07-09 decision allowing read-only Explore fan-outs and
+    the branch-2b workstation sub-subagent exemption below.
+
+    Fenced like branch 2b so it can never fire pre-bind or from a bystander:
+      1. WORKSTATION run — the marker's ``cloud`` flag is falsy (cloud keeps the
+         inline-override ban).
+      2. The run marker is BOUND (``session_id`` non-None — an orchestrator allow
+         already stamped it; pre-bind, no worker can be in flight).
+      3. ``tool_input.subagent_type == "claude-code-guide"`` (exact match).  A bare
+         ``@@lazy-ref`` prompt was already hard-denied above, so this branch only
+         ever admits a real consultation dispatch.
+
+    Every allow is audited to the deny ledger (``claude_code_guide_consult: true``,
+    pre-acked — no hardening debt).
+
+    FAIL-CLOSED: any error falls through to the caller's deny paths (never a
+    spurious allow; the guard's outer fail-OPEN contract is unchanged).
+
+    Returns the allow JSON string on a sanctioned match, else None.
+    """
+    try:
+        if tool_input.get("subagent_type") != "claude-code-guide":
+            return None
+        if marker.get("cloud") or marker.get("session_id") is None:
+            return None
+        # Best-effort context for the audit event (never blocks the allow).
+        try:
+            cycle = lazy_core.read_cycle_marker()
+        except Exception:  # noqa: BLE001
+            cycle = None
+        item_id = cycle.get("feature_id") if isinstance(cycle, dict) else None
+        sub_skill = cycle.get("sub_skill") if isinstance(cycle, dict) else None
+        try:
+            lazy_core.append_claude_code_guide_consult_event(
+                tool_use_id=tool_use_id, sha12=sha[:12],
+                item_id=item_id, sub_skill=sub_skill,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        # Phase 9 parity: an allow binds an unbound marker (best-effort/fail-open).
+        _bind_marker_on_allow(session_id)
+        reason = (
+            "claude-code-guide consultation allowed — a read-only platform / "
+            "Claude-Code capability check (subagent_type=claude-code-guide) under a "
+            "bound workstation marker; sanctioned for the /harden-harness "
+            "self-resolve protocol, audited as claude_code_guide_consult "
+            f"(prompt sha12 {sha[:12]})"
+        )
+        return _allow_json(reason)
+    except Exception:  # noqa: BLE001
+        # Fail-closed for the exemption: fall through to the deny paths.
+        return None
+
+
 def _deny_and_ledger(
     reason: str,
     *,
@@ -873,6 +945,20 @@ def guard(stdin_text: str) -> str | None:
                 marker, _default_deny_reason(),
                 tool_use_id=tool_use_id, sha=sha, prompt=prompt,
             )
+
+    # --- 2a. Sanctioned claude-code-guide consultation exemption. -------------
+    # harden-hard-parks-on-unconfirmed-platform-assumptions (operator-authorized
+    # 2026-07-19): a read-only platform-capability check the /harden-harness
+    # self-resolve protocol requires — ALLOW an unregistered dispatch whose
+    # subagent_type is claude-code-guide under a bound workstation marker.  Placed
+    # before branch 2b so the consultation is admitted regardless of whether the
+    # active cycle declares subagent_model (a harden-harness cycle does not, and an
+    # observed-friction background harden may run under no cycle of its own).
+    guide = _try_claude_code_guide_consult(
+        tool_input, marker, tool_use_id, sha, session_id,
+    )
+    if guide is not None:
+        return guide
 
     # --- 2b. Workstation sub-subagent exemption. ------------------------------
     # dispatch-guard-denies-workstation-subsubagent-split (decision 4 resolution,

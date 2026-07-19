@@ -106,19 +106,42 @@ Root-cause classes (pick the most specific that applies):
 - **hook-defect:** a bug in `lazy-route-inject.sh` or `lazy-dispatch-guard.sh` produced an
   incorrect allow/deny/inject or an error breadcrumb on a run that should have proceeded.
 
-**Confirm Claude Code platform behavior before relying on it — consult `claude-code-guide`.**
+**Confirm Claude Code platform behavior before relying on it — SELF-RESOLVE via `claude-code-guide`, then provisionally accept.**
 When the root cause OR the proposed fix hinges on how the Claude Code PLATFORM itself behaves —
 hook firing rules (which of `Stop` / `SubagentStop` / `PreToolUse` / … fires, and exactly when),
 the subagent / tool lifecycle, the fields a hook receives on stdin, the `settings.json` hook
 schema, or any SDK/runtime field — and that behavior is NOT authoritatively documented in this
-repo, do NOT ship load-bearing logic on an assumption. Dispatch the **`claude-code-guide`** agent
-to confirm the mechanism first, and CITE its finding in the Step-4 round (and in the Step-2.5 bug
-spec). Treat anything it reports as UNDOCUMENTED as a risk: prefer a design that does not depend
-on the undocumented behavior (e.g. a self-managed substitute) over one that does, and if an
-undocumented dependency is unavoidable, hard-park it for the operator per Step 3 rather than
-shipping on the assumption. (Origin: harden Round 81 — the `SubagentStop` wedge-backstop leaned on
-the undocumented `stop_hook_active`; the guide's caution against shipping load-bearing logic on
-that field is exactly why this check exists.)
+repo, do NOT ship load-bearing logic on an UNCONFIRMED assumption. But an unconfirmed platform
+assumption is a blocker to RESOLVE, **not** an automatic hard-park.
+
+**The self-resolve-then-provisional-accept flow (operator-authorized 2026-07-19, replaces the
+Round-81 blanket prohibition):** when the ONLY blocker to an otherwise-recommendable harden
+decision is an unconfirmed platform / Claude-Code capability, the harden agent MUST attempt to
+RESOLVE it by consulting the **`claude-code-guide`** agent ITSELF (`subagent_type: claude-code-guide`)
+— *even during a marked lazy run*. This consultation is now SANCTIONED at the enforcement plane:
+`lazy_guard.py` admits an unregistered `subagent_type == "claude-code-guide"` Agent dispatch under a
+bound workstation marker (a read-only agent that cannot advance the pipeline — not a gate-weakening),
+and `lazy-cycle-containment.sh` already allows a foreground Agent dispatch from a subagent. So the
+old "the marked-run harden agent is prohibited from dispatching `claude-code-guide`" rule is RETIRED
+— the agent self-checks. CITE the guide's finding in the Step-4 round (and the Step-2.5 bug spec).
+
+Then decide by what the consultation returned:
+- **Resolved → provisionally accept (the common case).** If the guide confirms the recommended
+  option is NON-platform-dependent (e.g. a self-managed substitute that uses only documented
+  fields), OR confirms the platform capability the option needs IS present, the blocker is cleared:
+  proceed with the recommended option as a PROVISIONAL auto-accept per Step 3 (`--park-provisional`).
+  Operator scope is "non-platform-dependent only" — once the check resolves the assumption, auto-accept.
+- **Genuinely unresolvable → hard-park.** ONLY when the guide reports the behavior as UNDOCUMENTED /
+  unconfirmable AND the recommended option cannot avoid depending on it does the decision still
+  hard-park for the operator per Step 3. Prefer a design that does not depend on the undocumented
+  behavior (a self-managed substitute) over one that does; a self-managed substitute is
+  non-platform-dependent by construction and takes the provisional-accept path.
+
+(Origin: harden Round 81 — the `SubagentStop` wedge-backstop leaned on the undocumented
+`stop_hook_active`; the guide's caution against shipping load-bearing logic on an UNCONFIRMED field
+is preserved. Round 109 replaced the Round-81 blanket hard-park + consultation-prohibition with this
+self-resolve flow: consulting the guide is exactly how the field stops being unconfirmed —
+`docs/bugs/harden-hard-parks-on-unconfirmed-platform-assumptions/`.)
 
 State your classification and cite the evidence (file path + line or field, transcript
 artifact, probe JSON field, or registry entry).
@@ -402,6 +425,15 @@ blocking halt that ships nothing. For every design choice you:
   is expensive to redirect — grade it `divergence: structural` and park it for the operator, exactly as
   `--park-provisional` itself fails a structural/stub-origin decision closed. Bias toward
   provisional-implement for anything genuinely `isolated`/`contained`; reserve the hard park for these.
+
+**An unconfirmed platform / Claude-Code capability is NOT a third carve-out.** It is a blocker to
+SELF-RESOLVE via the Step-2 `claude-code-guide` consultation first (retired Round-81 blanket). Once
+the guide confirms the recommended option is non-platform-dependent OR the capability is present, the
+platform blocker is cleared and the decision takes the normal disposition (provisional-implement
+unless it independently hits gate-weakening or `structural`/`stub_origin`). Only a GENUINELY
+unconfirmable platform dependency the recommended option cannot avoid still hard-parks. (A decision
+the operator has EXPLICITLY authorized to ship provisionally overrides the `structural` carve-out for
+that instance — record the operator authorization in the `## Resolution` and the Step-4 round.)
 
 Never bake a harness-design fork in silently — the provisional sentinel (or, for the two carve-outs,
 the blocking `NEEDS_INPUT.md`) is the triage signal that surfaces it to the operator.

@@ -332,6 +332,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "_strip_loop_fence": "dispatch",
     "append_dispatch_by_reference_event": "dispatch",
     "append_worker_subdispatch_event": "dispatch",
+    "append_claude_code_guide_consult_event": "dispatch",
     "consume_nonce": "dispatch",
     "consumed_emission_count": "dispatch",
     "emission_consumed_by_nonce": "dispatch",
