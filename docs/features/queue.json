@@ -3,6 +3,13 @@
   "autodiscover": true,
   "queue": [
     {
+      "id": "concurrent-worktree-agent-coordination",
+      "name": "Concurrent multi-agent worktree coordination (awareness + FIFO file-lock + conflict handling)",
+      "spec_dir": "concurrent-worktree-agent-coordination",
+      "tier": 0,
+      "adhoc": true
+    },
+    {
       "id": "claude-config-ci",
       "name": "CI for claude-config Itself",
       "spec_dir": "claude-config-ci",
@@ -13,13 +20,6 @@
       "name": "Native Android App for Pipeline Steering",
       "spec_dir": "native-android-pipeline-steering",
       "tier": 3
-    },
-    {
-      "id": "concurrent-worktree-agent-coordination",
-      "name": "Concurrent multi-agent worktree coordination (awareness + FIFO file-lock + conflict handling)",
-      "spec_dir": "concurrent-worktree-agent-coordination",
-      "tier": 3,
-      "adhoc": true
     }
   ],
   "interventions": true
