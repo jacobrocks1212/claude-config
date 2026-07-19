@@ -115,3 +115,20 @@ detect_gate_weakening(...) result == "hit"          user/scripts/harness-gate.py
    detection** — reconcile a removal in file A only when the same construct text is added in file
    B within the same change; anything else still counts as a removal. Locked for `/plan-bug`: do
    NOT implement (a) aggregate-net or (c) exemption-marker shapes.
+
+## Intervention Hypothesis
+
+- **Hypothesis:** Reconciling cross-file content-identity moves in `detect_gate_weakening`
+  eliminates `gate_weakening` FALSE-POSITIVES (a gate-refusal construct moved verbatim to a
+  sibling file within the same change no longer flags `hit`) WITHOUT reducing true-positive
+  detection (a deletion with no matching cross-file add — the genuine-removal shape — still hits).
+- **If broken (over-reconciled):** the metric would look like genuine gate-weakening deletions
+  ceasing to be caught — a DROP in true-positive `hit` results on the existing true-positive
+  fixtures (`test_gate_weakening_removed_refuse_construct_still_hits`,
+  `..._genuine_test_removal_still_hits`) and on any future incident where a construct is deleted
+  with no matching content-identity add anywhere in the diff. This is distinguishable from the
+  intended effect (a false-positive drop on the cross-file-move shape specifically).
+- signal_independence: independent — the discriminating signal is the rate of `GATE_VERDICT.md`
+  `overfit`/`gate_weakening` flags later overridden by the operator as false-positives specifically
+  on cross-file construct moves (an independent observable recorded in the GATE_VERDICT/override
+  ledger across future changes), not a metric this change itself emits or suppresses.
