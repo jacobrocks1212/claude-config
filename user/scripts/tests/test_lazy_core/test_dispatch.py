@@ -3582,6 +3582,27 @@ def _read_recovery_requires_keys():
     return [k.strip() for k in m.group(1).split(",") if k.strip()]
 
 
+def test_emit_dispatch_gate_verdict_binds_real_template():
+    """GAP 1 (adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps): the new
+    `gate-verdict` completion-time authoring class emits over its real template
+    with zero token residue, carries the design-gate anchors, and is Opus."""
+    _guard()
+    assert "gate-verdict" in lazy_core.DISPATCH_CLASSES
+    assert lazy_core.DISPATCH_MODELS["gate-verdict"] == "opus"
+    ctx = {k: f"v-{k}" for k in _dispatch_requires("gate-verdict")}
+    ctx["item_name"] = "My Change"
+    ctx["item_id"] = "some-change"
+    for pipeline in ("feature", "bug"):
+        r = lazy_core.emit_dispatch_prompt("gate-verdict", ctx, pipeline=pipeline)
+        assert r["ok"], r
+        p = r["prompt"]
+        assert not _TOKEN_RESIDUE_RE.findall(p), (
+            f"gate-verdict residue: {_TOKEN_RESIDUE_RE.findall(p)}"
+        )
+        assert "GATE_VERDICT.md" in p, "missing GATE_VERDICT.md anchor"
+        assert "harness-gate.py" in p, "missing harness-gate.py anchor"
+
+
 def test_emit_dispatch_cli_registry_gating():
     """Subprocess test against the REAL lazy-state.py with --emit-dispatch.
 
@@ -3964,10 +3985,10 @@ def test_hardening_dispatch_class_present():
     assert isinstance(classes, tuple), (
         f"DISPATCH_CLASSES must be a tuple, got {type(classes).__name__}"
     )
-    assert len(classes) == 10, (
-        f"DISPATCH_CLASSES must have 10 entries (7 Phase-4 + Round-44 "
-        f"'corrective-coverage' + 'ingest-research' + Round-80 'spike'); "
-        f"got {len(classes)}: {classes}"
+    assert len(classes) == 11, (
+        f"DISPATCH_CLASSES must have 11 entries (7 Phase-4 + Round-44 "
+        f"'corrective-coverage' + 'ingest-research' + Round-80 'spike' + "
+        f"GAP-1 'gate-verdict'); got {len(classes)}: {classes}"
     )
 
     # 'hardening' must be present.
@@ -7247,6 +7268,7 @@ _TESTS = [
     ("test_f2b_genuine_word_change_still_differs", test_f2b_genuine_word_change_still_differs),
     ("test_single_slot_dispatch_templates", test_single_slot_dispatch_templates),
     ("test_emit_dispatch_cycle_header_marker_gated", test_emit_dispatch_cycle_header_marker_gated),
+    ("test_emit_dispatch_gate_verdict_binds_real_template", test_emit_dispatch_gate_verdict_binds_real_template),
     ("test_record_decision_cli_and_apply_resolution_binds_end_to_end", test_record_decision_cli_and_apply_resolution_binds_end_to_end),
     ("test_emit_dispatch_always_emits_json_on_error", test_emit_dispatch_always_emits_json_on_error),
     ("test_f1a_default_deny_reason_names_customization_path", test_f1a_default_deny_reason_names_customization_path),

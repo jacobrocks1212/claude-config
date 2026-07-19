@@ -1239,6 +1239,11 @@ DISPATCH_CLASSES: tuple[str, ...] = (
     "needs-runtime-redispatch",
     "corrective-coverage",  # harden Round 44 — Gate-1 MCP-coverage authoring cycle
     "ingest-research",      # harden Round 44 — pre-loop / in-session staged-research ingest
+    "gate-verdict",       # adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps GAP 1 —
+                          # completion-time authoring seam for the harness-change design
+                          # gate (author GATE_VERDICT.md from the shipped diff when
+                          # gate_verdict_ok refuses); inserted BEFORE spike/hardening so
+                          # the last-entry invariant is preserved
     "spike",              # harden Round 80 — runtime-proof stage (always Opus); inserted
                           # BEFORE 'hardening' so the last-entry invariant is preserved
     "hardening",          # Phase 4 — harness-hardening stage (always Opus)
@@ -1256,6 +1261,7 @@ DISPATCH_MODELS: dict[str, str] = {
     "needs-runtime-redispatch": "opus",
     "corrective-coverage":     "opus",   # harden Round 44 — classify + author + run coverage = Opus
     "ingest-research":         "sonnet", # harden Round 44 — bounded mechanical ingest = Sonnet
+    "gate-verdict":            "opus",   # GAP 1 — adversarial design-gate judgment = Opus
     "spike":                   "opus",   # harden Round 80 — runtime proof = honest GO/NO-GO judgment = Opus
     "hardening":               "opus",   # Phase 4 — root-cause + mechanical fixes = Opus
 }
@@ -1312,6 +1318,7 @@ DISPATCH_STEP_NAMES: dict[str, str] = {
     "hardening":                "Harden",
     "input-audit":              "Audit",
     "needs-runtime-redispatch": "Validate",
+    "gate-verdict":             "Verdict",  # GAP 1 — author GATE_VERDICT.md
     "spike":                    "Spike",   # harden Round 80 — runtime-proof stage
 }
 

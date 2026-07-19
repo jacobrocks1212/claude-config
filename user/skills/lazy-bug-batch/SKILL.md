@@ -439,6 +439,18 @@ If `sub_skill` starts with `__`, perform the action inline. Bug-pipeline pseudo-
     --context cwd="{cwd}"
   ```
   Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The subagent reconciles PHASES.md honestly (tick-with-evidence or re-scope, never blind-tick) then returns to Step 1a. Exactly as a Gate-1 halt routes. **Honest-stuck terminal (no oscillation):** if the coherence-recovery subagent reports `ESCALATED` — it could reconcile nothing because the only remaining blockers are verification rows that genuinely never ran on this host (0 genuine implementation deliverables) — it will have written `NEEDS_INPUT.md` (`written_by: completion-integrity-gate`, surfacing `turn-routing-enforcement` decisions #2/#5/#6). Do NOT re-dispatch coherence-recovery; return to Step 1a and the next probe returns `terminal_reason: needs-input` (Step 1g handles it). This is the deterministic replacement for the prior manual-NEEDS_INPUT improvisation the oscillation tripwire used to force (see `dispatch-coherence-recovery.md` step 3a).
+
+  **Harness-change design-gate refusal (`gate-verdict`, distinct from coherence — GAP 1).** When the `--apply-pseudo __mark_fixed__` refusal reason NAMES the **harness-change design gate** (`lazy_core.gate_verdict_ok`: `harness-change design gate: … GATE_VERDICT.md`) — an in-scope harness change whose shipped commits touch a `docs/gate/control-surfaces.json` control surface, with a MISSING / failing / unsigned-gate-weakening `GATE_VERDICT.md` — do NOT route coherence-recovery (PHASES.md is coherent; the block is a missing/incomplete VERDICT). Authoring the verdict is JUDGMENT work (the adversarial questions in `_components/harness-change-gate.md`) the orchestrator must NOT improvise (HARD CONSTRAINT 1) — dispatch the completion-time authoring seam instead:
+  ```bash
+  python3 ~/.claude/scripts/bug-state.py \
+    --emit-dispatch gate-verdict \
+    --context item_name="{bug_name}" \
+    --context spec_path="{spec_path}" \
+    --context gate_output="<the --apply-pseudo refusal reason string>" \
+    --context item_id="{bug_id}" \
+    --context cwd="{cwd}"
+  ```
+  Dispatch `dispatch_prompt` VERBATIM using `dispatch_model` (opus). The `@requires` keys are `item_name`, `spec_path`, `gate_output`, `item_id`, `cwd`. The subagent runs `harness-gate.py` over the shipped diff, works the adversarial questions, and writes `GATE_VERDICT.md` into the item dir — then returns to Step 1a to re-attempt `__mark_fixed__`. **A gate-weakening `hit` is NEVER self-approved:** the subagent reports `ESCALATED` and writes `NEEDS_INPUT.md` (`written_by: harness-change-gate`) for operator sign-off instead; do NOT re-dispatch gate-verdict — the next probe returns `terminal_reason: needs-input` (Step 1g handles it).
   The orchestrator NEVER hand-writes the receipt, the status flip, or the sentinel deletions.
   After the script returns, the orchestrator runs ONE more script call — the **archive
   mechanics** are also script-owned per `~/.claude/skills/_components/mark-fixed-archive.md`:
