@@ -2548,6 +2548,106 @@ def _extract_recommended_label(h3_text: str) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Conflict routing (concurrent-worktree-agent-coordination Phase 4)
+# ---------------------------------------------------------------------------
+# SSOT for the semantic-conflict NEEDS_INPUT.md marker. WU-1 defines it here;
+# the WU-2 provisional_eligibility carve-out below keys on it, and the schema
+# doc (_components/sentinel-frontmatter.md) + the conflict-routing prose
+# (_components/lazy-batch-prompts/cycle-base-prompt.md) reference the same
+# literal `conflict_kind: semantic` frontmatter shape.
+_SEMANTIC_CONFLICT_MARKER_FIELD = "conflict_kind"
+_SEMANTIC_CONFLICT_MARKER_VALUE = "semantic"
+
+# Surface-key extractors for the coupled-surface half of the discriminator. A
+# conflict is on a SHARED logical surface when both sides touch the same named
+# symbol (def/class), the same Locked-Decision row id (D<n>/LD<n>), or the same
+# sentinel filename (BLOCKED.md / NEEDS_INPUT.md / …).
+_CONFLICT_SYMBOL_RE = re.compile(r"\b(?:def|class)\s+([A-Za-z_]\w*)")
+_CONFLICT_DECISION_ROW_RE = re.compile(r"\b((?:LD|D)\d+)\b")
+_CONFLICT_SENTINEL_RE = re.compile(r"\b([A-Z][A-Z0-9_]*\.md)\b")
+
+
+def _conflict_surface_keys(hunk_text: str) -> set[str]:
+    """Extract the set of logical surface keys a conflict hunk touches.
+
+    An EMPTY set means no finer-than-file surface was extractable — the
+    ambiguity signal ``classify_conflict`` fails safe on (a bare assignment,
+    a data-only region). Namespaced so a symbol named like a sentinel can
+    never collide with an actual sentinel filename.
+    """
+    keys: set[str] = set()
+    for m in _CONFLICT_SYMBOL_RE.finditer(hunk_text or ""):
+        keys.add("sym:" + m.group(1))
+    for m in _CONFLICT_DECISION_ROW_RE.finditer(hunk_text or ""):
+        keys.add("row:" + m.group(1))
+    for m in _CONFLICT_SENTINEL_RE.finditer(hunk_text or ""):
+        keys.add("sentinel:" + m.group(1))
+    return keys
+
+
+def classify_conflict(merge_result: dict) -> tuple[str, str]:
+    """Discriminate a conflict that slipped past the FIFO file-lock.
+
+    Returns ``("write" | "semantic", reason)``. A **write** conflict is
+    non-halting (retry/queue through the lock, log, continue); a **semantic**
+    conflict HALTS with a class-``product`` ``NEEDS_INPUT.md`` carrying
+    ``conflict_kind: semantic`` (never auto-accepted under ``--park-provisional``
+    — see ``provisional_eligibility`` below).
+
+    PURE with an **injectable git seam**: ``merge_result`` is a plain dict the
+    caller builds from git (e.g. ``git merge-tree``); ``--test`` passes literals.
+      - ``auto_merges``: bool — git merged cleanly (no conflict markers).
+      - ``conflicts``: ``list[{"file", "ours", "theirs"}]`` — consulted only
+        when ``auto_merges`` is not True; ``ours``/``theirs`` are the
+        conflicting hunk text from each side.
+
+    Heuristic, in order (LOCKED — SPEC Locked Decision 2, Requirements 4–5):
+      1. ``auto_merges`` True → ``write`` (git reconciled it mechanically).
+      2. Any conflict whose ours & theirs share a surface key (same symbol /
+         Locked-Decision row / sentinel) → ``semantic`` (two edits to the same
+         logical artifact cannot be mechanically reconciled).
+      3. Every conflict on DISJOINT surfaces (both sides have extractable keys,
+         no overlap) → ``write``.
+      4. Empty/undeterminable/ambiguous (a side with no extractable key) →
+         ``semantic`` (FAIL-SAFE direction).
+    """
+    if not isinstance(merge_result, dict):
+        return ("semantic", "un-parseable merge result — fail-safe to semantic")
+    if merge_result.get("auto_merges") is True:
+        return ("write", "git auto-merged cleanly — no conflict markers")
+    conflicts = merge_result.get("conflicts") or []
+    if not conflicts:
+        return (
+            "semantic",
+            "conflict reported with no analyzable hunks — fail-safe to semantic",
+        )
+    all_disjoint = True
+    for c in conflicts:
+        if not isinstance(c, dict):
+            all_disjoint = False
+            continue
+        ours_keys = _conflict_surface_keys(str(c.get("ours", "")))
+        theirs_keys = _conflict_surface_keys(str(c.get("theirs", "")))
+        shared = ours_keys & theirs_keys
+        if ours_keys and theirs_keys and shared:
+            return (
+                "semantic",
+                "conflict on a shared logical surface "
+                f"{sorted(shared)} — needs human reconciliation",
+            )
+        # Provably disjoint iff BOTH sides carry extractable keys that do not
+        # overlap; anything else is ambiguous and must fail safe.
+        if not (ours_keys and theirs_keys):
+            all_disjoint = False
+    if all_disjoint:
+        return (
+            "write",
+            "conflicting hunks touch disjoint logical surfaces — mechanically mergeable",
+        )
+    return ("semantic", "conflict surface undeterminable — fail-safe to semantic")
+
+
 def provisional_eligibility(sentinel_path: Path) -> tuple[bool, str]:
     """Deterministic, FAIL-CLOSED provisional-acceptance predicate (SPEC D3/D4/D8).
 
@@ -2617,6 +2717,19 @@ def provisional_eligibility(sentinel_path: Path) -> tuple[bool, str]:
         if not (_so is False or str(_so).strip().lower() in ("false", "no")):
             return (False, "stub_origin baseline decision — never provisional "
                            "(fail-closed)")
+    # Semantic-conflict carve-out (concurrent-worktree-agent-coordination Phase 4):
+    # a NEEDS_INPUT.md written by the conflict router for a SEMANTIC concurrent-
+    # writer conflict (classify_conflict above) reconciles two agents' divergent
+    # intent on the SAME logical artifact — never a "pick the recommended option"
+    # design fork. It is NEVER auto-accepted, even under --park --park-provisional
+    # (the feature PARKS for the operator). Keyed on the WU-1 SSOT marker field;
+    # both callers (the park-mode routing peek and --provisionalize-sentinel)
+    # re-run this predicate, so the carve-out is airtight. Placed with the
+    # Spike-FAIL / stub_origin exclusions, before the divergence two-key.
+    if (str(meta.get(_SEMANTIC_CONFLICT_MARKER_FIELD, "")).strip().lower()
+            == _SEMANTIC_CONFLICT_MARKER_VALUE):
+        return (False, "semantic conflict — never auto-accepted "
+                       "(park, do not provisionally accept)")
     if meta.get("class") == "mechanical" and meta.get("audit_concurs") is True:
         return (False, "two-key mechanical — flush auto-accept path wins (D4)")
     divergence = str(meta.get("divergence", "")).strip().lower()

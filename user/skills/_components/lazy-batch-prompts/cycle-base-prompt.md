@@ -669,6 +669,18 @@ TURN-END CONTRACT (HARD — read LAST because it is checked LAST):
   worktree/branch concurrently — an unexpected commit / moved HEAD is expected,
   not a defect. Genuine write contention is resolved by the coordination layer
   (git safety + the FIFO file-lock + conflict-routing) — not by halting.
+  **Conflict routing (concurrent-worktree-agent-coordination Phase 4):** when a
+  conflict SLIPS PAST the FIFO lock, classify it — `lazy_core.classify_conflict`
+  (git-mergeability + coupled-surface heuristic; ambiguous → semantic). A WRITE
+  conflict — git auto-merges, OR the conflicting hunks touch DISJOINT logical
+  surfaces — is NON-HALTING: retry/queue the write through the FIFO lock, log it,
+  and CONTINUE the cycle (never halt, never write a sentinel for it). A SEMANTIC
+  conflict — an un-auto-resolvable conflict on the SAME logical artifact (same
+  function / Locked-Decision row / sentinel), or any ambiguous/undeterminable case
+  — HALTS: write a class-`product` `NEEDS_INPUT.md` carrying `conflict_kind:
+  semantic` (NEVER auto-accepted under `--park-provisional` — the
+  `provisional_eligibility` carve-out; see `sentinel-frontmatter.md`) and stop for
+  the operator.
 
   3. TERMINAL VERIFY GATE (EXECUTED, not self-walked) — your FINAL action is a
      real command, not a mental checklist. In order:
@@ -723,6 +735,18 @@ TURN-END CONTRACT (HARD — read LAST because it is checked LAST):
   worktree/branch concurrently — an unexpected commit / moved HEAD is expected,
   not a defect. Genuine write contention is resolved by the coordination layer
   (git safety + the FIFO file-lock + conflict-routing) — not by halting.
+  **Conflict routing (concurrent-worktree-agent-coordination Phase 4):** when a
+  conflict SLIPS PAST the FIFO lock, classify it — `lazy_core.classify_conflict`
+  (git-mergeability + coupled-surface heuristic; ambiguous → semantic). A WRITE
+  conflict — git auto-merges, OR the conflicting hunks touch DISJOINT logical
+  surfaces — is NON-HALTING: retry/queue the write through the FIFO lock, log it,
+  and CONTINUE the cycle (never halt, never write a sentinel for it). A SEMANTIC
+  conflict — an un-auto-resolvable conflict on the SAME logical artifact (same
+  function / Locked-Decision row / sentinel), or any ambiguous/undeterminable case
+  — HALTS: write a class-`product` `NEEDS_INPUT.md` carrying `conflict_kind:
+  semantic` (NEVER auto-accepted under `--park-provisional` — the
+  `provisional_eligibility` carve-out; see `sentinel-frontmatter.md`) and stop for
+  the operator.
 
   3. TERMINAL VERIFY GATE (EXECUTED, not self-walked) — your FINAL action is a
      real command, not a mental checklist. In order:

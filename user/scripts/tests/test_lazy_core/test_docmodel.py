@@ -3306,6 +3306,142 @@ def test_provisional_eligibility_excludes_spike_verdict_fail():
         assert "spike" in reason.lower()
 
 
+def test_classify_conflict_auto_merge_is_write():
+    """concurrent-worktree-agent-coordination Phase 4: a clean git auto-merge
+    (no conflict markers) classifies as a "write" conflict — the cheap
+    mechanical-merge path, no semantic review needed."""
+    _guard()
+    result = lazy_core.classify_conflict({"auto_merges": True, "conflicts": []})
+    assert result[0] == "write"
+    assert isinstance(result[1], str) and result[1]
+
+
+def test_classify_conflict_shared_function_is_semantic():
+    """Both sides of a conflict touch the SAME symbol (def compute_state) —
+    a shared logical surface — so the discriminator must escalate to
+    "semantic" (a mechanical merge cannot safely reconcile two edits to the
+    same function body)."""
+    _guard()
+    merge_result = {
+        "auto_merges": False,
+        "conflicts": [
+            {
+                "file": "lazy_core/docmodel.py",
+                "ours": "def compute_state(feature_id):\n    return ours_impl()\n",
+                "theirs": "def compute_state(feature_id):\n    return theirs_impl()\n",
+            }
+        ],
+    }
+    result = lazy_core.classify_conflict(merge_result)
+    assert result[0] == "semantic"
+    assert isinstance(result[1], str) and result[1]
+
+
+def test_classify_conflict_disjoint_surfaces_is_write():
+    """Ours touches def alpha(, theirs touches def beta( — distinct,
+    extractable symbols with no overlap — so the conflict is a mechanical
+    "write" (safe to reconcile without semantic review)."""
+    _guard()
+    merge_result = {
+        "auto_merges": False,
+        "conflicts": [
+            {
+                "file": "lazy_core/docmodel.py",
+                "ours": "def alpha():\n    return 1\n",
+                "theirs": "def beta():\n    return 2\n",
+            }
+        ],
+    }
+    result = lazy_core.classify_conflict(merge_result)
+    assert result[0] == "write"
+    assert isinstance(result[1], str) and result[1]
+
+
+def test_classify_conflict_ambiguous_is_semantic():
+    """Fail-safe direction: no extractable symbol on either side (a bare
+    assignment) classifies "semantic", not "write" — and an auto_merges:
+    False conflict report with an EMPTY conflicts list (un-extractable /
+    ambiguous input) fails safe the same way."""
+    _guard()
+    merge_result = {
+        "auto_merges": False,
+        "conflicts": [
+            {
+                "file": "some_module.py",
+                "ours": "x = 1\n",
+                "theirs": "x = 2\n",
+            }
+        ],
+    }
+    result = lazy_core.classify_conflict(merge_result)
+    assert result[0] == "semantic"
+
+    empty_result = lazy_core.classify_conflict({"auto_merges": False, "conflicts": []})
+    assert empty_result[0] == "semantic"
+
+
+def _write_eligible_needs_input(path: Path, *, conflict_kind: str | None = None) -> None:
+    """A NEEDS_INPUT.md that satisfies EVERY existing provisional_eligibility
+    check (kind, non-empty <=4 decisions, no completion-integrity-gate /
+    spike written_by or spike_verdict fail, no stub_origin, not two-key
+    mechanical, divergence + audit_divergence both "isolated", 1:1
+    Decision-Context H3 carrying a Recommendation block, no ## Resolution) —
+    otherwise fully eligible=True — with an OPTIONAL conflict_kind: semantic
+    frontmatter line layered on top (concurrent-worktree-agent-coordination
+    Phase 4 carve-out under test)."""
+    conflict_line = f"conflict_kind: {conflict_kind}\n" if conflict_kind else ""
+    path.write_text(
+        "---\n"
+        "kind: needs-input\n"
+        "feature_id: feat-conflict-test\n"
+        "written_by: mcp-test\n"
+        "decisions:\n"
+        "  - pick a merge resolution strategy\n"
+        f"{conflict_line}"
+        "divergence: isolated\n"
+        "audit_divergence: isolated\n"
+        "date: 2026-07-18\n"
+        "---\n\n"
+        "## Decision Context\n\n"
+        "### 1. pick a merge resolution strategy\n\n"
+        "**Problem:** two lanes edited overlapping surfaces.\n\n"
+        "**Options:**\n- **a (Recommended)** — take ours\n- **b** — take theirs\n\n"
+        "**Recommendation:** a\n",
+        encoding="utf-8",
+    )
+
+
+def test_provisional_eligibility_excludes_semantic_conflict():
+    """concurrent-worktree-agent-coordination Phase 4 carve-out: a
+    NEEDS_INPUT.md carrying conflict_kind: semantic in frontmatter is
+    INELIGIBLE for provisional acceptance, even though every other
+    eligibility check (divergence grades, decision schema, etc.) passes —
+    a semantic conflict is never a mechanical "pick the recommended option"
+    fork."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "NEEDS_INPUT.md"
+        _write_eligible_needs_input(p, conflict_kind="semantic")
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is False
+        assert "semantic conflict" in reason.lower()
+
+
+def test_provisional_eligibility_eligible_without_conflict_kind():
+    """Regression pin: the SAME fixture as
+    test_provisional_eligibility_excludes_semantic_conflict but WITHOUT the
+    conflict_kind field is fully eligible=True — proving the new carve-out
+    (and only the new carve-out) is what excludes the semantic-conflict
+    sentinel above."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "NEEDS_INPUT.md"
+        _write_eligible_needs_input(p, conflict_kind=None)
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is True
+        assert reason == "eligible"
+
+
 def test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo():
     _guard()
     with tempfile.TemporaryDirectory() as td:
@@ -3747,6 +3883,12 @@ _TESTS = [
     ("test_read_spike_decision_required_value_token_and_goal", test_read_spike_decision_required_value_token_and_goal),
     ("test_provisional_eligibility_excludes_spike_written_by", test_provisional_eligibility_excludes_spike_written_by),
     ("test_provisional_eligibility_excludes_spike_verdict_fail", test_provisional_eligibility_excludes_spike_verdict_fail),
+    ("test_classify_conflict_auto_merge_is_write", test_classify_conflict_auto_merge_is_write),
+    ("test_classify_conflict_shared_function_is_semantic", test_classify_conflict_shared_function_is_semantic),
+    ("test_classify_conflict_disjoint_surfaces_is_write", test_classify_conflict_disjoint_surfaces_is_write),
+    ("test_classify_conflict_ambiguous_is_semantic", test_classify_conflict_ambiguous_is_semantic),
+    ("test_provisional_eligibility_excludes_semantic_conflict", test_provisional_eligibility_excludes_semantic_conflict),
+    ("test_provisional_eligibility_eligible_without_conflict_kind", test_provisional_eligibility_eligible_without_conflict_kind),
     ("test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo", test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo),
     ("test_skip_waiver_refusal_pipeline_structural_refuses_app_repo", test_skip_waiver_refusal_pipeline_structural_refuses_app_repo),
     ("test_skip_waiver_refusal_pipeline_structural_refuses_without_repo_root", test_skip_waiver_refusal_pipeline_structural_refuses_without_repo_root),

@@ -542,6 +542,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "_coerce_marker_truthy": "docmodel",
     "_extract_recommended_label": "docmodel",
     "_split_decision_context_h3s": "docmodel",
+    "classify_conflict": "docmodel",
     "detect_noncanonical_blocker": "docmodel",
     "neutralize_sentinel": "docmodel",
     "parse_independent_marker": "docmodel",

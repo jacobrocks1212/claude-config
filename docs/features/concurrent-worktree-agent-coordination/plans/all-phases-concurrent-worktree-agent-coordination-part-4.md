@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: concurrent-worktree-agent-coordination
-status: Ready
+status: Complete
 complexity: complex
 created: 2026-07-18
 phases: [4]
@@ -59,10 +59,10 @@ Where this plan's repo uses non-default gates (claude-config — Python/lint/tes
 
 ## Work Units
 
-- [ ] WU-1 — classify_conflict discriminator (git-mergeability + coupled-surface heuristic)
-- [ ] WU-2 — Semantic-conflict carve-out in provisional_eligibility
-- [ ] WU-3 — Sentinel-schema lockstep (sentinel-frontmatter.md + check-docs-consistency.ts)
-- [ ] WU-4 — Conflict-routing prose (cycle-base-prompt.md)
+- [x] WU-1 — classify_conflict discriminator (git-mergeability + coupled-surface heuristic)
+- [x] WU-2 — Semantic-conflict carve-out in provisional_eligibility
+- [x] WU-3 — Sentinel-schema lockstep (sentinel-frontmatter.md + check-docs-consistency.ts — .ts absent from this checkout, cross-repo follow-up)
+- [x] WU-4 — Conflict-routing prose (cycle-base-prompt.md)
 
 ### Phase: concurrent-worktree-agent-coordination P4 — Conflict routing + provisional carve-out
 
