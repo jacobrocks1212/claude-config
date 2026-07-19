@@ -27,7 +27,7 @@
 ## Reproduction Steps
 
 1. Read the intervention record: `docs/interventions/harden-2026-07-r53.md` — note `target_signal: event:containment-refusal`, `expected_direction: decrease`, `baseline.value: 72.9`, `band_pct: 20`, `canary.status: tripped`.
-2. Read `docs/bugs/canary-revert-harden-2026-07-r53/EVIDENCE.md` — note the +333.8% relative movement and `(none — band-only trip)` attribution.
+2. Read `docs/bugs/_archive/canary-revert-harden-2026-07-r53/EVIDENCE.md` — note the +333.8% relative movement and `(none — band-only trip)` attribution.
 3. Confirm the sole emitter surface: `grep -rn 'append_telemetry_event(' user/scripts/lazy_core/markers.py | grep -n containment` (or read markers.py:2470/2537/2657/2683) — all `containment-refusal` emissions live in `refuse_if_cycle_active`, `refuse_cycle_marker_mutation_if_subagent`, `refuse_run_start_clobber`.
 4. Confirm the revert target does NOT touch that surface: `git show --name-only 8a7bc738c9dfae0ec6079d5930086de54a558ca6 | grep markers.py` → no match.
 5. Confirm co-shipped same-signal confounders: `grep -l 'event:containment-refusal' docs/interventions/*.md` and inspect ship dates — r48 (07-16), r72/r75/r89 (07-17) share the target signal inside r53's post-ship window.

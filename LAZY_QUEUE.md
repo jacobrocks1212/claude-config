@@ -25,7 +25,7 @@
 | | status: Implement · phase 0/2 · next: execute plan · harness-gate.py runs its structural detectors over EVERY file in the diff range, so off-manifest generated docs (LAZY_QUEUE.md), PHASES.md prose rows, and unrelated bug/feature SPEC.md files swept into a range produce `gate_weakening=hit` / `overfit=flag` false positives — forcing redundant operator sign-off on plane-strengthening changes. | | | |
 | 6 | [canary-revert-harden-2026-07-r54](docs/bugs/canary-revert-harden-2026-07-r54/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 7 | [canary-revert-harden-2026-07-r53](docs/bugs/canary-revert-harden-2026-07-r53/SPEC.md) | Spec | — |  |
+| 7 | [canary-revert-harden-2026-07-r53](docs/bugs/_archive/canary-revert-harden-2026-07-r53/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
 | 8 | [canary-revert-harden-2026-07-r52](docs/bugs/_archive/canary-revert-harden-2026-07-r52/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
