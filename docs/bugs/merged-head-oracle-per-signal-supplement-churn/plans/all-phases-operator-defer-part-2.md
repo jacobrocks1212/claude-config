@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: merged-head-oracle-per-signal-supplement-churn
-status: Ready
+status: Complete
 created: 2026-07-19
 complexity: mechanical
 phases: [3]
@@ -61,7 +61,7 @@ This is **claude-config** (a harness-config repo whose gates are Python/`--test`
 
 ## Work Units
 
-- [ ] WU-3 — Correct docstrings/comments/prose, confirm parity, run the full invariant battery
+- [x] WU-3 — Correct docstrings/comments/prose, confirm parity, run the full invariant battery
 
 ---
 

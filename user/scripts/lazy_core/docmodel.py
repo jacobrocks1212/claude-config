@@ -2310,24 +2310,23 @@ def spec_dir_operator_deferred(spec_dir: "Path") -> bool:
     (``docs/bugs/merged-head-excludes-parked-not-operator-deferred-deadlocks``).
 
     Kept SEPARATE from ``spec_dir_would_park`` precisely because it is not
-    park-flag-gated. This predicate feeds ``compute_state``'s own park/skip
-    classification AND — restored by
-    ``merged-head-oracle-blind-to-operator-deferred-cross-pipeline-feature`` — the
-    merged-head actionability oracle (``dispatch.merged_head_nondispatchable_ids``).
-    The oracle's per-candidate scoped ``is_dispatchable`` re-inference covers an
-    operator-deferred BUG (``bug-state.py``'s branch surfaces
-    ``terminal_reason: operator-deferred``) but is BLIND to an operator-deferred
-    FEATURE (see below), so the oracle ALSO applies this file-predicate directly —
-    excluding an operator-deferred item from the merged head regardless of which
-    pipeline owns it.
+    park-flag-gated. This predicate now feeds ``compute_state``'s own park/skip
+    classification DIRECTLY in BOTH state scripts: ``bug-state.py``'s original
+    operator-deferred branch, and ``lazy-state.py``'s own operator-deferred branch
+    (added by ``merged-head-oracle-per-signal-supplement-churn`` Phase 1, mirroring
+    the bug pipeline). The merged-head actionability oracle
+    (``dispatch.merged_head_nondispatchable_ids``) no longer applies this
+    file-predicate directly as a supplement — that direct application was RETIRED by
+    ``merged-head-oracle-per-signal-supplement-churn`` Phase 2, because it is no
+    longer needed: the oracle's primary ``is_dispatchable(scoped_probe(iid))``
+    re-inference now correctly classifies an operator-deferred FEATURE too (since the
+    feature's own ``compute_state`` has the branch above), exactly as it already did
+    for an operator-deferred BUG (``bug-state.py``'s branch surfaces
+    ``terminal_reason: operator-deferred``).
 
-    NOT bug-pipeline-only in practice: although the feature pipeline has no
-    operator-``DEFERRED.md`` dispatch branch (a justified parity divergence), an
-    operator CAN drop a ``DEFERRED.md`` on a FEATURE dir to exclude it "from
-    dispatch and merged" (observed 2026-07-19: ``native-android-pipeline-steering``).
-    The FEATURE ``compute_state`` ignores it, so the merged-head oracle's
-    file-predicate is the ONLY thing that excludes such a feature — do NOT re-assume
-    "a feature spec dir never carries the file".
+    Both pipelines now model operator-defer directly in their own
+    ``compute_state``, so there is no cross-pipeline blind spot left for the oracle
+    to compensate for.
 
     Pure + fail-safe: ``None`` / a missing or unreadable ``spec_dir`` → ``False``
     (byte-identical non-defer behavior; the caller's exclusion set stays empty).

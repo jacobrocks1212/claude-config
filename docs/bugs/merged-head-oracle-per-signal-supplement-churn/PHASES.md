@@ -2,6 +2,8 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress
+
 **MCP runtime:** not-required — pure static state-machine logic in `lazy-state.py` / `lazy_core`; no Tauri/MCP-reachable surface. Verified deterministically by the in-file `--test` smoke harnesses + `pytest tests/test_lazy_core/` + `lazy_parity_audit.py` (the claude-config invariant gate battery), never by a live runtime.
 
 ## Touchpoint Audit (verified inline — dispatch unavailable, per spec-phases Step B fallback)
@@ -109,11 +111,11 @@ No premise-grade contradictions: the SPEC's serving-path trace matches the live 
 **Scope:** Update the docstrings the R102 fix left asserting the feature `compute_state` "ignores" operator-defer, confirm state-script parity treats the new feature branch correctly, and run the full claude-config invariant gate battery to certify no regression across the state machine.
 
 **Deliverables:**
-- [ ] Update `docmodel.py::spec_dir_operator_deferred` docstring (2299–2339): rewrite the "the FEATURE `compute_state` … ignores it, so the merged-head oracle's file-predicate is the ONLY thing that excludes such a feature" and "the feature pipeline has no operator-`DEFERRED.md` dispatch branch" language to state the feature `compute_state` now models operator-defer (mirroring the bug pipeline); note the predicate is still consumed by both `compute_state`s.
-- [ ] Update `depdag.py` merged-worklist docstring (1437–1445): reflect that the primary `is_dispatchable` re-inference now covers both pipelines' operator-deferred items (the file-predicate supplement retired).
-- [ ] Confirm `python3 user/scripts/lazy_parity_audit.py --repo-root .` is exit 0 — the feature-side operator-defer branch is a justified feature/bug divergence or a mirrored surface (document which in the audit's parity manifest if it needs a divergence note).
-- [ ] Update the root `CLAUDE.md` / `user/scripts/CLAUDE.md` prose where they document the feature side as having "NO operator-`DEFERRED.md` branch (bug-pipeline-only — JUSTIFIED divergence)" (e.g. `lazy-state.py:405–407` comment + the scripts-doc parity notes), so the docs no longer describe the now-closed divergence.
-- [ ] Tests: run the full battery — `python3 user/scripts/lazy-state.py --test`, `python3 user/scripts/bug-state.py --test`, `pytest tests/test_lazy_core/`, `lazy_parity_audit.py --repo-root .`, `python3 user/scripts/doc-drift-lint.py --repo-root .`, and `lint-skills.py` — all green.
+- [x] Update `docmodel.py::spec_dir_operator_deferred` docstring (2299–2339): rewrite the "the FEATURE `compute_state` … ignores it, so the merged-head oracle's file-predicate is the ONLY thing that excludes such a feature" and "the feature pipeline has no operator-`DEFERRED.md` dispatch branch" language to state the feature `compute_state` now models operator-defer (mirroring the bug pipeline); note the predicate is still consumed by both `compute_state`s.
+- [x] Update `depdag.py` merged-worklist docstring (1437–1445): reflect that the primary `is_dispatchable` re-inference now covers both pipelines' operator-deferred items (the file-predicate supplement retired).
+- [x] Confirm `python3 user/scripts/lazy_parity_audit.py --repo-root .` is exit 0 — the feature-side operator-defer branch is a justified feature/bug divergence or a mirrored surface (document which in the audit's parity manifest if it needs a divergence note).
+- [x] Update the root `CLAUDE.md` / `user/scripts/CLAUDE.md` prose where they document the feature side as having "NO operator-`DEFERRED.md` branch (bug-pipeline-only — JUSTIFIED divergence)" (e.g. `lazy-state.py:405–407` comment + the scripts-doc parity notes), so the docs no longer describe the now-closed divergence.
+- [x] Tests: run the full battery — `python3 user/scripts/lazy-state.py --test`, `python3 user/scripts/bug-state.py --test`, `pytest tests/test_lazy_core/`, `lazy_parity_audit.py --repo-root .`, `python3 user/scripts/doc-drift-lint.py --repo-root .`, and `lint-skills.py` — all green.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy_parity_audit.py --repo-root .` exits 0 AND both `--test` baselines match, proving the feature-side change preserved parity and state-machine behavior. Runnable commands.
 
@@ -134,3 +136,14 @@ No premise-grade contradictions: the SPEC's serving-path trace matches the live 
 **Integration Notes for Next Phase:** None — final phase. When this phase's work lands, set the top-level PHASES `**Status:**` to `In-progress` (implementation done, validation pending); the state machine routes to the validation tail and the orchestrator's `__mark_fixed__` gate owns the terminal flip + `FIXED.md` receipt.
 
 **Completion (gate-owned):** the `__mark_fixed__` gate flips SPEC.md **Status:** to Fixed, writes `FIXED.md`, and archives the bug dir once the validation tail passes — never authored as a checkbox here.
+
+**Implementation Notes (2026-07-19):**
+- Dispatched a Sonnet implementation agent (non-TDD, documentation-only) to correct the two stale docstrings — both are `.py` files, so the orchestrator contract required a subagent dispatch rather than a direct `Edit`.
+- `docmodel.py::spec_dir_operator_deferred`'s docstring (paragraphs 3–4) rewritten: no longer claims the feature pipeline "has no operator-`DEFERRED.md` dispatch branch" or that the oracle's file-predicate is "the ONLY thing" excluding an operator-deferred feature. Now states the predicate is consumed directly by BOTH state scripts' own `compute_state` (bug-state.py's original branch + lazy-state.py's Phase-1 branch), and that the oracle's direct file-predicate application was retired in Phase 2 as no longer necessary (its primary `is_dispatchable`/scoped-probe re-inference now covers both pipelines).
+- `depdag.py`'s `merged_worklist` docstring (the `exclude_ids` param, ~1436–1450) rewritten: no longer claims the oracle "STILL applies the `spec_dir_operator_deferred` file-predicate directly" — now states the primary re-inference covers both pipelines uniformly and the file-predicate supplement was retired.
+- The `lazy-state.py` `~:405–407` comment deliverable turned out to be a **no-op**: it was already corrected during Phase 1's implementation (commit `e2e2773e`) as a natural side effect of adding the feature-side branch — grep confirmed zero remaining "JUSTIFIED divergence" / "no operator-DEFERRED" occurrences before this phase started.
+- The root `CLAUDE.md` / `user/scripts/CLAUDE.md` deliverable is also a **no-op** — grepped both files for "operator-defer" (case-insensitive) and found zero mentions of the now-closed divergence; nothing to correct there.
+- `lazy_core/dispatch.py::merged_head_nondispatchable_ids` was verified (not edited) — its own docstring already accurately describes the retired supplement (no `spec_dir_operator_deferred` call remains in its body).
+- `lazy_parity_audit.py --repo-root .` exits 0 with no findings — no divergence note was needed in `lazy-parity-manifest.json` (the predicate is a shared `lazy_core` helper consumed identically by both scripts' `compute_state`, not a coupled-pair skill-file surface the audit tracks).
+- Full invariant gate battery run and green: `lazy-state.py --test` (all smoke fixtures pass), `bug-state.py --test` (all smoke fixtures pass), `pytest user/scripts/tests/test_lazy_core/ -q` (1280 passed), `lazy_parity_audit.py --repo-root .` (exit 0), `doc-drift-lint.py --repo-root .` (exit 0, 2 pre-existing unrelated exempted divergences), `lint-skills.py` (exit 0).
+- No production behavior changed — docstring/prose edits only, verified via `ast.parse` on both touched files.
