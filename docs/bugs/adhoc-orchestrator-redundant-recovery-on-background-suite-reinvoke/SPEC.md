@@ -2,7 +2,7 @@
 
 > A cycle /execute-plan subagent backgrounds its long verification suite and returns "holding, will re-invoke" instead of foreground-awaiting; the orchestrator, unable to distinguish that pause from a resultless return, dispatches a redundant recovery cycle that collides (one-writer) with the harness-re-invoked agent.
 
-**Status:** Investigating
+**Status:** Concluded
 **Severity:** P1
 **Discovered:** 2026-07-19
 **Placement:** docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke
@@ -12,9 +12,10 @@
   - Investigating → active investigation; root cause not yet locked OR a human decision is
     still required before planning. bug-state.py routes to /spec-bug.
   - Concluded → root cause proven AND fix direction settled; bug-state.py routes to /plan-bug.
-  This SPEC's root cause is TRACED (see Proven Findings), but the fix-APPROACH is a baseline-
-  gating product fork surfaced to the operator in NEEDS_INPUT.md — hence Status stays
-  Investigating (pre-conclusion, stub_origin) until the operator picks the fix direction.
+  This SPEC's root cause is TRACED (see Proven Findings). The fix-APPROACH was a baseline-
+  gating product fork surfaced to the operator in NEEDS_INPUT.md; the operator picked "Both"
+  (Locked Decision 1, accepted 2026-07-19 via bug-state.py --record-decision), so the
+  investigation is now CONCLUDED — root cause proven AND fix direction settled → /plan-bug.
 -->
 
 ---
@@ -131,7 +132,7 @@ Fix-site-on-path (Gap 1): the enforcement seam for "no backgrounded long gate in
 
 ## Open Questions
 
-- **Fix approach (baseline-gating — surfaced in `NEEDS_INPUT.md`):** mechanically enforce foreground gate-running (Gap 1), give the orchestrator a deterministic pause-vs-terminal signal (Gap 2), or both. Product-class fork on a stub the operator has never seen → parked.
+- **Fix approach (baseline-gating — was surfaced in `NEEDS_INPUT.md`):** RESOLVED — operator picked **Both** (Locked Decision 1, accepted 2026-07-19). No longer open.
 - **Harness re-invocation truth (informs the fix, not blocking):** does a dispatched cycle subagent reliably get background-completion re-invocation (contradicting `turn-end-gate.md` L13–18), or is it inconsistent/undocumented? If re-invocation is UNreliable, Gap 1 backgrounding also risks a genuine resultless stall — strengthening the case for mechanical prevention. `/plan-bug` should confirm the documented behavior before finalizing the fix.
 
 ## Locked Decisions

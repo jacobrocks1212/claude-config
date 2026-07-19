@@ -372,6 +372,15 @@ Optional (written by the gate at flip time; absent on backfill):
 - `completed_commit: <sha>` — the commit that performed the Complete flip.
 - `validated_via: <"mcp" | "skip-mcp-test" | "deferred-non-cloud">` — how the MCP gate was satisfied.
 - `mcp_pass_count: <int>` / `mcp_total_count: <int>` — folded from `MCP_TEST_RESULTS.md` / `VALIDATED.md`.
+- `auto_ticked_rows: <int>` — count of verification-only PHASES.md rows the
+  evidence-gated completion gate auto-ticked from MCP evidence at receipt time
+  (`0` when the rows were already ticked, e.g. operator-certified — recorded
+  explicitly so an auditor can tell "gate ran, ticked nothing" from "gate did not
+  run"). Written on every `provenance: gated` receipt by `apply_pseudo` via
+  `write_completed_receipt`; **omitted** on `--backfill-receipts` (legacy grandfather
+  path passes no value). Keep in lockstep with AlgoBooth's
+  `scripts/check-docs-consistency.ts` `SENTINEL_SCHEMAS['COMPLETED.md']` (`optional`
+  + `intFields`).
 
 `provenance: gated` is written by the completion-integrity gate after all
 preconditions pass (phase coherence + validation sentinel present + MCP-coverage
