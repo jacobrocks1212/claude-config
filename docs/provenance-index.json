@@ -5129,6 +5129,34 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/adhoc-incident-hook-deny-057921/GATE_VERDICT.md": [
+    {
+      "id": "adhoc-incident-hook-deny-057921",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-incident-hook-deny-057921/PHASES.md": [
+    {
+      "id": "adhoc-incident-hook-deny-057921",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-incident-hook-deny-057921/SPEC.md": [
+    {
+      "id": "adhoc-incident-hook-deny-057921",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-incident-hook-deny-057921/plans/all-phases-scope-tripwire-to-commit-pathspec.md": [
+    {
+      "id": "adhoc-incident-hook-deny-057921",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/adhoc-incident-hook-deny-19343d-r3/ADHOC_BRIEF.md": [
     {
       "id": "long-build-and-build-queue-matcher-bypasses",
@@ -9660,6 +9688,13 @@
   "docs/bugs/subagent-baseline-skill-surface-bloat/FIXED.md": [
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/subagent-wedge-backstop-blocks-nested-wu-workers/SPEC.md": [
+    {
+      "id": "adhoc-incident-hook-deny-057921",
       "type": "bug",
       "provenance": "pipeline-gated"
     }
@@ -17704,6 +17739,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/specs/turn-routing-enforcement/NEEDS_INPUT_2026-07-19-wedge-backstop-integrator-vs-worker-identity.md": [
+    {
+      "id": "adhoc-incident-hook-deny-057921",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/specs/turn-routing-enforcement/SPEC.md": [
     {
       "id": "multi-repo-concurrent-runs",
@@ -17778,6 +17820,11 @@
       "id": "adhoc-decision-key-relative-absolute-mismatch",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "adhoc-incident-hook-deny-057921",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker",
@@ -18792,6 +18839,11 @@
   ],
   "user/hooks/CLAUDE.md": [
     {
+      "id": "adhoc-incident-hook-deny-057921",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -18984,6 +19036,11 @@
     }
   ],
   "user/hooks/lazy-cycle-containment.sh": [
+    {
+      "id": "adhoc-incident-hook-deny-057921",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "adhoc-incident-hook-deny-4b767b",
       "type": "bug",
@@ -21516,6 +21573,11 @@
   "user/scripts/test_hooks.py": [
     {
       "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "adhoc-incident-hook-deny-057921",
       "type": "bug",
       "provenance": "pipeline-gated"
     },

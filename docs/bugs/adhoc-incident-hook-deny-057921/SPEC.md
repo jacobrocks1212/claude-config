@@ -10,7 +10,7 @@
 > own paths. The tripwire has no notion of the commit's own pathspec; it assumes `git commit` will
 > flush the whole index.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-19
 **Placement:** docs/bugs/adhoc-incident-hook-deny-057921
