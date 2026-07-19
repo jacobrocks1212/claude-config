@@ -2264,6 +2264,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/cycle-subagent-stalls-on-wedged-sub-subagent/FIXED.md": [
+    {
+      "id": "cycle-subagent-stalls-on-wedged-sub-subagent",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/cycle-subagent-stalls-on-wedged-sub-subagent/SPEC.md": [
+    {
+      "id": "cycle-subagent-stalls-on-wedged-sub-subagent",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/descoped-marker-blind-completion-coherence-gate/FIXED.md": [
     {
       "id": "shared-hook-lib",
@@ -15152,6 +15166,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/interventions/harden-2026-07-r100.md": [
+    {
+      "id": "cycle-subagent-stalls-on-wedged-sub-subagent",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/harden-2026-07-r14.md": [
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -17202,6 +17223,11 @@
       "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-subagent-stalls-on-wedged-sub-subagent",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "descoped-row-recognition-needs-canonical-marker",
