@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-19
+**Fixed:** 2026-07-19
+**Fix commit:** 895ca3b1
 **Placement:** docs/bugs/adhoc-cycle-return-omits-decision-classification-ledger
 **Related:** `docs/features/lazy-pipeline-visualizer/LAZY_BATCH_REVIEW_2026-06-16.md` (missing-ledger gap origin), `docs/specs/lazy-decision-gates/`, `user/skills/_components/sentinel-frontmatter.md` (Producer responsibilities #7)
 

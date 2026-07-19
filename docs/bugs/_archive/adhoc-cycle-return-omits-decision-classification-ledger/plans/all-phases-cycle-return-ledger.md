@@ -36,7 +36,7 @@ This is the **claude-config harness-config repo** — there is NO `/msbuild`/`/m
 python ~/.claude/scripts/project-skills.py        # re-expand !cat component refs into skills-projected/ (must succeed)
 python ~/.claude/scripts/lint-skills.py           # broken injections / embedded patterns (must be clean)
 python3 user/scripts/lazy_parity_audit.py --repo-root .   # bug-axis coupled-pair parity (must exit 0) — Phase 2 only
-python3 ~/.claude/scripts/validate-plan.py --structural docs/bugs/adhoc-cycle-return-omits-decision-classification-ledger/PHASES.md   # structural gate on PHASES.md (must exit 0)
+python3 ~/.claude/scripts/validate-plan.py --structural docs/bugs/_archive/adhoc-cycle-return-omits-decision-classification-ledger/PHASES.md   # structural gate on PHASES.md (must exit 0)
 ```
 
 - **No TDD test files** exist for markdown prose. "Tests" here = the grep-based Minimum Verifiable Behavior checks in PHASES.md plus the projection/lint/parity gates above. There is no red→green test cycle; each WU's acceptance is the deterministic presence check named in its scope.
