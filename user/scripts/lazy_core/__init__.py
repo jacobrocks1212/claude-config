@@ -70,6 +70,8 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "skip_waiver_refusal": "docmodel",
     "spec_status": "docmodel",
     "spec_fixed_annotation": "docmodel",
+    "spec_fix_implemented_heading": "docmodel",
+    "normalize_item_dir": "docmodel",
     "PROVISIONAL_SENTINEL": "docmodel",
     "_PROVISIONAL_ELIGIBLE_GRADES": "docmodel",
     "build_parked_entry": "docmodel",

@@ -1565,6 +1565,77 @@ def test_probe_withholds_forward_route_on_audit_obligation():
         )
 
 
+def test_input_audit_emit_names_pending_audit_item_not_next_queued():
+    """GAP 4 (adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps): when the
+    audit obligation is owed for a PRIOR item while the current probe emits for a
+    DIFFERENT (next-queued) item, the input_audit_emit_command must carry the
+    PENDING-AUDIT item's own identity — not the next-queued item's name. The
+    spec_path/item_id already branched on this; item_name used to be the wrong
+    (current-probe) item's name."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        features = td_path / "fixture-repo" / "docs" / "features"
+        features.mkdir(parents=True)
+        # Two features: feat-c already COMPLETE (receipt) so the probe head is
+        # feat-d; the obligation is armed for feat-c (the prior item).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-d", "name": "Feature D", "spec_dir": "feat-d", "tier": 1},
+                {"id": "feat-c", "name": "Feature C", "spec_dir": "feat-c", "tier": 2},
+            ]
+        }), encoding="utf-8")
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        # feat-d: fresh Draft head (yields a forward route).
+        dd = features / "feat-d"
+        dd.mkdir()
+        (dd / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (dd / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        (dd / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+        # feat-c: the obligated (prior) item — just needs a dir for spec_path.
+        cd = features / "feat-c"
+        cd.mkdir()
+        (cd / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n", encoding="utf-8")
+        fixture_repo = td_path / "fixture-repo"
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(fixture_repo),
+                max_cycles=10, now=_time.time(),
+            )
+            lazy_core.record_audit_obligation(
+                item_id="feat-c", cycle_kind="spec",
+                begin_head_sha="begin000", end_sha="end111feat",
+                cycle_summary="spec: feat-c baseline",
+            )
+        finally:
+            _clear_state_dir()
+
+        r = subprocess.run(
+            [sys.executable, str(lazy_state),
+             "--repeat-count", "--probe", "--emit-prompt",
+             "--repo-root", str(fixture_repo)],
+            capture_output=True, text=True, env=env,
+        )
+        assert r.returncode == 0, f"probe failed: {r.stderr[:400]!r}"
+        out = json.loads(r.stdout)
+        assert out.get("route_overridden_by") == "audit-obligation", out
+        cmd = out.get("input_audit_emit_command", "")
+        # The obligated item's OWN identity — never the next-queued item's name.
+        assert "item_id=feat-c" in cmd, cmd
+        assert "item_name=feat-c" in cmd, cmd
+        assert "Feature D" not in cmd, (
+            "item_name must NOT be the next-queued (current-probe) item's name: " + cmd
+        )
 
 
 def test_audit_obligation_helpers_no_marker_and_non_audited_kind():
@@ -4343,6 +4414,7 @@ _TESTS = [
     ("test_f2b_find_transcription_slip_entry_no_match_without_marker", test_f2b_find_transcription_slip_entry_no_match_without_marker),
     ("test_probe_withholds_forward_route_on_pending_debt", test_probe_withholds_forward_route_on_pending_debt),
     ("test_probe_withholds_forward_route_on_audit_obligation", test_probe_withholds_forward_route_on_audit_obligation),
+    ("test_input_audit_emit_names_pending_audit_item_not_next_queued", test_input_audit_emit_names_pending_audit_item_not_next_queued),
     ("test_audit_obligation_helpers_no_marker_and_non_audited_kind", test_audit_obligation_helpers_no_marker_and_non_audited_kind),
     ("test_build_input_audit_emit_command_binds_supplied_cycle_commit_sha", test_build_input_audit_emit_command_binds_supplied_cycle_commit_sha),
     ("test_build_input_audit_emit_command_falls_back_to_head1_without_sha", test_build_input_audit_emit_command_falls_back_to_head1_without_sha),

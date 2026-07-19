@@ -3098,7 +3098,78 @@ def test_format_fixed_unreconciled_blocker_shape():
     assert "FIXED.md" in body, body
 
 
+# ---------------------------------------------------------------------------
+# Tests: GAP 2 — is_fixed_unreconciled ALSO keys on a `## Fix (implemented …)`
+# heading (adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps).
+# ---------------------------------------------------------------------------
+
+
+def test_spec_fix_implemented_heading_reader():
+    """spec_fix_implemented_heading returns the heading text, else None."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(
+            "**Status:** Concluded\n\n## Fix (implemented 2026-07-10)\n\nLanded.\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.spec_fix_implemented_heading(spec_dir) == "## Fix (implemented 2026-07-10)"
+    with tempfile.TemporaryDirectory() as td2:
+        spec_dir2 = Path(td2)
+        (spec_dir2 / "SPEC.md").write_text("**Status:** Concluded\n", encoding="utf-8")
+        assert lazy_core.spec_fix_implemented_heading(spec_dir2) is None
+
+
+def test_is_fixed_unreconciled_true_fix_implemented_heading():
+    """Concluded + `## Fix (implemented …)` heading (NO inline **Fixed:**) + no
+    receipt → True — the GAP-2 second out-of-pipeline-fix signal."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(
+            "**Status:** Concluded\n\n## Fix (implemented 2026-07-10)\n\nPester 8/8.\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.is_fixed_unreconciled(spec_dir, spec_dir) is True
+
+
+# ---------------------------------------------------------------------------
+# Tests: GAP 3 — spec_path polymorphism (normalize_item_dir + gate_coverage
+# accept EITHER a dir or a SPEC.md file positional).
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_item_dir_accepts_dir_or_spec_md_file():
+    _guard()
+    base = Path("/repo/docs/bugs/some-bug")
+    assert lazy_core.normalize_item_dir(base) == base
+    assert lazy_core.normalize_item_dir(base / "SPEC.md") == base
+    assert lazy_core.normalize_item_dir(None) is None
+    # A non-SPEC.md .md path is NOT re-rooted (conservative).
+    plan = base / "plans" / "part-1.md"
+    assert lazy_core.normalize_item_dir(plan) == plan
+
+
+def test_gate_coverage_accepts_spec_md_file_positional():
+    """gate_coverage(dir/SPEC.md) == gate_coverage(dir) — GAP 3 normalization."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(
+            "**Status:** Concluded\n\n## Locked Decisions\n\nNone.\n",
+            encoding="utf-8",
+        )
+        as_dir = lazy_core.gate_coverage(spec_dir)
+        as_file = lazy_core.gate_coverage(spec_dir / "SPEC.md")
+        assert as_dir == as_file, (as_dir, as_file)
+        assert as_dir["ok"] is True
+
+
 _TESTS = [
+    ("test_spec_fix_implemented_heading_reader", test_spec_fix_implemented_heading_reader),
+    ("test_is_fixed_unreconciled_true_fix_implemented_heading", test_is_fixed_unreconciled_true_fix_implemented_heading),
+    ("test_normalize_item_dir_accepts_dir_or_spec_md_file", test_normalize_item_dir_accepts_dir_or_spec_md_file),
+    ("test_gate_coverage_accepts_spec_md_file_positional", test_gate_coverage_accepts_spec_md_file_positional),
     ("test_uncovered_rows_partial_evidence_reroutes_true", test_uncovered_rows_partial_evidence_reroutes_true),
     ("test_uncovered_rows_full_evidence_terminates", test_uncovered_rows_full_evidence_terminates),
     ("test_uncovered_host_deferred_row_excluded_terminates", test_uncovered_host_deferred_row_excluded_terminates),

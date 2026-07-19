@@ -2161,7 +2161,15 @@ def is_fixed_unreconciled(spec_dir: Path | None, repo_root: Path | None = None) 
     status = spec_status(spec_dir)
     if status in _FIXED_TERMINAL_STATUSES:
         return False
-    if not docmodel.spec_fixed_annotation(spec_dir):
+    # The already-fixed-out-of-pipeline signal is EITHER convention: the inline
+    # `**Fixed:**` evidence line OR a `## Fix (implemented <date>)` section heading
+    # (adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps GAP 2). A SPEC
+    # recording its fix under only the heading form was previously invisible here
+    # and burned a full plan-bug round.
+    if not (
+        docmodel.spec_fixed_annotation(spec_dir)
+        or docmodel.spec_fix_implemented_heading(spec_dir)
+    ):
         return False
     if has_completion_receipt(spec_dir, filename="FIXED.md"):
         return False
@@ -2357,6 +2365,10 @@ def archive_fixed(
     # were unaffected; this puts archive_fixed on the same footing. Anchoring a
     # relative spec_path at repo_root (not CWD) is the correct interpretation:
     # git ls-files output downstream is likewise repo-relative.
+    # GAP 3 (spec-path polymorphism): accept a SPEC.md FILE as well as the item
+    # DIRECTORY — resolve a SPEC.md positional to its parent so `bug_id` and the
+    # git-mv target never bind to the literal "SPEC.md".
+    spec_path = docmodel.normalize_item_dir(spec_path)
     spec_path = Path(spec_path)
     spec_path = (
         spec_path.resolve()
@@ -2859,7 +2871,12 @@ def gate_coverage(spec_path: Path) -> dict:
 
     A SPEC with no Locked-Decision surface passes vacuously (empty lists). An
     empty/absent mcp-tests dir → every decision uncovered.
+
+    GAP 3 (spec-path polymorphism): accepts EITHER the item directory OR a
+    ``SPEC.md`` file positional — a ``SPEC.md`` path is resolved to its parent so
+    ``spec_path / "SPEC.md"`` never becomes ``<dir>/SPEC.md/SPEC.md``.
     """
+    spec_path = docmodel.normalize_item_dir(spec_path)
     spec_md_path = spec_path / "SPEC.md"
     spec_md = ""
     if spec_md_path.exists():

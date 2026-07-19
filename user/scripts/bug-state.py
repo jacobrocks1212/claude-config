@@ -1718,7 +1718,11 @@ def compute_state(
                     _atomic_write(
                         blocked_file,
                         lazy_core.format_fixed_unreconciled_blocker(
-                            bug_id, lazy_core.spec_fixed_annotation(spec_dir)
+                            bug_id,
+                            # GAP 2: either the inline `**Fixed:**` line or the
+                            # `## Fix (implemented …)` heading is the evidence.
+                            lazy_core.spec_fixed_annotation(spec_dir)
+                            or lazy_core.spec_fix_implemented_heading(spec_dir),
                         ),
                     )
                 _diag(
@@ -10356,10 +10360,19 @@ def main() -> int:
                 if state.get("feature_id") == _obligation.get("item_id")
                 else None
             ) or str(Path(args.repo_root) / "docs" / "bugs" / _aud_item_id)
+            # GAP 4 (adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps):
+            # coupled-pair mirror — use feature_name only when this probe IS the
+            # pending-audit item; otherwise it is the NEXT queued bug's name, so
+            # fall back to the pending-audit item's own slug.
+            _aud_item_name = (
+                state.get("feature_name")
+                if state.get("feature_id") == _obligation.get("item_id")
+                else None
+            ) or _aud_item_id
             state["input_audit_emit_command"] = lazy_core.build_input_audit_emit_command(
                 "bug-state.py",
                 item_id=_aud_item_id,
-                item_name=state.get("feature_name") or _aud_item_id,
+                item_name=_aud_item_name,
                 spec_path=_aud_spec_path,
                 cycle_kind=_obligation.get("cycle_kind") or "",
                 cwd=str(args.repo_root),

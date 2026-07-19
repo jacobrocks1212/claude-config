@@ -14969,10 +14969,20 @@ def main() -> int:
                 if state.get("feature_id") == _obligation.get("item_id")
                 else None
             ) or str(Path(args.repo_root) / "docs" / "features" / _aud_item_id)
+            # GAP 4 (adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps):
+            # feature_name describes THIS probe's item, which — when the audit is
+            # owed for a PRIOR item — is the NEXT queued item, not the pending-audit
+            # one. Mirror the _aud_spec_path guard: use feature_name only when this
+            # probe IS the pending-audit item; otherwise fall back to its own slug.
+            _aud_item_name = (
+                state.get("feature_name")
+                if state.get("feature_id") == _obligation.get("item_id")
+                else None
+            ) or _aud_item_id
             state["input_audit_emit_command"] = lazy_core.build_input_audit_emit_command(
                 "lazy-state.py",
                 item_id=_aud_item_id,
-                item_name=state.get("feature_name") or _aud_item_id,
+                item_name=_aud_item_name,
                 spec_path=_aud_spec_path,
                 cycle_kind=_obligation.get("cycle_kind") or "",
                 cwd=str(args.repo_root),

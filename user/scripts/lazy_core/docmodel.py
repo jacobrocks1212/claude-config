@@ -453,6 +453,67 @@ def spec_fixed_annotation(spec_path: Path | None) -> str | None:
         pass
     return None
 
+# A SECOND out-of-pipeline-fix signal alongside `**Fixed:**` — a `## Fix
+# (implemented <date>)` section heading (adhoc-harden-bug-pipeline-gate-verdict-
+# and-detector-gaps GAP 2). Some SPECs record a landed out-of-pipeline fix under
+# this heading instead of the inline `**Fixed:**` evidence line (observed:
+# docs/bugs/build-queue-timeout-kill-reaps-detached-runner/SPEC.md, fix landed
+# 2026-07-10). `is_fixed_unreconciled` keys on EITHER signal so such a SPEC is
+# diverted to reconciliation instead of burning a wasted plan-bug round.
+_FIX_IMPLEMENTED_HEADING_RE = re.compile(
+    r"^##\s+Fix\s*\(\s*implemented\b.*\)\s*$", re.IGNORECASE
+)
+
+def spec_fix_implemented_heading(spec_path: Path | None) -> str | None:
+    """Return the bug SPEC.md ``## Fix (implemented <date>)`` heading text, or None.
+
+    Sibling of ``spec_fixed_annotation`` — the alternate out-of-pipeline-fix
+    signal (a `## Fix (implemented …)` SECTION HEADING rather than the inline
+    `**Fixed:** <date>` evidence line). The FIRST matching heading wins,
+    mirroring ``spec_fixed_annotation``/``spec_status`` first-occurrence rules.
+    Read+scan shape is byte-parallel to ``spec_fixed_annotation`` (do NOT re-open
+    the file with a divergent reader). ``is_fixed_unreconciled`` treats
+    ``spec_fixed_annotation(...) or spec_fix_implemented_heading(...)`` as the
+    already-fixed signal, so a SPEC recording its fix under EITHER convention is
+    diverted to reconciliation instead of a wasted re-plan.
+    """
+    if spec_path is None:
+        return None
+    spec_md = spec_path / "SPEC.md"
+    if not spec_md.exists():
+        return None
+    try:
+        for line in spec_md.read_text(encoding="utf-8").splitlines():
+            m = _FIX_IMPLEMENTED_HEADING_RE.match(line)
+            if m:
+                return m.group(0).strip()
+    except OSError:
+        pass
+    return None
+
+def normalize_item_dir(spec_path: Path | None) -> Path | None:
+    """Resolve a polymorphic ``spec_path`` positional to the item DIRECTORY.
+
+    The state-script CLI is polymorphic at every ``<spec_path>``-taking
+    subcommand (adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps GAP 3):
+    ``--apply-pseudo __mark_fixed__`` / ``__grant_skip_no_mcp_surface__`` /
+    ``__write_validated_from_skip__`` and ``--archive-fixed`` treat the positional
+    as the item DIRECTORY (``spec_path / "FIXED.md"``; ``bug_id = spec_path.name``),
+    while ``--verify-ledger`` / ``--gate-coverage`` treat it as the ``SPEC.md``
+    FILE. Passing the wrong shape yielded a confusing precondition refusal that
+    was really a path-shape mismatch. This normalizer lets a dir-expecting caller
+    accept EITHER shape: a ``SPEC.md`` file is resolved to its parent dir; a dir
+    (or any non-``SPEC.md`` path) is returned unchanged. Conservative on purpose
+    (keys on the exact ``SPEC.md`` basename, never a bare ``.md``, so a stray plan
+    path is never silently re-rooted).
+    """
+    if spec_path is None:
+        return None
+    p = Path(spec_path)
+    if p.name == "SPEC.md":
+        return p.parent
+    return p
+
 # park-provisional-acceptance: the filename state a provisionally-accepted
 # NEEDS_INPUT.md is renamed to by provisionalize_sentinel(). It stays
 # `kind: needs-input` in frontmatter — the FILENAME is the state carrier
