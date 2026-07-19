@@ -4062,6 +4062,129 @@ def test_flush_commit_artifacts_skips_missing_and_noops_when_empty():
         assert head1 == head0, "no-op flush must not create a commit"
 
 
+# ---------------------------------------------------------------------------
+# WU-1 — concurrent-activity commit-sha ledger substrate
+# (adhoc-process-friction-detector-counts-concurrent-session-commits Phase 1):
+# append_concurrent_commit_sha / read_concurrent_commit_entries mirror the
+# deny-ledger fail-open plain-append pattern. Script-owned commit sites (Phase 2)
+# record their produced sha here so a concurrent same-identity session's commits
+# are subtractable at the friction detector.
+# ---------------------------------------------------------------------------
+
+def _cca_raw_lines(state_dir: "Path") -> "list[dict]":
+    p = state_dir / "lazy-concurrent-activity.jsonl"
+    if not p.exists():
+        return []
+    out = []
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            out.append(json.loads(line))
+    return out
+
+
+def test_append_concurrent_commit_sha_writes_entry():
+    """A single append writes one compact JSON line {sha, run_started_at, ts} to
+    lazy-concurrent-activity.jsonl and returns True."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td)
+        _set_state_dir(state_dir)
+        try:
+            ok = lazy_core.append_concurrent_commit_sha(
+                "abc123", run_started_at="R1", now=7.0,
+            )
+            assert ok is True
+            lines = _cca_raw_lines(state_dir)
+        finally:
+            _clear_state_dir()
+    assert len(lines) == 1, lines
+    entry = lines[0]
+    assert entry["sha"] == "abc123"
+    assert entry["run_started_at"] == "R1"
+    assert entry["ts"] == 7.0
+
+
+def test_read_concurrent_commit_entries_roundtrip():
+    """read_concurrent_commit_entries returns the appended entries as a
+    {sha: run_started_at} map."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.append_concurrent_commit_sha("s1", run_started_at="A", now=1.0)
+            lazy_core.append_concurrent_commit_sha("s2", run_started_at="B", now=2.0)
+            got = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert got == {"s1": "A", "s2": "B"}, got
+
+
+def test_read_concurrent_commit_entries_missing_file_empty():
+    """A missing ledger file returns an empty map, never raises."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            got = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert got == {}, got
+
+
+def test_read_concurrent_commit_entries_tolerates_torn_line():
+    """A torn/partial final line is skipped; the valid lines still parse."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td)
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.append_concurrent_commit_sha("good", run_started_at="A", now=1.0)
+            # Simulate a torn final append (a crash mid-write).
+            with (state_dir / "lazy-concurrent-activity.jsonl").open(
+                "a", encoding="utf-8"
+            ) as fh:
+                fh.write('{"sha": "torn", "run_started')  # no newline, invalid JSON
+            got = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert got == {"good": "A"}, got
+
+
+def test_append_concurrent_commit_sha_run_started_at_none_roundtrips():
+    """run_started_at=None (interactive, no live marker) records null and
+    round-trips as None (the conservative, never-subtracted identity)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            ok = lazy_core.append_concurrent_commit_sha(
+                "nullid", run_started_at=None, now=3.0,
+            )
+            assert ok is True
+            got = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert got == {"nullid": None}, got
+
+
+def test_append_concurrent_commit_sha_fail_open_unwritable():
+    """An unwritable state dir makes append return False WITHOUT raising
+    (fail-open — identical contract to append_deny_ledger_entry)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # Point LAZY_STATE_DIR at a FILE, not a dir — claude_state_dir's mkdir
+        # then raises, and the fail-open append swallows it.
+        blocker = Path(td) / "not-a-dir"
+        blocker.write_text("x", encoding="utf-8")
+        _set_state_dir(blocker)
+        try:
+            ok = lazy_core.append_concurrent_commit_sha("x", run_started_at="A", now=1.0)
+        finally:
+            _clear_state_dir()
+    assert ok is False
+
+
 _TESTS = [
     ("test_stale_and_materialized_symbols_present", test_stale_and_materialized_symbols_present),
     ("test_read_stale_upstream_absent", test_read_stale_upstream_absent),
@@ -4192,6 +4315,12 @@ _TESTS = [
     ("test_intervention_event_vocabulary_matches_live_emit_set", test_intervention_event_vocabulary_matches_live_emit_set),
     ("test_flush_commit_artifacts_does_not_absorb_foreign_staged_file", test_flush_commit_artifacts_does_not_absorb_foreign_staged_file),
     ("test_flush_commit_artifacts_skips_missing_and_noops_when_empty", test_flush_commit_artifacts_skips_missing_and_noops_when_empty),
+    ("test_append_concurrent_commit_sha_writes_entry", test_append_concurrent_commit_sha_writes_entry),
+    ("test_read_concurrent_commit_entries_roundtrip", test_read_concurrent_commit_entries_roundtrip),
+    ("test_read_concurrent_commit_entries_missing_file_empty", test_read_concurrent_commit_entries_missing_file_empty),
+    ("test_read_concurrent_commit_entries_tolerates_torn_line", test_read_concurrent_commit_entries_tolerates_torn_line),
+    ("test_append_concurrent_commit_sha_run_started_at_none_roundtrips", test_append_concurrent_commit_sha_run_started_at_none_roundtrips),
+    ("test_append_concurrent_commit_sha_fail_open_unwritable", test_append_concurrent_commit_sha_fail_open_unwritable),
 ]
 
 

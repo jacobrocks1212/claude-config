@@ -64,6 +64,18 @@ from .statedir import (
 _DENY_LEDGER_FILENAME = "lazy-deny-ledger.jsonl"
 
 
+# adhoc-process-friction-detector-counts-concurrent-session-commits Phase 1:
+# the concurrent-activity commit-sha ledger. Script-owned DIRECT-commit sites
+# (archive_fixed, flush_commit_artifacts) append their produced sha here stamped
+# with the LIVE run identity; the --cycle-end friction detector subtracts any
+# in-window sha recorded under a DISTINCT run identity, so a concurrent
+# SAME-git-identity session's automated commits (the operator's own second
+# interactive/scheduled session — invisible to the committer-email signal) no
+# longer false-trip `unexpected-commits`. Shared per-repo keyed state dir, so
+# the ledger is visible across concurrent same-repo sessions.
+_CONCURRENT_ACTIVITY_FILENAME = "lazy-concurrent-activity.jsonl"
+
+
 # ---------------------------------------------------------------------------
 # Phase 7 WU-7.1 — Deny ledger (routed hardening debt)
 # ---------------------------------------------------------------------------
@@ -199,6 +211,93 @@ def append_friction_ledger_entry(
     except Exception:  # noqa: BLE001
         # Fail-open: a ledger write must never propagate.
         return False
+
+
+def append_concurrent_commit_sha(
+    sha: str,
+    *,
+    run_started_at: str | None,
+    now: float | None = None,
+) -> bool:
+    """Append one concurrent-activity entry to ``lazy-concurrent-activity.jsonl``.
+
+    adhoc-process-friction-detector-counts-concurrent-session-commits Phase 1 —
+    the write-side substrate. Called (best-effort) by every script-owned
+    DIRECT-commit site AFTER a confirmed-successful commit, so the produced sha
+    is recorded with the run identity that made it. The ``--cycle-end`` detector
+    subtracts an in-window sha whose recorded ``run_started_at`` is PRESENT and
+    differs from the current run's identity (a concurrent session's commit).
+
+    Mirrors ``append_deny_ledger_entry``'s EXACT fail-open plain-append pattern
+    (``claude_state_dir() / <FILENAME>``, ``open("a")``, one compact JSON line,
+    ``except`` → return False). Never raises; a ledger-write failure must never
+    fail or partial-abort the commit the caller just made.
+
+    Entry shape (one JSON object per line):
+        {"sha": <full commit sha>, "run_started_at": <str|null>, "ts": <epoch>}
+
+    Args:
+        sha: the produced commit's full sha (the value the detector matches
+            against ``git log`` window shas).
+        run_started_at: the LIVE run marker's ``started_at`` identity as read by
+            ``_raw_marker_started_at()`` — the SAME source ``append_deny_ledger_entry``
+            stamps, so this run's OWN commits carry ``run_started_at == MINE`` and
+            are correctly EXCLUDED from subtraction. None (interactive / no live
+            marker) records ``null`` and is never subtracted (conservative).
+        now: epoch float for ts (injectable for hermetic tests).
+
+    Returns:
+        True if the line was appended; False on any write failure (fail-open).
+    """
+    if now is None:
+        now = time.time()
+    try:
+        entry = {"sha": sha, "run_started_at": run_started_at, "ts": now}
+        ledger_path = claude_state_dir() / _CONCURRENT_ACTIVITY_FILENAME
+        # Plain append (not _atomic_write) — mirrors append_deny_ledger_entry:
+        # append-only, torn-final-line-tolerant reader, no read-modify-write race.
+        with ledger_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        # Fail-open: a ledger write must never propagate.
+        return False
+
+
+def read_concurrent_commit_entries() -> dict[str, str | None]:
+    """Read ``lazy-concurrent-activity.jsonl`` as a ``{sha: run_started_at}`` map.
+
+    Mirrors ``read_deny_ledger``: a missing file → empty map (no concurrent
+    activity recorded), a corrupt/torn final line is skipped rather than
+    aborting the whole read, and a non-git/OS error degrades to an empty map.
+    Never raises. When the same sha appears more than once the LAST entry wins
+    (append order); the detector only cares whether a sha is present under a
+    distinct identity.
+
+    Returns:
+        ``{sha: run_started_at}`` for every well-formed entry (``run_started_at``
+        may be None for an interactive/no-marker record).
+    """
+    ledger_path = claude_state_dir(create=False) / _CONCURRENT_ACTIVITY_FILENAME
+    if not ledger_path.exists():
+        return {}
+    try:
+        raw = ledger_path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    out: dict[str, str | None] = {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(obj, dict) and isinstance(obj.get("sha"), str):
+            rsa = obj.get("run_started_at")
+            out[obj["sha"]] = rsa if isinstance(rsa, str) else None
+    return out
 
 
 def read_hook_events() -> list[dict]:

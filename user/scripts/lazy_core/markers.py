@@ -2075,38 +2075,56 @@ def _count_authored_commits_since(
 
 
 def _count_concurrent_writer_commits(
-    repo_root: Path, begin_head_sha: str | None
+    repo_root: Path,
+    begin_head_sha: str | None,
+    current_run_started_at: str | None = None,
 ) -> int | None:
     """Best-effort count of commits in ``begin_head_sha..HEAD`` attributable to
     a SANCTIONED CONCURRENT WRITER (concurrent-worktree-agent-coordination WU-2,
-    SPEC Requirement 2 — the 2026-07-18 false-friction incident).
+    SPEC Requirement 2 — the 2026-07-18 false-friction incident; EXTENDED by
+    adhoc-process-friction-detector-counts-concurrent-session-commits with a
+    ledger-read arm that closes the SAME-git-identity blind spot).
 
-    Signal: a commit's COMMITTER EMAIL differs from THIS repo's own configured
-    committer (``git config user.email``). Any commit this cycle's own dispatch
-    made was authored under the repo's configured git identity (the harness
-    never overrides it per-cycle), so a commit carrying a DIFFERENT committer
-    email is affirmative, deterministic evidence it did NOT come from this
-    cycle. Merges are excluded (mirrors ``_count_authored_commits_since`` —
-    a merge is a branch-integration artifact, never an authored work unit
-    attributable to either party).
+    TWO POSITIVE signals are UNIONED (a commit attributed by EITHER counts once):
 
-    Known limitation (documented, not a defect): a concurrent writer sharing
-    THIS SAME repo's configured git identity — e.g. the operator's own second
-    interactive/scheduled session on this machine, which is exactly the
-    2026-07-18 motivating incident's shape — commits under the identical
-    committer email and is therefore invisible to this signal; those commits
-    correctly contribute 0 (never misattributed), which is the required
-    fail-safe direction (see ``detect_cycle_bracket_friction``'s
-    ``concurrent_writer_commits`` param: an unknown/ambiguous count must never
-    cause suppression). A genuinely distinct committer identity (a teammate, a
-    bot, a differently-configured clone) IS caught.
+    1. **Committer-email** — a commit's COMMITTER EMAIL differs from THIS repo's
+       own configured committer (``git config user.email``). Any commit this
+       cycle's own dispatch made was authored under the repo's configured git
+       identity (the harness never overrides it per-cycle), so a DIFFERENT
+       committer email is affirmative evidence the commit did NOT come from this
+       cycle. Catches a genuinely-distinct identity (a teammate, a bot, a
+       differently-configured clone).
+
+    2. **Concurrent-activity ledger** (the new arm) — a window sha recorded in
+       ``lazy-concurrent-activity.jsonl`` (by a script-owned commit site, Phase 2)
+       under a ``run_started_at`` that is PRESENT and DIFFERS from this run's
+       ``current_run_started_at``. This closes the committer-email blind spot:
+       the operator's own second interactive/scheduled session shares THIS repo's
+       git identity (so signal 1 misses it) but stamps its automated commits with
+       a DISTINCT run identity in the shared per-repo-keyed ledger — exactly the
+       2026-07-18 motivating incident's shape.
+
+    Fail-SAFE invariant (SPEC Proven Findings): the ledger arm only ADDS positive
+    same-identity attribution — it NEVER over-subtracts. A ledger sha is counted
+    ONLY when its recorded ``run_started_at`` is a non-empty string that DIFFERS
+    from ``current_run_started_at``; an absent/null/malformed identity, or one
+    equal to this run's own (``== current``, i.e. THIS run's own automated
+    commits), is NOT counted. A ledger-read failure degrades to the email-only
+    count (never a crash, never over-subtraction). Merges are excluded from the
+    window (mirrors ``_count_authored_commits_since``).
+
+    Args:
+        repo_root: the repo to attribute commits against.
+        begin_head_sha: the ``--cycle-begin`` HEAD snapshot; None ⇒ degraded.
+        current_run_started_at: this run's identity (``read_run_marker().started_at``,
+            None interactive) — the discriminator for the ledger arm.
 
     Returns:
-        The count of differing-committer, non-merge commits in the range, or
-        ``None`` on ANY degraded read (no begin sha, unreadable git config, a
-        git failure) — mirrors ``_count_authored_commits_since``'s contract:
-        never raises, degrades to None (which disables suppression at the
-        caller), never crashes ``--cycle-end``.
+        The count of distinct concurrent-writer, non-merge window commits, or
+        ``None`` on ANY degraded git read (no begin sha, unreadable git config,
+        a git failure) — mirrors ``_count_authored_commits_since``'s contract:
+        never raises, degrades to None (disables suppression at the caller),
+        never crashes ``--cycle-end``.
     """
     from .runtimeplane import _git  # deferred (runtime/git plane; function-local avoids import cycle)
     if not begin_head_sha:
@@ -2118,18 +2136,42 @@ def _count_concurrent_writer_commits(
         own_email = (cfg_proc.stdout or "").strip()
         if not own_email:
             return None
+        # %H<US>%ae per commit (unit-separator \x1f never appears in either
+        # field), so we recover both the sha (for the ledger arm + de-dup) and
+        # the committer email in one pass.
         log_proc = _git(
-            repo_root, "log", "--no-merges", "--format=%ae",
+            repo_root, "log", "--no-merges", "--format=%H%x1f%ae",
             f"{begin_head_sha}..HEAD",
         )
         if log_proc.returncode != 0:
             return None
-        emails = [
-            line.strip()
-            for line in (log_proc.stdout or "").splitlines()
-            if line.strip()
-        ]
-        return sum(1 for email in emails if email != own_email)
+        window_shas: list[str] = []
+        attributed: set[str] = set()  # shas charged to a concurrent writer
+        for line in (log_proc.stdout or "").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split("\x1f", 1)
+            if len(parts) != 2:
+                continue
+            sha, email = parts[0].strip(), parts[1].strip()
+            if not sha:
+                continue
+            window_shas.append(sha)
+            if email and email != own_email:
+                attributed.add(sha)  # signal 1: distinct committer email
+        # Signal 2 (ledger arm) — best-effort; ANY failure degrades to the
+        # email-only attribution set (NEVER over-subtracts).
+        try:
+            from .ledgers import read_concurrent_commit_entries  # deferred (ledger plane; avoids import cycle)
+            ledger = read_concurrent_commit_entries()  # {sha: run_started_at}
+            for sha in window_shas:
+                rsa = ledger.get(sha)
+                if isinstance(rsa, str) and rsa and rsa != current_run_started_at:
+                    attributed.add(sha)  # de-duped by the set (counted once)
+        except Exception:  # noqa: BLE001
+            pass  # ledger unavailable → email-only count (fail-safe)
+        return len(attributed)
     except Exception:  # noqa: BLE001
         return None
 
@@ -2223,7 +2265,9 @@ def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
     # see _count_concurrent_writer_commits for the signal + its documented
     # limitation. Degrades to None on ANY read failure, which is the required
     # fail-safe default at the detector (no suppression on an unknown signal).
-    concurrent_writer_commits = _count_concurrent_writer_commits(root, begin_head_sha)
+    concurrent_writer_commits = _count_concurrent_writer_commits(
+        root, begin_head_sha, current_run_started_at
+    )
 
     descriptor = detect_cycle_bracket_friction(
         marker,

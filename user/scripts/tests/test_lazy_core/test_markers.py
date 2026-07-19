@@ -8425,6 +8425,115 @@ def test_record_audit_obligation_non_audited_kind_noop_regardless_of_delta():
             _clear_state_dir()
 
 
+# ---------------------------------------------------------------------------
+# WU-2 — _count_concurrent_writer_commits ledger-read arm
+# (adhoc-process-friction-detector-counts-concurrent-session-commits Phase 1):
+# a window commit recorded in lazy-concurrent-activity.jsonl under a DISTINCT
+# run identity is attributed to a concurrent writer even when it shares THIS
+# repo's git identity (the committer-email blind spot). Fail-safe: a null/
+# same-identity/absent ledger entry is NEVER subtracted.
+# ---------------------------------------------------------------------------
+
+def _cwc_seed_ledger(state_dir: "Path", shas, run_started_at) -> None:
+    """Seed the concurrent-activity ledger via the REAL producer under state_dir."""
+    _set_state_dir(state_dir)
+    for s in shas:
+        lazy_core.append_concurrent_commit_sha(s, run_started_at=run_started_at)
+
+
+def test_count_concurrent_writer_commits_ledger_subtracts_same_identity():
+    """N in-window commits made under THIS repo's own git identity (email-only
+    signal returns 0) but recorded in the ledger under a DISTINCT run identity
+    are attributed to a concurrent writer — the SAME-identity blind spot closed."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td_repo, tempfile.TemporaryDirectory() as td_state:
+        root = Path(td_repo)
+        begin = _prov_git_fixture_repo(root)  # committer email t@t
+        shas = [_prov_git_commit_file(root, f"f{i}.txt", f"c{i}") for i in range(3)]
+        try:
+            # No ledger yet → email-only degrade == 0 (fail-safe; pre-fix behavior).
+            _set_state_dir(Path(td_state))
+            assert lazy_core._count_concurrent_writer_commits(
+                root, begin, "MINE") == 0
+            # Seed the 3 shas under a DISTINCT identity → all 3 attributed.
+            _cwc_seed_ledger(Path(td_state), shas, "OTHER")
+            assert lazy_core._count_concurrent_writer_commits(
+                root, begin, "MINE") == 3
+        finally:
+            _clear_state_dir()
+
+
+def test_count_concurrent_writer_commits_this_run_shas_not_subtracted():
+    """A ledger sha stamped with THIS run's own identity (== current) is NOT
+    subtracted — this run's own automated commits still charge the budget."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td_repo, tempfile.TemporaryDirectory() as td_state:
+        root = Path(td_repo)
+        begin = _prov_git_fixture_repo(root)
+        shas = [_prov_git_commit_file(root, f"f{i}.txt", f"c{i}") for i in range(2)]
+        try:
+            _cwc_seed_ledger(Path(td_state), shas, "MINE")
+            assert lazy_core._count_concurrent_writer_commits(
+                root, begin, "MINE") == 0
+        finally:
+            _clear_state_dir()
+
+
+def test_count_concurrent_writer_commits_null_identity_not_subtracted():
+    """A ledger entry with a null/absent run_started_at is NOT subtracted
+    (conservative — an unknown identity never suppresses friction)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td_repo, tempfile.TemporaryDirectory() as td_state:
+        root = Path(td_repo)
+        begin = _prov_git_fixture_repo(root)
+        shas = [_prov_git_commit_file(root, f"f{i}.txt", f"c{i}") for i in range(2)]
+        try:
+            _cwc_seed_ledger(Path(td_state), shas, None)  # null identity
+            assert lazy_core._count_concurrent_writer_commits(
+                root, begin, "MINE") == 0
+        finally:
+            _clear_state_dir()
+
+
+def test_count_concurrent_writer_commits_dedup_email_and_ledger():
+    """A window commit attributed by BOTH signals (distinct author email AND a
+    ledger record) is counted exactly ONCE, not twice."""
+    _guard()
+
+    def _run(cmd, cwd):
+        r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+        if r.returncode != 0:
+            raise RuntimeError(f"git fixture failed: {r.stderr.strip()}")
+        return r
+
+    with tempfile.TemporaryDirectory() as td_repo, tempfile.TemporaryDirectory() as td_state:
+        root = Path(td_repo)
+        begin = _prov_git_fixture_repo(root)  # own author email t@t
+        # One commit authored under a DIFFERENT email (email signal attributes it).
+        (root / "foreign.txt").write_text("x\n", encoding="utf-8")
+        _run(["git", "add", "-A"], str(root))
+        _run(["git", "-c", "user.email=other@x", "-c", "user.name=o",
+              "commit", "-q", "-m", "foreign"], str(root))
+        foreign_sha = _run(["git", "rev-parse", "HEAD"], str(root)).stdout.strip()
+        try:
+            # ALSO record the same sha in the ledger under a distinct identity.
+            _cwc_seed_ledger(Path(td_state), [foreign_sha], "OTHER")
+            # Both signals fire on the one commit → counted once.
+            assert lazy_core._count_concurrent_writer_commits(
+                root, begin, "MINE") == 1
+        finally:
+            _clear_state_dir()
+
+
+def test_count_concurrent_writer_commits_none_on_degraded_read():
+    """No begin sha → None (the degraded contract is preserved; the caller
+    treats None as 'disable suppression', never a false positive)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td_repo:
+        assert lazy_core._count_concurrent_writer_commits(
+            Path(td_repo), None, "MINE") is None
+
+
 _TESTS = [
     ("test_lazy_state_test_output_matches_baseline", test_lazy_state_test_output_matches_baseline),
     ("test_bug_state_test_output_matches_baseline", test_bug_state_test_output_matches_baseline),
@@ -8527,6 +8636,11 @@ _TESTS = [
     ("test_detect_friction_planning_cycle_multi_commit_within_budget", test_detect_friction_planning_cycle_multi_commit_within_budget),
     ("test_detect_friction_spec_cycle_multi_commit_within_budget", test_detect_friction_spec_cycle_multi_commit_within_budget),
     ("test_count_authored_commits_since_excludes_merge_commits", test_count_authored_commits_since_excludes_merge_commits),
+    ("test_count_concurrent_writer_commits_ledger_subtracts_same_identity", test_count_concurrent_writer_commits_ledger_subtracts_same_identity),
+    ("test_count_concurrent_writer_commits_this_run_shas_not_subtracted", test_count_concurrent_writer_commits_this_run_shas_not_subtracted),
+    ("test_count_concurrent_writer_commits_null_identity_not_subtracted", test_count_concurrent_writer_commits_null_identity_not_subtracted),
+    ("test_count_concurrent_writer_commits_dedup_email_and_ledger", test_count_concurrent_writer_commits_dedup_email_and_ledger),
+    ("test_count_concurrent_writer_commits_none_on_degraded_read", test_count_concurrent_writer_commits_none_on_degraded_read),
     ("test_detect_friction_within_commit_budget_returns_none", test_detect_friction_within_commit_budget_returns_none),
     ("test_detect_friction_degraded_inputs_return_none", test_detect_friction_degraded_inputs_return_none),
     ("test_detect_friction_meta_cycle_exempt_from_unexpected_commits", test_detect_friction_meta_cycle_exempt_from_unexpected_commits),
