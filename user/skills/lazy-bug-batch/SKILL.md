@@ -87,8 +87,13 @@ See `~/.claude/skills/lazy-batch/SKILL.md` HARD CONSTRAINTS for the full text of
 sub-subagent orchestration model is authoritative, under the emitted prompt's "WORKSTATION
 DISPATCH — LOAD-BEARING" guardrails (terminal-stop ban restated in every sub-subagent prompt,
 single-writer / sole-integrator discipline, scope containment). Inline execution of small
-mechanical batches remains sanctioned. See `/lazy-batch`'s "Cycle-subagent execution model"
-paragraph for the full contract + history.
+mechanical batches remains sanctioned. **ORCHESTRATOR SCOPE (same as `/lazy-batch`): you dispatch
+EXACTLY ONE `Agent` per cycle — the single emitted `cycle_prompt`, verbatim, to ONE subagent — and
+NEVER compose the cycle skill's internal worker prompts (test-agent / impl-agent / per-work-unit /
+Explore fan-out) yourself; that split happens INSIDE the subagent.** Improvising a worker prompt at
+the orchestrator level is caught by the dispatch guard's self-announcing deny (hardening
+Rounds 112/114). See `/lazy-batch`'s "Cycle-subagent execution model" paragraph for the full
+contract + history.
 
 **Meta-dispatch by-reference — PREFER `dispatch_prompt_ref` at ALL `--emit-dispatch` sites (mirrors `/lazy-batch` Phase 7 / lazy-validation-readiness).** Every `bug-state.py --emit-dispatch <class>` call emits BOTH `dispatch_prompt` AND `dispatch_prompt_ref` (`@@lazy-ref nonce=<hex>`). When dispatching any meta-dispatch prompt (hardening, recovery, apply-resolution, coherence-recovery, input-audit, investigation, etc.), PREFER `dispatch_prompt_ref` over the verbatim `dispatch_prompt`. Fall back to `dispatch_prompt` verbatim ONLY when `dispatch_prompt_ref` is absent or null. See `/lazy-batch`'s "Meta-dispatch by-reference" paragraph (§1d) for the full rationale.
 
