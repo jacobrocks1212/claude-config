@@ -118,6 +118,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -333,6 +338,11 @@
       "id": "descoped-row-recognition-needs-canonical-marker",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -738,6 +748,27 @@
       "id": "adhoc-ensure-runtime-test-injects-signal-under-test",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps/FIXED.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps/IMPLEMENTED.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps/SPEC.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker/ADHOC_BRIEF.md": [
@@ -2404,6 +2435,20 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/_archive/dispatch-guard-improvisation-deny-not-self-announcing/FIXED.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/dispatch-guard-improvisation-deny-not-self-announcing/SPEC.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/FIXED.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -3143,6 +3188,37 @@
       "id": "shared-hook-lib",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/lazy-batch-prose-entices-orchestrator-subagent-split/FIXED.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "lazy-batch-prose-entices-orchestrator-subagent-split",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/lazy-batch-prose-entices-orchestrator-subagent-split/IMPLEMENTED.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/lazy-batch-prose-entices-orchestrator-subagent-split/SPEC.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "lazy-batch-prose-entices-orchestrator-subagent-split",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/lazy-batch-unified-driver-parity-and-accounting/FIXED.md": [
@@ -5033,6 +5109,20 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/adhoc-containment-hook-e2big-fails-open-windows-native/NEEDS_INPUT.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/adhoc-containment-hook-e2big-fails-open-windows-native/SPEC.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/adhoc-cycle-begin-real-requires-sub-skill/PHASES.md": [
     {
       "id": "adhoc-cycle-begin-real-requires-sub-skill",
@@ -5246,6 +5336,20 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/adhoc-incident-friction-4cb10b/ADHOC_BRIEF.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/adhoc-incident-friction-4cb10b/INCIDENT.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/adhoc-incident-hook-deny-057921/GATE_VERDICT.md": [
     {
       "id": "adhoc-incident-hook-deny-057921",
@@ -5386,6 +5490,20 @@
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-incident-hook-deny-19343d-r3/NEEDS_INPUT.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/adhoc-incident-hook-deny-19343d-r3/SPEC.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/adhoc-incident-hook-deny-4b767b/PHASES.md": [
@@ -6004,9 +6122,23 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/build-queue-timeout-kill-reaps-detached-runner/PHASES.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/build-queue-timeout-kill-reaps-detached-runner/SPEC.md": [
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/build-queue-timeout-kill-reaps-detached-runner/plans/fix-crash-safe-detached-runner.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
       "type": "bug",
       "provenance": "manual"
     }
@@ -9324,6 +9456,11 @@
       "id": "cycle-subagent-leaves-work-uncommitted-or-unticked",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -16113,6 +16250,32 @@
       "provenance": "manual"
     }
   ],
+  "docs/interventions/harden-2026-07-r112.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r113.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r114.md": [
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "lazy-batch-prose-entices-orchestrator-subagent-split",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/harden-2026-07-r14.md": [
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -17964,6 +18127,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -18271,6 +18439,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -18307,6 +18480,11 @@
     },
     {
       "id": "lazy-batch-parallel-run-harness-gaps-round-2",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "lazy-batch-prose-entices-orchestrator-subagent-split",
       "type": "bug",
       "provenance": "manual"
     },
@@ -19781,6 +19959,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -20033,6 +20216,11 @@
       "id": "descoped-row-recognition-needs-canonical-marker",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -20762,6 +20950,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -21203,6 +21396,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -21336,6 +21534,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -21386,6 +21589,11 @@
       "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -21468,6 +21676,11 @@
       "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -21628,6 +21841,11 @@
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
@@ -23104,6 +23322,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -23203,6 +23426,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -23255,6 +23483,11 @@
       "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -23803,6 +24036,11 @@
   "user/skills/_components/lazy-batch-prompts/dispatch-gate-verdict.md": [
     {
       "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
       "type": "bug",
       "provenance": "manual"
     }
@@ -24696,6 +24934,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -24876,6 +25119,11 @@
       "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "dispatch-guard-improvisation-deny-not-self-announcing",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
