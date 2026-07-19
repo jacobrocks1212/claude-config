@@ -77,10 +77,10 @@ No premise-grade contradictions; all anchors verified present. The two judgment 
 
 ## Work Units
 
-- [ ] WU-1 — `lazy_core.execute_plan_liveness` discriminator helper + tests
-- [ ] WU-2 — `--execute-plan-liveness` CLI flag on both state scripts + parity-manifest registration
-- [ ] WU-3 — orchestrator recovery-suppression wiring in lazy-batch + lazy-bug-batch Step 1e/4a
-- [ ] WU-4 — Gap-1 mechanical foreground-enforcement PreToolUse guard + registration + tests
+- [x] WU-1 — `lazy_core.execute_plan_liveness` discriminator helper + tests
+- [x] WU-2 — `--execute-plan-liveness` CLI flag on both state scripts + parity-manifest registration
+- [x] WU-3 — orchestrator recovery-suppression wiring in lazy-batch + lazy-bug-batch Step 1e/4a
+- [x] WU-4 — Gap-1 mechanical foreground-enforcement PreToolUse guard + registration + tests
 
 ## Execution Schedule
 
