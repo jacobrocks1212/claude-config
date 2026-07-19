@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: adhoc-plan-bug-no-guard-for-fixed-annotated-specs
-status: In-progress
+status: Complete
 created: 2026-07-19
 complexity: complex
 phases: [1, 2, 3]
@@ -68,7 +68,7 @@ Upstream plans and PHASES.md files this plan was authored against. Listed in dep
 
 - [x] WU-1 — Phase 1: shared `**Fixed:**` reader + `is_fixed_unreconciled` predicate + `format_fixed_unreconciled_blocker` (+ unit tests)
 - [x] WU-2 — Phase 2: wire the pre-gate into `bug-state.py` Step 4 (divert to `BLOCKED.md`) + parity-divergence row + `--test` fixture
-- [ ] WU-3 — Phase 3: `/plan-bug` Step 0.4 belt-and-suspenders prose + re-project/lint
+- [x] WU-3 — Phase 3: `/plan-bug` Step 0.4 belt-and-suspenders prose + re-project/lint
 
 ---
 

@@ -95,16 +95,20 @@ The one decision that *looks* product-class — should the pre-gate **HALT** for
 
 ### Phase 3: `/plan-bug` Step 0.4 belt-and-suspenders gate (direct-invocation safety)
 
+**Status:** Complete
+
 **Scope:** Add the completion-defense-in-depth pre-gate to `/plan-bug`'s Step 0.4 status gate so the skill is safe even when invoked directly on a Fixed-annotated Concluded SPEC (bypassing the Phase-2 `bug-state.py` divert) — it refuses to plan and names the reconciliation remedy instead of burning a `/spec-phases` + `/write-plan` dispatch.
 
 **Deliverables:**
-- [ ] Extend `user/skills/plan-bug/SKILL.md` Step 0.4: after the status gate confirms a pre-fix status, add a sub-check — if the SPEC carries a `**Fixed:**` annotation (status not yet `Fixed`) AND no valid `FIXED.md` receipt (the `lazy_core.is_fixed_unreconciled` predicate, named as the contract), REFUSE the planning round with a distinct `fixed-unreconciled` note: "this bug appears already-implemented out-of-pipeline (`**Fixed:**` annotation present, no receipt) — reconcile via the `docs/bugs/CLAUDE.md` receipt + `--archive-fixed` contract, or clear the stray `**Fixed:**` annotation to re-plan. Do NOT author `PHASES.md` / a plan." Return success with the note and STOP; do NOT proceed to Step 1/2.
-- [ ] Re-project + lint: `python ~/.claude/scripts/project-skills.py` then `python ~/.claude/scripts/lint-skills.py` (no broken injections; the added prose references the shared predicate by name — no new `!cat` component needed).
+- [x] Extend `user/skills/plan-bug/SKILL.md` Step 0.4: after the status gate confirms a pre-fix status, add a sub-check — if the SPEC carries a `**Fixed:**` annotation (status not yet `Fixed`) AND no valid `FIXED.md` receipt (the `lazy_core.is_fixed_unreconciled` predicate, named as the contract), REFUSE the planning round with a distinct `fixed-unreconciled` note: "this bug appears already-implemented out-of-pipeline (`**Fixed:**` annotation present, no receipt) — reconcile via the `docs/bugs/CLAUDE.md` receipt + `--archive-fixed` contract, or clear the stray `**Fixed:**` annotation to re-plan. Do NOT author `PHASES.md` / a plan." Return success with the note and STOP; do NOT proceed to Step 1/2.
+- [x] Re-project + lint: `python ~/.claude/scripts/project-skills.py` then `python ~/.claude/scripts/lint-skills.py` (no broken injections; the added prose references the shared predicate by name — no new `!cat` component needed).
+
+**Implementation Notes (2026-07-19):** Added the `Already-implemented-out-of-pipeline gate (fixed-unreconciled — belt-and-suspenders)` bullet to Step 0.4 right after the status gate, naming `lazy_core.is_fixed_unreconciled(spec_dir, repo_root)` as the mechanical contract and mirroring Phase 2's remedy wording (reconcile via receipt + `--archive-fixed`, OR clear the stray annotation) so both surfaces speak with one voice. Re-projected (`~/.claude/skills-projected/_default/plan-bug/SKILL.md`) + lint clean; parity audit green (no coupled-pair mirror owed — `/plan-bug` is a bug-axis skill; `/plan-feature` has no `**Fixed:**`-annotation analog).
 
 **Minimum Verifiable Behavior:** `python ~/.claude/scripts/lint-skills.py` exits clean after re-projection; the Step 0.4 prose visibly refuses a `**Fixed:**`-annotated Concluded SPEC before Step 1.
 
 **Runtime Verification** *(checked by manual review / the skill's own contract — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> The updated Step 0.4, read end-to-end, refuses a Fixed-annotated no-receipt Concluded SPEC (names the reconciliation remedy) and still proceeds normally for a plain Concluded SPEC — confirmed by reading the projected `skills-projected/_default/plan-bug/SKILL.md`.
+- [x] <!-- verification-only --> The updated Step 0.4, read end-to-end, refuses a Fixed-annotated no-receipt Concluded SPEC (names the reconciliation remedy) and still proceeds normally for a plain Concluded SPEC — confirmed by reading the projected `skills-projected/_default/plan-bug/SKILL.md`.
 
 **MCP Integration Test Assertions:** N/A — `/plan-bug` is prose; its behavior is verified by lint + projection review, not an MCP surface.
 
