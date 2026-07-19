@@ -216,6 +216,18 @@ Audit algorithm:
    Never REMOVE an existing `stub_origin: true`. On a non-stub-origin cycle
    this step is a no-op (do not add the marker to post-research sentinels —
    the operator locked that baseline).
+     - **Auto-generated-stub backstop** (park-provisional-parks-claude-config-
+       auto-generated-stubs): if the bug dir for this {feature_id} carries a
+       HARNESS-AUTO-GENERATED capsule — `INCIDENT.md` (`kind: incident-capture`)
+       or `EVIDENCE.md` (`kind: canary-evidence`) whose frontmatter carries
+       `auto_generated: true` — then ALSO verify the NEEDS_INPUT.md carries
+       `auto_generated: true` + the capsule's `auto_generated_origin:` value
+       (`incident-capture` / `canary-revert`); ADD both with `Edit` if the
+       producer omitted them (same commit). These mark the sentinel as machine
+       triage noise so `lazy_core.provisional_eligibility`'s claude-config
+       carve-out auto-accepts its recommended option under `--park-provisional`.
+       NEVER add them when the bug dir has no such capsule (a genuine operator
+       stub stays parked); never REMOVE an existing pair.
 
 8. Return a one-paragraph summary (≤ 8 lines) covering:
    - Decisions reviewed (count) and how many you classified as

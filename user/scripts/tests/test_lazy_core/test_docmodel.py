@@ -3442,6 +3442,111 @@ def test_provisional_eligibility_eligible_without_conflict_kind():
         assert reason == "eligible"
 
 
+def _write_stub_origin_needs_input(path: Path, *, auto_generated: str | None = None,
+                                   origin: str | None = None) -> None:
+    """A NEEDS_INPUT.md that satisfies every OTHER provisional_eligibility check
+    (kind, decisions, divergence grades, Decision-Context H3 + Recommendation)
+    but carries `stub_origin: true` — normally INELIGIBLE. Optional
+    `auto_generated`/`auto_generated_origin` lines layer the claude-config
+    carve-out under test (park-provisional-parks-claude-config-auto-generated-
+    stubs)."""
+    ag_line = f"auto_generated: {auto_generated}\n" if auto_generated is not None else ""
+    origin_line = f"auto_generated_origin: {origin}\n" if origin is not None else ""
+    path.write_text(
+        "---\n"
+        "kind: needs-input\n"
+        "feature_id: adhoc-incident-test\n"
+        "written_by: spec-bug\n"
+        "decisions:\n"
+        "  - revert, redesign, or close-as-noise\n"
+        "stub_origin: true\n"
+        f"{ag_line}"
+        f"{origin_line}"
+        "divergence: isolated\n"
+        "audit_divergence: isolated\n"
+        "date: 2026-07-19\n"
+        "---\n\n"
+        "## Decision Context\n\n"
+        "### 1. revert, redesign, or close-as-noise\n\n"
+        "**Problem:** the canary tripped on an aggregate band swing.\n\n"
+        "**Options:**\n- **close-as-noise (Recommended)** — x\n- **revert** — y\n\n"
+        "**Recommendation:** close-as-noise\n",
+        encoding="utf-8",
+    )
+
+
+def _seed_claude_config_repo(root: Path) -> Path:
+    """Seed the claude-config discriminator (manifest.psd1 + user/settings.json)
+    at `root` and return a bug-dir path for a NEEDS_INPUT.md under it."""
+    (root / "manifest.psd1").write_text("@{}\n", encoding="utf-8")
+    (root / "user").mkdir(parents=True, exist_ok=True)
+    (root / "user" / "settings.json").write_text("{}\n", encoding="utf-8")
+    bug_dir = root / "docs" / "bugs" / "canary-revert-harden-x"
+    bug_dir.mkdir(parents=True, exist_ok=True)
+    return bug_dir
+
+
+def test_provisional_eligibility_auto_generated_stub_in_claude_config_eligible():
+    """park-provisional-parks-claude-config-auto-generated-stubs: a stub_origin
+    sentinel that ALSO carries auto_generated: true + a recognized origin, under
+    a claude-config checkout, is provisional-ELIGIBLE (the carve-out bypasses the
+    stub_origin exclusion)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        bug_dir = _seed_claude_config_repo(Path(td))
+        p = bug_dir / "NEEDS_INPUT.md"
+        _write_stub_origin_needs_input(
+            p, auto_generated="true", origin="canary-revert")
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is True, reason
+        assert reason == "eligible"
+
+
+def test_provisional_eligibility_genuine_operator_stub_origin_still_parks():
+    """Regression pin: the SAME claude-config fixture WITHOUT the auto_generated
+    marker (a genuine operator-requested stub) still parks — the carve-out is
+    what (and only what) rescues the auto-generated sentinel above."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        bug_dir = _seed_claude_config_repo(Path(td))
+        p = bug_dir / "NEEDS_INPUT.md"
+        _write_stub_origin_needs_input(p)  # no auto_generated fields
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is False
+        assert "stub_origin" in reason.lower()
+
+
+def test_provisional_eligibility_auto_generated_stub_outside_claude_config_parks():
+    """The carve-out is claude-config-scoped: an auto_generated stub_origin
+    sentinel with NO manifest.psd1/user/settings.json discriminator on any parent
+    still parks (the operator directive names claude-config specifically)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # Plain temp dir — no claude-config discriminator seeded.
+        bug_dir = Path(td) / "docs" / "bugs" / "canary-revert-harden-x"
+        bug_dir.mkdir(parents=True, exist_ok=True)
+        p = bug_dir / "NEEDS_INPUT.md"
+        _write_stub_origin_needs_input(
+            p, auto_generated="true", origin="canary-revert")
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is False
+        assert "stub_origin" in reason.lower()
+
+
+def test_provisional_eligibility_auto_generated_unrecognized_origin_parks():
+    """Fail-closed: auto_generated: true with an origin OUTSIDE the closed
+    harness-origin set does NOT rescue — the stub_origin exclusion stands."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        bug_dir = _seed_claude_config_repo(Path(td))
+        p = bug_dir / "NEEDS_INPUT.md"
+        _write_stub_origin_needs_input(
+            p, auto_generated="true", origin="operator-typed-thing")
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is False
+        assert "stub_origin" in reason.lower()
+
+
 def test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo():
     _guard()
     with tempfile.TemporaryDirectory() as td:
@@ -3889,6 +3994,10 @@ _TESTS = [
     ("test_classify_conflict_ambiguous_is_semantic", test_classify_conflict_ambiguous_is_semantic),
     ("test_provisional_eligibility_excludes_semantic_conflict", test_provisional_eligibility_excludes_semantic_conflict),
     ("test_provisional_eligibility_eligible_without_conflict_kind", test_provisional_eligibility_eligible_without_conflict_kind),
+    ("test_provisional_eligibility_auto_generated_stub_in_claude_config_eligible", test_provisional_eligibility_auto_generated_stub_in_claude_config_eligible),
+    ("test_provisional_eligibility_genuine_operator_stub_origin_still_parks", test_provisional_eligibility_genuine_operator_stub_origin_still_parks),
+    ("test_provisional_eligibility_auto_generated_stub_outside_claude_config_parks", test_provisional_eligibility_auto_generated_stub_outside_claude_config_parks),
+    ("test_provisional_eligibility_auto_generated_unrecognized_origin_parks", test_provisional_eligibility_auto_generated_unrecognized_origin_parks),
     ("test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo", test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo),
     ("test_skip_waiver_refusal_pipeline_structural_refuses_app_repo", test_skip_waiver_refusal_pipeline_structural_refuses_app_repo),
     ("test_skip_waiver_refusal_pipeline_structural_refuses_without_repo_root", test_skip_waiver_refusal_pipeline_structural_refuses_without_repo_root),

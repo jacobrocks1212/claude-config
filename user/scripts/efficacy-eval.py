@@ -813,6 +813,14 @@ def _canary_evidence_text(rec: dict, ev: dict, repo_root: Path,
     fm = [
         "---",
         "kind: canary-evidence",
+        # park-provisional-parks-claude-config-auto-generated-stubs: durable
+        # provenance that this revert-triage bug stub was machine-enqueued by the
+        # canary watcher (NOT operator-authored). spec-bug propagates these two
+        # fields onto its pre-conclusion NEEDS_INPUT.md, where
+        # lazy_core.provisional_eligibility's claude-config carve-out reads them to
+        # auto-accept the recommended option under --park-provisional.
+        "auto_generated: true",
+        "auto_generated_origin: canary-revert",
         f"canary_revert_of: {rid}",
         f"intervention_record: {record_rel}",
         f"tripped: {today}",
@@ -1000,6 +1008,40 @@ def _canary_ceiling_matured(opened, today: str) -> bool:
     return (t - o).days >= lazy_core.CANARY_WINDOW_DAYS_CEILING
 
 
+def _canary_should_enqueue(band: dict, incident_trip: bool,
+                           attributed: list, meta: dict) -> "tuple[bool, str]":
+    """Confound guard between trip DETECTION and auto-ENQUEUE (canary-band-only-
+    trip-auto-enqueues-without-attribution). A detected trip is ALWAYS surfaced
+    (D4 — never silent); this gates ONLY whether it auto-enqueues a revert-triage
+    bug stub. Returns (enqueue, suppress_reason).
+
+    - An INCIDENT trip (≥CANARY_INCIDENT_TRIP_COUNT attributed fresh incidents)
+      always enqueues — real surface attribution.
+    - A BAND-only trip enqueues iff the swing is plausibly caused by the shipped
+      change:
+        * `signal_independence` starts with "independent" — a band swing on an
+          independent signal is meaningful on its own (it is not self-emitted by
+          the changed surface); OR
+        * ≥1 fresh incident attributes to the change's own surface.
+      A band-only trip on a NON-independent (self-emitted / mixed / undeclared)
+      signal with ZERO attributed incidents is a confounded aggregate-volume
+      swing — the shipped change can only REDUCE the regressed signal on its own
+      path — so it is SUPPRESSED (surfaced for triage, not auto-enqueued). Keys
+      on STRUCTURAL signals (attribution + declared independence), never on a
+      specific signal id or id prefix."""
+    if incident_trip:
+        return True, ""
+    indep = str(meta.get("signal_independence") or "").strip().lower()
+    if indep.startswith("independent"):
+        return True, ""
+    if attributed:
+        return True, ""
+    return False, (
+        "band-only trip on a non-independent signal with zero attributed fresh "
+        "incidents — confounded (aggregate-volume) swing; surfaced for triage, "
+        "not auto-enqueued (D4 preserved — nothing reverted)")
+
+
 def _canary_evaluate_record(rec: dict, events: list[dict], run_ids: list[str],
                             incidents: list[dict], today: str) -> dict:
     """Evaluate ONE open-canary record for this run boundary. Pure (no writes);
@@ -1021,6 +1063,13 @@ def _canary_evaluate_record(rec: dict, events: list[dict], run_ids: list[str],
     attributed, unattributed = _canary_attribute(canary, incidents)
     incident_trip = len(attributed) >= CANARY_INCIDENT_TRIP_COUNT
     trip = bool(band.get("trip")) or incident_trip
+    # Confound guard (canary-band-only-trip-auto-enqueues-without-attribution):
+    # a detected trip is always surfaced (D4); `enqueue` gates only the
+    # auto-enqueue of a revert-triage stub. Only meaningful when a trip fired.
+    enqueue, suppress_reason = True, ""
+    if trip:
+        enqueue, suppress_reason = _canary_should_enqueue(
+            band, incident_trip, attributed, meta)
 
     # A matured window with ZERO observable runs is honest no-data (D2/D7) —
     # only when it did NOT trip (an incident trip needs no runs).
@@ -1043,6 +1092,8 @@ def _canary_evaluate_record(rec: dict, events: list[dict], run_ids: list[str],
         "matured": matured,
         "no_data": no_data,
         "trip": trip,
+        "enqueue": enqueue,
+        "suppress_reason": suppress_reason,
         "band": band,
         "attributed": attributed,
         "unattributed": unattributed,
@@ -1114,6 +1165,7 @@ def run_canary(repo_root: Path, args, today: str) -> dict:
     incidents = _canary_gather_incidents(repo_root)
 
     trips: list[dict] = []
+    suppressed: list[dict] = []
     closed_no_data: list[str] = []
     closed_clean: list[str] = []
     monitoring: list[dict] = []
@@ -1121,7 +1173,24 @@ def run_canary(repo_root: Path, args, today: str) -> dict:
     projected_no_data = 0
     for rec in open_recs:
         ev = _canary_evaluate_record(rec, events, run_ids, incidents, today)
-        if ev["trip"]:
+        if ev["trip"] and not ev["enqueue"]:
+            # Confound guard (canary-band-only-trip-auto-enqueues-without-
+            # attribution): a band-only trip with zero surface attribution on a
+            # non-independent signal is SURFACED for triage (D4) but NOT
+            # auto-enqueued. The record is NEITHER closed nor consequence-fired —
+            # it stays open and re-surfaces until attribution appears or the
+            # operator acts. NOTHING is reverted.
+            suppressed.append({
+                "id": ev["id"],
+                "reason": ev["reason"],
+                "suppress_reason": ev["suppress_reason"],
+                "band": {k: ev["band"].get(k) for k in
+                         ("trip", "rel", "band", "post_events", "post_value",
+                          "base_value")},
+                "attributed": len(ev["attributed"]),
+                "unattributed": len(ev["unattributed"]),
+            })
+        elif ev["trip"]:
             consequence = "would enqueue canary-revert-{} (dry-run)".format(
                 ev["id"]) if args.dry_run else _canary_fire_consequence(
                 repo_root, rec, ev, today)
@@ -1174,6 +1243,13 @@ def run_canary(repo_root: Path, args, today: str) -> dict:
     notify = None
     if trips:
         notify = "canary tripped: " + ", ".join(t["id"] for t in trips)
+    suppressed_notify = None
+    if suppressed:
+        suppressed_notify = (
+            f"⚠ {len(suppressed)} band-only canary trip(s) suppressed "
+            "(zero attribution on a non-independent signal — surfaced for "
+            "triage, not auto-enqueued): "
+            + ", ".join(s["id"] for s in suppressed))
     staleness = {
         "open_count": len(monitoring),
         "oldest_age_days": max(still_open_ages) if still_open_ages else 0,
@@ -1191,6 +1267,8 @@ def run_canary(repo_root: Path, args, today: str) -> dict:
         "mode": "canary",
         "open_canaries": len(open_recs),
         "trips": trips,
+        "suppressed": suppressed,
+        "suppressed_notify": suppressed_notify,
         "closed_no_data": closed_no_data,
         "closed_clean": closed_clean,
         "monitoring": monitoring,

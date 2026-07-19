@@ -2567,6 +2567,17 @@ def _extract_recommended_label(h3_text: str) -> str | None:
 _SEMANTIC_CONFLICT_MARKER_FIELD = "conflict_kind"
 _SEMANTIC_CONFLICT_MARKER_VALUE = "semantic"
 
+# park-provisional-parks-claude-config-auto-generated-stubs: the closed set of
+# HARNESS-AUTO-GENERATED bug-stub origins. A stub whose seeded capsule (and, via
+# spec-bug propagation, its NEEDS_INPUT.md) carries `auto_generated: true` +
+# `auto_generated_origin: <one of these>` was machine-enqueued by the harness
+# self-improvement loop (canary revert-triage / incident capture), NOT authored
+# by the operator — so its stub-origin baseline is machine triage noise, and in
+# claude-config `--park-provisional` should AUTO-ACCEPT its recommended option
+# rather than parking. Structural origin tag — NEVER an id prefix like
+# `canary-revert-*` (that would be an anti-overfit literal-alternation finding).
+_AUTO_GENERATED_HARNESS_ORIGINS = frozenset({"canary-revert", "incident-capture"})
+
 # Surface-key extractors for the coupled-surface half of the discriminator. A
 # conflict is on a SHARED logical surface when both sides touch the same named
 # symbol (def/class), the same Locked-Decision row id (D<n>/LD<n>), or the same
@@ -2656,6 +2667,59 @@ def classify_conflict(merge_result: dict) -> tuple[str, str]:
     return ("semantic", "conflict surface undeterminable — fail-safe to semantic")
 
 
+def _sentinel_repo_is_claude_config(sentinel_path: Path) -> bool:
+    """True iff ``sentinel_path`` lives under the claude-config checkout.
+
+    park-provisional-parks-claude-config-auto-generated-stubs: the auto-generated-
+    stub carve-out is claude-config-scoped (the operator directive names it
+    specifically). Self-contained + deterministic: walk up from the sentinel and
+    report claude-config when a parent carries BOTH ``manifest.psd1`` (the symlink
+    manifest — unique to this repo's root) AND ``user/settings.json`` (the
+    user-scope settings SSOT that exists ONLY in the claude-config checkout — the
+    same discriminator ``doc-drift-lint.py`` uses). Depth-bounded; a fixture repo
+    that seeds those two paths is recognized (hermetic tests), any other repo is
+    not. Any filesystem error fails closed to False (the carve-out never applies
+    on an unresolvable path)."""
+    try:
+        cur = sentinel_path.resolve().parent
+    except OSError:
+        return False
+    for _ in range(8):
+        try:
+            if (cur / "manifest.psd1").is_file() and \
+                    (cur / "user" / "settings.json").is_file():
+                return True
+        except OSError:
+            return False
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return False
+
+
+def _auto_generated_carveout_applies(meta: dict, sentinel_path: Path) -> bool:
+    """Whether the claude-config auto-generated-stub carve-out rescues an
+    otherwise stub-origin-excluded sentinel (park-provisional-parks-claude-
+    config-auto-generated-stubs). ALL of:
+
+      - ``auto_generated`` is explicitly truthy (an explicit ``false``/``no`` or
+        an absent field does NOT rescue — a genuine operator stub stays parked);
+      - ``auto_generated_origin`` is in the closed harness-origin set
+        (``_AUTO_GENERATED_HARNESS_ORIGINS`` — a structural tag, never an id
+        prefix);
+      - the sentinel lives under the claude-config checkout.
+
+    Fail-CLOSED: any missing/malformed piece ⇒ the carve-out does not apply, so
+    the stub-origin exclusion stands (byte-identical to before)."""
+    _ag = meta.get("auto_generated")
+    if not (_ag is True or str(_ag).strip().lower() in ("true", "yes")):
+        return False
+    origin = str(meta.get("auto_generated_origin", "")).strip().lower()
+    if origin not in _AUTO_GENERATED_HARNESS_ORIGINS:
+        return False
+    return _sentinel_repo_is_claude_config(sentinel_path)
+
+
 def provisional_eligibility(sentinel_path: Path) -> tuple[bool, str]:
     """Deterministic, FAIL-CLOSED provisional-acceptance predicate (SPEC D3/D4/D8).
 
@@ -2723,8 +2787,14 @@ def provisional_eligibility(sentinel_path: Path) -> tuple[bool, str]:
     if "stub_origin" in meta:
         _so = meta.get("stub_origin")
         if not (_so is False or str(_so).strip().lower() in ("false", "no")):
-            return (False, "stub_origin baseline decision — never provisional "
-                           "(fail-closed)")
+            # CARVE-OUT (park-provisional-parks-claude-config-auto-generated-
+            # stubs): a claude-config HARNESS-AUTO-GENERATED stub (canary-revert
+            # / incident-capture) is machine triage noise, not an operator-shaped
+            # baseline — its recommended option is AUTO-ACCEPTED under
+            # --park-provisional. Every OTHER stub_origin sentinel still parks.
+            if not _auto_generated_carveout_applies(meta, sentinel_path):
+                return (False, "stub_origin baseline decision — never provisional "
+                               "(fail-closed)")
     # Semantic-conflict carve-out (concurrent-worktree-agent-coordination Phase 4):
     # a NEEDS_INPUT.md written by the conflict router for a SEMANTIC concurrent-
     # writer conflict (classify_conflict above) reconciles two agents' divergent
