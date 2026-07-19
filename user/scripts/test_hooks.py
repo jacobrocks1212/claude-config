@@ -9855,6 +9855,103 @@ def test_wedge_execute_plan_scoped_plan_wu_blocks_on_clean_tree():
         assert _wedge_breadcrumb_path(state_dir, agent_id).exists()
 
 
+def test_wedge_foreign_concurrent_dirty_only_allows():
+    """subagent-wedge-backstop-dirty-tree-predicate-repo-wide (REGRESSION): an
+    execute-plan cycle whose OWN plan has NO unchecked WU (plan_pending false) and
+    whose tree is dirty ONLY with a concurrent lane's FOREIGN residue — a foreign
+    docs/features/<other>/IMPLEMENTED.md and the shared docs/provenance-index.json —
+    must ALLOW (exit 0). Red on the whole-tree _git_dirty predicate (any dirt →
+    block), green on the own-item-dir-scoped predicate (foreign docs/ residue is
+    not this agent's work)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        # Plan all WUs checked → plan_pending false → isolate the git-dirty half.
+        repo = _init_wedge_repo(
+            td, plan_status="In-progress", wu_checked=True, dirty=False
+        )
+        # Foreign concurrent-lane residue: another item's IMPLEMENTED.md + the
+        # shared provenance index — both under docs/ but NOT under wedge-feat/.
+        foreign = repo / "docs" / "features" / "other-feat"
+        foreign.mkdir(parents=True)
+        (foreign / "IMPLEMENTED.md").write_text("shipped\n", encoding="utf-8")
+        (repo / "docs" / "provenance-index.json").write_text("{}\n", encoding="utf-8")
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names THIS plan
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 0, (
+            f"foreign concurrent residue only must ALLOW; got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert not _wedge_breadcrumb_path(state_dir, agent_id).exists(), (
+            "an allowed stop must NOT write a loop-guard breadcrumb"
+        )
+
+
+def test_wedge_own_source_dirty_blocks():
+    """subagent-wedge-backstop-dirty-tree-predicate-repo-wide (NON-VACUITY): the
+    own-item-dir scoping must NOT neuter own-source wedge detection. An execute-plan
+    cycle with all WUs checked (plan_pending false) but an uncommitted NON-docs
+    source file (repo-root dirty.txt) still BLOCKS (exit 2) — a non-docs path is
+    presumed OWN work."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        # dirty=True adds repo-root dirty.txt (non-docs → OWN); wu_checked isolates
+        # the git-dirty half.
+        repo = _init_wedge_repo(
+            td, plan_status="In-progress", wu_checked=True, dirty=True
+        )
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names THIS plan
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 2, (
+            f"own uncommitted source must still BLOCK; got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert _wedge_breadcrumb_path(state_dir, agent_id).exists()
+
+
+def test_wedge_own_item_dir_dirty_blocks():
+    """subagent-wedge-backstop-dirty-tree-predicate-repo-wide (NON-VACUITY): dirt
+    INSIDE the cycle's own pipeline-item dir (docs/features/wedge-feat/) is OWN
+    work and still BLOCKS (exit 2) — only OTHER items' docs/ dirt is treated as
+    foreign residue."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(
+            td, plan_status="In-progress", wu_checked=True, dirty=False
+        )
+        # Uncommitted file under the cycle's OWN item dir.
+        (repo / "docs" / "features" / "wedge-feat" / "NOTES.md").write_text(
+            "own uncommitted note\n", encoding="utf-8"
+        )
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names THIS plan
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 2, (
+            f"own-item-dir dirt must BLOCK; got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert _wedge_breadcrumb_path(state_dir, agent_id).exists()
+
+
 _TESTS = _TESTS + [
     # subagent-wedge-backstop-hook — SubagentStop wedge-backstop hook (WU-1)
     ("test_wedge_hook_file_exists", test_wedge_hook_file_exists),
@@ -9879,6 +9976,10 @@ _TESTS = _TESTS + [
      test_wedge_non_execute_cycle_ignores_stray_plan_allows),
     ("test_wedge_execute_plan_scoped_plan_wu_blocks_on_clean_tree",
      test_wedge_execute_plan_scoped_plan_wu_blocks_on_clean_tree),
+    ("test_wedge_foreign_concurrent_dirty_only_allows",
+     test_wedge_foreign_concurrent_dirty_only_allows),
+    ("test_wedge_own_source_dirty_blocks", test_wedge_own_source_dirty_blocks),
+    ("test_wedge_own_item_dir_dirty_blocks", test_wedge_own_item_dir_dirty_blocks),
 ]
 
 

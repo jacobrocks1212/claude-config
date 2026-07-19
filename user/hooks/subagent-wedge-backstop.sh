@@ -227,52 +227,111 @@ def _active_plan_unchecked(lc, repo_root):
     --cycle-end, so it is present at SubagentStop and names the just-stopped
     cycle's sub_skill + plan (the same field _execute_plan_commit_budget reads).
 
-    Returns:
-      - [unchecked_count] when the active cycle IS execute-plan and its plan is
-        active (status not Complete/Superseded/Draft) — a genuine execute-plan
-        wedge still trips the block;
-      - [] when the active cycle is NOT execute-plan (/spec, research, realign,
-        /plan-*), names no plan, the plan is terminal/absent, or the cycle marker
-        is absent/unreadable. An empty result means the plan-WU signal contributes
-        nothing and the caller's `if not active: _allow()` biases to false-negative
-        — a stray plans/*.md the current cycle is not executing can never trip it.
+    Returns a (active_list, plan_path) tuple:
+      - ([unchecked_count], plan_path) when the active cycle IS execute-plan and
+        its plan is active (status not Complete/Superseded/Draft) — a genuine
+        execute-plan wedge still trips the block; plan_path is the resolved
+        on-disk plan, which the caller uses to scope the git-dirty half to the
+        cycle's OWN pipeline-item dir (see _own_work_dirty);
+      - ([], None) when the active cycle is NOT execute-plan (/spec, research,
+        realign, /plan-*), names no plan, the plan is terminal/absent, or the
+        cycle marker is absent/unreadable. An empty result means the plan-WU
+        signal contributes nothing and the caller's `if not active: _allow()`
+        biases to false-negative — a stray plans/*.md the current cycle is not
+        executing can never trip it.
     """
     try:
         cycle = lc.read_cycle_marker()
     except Exception:
-        return []
+        return [], None
     if not isinstance(cycle, dict):
-        return []
+        return [], None
     if cycle.get("sub_skill") != "execute-plan":
-        return []
+        return [], None
     args = cycle.get("sub_skill_args")
     if not args:
-        return []
+        return [], None
     toks = str(args).split()
     plan_token = toks[0] if toks else ""
     if not plan_token:
-        return []
+        return [], None
     candidates = [plan_token]
     if not os.path.isabs(plan_token):
         candidates.append(os.path.join(repo_root, plan_token))
     plan_path = next((c for c in candidates if os.path.exists(c)), None)
     if plan_path is None:
-        return []
+        return [], None
     try:
         status = lc._plan_status(Path(plan_path))
     except Exception:
         status = "Ready"
     if status in ("Complete", "Superseded", "Draft"):
-        return []
+        return [], None
     try:
         with open(plan_path, encoding="utf-8") as fh:
             unchecked, _checked = lc._plan_wu_checkbox_counts(fh.read())
     except Exception:
         unchecked = 0
-    return [unchecked]
+    return [unchecked], plan_path
 
 
-def _git_dirty(repo_root):
+def _own_item_dir(plan_path, repo_root):
+    """Derive the active cycle's OWN pipeline-item dir (repo-relative POSIX
+    'docs/features/<slug>' or 'docs/bugs/<slug>') from its resolved plan path.
+    Plans live at docs/{features,bugs}/<slug>/plans/<name>.md. None when not
+    derivable (a pathological plan path outside the pipeline tree)."""
+    if not plan_path:
+        return None
+    p = str(plan_path).replace("\\", "/")
+    rr = str(repo_root).replace("\\", "/").rstrip("/")
+    if rr and p.startswith(rr + "/"):
+        p = p[len(rr) + 1:]
+    p = p.lstrip("/")
+    parts = p.split("/")
+    if len(parts) >= 3 and parts[0] == "docs" and parts[1] in ("features", "bugs"):
+        return "docs/" + parts[1] + "/" + parts[2]
+    return None
+
+
+def _porcelain_path(line):
+    """Extract the (new) path from a `git status --porcelain` line. Skips the
+    2-char status + separator, takes the post-`->` target on a rename, and
+    best-effort strips C-style quoting. Not a full porcelain parser — the caller
+    only needs a prefix classification, and the pipeline residue this guards
+    (IMPLEMENTED.md, provenance-index.json) carries no special chars."""
+    if len(line) < 4:
+        return ""
+    rest = line[3:]
+    if " -> " in rest:
+        rest = rest.split(" -> ", 1)[1]
+    rest = rest.strip()
+    if len(rest) >= 2 and rest[0] == '"' and rest[-1] == '"':
+        rest = rest[1:-1]
+    return rest
+
+
+def _own_work_dirty(repo_root, own_item_dir):
+    """Return True iff the tree carries uncommitted work attributable to THIS
+    cycle — a scoped, concurrent-writer-aware replacement for the old whole-tree
+    _git_dirty read.
+
+    Under the sanctioned concurrent-writer regime (user/CLAUDE.md <orchestration>)
+    multiple agents commit to the shared worktree at once, so a whole-tree
+    `git status --porcelain` conflates the stopping agent's OWN incomplete work
+    with another lane's uncommitted bookkeeping residue (a foreign
+    docs/features/<other>/IMPLEMENTED.md, the shared docs/provenance-index.json,
+    ROADMAP/queue.json) — the false-fire this fixes
+    (subagent-wedge-backstop-dirty-tree-predicate-repo-wide; the git-dirty analog
+    of the plan-WU-glob fix adhoc-subagent-wedge-hook-overfires-globs-all-plans).
+
+    STRUCTURAL rule (no incident-literal filename denylist): the pipeline's shared
+    bookkeeping tree `docs/` is a concurrent-writer battleground, and a stopping
+    agent's OWN pending work there is confined to its own item directory. So a
+    dirty path under `docs/` that is NOT under own_item_dir is FOREIGN residue
+    (ignored); every non-`docs/` path (source the agent edited) and the cycle's
+    own item dir counts as OWN pending work — genuine own-source wedge detection
+    is preserved. own_item_dir None (underivable) → False (bias to false-negative,
+    per the backstop's allow-on-doubt posture)."""
     try:
         out = subprocess.run(
             ["git", "-C", repo_root, "status", "--porcelain"],
@@ -280,9 +339,23 @@ def _git_dirty(repo_root):
         )
         if out.returncode != 0:
             return False
-        return bool(out.stdout.strip())
     except Exception:
         return False
+    lines = [ln for ln in out.stdout.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    if not own_item_dir:
+        return False
+    own_prefix = own_item_dir.rstrip("/") + "/"
+    for ln in lines:
+        path = _porcelain_path(ln)
+        if not path:
+            continue
+        p = path.replace("\\", "/")
+        if p.startswith("docs/") and not (p == own_item_dir or p.startswith(own_prefix)):
+            continue  # foreign concurrent-lane residue — not this agent's work
+        return True  # own pending work (own item dir, or a non-docs source edit)
+    return False
 
 
 def _write_breadcrumb(stops_dir, agent_id, session_id, now):
@@ -341,17 +414,21 @@ def main():
         _allow()
 
     # Conditions 2 & 3: the ACTIVE CYCLE's own (non-terminal) execute-plan plan
-    # AND pending work (git dirty OR unchecked plan WUs in THAT plan). The cycle
-    # marker scopes this to the plan the just-stopped cycle was executing — a
-    # non-execute-plan cycle (/spec, research, realign) resolves NO active plan
-    # (empty) ⇒ fail-open allow, so a stray plans/*.md never trips it
-    # (adhoc-subagent-wedge-hook-overfires-globs-all-plans). Bias to
+    # AND pending work (OWN uncommitted work OR unchecked plan WUs in THAT plan).
+    # The cycle marker scopes BOTH halves to the plan the just-stopped cycle was
+    # executing — a non-execute-plan cycle (/spec, research, realign) resolves NO
+    # active plan (empty) ⇒ fail-open allow, so a stray plans/*.md never trips it
+    # (adhoc-subagent-wedge-hook-overfires-globs-all-plans). The git-dirty half is
+    # ALSO scoped to the cycle's own pipeline-item dir so a concurrent lane's
+    # uncommitted residue is never read as this agent's incomplete work
+    # (subagent-wedge-backstop-dirty-tree-predicate-repo-wide). Bias to
     # false-negative, per the operator steer.
-    active = _active_plan_unchecked(lc, repo_root)
+    active, plan_path = _active_plan_unchecked(lc, repo_root)
     if not active:
         _allow()
     plan_pending = any(u > 0 for u in active)
-    if not (_git_dirty(repo_root) or plan_pending):
+    own_item_dir = _own_item_dir(plan_path, repo_root)
+    if not (_own_work_dirty(repo_root, own_item_dir) or plan_pending):
         _allow()
 
     # Predicate TRUE → block ONCE. Write the breadcrumb BEFORE blocking; a write
