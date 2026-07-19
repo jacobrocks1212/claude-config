@@ -4140,6 +4140,20 @@ def flush_commit_artifacts(
 
     sha_proc = _git("rev-parse", "HEAD")
     commit_sha = sha_proc.stdout.strip() if sha_proc.returncode == 0 else None
+    # adhoc-process-friction-detector-counts-concurrent-session-commits Phase 2:
+    # record the produced sha in the concurrent-activity ledger stamped with this
+    # run's identity, so a CONCURRENT session's flush commit is subtractable at the
+    # --cycle-end friction detector. Best-effort — a ledger-write error NEVER
+    # changes this flush's verdict (append_concurrent_commit_sha is itself
+    # fail-open; the guard is defense-in-depth). The no-op / nothing-to-commit
+    # branches returned earlier with commit_sha=None and append nothing.
+    if commit_sha:
+        try:
+            append_concurrent_commit_sha(
+                commit_sha, run_started_at=_raw_marker_started_at(),
+            )
+        except Exception:  # noqa: BLE001
+            pass  # best-effort concurrent-activity ledger; never fail the flush
     # The files actually captured by the commit (authoritative — reflects the pathspec).
     show = _git("show", "--name-only", "--pretty=format:", "HEAD")
     committed = [l.strip() for l in show.stdout.splitlines() if l.strip()] if show.returncode == 0 else present

@@ -2659,6 +2659,94 @@ def test_archive_fixed_rerun_is_noop():
 
 
 
+# ---------------------------------------------------------------------------
+# WU-3 — archive_fixed records its produced sha in the concurrent-activity
+# ledger (adhoc-process-friction-detector-counts-concurrent-session-commits
+# Phase 2): a concurrent session's archive commit becomes subtractable at the
+# --cycle-end friction detector. Best-effort — a ledger failure NEVER changes
+# the archive verdict.
+# ---------------------------------------------------------------------------
+
+def test_archive_fixed_appends_concurrent_commit_sha():
+    """A real archive commit appends exactly one concurrent-activity entry whose
+    sha == the new HEAD and whose run_started_at == the live-run identity."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as td_state:
+        _set_state_dir(Path(td_state))
+        try:
+            repo_root, bug_dir = _make_fixed_bug_repo(td)
+            marker = lazy_core.write_run_marker(
+                pipeline="bug", cloud=False, repo_root=str(repo_root),
+                now=_time.time(),
+            )
+            result = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+            assert result["ok"] is True, result
+            head = subprocess.run(
+                ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+                capture_output=True, text=True,
+            ).stdout.strip()
+            ledger = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert head in ledger, (head, ledger)
+    assert ledger[head] == marker["started_at"], ledger
+
+
+def test_archive_fixed_noop_rerun_appends_nothing():
+    """The no-op re-run path (nothing staged → noop) appends NOTHING — the
+    ledger holds exactly the one entry from the first real archive."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as td_state:
+        _set_state_dir(Path(td_state))
+        try:
+            repo_root, bug_dir = _make_fixed_bug_repo(td)
+            lazy_core.write_run_marker(
+                pipeline="bug", cloud=False, repo_root=str(repo_root),
+                now=_time.time(),
+            )
+            first = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+            assert first["ok"] is True and not first.get("noop")
+            after_first = dict(lazy_core.read_concurrent_commit_entries())
+            second = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+            assert second["ok"] is True and second["noop"] is True
+            after_second = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert len(after_first) == 1, after_first
+    assert after_second == after_first, "noop re-run must not append a ledger entry"
+
+
+def test_archive_fixed_ledger_failure_does_not_change_verdict():
+    """A forced ledger-write failure leaves the archive committed and ok:True —
+    the sha append is strictly best-effort."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as td_state:
+        _set_state_dir(Path(td_state))
+        original = lazy_core.ledgers.append_concurrent_commit_sha
+
+        def _boom(*a, **k):
+            raise RuntimeError("simulated ledger failure")
+
+        lazy_core.ledgers.append_concurrent_commit_sha = _boom  # type: ignore[assignment]
+        try:
+            repo_root, bug_dir = _make_fixed_bug_repo(td)
+            lazy_core.write_run_marker(
+                pipeline="bug", cloud=False, repo_root=str(repo_root),
+                now=_time.time(),
+            )
+            result = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+        finally:
+            lazy_core.ledgers.append_concurrent_commit_sha = original  # type: ignore[assignment]
+            _clear_state_dir()
+    assert result["ok"] is True, result
+    assert result["committed"], result
+
+
+
+
 def test_archive_fixed_resume_after_partial_move():
     """If a prior run moved the directory but died before repoint/commit,
     re-running resumes: repoints, trims the queue, and commits."""
@@ -4443,6 +4531,9 @@ _TESTS = [
     ("test_archive_fixed_wont_fix_archives_without_receipt", test_archive_fixed_wont_fix_archives_without_receipt),
     ("test_archive_fixed_collision_appends_suffix", test_archive_fixed_collision_appends_suffix),
     ("test_archive_fixed_rerun_is_noop", test_archive_fixed_rerun_is_noop),
+    ("test_archive_fixed_appends_concurrent_commit_sha", test_archive_fixed_appends_concurrent_commit_sha),
+    ("test_archive_fixed_noop_rerun_appends_nothing", test_archive_fixed_noop_rerun_appends_nothing),
+    ("test_archive_fixed_ledger_failure_does_not_change_verdict", test_archive_fixed_ledger_failure_does_not_change_verdict),
     ("test_archive_fixed_resume_after_partial_move", test_archive_fixed_resume_after_partial_move),
     ("test_archive_fixed_accepts_relative_spec_path", test_archive_fixed_accepts_relative_spec_path),
     ("test_validation_escalation_retry_1_not_escalated", test_validation_escalation_retry_1_not_escalated),

@@ -32,12 +32,18 @@ An unknown/ambiguous attribution must NEVER suppress a genuine runaway. The exte
 
 **Scope:** Introduce the concurrent-activity commit-sha ledger in the shared per-repo-keyed state dir and teach `_count_concurrent_writer_commits` to subtract window commits recorded in it by a DISTINCT run identity — closing the same-identity blind spot at the detector. This phase delivers the full read/consume mechanism with the producer side stubbed (tests seed the ledger directly), so the fix is verifiable before the commit sites are wired.
 
+**Status:** Complete (implementation); validation pending (bug pipeline `__mark_fixed__` gate)
+
 **Deliverables:**
-- [ ] `lazy_core.ledgers.append_concurrent_commit_sha(sha, *, run_started_at)` — appends one compact JSON line `{sha, run_started_at, ts}` to `claude_state_dir() / lazy-concurrent-activity.jsonl`, reusing `append_deny_ledger_entry`'s exact fail-open plain-append pattern (identity stamped from the live run marker exactly as that helper does; `None`/interactive → `run_started_at: null`). Never raises; returns True/False.
-- [ ] `lazy_core.ledgers.read_concurrent_commit_entries()` — returns a list/map of `{sha: run_started_at}` from the ledger; tolerant of a torn final line and a missing file (empty result), never raises.
-- [ ] `_count_concurrent_writer_commits(repo_root, begin_head_sha, current_run_started_at)` extended: after the existing email-inequality count, UNION in window shas (from `git log --format=%H <begin>..HEAD`, merges excluded, de-duplicated against the email-attributed set so no commit is counted twice) that appear in the ledger with a recorded `run_started_at` that is present AND `!= current_run_started_at`. Returns `None` on ANY degraded read (unchanged contract); a ledger-read failure degrades to the email-only count.
-- [ ] `cycle_end_friction_check` passes its already-computed `current_run_started_at` (markers.py:2178) into the extended counter call (markers.py:2226).
-- [ ] Tests: see assertions below.
+- [x] `lazy_core.ledgers.append_concurrent_commit_sha(sha, *, run_started_at)` — appends one compact JSON line `{sha, run_started_at, ts}` to `claude_state_dir() / lazy-concurrent-activity.jsonl`, reusing `append_deny_ledger_entry`'s exact fail-open plain-append pattern (identity stamped from the live run marker exactly as that helper does; `None`/interactive → `run_started_at: null`). Never raises; returns True/False.
+- [x] `lazy_core.ledgers.read_concurrent_commit_entries()` — returns a `{sha: run_started_at}` map from the ledger; tolerant of a torn final line and a missing file (empty result), never raises.
+- [x] `_count_concurrent_writer_commits(repo_root, begin_head_sha, current_run_started_at)` extended: after the existing email-inequality count, UNION in window shas (from `git log --no-merges --format=%H%x1f%ae <begin>..HEAD`, merges excluded, de-duplicated against the email-attributed set via a shared `set`) that appear in the ledger with a recorded `run_started_at` that is present AND `!= current_run_started_at`. Returns `None` on ANY degraded read (unchanged contract); a ledger-read failure degrades to the email-only count.
+- [x] `cycle_end_friction_check` passes its already-computed `current_run_started_at` (markers.py:2178) into the extended counter call.
+- [x] Tests: `test_ledgers.py` WU-1 substrate (6) + `test_markers.py` WU-2 detector fixtures (5); GREEN.
+
+**Implementation Notes (2026-07-19):**
+- WU-1 helpers + `_CONCURRENT_ACTIVITY_FILENAME = "lazy-concurrent-activity.jsonl"` added to `lazy_core/ledgers.py` beside the deny-ledger helpers; three symbols registered in the `lazy_core/__init__.py` PEP-562 facade map (`append_concurrent_commit_sha`, `read_concurrent_commit_entries`, `_count_concurrent_writer_commits`).
+- WU-2 widened `_count_concurrent_writer_commits` to 3 args (back-compat default `current_run_started_at=None`); the ledger arm is a function-local `from .ledgers import read_concurrent_commit_entries` (markers→ledgers is acyclic). Fail-safe held: null/same-identity/degraded reads never over-subtract (proven by the stash-RED test-first check).
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test && python3 user/scripts/bug-state.py --test` stay green, and the new `test_markers.py` / `test_ledgers.py` fixtures pass: a same-identity concurrent commit seeded into the ledger with a distinct `run_started_at` is subtracted from `chargeable_commits`, so a window that would trip `unexpected-commits` no longer does.
 
@@ -61,11 +67,17 @@ An unknown/ambiguous attribution must NEVER suppress a genuine runaway. The exte
 
 **Scope:** Wire every script-owned DIRECT-commit site in `lazy_core` to append its produced sha to the concurrent-activity ledger via `append_concurrent_commit_sha`, so a concurrent session's automated archive/mark/flush commits become subtractable at the detector. Best-effort at every site — a ledger-write error can NEVER fail or partial-abort a commit.
 
+**Status:** Complete (implementation); validation pending (bug pipeline `__mark_fixed__` gate)
+
 **Deliverables:**
-- [ ] Grep audit (record the result inline in Implementation Notes): enumerate every direct `_git(..., "commit", ...)` site in `user/scripts/lazy_core/**` and confirm the instrumentation set is complete. Known sites: `gates.py:2296` (`archive_fixed`), `ledgers.py:4025` (`flush_commit_artifacts`). Confirm `apply_pseudo`/`reorder_queue`/`sync_deps` make NO direct commit (orchestrator commits their output) — if the audit finds an additional direct-commit site, instrument it too.
-- [ ] `archive_fixed` (gates.py): after the successful `commit_proc` (and the short-sha capture at 2308), append the produced sha via `append_concurrent_commit_sha(sha, run_started_at=<live-run identity>)`. Wrapped best-effort — a ledger failure leaves the archive committed and `ok: True`.
-- [ ] `flush_commit_artifacts` (ledgers.py): after its successful commit resolves `commit_sha`, append it the same way. The no-op / "nothing to commit" path appends NOTHING.
-- [ ] Tests: see assertions below.
+- [x] Grep audit: `grep -rn '"commit"' user/scripts/lazy_core/*.py` (excluding tests) returns EXACTLY two direct-commit sites — `gates.py:2296` (`archive_fixed`) and `ledgers.py` `flush_commit_artifacts` (the commit line shifted from 4025→4124 as WU-1 added helper lines above it). No additional direct-commit site exists; `apply_pseudo`/`reorder_queue`/`sync_deps` make no direct commit (the orchestrator commits their output). The instrumentation set is complete.
+- [x] `archive_fixed` (gates.py): after the short-sha capture, appends the produced full sha via `append_concurrent_commit_sha(<git rev-parse HEAD>, run_started_at=_raw_marker_started_at())`, best-effort (function-local import — ledgers imports gates). A ledger failure leaves the archive committed and `ok: True`.
+- [x] `flush_commit_artifacts` (ledgers.py): after its successful commit resolves `commit_sha`, appends it the same way; the no-op / "nothing to commit" branches (commit_sha=None) append nothing.
+- [x] Tests: `test_pseudo.py` WU-3 (3: appends / noop-appends-nothing / ledger-failure-doesn't-change-verdict) + `test_ledgers.py` WU-4 (3: flush appends / flush noop / end-to-end seam); GREEN.
+
+**Implementation Notes (2026-07-19):**
+- Both producers stamp `run_started_at=_raw_marker_started_at()` — the SAME live-run identity source `append_deny_ledger_entry` reads — so THIS run's own archive/flush commits carry `run_started_at == MINE` and are correctly EXCLUDED from subtraction; a concurrent session's commits carry that session's distinct identity and subtract.
+- The end-to-end seam test (`test_concurrent_session_commits_seam_no_false_friction`) drives the real producer + the WU-2 detector through `cycle_end_friction_check`: `budget + M` window commits with `M` recorded under a distinct identity → chargeable = budget → NO `unexpected-commits` friction; one more own commit → trips (genuine runaway preserved).
 
 **Minimum Verifiable Behavior:** in a hermetic temp-repo fixture, `archive_fixed` (and `flush_commit_artifacts`) leave exactly one new entry in `lazy-concurrent-activity.jsonl` whose `sha` equals the commit they just made; a no-op re-run leaves the ledger unchanged.
 

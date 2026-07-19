@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: adhoc-process-friction-detector-counts-concurrent-session-commits
-status: In-progress
+status: Complete
 created: 2026-07-19
 complexity: complex
 phases: [1, 2]
@@ -71,8 +71,8 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 
 - [x] WU-1 — concurrent-activity ledger substrate (append + read helpers)
 - [x] WU-2 — extend `_count_concurrent_writer_commits` with the ledger-read arm + wire caller
-- [ ] WU-3 — instrument `archive_fixed` commit site + grep audit of all direct-commit sites
-- [ ] WU-4 — instrument `flush_commit_artifacts` commit site + end-to-end seam test
+- [x] WU-3 — instrument `archive_fixed` commit site + grep audit of all direct-commit sites
+- [x] WU-4 — instrument `flush_commit_artifacts` commit site + end-to-end seam test
 
 ---
 

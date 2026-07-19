@@ -2306,6 +2306,26 @@ def archive_fixed(
         result["committed"] = (
             sha_proc.stdout.strip() if sha_proc.returncode == 0 else "unknown"
         )
+        # adhoc-process-friction-detector-counts-concurrent-session-commits Phase 2:
+        # record the produced sha in the concurrent-activity ledger stamped with
+        # this run's identity, so a CONCURRENT session's archive commit is
+        # subtractable at the --cycle-end friction detector. Best-effort — a
+        # ledger-write error NEVER changes the archive verdict (the archive is
+        # already committed). Function-local import: ledgers imports gates, so a
+        # module-level import here would be circular.
+        try:
+            from .ledgers import (
+                _raw_marker_started_at,
+                append_concurrent_commit_sha,
+            )
+            full_sha = _git(repo_root, "rev-parse", "HEAD")
+            if full_sha.returncode == 0:
+                append_concurrent_commit_sha(
+                    full_sha.stdout.strip(),
+                    run_started_at=_raw_marker_started_at(),
+                )
+        except Exception:  # noqa: BLE001
+            pass  # best-effort concurrent-activity ledger; never fail the archive
         result["ok"] = True
         return result
     except (OSError, subprocess.SubprocessError) as exc:

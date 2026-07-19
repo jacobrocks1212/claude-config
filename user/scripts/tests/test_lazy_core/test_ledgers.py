@@ -4185,6 +4185,109 @@ def test_append_concurrent_commit_sha_fail_open_unwritable():
     assert ok is False
 
 
+# ---------------------------------------------------------------------------
+# WU-4 — flush_commit_artifacts producer instrumentation + the end-to-end seam
+# (adhoc-process-friction-detector-counts-concurrent-session-commits Phase 2):
+# the shared script-owned flush commit records its sha too, and the motivating
+# incident (a concurrent same-identity session's commits) is exercised hermetic
+# through the real producer + the WU-2 detector.
+# ---------------------------------------------------------------------------
+
+def test_flush_commit_artifacts_appends_commit_sha():
+    """A real flush commit appends its resolved commit_sha to the concurrent-
+    activity ledger stamped with the live-run identity."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as td_state:
+        root = Path(td)
+        _prov_git_fixture_repo(root)
+        _set_state_dir(Path(td_state))
+        try:
+            marker = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(root),
+                now=_time.time(),
+            )
+            (root / "docs" / "kpi").mkdir(parents=True)
+            (root / "docs" / "kpi" / "SCORECARD.md").write_text("# s\n", encoding="utf-8")
+            result = lazy_core.flush_commit_artifacts(
+                root, ["docs/kpi/SCORECARD.md"], "docs(kpi): scorecard — test",
+            )
+            assert result["ok"] is True and result["commit_sha"], result
+            ledger = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert result["commit_sha"] in ledger, (result["commit_sha"], ledger)
+    assert ledger[result["commit_sha"]] == marker["started_at"], ledger
+
+
+def test_flush_commit_artifacts_noop_appends_nothing():
+    """The 'no flush artifacts present' path commits nothing and appends nothing
+    to the concurrent-activity ledger."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as td_state:
+        root = Path(td)
+        _prov_git_fixture_repo(root)
+        _set_state_dir(Path(td_state))
+        try:
+            result = lazy_core.flush_commit_artifacts(
+                root, ["docs/interventions/absent.md"], "docs: none",
+            )
+            assert result["ok"] is True and result["commit_sha"] is None
+            ledger = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert ledger == {}, ledger
+
+
+def test_concurrent_session_commits_seam_no_false_friction():
+    """END-TO-END SEAM (the 2026-07-18 motivating incident, hermetic): a
+    concurrent session's automated commits — recorded through the REAL producer
+    under a DISTINCT run identity — are subtracted at cycle_end_friction_check,
+    so no `unexpected-commits` process-friction entry lands when the REMAINDER
+    is within budget; a genuine same-run runaway (commits NOT in the ledger)
+    still trips."""
+    _guard()
+    budget = (
+        lazy_core.markers._CYCLE_COMMIT_MULTI
+        + lazy_core.markers._CYCLE_COMMIT_NOISE_ALLOWANCE
+    )  # execute-plan derived budget (no sub_skill_args) == 4
+    m = 3  # concurrent-session commits recorded in the ledger
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as td_state:
+        root = Path(td)
+        _set_state_dir(Path(td_state))
+        try:
+            begin = _prov_git_fixture_repo(root)
+            # run_started_at=None (no live run marker) → bracket-break signal off,
+            # isolating the unexpected-commits signal; a ledger identity of "OTHER"
+            # (present, != None) is a DISTINCT concurrent identity, so it subtracts.
+            lazy_core.write_cycle_marker(
+                feature_id="f", nonce="n", run_started_at=None,
+                begin_head_sha=begin, sub_skill="execute-plan",
+            )
+            # budget + m commits in the window; record m of them (the concurrent
+            # session's) through the REAL producer under a distinct identity.
+            shas = [
+                _prov_git_commit_file(root, f"c{i}.txt", f"c{i}")
+                for i in range(budget + m)
+            ]
+            for s in shas[:m]:
+                lazy_core.append_concurrent_commit_sha(s, run_started_at="OTHER")
+
+            desc = lazy_core.cycle_end_friction_check(repo_root=root)
+            assert desc is None, (
+                f"chargeable={budget} must be within budget; got {desc}")
+            assert lazy_core.pending_hardening() == 0, "no friction entry expected"
+
+            # Genuine runaway: one MORE own commit (NOT in the ledger) pushes the
+            # remainder to budget+1 → still trips.
+            _prov_git_commit_file(root, "runaway.txt", "runaway")
+            desc2 = lazy_core.cycle_end_friction_check(repo_root=root)
+            assert desc2 is not None and desc2["reason"] == "unexpected-commits", desc2
+            assert lazy_core.pending_hardening() == 1
+        finally:
+            _clear_state_dir()
+
+
 _TESTS = [
     ("test_stale_and_materialized_symbols_present", test_stale_and_materialized_symbols_present),
     ("test_read_stale_upstream_absent", test_read_stale_upstream_absent),
@@ -4321,6 +4424,9 @@ _TESTS = [
     ("test_read_concurrent_commit_entries_tolerates_torn_line", test_read_concurrent_commit_entries_tolerates_torn_line),
     ("test_append_concurrent_commit_sha_run_started_at_none_roundtrips", test_append_concurrent_commit_sha_run_started_at_none_roundtrips),
     ("test_append_concurrent_commit_sha_fail_open_unwritable", test_append_concurrent_commit_sha_fail_open_unwritable),
+    ("test_flush_commit_artifacts_appends_commit_sha", test_flush_commit_artifacts_appends_commit_sha),
+    ("test_flush_commit_artifacts_noop_appends_nothing", test_flush_commit_artifacts_noop_appends_nothing),
+    ("test_concurrent_session_commits_seam_no_false_friction", test_concurrent_session_commits_seam_no_false_friction),
 ]
 
 
