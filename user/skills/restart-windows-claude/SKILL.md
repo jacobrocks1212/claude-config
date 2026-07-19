@@ -99,13 +99,31 @@ name) is NOT on the command line and should not be relied on for identification.
 
 Get an exact, current inventory — and flag which process is THIS session — by writing this to a
 file and running it via `powershell.exe -File` (inline PowerShell mangles quoting through the Bash
-tool). Pass the Bash shell's own PID as the seed so SELF is resolved by process ancestry, not a
-guess:
+tool). **Seed SELF from `$CLAUDE_PID`, not `$$`.**
+
+> **✅ SELF IS RESOLVED FROM `$CLAUDE_PID` — the authoritative key.** Claude Code exports the current
+> session's own **`claude.exe` Windows PID** into every tool's environment as `CLAUDE_PID` (alongside
+> `CLAUDE_CODE_SESSION_ID`). That IS the self process — pass it as the seed and the row whose `PID`
+> equals it is THIS session, deterministically, with zero ancestry guessing. Verified live 2026-07-18:
+> `CLAUDE_PID=20936` → the `claude-config-opus1m` row → `Self=True`, all others `False`.
+>
+> **Why NOT `$$` (the trap that burned us once):** the Bash tool on this box is **Git Bash / MSYS2**
+> (`uname` → `MINGW64_NT… Msys`), *not* WSL. Under MSYS2, `$$` is an **MSYS pseudo-PID** from the
+> emulation layer's own PID namespace — it does **not** equal the Windows PID of `bash.exe`, so
+> `Get-CimInstance … ProcessId=$$` matches nothing on the Windows side, the walk finds no `claude.exe`,
+> and **every row falsely reads `Self=False`** (the original 2026-07-18 symptom — misdiagnosed at first
+> as "WSL"; the real cause is the MSYS pseudo-PID). `$CLAUDE_PID` sidesteps this entirely because it is
+> already a real Windows PID. The script keeps a parent-walk only as a fallback for the odd seed that
+> is a *child* of claude.exe, and prints a loud `!! SELF UNRESOLVED` banner if even that fails.
 
 ```bash
 cat > /tmp/claude-sessions.ps1 <<'EOF'
 param([int]$SeedPid = 0)
-# Resolve SELF: walk ParentProcessId up from the seed (the Bash tool's shell) to its claude.exe.
+# Resolve SELF from the seed. The caller passes $CLAUDE_PID — the session's OWN claude.exe Windows
+# PID, exported by Claude Code into every tool env. That is already the claude.exe, so the walk's
+# first hop matches immediately. The ParentProcessId walk is a fallback for a seed that is a *child*
+# of claude.exe. (Do NOT seed with the Bash `$$` — under Git Bash/MSYS2 that is an MSYS pseudo-PID,
+# not a Windows PID, and it matches nothing here.)
 $selfPid = 0
 if ($SeedPid -gt 0) {
   $cur = Get-CimInstance Win32_Process -Filter "ProcessId=$SeedPid" -ErrorAction SilentlyContinue
@@ -125,20 +143,35 @@ Get-CimInstance Win32_Process -Filter "Name='claude.exe'" | ForEach-Object {
     Self    = ($_.ProcessId -eq $selfPid)
   }
 } | Sort-Object Started | Format-Table -AutoSize | Out-String -Width 200
+if ($selfPid -eq 0) {
+  Write-Output '!! SELF UNRESOLVED - the seed did not resolve to a claude.exe.'
+  Write-Output '!! Did you seed with $CLAUDE_PID? (Do NOT use $$ - MSYS pseudo-PID, not a Windows PID.)'
+  Write-Output '!! Self=False on EVERY row above is NOT proof you are absent - Self was unresolvable.'
+  Write-Output '!! Fallback: identify THIS session by its --remote-control name (the one on your phone),'
+  Write-Output '!! cross-checked by --model == your stated model id + the newest Started.'
+  Write-Output '!! NEVER recycle/kill a row you cannot positively rule OUT as Self.'
+}
 EOF
-powershell.exe -File /tmp/claude-sessions.ps1 -SeedPid $$
+powershell.exe -File /tmp/claude-sessions.ps1 -SeedPid "$CLAUDE_PID"
 ```
 
-- **`Self = True`** marks THIS session — found by walking the process-parent chain from the Bash
-  tool's own PID up to its `claude.exe` ancestor (deterministic, not inferred from the RC name).
-  NEVER recycle or kill that one.
+- **`Self = True`** marks THIS session — the row whose `PID` equals `$CLAUDE_PID`. Deterministic, not
+  a guess. NEVER recycle or kill that one.
+- **If the `!! SELF UNRESOLVED` banner prints** (seed was empty/wrong — e.g. `$CLAUDE_PID` unset in
+  some future harness, or you used `$$`), fall back to RC-name identification: THIS session is the row
+  whose **`--remote-control` name matches the name you are being steered under** (the one shown on your
+  phone / in the session context that launched this task), corroborated by **`--model` == your
+  environment's stated model id** (e.g. Opus 4.8 / 1M reports `claude-opus-4-8[1m]`) and the **newest
+  `Started`**. NEVER recycle or kill that row.
 - Two live processes may share a `--remote-control` name only when one is a dropped/disconnected
   **orphan** and a reconnect spawned a fresh one; the **newer `Started`** is the live steerable
   session, the older is the orphan.
-- Do NOT try to map a PID to its session-id from the command line — it isn't there. If you truly
-  need the session-id, it's the marker's `session_id` (`~/.claude/state/<repo-hash>/lazy-run-marker.json`)
-  for an autonomous run, or the process's open transcript handle (needs Sysinternals `handle.exe`,
-  usually absent). The RC name + `Started` + `Self` flag above are sufficient to act safely.
+- Do NOT try to map a PID to its session-id from the command line — it isn't there. The session-id of
+  THIS session is `$CLAUDE_CODE_SESSION_ID` in the env; for another (autonomous) session it is the
+  marker's `session_id` (`~/.claude/state/<repo-hash>/lazy-run-marker.json`). Joining an *arbitrary*
+  PID to its session-id needs the process's open transcript handle (Sysinternals `handle.exe`, usually
+  absent) — but you rarely need to: `PID` (via `$CLAUDE_PID`) + `RC name` + `Started` identify every
+  session safely.
 
 ## Terminate a session (operator-gated kill-hook bypass)
 
