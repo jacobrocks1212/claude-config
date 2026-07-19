@@ -2734,12 +2734,29 @@
   ],
   "docs/bugs/_archive/execute-plan-strict-order-prereq-ignores-series-index-reschedule/FIXED.md": [
     {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
       "type": "bug",
       "provenance": "manual"
     }
   ],
+  "docs/bugs/_archive/execute-plan-strict-order-prereq-ignores-series-index-reschedule/IMPLEMENTED.md": [
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/execute-plan-strict-order-prereq-ignores-series-index-reschedule/SPEC.md": [
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
       "type": "bug",
@@ -4747,6 +4764,11 @@
   ],
   "docs/bugs/_archive/subagent-wedge-backstop-blocks-nested-wu-workers/FIXED.md": [
     {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "subagent-wedge-backstop-blocks-nested-wu-workers",
       "type": "bug",
       "provenance": "manual"
@@ -4754,12 +4776,22 @@
   ],
   "docs/bugs/_archive/subagent-wedge-backstop-blocks-nested-wu-workers/IMPLEMENTED.md": [
     {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/subagent-wedge-backstop-blocks-nested-wu-workers/SPEC.md": [
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "subagent-wedge-backstop-blocks-nested-wu-workers",
       "type": "bug",
@@ -6521,12 +6553,29 @@
   ],
   "docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test/GATE_VERDICT.md": [
     {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
       "type": "bug",
       "provenance": "manual"
     }
   ],
+  "docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test/NEEDS_INPUT.md": [
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test/PHASES.md": [
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
       "type": "bug",
@@ -6545,6 +6594,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test/SPEC.md": [
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test/VALIDATED.md": [
     {
       "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
@@ -6553,6 +6609,11 @@
     }
   ],
   "docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test/plans/all-phases-decision-2-6-reroute.md": [
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
       "type": "bug",
@@ -6910,6 +6971,13 @@
       "id": "env-transient-counts-against-validation-retry-budget",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/execute-plan-strict-order-prereq-ignores-series-index-reschedule/SPEC.md": [
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/external-owner-contracts-locked-without-consultation/IMPLEMENTATION_NOTES.md": [
@@ -15936,12 +16004,22 @@
   ],
   "docs/interventions/harden-2026-07-r109.md": [
     {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "subagent-wedge-backstop-blocks-nested-wu-workers",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/interventions/harden-2026-07-r110.md": [
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
       "type": "bug",
@@ -17794,6 +17872,11 @@
       "provenance": "manual"
     },
     {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -17948,6 +18031,11 @@
   ],
   "docs/specs/turn-routing-enforcement/NEEDS_INPUT_PROVISIONAL_2026-07-19-wedge-backstop-integrator-vs-worker-identity.md": [
     {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "subagent-wedge-backstop-blocks-nested-wu-workers",
       "type": "bug",
       "provenance": "manual"
@@ -18072,6 +18160,11 @@
       "id": "cycle-subagent-stalls-on-wedged-sub-subagent",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "descoped-row-recognition-needs-canonical-marker",
@@ -19274,6 +19367,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -19403,6 +19501,11 @@
   "user/hooks/subagent-wedge-backstop.sh": [
     {
       "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
       "type": "bug",
       "provenance": "pipeline-gated"
     },
@@ -19796,6 +19899,11 @@
       "id": "cycle-subagent-fabricates-policy-or-stray-branch",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "descoped-row-recognition-needs-canonical-marker",
@@ -20508,6 +20616,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -20939,6 +21052,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -21104,6 +21222,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -21172,6 +21295,11 @@
     },
     {
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
       "type": "bug",
       "provenance": "pipeline-gated"
     },
@@ -21904,6 +22032,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -22496,6 +22629,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "descoped-row-recognition-needs-canonical-marker",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -22576,6 +22714,11 @@
       "id": "budget-guard-defers-near-complete-feature",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
@@ -22812,6 +22955,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -22845,6 +22993,11 @@
   "user/scripts/tests/test_lazy_core/test_gates.py": [
     {
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
       "type": "bug",
       "provenance": "pipeline-gated"
     },
@@ -23320,6 +23473,11 @@
       "id": "cycle-subagent-leaves-work-uncommitted-or-unticked",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
@@ -23935,6 +24093,11 @@
     }
   ],
   "user/skills/execute-plan/SKILL.md": [
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -25361,6 +25524,11 @@
     }
   ],
   "user/skills/write-plan/SKILL.md": [
+    {
+      "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",

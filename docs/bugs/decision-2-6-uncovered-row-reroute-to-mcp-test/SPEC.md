@@ -6,7 +6,7 @@
 > This produces a VALIDATED→refuse→coherence-recovery→VALIDATED oscillation (decision 2) and
 > strands newly-discovered-at-completion coverage (decision 6).
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-18
 **Placement:** docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test

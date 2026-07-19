@@ -29,7 +29,7 @@
 
 ### Phase 1: Per-row host-defer recognizer (`<!-- requires-host: <cap> -->`)
 
-**Status:** Complete
+**Status:** Fixed
 
 **Scope:** Land the minimal per-row host-defer marker recognizer that clause (b) of the re-route predicate depends on (per SPEC **Locked Decision 1** — landed as a phase of THIS bug, NOT a queue `deps` on the decision-5 sibling). A pure string recognizer mirroring `_VERIFICATION_ONLY_MARKER` / `_DESCOPED_MARKER`: given a PHASES.md row's text, return the declared host-capability id (or `None`). This is the ONLY new primitive; everything downstream composes existing helpers.
 
