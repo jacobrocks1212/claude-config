@@ -39,6 +39,15 @@ def _diff(file: str, added=(), removed=(), context=()):
     return "\n".join(lines) + "\n"
 
 
+def _multi_diff(*parts):
+    """Concatenate several `_diff(...)` outputs into one multi-file diff.
+
+    `parse_diff` resets its per-file state on each `diff --git` header, so a
+    concatenation of single-file diffs parses into one `_Hunk` per file.
+    """
+    return "".join(parts)
+
+
 DEFAULT_GLOBS = [
     "user/hooks/**",
     "user/scripts/lazy_core.py",
@@ -71,6 +80,64 @@ def test_out_of_scope_result_shape_and_no_verdict():
     assert res["in_scope"] is False
     assert res["verdict_required"] is False
     assert res["checks"] == {}
+
+
+# --- detector-input scoping to manifest control-surface hunks (Phase 1: S1/S2/S3) -
+
+def test_run_checker_scopes_out_lazy_queue_renumber():
+    """S1: an ON-manifest hook change (in_scope) + an off-manifest LAZY_QUEUE.md
+    queue-count renumber. The renumber (a numeric-literal gate-line change) must NOT
+    reach detect_gate_weakening — the off-manifest hunk is filtered out first."""
+    diff = _multi_diff(
+        _diff("user/hooks/foo.sh", added=["echo hello"]),
+        _diff("LAZY_QUEUE.md", removed=["## Bugs (17)"], added=["## Bugs (16)"]),
+    )
+    changed = ["user/hooks/foo.sh", "LAZY_QUEUE.md"]
+    res = hg.run_checker(Path("."), diff, changed, None, DEFAULT_GLOBS)
+    assert res["in_scope"] is True
+    assert res["checks"]["gate_weakening"]["result"] == "pass", res["checks"]["gate_weakening"]["evidence"]
+
+
+def test_run_checker_scopes_out_phases_bypass_prose():
+    """S2: an ON-manifest hook change (in_scope) + an off-manifest PHASES.md prose
+    line mentioning a *_BYPASS env-var. The prose must NOT reach detect_gate_weakening."""
+    diff = _multi_diff(
+        _diff("user/hooks/foo.sh", added=["echo hello"]),
+        _diff(
+            "docs/bugs/x/PHASES.md",
+            added=["the deliberate one-off override is BUILD_QUEUE_BYPASS=1 leading the segment"],
+        ),
+    )
+    changed = ["user/hooks/foo.sh", "docs/bugs/x/PHASES.md"]
+    res = hg.run_checker(Path("."), diff, changed, None, DEFAULT_GLOBS)
+    assert res["in_scope"] is True
+    assert res["checks"]["gate_weakening"]["result"] == "pass", res["checks"]["gate_weakening"]["evidence"]
+
+
+def test_run_checker_scopes_out_unrelated_spec_incident_literal():
+    """S3: an ON-manifest hook change (in_scope) + an off-manifest, unrelated SPEC.md
+    citing another slug's docs/bugs/<slug> path. The literal must NOT reach detect_overfit."""
+    diff = _multi_diff(
+        _diff("user/hooks/foo.sh", added=["echo hello"]),
+        _diff(
+            "docs/bugs/unrelated/SPEC.md",
+            added=["  - see 'docs/bugs/some-other-incident-slug' for prior art"],
+        ),
+    )
+    changed = ["user/hooks/foo.sh", "docs/bugs/unrelated/SPEC.md"]
+    res = hg.run_checker(Path("."), diff, changed, None, DEFAULT_GLOBS)
+    assert res["in_scope"] is True
+    assert res["checks"]["overfit"]["result"] == "pass", res["checks"]["overfit"]["evidence"]
+
+
+def test_run_checker_on_manifest_bypass_still_hits_after_scoping():
+    """POSITIVE control: an ON-manifest hook carrying a *_BYPASS line STILL hits
+    through run_checker — the scoping filter narrows input, it does not disarm detectors."""
+    diff = _diff("user/hooks/foo.sh", added=['if [ "$HARNESS_GATE_BYPASS" = "1" ]; then exit 0; fi'])
+    changed = ["user/hooks/foo.sh"]
+    res = hg.run_checker(Path("."), diff, changed, None, DEFAULT_GLOBS)
+    assert res["in_scope"] is True
+    assert res["checks"]["gate_weakening"]["result"] == "hit", res["checks"]["gate_weakening"]["evidence"]
 
 
 # --- overfit detector (SPEC Validation row 2) ------------------------------------

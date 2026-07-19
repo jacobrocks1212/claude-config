@@ -381,6 +381,16 @@ def run_checker(repo_root: Path, diff_text: str, changed: list,
             "verdict_required": False,
         }
     hunks = parse_diff(diff_text)
+    # Scope the structural detectors to manifest control-surface hunks ONLY. A diff is
+    # in scope once ANY changed file is on the manifest, but off-manifest files swept
+    # into the same range — regenerated docs (LAZY_QUEUE.md), per-item PHASES.md prose,
+    # unrelated docs/{features,bugs}/<slug>/SPEC.md — are NOT code/gate surfaces and must
+    # never be inspected (adhoc-harness-gate-false-positives-on-generated-docs-and-phases-
+    # prose). `hits` is the manifest-membership SSOT (scope_hits ∩ globs); reuse it, adding
+    # no new "is this code" heuristic. `detect_tautology` reads the SPEC dir, not hunks, so
+    # it is unaffected; the in_scope/scope_hit verdict shape (below) is unchanged.
+    hits_set = {h.replace("\\", "/") for h in hits}
+    hunks = [h for h in hunks if h.file.replace("\\", "/") in hits_set]
     overfit = detect_overfit(hunks)
     gate_weak = detect_gate_weakening(hunks)
     taut = detect_tautology(feature_dir)
