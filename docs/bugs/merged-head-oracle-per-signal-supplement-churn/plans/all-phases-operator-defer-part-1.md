@@ -60,7 +60,7 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 
 ## Work Units
 
-- [ ] WU-1 — Feature-side operator-defer branch in `lazy-state.py::compute_state`
+- [x] WU-1 — Feature-side operator-defer branch in `lazy-state.py::compute_state`
 - [ ] WU-2 — Retire the `_candidate_operator_deferred` supplement in `dispatch.py`
 
 ---

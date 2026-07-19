@@ -33,6 +33,7 @@ Output schema (stdout JSON):
                             | "blocked" | "needs-research" | "needs-input"
                             | "needs-spec-input" | "queue-missing"
                             | "completion-unverified" | "stale_upstream"
+                            | "all-remaining-deferred"
                             | "scoped-id-not-found",
   "notify_message":    "<string>"      | null,
   "diagnostics":       []                                  # always present; non-empty
@@ -168,6 +169,12 @@ def _state(
         # device_deferred_features) so orchestrators surface lingering
         # In-progress host-deferrals deterministically, not only at exhaustion.
         "host_deferred_features": list(_HOST_DEFERRED),
+        # merged-head-oracle-per-signal-supplement-churn Phase 1: features the
+        # operator parked via a bare DEFERRED.md this probe (the feature-side
+        # mirror of bug-state.py's operator_deferred key). Always present so
+        # /lazy-status + orchestrators surface lingering operator-deferred
+        # features deterministically, not only at queue exhaustion.
+        "operator_deferred": list(_OPERATOR_DEFERRED),
     }
     # CRITICAL INVARIANT: "parked" is ONLY included when _PARK_MODE is True.
     # When False the key must be entirely absent so default output (no flag) is
@@ -284,6 +291,14 @@ _DEVICE_DEFERRED: list[str] = []
 # Both reset at the start of each compute_state().
 _HOST_DEFERRED: list[str] = []
 _HOST_SATURATED: list[dict] = []
+
+# merged-head-oracle-per-signal-supplement-churn Phase 1: operator-deferred
+# features (a bare DEFERRED.md sentinel is present) observed this invocation —
+# the feature-side mirror of bug-state.py's _OPERATOR_DEFERRED. Surfaced in the
+# always-present operator_deferred probe key; when the queue exhausts to only
+# these, the global all-remaining-deferred terminal fires. Reset at the start of
+# each compute_state().
+_OPERATOR_DEFERRED: list[str] = []
 
 # Park mode: when True (--park-needs-input and/or --park-blocked flag),
 # NEEDS_INPUT.md and/or feature-local BLOCKED.md items are skipped (parked)
@@ -402,9 +417,12 @@ STEP_STALE_UPSTREAM = "Step 2.9: stale-upstream"
 # null-identity terminal (cloud-queue-exhausted / device-queue-exhausted /
 # host-capability-saturated / queue-exhausted-all-parked).
 #
-# Parity with bug-state.py's literals where the axis matches (cloud/device/park);
-# the feature side adds the host-capability axis (no bug-side analog) and has NO
-# operator-DEFERRED.md branch (bug-pipeline-only — JUSTIFIED divergence).
+# Parity with bug-state.py's literals where the axis matches
+# (cloud/device/park/operator-defer); the feature side adds the host-capability
+# axis (no bug-side analog). The operator-DEFERRED.md branch is now present on
+# BOTH pipelines — the former feature/bug divergence was CLOSED by
+# merged-head-oracle-per-signal-supplement-churn (the feature side gained the
+# bare-DEFERRED.md skip the bug side already had).
 # Part 3 (curated_stage.py) maps these literals VERBATIM:
 #   cloud-queue-exhausted-scoped     → Deferred
 #   device-queue-exhausted-scoped    → Deferred
@@ -414,6 +432,14 @@ STEP_STALE_UPSTREAM = "Step 2.9: stale-upstream"
 TR_CLOUD_DEFERRED_SCOPED = "cloud-queue-exhausted-scoped"
 TR_DEVICE_DEFERRED_SCOPED = "device-queue-exhausted-scoped"
 TR_HOST_DEFERRED_SCOPED = "host-capability-saturated-scoped"
+# merged-head-oracle-per-signal-supplement-churn Phase 1: the feature-side
+# operator-deferred literals, matching bug-state.py's exactly (a scoped
+# --feature-id query on a DEFERRED.md feature returns its own identity + this
+# scoped terminal; the global all-remaining-deferred terminal fires when only
+# operator-deferred features remain). NOT registered in SANCTIONED_STOP_TERMINAL
+# — matching the bug side, which does not register them either.
+TR_OPERATOR_DEFERRED_SCOPED = "operator-deferred"
+TR_ALL_DEFERRED = "all-remaining-deferred"
 TR_BLOCKED_SCOPED = "blocked-scoped"
 TR_NEEDS_INPUT_SCOPED = "needs-input-scoped"
 # A --feature-id scoped query matching an entry that is ALREADY genuinely done
@@ -436,6 +462,11 @@ STEP_NEEDS_INPUT_PARKED_SCOPED = "Needs-input, parked (scoped)"
 STEP_COMPLETE_SCOPED = "Complete (scoped)"
 STEP_NEEDS_RATIFICATION = "Step 3.6: needs-ratification"
 STEP_PROVISIONAL_PARKED_SCOPED = "Provisional, parked (scoped)"
+# merged-head-oracle-per-signal-supplement-churn Phase 1: the operator-deferred
+# scoped current_step (kept GENERIC — the curated stage resolves from the
+# terminal_reason, which dominates). Mirrors bug-state.py's
+# STEP_OPERATOR_DEFERRED_SCOPED.
+STEP_OPERATOR_DEFERRED_SCOPED = "Operator-deferred (scoped)"
 
 
 def resolve_real_device(flag_value: str) -> bool:
@@ -1758,6 +1789,7 @@ def compute_state(
     _DEVICE_DEFERRED.clear()
     _HOST_DEFERRED.clear()
     _HOST_SATURATED.clear()
+    _OPERATOR_DEFERRED.clear()
     # Park mode: set the module global from the param so _state() can gate
     # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
     global _PARK_MODE, _PARKED, _DEFERRED_BUDGET, _BUDGET_GUARD, _GATED_HEADS
@@ -2242,6 +2274,45 @@ def compute_state(
                         f"host that provides the capability."
                     )
                     continue
+        # -----------------------------------------------------------------------
+        # Operator-deferred skip (merged-head-oracle-per-signal-supplement-churn
+        # Phase 1 — feature-side mirror of bug-state.py's operator-deferred branch,
+        # closing the former feature/bug divergence): a bare DEFERRED.md means the
+        # operator parked this feature. Skip and continue so the queue keeps
+        # moving; re-include by deleting DEFERRED.md. UNCONDITIONAL (independent of
+        # any park flag), exactly like the bug side — the merged-head oracle relies
+        # on an operator-deferred feature being non-dispatchable at its own
+        # pipeline. Placed after the device/host skips and before the park branches
+        # to mirror the bug-side ordering. Uses the shared
+        # lazy_core.spec_dir_operator_deferred predicate (never an inline
+        # DEFERRED.md existence check) + _scoped_skip_state for the scoped return,
+        # exactly as the sibling cloud/device/host scoped branches do.
+        if lazy_core.spec_dir_operator_deferred(spec_path):
+            # Scoped-match identity preservation: when --feature-id targets THIS
+            # feature, return its identity + a per-feature scoped deferred terminal
+            # instead of `continue`-ing into the global null-identity
+            # all-remaining-deferred terminal (which renders "unknown" downstream).
+            # UNSCOPED behavior (scope_feature_id is None) is byte-identical.
+            if scope_feature_id is not None and feature_id == scope_feature_id:
+                return _scoped_skip_state(
+                    feature_id=feature_id,
+                    feature_name=name,
+                    spec_path=spec_path,
+                    current_step=STEP_OPERATOR_DEFERRED_SCOPED,
+                    terminal_reason=TR_OPERATOR_DEFERRED_SCOPED,
+                    notify_message=(
+                        f"{name}: operator-deferred (DEFERRED.md). Scoped query "
+                        "returns its identity; re-include by deleting DEFERRED.md."
+                    ),
+                )
+            _OPERATOR_DEFERRED.append(name)
+            meta = parse_sentinel(spec_path / "DEFERRED.md") or {}
+            reason = meta.get("reason") or "(no reason recorded)"
+            _diag(
+                f"operator-deferred skipped: {name} — DEFERRED.md "
+                f"(reason: {reason}); re-include by deleting DEFERRED.md."
+            )
+            continue
         if skip_needs_research:
             # Cheap filesystem peek — don't run the full per-feature state machine.
             # Skip features that would terminate the loop with needs-research.
@@ -2993,6 +3064,26 @@ def compute_state(
                     f"deferred to capability-host. "
                     f"{len(_HOST_SATURATED)} feature(s) await a capability-bearing "
                     "host."
+                ),
+            )
+        # merged-head-oracle-per-signal-supplement-churn Phase 1: the global
+        # all-remaining-deferred terminal (feature-side mirror of bug-state.py).
+        # When the walk advanced past every workable feature and the ONLY reason
+        # nothing dispatched is that the remaining features were operator-parked
+        # via DEFERRED.md, return a distinct terminal — NOT all-features-complete,
+        # which would be a false completion. Placed beside the device/host
+        # terminals (after budget/cloud/device/host, before research/scoped-id/
+        # all-parked) so an operator-deferred remainder is honestly surfaced. The
+        # queue isn't empty — it's paused by the operator; re-include by deleting
+        # each DEFERRED.md. NOT in SANCTIONED_STOP_TERMINAL (matching the bug side).
+        if _OPERATOR_DEFERRED:
+            return _state(
+                terminal_reason=TR_ALL_DEFERRED,
+                current_step="All remaining features are operator-deferred",
+                notify_message=(
+                    f"All remaining features are operator-deferred — "
+                    f"{len(_OPERATOR_DEFERRED)} feature(s) parked via DEFERRED.md. "
+                    "Re-include by deleting DEFERRED.md in each feature dir."
                 ),
             )
         if skip_needs_research and research_pending_skipped:
@@ -4109,6 +4200,68 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             blocker_kind="runtime-spike-verdict-pending",
             blocked_at="2026-05-19T12:00:00Z", retry_count=0,
         )
+    elif name == "operator-deferred-skip":
+        # merged-head-oracle-per-signal-supplement-churn Phase 1 (feature-side
+        # mirror of bug-state.py's operator-deferred-skip). Two features:
+        # feat-deferred carries a bare DEFERRED.md (operator-parked, must be
+        # skipped) and feat-actionable is Draft-with-no-research (must dispatch
+        # /spec). Queue lists the deferred one first.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-deferred", "name": "Deferred Feature",
+                 "spec_dir": "feat-deferred", "tier": 1},
+                {"id": "feat-actionable", "name": "Actionable Feature",
+                 "spec_dir": "feat-actionable", "tier": 2},
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        fdd = features / "feat-deferred"
+        fdd.mkdir()
+        (fdd / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        _write_yaml_sentinel(
+            fdd / "DEFERRED.md", "deferred",
+            feature_id="feat-deferred",
+            reason="Operator parked pending an upstream decision.",
+            deferred_at="2026-07-19",
+        )
+        faa = features / "feat-actionable"
+        faa.mkdir()
+        (faa / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+    elif name == "all-operator-deferred":
+        # Only feature carries DEFERRED.md → no actionable features remain. The
+        # global all-remaining-deferred terminal fires (feature_id None,
+        # operator_deferred non-empty). Mirror of bug-state.py's fixture.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-only-deferred", "name": "Only Deferred Feature",
+                 "spec_dir": "feat-only-deferred", "tier": 1},
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        fod = features / "feat-only-deferred"
+        fod.mkdir()
+        (fod / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        _write_yaml_sentinel(
+            fod / "DEFERRED.md", "deferred",
+            feature_id="feat-only-deferred",
+            reason="Pending hardware setup.",
+            deferred_at="2026-07-19",
+        )
+    elif name == "operator-deferred-control":
+        # Control: identical shape to all-operator-deferred but with NO
+        # DEFERRED.md → the feature is dispatchable (Draft SPEC + no research
+        # routes /spec at Step 5), proving the bare-DEFERRED.md branch is the
+        # ONLY thing that excludes it.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-ctrl", "name": "Control Feature",
+                 "spec_dir": "feat-ctrl", "tier": 1},
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        fcc = features / "feat-ctrl"
+        fcc.mkdir()
+        (fcc / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
     elif name == "mid-implementation":
         (features / "queue.json").write_text(json.dumps({
             "queue": [
@@ -6957,6 +7110,30 @@ def run_smoke_tests() -> int:
                 "feature_id": "feat-sau",
             }),
 
+            # merged-head-oracle-per-signal-supplement-churn Phase 1: the
+            # feature-side operator-defer branch (mirror of bug-state.py). RED
+            # until the walk-loop DEFERRED.md skip + global terminal land.
+            # Deferred feature skipped, actionable feature dispatched; the
+            # operator_deferred probe key names the parked feature.
+            ("operator-deferred-skip", False, False, {
+                "feature_id": "feat-actionable",
+                "sub_skill": "spec",
+                "operator_deferred": ["Deferred Feature"],
+            }),
+            # Only the deferred feature remains → the global all-remaining-deferred
+            # terminal fires with a null identity (NOT all-features-complete).
+            ("all-operator-deferred", False, False, {
+                "terminal_reason": TR_ALL_DEFERRED,
+                "feature_id": None,
+                "operator_deferred": ["Only Deferred Feature"],
+            }),
+            # Control: DEFERRED.md absent → the same feature is dispatchable
+            # (proving the branch is the sole exclusion mechanism).
+            ("operator-deferred-control", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-ctrl",
+                "operator_deferred": [],
+            }),
             # NOTE: WU-8 Fixture 3 (step10-unexpected-writes-needs-input) is NOT a
             # compute_state routing case. The Step 10 "unexpected state" branch is
             # GENUINELY UNREACHABLE through compute_state's inputs (workstation Step 9
@@ -9644,6 +9821,90 @@ def run_smoke_tests() -> int:
             )
         except SystemExit as exc:
             failures.append(f"[{fix_scoped_host}] SystemExit: {exc.code}")
+
+        # Fixture D (scoped operator-deferred identity):
+        # merged-head-oracle-per-signal-supplement-churn Phase 1. A feature
+        # carrying a bare DEFERRED.md queried with --feature-id returns its OWN
+        # identity + TR_OPERATOR_DEFERRED_SCOPED, NOT the global null-identity
+        # all-remaining-deferred terminal. Feature-side twin of bug-state.py's
+        # scoped-operator-deferred-identity fixture.
+        fix_scoped_opdef = "scoped-operator-deferred-identity"
+        sod_root = td_path / "scoped-operator-deferred"
+        sod_feat = sod_root / "docs" / "features"
+        sod_feat.mkdir(parents=True, exist_ok=True)
+        (sod_feat / "ROADMAP.md").write_text("# Roadmap\n")
+        (sod_feat / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-sod", "name": "Feature SOD", "spec_dir": "feat-sod", "tier": 1},
+            ]
+        }))
+        sod_d = sod_feat / "feat-sod"
+        sod_d.mkdir()
+        (sod_d / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        _write_yaml_sentinel(
+            sod_d / "DEFERRED.md", "deferred",
+            feature_id="feat-sod",
+            reason="Operator parked for scoped-identity test.",
+            deferred_at="2026-07-19",
+        )
+        try:
+            got_sod = compute_state(
+                sod_root, cloud=False, real_device=True,
+                scope_feature_id="feat-sod",
+            )
+            sod_ok = True
+            if got_sod.get("feature_id") != "feat-sod":
+                failures.append(
+                    f"[{fix_scoped_opdef}] expected feature_id='feat-sod', "
+                    f"got {got_sod.get('feature_id')!r}"
+                )
+                sod_ok = False
+            if got_sod.get("terminal_reason") != TR_OPERATOR_DEFERRED_SCOPED:
+                failures.append(
+                    f"[{fix_scoped_opdef}] expected terminal_reason="
+                    f"{TR_OPERATOR_DEFERRED_SCOPED!r}, got "
+                    f"{got_sod.get('terminal_reason')!r}"
+                )
+                sod_ok = False
+            if got_sod.get("terminal_reason") == TR_ALL_DEFERRED:
+                failures.append(
+                    f"[{fix_scoped_opdef}] scoped query erroneously returned global "
+                    f"{TR_ALL_DEFERRED!r} (identity lost)"
+                )
+                sod_ok = False
+            print(
+                f"  {'PASS' if sod_ok else 'FAIL'} [{fix_scoped_opdef}] "
+                f"scoped operator-deferred query returns feat-sod + scoped terminal"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_scoped_opdef}] SystemExit: {exc.code}")
+
+        # Unscoped regression twin: the SAME single-deferred-feature root queried
+        # WITHOUT a scope id returns the global all-remaining-deferred terminal
+        # (feature_id None) — proving the scoped branch fires ONLY on a match and
+        # the unscoped walk still `continue`s into the global terminal.
+        fix_unscoped_opdef = "unscoped-operator-deferred-regression"
+        try:
+            got_uod = compute_state(sod_root, cloud=False, real_device=True)
+            uod_ok = True
+            if got_uod.get("terminal_reason") != TR_ALL_DEFERRED:
+                failures.append(
+                    f"[{fix_unscoped_opdef}] expected terminal_reason="
+                    f"{TR_ALL_DEFERRED!r}, got {got_uod.get('terminal_reason')!r}"
+                )
+                uod_ok = False
+            if got_uod.get("feature_id") is not None:
+                failures.append(
+                    f"[{fix_unscoped_opdef}] expected feature_id=None (global), "
+                    f"got {got_uod.get('feature_id')!r}"
+                )
+                uod_ok = False
+            print(
+                f"  {'PASS' if uod_ok else 'FAIL'} [{fix_unscoped_opdef}] "
+                f"unscoped returns global all-remaining-deferred"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_unscoped_opdef}] SystemExit: {exc.code}")
 
         # -------------------------------------------------------------------
         # Fixture WU-1-park: --park-needs-input mode (Phase 4)

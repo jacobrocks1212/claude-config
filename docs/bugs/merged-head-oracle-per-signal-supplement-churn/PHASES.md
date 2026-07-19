@@ -33,16 +33,23 @@ No premise-grade contradictions: the SPEC's serving-path trace matches the live 
 
 ---
 
-### Phase 1: Feature-side operator-defer branch (fixes the near-neighbor)
+### Phase 1: Feature-side operator-defer branch (fixes the near-neighbor)  ✅ Complete
 
 **Scope:** Give the FEATURE `compute_state` walk loop a bare-`DEFERRED.md` operator-defer skip branch, mirroring `bug-state.py:1126–1160`. This directly fixes Reproduction A (the feature pipeline dispatching `/spec` on an operator-EXCLUDED feature) and makes `is_dispatchable(scoped_probe(feature))` return false for an operator-deferred feature — the precondition Phase 2's supplement-retirement depends on.
 
 **Deliverables:**
-- [ ] Feature-side scoped constants in `lazy-state.py`: `TR_OPERATOR_DEFERRED_SCOPED` + `STEP_OPERATOR_DEFERRED_SCOPED` (twins of `bug-state.py:187,253`), alongside the existing `TR_*_SCOPED` block (~414–438).
-- [ ] Module-level `_OPERATOR_DEFERRED: list[str]` accumulator + its per-`compute_state` `.clear()` (twin of `bug-state.py:293,865`), surfaced in the probe dict as an `operator_deferred` key (twin of `bug-state.py:372`).
-- [ ] The operator-defer skip branch in the `compute_state` walk loop: on `(spec_path / "DEFERRED.md").exists()`, a scoped `--feature-id` match returns `_scoped_skip_state(... TR_OPERATOR_DEFERRED_SCOPED ...)`; otherwise append to `_OPERATOR_DEFERRED`, `_diag(...)`, `continue`. Placed to mirror the bug-side ordering (before the park branches). Reuse `docmodel.spec_dir_operator_deferred` for the predicate.
-- [ ] Global `all-remaining-deferred`-shaped feature terminal in the `current is None` block (twin of `bug-state.py:1460–1469`), fired when `_OPERATOR_DEFERRED` non-empty and no workable successor. Add its terminal string to `lazy_core.SANCTIONED_STOP_TERMINAL` if the bug-side literal is registered there.
-- [ ] Tests: feature-side `--test` fixtures — `operator-deferred-skip` (a `DEFERRED.md` feature parked, an actionable feature dispatched), `all-operator-deferred` (only feature has `DEFERRED.md` → global terminal), scoped-operator-deferred (`--feature-id` on the deferred feature returns its identity + scoped terminal), and a control (delete `DEFERRED.md` → dispatchable via `/spec`). Regenerate `tests/baselines/lazy-state-test-baseline.txt` via `_normalize_smoke_output`.
+- [x] Feature-side scoped constants in `lazy-state.py`: `TR_OPERATOR_DEFERRED_SCOPED` + `STEP_OPERATOR_DEFERRED_SCOPED` (twins of `bug-state.py:187,253`), alongside the existing `TR_*_SCOPED` block (~414–438).
+- [x] Module-level `_OPERATOR_DEFERRED: list[str]` accumulator + its per-`compute_state` `.clear()` (twin of `bug-state.py:293,865`), surfaced in the probe dict as an `operator_deferred` key (twin of `bug-state.py:372`).
+- [x] The operator-defer skip branch in the `compute_state` walk loop: on `(spec_path / "DEFERRED.md").exists()`, a scoped `--feature-id` match returns `_scoped_skip_state(... TR_OPERATOR_DEFERRED_SCOPED ...)`; otherwise append to `_OPERATOR_DEFERRED`, `_diag(...)`, `continue`. Placed to mirror the bug-side ordering (before the park branches). Reuse `docmodel.spec_dir_operator_deferred` for the predicate.
+- [x] Global `all-remaining-deferred`-shaped feature terminal in the `current is None` block (twin of `bug-state.py:1460–1469`), fired when `_OPERATOR_DEFERRED` non-empty and no workable successor. (NOT added to `lazy_core.SANCTIONED_STOP_TERMINAL` — verified the bug-side literal is NOT registered there either; matched the bug side exactly.)
+- [x] Tests: feature-side `--test` fixtures — `operator-deferred-skip` (a `DEFERRED.md` feature parked, an actionable feature dispatched), `all-operator-deferred` (only feature has `DEFERRED.md` → global terminal), scoped-operator-deferred + unscoped-regression twin, and `operator-deferred-control` (no `DEFERRED.md` → dispatchable via `/spec`). Regenerated `tests/baselines/lazy-state-test-baseline.txt` via `_normalize_smoke_output`.
+
+**Implementation Notes (2026-07-19):**
+- Landed in `lazy-state.py`: constants `TR_OPERATOR_DEFERRED_SCOPED="operator-deferred"` / `TR_ALL_DEFERRED="all-remaining-deferred"` / `STEP_OPERATOR_DEFERRED_SCOPED` (beside the `TR_*_SCOPED` block), module list `_OPERATOR_DEFERRED` + `.clear()` (beside `_HOST_SATURATED.clear()`), the always-present `operator_deferred` probe key, the walk-loop skip branch (after the host-capability block, before `skip_needs_research` — mirrors bug-side ordering), and the global `all-remaining-deferred` terminal (after `host-capability-saturated`, before the research terminal).
+- The stale divergence comment at `lazy-state.py:~407` ("has NO operator-DEFERRED.md branch — bug-pipeline-only JUSTIFIED divergence") was UPDATED to record the divergence is now CLOSED.
+- Predicate reuse: the branch calls `lazy_core.spec_dir_operator_deferred(spec_path)` (never an inline `DEFERRED.md` existence check); the `_diag` reason reads via `parse_sentinel`.
+- `_OPERATOR_DEFERRED` accumulates the feature DISPLAY name (mirrors bug-side `_OPERATOR_DEFERRED.append(bug_name)` and the feature-side `_DEVICE_DEFERRED.append(name)`).
+- Gates green: `lazy-state.py --test`, `bug-state.py --test`, full `pytest tests/test_lazy_core/` (exit 0), `lazy_parity_audit.py --repo-root .` (exit 0 — bug-state.py untouched; feature side gained the branch the bug side already had, a CLOSED divergence).
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --test` passes with the new fixtures, and a scoped probe on a `DEFERRED.md` feature dir routes NOT to `/spec`: `python3 user/scripts/lazy-state.py --repo-root <tmp> --feature-id <deferred-slug>` returns a `terminal_reason` of `operator-deferred` (scoped), never `sub_skill: /spec`. Both are runnable commands driving the real state machine.
 
