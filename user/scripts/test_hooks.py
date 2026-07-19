@@ -8364,17 +8364,18 @@ def _matcher_for_hook(hook_name: str) -> str | None:
     return None
 
 
-def test_termkill_registered_widened_matcher():
-    """block-terminal-kill.sh must be registered under a matcher covering BOTH
-    Bash and PowerShell (Stop-Process via the PowerShell tool must not walk past)."""
+def test_termkill_revoked_not_registered():
+    """block-terminal-kill.sh was REVOKED by operator instruction on 2026-07-19 —
+    unregistered from user/settings.json. This is now a revocation guard: the hook
+    must STAY unregistered (any re-registration needs a fresh operator instruction).
+    The script itself is retained in user/hooks/ for reference (carrying a REVOKED
+    header comment); the functional deny/allow tests below still exercise the
+    retained script body directly (they drive it as a subprocess, not via the hook
+    registration)."""
     matcher = _matcher_for_hook("block-terminal-kill.sh")
-    assert matcher is not None, (
-        "block-terminal-kill.sh not registered in any PreToolUse block"
-    )
-    tools = matcher.split("|")
-    assert "Bash" in tools and "PowerShell" in tools, (
-        f"block-terminal-kill.sh matcher must include Bash AND PowerShell; "
-        f"got matcher={matcher!r}"
+    assert matcher is None, (
+        "block-terminal-kill.sh is REVOKED (operator, 2026-07-19) and must remain "
+        f"unregistered in user/settings.json; found matcher={matcher!r}"
     )
 
 
@@ -8412,8 +8413,8 @@ _TESTS = _TESTS + [
     ("test_push_malformed_fails_open", test_push_malformed_fails_open),
     ("test_push_powershell_payload_denies", test_push_powershell_payload_denies),
     # registration meta-tests
-    ("test_termkill_registered_widened_matcher",
-     test_termkill_registered_widened_matcher),
+    ("test_termkill_revoked_not_registered",
+     test_termkill_revoked_not_registered),
     ("test_push_registered_widened_matcher",
      test_push_registered_widened_matcher),
 ]
@@ -8996,9 +8997,10 @@ def test_push_unaffected_by_heredoc_body_no_cmd_start_anchoring():
 
 # --- cross-guard registration meta-test (item 4) ----------------------------
 
+# block-terminal-kill.sh REVOKED (operator, 2026-07-19) — unregistered from
+# user/settings.json, so it is deliberately NOT in this registered-guard set.
 _COMMAND_GUARD_HOOKS = (
     "block-work-repo-git-push.sh",
-    "block-terminal-kill.sh",
     "lazy-cycle-containment.sh",
     "long-build-ownership-guard.sh",
     "build-queue-enforce.sh",

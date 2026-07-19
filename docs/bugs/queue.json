@@ -8,12 +8,6 @@
       "severity": null
     },
     {
-      "id": "adhoc-block-terminal-kill-false-denies-brace-group-exit-guard",
-      "name": "block-terminal-kill.sh false-denies an unquoted { ...; exit 1; } shell error-guard",
-      "spec_dir": "adhoc-block-terminal-kill-false-denies-brace-group-exit-guard",
-      "severity": null
-    },
-    {
       "id": "adhoc-cycle-return-omits-decision-classification-ledger",
       "name": "Cycle-subagent return summaries omit the mandatory Decision-Classification Ledger",
       "spec_dir": "adhoc-cycle-return-omits-decision-classification-ledger",

@@ -102,11 +102,6 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/block-work-repo-git-push.sh",
             "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/block-terminal-kill.sh",
-            "timeout": 5
           }
         ]
       },

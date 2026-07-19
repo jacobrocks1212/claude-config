@@ -1,4 +1,11 @@
 #!/bin/bash
+# ============================================================================
+# REVOKED / UNREGISTERED — 2026-07-19, by operator instruction (Jacob).
+# The operator directed that the block-terminal-kill mechanism be revoked. Its
+# registration was removed from user/settings.json on this date, so this hook no
+# longer runs on any tool call. The script body is retained for history/reference
+# only; do NOT re-register it without a fresh operator instruction.
+# ============================================================================
 # block-terminal-kill.sh — PreToolUse(Bash|PowerShell) hook.
 #
 # Block commands that could kill terminal processes during the mobile/remote
