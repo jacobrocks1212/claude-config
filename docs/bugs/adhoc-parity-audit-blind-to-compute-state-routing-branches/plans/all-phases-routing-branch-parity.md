@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: adhoc-parity-audit-blind-to-compute-state-routing-branches
-status: Ready
+status: In-progress
 complexity: complex
 created: 2026-07-19
 phases: [1, 2]
@@ -67,7 +67,7 @@ No contradictions found — the SPEC's root cause is `traced` and every anchor r
 
 ## Work Units
 
-- [ ] WU-1 — Declared routing-branch allowlist + classification of all coupled compute_state branches
+- [x] WU-1 — Declared routing-branch allowlist + classification of all coupled compute_state branches
 - [ ] WU-2 — audit_compute_state_routing_parity() + wire into audit_all_pairs + tests
 - [ ] WU-3 — Document the new routing-branch coverage + allowlist location
 
