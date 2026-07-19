@@ -1,7 +1,8 @@
 # Bug: merged-head oracle deadlocks on a parked-but-UNREACHED same-pipeline head
 
-**Status:** Concluded
+**Status:** Fixed
 **Discovered:** 2026-07-19
+**Fix:** `1b7d420f` — removed the emit-path `same_ids` fast-path so every unreached merged-head candidate is classified via scoped `is_dispatchable` re-inference (identical to the stateless `--next-merged` walk); made the three emit-path `scoped_probe` callables type-aware. Verified: `test_lazy_core` 1278/1278, both `--test` suites, parity exit 0 (harden Round 101).
 **Severity:** P1 (run-blocking deadlock; recurrence of a closed class)
 **Pipeline surface:** `lazy_core/dispatch.py` merged-head actionability oracle + both state scripts' `--emit-prompt` wiring
 **Related:**
