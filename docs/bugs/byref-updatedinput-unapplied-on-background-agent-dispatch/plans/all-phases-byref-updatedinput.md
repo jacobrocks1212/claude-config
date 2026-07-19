@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: byref-updatedinput-unapplied-on-background-agent-dispatch
-status: Ready
+status: In-progress
 created: 2026-07-19
 complexity: complex
 phases: [1, 2]
