@@ -27,7 +27,7 @@
 ## Reproduction Steps
 
 1. `python3 user/scripts/efficacy-eval.py --repo-root . --canary --dry-run --id harden-2026-07-r52` — inspect the canary trip verdict for this intervention.
-2. Read `docs/bugs/canary-revert-harden-2026-07-r52/EVIDENCE.md` — the frozen trip evidence (band numbers, commit set, coupled-pair scope).
+2. Read `docs/bugs/_archive/canary-revert-harden-2026-07-r52/EVIDENCE.md` — the frozen trip evidence (band numbers, commit set, coupled-pair scope).
 3. `git show --stat bc03240e065cb8ad8ac7bdbe203b7d555c09580c` — the revert-target commit set.
 
 **Expected:** A canary trip identifies a shipped change that measurably worsened its targeted friction signal, attributable to the change.
