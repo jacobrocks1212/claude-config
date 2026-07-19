@@ -657,6 +657,8 @@ class TestStateScriptParity:
             '    parser.add_argument("--record-intervention")\n'
             '    lazy_core.notify_halt(state, repo_root, pipeline="x")\n'
             '    parser.add_argument("--sync-deps")\n'
+            '    parser.add_argument("--execute-plan-liveness")\n'
+            '    parser.add_argument("--resolve-ref")\n'
             '    lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
             '    state["cycle_prompt_ref"] = _emit_ref\n',
@@ -671,6 +673,8 @@ class TestStateScriptParity:
             '    parser.add_argument("--record-intervention")\n'
             '    lazy_core.notify_halt(state, repo_root, pipeline="x")\n'
             '    parser.add_argument("--sync-deps")\n'
+            '    parser.add_argument("--execute-plan-liveness")\n'
+            '    parser.add_argument("--resolve-ref")\n'
             '    lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
             '    state["cycle_prompt_ref"] = _emit_ref\n',
@@ -698,6 +702,8 @@ class TestStateScriptParity:
             'parser.add_argument("--record-intervention")\n'
             'lazy_core.notify_halt(state, repo_root, pipeline="x")\n'
             'parser.add_argument("--sync-deps")\n'
+            'parser.add_argument("--execute-plan-liveness")\n'
+            'parser.add_argument("--resolve-ref")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
             'state["cycle_prompt_ref"] = _emit_ref\n',
@@ -711,6 +717,8 @@ class TestStateScriptParity:
             'parser.add_argument("--record-intervention")\n'
             'lazy_core.notify_halt(state, repo_root, pipeline="x")\n'
             'parser.add_argument("--sync-deps")\n'
+            'parser.add_argument("--execute-plan-liveness")\n'
+            'parser.add_argument("--resolve-ref")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
             'state["cycle_prompt_ref"] = _emit_ref\n',
@@ -737,6 +745,8 @@ class TestStateScriptParity:
             'parser.add_argument("--record-intervention")\n'
             'lazy_core.notify_halt(state, repo_root, pipeline="x")\n'
             'parser.add_argument("--sync-deps")\n'
+            'parser.add_argument("--execute-plan-liveness")\n'
+            'parser.add_argument("--resolve-ref")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
             'state["cycle_prompt_ref"] = _emit_ref\n',
@@ -746,6 +756,8 @@ class TestStateScriptParity:
         # → exactly one finding, naming --sync-deps.
         (scripts / "bug-state.py").write_text(
             'set_active_repo_root(args.repo_root)  # no --sync-deps\n'
+            'parser.add_argument("--execute-plan-liveness")\n'
+            'parser.add_argument("--resolve-ref")\n'
             'parser.add_argument("--reorder-queue")\n'
             'parser.add_argument("--reassert-owner")\n'
             'parser.add_argument("--record-intervention")\n'
@@ -774,6 +786,8 @@ class TestStateScriptParity:
             'parser.add_argument("--reorder-queue")\n'
             'parser.add_argument("--reassert-owner")\n'
             'parser.add_argument("--sync-deps")\n'
+            'parser.add_argument("--execute-plan-liveness")\n'
+            'parser.add_argument("--resolve-ref")\n'
             'parser.add_argument("--record-intervention")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
@@ -788,6 +802,8 @@ class TestStateScriptParity:
             'parser.add_argument("--reorder-queue")\n'
             'parser.add_argument("--reassert-owner")\n'
             'parser.add_argument("--sync-deps")\n'
+            'parser.add_argument("--execute-plan-liveness")\n'
+            'parser.add_argument("--resolve-ref")\n'
             'parser.add_argument("--record-intervention")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
@@ -816,6 +832,8 @@ class TestStateScriptParity:
             'parser.add_argument("--record-intervention")\n'
             'lazy_core.notify_halt(state, repo_root, pipeline="x")\n'
             'parser.add_argument("--sync-deps")\n'
+            'parser.add_argument("--execute-plan-liveness")\n'
+            'parser.add_argument("--resolve-ref")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
             'state["cycle_prompt_ref"] = _emit_ref\n',
@@ -828,6 +846,8 @@ class TestStateScriptParity:
             'parser.add_argument("--record-intervention")\n'
             'lazy_core.notify_halt(state, repo_root, pipeline="x")\n'
             'parser.add_argument("--sync-deps")\n'
+            'parser.add_argument("--execute-plan-liveness")\n'
+            'parser.add_argument("--resolve-ref")\n'
             'lazy_core.format_unknown_host_capability_blocker(...)'
             '  # blocker_kind: unknown-host-capability\n'
             'state["cycle_prompt_ref"] = _emit_ref\n',

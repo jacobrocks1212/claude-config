@@ -3089,6 +3089,9 @@ def test_p7_meta_dispatch_by_reference_via_guard():
 
 _CONTAINMENT_SH = _HOOKS_DIR / "lazy-cycle-containment.sh"
 _WEDGE_SH = _HOOKS_DIR / "subagent-wedge-backstop.sh"
+# adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke Phase 2
+# (Gap 1): the mechanical foreground-enforcement guard.
+_BGGATE_SH = _HOOKS_DIR / "cycle-subagent-bg-gate-guard.sh"
 
 # A synthetic subagent identifier — its mere PRESENCE in a PreToolUse payload
 # marks the call as coming from within a dispatched subagent (D4 trip).
@@ -6746,6 +6749,9 @@ _ALL_PYTHON_BEARING_HOOKS = [
     _GUARD_SH,
     _INJECT_SH,
     _WEDGE_SH,
+    # adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke Phase 2:
+    # the 9th python-bearing hook — the cycle-subagent background-gate guard.
+    _BGGATE_SH,
 ]
 
 
@@ -6763,8 +6769,8 @@ def test_all_python_bearing_hooks_breadcrumb_on_no_python():
     emit no deny, and write BOTH hook-error.json (hook field matches) and a
     single kind:error hook-events.jsonl line — closing guard-fail-open-leaves
     -no-trace symptom (a) (silent total disarm of the entire guard plane) for
-    all 8 python-bearing hooks in one sweep (7 original + the SubagentStop
-    wedge-backstop hook)."""
+    all 9 python-bearing hooks in one sweep (7 original + the SubagentStop
+    wedge-backstop hook + the cycle-subagent background-gate guard)."""
     minimal_payload = json.dumps({
         "tool_name": "Bash",
         "tool_input": {"command": "echo hi"},
@@ -9004,6 +9010,10 @@ _COMMAND_GUARD_HOOKS = (
     "lazy-cycle-containment.sh",
     "long-build-ownership-guard.sh",
     "build-queue-enforce.sh",
+    # adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke Phase 2:
+    # the cycle-subagent background-gate guard is a command-content guard
+    # (Bash|PowerShell) too — it must carry the widened matcher.
+    "cycle-subagent-bg-gate-guard.sh",
 )
 
 
@@ -9963,6 +9973,250 @@ _TESTS = _TESTS + [
     # shared-hook-lib Phase 3 — hook_lib import-failure fails open + leaves a trace
     ("test_containment_hook_lib_unavailable_fails_open_with_trace",
      test_containment_hook_lib_unavailable_fails_open_with_trace),
+]
+
+
+# ===========================================================================
+# cycle-subagent-bg-gate-guard.sh — the Gap-1 mechanical foreground-enforcement
+# guard (adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke
+# Phase 2). Denies a `run_in_background` long-gate/test-suite launch from inside
+# an ARMED cycle subagent (agent_id present + cycle marker present), so the
+# ambiguous "holding, will re-invoke" return can never be produced at its source.
+# ===========================================================================
+
+def _bggate_preToolUse_json(
+    command: str,
+    *,
+    agent_id: str | None = None,
+    run_in_background: bool | None = None,
+    tool_name: str = "Bash",
+    session_id: str | None = None,
+) -> str:
+    """A PreToolUse payload for the bg-gate guard: a command tool call carrying
+    an optional agent_id (subagent marker) and an optional run_in_background
+    flag in tool_input."""
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+    tool_input: dict = {"command": command}
+    if run_in_background is not None:
+        tool_input["run_in_background"] = run_in_background
+    payload = {
+        "session_id": session_id,
+        "cwd": "C:\\\\Users\\\\Jacob\\\\AppData\\\\Local\\\\Temp\\\\spike",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": tool_name,
+        "tool_input": tool_input,
+        "tool_use_id": "toolu_" + uuid.uuid4().hex[:24],
+    }
+    if agent_id is not None:
+        payload["agent_id"] = agent_id
+    return json.dumps(payload)
+
+
+def _run_bggate(stdin_text: str, state_dir: Path) -> subprocess.CompletedProcess:
+    return _run_bash(_BGGATE_SH, stdin_text, _base_env(state_dir))
+
+
+def test_bggate_hook_file_exists():
+    """The bg-gate guard script must exist on disk (Phase 2)."""
+    assert _BGGATE_SH.exists(), (
+        f"cycle-subagent-bg-gate-guard.sh missing — Phase 2 not implemented: "
+        f"{_BGGATE_SH}"
+    )
+
+
+def test_bggate_denies_backgrounded_gate_in_armed_subagent():
+    """(a) agent_id + cycle marker + run_in_background:true + a gate command
+    (`npm run qg`) → DENY."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_bggate(
+            _bggate_preToolUse_json(
+                "npm run qg", agent_id=_SUBAGENT_AGENT_ID, run_in_background=True
+            ),
+            state_dir,
+        )
+        assert result.returncode == 0, result.stderr
+        assert _containment_decision(result) == "deny", (
+            f"backgrounded gate in armed subagent must deny; stdout: "
+            f"{result.stdout!r}"
+        )
+        reason = json.loads(result.stdout.strip())["hookSpecificOutput"].get(
+            "permissionDecisionReason", ""
+        )
+        assert "foreground" in reason.lower(), (
+            f"deny reason must name the foreground-await mandate; got {reason!r}"
+        )
+
+
+def test_bggate_allows_main_thread_background_gate():
+    """(b) NO agent_id (main thread) + marker + bg + gate command → ALLOW (the
+    main-thread orchestrator legitimately backgrounds long gates)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_bggate(
+            _bggate_preToolUse_json("npm run qg", run_in_background=True),
+            state_dir,
+        )
+        assert _containment_decision(result) != "deny", (
+            f"main-thread background gate must allow; stdout: {result.stdout!r}"
+        )
+
+
+def test_bggate_allows_foreground_gate_in_subagent():
+    """(c) agent_id + marker + run_in_background:false + gate command → ALLOW
+    (a foreground gate is exactly what the mandate requires)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_bggate(
+            _bggate_preToolUse_json(
+                "npm run qg", agent_id=_SUBAGENT_AGENT_ID, run_in_background=False
+            ),
+            state_dir,
+        )
+        assert _containment_decision(result) != "deny", (
+            f"foreground gate in subagent must allow; stdout: {result.stdout!r}"
+        )
+
+
+def test_bggate_allows_backgrounded_non_gate_in_subagent():
+    """(d) agent_id + marker + bg + a NON-gate command (`sleep 2`, a log tail) →
+    ALLOW (only long gate/test-suite commands are the concern)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        for cmd in ("sleep 2", "tail -f build.log", "npm run dev"):
+            result = _run_bggate(
+                _bggate_preToolUse_json(
+                    cmd, agent_id=_SUBAGENT_AGENT_ID, run_in_background=True
+                ),
+                state_dir,
+            )
+            assert _containment_decision(result) != "deny", (
+                f"backgrounded non-gate {cmd!r} must allow; stdout: "
+                f"{result.stdout!r}"
+            )
+
+
+def test_bggate_allows_when_no_cycle_marker():
+    """(e) agent_id + bg + gate command but NO cycle marker → ALLOW (the guard
+    is scoped to an armed cycle subagent)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        # No cycle marker written.
+        result = _run_bggate(
+            _bggate_preToolUse_json(
+                "npm run qg", agent_id=_SUBAGENT_AGENT_ID, run_in_background=True
+            ),
+            state_dir,
+        )
+        assert _containment_decision(result) != "deny", (
+            f"no cycle marker must allow; stdout: {result.stdout!r}"
+        )
+
+
+def test_bggate_denies_gate_token_variants():
+    """The conservative gate/test-suite token set each denies under the armed
+    background predicate: pytest, python -m pytest, vitest, cargo test,
+    dotnet test, gate-battery, npm run test."""
+    _guard()
+    cmds = (
+        "pytest -q",
+        "python3 -m pytest user/scripts/test_hooks.py",
+        "vitest run",
+        "cargo test --workspace",
+        "dotnet test",
+        "npm run test",
+        "python3 user/scripts/gate-battery.py",
+        "cd repo && npm run qg -- rust",
+    )
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        for cmd in cmds:
+            result = _run_bggate(
+                _bggate_preToolUse_json(
+                    cmd, agent_id=_SUBAGENT_AGENT_ID, run_in_background=True
+                ),
+                state_dir,
+            )
+            assert _containment_decision(result) == "deny", (
+                f"backgrounded gate token {cmd!r} must deny; stdout: "
+                f"{result.stdout!r}"
+            )
+
+
+def test_bggate_powershell_backgrounded_gate_denies():
+    """PowerShell leg (widened-matcher family): a backgrounded gate command run
+    through the PowerShell tool in an armed subagent also denies."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_bggate(
+            _bggate_preToolUse_json(
+                "pytest -q", agent_id=_SUBAGENT_AGENT_ID,
+                run_in_background=True, tool_name="PowerShell",
+            ),
+            state_dir,
+        )
+        assert _containment_decision(result) == "deny", (
+            f"PowerShell backgrounded gate must deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_bggate_malformed_json_fails_open_with_breadcrumb():
+    """(f) malformed JSON → ALLOW (fail-open) AND a hook-error.json breadcrumb
+    is written (guard-fail-open-leaves-no-trace)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_bggate("{ not valid json", state_dir)
+        assert result.returncode == 0, result.stderr
+        assert _containment_decision(result) != "deny", (
+            f"malformed JSON must fail open (allow); stdout: {result.stdout!r}"
+        )
+        assert (state_dir / "hook-error.json").exists(), (
+            "malformed JSON must leave a hook-error.json breadcrumb"
+        )
+
+
+_TESTS = _TESTS + [
+    # cycle-subagent-bg-gate-guard.sh — Gap-1 mechanical foreground-enforcement
+    ("test_bggate_hook_file_exists", test_bggate_hook_file_exists),
+    ("test_bggate_denies_backgrounded_gate_in_armed_subagent",
+     test_bggate_denies_backgrounded_gate_in_armed_subagent),
+    ("test_bggate_allows_main_thread_background_gate",
+     test_bggate_allows_main_thread_background_gate),
+    ("test_bggate_allows_foreground_gate_in_subagent",
+     test_bggate_allows_foreground_gate_in_subagent),
+    ("test_bggate_allows_backgrounded_non_gate_in_subagent",
+     test_bggate_allows_backgrounded_non_gate_in_subagent),
+    ("test_bggate_allows_when_no_cycle_marker",
+     test_bggate_allows_when_no_cycle_marker),
+    ("test_bggate_denies_gate_token_variants",
+     test_bggate_denies_gate_token_variants),
+    ("test_bggate_powershell_backgrounded_gate_denies",
+     test_bggate_powershell_backgrounded_gate_denies),
+    ("test_bggate_malformed_json_fails_open_with_breadcrumb",
+     test_bggate_malformed_json_fails_open_with_breadcrumb),
 ]
 
 

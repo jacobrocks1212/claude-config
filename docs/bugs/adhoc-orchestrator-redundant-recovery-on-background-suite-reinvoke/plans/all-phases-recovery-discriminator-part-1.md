@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke
-status: Ready
+status: Complete
 created: 2026-07-19
 complexity: complex
 phases: [1, 2]

@@ -422,6 +422,8 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "_count_concurrent_writer_commits": "markers",
     "_env_truthy": "markers",
     "_execute_plan_commit_budget": "markers",
+    "_execute_plan_marker_path": "markers",
+    "execute_plan_liveness": "markers",
     "_run_marker_scoped_keys": "markers",
     "advance_cycle_bracket_counter": "markers",
     "advance_forward_cycle": "markers",

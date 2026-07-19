@@ -57,6 +57,7 @@ from .statedir import (
 )
 from .docmodel import (
     _plan_phase_set,
+    _plan_status,
     remaining_unchecked_are_verification_only,
 )
 from .gates import _plan_wu_checkbox_counts
@@ -71,6 +72,76 @@ from .dispatch import (
     skill_declares_multi_commit,
     skill_declares_subagent_model,
 )
+
+
+# ---------------------------------------------------------------------------
+# execute-plan pause-vs-terminal liveness discriminator
+# (docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke,
+#  Phase 1 / Gap 2 — the load-bearing half).
+# ---------------------------------------------------------------------------
+
+# The execute-plan run marker is written by /execute-plan Step 1d at
+# `~/.claude/state/execute-plan/<md5(repo_root)[:12]>.json` (present iff a run
+# is IN FLIGHT, removed only at genuine completion / on a BLOCKED.md /
+# NEEDS_INPUT.md halt — see execute-plan/SKILL.md L103-111,190). It is DISTINCT
+# from the lazy run marker: a FIXED `execute-plan/` subdir, keyed by md5 of the
+# repo-root STRING (NOT the sha1 repo_key), and NOT under the per-repo keyed
+# state dir. Base honors LAZY_STATE_DIR (hermetic tests / hook pipe-tests) and
+# defaults to ~/.claude/state in production — matching the SKILL's bash recipe
+# `printf '%s' "$root" | md5sum | cut -c1-12`.
+def _execute_plan_marker_path(repo_root: str) -> Path:
+    base = os.environ.get("LAZY_STATE_DIR") or os.path.join(
+        os.path.expanduser("~"), ".claude", "state"
+    )
+    key = hashlib.md5(str(repo_root).encode("utf-8")).hexdigest()[:12]
+    return Path(base) / "execute-plan" / f"{key}.json"
+
+
+def execute_plan_liveness(repo_root: str, plan_path: str) -> dict:
+    """Return a pause-vs-terminal verdict for a just-returned /execute-plan
+    cycle, encoding the ``dispatched-agent-liveness.md`` authoritative-completion
+    signal recipe (marker present ⇒ NOT done; plan ``status: Complete`` ⇒ done):
+
+        {"marker_present": bool,
+         "plan_status": str | None,
+         "verdict": "paused" | "terminal" | "wedge-candidate"}
+
+    Decision rule:
+      * execute-plan marker ABSENT (no in-flight run for this repo)  → ``terminal``
+      * marker present AND plan ``status: Complete``                 → ``terminal``
+      * marker present AND plan status not Complete                  → ``paused``
+
+    FAIL-SAFE — bias to the SAFE / legacy behavior: ANY read error (an
+    unreadable / missing plan file, a bad marker, an unexpected exception)
+    resolves to ``terminal`` so a legitimate recovery is NEVER suppressed on an
+    unreadable signal (an over-suppressed recovery would strand a genuinely
+    resultless cycle; an over-eager recovery is merely the pre-fix behavior).
+
+    The marker read is NON-DESTRUCTIVE (a plain ``os.path.isfile`` presence
+    check + no delete) — this is a probe, never a mutation.
+
+    ``"wedge-candidate"`` is RESERVED for the orchestrator's bounded-wait
+    genuine-wedge escalation (marker persisting with NO live descendant after a
+    bounded wait — ``dispatched-agent-liveness.md`` §57-62); the pure function
+    CANNOT observe live descendants, so it never returns that value in v1.
+    """
+    result: dict = {"marker_present": False, "plan_status": None,
+                    "verdict": "terminal"}
+    try:
+        marker_path = _execute_plan_marker_path(repo_root)
+        if not marker_path.is_file():
+            return result  # no in-flight run → terminal (legacy recovery path)
+        result["marker_present"] = True
+        plan_p = Path(plan_path)
+        if not plan_p.is_file():
+            return result  # fail-safe: unreadable/missing plan → terminal
+        status = _plan_status(plan_p)
+        result["plan_status"] = status
+        result["verdict"] = "terminal" if status == "Complete" else "paused"
+        return result
+    except Exception:  # noqa: BLE001 — fail-safe to terminal on ANY error
+        return {"marker_present": False, "plan_status": None,
+                "verdict": "terminal"}
 
 
 def update_repeat_counts(

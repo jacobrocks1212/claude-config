@@ -57,13 +57,13 @@ No hard deps on completed upstream features (`**Depends on:**` is not declared i
 ⚖ policy: script-owned discriminator vs. prose-only orchestrator check → script-owned (deterministic, both pipelines). Scope-class (identical product behavior — recovery suppressed during a pause); the harness mission mandates deterministic script-owned state over LLM-inferred, so the discriminator is a `lazy_core` helper the orchestrator shells, not a prose "look at the marker yourself" instruction.
 
 **Deliverables:**
-- [ ] `lazy_core.execute_plan_liveness(repo_root, plan_path)` — reads `~/.claude/state/execute-plan/<md5(repo_root)[:12]>.json` NON-destructively (raw read, never `read_run_marker`) + the plan frontmatter `status:`; returns `{"marker_present": bool, "plan_status": str|null, "verdict": "paused"|"terminal"|"wedge-candidate"}`. Decision rule (encodes `dispatched-agent-liveness.md` §43–62): marker absent OR plan `status: Complete` ⇒ `terminal`; marker present + plan not `Complete` ⇒ `paused`. Fail-safe: any read error ⇒ `terminal` (never suppress recovery on an unreadable signal — bias to the safe/legacy behavior).
-- [ ] `lazy-state.py --execute-plan-liveness --plan <plan> --repo-root <cwd>` CLI flag — shells the helper, prints the JSON verdict, always exits 0; registered on the `--dump-cli-surface` roster.
-- [ ] `bug-state.py --execute-plan-liveness …` — identical mirror (marker is pipeline-agnostic); parity-audited.
-- [ ] Register the new shared flag in `user/scripts/lazy-parity-manifest.json` so `lazy_parity_audit.py --repo-root .` stays exit 0.
-- [ ] `lazy-batch/SKILL.md` Step 1e/4a: BEFORE the `--emit-dispatch recovery` on a `clean_tree`/`head_matches_origin` failure FOLLOWING an `/execute-plan` cycle, call `--execute-plan-liveness --plan {plan_file}`. On `verdict == "paused"` → do NOT dispatch recovery; record a T6 line (`⚠ execute-plan cycle paused (backgrounded suite) — recovery suppressed, awaiting harness re-invocation`) and fall through to the next state probe. Only `terminal` (or the orchestrator-owned bounded-wait wedge escalation) proceeds to the existing recovery emit. Non-`/execute-plan` cycles (`/mcp-test`) are unaffected — the gate is scoped to execute-plan returns.
-- [ ] `lazy-bug-batch/SKILL.md`: mirror the same discriminator gate in the guardrail-D reference block (`bug-state.py --execute-plan-liveness`), keeping the coupled pair in sync.
-- [ ] Tests (`test_execute_plan_liveness.py`): marker present + `status: Ready`/`In-progress` ⇒ `paused`; marker present + `Complete` ⇒ `terminal`; marker absent ⇒ `terminal`; unreadable/missing plan ⇒ `terminal` (fail-safe). Drive the REAL helper against REAL marker files in a tmp state dir (not a mock) — this is the orchestrator↔script boundary slice.
+- [x] `lazy_core.execute_plan_liveness(repo_root, plan_path)` — reads `~/.claude/state/execute-plan/<md5(repo_root)[:12]>.json` NON-destructively (raw read, never `read_run_marker`) + the plan frontmatter `status:`; returns `{"marker_present": bool, "plan_status": str|null, "verdict": "paused"|"terminal"|"wedge-candidate"}`. Decision rule (encodes `dispatched-agent-liveness.md` §43–62): marker absent OR plan `status: Complete` ⇒ `terminal`; marker present + plan not `Complete` ⇒ `paused`. Fail-safe: any read error ⇒ `terminal` (never suppress recovery on an unreadable signal — bias to the safe/legacy behavior).
+- [x] `lazy-state.py --execute-plan-liveness --plan <plan> --repo-root <cwd>` CLI flag — shells the helper, prints the JSON verdict, always exits 0; registered on the `--dump-cli-surface` roster.
+- [x] `bug-state.py --execute-plan-liveness …` — identical mirror (marker is pipeline-agnostic); parity-audited.
+- [x] Register the new shared flag in `user/scripts/lazy-parity-manifest.json` so `lazy_parity_audit.py --repo-root .` stays exit 0.
+- [x] `lazy-batch/SKILL.md` Step 1e/4a: BEFORE the `--emit-dispatch recovery` on a `clean_tree`/`head_matches_origin` failure FOLLOWING an `/execute-plan` cycle, call `--execute-plan-liveness --plan {plan_file}`. On `verdict == "paused"` → do NOT dispatch recovery; record a T6 line (`⚠ execute-plan cycle paused (backgrounded suite) — recovery suppressed, awaiting harness re-invocation`) and fall through to the next state probe. Only `terminal` (or the orchestrator-owned bounded-wait wedge escalation) proceeds to the existing recovery emit. Non-`/execute-plan` cycles (`/mcp-test`) are unaffected — the gate is scoped to execute-plan returns.
+- [x] `lazy-bug-batch/SKILL.md`: mirror the same discriminator gate in the guardrail-D reference block (`bug-state.py --execute-plan-liveness`), keeping the coupled pair in sync.
+- [x] Tests (`test_execute_plan_liveness.py`): marker present + `status: Ready`/`In-progress` ⇒ `paused`; marker present + `Complete` ⇒ `terminal`; marker absent ⇒ `terminal`; unreadable/missing plan ⇒ `terminal` (fail-safe). Drive the REAL helper against REAL marker files in a tmp state dir (not a mock) — this is the orchestrator↔script boundary slice.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/lazy-state.py --execute-plan-liveness --plan <p> --repo-root <r>` prints `{"verdict":"paused"}` when a marker exists for `<r>` and `<p>`'s status is not `Complete`, and `{"verdict":"terminal"}` when the marker is absent — asserted by the new pytest module against real on-disk marker files (deterministic, no runtime).
 
@@ -94,10 +94,10 @@ No hard deps on completed upstream features (`**Depends on:**` is not declared i
 ⚖ policy: Gap-1 guard command-classification scope → conservative token set (gate/test-suite/aggregate invocations at segment start), documented false-negative bias. Scope-class (tuning which backgroundings are denied, not user-visible product semantics); a missed command falls back to the existing prose mandate + Gap-2 discriminator, so under-matching is safe while over-matching would false-deny legitimate work.
 
 **Deliverables:**
-- [ ] `user/hooks/cycle-subagent-bg-gate-guard.sh` — PreToolUse (Bash|PowerShell). Fires ONLY when: payload carries `agent_id` (dispatched subagent) AND the cycle marker is present (armed) AND `tool_input.run_in_background == true` AND the command's first real command-segment token (after an optional env prefix, using `hook_lib`'s `_CMD_START`/`ENV_PREFIX` anchors) matches the gate/test-suite token set (e.g. `npm run qg`, `npm run test`/`vitest`, `pytest`, `cargo test`, `dotnet test`, `gate-battery`, the aggregate gate battery). Deny via JSON `permissionDecision: deny` with a message naming the foreground-await mandate ("run the individual under-cap sub-components synchronously; never background a long gate inside a cycle subagent"). Main-thread (no `agent_id`) ⇒ ALLOW (the orchestrator legitimately backgrounds the build spine). `run_in_background != true` ⇒ ALLOW.
-- [ ] SOURCE `hook-prelude.sh` + import `hook_lib` for python resolution, allow/deny emitters, the segment-start anchor, `COMMAND_TOOL_NAMES`, and the no-python + catch-all breadcrumb (mirror `long-build-ownership-guard.sh`). Fail-OPEN on every error path (malformed JSON / missing python / unresolvable state ⇒ allow + breadcrumb).
-- [ ] Register the guard in `user/settings.json` `hooks.PreToolUse` on the `Bash|PowerShell` chain (after `long-build-ownership-guard.sh`, before/near `build-queue-enforce.sh` — order it so a raw long BUILD still surfaces the ownership-takeover signature first; this guard targets the gate/test-SUITE background class the ownership guard does not cover).
-- [ ] Tests (`test_hooks.py`): armed cycle subagent (`agent_id` + marker) + `run_in_background:true` + a gate token ⇒ DENY; same but main-thread (no `agent_id`) ⇒ ALLOW; `run_in_background:false` ⇒ ALLOW; armed subagent + a non-gate background command (e.g. a short `sleep`/log tail) ⇒ ALLOW; no marker ⇒ ALLOW; malformed payload / no-python ⇒ ALLOW (fail-open) + breadcrumb asserted.
+- [x] `user/hooks/cycle-subagent-bg-gate-guard.sh` — PreToolUse (Bash|PowerShell). Fires ONLY when: payload carries `agent_id` (dispatched subagent) AND the cycle marker is present (armed) AND `tool_input.run_in_background == true` AND the command's first real command-segment token (after an optional env prefix, using `hook_lib`'s `_CMD_START`/`ENV_PREFIX` anchors) matches the gate/test-suite token set (e.g. `npm run qg`, `npm run test`/`vitest`, `pytest`, `cargo test`, `dotnet test`, `gate-battery`, the aggregate gate battery). Deny via JSON `permissionDecision: deny` with a message naming the foreground-await mandate ("run the individual under-cap sub-components synchronously; never background a long gate inside a cycle subagent"). Main-thread (no `agent_id`) ⇒ ALLOW (the orchestrator legitimately backgrounds the build spine). `run_in_background != true` ⇒ ALLOW.
+- [x] SOURCE `hook-prelude.sh` + import `hook_lib` for python resolution, allow/deny emitters, the segment-start anchor, `COMMAND_TOOL_NAMES`, and the no-python + catch-all breadcrumb (mirror `long-build-ownership-guard.sh`). Fail-OPEN on every error path (malformed JSON / missing python / unresolvable state ⇒ allow + breadcrumb).
+- [x] Register the guard in `user/settings.json` `hooks.PreToolUse` on the `Bash|PowerShell` chain (after `long-build-ownership-guard.sh`, before/near `build-queue-enforce.sh` — order it so a raw long BUILD still surfaces the ownership-takeover signature first; this guard targets the gate/test-SUITE background class the ownership guard does not cover).
+- [x] Tests (`test_hooks.py`): armed cycle subagent (`agent_id` + marker) + `run_in_background:true` + a gate token ⇒ DENY; same but main-thread (no `agent_id`) ⇒ ALLOW; `run_in_background:false` ⇒ ALLOW; armed subagent + a non-gate background command (e.g. a short `sleep`/log tail) ⇒ ALLOW; no marker ⇒ ALLOW; malformed payload / no-python ⇒ ALLOW (fail-open) + breadcrumb asserted.
 
 **Minimum Verifiable Behavior:** `test_hooks.py` drives the guard with a synthetic PreToolUse payload (`agent_id` present, cycle marker staged, `tool_input.run_in_background:true`, `command:"npm run qg"`) and asserts the emitted decision is `deny`; the same payload without `agent_id` asserts `allow`. Deterministic, no live subagent.
 
@@ -115,6 +115,49 @@ No hard deps on completed upstream features (`**Depends on:**` is not declared i
 **Integration Notes for Next Phase:**
 - Scope delineation to document in Phase 3: this guard covers the backgrounded gate/test-SUITE class inside cycle subagents; `long-build-ownership-guard.sh` covers exact long-BUILD invocations (`tauri build`/`cargo build --release`/`npm run build`) request-time regardless of subagent; `lazy-cycle-containment.sh` covers routing/lifecycle ops. Three distinct concerns — the CLAUDE.md row must state the delineation so a future editor does not think it redundant.
 - Fail-open + conservative command set means a missed background still falls back to the prose mandate + Phase-1 discriminator — under-matching is safe, over-matching (false-deny) is the risk to avoid.
+
+#### Implementation Notes (part 1 — Phases 1+2 landed 2026-07-19)
+
+Plan part 1 (`plans/all-phases-recovery-discriminator-part-1.md`) complete. Executed INLINE
+(zero `Agent()` sub-subagent dispatches — small, well-traced harness set per the plan's own
+inline Touchpoint Audit + the wedge-resilience contract), test-first (RED→GREEN per WU).
+
+- **WU-1 (Gap 2 helper):** `lazy_core.execute_plan_liveness(repo_root, plan_path)` added to
+  `user/scripts/lazy_core/markers.py` (+ `_execute_plan_marker_path`; facade-mapped in
+  `lazy_core/__init__.py`). Reads `<base>/execute-plan/<md5(repo_root)[:12]>.json` NON-destructively
+  (base honors `LAZY_STATE_DIR`, else `~/.claude/state`) + the plan `status:` via `docmodel._plan_status`.
+  Fail-safe: marker absent / plan `Complete` / **missing-or-unreadable plan** ⇒ `terminal`
+  (an `is_file()` guard precedes `_plan_status` so a missing plan is terminal, not paused).
+  `wedge-candidate` reserved, never returned by the pure fn. Tests: `test_execute_plan_liveness.py`.
+- **WU-2 (CLI flag):** `--execute-plan-liveness --plan <p> --repo-root <r>` added to BOTH
+  `lazy-state.py` and `bug-state.py` (always exit 0). Auto-appears in `--dump-cli-surface`;
+  `docs/cli/cli-surface.json` regenerated. Registered as a parity-audited coupled-pair mechanic in
+  **`lazy_parity_audit.py`** (`_EXECUTE_PLAN_LIVENESS_RE`) — NOT `lazy-parity-manifest.json`, whose
+  `mechanic_sets` audit SKILL.md prose, not state-script CLI flags (⚖ the plan named the JSON file
+  but the actual CLI-parity mechanism is the Python regex-constant list; same product behavior —
+  a future drop from one script is now a hard finding). While updating the parity self-test stubs
+  for the new surface, discovered + repaired a **pre-existing** staleness: the `TestStateScriptParity`
+  stubs never carried `--resolve-ref` (added in a prior feature) → all 5 stub tests were RED on HEAD;
+  added both `--resolve-ref` and `--execute-plan-liveness` to the stubs → green.
+- **WU-3 (orchestrator wiring):** pause-vs-terminal discriminator gate inserted at
+  `lazy-batch/SKILL.md` Step 1e/4a (before the `clean_tree`/`head_matches_origin` recovery emit,
+  `/execute-plan` cycles only) and mirrored into `lazy-bug-batch/SKILL.md` guardrail-D
+  (`bug-state.py --execute-plan-liveness`). `paused` ⇒ suppress recovery + T6 line + fall through to
+  Step 1a; `terminal` ⇒ recovery unchanged; genuine-wedge fallback per `dispatched-agent-liveness.md`.
+- **WU-4 (Gap 1 hook):** `user/hooks/cycle-subagent-bg-gate-guard.sh` (net-new, sources
+  `hook-prelude.sh` + `hook_lib`, fail-OPEN, PS-normalize + heredoc-mask copies). Denies a
+  `run_in_background` gate/test-suite launch (`pytest`/`python -m pytest`/`vitest`/`cargo test`/
+  `dotnet test`/`npm run qg`/`npm run test`/`gate-battery`) ONLY when `agent_id` present +
+  `run_in_background` truthy + gate token at a command-segment start + the cycle marker is present.
+  Registered in `user/settings.json` on the `Bash|PowerShell` chain AFTER `long-build-ownership-guard.sh`,
+  before `build-queue-enforce.sh`. Added to the `_COMMAND_GUARD_HOOKS` + `_ALL_PYTHON_BEARING_HOOKS`
+  meta-test lists (9th python-bearing hook). Tests: `test_hooks.py` (`test_bggate_*`).
+
+**Deferred to part 2 (Phase 3):** the CLAUDE.md Hooks-table row for the new guard, the
+`cycle-base-prompt.md` / `turn-end-gate.md` prose-mandate re-point + re-invocation-contradiction
+annotation, and the `dispatched-agent-liveness.md` cross-ref. Consequently `doc-drift-lint.py` reports
+ONE expected finding (new hook registered but not yet in the Hooks table) until part 2 lands — all
+other part-1 gates are green.
 
 ---
 

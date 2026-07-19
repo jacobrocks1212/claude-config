@@ -8607,6 +8607,23 @@ def build_parser() -> argparse.ArgumentParser:
             "Never creates state. Used by the stray-branch write-time hook."
         ),
     )
+    # adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke Phase 1
+    # (Gap 2; coupled-pair mirror of lazy-state.py): read-only pause-vs-terminal
+    # discriminator for a just-returned /execute-plan cycle. The execute-plan run
+    # marker is PIPELINE-AGNOSTIC (same ~/.claude/state/execute-plan/<md5>.json
+    # for a bug or feature cycle), so this flag is identical on both scripts and
+    # parity-audited. Consumed by lazy-bug-batch Step 1e/4a guardrail-D BEFORE
+    # emitting --emit-dispatch recovery.
+    parser.add_argument(
+        "--execute-plan-liveness", action="store_true",
+        help=(
+            "Read-only: print the execute-plan pause-vs-terminal verdict JSON "
+            "{marker_present, plan_status, verdict} for --plan PLAN in --repo-root "
+            "REPO. marker present + plan not Complete => paused (recovery should "
+            "be suppressed); marker absent or plan Complete or any read error => "
+            "terminal (fail-safe). Always exits 0."
+        ),
+    )
     # byref-updatedinput-unapplied-on-background-agent-dispatch WU-2 (coupled-pair
     # mirror of lazy-state.py): the sanctioned consumed-nonce read. The platform
     # silently drops the by-reference `hookSpecificOutput.updatedInput` rewrite for
@@ -8720,6 +8737,16 @@ def main() -> int:
             sys.stdout.write(branch + "\n")
             return 0
         return 1
+
+    # adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke Phase 1
+    # (Gap 2; coupled-pair mirror of lazy-state.py): --execute-plan-liveness —
+    # read-only pause-vs-terminal verdict for a just-returned /execute-plan
+    # cycle. Shells the SHARED discriminator (the execute-plan marker is
+    # pipeline-agnostic — same helper, same output). ALWAYS exits 0.
+    if args.execute_plan_liveness:
+        verdict = lazy_core.execute_plan_liveness(args.repo_root, args.plan or "")
+        sys.stdout.write(json.dumps(verdict) + "\n")
+        return 0
 
     # byref-updatedinput-unapplied-on-background-agent-dispatch WU-2 (coupled-pair
     # mirror of lazy-state.py): --resolve-ref <nonce> — the subagent-side resolve

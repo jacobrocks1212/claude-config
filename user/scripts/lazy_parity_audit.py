@@ -370,6 +370,15 @@ _NOTIFY_HALT_RE = re.compile(r"lazy_core\.notify_halt\(")
 # leave that pipeline's by-reference subagents with no resolve path. Match the
 # argparse flag literal.
 _RESOLVE_REF_RE = re.compile(r'"--resolve-ref"')
+# adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke Phase 1
+# (Gap 2): the read-only --execute-plan-liveness pause-vs-terminal discriminator
+# is a coupled-pair CLI surface — the execute-plan run marker is PIPELINE-
+# AGNOSTIC (same ~/.claude/state/execute-plan/<md5>.json for a bug or feature
+# cycle, shared lazy_core.execute_plan_liveness), so both state scripts MUST
+# expose the identical flag. A drop from one would leave that pipeline's
+# lazy-batch orchestrator unable to suppress redundant recovery against a paused
+# cycle. Match the argparse flag literal.
+_EXECUTE_PLAN_LIVENESS_RE = re.compile(r'"--execute-plan-liveness"')
 
 
 def audit_state_script_parity(repo_root: str | Path) -> list[str]:
@@ -476,6 +485,16 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
                 f"refuse_if_cycle_active — a read a by-reference subagent must "
                 f"run) so both state scripts expose the same consumed-nonce "
                 f"resolve path (byref-updatedinput coupled-pair parity)"
+            )
+        if _EXECUTE_PLAN_LIVENESS_RE.search(text) is None:
+            findings.append(
+                f"lazy-parity [state-scripts] STATE: {script} must carry the "
+                f"read-only --execute-plan-liveness subcommand (calls "
+                f"lazy_core.execute_plan_liveness; the execute-plan run marker is "
+                f"pipeline-agnostic) so both state scripts expose the same "
+                f"pause-vs-terminal discriminator the lazy-batch orchestrators "
+                f"consult before dispatching recovery "
+                f"(adhoc-orchestrator-redundant-recovery coupled-pair parity)"
             )
     return findings
 

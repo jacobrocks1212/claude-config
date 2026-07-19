@@ -771,6 +771,23 @@ bindings:
   # /mcp-test cycle (feature-level):
   python3 ~/.claude/scripts/bug-state.py --repo-root <repo_root> --verify-ledger {spec_path}
   ```
+  **Pause-vs-terminal discriminator gate (Gap 2 —
+  `docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke`; mirrors
+  `/lazy-batch` Step 1e/4a).** On a `clean_tree`/`head_matches_origin` failure FOLLOWING an
+  `/execute-plan` cycle, BEFORE emitting recovery run the discriminator (the execute-plan run
+  marker is pipeline-agnostic — same helper, same `~/.claude/state/execute-plan/<md5>.json`):
+  ```bash
+  python3 ~/.claude/scripts/bug-state.py --repo-root <repo_root> --execute-plan-liveness --plan {plan_file}
+  ```
+  `verdict == "paused"` (marker present + plan not `Complete`) → the returned `/execute-plan`
+  cycle is a live PAUSE (a backgrounded suite about to be harness-re-invoked), NOT resultless →
+  do **NOT** dispatch recovery (it would collide one-writer with the re-invoked agent); emit
+  `⚠ execute-plan cycle paused (backgrounded suite) — recovery suppressed, awaiting harness
+  re-invocation` and fall through to the next state probe (Step 1a). `verdict == "terminal"`
+  (marker absent / plan `Complete` / any read error — fail-safe) → proceed to the recovery emit
+  below, unchanged. `/mcp-test` cycles (no `--plan`) skip the discriminator. Genuine-wedge
+  fallback per `dispatched-agent-liveness.md` §57–62 (marker persists + NO live descendant after
+  a bounded wait ⇒ recovery IS appropriate) — see `/lazy-batch` Step 1e/4a for the full algorithm.
   Recovery dispatch — **NEVER hand-composed.** The reconcile+commit job the recovery agent
   performs is the emitted dispatch's *contract* (owned by `dispatch-recovery.md`), NOT a prompt
   for the orchestrator to author; the ONLY sanctioned dispatch is the `--emit-dispatch recovery`

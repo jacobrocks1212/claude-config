@@ -333,6 +333,19 @@
           "required": false
         },
         {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "Read-only: print the execute-plan pause-vs-terminal verdict JSON {marker_present, plan_status, verdict} for --plan PLAN in --repo-root REPO.",
+          "metavar": null,
+          "name": "--execute-plan-liveness",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
           "action": "_StoreAction",
           "aliases": [],
           "choices": [
@@ -1998,6 +2011,19 @@
           "help_head": "Ensure the dev runtime + MCP server are up AND current; print structured JSON {status: ready|booted|stale-rebuilt, mcp_tools_present, health_code}.",
           "metavar": null,
           "name": "--ensure-runtime",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "Read-only: print the execute-plan pause-vs-terminal verdict JSON {marker_present, plan_status, verdict} for --plan PLAN in --repo-root REPO.",
+          "metavar": null,
+          "name": "--execute-plan-liveness",
           "nargs": 0,
           "positional": false,
           "required": false

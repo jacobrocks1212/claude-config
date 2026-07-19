@@ -120,6 +120,11 @@
           },
           {
             "type": "command",
+            "command": "bash ~/.claude/hooks/cycle-subagent-bg-gate-guard.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
             "command": "bash ~/.claude/hooks/build-queue-enforce.sh",
             "timeout": 5
           }
@@ -238,6 +243,7 @@
   "autoUpdatesChannel": "latest",
   "tui": "default",
   "autoMemoryEnabled": false,
+  "includeCoAuthoredBy": false,
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
   "remoteControlAtStartup": true,
