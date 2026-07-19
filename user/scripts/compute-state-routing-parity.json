@@ -93,6 +93,13 @@
       "classification": "tabulated-divergence",
       "owner": "lazy-state.py",
       "reason": "host-capability-declaration-for-gated-features: the capability-MISS DEFER (DEFERRED_REQUIRES_HOST.md skip + the host-capability-saturated terminal) is feature-pipeline-shaped queue-selection curation. bug-state.py deliberately does not expose the N-capability miss-defer (it has only the single device axis in v1); only the host-capability FAIL-FAST above is mirrored."
+    },
+    {
+      "id": "fixed-unreconciled-predispatch-divert",
+      "signature": "is_fixed_unreconciled",
+      "classification": "tabulated-divergence",
+      "owner": "bug-state.py",
+      "reason": "adhoc-plan-bug-no-guard-for-fixed-annotated-specs Phase 2: the Step-4 pre-gate that diverts a Concluded SPEC carrying a **Fixed:** out-of-pipeline annotation with no FIXED.md receipt to a fixed-unreconciled BLOCKED.md instead of a plan-bug dispatch. BUG-pipeline-only: the feature pipeline has no out-of-pipeline **Fixed:**-annotation / Concluded-intermediate analog (features route SPEC -> research -> spec-phases, not an investigate->Concluded->plan intermediate with an evidence-header fix annotation), so no lazy-state.py mirror is owed."
     }
   ]
 }

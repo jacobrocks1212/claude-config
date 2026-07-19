@@ -1702,6 +1702,43 @@ def compute_state(
     if not phases_file.exists():
         _status = spec_status(spec_dir)
         if _status == "Concluded":
+            # PRE-GATE (adhoc-plan-bug-no-guard-for-fixed-annotated-specs Phase 2):
+            # a Concluded SPEC whose fix already landed OUT-OF-PIPELINE (carries a
+            # `**Fixed:**` evidence annotation) but was never reconciled (no valid
+            # FIXED.md receipt, dir not archived) must NOT route to plan-bug — that
+            # burns a full spec-phases + write-plan dispatch re-planning work already
+            # on disk. Divert it to a canonical fixed-unreconciled BLOCKED.md so the
+            # next probe halts at the Step-3 BLOCKED.md check and the human runs the
+            # docs/bugs/CLAUDE.md receipt + --archive-fixed reconciliation contract.
+            # This HALTS for reconciliation; it never auto-writes FIXED.md (the
+            # Status-honesty PIPELINE-GATE owns FIXED.md exclusively).
+            if lazy_core.is_fixed_unreconciled(spec_dir, repo_root):
+                blocked_file = spec_dir / "BLOCKED.md"
+                if not blocked_file.exists():
+                    _atomic_write(
+                        blocked_file,
+                        lazy_core.format_fixed_unreconciled_blocker(
+                            bug_id, lazy_core.spec_fixed_annotation(spec_dir)
+                        ),
+                    )
+                _diag(
+                    f"fixed-unreconciled: {bug_name} is Concluded but carries a "
+                    f"`**Fixed:**` annotation with no FIXED.md receipt — diverted to "
+                    f"reconciliation (BLOCKED.md, blocker_kind: fixed-unreconciled), "
+                    f"not plan-bug. Reconcile via the docs/bugs/CLAUDE.md receipt + "
+                    f"--archive-fixed contract, or clear the stray annotation to re-plan."
+                )
+                return _bug_state(
+                    **common,
+                    current_step=STEP_BLOCKED,
+                    terminal_reason=TR_BLOCKED,
+                    notify_message=(
+                        f"BLOCKED: {bug_name} — fix already implemented "
+                        "out-of-pipeline (fixed-unreconciled); reconcile "
+                        "(FIXED.md + --archive-fixed) or clear the stray "
+                        "`**Fixed:**` annotation to re-plan."
+                    ),
+                )
             # Investigation concluded; hand off to plan-bug to author PHASES.md.
             # DISTINCT step label (STEP_PLAN_BUG, not the reused STEP_INVESTIGATE) so
             # the spec-bug -> plan-bug forward transition visibly advances current_step
@@ -3883,6 +3920,44 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
         )
         # Intentionally NO PHASES.md — triggers the discriminating guard being pinned.
 
+    elif name == "concluded-fixed-unreconciled-diverts":
+        # adhoc-plan-bug-no-guard-for-fixed-annotated-specs Phase 2:
+        # SPEC.md has **Status:** Concluded AND a **Fixed:** evidence annotation,
+        # but NO PHASES.md, NO FIXED.md receipt (already-implemented out-of-pipeline,
+        # unreconciled). The Step-4 pre-gate MUST divert this to a fixed-unreconciled
+        # BLOCKED.md outcome INSTEAD of routing to plan-bug (which would burn a full
+        # planning dispatch re-planning a fix already on disk).
+        #
+        # Expected behavior:
+        #   terminal_reason == TR_BLOCKED
+        #   current_step == STEP_BLOCKED
+        #   sub_skill != "plan-bug"
+        #   a BLOCKED.md is written carrying blocker_kind: fixed-unreconciled
+        #
+        # The companion no-regression case (a plain Concluded-no-annotation SPEC still
+        # routes to plan-bug) is fixture #24 concluded-investigation-plan-bug — it would
+        # break if this pre-gate false-fired on a SPEC with no **Fixed:** annotation.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-fixed-unreconciled", "name": "Fixed-Annotated Unreconciled Bug",
+                 "spec_dir": "bug-fixed-unreconciled"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-fixed-unreconciled"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Fixed-Annotated Unreconciled Bug\n\n"
+            "**Status:** Concluded\n\n"
+            "**Fixed:** 2026-07-18 - implemented out-of-pipeline\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-01\n\n"
+            "## Proven Findings\n\n"
+            "Root cause traced; fix already landed out-of-pipeline but never "
+            "reconciled (no FIXED.md receipt, dir not archived).\n",
+            encoding="utf-8",
+        )
+        # Intentionally NO PHASES.md and NO FIXED.md — triggers the pre-gate divert.
+
     elif name == "concluded-investigation-guard-still-spec-bug":
         # SPEC.md has **Status:** Investigating; no PHASES.md.
         # Guard fixture: the discriminating marker must NOT change behavior when the
@@ -4535,6 +4610,33 @@ def run_smoke_tests() -> int:
                 f"(queue overrides severity); got feature_id={fid!r}"
             )
 
+    def _assert_fixed_unreconciled_blocked(
+        got: dict[str, Any], failures: list[str], name: str
+    ) -> None:
+        """Phase 2: the Step-4 divert must write a canonical BLOCKED.md carrying
+        blocker_kind: fixed-unreconciled, and must NOT route to plan-bug."""
+        if got.get("sub_skill") == "plan-bug":
+            failures.append(
+                f"[{name}] sub_skill must NOT be 'plan-bug' (fixed-unreconciled divert); "
+                f"got sub_skill={got.get('sub_skill')!r}"
+            )
+        spec_path = got.get("spec_path")
+        if not spec_path:
+            failures.append(f"[{name}] no spec_path in state to locate BLOCKED.md")
+            return
+        blocked = Path(spec_path) / "BLOCKED.md"
+        if not blocked.exists():
+            failures.append(
+                f"[{name}] expected a fixed-unreconciled BLOCKED.md at {blocked}"
+            )
+            return
+        meta = parse_sentinel(blocked) or {}
+        if meta.get("blocker_kind") != "fixed-unreconciled":
+            failures.append(
+                f"[{name}] expected blocker_kind 'fixed-unreconciled'; "
+                f"got {meta.get('blocker_kind')!r}"
+            )
+
     def _assert_unknown_host_capability_blocked(
         got: dict[str, Any], failures: list[str], name: str
     ) -> None:
@@ -4945,6 +5047,21 @@ def run_smoke_tests() -> int:
                 "sub_skill": SKILL_INVESTIGATE,
                 "current_step": STEP_INVESTIGATE,
             },
+        ),
+        # 25b. concluded-fixed-unreconciled-diverts
+        #      (adhoc-plan-bug-no-guard-for-fixed-annotated-specs Phase 2).
+        #      A Concluded SPEC carrying a **Fixed:** annotation with no FIXED.md
+        #      receipt must be DIVERTED to a fixed-unreconciled BLOCKED.md at Step 4,
+        #      never routed to plan-bug (which would burn a planning dispatch on an
+        #      already-implemented fix). Companion no-regression case is fixture #24.
+        (
+            "concluded-fixed-unreconciled-diverts", False, True,
+            {
+                "feature_id": "bug-fixed-unreconciled",
+                "terminal_reason": TR_BLOCKED,
+                "current_step": STEP_BLOCKED,
+            },
+            _assert_fixed_unreconciled_blocked,
         ),
         # 26. D-3(a) provenance gate: pipeline-self-granted SKIP_MCP_TEST.md must
         #     NOT vacuously validate — halt with needs-input for operator review.

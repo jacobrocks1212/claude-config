@@ -67,7 +67,7 @@ Upstream plans and PHASES.md files this plan was authored against. Listed in dep
 ## Work Units
 
 - [x] WU-1 — Phase 1: shared `**Fixed:**` reader + `is_fixed_unreconciled` predicate + `format_fixed_unreconciled_blocker` (+ unit tests)
-- [ ] WU-2 — Phase 2: wire the pre-gate into `bug-state.py` Step 4 (divert to `BLOCKED.md`) + parity-divergence row + `--test` fixture
+- [x] WU-2 — Phase 2: wire the pre-gate into `bug-state.py` Step 4 (divert to `BLOCKED.md`) + parity-divergence row + `--test` fixture
 - [ ] WU-3 — Phase 3: `/plan-bug` Step 0.4 belt-and-suspenders prose + re-project/lint
 
 ---

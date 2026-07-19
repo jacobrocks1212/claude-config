@@ -36,6 +36,7 @@
   PASS [unqueued-fixed-no-receipt-halt] cloud=False real_device=True: Step 2: completion claimed without receipt
   PASS [concluded-investigation-plan-bug] cloud=False real_device=True: Step 5: plan bug from concluded investigation
   PASS [concluded-investigation-guard-still-spec-bug] cloud=False real_device=True: Step 4: investigate bug
+  PASS [concluded-fixed-unreconciled-diverts] cloud=False real_device=True: Step 3: blocked
   PASS [step9-skip-pipeline-granted] cloud=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation
   PASS [step9-skip-operator-granted] cloud=False real_device=True: Step 9: skip-mcp-test → validated
   PASS [step9-skip-mcp-test-granted-with-class] cloud=False real_device=True: Step 9: skip-mcp-test → validated
