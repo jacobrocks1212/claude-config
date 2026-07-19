@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-18
+**Fixed:** 2026-07-19
+**Fix commit:** bdb1f028
 **Placement:** docs/bugs/decision-11-dispatch-time-forward-advance
 **Related:** `docs/specs/turn-routing-enforcement/NEEDS_INPUT.md` (decision 11 + decision 3, both RESOLVED 2026-07-18); `docs/bugs/_archive/lazy-run-marker-park-arm-and-forward-cycle-inflation/SPEC.md` (DEFECT 1, Concluded — origin symptom); `docs/bugs/_archive/byref-dispatch-undercounts-forward-cycles/` (decision-3 under-count origin); `docs/bugs/_archive/byref-forward-cycles-frozen-on-multicycle-same-step/` (origin of the two pinned tests); the `cycle-budget-counters-double-count-on-probes-and-inject-hook` fix (commit `e91bd305`, 2026-07-17) that pre-emptively landed this decision's mechanism.
 
