@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-19
+**Fixed:** 2026-07-19
+**Fix commit:** 4b3a9076
 **Placement:** docs/bugs/canary-band-only-trip-auto-enqueues-without-attribution
 **Related:** `user/scripts/efficacy-eval.py` (`_canary_evaluate_record` / `_canary_band_trip` / `_canary_attribute` / `run_canary`) · `user/scripts/test_efficacy_eval.py` · `docs/bugs/park-provisional-parks-claude-config-auto-generated-stubs` (batched sibling — mitigates the operator-toil symptom this defect produces)
 
