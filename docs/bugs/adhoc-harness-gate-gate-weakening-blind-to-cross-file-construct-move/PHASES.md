@@ -22,7 +22,7 @@ This fix edits a **control surface** (`harness-gate.py`, on the manifest's `gate
 
 ### Phase 1: Content-identity cross-file move reconciliation for `gate_weakening`
 
-**Status:** In-progress — implementation + regression fixtures landed; validation tail (operator `GATE_VERDICT.md` sign-off at the ship seam) pending.
+**Status:** Fixed
 
 **Scope:** Make `detect_gate_weakening` reconcile removed-vs-added gate-refusal constructs (`_DENY_BRANCH_RE`) and `def test_*` definitions **across the whole change's file set** using content-identity (option b), so a construct/text removed from file A and re-added verbatim in file B within one change is a MOVE (not flagged), while genuine removals, same-file reformats, and cross-file adds of *different* constructs stay flagged. TDD — regression fixtures first (RED), then the detector change (GREEN).
 

@@ -5134,6 +5134,41 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move/GATE_VERDICT.md": [
+    {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move/NEEDS_INPUT.md": [
+    {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move/PHASES.md": [
+    {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move/SPEC.md": [
+    {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move/plans/fix-cross-file-move-reconciliation.md": [
+    {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/adhoc-incident-hook-deny-057921/GATE_VERDICT.md": [
     {
       "id": "adhoc-incident-hook-deny-057921",
@@ -7061,6 +7096,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/harden-hard-parks-on-unconfirmed-platform-assumptions/SPEC.md": [
+    {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/harden-harness-feature-spec-lands-in-unmanaged-docs-specs/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -8174,6 +8216,27 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/bugs/merged-head-oracle-blind-to-operator-deferred-cross-pipeline-feature/FIXED.md": [
+    {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/merged-head-oracle-blind-to-operator-deferred-cross-pipeline-feature/GATE_VERDICT.md": [
+    {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/merged-head-oracle-blind-to-operator-deferred-cross-pipeline-feature/SPEC.md": [
+    {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/merged-head-oracle-per-signal-supplement-churn/PHASES.md": [
@@ -15757,6 +15820,11 @@
   ],
   "docs/interventions/harden-2026-07-r102.md": [
     {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "merged-head-oracle-blind-to-operator-deferred-cross-pipeline-feature",
       "type": "bug",
       "provenance": "manual"
@@ -17853,6 +17921,11 @@
       "id": "adhoc-decision-key-relative-absolute-mismatch",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "adhoc-incident-hook-deny-057921",
@@ -20107,6 +20180,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -20791,6 +20869,11 @@
   ],
   "user/scripts/lazy_core/depdag.py": [
     {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -20833,6 +20916,11 @@
   ],
   "user/scripts/lazy_core/dispatch.py": [
     {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -20864,6 +20952,11 @@
     }
   ],
   "user/scripts/lazy_core/docmodel.py": [
+    {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
@@ -21587,6 +21680,11 @@
   "user/scripts/test_harness_gate.py": [
     {
       "id": "adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
       "type": "bug",
       "provenance": "pipeline-gated"
     },
@@ -22497,6 +22595,11 @@
   "user/scripts/tests/test_lazy_core/test_dispatch.py": [
     {
       "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
       "type": "bug",
       "provenance": "pipeline-gated"
     },

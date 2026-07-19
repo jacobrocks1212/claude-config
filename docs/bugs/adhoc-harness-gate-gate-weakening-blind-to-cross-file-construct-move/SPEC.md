@@ -2,7 +2,7 @@
 
 > `detect_gate_weakening`'s per-file net-count reconciliation flags a false-positive `hit` when a behavior-preserving refactor MOVES a gate-refusal construct out of one file into a shared sibling within the same change.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-18
 **Placement:** docs/bugs/adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move
