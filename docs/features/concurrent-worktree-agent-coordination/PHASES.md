@@ -31,12 +31,12 @@ Load-bearing assumptions for this plan, classified per the Step 2.7 gate. This f
 **Scope:** Bake the concurrent-writer awareness note — "OTHER agents may be committing to this same worktree/branch concurrently from parallel sessions; an unexpected commit / moved HEAD is EXPECTED, not a defect to panic on" — into every agent-context surface, and reconcile the single-writer `<orchestration>` block with sanctioned concurrent writers. Mechanical text (Requirement 1); establishes the trust contract Phase 6 (R7) relies on so a future orchestrator does not reintroduce defensiveness.
 
 **Deliverables:**
-- [ ] Awareness note added to `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` (cycle-subagent context).
-- [ ] Awareness note added to the HARD CONSTRAINTS of `user/skills/lazy-batch/SKILL.md` and `user/skills/lazy-batch-parallel/SKILL.md`.
-- [ ] Awareness note added to the sub-subagent dispatch policy prose (the dispatch-policy block reused across the cycle prompts).
-- [ ] `user/CLAUDE.md` `<orchestration>` "One writer per file" block reconciled: keep the single-writer default for a run's OWN dispatched agents, but explicitly carve out sanctioned CONCURRENT writers on a shared worktree/branch (a second interactive/scheduled session) and point at the coordination layer (git-safety + FIFO lock + conflict-routing) as the arbiter — NOT panic.
-- [ ] AlgoBooth mirrors updated: `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` and `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` carry the same awareness note.
-- [ ] Tests: `python3 ~/.claude/scripts/lint-skills.py --check-projected --check-capabilities` and `python3 ~/.claude/scripts/doc-drift-lint.py --repo-root .` stay exit 0; `python3 ~/.claude/scripts/project-skills.py` re-projects cleanly.
+- [x] Awareness note added to `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` (cycle-subagent context).
+- [x] Awareness note added to the HARD CONSTRAINTS of `user/skills/lazy-batch/SKILL.md` and `user/skills/lazy-batch-parallel/SKILL.md`.
+- [x] Awareness note added to the sub-subagent dispatch policy prose (the dispatch-policy block reused across the cycle prompts).
+- [x] `user/CLAUDE.md` `<orchestration>` "One writer per file" block reconciled: keep the single-writer default for a run's OWN dispatched agents, but explicitly carve out sanctioned CONCURRENT writers on a shared worktree/branch (a second interactive/scheduled session) and point at the coordination layer (git-safety + FIFO lock + conflict-routing) as the arbiter — NOT panic.
+- [x] AlgoBooth mirrors updated: `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` and `repos/algobooth/.claude/skills/lazy-cloud/SKILL.md` carry the same awareness note.
+- [x] Tests: `python3 ~/.claude/scripts/lint-skills.py --check-projected --check-capabilities` and `python3 ~/.claude/scripts/doc-drift-lint.py --repo-root .` stay exit 0; `python3 ~/.claude/scripts/project-skills.py` re-projects cleanly.
 
 **Minimum Verifiable Behavior:** `python3 ~/.claude/scripts/lint-skills.py --check-projected --check-capabilities && python3 ~/.claude/scripts/doc-drift-lint.py --repo-root .` exits 0 after the edits, and a `grep -rl "unexpected commit"` (or the chosen canonical awareness phrase) resolves in every injection point named above.
 

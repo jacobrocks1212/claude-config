@@ -654,6 +654,12 @@ TURN-END CONTRACT (HARD — read LAST because it is checked LAST):
      `<gate> && git add -A && git commit -m "..." && git push` — so even an
      interrupted turn leaves committed, pushed state. This is the final action of
      each /execute-plan batch and of plan-part completion.
+
+  **Concurrent-writer awareness:** other agents may be working this same
+  worktree/branch concurrently — an unexpected commit / moved HEAD is expected,
+  not a defect. Genuine write contention is resolved by the coordination layer
+  (git safety + the FIFO file-lock + conflict-routing) — not by halting.
+
   3. TERMINAL VERIFY GATE (EXECUTED, not self-walked) — your FINAL action is a
      real command, not a mental checklist. In order:
      (i) FINALIZE all reconciliation writes FIRST: tick the landed WU/PHASES
@@ -698,6 +704,12 @@ TURN-END CONTRACT (HARD — read LAST because it is checked LAST):
      `<gate> && git add -A && git commit -m "..." && git push` — so even an
      interrupted turn leaves committed, pushed state. This is the final action of
      each /execute-plan batch and of plan-part completion.
+
+  **Concurrent-writer awareness:** other agents may be working this same
+  worktree/branch concurrently — an unexpected commit / moved HEAD is expected,
+  not a defect. Genuine write contention is resolved by the coordination layer
+  (git safety + the FIFO file-lock + conflict-routing) — not by halting.
+
   3. TERMINAL VERIFY GATE (EXECUTED, not self-walked) — your FINAL action is a
      real command, not a mental checklist. In order:
      (i) FINALIZE all reconciliation writes FIRST: tick the landed WU/PHASES

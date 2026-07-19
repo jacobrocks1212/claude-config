@@ -86,6 +86,14 @@ P7. **Containment unchanged, armed per lane (D9).** Export `LAZY_ORCHESTRATOR=1`
     builds: existing machinery only (D8) — a lane's `LONG-BUILD-OWNERSHIP-TAKEOVER` deny bubbles
     to the coordinator, which runs the build serially under the Transient Build contract.
 
+P8. **Concurrent-writer awareness — no monsters-in-the-closet serialization.** Lanes ARE
+    other agents committing to shared state (the trio + the work branch at merge time)
+    concurrently with each other and with any outside session touching the same worktree/branch.
+    An unexpected incoming commit / moved HEAD is EXPECTED, not a defect to panic on or halt for.
+    Genuine write contention is resolved by the coordination layer (git safety + the FIFO
+    file-lock + conflict-routing) — not by pre-serializing lane dispatches on the mere
+    possibility of a collision.
+
 ---
 
 ## Step 0: Parse Arguments
@@ -235,7 +243,11 @@ lane subagents follow the `/lazy-batch` cycle-subagent execution model exactly, 
 workstation dispatch policy (workstation-recursive-subagent-dispatch, 2026-07-09): a lane cycle
 subagent MAY dispatch sub-subagents per the emitted prompt's "WORKSTATION DISPATCH —
 LOAD-BEARING" guardrails; sub-subagents inherit the terminal-stop ban and work only inside the
-lane's worktree + item scope, so the fencing/lease/single-writer-trio model is unaffected):
+lane's worktree + item scope, so the fencing/lease/single-writer-trio model is unaffected).
+**Concurrent-writer awareness:** other agents may be working this same worktree/branch
+concurrently — an unexpected commit / moved HEAD is expected, not a defect. Genuine write
+contention is resolved by the coordination layer (git safety + the FIFO file-lock +
+conflict-routing) — not by halting:
 
 1. **Probe:** `lazy-state.py --repeat-count --probe --repo-root <worktree> --feature-id <id>
    [--forward-cycles/--meta-cycles/--max-cycles from the LANE's counters]`.

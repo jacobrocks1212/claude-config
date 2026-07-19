@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: concurrent-worktree-agent-coordination
-status: Ready
+status: Complete
 complexity: mechanical
 created: 2026-07-18
 phases: [1]
@@ -59,10 +59,10 @@ Where this plan's repo uses non-default gates or component paths (claude-config 
 
 ## Work Units
 
-- [ ] WU-1 — Awareness note in cycle-base-prompt.md
-- [ ] WU-2 — Awareness note in lazy-batch + lazy-batch-parallel HARD CONSTRAINTS + dispatch policy
-- [ ] WU-3 — Reconcile user/CLAUDE.md "One writer per file"
-- [ ] WU-4 — Awareness note in AlgoBooth mirrors (lazy-batch-cloud + lazy-cloud)
+- [x] WU-1 — Awareness note in cycle-base-prompt.md
+- [x] WU-2 — Awareness note in lazy-batch + lazy-batch-parallel HARD CONSTRAINTS + dispatch policy
+- [x] WU-3 — Reconcile user/CLAUDE.md "One writer per file"
+- [x] WU-4 — Awareness note in AlgoBooth mirrors (lazy-batch-cloud + lazy-cloud)
 
 ### Phase: concurrent-worktree-agent-coordination P1 — Awareness injection + reconcile "One writer per file"
 

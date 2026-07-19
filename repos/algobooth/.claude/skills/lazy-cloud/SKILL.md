@@ -23,6 +23,8 @@ State-machine differences from `/lazy` (all encoded in `lazy-state.py --cloud`):
 
 **HARD REQUIREMENT — NEVER WRITE PERMANENT SKIP MARKERS FROM CLOUD:** Do not write `SKIP_MCP_TEST.md`, `VALIDATED.md` (from MCP results — `__write_validated_from_skip__` based on a prior SKIP_MCP_TEST is OK), or `MCP_TEST_RESULTS.md` for a feature whose MCP-testability was not actually evaluated against a running Tauri app in this session. Permanent decisions about test coverage require the workstation environment. `lazy-state.py --cloud` enforces this — it will never emit `sub_skill: "mcp-test"`.
 
+**Concurrent-writer awareness:** other agents may be working this same worktree/branch concurrently — an unexpected commit / moved HEAD is expected, not a defect. Genuine write contention is resolved by the coordination layer (git safety + the FIFO file-lock + conflict-routing) — not by halting.
+
 **HARD REQUIREMENT — STATUS BOOKENDS:** Every /lazy-cloud invocation must produce two status messages:
 
 1. **Before acting** (after running lazy-state.py, before invoking any skill):
