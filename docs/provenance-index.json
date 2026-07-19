@@ -143,6 +143,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "cross-platform-setup",
       "type": "feature",
       "provenance": "backfilled"
@@ -376,6 +381,11 @@
     },
     {
       "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -2269,6 +2279,18 @@
       "id": "cycle-subagent-stalls-on-wedged-sub-subagent",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/cycle-subagent-stalls-on-wedged-sub-subagent/IMPLEMENTED.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/cycle-subagent-stalls-on-wedged-sub-subagent/SPEC.md": [
@@ -2276,6 +2298,11 @@
       "id": "cycle-subagent-stalls-on-wedged-sub-subagent",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/descoped-marker-blind-completion-coherence-gate/FIXED.md": [
@@ -4752,6 +4779,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/adhoc-decision-key-relative-absolute-mismatch/SPEC.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/adhoc-derive-cycle-commit-budget/ADHOC_BRIEF.md": [
     {
       "id": "adhoc-derive-cycle-commit-budget",
@@ -5091,6 +5125,11 @@
       "id": "adhoc-decision-key-relative-absolute-mismatch",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/agpl-sidecar-framing-strudel-only-second-sidecar/SPEC.md": [
@@ -10177,6 +10216,104 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/concurrent-worktree-agent-coordination/IMPLEMENTATION_NOTES.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/concurrent-worktree-agent-coordination/NEEDS_INPUT.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/concurrent-worktree-agent-coordination/NEEDS_INPUT_RESOLVED_2026-07-18.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/concurrent-worktree-agent-coordination/PHASES.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/concurrent-worktree-agent-coordination/RESEARCH_PROMPT.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/concurrent-worktree-agent-coordination/RUNTIME_GATES.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/concurrent-worktree-agent-coordination/SPEC.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/concurrent-worktree-agent-coordination/plans/all-phases-concurrent-worktree-agent-coordination-part-1.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/concurrent-worktree-agent-coordination/plans/all-phases-concurrent-worktree-agent-coordination-part-2.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/concurrent-worktree-agent-coordination/plans/all-phases-concurrent-worktree-agent-coordination-part-3.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/concurrent-worktree-agent-coordination/plans/all-phases-concurrent-worktree-agent-coordination-part-4.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/concurrent-worktree-agent-coordination/plans/all-phases-concurrent-worktree-agent-coordination-part-5.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/concurrent-worktree-agent-coordination/plans/all-phases-concurrent-worktree-agent-coordination-part-6.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/concurrent-worktree-agent-coordination/plans/realign-2026-07-18.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/coupled-pair-generation/COMPLETED.md": [
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
@@ -15171,6 +15308,11 @@
       "id": "cycle-subagent-stalls-on-wedged-sub-subagent",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/interventions/harden-2026-07-r14.md": [
@@ -16498,6 +16640,11 @@
       "id": "adhoc-subagent-wedge-hook-overfires-globs-all-plans",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/interventions/hardening-intervention-records-unmeasurable-or-missing.md": [
@@ -17032,6 +17179,11 @@
       "id": "code-doc-provenance-linkage",
       "type": "feature",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/specs/machine-keyed-manifest-projection/SPEC.md": [
@@ -17310,6 +17462,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "shared-hook-lib",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -17581,6 +17738,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "execute-plan-skill-diet",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -17669,6 +17831,11 @@
     },
     {
       "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -18158,6 +18325,11 @@
       "id": "test-only-production-seams",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/hooks/CLAUDE.md": [
@@ -18486,6 +18658,11 @@
   ],
   "user/hooks/subagent-wedge-backstop.sh": [
     {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "subagent-wedge-backstop-hook",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -18701,6 +18878,11 @@
       "id": "completion-coherence-gate-reconciliation",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "cross-platform-setup",
@@ -19152,6 +19334,20 @@
     },
     {
       "id": "generalized-build-test-runner-skills",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/concurrent-lock.Tests.ps1": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/concurrent-lock.ps1": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -19618,6 +19814,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
@@ -19702,6 +19903,11 @@
     {
       "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
       "provenance": "pipeline-gated"
     }
   ],
@@ -19954,6 +20160,11 @@
       "provenance": "manual"
     },
     {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "merged-head-actionability-oracle",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -20084,6 +20295,11 @@
       "provenance": "manual"
     },
     {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -20178,6 +20394,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/lazy_core/markers.py": [
@@ -20210,6 +20431,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/lazy_core/notifyplane.py": [
@@ -20251,6 +20477,11 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/lazy_core/statedir.py": [
@@ -20799,6 +21030,11 @@
     {
       "id": "push-hook-bypass-anchor-false-blocks-composed-push",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -21466,6 +21702,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "feature-budget-guard-and-skip-ahead",
       "type": "feature",
       "provenance": "backfilled"
@@ -21653,6 +21894,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/tests/test_lazy_core/test_gates.py": [
@@ -21724,6 +21970,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/tests/test_lazy_core/test_markers.py": [
@@ -21756,6 +22007,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/tests/test_lazy_core/test_misc.py": [
@@ -21844,6 +22100,11 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/tests/test_lazy_core/test_statedir.py": [
@@ -21996,6 +22257,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/skills/_components/concurrent-lock-contract.md": [
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/skills/_components/dep-block-schema.md": [
     {
       "id": "queue-dependency-dag",
@@ -22084,6 +22352,11 @@
     },
     {
       "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -22351,6 +22624,11 @@
     },
     {
       "id": "code-doc-provenance-linkage",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -22952,6 +23230,11 @@
       "provenance": "manual"
     },
     {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "execute-plan-skill-diet",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -23111,6 +23394,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "execute-plan-skill-diet",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -23246,6 +23534,11 @@
       "id": "probe-full-read-before-dispatch",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "execute-plan-skill-diet",

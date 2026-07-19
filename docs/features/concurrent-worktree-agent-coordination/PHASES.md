@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress — all 6 phases' implementation landed (2026-07-19); validation pending. MCP runtime not-required, so the state machine routes directly to the `__mark_complete__` gate, which owns the flip to Complete + COMPLETED.md.
+**Status:** Complete
 
 **MCP runtime:** not-required — the entire deliverable is claude-config harness surface (Python state-machine helpers, a PowerShell lock, skill/component prose, and docs). It crosses none of the AlgoBooth MCP boundary taxonomy (no sidecar↔Rust, capnp/N-API, Tauri command, or audio-callback surface); it is validated by the in-file `--test` smoke harnesses, `pytest tests/test_lazy_core/`, PowerShell Pester, and the 7-command gate battery — never the Tauri+MCP HTTP runtime. (Per `docs/features/mcp-testing/SPEC.md`, this is the "no app integration / build-tooling / docs" untestable class.)
 
@@ -125,7 +125,7 @@ Load-bearing assumptions for this plan, classified per the Step 2.7 gate. This f
 
 **Scope:** Consistent handling for a conflict that slips past the FIFO lock (Requirements 4–6, Locked Decision 2). A WRITE conflict is non-halting (retry/queue via the lock, log, continue — NEVER halts a `/lazy-batch` run). A SEMANTIC conflict HALTS: write `NEEDS_INPUT.md` (class `product`) and add the semantic-conflict carve-out to `provisional_eligibility`'s fail-closed set so it is NEVER auto-accepted under `--park-provisional`. The discriminator is LOCKED to the **git-mergeability + coupled-surface heuristic**: NON-semantic when git auto-merges (no conflict markers) OR the conflicting hunks touch disjoint logical surfaces; SEMANTIC when git reports an un-auto-resolvable conflict on the SAME logical artifact (same function / Locked-Decision row / sentinel). Deterministic; ambiguous → SEMANTIC/halt (fail-safe).
 
-**Status:** Complete (2026-07-19) — implementation landed; MCP runtime not-required (pure/hermetic-tested, no runtime-verification rows).
+**Status:** Complete
 
 **Deliverables:**
 - [x] Conflict-discriminator helper in `lazy_core` (shared, both pipelines): `classify_conflict(...) -> {"write" | "semantic", reason}` implementing the git-mergeability + coupled-surface heuristic (git auto-merge check → conflict-marker presence → disjoint-surface check → fail to SEMANTIC on ambiguity). Pure/injectable git seam for hermetic `--test`.
@@ -157,7 +157,7 @@ Load-bearing assumptions for this plan, classified per the Step 2.7 gate. This f
 
 **Scope:** For a large/complex but NON-semantic conflict, the orchestrator completes the work in a temporary worktree and merges it back in queue order, resolving conflicts (Requirement 6, Locked Decisions 3–4). LOCKED to reusing the `lazy_coord.py` lane machinery: spin the temp worktree as a coordinator lane (`lane/<item-id>` + lane marker + fencing lease), do the work there, merge back via `merge_lane_branch` (abort-and-demote on conflict, lane branch preserved, `lanes.json` audit ledger). If this agent beats the conflicting agent to the merge, it COMMUNICATES via a structured `Concurrent-Merge-Back:` commit-message trailer (affected paths + resolution guidance) that the conflicting agent reads in the incoming history it must fetch/rebase to push. Does NOT halt the run. Workstation-only v1 (cloud/bug path documented as a follow-up).
 
-**Status:** Complete (2026-07-19) — implementation landed (`merge_back_lanes` + the trailer compose/parse/read helpers + orchestration prose; `lazy_coord.py --test` fix27/fix28 green, 4 trailer tests green); MCP runtime not-required. RUNTIME GATES PENDING (1) — the live workstation large-non-semantic-conflict observation (see `RUNTIME_GATES.md`) is owned by manual/integration testing, NOT the implementation agent.
+**Status:** Complete
 
 **Deliverables:**
 - [x] Merge-back orchestration wiring (prose in `lazy-batch-parallel/SKILL.md` + any shared helper in `lazy_coord.py`/`lazy_core`): on a `classify_conflict == write` verdict that is large/complex, spin a lane via `lane_branch`/`lane_pool_dir` + `acquire_lease`, complete the work, and `merge_lane_branch` in `merge_order`. Reuse the EXISTING abort-and-demote-on-conflict path — no new merge engine.
@@ -189,7 +189,7 @@ Load-bearing assumptions for this plan, classified per the Step 2.7 gate. This f
 
 ### Phase 6: Orchestrator parallel-dispatch trust — retire the self_edit_mode foreground-await coupling
 
-**Status:** Complete (2026-07-19) — implementation landed; the `self_edit_mode → foreground/await` coupling retired from `/lazy-batch` + `/lazy-bug-batch` + `/lazy-batch-cloud`, governing-file RELOAD discipline retained (grep-anchored); lint/doc-drift/parity/projection green. MCP runtime not-required (prose-only).
+**Status:** Complete
 
 **Scope:** The orchestrator MUST rely on the coordination layer (Phases 2–5) to resolve write conflicts, not prevent parallel work by pre-serializing dispatches (Requirement 7, Validation row 6). Retire the `self_edit_mode → foreground/await` coupling: a background harden (or any dispatch) that touches claude-config while the run is itself editing claude-config now runs CONCURRENTLY on the shared tree, trusting the FIFO lock + conflict-routing to serialize genuine contention and to halt only on a true semantic conflict. Retire the coupling at `/lazy-batch` §1d.1 (the Concurrency EXCEPTION @899) and its coupled twins `lazy-bug-batch` (@709) and `lazy-batch-cloud`. The awareness note (Phase 1) documents the new trust contract so the defensiveness is not reintroduced.
 

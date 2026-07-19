@@ -1,12 +1,10 @@
-# Runtime Gates — concurrent-worktree-agent-coordination
+# Runtime Gates — 2 MANUAL RUNTIME GATES PENDING (feature not verified end-to-end)
 
-Manual/integration runtime-verification rows deferred past plan-part completion. This feature
-declares **MCP runtime: not-required** — there is NO downstream `/mcp-test` gate, so **this
-ledger is the ONLY owner of these rows**. The operator working this ledger is the sole remaining
-mechanism; no pipeline gate will hold them.
+These runtime-verification rows are DEFERRED — their PHASES.md checkboxes stay `- [ ]` because they cannot run in this environment yet (closed later outside the pipeline; see each row's own closer). This repo declares `MCP runtime: not-required` (no `/mcp-test` step downstream), so **this ledger is the ONLY owner of these rows** — no pipeline gate will hold them; the operator working the ledger is the sole remaining mechanism.
 
-## Phase 5 — Temp-worktree merge-back + `Concurrent-Merge-Back:` trailer
+Written by the completion gate (`completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo`) when `__mark_complete__`/`__mark_fixed__` exempted these deferred rows on the structural-skip route. Regenerated (not appended) on each completion.
 
-| Gate row text | How to run it | Owning phase | Date deferred |
+| # | Owning phase | Deferred | Gate row (verbatim) |
 |---|---|---|---|
-| A real large non-semantic conflict on the workstation: the temp worktree is created, work merges back, the run CONTINUES (no halt), and the conflicting agent's next fetch/rebase surfaces the `Concurrent-Merge-Back:` trailer. | On the workstation, drive a `/lazy-batch-parallel` run (or a hand-built two-worktree scenario) that manufactures a large but non-semantic write conflict between two lanes touching disjoint surfaces of the same feature. Confirm: (1) the losing lane's work is completed in a temp worktree spun as a lane and `merge_back_lanes` merges it back in queue order; (2) the run does NOT halt; (3) the conflicting agent's fetch/rebase (`git log <remote>/<branch>..HEAD`) shows a `Concurrent-Merge-Back:` trailer, and `lazy_core.read_concurrent_merge_back_trailers(<root>, "<remote>/<branch>..HEAD")` recovers its affected paths + guidance. | Phase 5 | 2026-07-19 |
+| 1 | ### Phase 3: Cross-platform FIFO file-lock (per-queue-item grain, two conforming implementations) | 2026-07-19 | <!-- verification-only --> Two real concurrent processes acquiring the SAME per-item lock proceed in FIFO order (second blocks until first releases), observed on the workstation via the PowerShell plane. (Cross-platform two-implementation parity — workstation-eligible.) |
+| 2 | ### Phase 5: Temp-worktree merge-back + cross-agent commit-message-trailer channel | 2026-07-19 | <!-- verification-only --> A real large non-semantic conflict on the workstation: the temp worktree is created, work merges back, the run CONTINUES (no halt), and the conflicting agent's next fetch/rebase surfaces the `Concurrent-Merge-Back:` trailer. (Workstation-eligible integration observation.) |
