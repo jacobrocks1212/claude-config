@@ -11,7 +11,7 @@ written_by: harden-harness
 
 **Status:** Fixed
 **Fixed:** 2026-07-19
-**Fix commit:** 4a12e218
+**Fix commit:** 24d48e43
 **Root-cause class:** hook-defect
 
 **Fix scope (concluded):** scope the wedge-backstop's git-dirty half to the STOPPING
