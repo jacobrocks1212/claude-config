@@ -74,12 +74,12 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cli_surface
 
-# lazy_coord owns the coordinator leases.json (worktree-pool fencing). Imported
-# for the read-only has_live_lease() helper used by the --emit-prompt merged-head
-# divergence guard's serial-tail lease exemption (lazy-batch-parallel-run-harness-
-# gaps round-2 gap 8). lazy_coord is stdlib-only and never imports lazy_core, so
-# there is no import cycle.
-import lazy_coord
+# adhoc-unify-merged-head-coordinator-exemptions: the --emit-prompt merged-head
+# lane/serial-tail-lease exemptions moved into ONE shared predicate,
+# lazy_core.dispatch.coordinator_arbitrated_emission, which owns the (local,
+# fail-safe) lazy_coord.has_live_lease call. This script no longer references
+# lazy_coord directly, so its top-level import was retired here (the dependency
+# now lives with the predicate in lazy_core/dispatch.py).
 
 # Domain-agnostic helpers live in lazy_core (WU-1.2 extraction). Import the
 # module itself so lazy_core._DIAGNOSTICS is the canonical list object and
@@ -14789,53 +14789,34 @@ def main() -> int:
         # spurious withhold). Reuses the SAME next_merged ordering the
         # --next-merged surface uses — never a second ordering rule.
         #
-        # lazy-batch-parallel-run-harness-gaps gap 1: EXEMPT the lane probe form.
-        # A /lazy-batch-parallel lane marker carries a non-null `parent_run`; the
-        # coordinator's claim_shardable ALREADY applied the queue-order +
-        # independent:true + lease arbitration when it assigned this lane its
-        # --feature-id. The merged-head guard's serial premise ("only one item is
-        # active and it must be the global head") is void by design in a parallel
-        # run — every lane whose item is not the global head would otherwise
-        # withhold forever (observed live: lanes wt-01/wt-02 stalled behind the
-        # serial-held head hydra-overlay, which — being unsharded — holds no lease,
-        # so lease-exclusion alone would not have cleared it). Lane arbitration is
-        # coordinator-owned, not a per-lane-probe concern.
-        _emit_is_lane = bool(
-            isinstance(_emit_marker, dict) and _emit_marker.get("parent_run")
+        # adhoc-unify-merged-head-coordinator-exemptions: the two
+        # coordinator-arbitration exemptions the serial merged-head divergence
+        # premise does NOT apply to now live behind ONE shared predicate in
+        # lazy_core.dispatch (single home; the anti-accretion contract). It
+        # returns "lane" | "lease" | None (lane precedence over lease), fail-safe
+        # (never raises into the base probe):
+        #   * "lane" — round-1 gap 1: a /lazy-batch-parallel lane marker carries a
+        #     non-null `parent_run`; claim_shardable ALREADY arbitrated the queue
+        #     (queue-order + independent:true + lease) when it assigned this lane
+        #     its --feature-id, so the serial "one active item == the global head"
+        #     premise is void by design and the lane must not withhold.
+        #   * "lease" — round-2 gap 8: a non-lane main-root SERIAL-TAIL probe whose
+        #     OWN feature_id holds a LIVE coordinator lease is discharging the
+        #     coordinator's in-flight, lane-merged obligation BEFORE any new head
+        #     work (heartbeat-fresh actively-owned work, never the stale route the
+        #     guard exists to catch), delegating the liveness I/O to
+        #     lazy_coord.has_live_lease(leases_path, feature_id).
+        # A future third exemption (demoted-serial-rerun) is a one-line addition
+        # THERE. The reason drives BOTH the skip decision here and the
+        # observability diagnostic below (via coordinator_exemption_diag), so the
+        # two-boolean fragmentation collapses into one predicate call.
+        _emit_exempt_reason = lazy_core.dispatch.coordinator_arbitrated_emission(
+            _emit_marker,
+            state.get("feature_id"),
+            lazy_core.claude_state_dir() / "leases.json",
         )
-        # lazy-batch-parallel-run-harness-gaps round-2 gap 8: EXEMPT the
-        # coordinator's SERIAL-TAIL probe whose OWN feature_id holds a LIVE
-        # coordinator lease. Round-1 gap 1 (above) exempted the LANE probe form
-        # (parent_run set), but the post-merge validation TAIL probes run at the
-        # MAIN root against the PARENT marker (parent_run null → not a lane), so
-        # the serial guard still fired: when a freshly-dispatchable head (e.g. a
-        # research-ingested feature) became the merged head, the tail's
-        # --emit-prompt for a merged, lease-held item was WITHHELD
-        # (route_overridden_by: merged-head-diverged) even though completing that
-        # lease-held item is the coordinator's obligation BEFORE any new head
-        # work. A live lease on the PROBED item means it is actively-owned
-        # in-flight work (heartbeat fresh) — never the stale route the guard
-        # exists to catch — so redirecting away from it would orphan the
-        # lease-held tail. This is the exact analog of the lane exemption: a lane
-        # exempts on the coordinator-arbitrated claim (parent_run); the tail
-        # exempts on the probed item's OWN live lease (coordinator-owned in-flight
-        # completion). Fail-safe: any read error / no leases.json / no live lease
-        # → False → the guard runs exactly as before (byte-identical for every
-        # non-parallel serial run, which has no leases.json). Note lease-EXCLUSION
-        # (dropping other leased ids from the merged head) would NOT fix this — the
-        # divergent head here is a fresh non-leased item, so it stays the head;
-        # only exempting the probe for its OWN live lease clears the withhold.
-        _emit_is_lease_held = False
-        if _emit_marker is not None and not _emit_is_lane and state.get("feature_id"):
-            try:
-                _emit_is_lease_held = lazy_coord.has_live_lease(
-                    lazy_core.claude_state_dir() / "leases.json",
-                    state.get("feature_id"),
-                )
-            except Exception:  # noqa: BLE001 — lease probe must never break the base probe
-                _emit_is_lease_held = False
         _merged_override = None
-        if _emit_marker is not None and not _emit_is_lane and not _emit_is_lease_held:
+        if _emit_marker is not None and _emit_exempt_reason is None:
             try:
                 _mo_repo = Path(args.repo_root)
                 _mo_feats = load_queue(_mo_repo)
@@ -14941,27 +14922,16 @@ def main() -> int:
                         state["diagnostics"].append(_diag_line)
             except Exception:  # noqa: BLE001 — divergence probe must never break the base probe
                 _merged_override = None
-        elif _emit_is_lane:
-            # gap 1 observability: record that the merged-head divergence guard was
-            # SKIPPED because this is a coordinator-authorized lane probe (never
-            # withheld — lane arbitration is claim_shardable's job).
+        elif _emit_exempt_reason is not None:
+            # Observability: the merged-head divergence guard was SKIPPED because
+            # this is a coordinator-arbitrated emission (lane probe / serial-tail
+            # lease probe — round-1 gap 1 / round-2 gap 8; never withheld). The
+            # per-reason diag text is selected by coordinator_exemption_diag,
+            # preserving both historical messages verbatim; an unrecognized future
+            # reason still skips + emits a generic coordinator-arbitrated diag.
             if isinstance(state.get("diagnostics"), list):
                 state["diagnostics"].append(
-                    "merged-head: skipped divergence guard — lane probe "
-                    "(parent_run set); lane arbitration is coordinator-owned "
-                    "(claim_shardable)."
-                )
-        elif _emit_is_lease_held:
-            # gap 8 observability: the merged-head divergence guard was SKIPPED
-            # because this serial-tail probe's OWN feature_id holds a live
-            # coordinator lease — completing the lease-held, lane-merged item is
-            # the coordinator's obligation before new head work (never withheld).
-            if isinstance(state.get("diagnostics"), list):
-                state["diagnostics"].append(
-                    "merged-head: skipped divergence guard — serial-tail probe "
-                    "for a lease-held item (feature_id holds a live coordinator "
-                    "lease); completing the merged, lease-held item is the "
-                    "coordinator's in-flight obligation (round-2 gap 8)."
+                    lazy_core.dispatch.coordinator_exemption_diag(_emit_exempt_reason)
                 )
         if _emit_marker is not None and _emit_debt > 0:
             # Withhold: no cycle_prompt, no cycle_model, no registration.

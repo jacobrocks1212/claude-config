@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: adhoc-unify-merged-head-coordinator-exemptions
-status: In-progress
+status: Complete
 created: 2026-07-19
 complexity: complex
 phases: [1, 2]
@@ -70,7 +70,7 @@ No contradictions surfaced — every planned path exists; the predicate's home +
 ## Work Units
 
 - [x] WU-1 — Add `coordinator_arbitrated_emission` predicate + unit tests (Phase 1)
-- [ ] WU-2 — Switch both state-script callers to the predicate; parity + baselines green (Phase 2)
+- [x] WU-2 — Switch both state-script callers to the predicate; parity + baselines green (Phase 2)
 
 ---
 
@@ -120,11 +120,11 @@ No contradictions surfaced — every planned path exists; the predicate's home +
 #### WU-2 — Switch both callers; parity + baselines green
 
 - **Scope (PHASES.md Phase 2 deliverables):**
-  - [ ] `lazy-state.py` guard prologue rewritten to one `coordinator_arbitrated_emission(...)` call; guard becomes `if _emit_marker is not None and _emit_exempt_reason is None:`; the two `elif _emit_is_lane` / `elif _emit_is_lease_held` observability branches become a single `elif _emit_exempt_reason is not None:` selecting the existing per-reason diag text (lane vs. lease), preserving both messages' content.
-  - [ ] `bug-state.py` given the byte-parallel identical replacement (coupled mirror), including mirror comments updated to point at the shared predicate.
-  - [ ] Mirror-comment blocks + the `lazy_coord` import annotations (`lazy-state.py:77-82`, `bug-state.py:97-100`) updated to reflect the single shared home (`has_live_lease` is still consumed, now transitively via the predicate).
-  - [ ] `lazy_parity_audit.py --report` exits 0; reconcile `lazy-parity-manifest.json` only if it pins the changed block content.
-  - [ ] Caller-facing reason→diagnostic mapping (`"lane"` / `"lease"`) covered so a future reason rename cannot silently drop a diagnostic; an UNRECOGNIZED reason still skips the guard and emits a generic "coordinator-arbitrated emission" diag (forward-compat for the future third exemption).
+  - [x] `lazy-state.py` guard prologue rewritten to one `coordinator_arbitrated_emission(...)` call; guard becomes `if _emit_marker is not None and _emit_exempt_reason is None:`; the two `elif _emit_is_lane` / `elif _emit_is_lease_held` observability branches become a single `elif _emit_exempt_reason is not None:` selecting the existing per-reason diag text (lane vs. lease), preserving both messages' content.
+  - [x] `bug-state.py` given the byte-parallel identical replacement (coupled mirror), including mirror comments updated to point at the shared predicate.
+  - [x] Mirror-comment blocks + the `lazy_coord` import annotations (`lazy-state.py:77-82`, `bug-state.py:97-100`) updated to reflect the single shared home. ⚖ The top-level `import lazy_coord` became dead (its sole consumer moved into the predicate's local import) so it was REMOVED from both scripts with an annotation recording the move (behavior-preserving; baselines byte-unchanged prove it).
+  - [x] `lazy_parity_audit.py --repo-root .` exits 0; the manifest does not pin the changed block content, so no `lazy-parity-manifest.json` edit was needed.
+  - [x] Caller-facing reason→diagnostic mapping (`"lane"` / `"lease"`) covered so a future reason rename cannot silently drop a diagnostic; an UNRECOGNIZED reason still skips the guard and emits a generic "coordinator-arbitrated emission" diag (forward-compat for the future third exemption).
 - **TDD:** yes (the correctness net is baseline byte-identity + parity exit 0 + the reason→diag test; extend `test_dispatch.py` for the caller-facing mapping).
 - **Files to create/modify:**
   - `user/scripts/lazy-state.py` — replace the guard prologue booleans + inline AND + two elifs with one predicate call + reason→diag map [VERIFY: grep -n "_emit_is_lease_held" user/scripts/lazy-state.py] (~14803-14965).
