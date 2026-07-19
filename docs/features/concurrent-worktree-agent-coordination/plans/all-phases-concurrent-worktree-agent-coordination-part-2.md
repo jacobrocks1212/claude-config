@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: concurrent-worktree-agent-coordination
-status: Ready
+status: In-progress
 complexity: complex
 created: 2026-07-18
 phases: [2]
