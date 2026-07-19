@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Fixed
 
 **MCP runtime:** not-required — pure static state-machine logic in `lazy-state.py` / `lazy_core`; no Tauri/MCP-reachable surface. Verified deterministically by the in-file `--test` smoke harnesses + `pytest tests/test_lazy_core/` + `lazy_parity_audit.py` (the claude-config invariant gate battery), never by a live runtime.
 
