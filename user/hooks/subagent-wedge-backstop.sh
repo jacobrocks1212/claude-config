@@ -69,7 +69,6 @@ fi
 # straight through to python's sys.stdin. The body is deliberately COMPACT so it
 # never approaches the platform `-c` argument-length limit.
 read -r -d '' _WEDGE_PY <<'PYEOF'
-import glob
 import json
 import os
 import subprocess
@@ -216,27 +215,61 @@ def _gc_by_session(stops_dir, session_id):
 
 
 def _active_plan_unchecked(lc, repo_root):
-    """Return the per-plan unchecked-WU counts for every ACTIVE (non-terminal)
-    plan under the repo. A Complete/Superseded/Draft plan is not active pending
-    work and is excluded (so a non-empty result ⇒ predicate condition 2 holds:
-    an active plan whose status != Complete)."""
-    counts = []
-    for sub in ("features", "bugs"):
-        pat = os.path.join(repo_root, "docs", sub, "*", "plans", "*.md")
-        for path in glob.glob(pat):
-            try:
-                status = lc._plan_status(Path(path))
-            except Exception:
-                status = "Ready"
-            if status in ("Complete", "Superseded", "Draft"):
-                continue
-            try:
-                with open(path, encoding="utf-8") as fh:
-                    unchecked, _checked = lc._plan_wu_checkbox_counts(fh.read())
-            except Exception:
-                unchecked = 0
-            counts.append(unchecked)
-    return counts
+    """Return the unchecked-WU count for ONLY the plan the ACTIVE cycle is
+    executing — the cycle marker's (lazy-cycle-active.json) execute-plan
+    sub_skill_args plan path. Scoping to the active cycle's OWN plan is
+    load-bearing (adhoc-subagent-wedge-hook-overfires-globs-all-plans): the prior
+    impl globbed EVERY docs/{features,bugs}/*/plans/*.md and counted any
+    non-terminal plan, so a /spec, research, or realign cycle (which owns no
+    execute-plan plan) false-fired on a STRAY plans/*.md it was not executing (a
+    prior part's plan, a realign-<date>.md). The cycle marker is written by
+    --cycle-begin immediately BEFORE every Agent dispatch and cleared only later by
+    --cycle-end, so it is present at SubagentStop and names the just-stopped
+    cycle's sub_skill + plan (the same field _execute_plan_commit_budget reads).
+
+    Returns:
+      - [unchecked_count] when the active cycle IS execute-plan and its plan is
+        active (status not Complete/Superseded/Draft) — a genuine execute-plan
+        wedge still trips the block;
+      - [] when the active cycle is NOT execute-plan (/spec, research, realign,
+        /plan-*), names no plan, the plan is terminal/absent, or the cycle marker
+        is absent/unreadable. An empty result means the plan-WU signal contributes
+        nothing and the caller's `if not active: _allow()` biases to false-negative
+        — a stray plans/*.md the current cycle is not executing can never trip it.
+    """
+    try:
+        cycle = lc.read_cycle_marker()
+    except Exception:
+        return []
+    if not isinstance(cycle, dict):
+        return []
+    if cycle.get("sub_skill") != "execute-plan":
+        return []
+    args = cycle.get("sub_skill_args")
+    if not args:
+        return []
+    toks = str(args).split()
+    plan_token = toks[0] if toks else ""
+    if not plan_token:
+        return []
+    candidates = [plan_token]
+    if not os.path.isabs(plan_token):
+        candidates.append(os.path.join(repo_root, plan_token))
+    plan_path = next((c for c in candidates if os.path.exists(c)), None)
+    if plan_path is None:
+        return []
+    try:
+        status = lc._plan_status(Path(plan_path))
+    except Exception:
+        status = "Ready"
+    if status in ("Complete", "Superseded", "Draft"):
+        return []
+    try:
+        with open(plan_path, encoding="utf-8") as fh:
+            unchecked, _checked = lc._plan_wu_checkbox_counts(fh.read())
+    except Exception:
+        unchecked = 0
+    return [unchecked]
 
 
 def _git_dirty(repo_root):
@@ -307,9 +340,13 @@ def main():
     if not repo_root:
         _allow()
 
-    # Conditions 2 & 3: an active (non-Complete) plan AND pending work
-    # (git dirty OR unchecked plan WUs). No active plan resolves ⇒ fail-open
-    # allow (bias to false-negative, per the operator steer).
+    # Conditions 2 & 3: the ACTIVE CYCLE's own (non-terminal) execute-plan plan
+    # AND pending work (git dirty OR unchecked plan WUs in THAT plan). The cycle
+    # marker scopes this to the plan the just-stopped cycle was executing — a
+    # non-execute-plan cycle (/spec, research, realign) resolves NO active plan
+    # (empty) ⇒ fail-open allow, so a stray plans/*.md never trips it
+    # (adhoc-subagent-wedge-hook-overfires-globs-all-plans). Bias to
+    # false-negative, per the operator steer.
     active = _active_plan_unchecked(lc, repo_root)
     if not active:
         _allow()

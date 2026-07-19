@@ -3813,14 +3813,26 @@ _DECISIONS_FILENAME = "lazy-decisions.json"
 def _normalize_sentinel_key(sentinel_path: str | Path) -> str:
     """Normalize a sentinel path into a stable dict key (D3-A).
 
-    Uses os.path.normpath + forward slashes so the SAME sentinel recorded
-    and looked up via slightly different path spellings (relative vs
-    absolute, backslash vs forward slash) still round-trips. Does NOT
-    require the file to exist (recording happens against a real, existing
-    sentinel in practice, but the key derivation itself is pure string
-    normalization — no filesystem I/O, no resolve()).
+    ABSOLUTIZES via os.path.abspath (which also applies normpath) then
+    forward-slashes, so the SAME sentinel recorded and looked up via
+    different path spellings — relative vs absolute, backslash vs forward
+    slash — produces the SAME key. A pure-string ``normpath`` (the prior
+    impl) could NOT reconcile a relative spelling with an absolute one
+    without joining a base, so a decision recorded with a repo-relative
+    ``docs/features/<f>/NEEDS_INPUT.md`` silently missed an
+    ``--emit-dispatch apply-resolution`` lookup that passed the absolute
+    Windows path — the ``no recorded decision for sentinel`` refusal
+    (``adhoc-decision-key-relative-absolute-mismatch``). Both
+    ``--record-decision`` and ``--emit-dispatch apply-resolution`` are
+    invoked by the orchestrator from the run's repo-root cwd, so
+    ``abspath`` reconciles them deterministically; same-spelling round-trip
+    is preserved (abspath is idempotent on an already-absolute path and
+    deterministic on a relative one from a fixed cwd). Uses ``abspath``,
+    NOT ``realpath`` — a sentinel lives in the repo working tree, never
+    behind a ``~/.claude/*`` skill symlink, so symlink resolution is
+    unneeded and abspath is the smaller, more predictable change.
     """
-    return os.path.normpath(str(sentinel_path)).replace("\\", "/")
+    return os.path.abspath(str(sentinel_path)).replace("\\", "/")
 
 
 def _load_decisions() -> dict:

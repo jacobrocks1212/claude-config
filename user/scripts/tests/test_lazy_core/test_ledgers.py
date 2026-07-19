@@ -1717,6 +1717,44 @@ def test_record_decision_and_read_round_trip():
             _clear_state_dir()
 
 
+def test_record_decision_key_reconciles_relative_and_absolute():
+    """adhoc-decision-key-relative-absolute-mismatch: a decision recorded with a
+    REPRESENTATIVE relative sentinel path must be found by a lookup that passes the
+    ABSOLUTE form of the same file, and vice versa — the exact record/emit
+    disagreement that produced 'no recorded decision for sentinel'. Red on the
+    prior pure-string normpath key (relative != absolute), green on the abspath
+    key. No filesystem I/O beyond the state dir (record_decision never touches the
+    sentinel file); abspath is resolved against the test process cwd on BOTH sides,
+    so relative and absolute reconcile deterministically."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            rel_sentinel = os.path.join("feat-rel", "NEEDS_INPUT.md")  # relative
+            abs_sentinel = os.path.abspath(rel_sentinel)               # its absolute form
+            assert rel_sentinel != abs_sentinel  # the two spellings genuinely differ
+
+            # Record RELATIVE → look up ABSOLUTE reconciles.
+            lazy_core.record_decision(rel_sentinel, "Option R", now=1000.0)
+            got_abs = lazy_core.read_decision_record(abs_sentinel)
+            assert got_abs is not None, (
+                "an absolute lookup must find a relatively-recorded decision"
+            )
+            assert got_abs["chosen_path"] == "Option R"
+
+            # Record ABSOLUTE (overwrites the SAME key) → look up RELATIVE reconciles.
+            lazy_core.record_decision(abs_sentinel, "Option A2", now=2000.0)
+            got_rel = lazy_core.read_decision_record(rel_sentinel)
+            assert got_rel is not None, (
+                "a relative lookup must find an absolutely-recorded decision"
+            )
+            assert got_rel["chosen_path"] == "Option A2", (
+                "the two spellings must map to ONE key (overwrite, not a 2nd entry)"
+            )
+        finally:
+            _clear_state_dir()
 
 
 def test_bind_decision_record_context_refuses_without_record_and_binds_when_present():
@@ -4083,6 +4121,8 @@ _TESTS = [
     ("test_build_input_audit_emit_command_binds_supplied_cycle_commit_sha", test_build_input_audit_emit_command_binds_supplied_cycle_commit_sha),
     ("test_build_input_audit_emit_command_falls_back_to_head1_without_sha", test_build_input_audit_emit_command_falls_back_to_head1_without_sha),
     ("test_record_decision_and_read_round_trip", test_record_decision_and_read_round_trip),
+    ("test_record_decision_key_reconciles_relative_and_absolute",
+     test_record_decision_key_reconciles_relative_and_absolute),
     ("test_bind_decision_record_context_refuses_without_record_and_binds_when_present", test_bind_decision_record_context_refuses_without_record_and_binds_when_present),
     ("test_emit_dispatch_hardening_no_longer_acks", test_emit_dispatch_hardening_no_longer_acks),
     ("test_detect_cycle_bracket_friction_symbols_present", test_detect_cycle_bracket_friction_symbols_present),

@@ -9502,6 +9502,28 @@ def _run_wedge(stdin_text: str, state_dir: Path) -> subprocess.CompletedProcess:
     return _run_bash(_WEDGE_SH, stdin_text, _base_env(state_dir))
 
 
+def _write_wedge_cycle_marker(
+    state_dir: Path,
+    sub_skill: str = "execute-plan",
+    plan_rel: str = "docs/features/wedge-feat/plans/plan.md",
+) -> None:
+    """Write a cycle-subagent marker (lazy-cycle-active.json) naming the ACTIVE
+    cycle's sub_skill + sub_skill_args plan path. The wedge backstop scopes its
+    plan-WU signal to THIS plan (adhoc-subagent-wedge-hook-overfires-globs-all-plans);
+    a non-execute-plan sub_skill resolves no active plan. `plan_rel` is repo-relative
+    (the hook joins it against the run marker's repo_root)."""
+    _set_state_dir(state_dir)
+    try:
+        lazy_core.write_cycle_marker(
+            "wedge-feat", "deadbeef",
+            sub_skill=sub_skill,
+            sub_skill_args=plan_rel,
+            now=time.time(),
+        )
+    finally:
+        _clear_state_dir()
+
+
 def _wedge_breadcrumb_path(state_dir: Path, agent_id: str) -> Path:
     return state_dir / _WEDGE_STOPS_SUBDIR / f"{agent_id}.json"
 
@@ -9523,6 +9545,7 @@ def test_wedge_blocks_once_predicate_true():
         state_dir.mkdir()
         repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
         _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names the plan
         agent_id = "agent_" + uuid.uuid4().hex[:16]
         result = _run_wedge(
             _subagentstop_json(agent_id, cwd=str(repo)), state_dir
@@ -9550,6 +9573,7 @@ def test_wedge_second_attempt_same_agent_allows():
         state_dir.mkdir()
         repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
         _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names the plan
         agent_id = "agent_" + uuid.uuid4().hex[:16]
         first = _run_wedge(_subagentstop_json(agent_id, cwd=str(repo)), state_dir)
         assert first.returncode == 2, f"first attempt must block; got {first.returncode}"
@@ -9603,6 +9627,7 @@ def test_wedge_clean_tree_all_checked_allows():
             td, plan_status="In-progress", wu_checked=True, dirty=False
         )
         _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names the plan
         agent_id = "agent_" + uuid.uuid4().hex[:16]
         result = _run_wedge(
             _subagentstop_json(agent_id, cwd=str(repo)), state_dir
@@ -9626,6 +9651,7 @@ def test_wedge_plan_complete_allows():
         state_dir.mkdir()
         repo = _init_wedge_repo(td, plan_status="Complete", dirty=True)
         _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names the plan
         agent_id = "agent_" + uuid.uuid4().hex[:16]
         result = _run_wedge(
             _subagentstop_json(agent_id, cwd=str(repo)), state_dir
@@ -9664,6 +9690,7 @@ def test_wedge_two_distinct_agents_independent_breadcrumbs():
         state_dir.mkdir()
         repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
         _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names the plan
         agent_a = "agent_" + uuid.uuid4().hex[:16]
         agent_b = "agent_" + uuid.uuid4().hex[:16]
         r_a1 = _run_wedge(_subagentstop_json(agent_a, cwd=str(repo)), state_dir)
@@ -9689,6 +9716,7 @@ def test_wedge_breadcrumb_write_failure_allows():
         (state_dir / _WEDGE_STOPS_SUBDIR).write_text("blocker\n", encoding="utf-8")
         repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
         _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # predicate-true: reach the breadcrumb write
         agent_id = "agent_" + uuid.uuid4().hex[:16]
         result = _run_wedge(
             _subagentstop_json(agent_id, cwd=str(repo)), state_dir
@@ -9756,6 +9784,65 @@ def test_wedge_staleness_sweep_removes_old_breadcrumb():
         assert not old.exists(), "the entry staleness sweep must remove the stale breadcrumb"
 
 
+def test_wedge_non_execute_cycle_ignores_stray_plan_allows():
+    """adhoc-subagent-wedge-hook-overfires-globs-all-plans (REGRESSION): a
+    non-execute-plan cycle (/spec) whose cycle marker names no execute-plan plan
+    must ALLOW (exit 0) even with a STRAY non-terminal plan on disk (unchecked WU)
+    AND a dirty tree — the reported false-fire. Red on the glob-all predicate
+    (which found the stray plan → plan_pending → block), green on the
+    cycle-marker-scoped predicate (a /spec cycle owns no execute-plan plan → the
+    plan-WU signal is empty → allow)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        # A stray non-terminal plan with an unchecked WU the current cycle is NOT
+        # executing (models a realign-<date>.md / prior part's plan).
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        # The ACTIVE cycle is /spec — not execute-plan; it owns no plan.
+        _write_wedge_cycle_marker(state_dir, sub_skill="spec", plan_rel="")
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 0, (
+            f"a /spec cycle must ALLOW despite a stray plan + dirty tree; "
+            f"got {result.returncode}; stderr={result.stderr!r}"
+        )
+        assert not _wedge_breadcrumb_path(state_dir, agent_id).exists(), (
+            "an allowed stop must NOT write a loop-guard breadcrumb"
+        )
+
+
+def test_wedge_execute_plan_scoped_plan_wu_blocks_on_clean_tree():
+    """adhoc-subagent-wedge-hook-overfires-globs-all-plans (PRESERVED behavior): an
+    execute-plan cycle whose OWN plan has an unchecked WU must BLOCK (exit 2) even
+    on a CLEAN tree — proving the scoped predicate still reads the active cycle's
+    plan for the unchecked-WU half of the signal (not only the git-dirty half)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        # Clean tree, plan In-progress with an UNCHECKED WU (the plan-WU signal only).
+        repo = _init_wedge_repo(
+            td, plan_status="In-progress", wu_checked=False, dirty=False
+        )
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names THIS plan
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 2, (
+            f"an execute-plan cycle with its own unchecked WU must BLOCK on a clean "
+            f"tree; got {result.returncode}; stderr={result.stderr!r}"
+        )
+        assert _wedge_breadcrumb_path(state_dir, agent_id).exists()
+
+
 _TESTS = _TESTS + [
     # subagent-wedge-backstop-hook — SubagentStop wedge-backstop hook (WU-1)
     ("test_wedge_hook_file_exists", test_wedge_hook_file_exists),
@@ -9776,6 +9863,10 @@ _TESTS = _TESTS + [
      test_wedge_sessionend_gcs_session_breadcrumbs),
     ("test_wedge_staleness_sweep_removes_old_breadcrumb",
      test_wedge_staleness_sweep_removes_old_breadcrumb),
+    ("test_wedge_non_execute_cycle_ignores_stray_plan_allows",
+     test_wedge_non_execute_cycle_ignores_stray_plan_allows),
+    ("test_wedge_execute_plan_scoped_plan_wu_blocks_on_clean_tree",
+     test_wedge_execute_plan_scoped_plan_wu_blocks_on_clean_tree),
 ]
 
 
