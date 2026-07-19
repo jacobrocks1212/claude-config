@@ -549,6 +549,143 @@ def _staged_paths():
     return [p.strip() for p in out.stdout.splitlines() if p.strip()]
 
 
+# adhoc-incident-hook-deny-057921: the second-feature tripwire below must
+# evaluate only the commit's EFFECTIVE PATHSPEC, not the whole staged index —
+# a foreign path staged by a concurrent lane in a shared worktree index must
+# not false-deny a commit that will not include it. `_commit_pathspecs`
+# resolves the explicit pathspec token list for a `git commit` invocation (or
+# None when the commit is index-wide: bare, `-a`/`--all`, or any parse
+# ambiguity — safe-fallback bias, never a false-ALLOW of a foreign path).
+# Flat string scan, same not-a-shell-parser discipline as `_mask_heredoc` /
+# `_normalize_ps_syntax` — NOT a real shell tokenizer, but quote-aware enough
+# that a `-m '...path-looking text...'` message value is consumed as ONE
+# token (never split into stray pathspec-looking fragments by its own
+# internal whitespace).
+_GIT_COMMIT_RE = re.compile(r"\bgit\s+commit\b")
+
+# Option/value pairs that consume the FOLLOWING token as their value (both
+# `--opt value` and `--opt=value` forms) — so the value is never mistaken for
+# a pathspec token. `-S`/`--gpg-sign` takes an OPTIONAL value in real git; kept
+# conservative here (only consumed when the following token is not itself
+# option-shaped).
+_COMMIT_VALUE_OPTS = frozenset((
+    "-m", "--message", "-F", "--file", "-C", "--reuse-message",
+    "-c", "--reedit-message", "--author", "--date", "-t", "--template",
+    "--fixup", "--squash", "--cleanup", "-S", "--gpg-sign",
+))
+
+# Separator chars that end the `git commit` invocation's own segment — mirrors
+# `_SEGMENT_SPLIT_RE`'s separator class, but consulted QUOTE-AWARE here (a
+# separator char sitting inside a quoted commit-message value must not
+# fabricate a false segment boundary).
+_COMMIT_SEG_SEPARATOR_CHARS = frozenset("\n;&|({")
+
+
+def _commit_pathspecs(command):
+    """Return the explicit pathspec token list for a `git commit` invocation
+    in *command*, or None when the commit is index-wide (bare, `-a`/`--all`,
+    or any parse ambiguity — deny-safe: callers fall back to the whole staged
+    index on None, never a false-ALLOW of a foreign path).
+
+    Scoped to the `git commit` invocation's own segment (up to the next
+    top-level separator, quote-aware) so a later `&&`-chained segment never
+    leaks tokens in. Tokenization is a flat, quote-aware whitespace split — a
+    single-/double-quoted span (its `-m` message value, typically) is kept as
+    ONE token regardless of internal whitespace, so a message that merely
+    MENTIONS a path as prose is never split into a spurious pathspec-looking
+    fragment. An unterminated quote is a parse ambiguity -> None.
+    """
+    m = _GIT_COMMIT_RE.search(command)
+    if m is None:
+        return None
+    tail = command[m.end():]
+
+    tokens = []
+    buf = []
+    quote = None
+    for ch in tail:
+        if quote is not None:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            buf.append(ch)
+            continue
+        if ch in _COMMIT_SEG_SEPARATOR_CHARS:
+            break  # end of this invocation's own command segment
+        if ch.isspace():
+            if buf:
+                tokens.append("".join(buf))
+                buf = []
+            continue
+        buf.append(ch)
+    if quote is not None:
+        return None  # unterminated quote -- ambiguous, deny-safe fallback
+    if buf:
+        tokens.append("".join(buf))
+
+    pathspecs = []
+    saw_all = False
+    i = 0
+    n = len(tokens)
+    while i < n:
+        tok = tokens[i]
+        if tok == "--":
+            pathspecs.extend(t for t in tokens[i + 1:] if t)
+            break
+        if tok in ("-a", "--all"):
+            saw_all = True
+            i += 1
+            continue
+        if tok.startswith("--") and "=" in tok:
+            # --opt=value: the value is attached to this one token -- skip it
+            # whole, no separate value token to consume.
+            i += 1
+            continue
+        if tok in _COMMIT_VALUE_OPTS:
+            if i + 1 < n:
+                nxt = tokens[i + 1]
+                if tok in ("-S", "--gpg-sign") and nxt.startswith("-"):
+                    # optional value not supplied -- don't consume nxt.
+                    i += 1
+                    continue
+                i += 2  # consume the option AND its value token
+                continue
+            i += 1  # trailing option with no value token at all
+            continue
+        if tok.startswith("-"):
+            i += 1  # an ordinary no-value flag (-q, --amend, --no-verify, ...)
+            continue
+        pathspecs.append(tok)
+        i += 1
+
+    if saw_all:
+        return None
+    if not pathspecs:
+        return None
+    return pathspecs
+
+
+def _commit_effective_paths(command, staged):
+    """Return the subset of *staged* the pending `git commit` in *command*
+    will actually include -- its effective pathspec -- or *staged* unchanged
+    when the commit is index-wide (see `_commit_pathspecs`)."""
+    pathspecs = _commit_pathspecs(command)
+    if pathspecs is None:
+        return staged
+    norm_specs = [p.replace("\\", "/").rstrip("/") for p in pathspecs]
+    effective = []
+    for p in staged:
+        norm_p = p.replace("\\", "/")
+        for spec in norm_specs:
+            if norm_p == spec or norm_p.startswith(spec + "/"):
+                effective.append(p)
+                break
+    return effective
+
+
 def _is_carve_out(path, feature_id):
     norm = path.replace("\\", "/")
     if norm in CARVE_OUT_PATHS:
@@ -713,7 +850,7 @@ def main():
         # group-aware membership authority (keyed on feature_id), so the old buggy
         # `.group(1) != feature_id` comparison — which mis-parsed grouped features
         # — is gone.
-        staged = _staged_paths()
+        staged = _commit_effective_paths(command, _staged_paths())
         offending = [] if _batch_docs_writer else [
             p for p in staged
             if _FEATURE_DIR_RE.search(p.replace("\\", "/"))

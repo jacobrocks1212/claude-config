@@ -3635,6 +3635,111 @@ def test_containment_allows_ingest_research_multifeature_commit():
         )
 
 
+def test_containment_allows_pathspec_scoped_commit_with_foreign_staged_path():
+    """adhoc-incident-hook-deny-057921: a pathspec-scoped `git commit <path>` must
+    evaluate only the commit's EFFECTIVE PATHSPEC, not the whole staged index — a
+    foreign feat-B path sitting in a shared worktree's index (a concurrent lane)
+    must NOT false-deny a commit that will not include it."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="feat-A")
+        result = _run_containment(
+            _bash_preToolUse_json("git commit docs/bugs/feat-A/SPEC.md -m 'fix'"),
+            state_dir,
+            staged_paths=["docs/bugs/feat-A/SPEC.md", "docs/bugs/feat-B/FIXED.md"],
+        )
+        assert _containment_decision(result) != "deny", (
+            f"pathspec-scoped commit excluding the foreign path must NOT deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_bare_commit_absorbing_foreign_staged_path():
+    """adhoc-incident-hook-deny-057921 (non-weakening): a bare `git commit -m ...`
+    with NO pathspec flushes the WHOLE staged index — the foreign feat-B path is
+    genuinely included, so this must still DENY (the re-scope is not a blanket
+    allow)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="feat-A")
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'fix'"),
+            state_dir,
+            staged_paths=["docs/bugs/feat-A/SPEC.md", "docs/bugs/feat-B/FIXED.md"],
+        )
+        assert _containment_decision(result) == "deny", (
+            f"bare commit absorbing the whole index must deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_commit_all_flag_with_foreign_staged_path():
+    """adhoc-incident-hook-deny-057921 (non-weakening): `git commit -a` commits the
+    whole staged+tracked-modified set regardless of any pathspec — must not be
+    narrowed by the pathspec-scoping fix, so the foreign feat-B path still DENIES."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="feat-A")
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -a -m 'fix'"),
+            state_dir,
+            staged_paths=["docs/bugs/feat-A/SPEC.md", "docs/bugs/feat-B/FIXED.md"],
+        )
+        assert _containment_decision(result) == "deny", (
+            f"-a/--all commit must deny on a foreign staged path; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_pathspec_commit_that_names_foreign_path():
+    """adhoc-incident-hook-deny-057921 (non-weakening): a pathspec-scoped commit
+    whose pathspec DIRECTLY NAMES the foreign feature's path must still deny — the
+    foreign path IS in the commit's effective set here."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="feat-A")
+        result = _run_containment(
+            _bash_preToolUse_json("git commit docs/bugs/feat-B/FIXED.md -m 'fix'"),
+            state_dir,
+            staged_paths=["docs/bugs/feat-A/SPEC.md", "docs/bugs/feat-B/FIXED.md"],
+        )
+        assert _containment_decision(result) == "deny", (
+            f"pathspec naming the foreign path directly must deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_pathspec_message_containing_path_token_not_mistaken_for_pathspec():
+    """adhoc-incident-hook-deny-057921: the `-m` VALUE must be skipped when parsing
+    pathspec tokens — a commit message that happens to mention the foreign path as
+    prose text (e.g. 'closes docs/bugs/feat-B/FIXED.md') must not be mistaken for a
+    second pathspec token; only the real pathspec (feat-A/SPEC.md) is evaluated."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="feat-A")
+        result = _run_containment(
+            _bash_preToolUse_json(
+                "git commit docs/bugs/feat-A/SPEC.md -m 'closes docs/bugs/feat-B/FIXED.md'"
+            ),
+            state_dir,
+            staged_paths=["docs/bugs/feat-A/SPEC.md", "docs/bugs/feat-B/FIXED.md"],
+        )
+        assert _containment_decision(result) != "deny", (
+            f"the -m message value must not be parsed as a pathspec token; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
 def test_containment_denies_multifeature_commit_non_ingest():
     """lazy-batch-parallel-run-harness-gaps gap 7 (non-weakening): the
     ingest-research exemption is sub_skill-scoped — a NON-ingest cycle

@@ -210,6 +210,20 @@ locked D4). Ordering is load-bearing: the ownership guard is registered BEFORE t
 a subagent's raw long build surfaces the takeover signature first; the takeover re-launch then
 routes through the queue wrapper, which the enforce hook exempts (locked D5 — no ping-pong).
 
+### Second-feature tripwire scopes to the commit's effective pathspec
+
+`lazy-cycle-containment.sh`'s marker-armed second-feature-commit tripwire evaluates only the paths
+the pending `git commit` will actually include — its **effective pathspec**, parsed from the
+`git commit` invocation (`_commit_pathspecs` / `_commit_effective_paths`) — NOT the whole staged
+index. A **bare** `git commit -m "…"`, a `git commit -a`/`--all`, or any parse ambiguity falls back
+to the WHOLE index (deny preserved), so the genuine "a bare commit flushes a concurrent lane's
+staged foreign files into one commit" cross-contamination catch is intact. The re-scope closes a
+false-deny (`adhoc-incident-hook-deny-057921`) where, under a shared worktree, a concurrent lane's
+foreign `docs/{features,bugs}/<other>/…` path staged in the shared index made a legitimately
+pathspec-scoped same-feature commit deny. Safe-fallback bias: the filter narrows the evaluated set
+ONLY when the commit is confidently pathspec-scoped — it may false-DENY on ambiguity, never
+false-ALLOW a foreign path.
+
 ## Countable deny/error events (`hook-events.jsonl`)
 
 Every deny site in the five enforcement hooks (`lazy-cycle-containment.sh`,

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: adhoc-incident-hook-deny-057921
-status: Ready
+status: Complete
 created: 2026-07-19
 complexity: complex
 phases: [1]
@@ -49,8 +49,8 @@ Where this plan's repo uses non-default gates or component paths (claude-config 
 
 ## Work Units
 
-- [ ] WU-1 — Scope the second-feature tripwire to the commit's effective pathspec (hook fix + red→green tests)
-- [ ] WU-2 — Document the pathspec-scoping behavior in `user/hooks/CLAUDE.md`
+- [x] WU-1 — Scope the second-feature tripwire to the commit's effective pathspec (hook fix + red→green tests)
+- [x] WU-2 — Document the pathspec-scoping behavior in `user/hooks/CLAUDE.md`
 
 ### Phase: adhoc-incident-hook-deny-057921 P1 — Scope tripwire to commit pathspec
 
