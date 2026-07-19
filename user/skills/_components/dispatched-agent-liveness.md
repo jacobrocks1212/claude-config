@@ -39,6 +39,9 @@ An orchestrator is done only when its own on-disk terminal state says so:
 - **A lazy cycle / other skill dispatch you awaited FOREGROUND:** you receive its final report as
   the `Agent` tool call's own result — that result, not a notification, is the completion signal.
   You never need to interpret a notification for an agent you dispatched and are awaiting in-turn.
+- **Gap-2 discriminator:** `lazy_core.execute_plan_liveness` (`--execute-plan-liveness --plan
+  <p> --repo-root <r>` on both state scripts) now wires this same run-marker/plan-status recipe
+  into the orchestrator's AWAITED-`Agent`-result path too, not just the notification-path read.
 
 #### Decision procedure on a `completed` notification against a live orchestrator
 

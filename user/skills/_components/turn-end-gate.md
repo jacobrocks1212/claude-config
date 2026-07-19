@@ -17,6 +17,16 @@ notified when it completes" is structurally false there, and the run stalls unti
 manually resumes it. Only a top-level interactive session gets background-completion
 re-invocation; never rely on it from inside any `Agent` dispatch.
 
+**Annotation — the mandate does not rest on the teardown premise alone.** In practice, a
+dispatched cycle subagent MAY receive background-completion re-invocation (this is
+undocumented/inconsistent platform behavior — see `ADHOC_BRIEF.md` in
+`docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke`), so "the process
+tree is torn down" is no longer the sole reason to never background a long gate here. The rule is
+now ALSO enforced MECHANICALLY (the `cycle-subagent-bg-gate-guard.sh` PreToolUse hook denies the
+launch outright) AND backed by the Gap-2 discriminator — `lazy_core.execute_plan_liveness` /
+`--execute-plan-liveness` — which lets the orchestrator tell a genuinely-paused run apart from a
+dead one on the rare occasion a background-completion notification does arrive.
+
 **The gate — drive every in-flight item to a terminal result, then consume it, before your
 final message:**
 
@@ -27,7 +37,10 @@ final message:**
   Do NOT reach for the aggregate at all — run its individual under-cap sub-components
   synchronously in the foreground instead (each sub-check drives to a real pass/fail within the
   cap). Never background a long gate from inside a dispatched agent, whose process tree is torn
-  down when its turn ends.
+  down when its turn ends. **This is now MECHANICALLY enforced for cycle subagents:** the
+  PreToolUse hook `cycle-subagent-bg-gate-guard.sh` denies a `run_in_background: true`
+  gate/test-suite launch from inside an armed cycle subagent at the tool layer, redirecting to
+  this foreground-await mandate.
 - **Inner agent dispatch** → dispatch-and-AWAIT: the child's final report arrives as the
   `Agent` tool call's own result — consume it directly. NEVER dispatch asynchronously and end
   your turn expecting a message, watcher, or notification to bring the result back.

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke
-status: Ready
+status: Complete
 created: 2026-07-19
 complexity: mechanical
 phases: [3]
@@ -67,8 +67,8 @@ python3 ~/.claude/scripts/validate-plan.py --structural <this-plan-file>        
 
 ## Work Units
 
-- [ ] WU-1 — prose hardening: point the foreground-await mandate at the mechanical guard + annotate the re-invocation contradiction (component files)
-- [ ] WU-2 — CLAUDE.md Hooks-table row for the new guard + doc-drift consistency
+- [x] WU-1 — prose hardening: point the foreground-await mandate at the mechanical guard + annotate the re-invocation contradiction (component files)
+- [x] WU-2 — CLAUDE.md Hooks-table row for the new guard + doc-drift consistency
 
 ## Execution Schedule
 

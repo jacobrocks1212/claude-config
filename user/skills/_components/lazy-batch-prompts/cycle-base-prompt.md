@@ -654,7 +654,9 @@ TURN-END CONTRACT (HARD — read LAST because it is checked LAST):
      Run its individual UNDER-cap sub-components synchronously in the foreground
      instead (each drives to a real pass/fail within the cap). Never background a
      long gate from inside this cycle subagent — its process tree is torn down
-     when your turn ends.
+     when your turn ends. This is now MECHANICALLY enforced — a PreToolUse guard
+     (`cycle-subagent-bg-gate-guard.sh`) denies a `run_in_background` long-gate/
+     test-suite launch from inside an armed cycle subagent, redirecting here.
   2. ATOMIC GATE+COMMIT (R5): launch any long gate/test/build as ONE chained
      command that carries its own commit —
      `<gate> && git add <your changed paths> && git commit -m "..." && git push`
@@ -720,7 +722,9 @@ TURN-END CONTRACT (HARD — read LAST because it is checked LAST):
      Run its individual UNDER-cap sub-components synchronously in the foreground
      instead (each drives to a real pass/fail within the cap). Never background a
      long gate from inside this cycle subagent — its process tree is torn down
-     when your turn ends.
+     when your turn ends. This is now MECHANICALLY enforced — a PreToolUse guard
+     (`cycle-subagent-bg-gate-guard.sh`) denies a `run_in_background` long-gate/
+     test-suite launch from inside an armed cycle subagent, redirecting here.
   2. ATOMIC GATE+COMMIT (R5): launch any long gate/test/build as ONE chained
      command that carries its own commit+push —
      `<gate> && git add <your changed paths> && git commit -m "..." && git push`

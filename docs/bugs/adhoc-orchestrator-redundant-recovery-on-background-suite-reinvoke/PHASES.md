@@ -1,5 +1,7 @@
 # Implementation Phases — Orchestrator Redundant-Recovery on Background-Suite Re-invoke
 
+**Status:** In-progress
+
 > Phases for [`SPEC.md`](./SPEC.md)
 
 **MCP runtime:** not-required — the entire deliverable is claude-config harness surface (orchestrator skill prose, a stdlib-Python `lazy_core` discriminator + its two state-script CLI flags, one new PreToolUse shell hook + its settings registration, and unit tests). No app integration, audio, UI, or MCP-reachable surface exists in this repo — structurally outside MCP reach per `docs/features/mcp-testing/SPEC.md`'s untestable classes (build/tooling/docs-only). Verification is the repo's own deterministic gate battery (pytest + lint/projection + doc-drift-lint + parity audit).
@@ -166,11 +168,11 @@ other part-1 gates are green.
 **Scope:** Point the prose foreground-await mandate at the now-existing mechanical guard, resolve/annotate the `turn-end-gate.md` re-invocation contradiction, add the new hook's CLAUDE.md Hooks-table row, add the `dispatched-agent-liveness.md` cross-ref, and re-project + lint so all doc-drift/parity/CLI-surface gates stay green.
 
 **Deliverables:**
-- [ ] `cycle-base-prompt.md` turn-end §1 (both feature+bug and cloud variants — verified at L648–657 and L710–722): add that the ban is now mechanically enforced (a PreToolUse guard denies a backgrounded long gate inside a cycle subagent), keeping the foreground-await instruction as the positive path.
-- [ ] `turn-end-gate.md`: reference the mechanical guard at L23–30 (over-cap prevention), and annotate the L13–18 deterrent — note that dispatched cycle subagents MAY in practice receive background-completion re-invocation (undocumented/inconsistent, per `ADHOC_BRIEF.md`), so the mandate no longer rests on the "process tree is torn down" premise alone; it is enforced by the guard AND backed by the Gap-2 discriminator.
-- [ ] `CLAUDE.md` (root) Hooks table: add the `cycle-subagent-bg-gate-guard.sh` row (Trigger: PreToolUse Bash|PowerShell; Purpose: denies a `run_in_background` long-gate/test-suite launch inside an armed cycle subagent; fail-OPEN), and state the three-guard delineation from Phase 2's notes. Keep the table consistent with `settings.json` (doc-drift-lint cross-checks it).
-- [ ] `dispatched-agent-liveness.md`: one-line cross-ref that the Gap-2 discriminator now wires the authoritative-signal recipe into the orchestrator's awaited-`Agent`-result path (previously notification-path only).
-- [ ] Re-project + lint: `python ~/.claude/scripts/project-skills.py`, `python ~/.claude/scripts/lint-skills.py --check-projected --check-capabilities`, `python3 user/scripts/doc-drift-lint.py --repo-root .`, `python3 user/scripts/cli_surface_gen.py --check`, `python3 user/scripts/lazy_parity_audit.py --repo-root .` — all clean.
+- [x] `cycle-base-prompt.md` turn-end §1 (both feature+bug and cloud variants — verified at L648–657 and L710–722): add that the ban is now mechanically enforced (a PreToolUse guard denies a backgrounded long gate inside a cycle subagent), keeping the foreground-await instruction as the positive path.
+- [x] `turn-end-gate.md`: reference the mechanical guard at L23–30 (over-cap prevention), and annotate the L13–18 deterrent — note that dispatched cycle subagents MAY in practice receive background-completion re-invocation (undocumented/inconsistent, per `ADHOC_BRIEF.md`), so the mandate no longer rests on the "process tree is torn down" premise alone; it is enforced by the guard AND backed by the Gap-2 discriminator.
+- [x] `CLAUDE.md` (root) Hooks table: add the `cycle-subagent-bg-gate-guard.sh` row (Trigger: PreToolUse Bash|PowerShell; Purpose: denies a `run_in_background` long-gate/test-suite launch inside an armed cycle subagent; fail-OPEN), and state the three-guard delineation from Phase 2's notes. Keep the table consistent with `settings.json` (doc-drift-lint cross-checks it).
+- [x] `dispatched-agent-liveness.md`: one-line cross-ref that the Gap-2 discriminator now wires the authoritative-signal recipe into the orchestrator's awaited-`Agent`-result path (previously notification-path only).
+- [x] Re-project + lint: `python ~/.claude/scripts/project-skills.py`, `python ~/.claude/scripts/lint-skills.py --check-projected --check-capabilities`, `python3 user/scripts/doc-drift-lint.py --repo-root .`, `python3 user/scripts/cli_surface_gen.py --check`, `python3 user/scripts/lazy_parity_audit.py --repo-root .` — all clean.
 
 **Completion (gate-owned):** the `__mark_fixed__` gate flips SPEC.md `**Status:**` to `Fixed`, writes `FIXED.md`, and archives the bug dir once the validation tail passes — never authored as a checkbox row here.
 
@@ -190,3 +192,42 @@ other part-1 gates are green.
 **Testing Strategy:** Run the repo's doc/lint gate battery (project-skills, lint-skills `--check-projected`, doc-drift-lint, cli_surface_gen `--check`, lazy_parity_audit) — all exit 0. These deterministically prove the docs match the shipped hook/flag and the coupled pairs stayed in sync.
 
 **Integration Notes for Next Phase:** Terminal phase — when this lands, set the top-level PHASES `**Status:**` to `In-progress` (implementation done, validation pending) and let the state machine route to the validation tail. The `__mark_fixed__` gate owns the terminal `Fixed` flip + `FIXED.md` + archive.
+
+---
+
+#### Implementation Notes (part 2 — Phase 3 landed 2026-07-19)
+
+Plan part 2 (`plans/all-phases-recovery-discriminator-part-2.md`) complete. Executed with ONE
+Sonnet sub-subagent dispatch for WU-1 (component prose, batch file-disjoint from WU-2) + WU-2
+done inline by the orchestrator (CLAUDE.md is on the orchestrator's directly-editable list). No
+TDD split — pure prose/doc edits, verified by the deterministic gate battery, per the plan's own
+`TDD: no` classification.
+
+- **WU-1 (prose hardening):** `cycle-base-prompt.md` turn-end §1 — both occurrences (L648–657
+  feature+bug workstation variant, L710–722 cloud variant) now note the ban is mechanically
+  enforced by `cycle-subagent-bg-gate-guard.sh`, with the original foreground-await instruction
+  kept intact (augmented, not replaced). Both occurrences are textually identical (parity-relevant).
+  `turn-end-gate.md`: added a mechanical-guard reference at the over-cap-prevention bullet (former
+  L23–30), and a new annotation paragraph after the "Why this is structural" premise (former L13–18)
+  noting cycle subagents MAY in practice receive background-completion re-invocation
+  (undocumented/inconsistent, per `ADHOC_BRIEF.md`) — the mandate no longer rests on the teardown
+  premise alone; it is now ALSO enforced mechanically AND backed by the Gap-2
+  `execute_plan_liveness` discriminator. `dispatched-agent-liveness.md`: one new bullet under "The
+  AUTHORITATIVE completion signal" cross-referencing that the Gap-2 discriminator now wires this
+  component's recipe into the orchestrator's awaited-`Agent`-result path, not just notification-path.
+- **WU-2 (CLAUDE.md Hooks-table row):** added a new row for `cycle-subagent-bg-gate-guard.sh`
+  between the `long-build-ownership-guard.sh` and `build-queue-enforce.sh` rows (matching
+  registration order in `settings.json`), stating the three-guard delineation (this guard =
+  backgrounded gate/test-SUITE class inside cycle subagents; `long-build-ownership-guard.sh` =
+  exact long-BUILD invocations request-time; `lazy-cycle-containment.sh` = routing/lifecycle ops)
+  and a cross-ref to the Gap-2 discriminator.
+- **Gate battery (all exit 0):** `project-skills.py` (91 skills, 102 components, 0 errors, 3
+  repos), `lint-skills.py --check-projected --check-capabilities`, `doc-drift-lint.py --repo-root .`
+  (5 checks, 0 drift findings, 2 pre-existing exempted divergences unrelated to this change),
+  `lazy_parity_audit.py --repo-root .`, `cli_surface_gen.py --check`, `validate-plan.py --structural`
+  on this plan file — clean.
+- **Bug pipeline terminal state:** this was the LAST phase (3 of 3). Top-level PHASES `**Status:**`
+  set to `In-progress` (added — this PHASES.md previously had no top-level Status line; backfilled
+  per the sibling-bug convention, e.g. `decision-11-dispatch-time-forward-advance/PHASES.md`).
+  Implementation is done across all 3 phases; validation tail (`/mcp-test` — N/A per `MCP runtime:
+  not-required` — then `__mark_fixed__`) is next, owned by the state machine.
