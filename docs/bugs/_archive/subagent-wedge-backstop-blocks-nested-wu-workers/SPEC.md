@@ -10,6 +10,8 @@ written_by: harden-harness
 # SubagentStop wedge-backstop false-fires on nested execute-plan WU workers — the predicate is cycle-scoped but not AGENT-scoped
 
 **Status:** Fixed (root cause proven; recommended **Option A shipped** in commit `5312b9db`,
+**Fixed:** 2026-07-19
+**Fix commit:** 7e3bb229
 hardening Round 109, and PROVISIONALLY accepted — see
 `docs/specs/turn-routing-enforcement/NEEDS_INPUT_PROVISIONAL_2026-07-19-wedge-backstop-integrator-vs-worker-identity.md`,
 decision `wedge-backstop-integrator-vs-worker-identity`, ratification-pending). Round 108

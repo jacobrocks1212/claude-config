@@ -17,7 +17,7 @@ false-fire facet of the `subagent-wedge-backstop.sh` `SubagentStop` predicate. D
 `hydra-overlay` phase-8.5 `execute-plan` cycle the hook BLOCKED **3 correctly-scoped, non-committing
 WU sub-subagents** (great-grandchildren the cycle integrator dispatched via the workstation
 sub-subagent split). Root cause is CONCLUDED and reproduced —
-`docs/bugs/subagent-wedge-backstop-blocks-nested-wu-workers/SPEC.md`.
+`docs/bugs/_archive/subagent-wedge-backstop-blocks-nested-wu-workers/SPEC.md`.
 
 This is a DISTINCT axis from the two prior facets, both already FIXED:
 - Round 99 (`adhoc-subagent-wedge-hook-overfires-globs-all-plans`) scoped the **plan-WU** half to
