@@ -603,15 +603,21 @@ Hard contract (sentinel + git hygiene + cloud push + report):
      before each `git commit`/`git push`; if it drifted, STOP and report.
   3. COMMIT + PUSH EACH BATCH (cloud durability) — the container is reclaimed on
      inactivity and any UNPUSHED commit is permanently lost, so after EACH batch /
-     work-unit commit IMMEDIATELY `git push origin {work_branch}` (retry a NETWORK
-     error up to 4× with 2s/4s/8s/16s backoff); never defer pushing to cycle end.
+     work-unit commit IMMEDIATELY fetch + fast-forward then `git push origin
+     {work_branch}`; never defer pushing to cycle end. Retry a failed push —
+     whether a transient NETWORK error OR a non-fast-forward rejection caused by a
+     concurrent writer landing on {work_branch} mid-cycle — by re-fetching +
+     fast-forwarding and re-pushing, bounded (a few attempts, e.g. 4× with
+     2s/4s/8s/16s backoff), then STOP and report.
      The commit policy is whatever is ON DISK at
      .claude/skill-config/commit-policy.md: `Read` that file and observe its
      contents before asserting ANY rule from it; NEVER assert its contents from
      memory, and an ABSENT file is NOT a policy. Absent the file, the standing
      default is commit + push to {work_branch}; NEVER skip a required commit on the
-     basis of an unread or absent policy. Never force-push (a non-fast-forward
-     rejection → STOP and report).
+     basis of an unread or absent policy. NEVER force-push — resolve a
+     non-fast-forward rejection by fetch + fast-forward + bounded retry (above),
+     never `--force`/`-f`/`--force-with-lease` (the `git_safe_push` fetch+ff-then-
+     push contract in `lazy_core/runtimeplane.py`).
   4. REPORT — one paragraph (≤8 lines): state advanced, files modified, whether
      work is committed+pushed (or "no commit"), any `⚖ policy:` lines, and any
      issues. NO commit sha. On any cycle that COULD write NEEDS_INPUT.md (/spec,
@@ -651,9 +657,13 @@ TURN-END CONTRACT (HARD — read LAST because it is checked LAST):
      when your turn ends.
   2. ATOMIC GATE+COMMIT (R5): launch any long gate/test/build as ONE chained
      command that carries its own commit —
-     `<gate> && git add -A && git commit -m "..." && git push` — so even an
-     interrupted turn leaves committed, pushed state. This is the final action of
-     each /execute-plan batch and of plan-part completion.
+     `<gate> && git add <your changed paths> && git commit -m "..." && git push`
+     — so even an interrupted turn leaves committed, pushed state. This is the
+     final action of each /execute-plan batch and of plan-part completion. Stage
+     ONLY the paths YOU changed (pathspec-scoped) — NEVER a blanket `git add -A`,
+     which under a shared worktree can absorb a concurrent writer's staged files
+     into your commit. The push follows the fetch+ff-then-push + bounded non-ff
+     retry contract (item 3 above / `git_safe_push`), NEVER `--force`.
 
   **Concurrent-writer awareness:** other agents may be working this same
   worktree/branch concurrently — an unexpected commit / moved HEAD is expected,
@@ -701,9 +711,13 @@ TURN-END CONTRACT (HARD — read LAST because it is checked LAST):
      when your turn ends.
   2. ATOMIC GATE+COMMIT (R5): launch any long gate/test/build as ONE chained
      command that carries its own commit+push —
-     `<gate> && git add -A && git commit -m "..." && git push` — so even an
-     interrupted turn leaves committed, pushed state. This is the final action of
-     each /execute-plan batch and of plan-part completion.
+     `<gate> && git add <your changed paths> && git commit -m "..." && git push`
+     — so even an interrupted turn leaves committed, pushed state. This is the
+     final action of each /execute-plan batch and of plan-part completion. Stage
+     ONLY the paths YOU changed (pathspec-scoped) — NEVER a blanket `git add -A`,
+     which under a shared worktree can absorb a concurrent writer's staged files
+     into your commit. The push follows the fetch+ff-then-push + bounded non-ff
+     retry contract (item 3 above / `git_safe_push`), NEVER `--force`.
 
   **Concurrent-writer awareness:** other agents may be working this same
   worktree/branch concurrently — an unexpected commit / moved HEAD is expected,

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: concurrent-worktree-agent-coordination
-status: In-progress
+status: Complete
 complexity: complex
 created: 2026-07-18
 phases: [2]
@@ -60,7 +60,7 @@ Where this plan's repo uses non-default gates (claude-config is a harness-config
 
 - [x] WU-1 — Git-safety push helper (fetch+ff, bounded non-ff retry, never --force)
 - [x] WU-2 — Process-friction carve-out for sanctioned concurrent-writer commits
-- [ ] WU-3 — Cycle-commit prose: fetch+ff-then-push + pathspec-scoped staging
+- [x] WU-3 — Cycle-commit prose: fetch+ff-then-push + pathspec-scoped staging
 
 ### Phase: concurrent-worktree-agent-coordination P2 — Git safety
 

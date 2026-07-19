@@ -40,3 +40,13 @@
 - **TERTIARY descoped:** the plan listed an optional `lazy-state.py` in-file `--test` `[process-friction]` fixture. Descoped this batch (would force a byte-pinned baseline regen for coverage the deterministic `test_markers.py` unit tests already provide) — `lazy-state.py` + `tests/baselines/` left untouched.
 **Verification (independent orchestrator re-run):** `pytest test_runtimeplane.py test_markers.py` 347 passed; full `pytest tests/test_lazy_core/` 1261 passed; `lazy-state.py --test` + `bug-state.py --test` PASS; `lazy_parity_audit.py --repo-root .` exit 0.
 **Files modified (Batch 1):** `user/scripts/lazy_core/runtimeplane.py`, `user/scripts/lazy_core/__init__.py`, `user/scripts/lazy_core/markers.py`, `user/scripts/tests/test_lazy_core/test_runtimeplane.py`, `user/scripts/tests/test_lazy_core/test_markers.py`.
+
+#### Implementation Notes (Phase 2 — Batch 2: WU-3, prose)
+**Completed:** 2026-07-18 (orchestrator-inline; prose is not a source/test file). Phase 2 complete.
+**Work completed:**
+- Updated both R5 ATOMIC GATE+COMMIT chains in `cycle-base-prompt.md` (workstation @~660 + cloud @~714 turn-end sections): `git add -A` → `git add <your changed paths>` with pathspec-scoped-staging guidance ("stage ONLY the paths YOU changed — NEVER a blanket `git add -A`, which under a shared worktree can absorb a concurrent writer's staged files into your commit"), and pointed the push at the fetch+ff-then-push + bounded non-ff retry contract, never `--force`.
+- Folded the pre-existing network-retry note (the "COMMIT + PUSH EACH BATCH (cloud durability)" item): the push is now "fetch + fast-forward then `git push`", and a failed push — transient NETWORK error OR a non-fast-forward rejection from a concurrent writer — is resolved by the SAME bounded re-fetch+ff+re-push retry (then STOP and report). The former "Never force-push (non-ff → STOP and report)" clause became "resolve a non-ff rejection by fetch+ff+bounded retry, never `--force`/`-f`/`--force-with-lease` (the `git_safe_push` contract)".
+**Integration notes:**
+- Branch-guard (R10 work-branch re-assert before each commit/push) and R5 atomicity (gate+commit+push in one chained job) are intact — the edits only changed the staging pathspec and the push/retry semantics, not the chain's atomicity or the branch guard.
+- `project-skills.py` re-projected + `lint-skills.py` clean after the component edit.
+**Files modified (Batch 2):** `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` (+ regenerated `skills-projected/`).

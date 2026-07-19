@@ -11683,6 +11683,90 @@ def run_smoke_tests() -> int:
             dym_ok = False
     print(f"  {'PASS' if dym_ok else 'FAIL'} [{dym_name}]")
 
+    # -------------------------------------------------------------------
+    # concurrent-worktree-agent-coordination WU-2 (SPEC Requirement 2): the
+    # concurrent_writer_commits carve-out, end-to-end through the REAL
+    # --cycle-begin / --cycle-end CLI path (not just the pure
+    # detect_cycle_bracket_friction unit — those live in
+    # tests/test_lazy_core/test_markers.py). Two legitimate execute-plan
+    # commits are made under the repo's OWN configured committer email
+    # ("t@t"); three MORE commits are made under a DIFFERENT committer email
+    # ("concurrent@writer.example") to simulate a sanctioned concurrent
+    # writer. Budget (execute-plan, no plan file → table budget
+    # _CYCLE_COMMIT_MULTI(3) + _CYCLE_COMMIT_NOISE_ALLOWANCE(1) = 4).
+    # commits_since = 5 (over budget on its own), but
+    # _count_concurrent_writer_commits attributes the 3 differing-email
+    # commits away, leaving a chargeable count of 2 — well within budget —
+    # so --cycle-end must report NO process_friction key.
+    # -------------------------------------------------------------------
+    fix_cwc = "concurrent-writer-commits-carve-out"
+    cwc_ok = True
+    try:
+        cwc_state = td_path / "cwc-state"
+        cwc_state.mkdir(parents=True, exist_ok=True)
+        cwc_repo = td_path / "cwc-repo"
+        cwc_repo.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "-C", str(cwc_repo), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(cwc_repo), "config", "user.email", "t@t"], check=True)
+        subprocess.run(["git", "-C", str(cwc_repo), "config", "user.name", "t"], check=True)
+        subprocess.run(["git", "-C", str(cwc_repo), "config", "commit.gpgsign", "false"], check=True)
+        (cwc_repo / "seed.txt").write_text("seed", encoding="utf-8")
+        subprocess.run(["git", "-C", str(cwc_repo), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(cwc_repo), "commit", "-q", "-m", "seed"], check=True)
+        cwc_env = {k: v for k, v in os.environ.items()
+                   if k not in ("LAZY_CYCLE_SUBAGENT",)}
+        cwc_env["LAZY_STATE_DIR"] = str(cwc_state)
+        cwc_env["LAZY_ORCHESTRATOR"] = "1"
+        r = subprocess.run(
+            [sys.executable, _this_script, "--cycle-begin",
+             "--feature-id", "feat-cwc", "--nonce", "beef",
+             "--sub-skill", "execute-plan",
+             "--repo-root", str(cwc_repo)],
+            capture_output=True, text=True, env=cwc_env,
+        )
+        if r.returncode != 0:
+            failures.append(f"[{fix_cwc}] --cycle-begin must exit 0; got {r.returncode}: {r.stderr}")
+            cwc_ok = False
+        # Two OWN commits (this cycle's own dispatch, same configured identity).
+        for i in range(2):
+            (cwc_repo / f"own{i}.txt").write_text(f"own{i}", encoding="utf-8")
+            subprocess.run(["git", "-C", str(cwc_repo), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(cwc_repo), "commit", "-q", "-m", f"own{i}"], check=True)
+        # Three CONCURRENT-WRITER commits (a different committer identity).
+        for i in range(3):
+            (cwc_repo / f"conc{i}.txt").write_text(f"conc{i}", encoding="utf-8")
+            subprocess.run(["git", "-C", str(cwc_repo), "add", "-A"], check=True)
+            subprocess.run(
+                ["git", "-C", str(cwc_repo),
+                 "-c", "user.email=concurrent@writer.example",
+                 "-c", "user.name=concurrent-writer",
+                 "commit", "-q", "-m", f"conc{i}"],
+                check=True,
+            )
+        r = subprocess.run(
+            [sys.executable, _this_script, "--cycle-end",
+             "--repo-root", str(cwc_repo)],
+            capture_output=True, text=True, env=cwc_env,
+        )
+        if r.returncode != 0:
+            failures.append(f"[{fix_cwc}] --cycle-end must exit 0; got {r.returncode}: {r.stderr}")
+            cwc_ok = False
+        try:
+            cwc_out = json.loads(r.stdout)
+            if "process_friction" in cwc_out:
+                failures.append(
+                    f"[{fix_cwc}] a concurrent-writer HEAD advance must NOT trip "
+                    f"process_friction; got {cwc_out.get('process_friction')!r}"
+                )
+                cwc_ok = False
+        except (json.JSONDecodeError, TypeError):
+            failures.append(f"[{fix_cwc}] --cycle-end stdout must be JSON; got {r.stdout!r}")
+            cwc_ok = False
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"[{fix_cwc}] unexpected error: {exc!r}")
+        cwc_ok = False
+    print(f"  {'PASS' if cwc_ok else 'FAIL'} [{fix_cwc}] concurrent-writer commits suppressed via committer-email carve-out")
+
     if failures:
         print("\nFAILURES:")
         for f in failures:
