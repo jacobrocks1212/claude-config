@@ -1704,6 +1704,7 @@ def detect_cycle_bracket_friction(
     expected_work_branch: str | None = None,
     repo_root: "str | Path | None" = None,
     now: float | None = None,
+    concurrent_writer_commits: int | None = None,
 ) -> dict | None:
     """Detect process-friction at --cycle-end: a torn cycle bracket or unexpected
     commits (hardening-blind-to-process-friction Phase 2, Locked Decision D1).
@@ -1758,6 +1759,22 @@ def detect_cycle_bracket_friction(
             NOT false-positive against the fixed table budget of 3. None → fall back
             to the per-sub_skill table (legacy behavior, never a crash).
         now: unused placeholder for caller symmetry / future timing fields.
+        concurrent_writer_commits: (WU-2, SPEC Requirement 2 — the 2026-07-18
+            false-friction incident) the number of commits within
+            ``commits_since`` attributable to a SANCTIONED CONCURRENT WRITER —
+            a separate session/lane legitimately committing to the same shared
+            worktree/branch mid-cycle (a parallel `/lazy-batch-parallel` lane, a
+            second interactive/scheduled session, a background harden dispatch;
+            see the root CLAUDE.md `<orchestration>` "sanctioned concurrent
+            writers" carve-out). When this is a non-negative int, signal (b)'s
+            budget comparison uses ``max(0, commits_since -
+            concurrent_writer_commits)`` in place of the raw ``commits_since`` —
+            a HEAD advance the concurrent writer caused does not count toward
+            THIS cycle's own runaway budget. When it is ``None``/absent (the
+            default) the branch is BYTE-IDENTICAL to the pre-WU-2 behavior —
+            this is the fail-safe/ambiguous path: an unknown concurrent-writer
+            count must never suppress a genuine runaway, so ambiguity always
+            falls back to comparing the raw ``commits_since`` against budget.
 
     Returns:
         A friction descriptor ``{"reason": <str>, "detail": <str>, ...}`` on the
@@ -1902,13 +1919,33 @@ def detect_cycle_bracket_friction(
                 else _CYCLE_COMMIT_BUDGET_DEFAULT
             )
             budget = base_budget + _CYCLE_COMMIT_NOISE_ALLOWANCE
-        if commits_since > budget:
+        # WU-2 (SPEC Requirement 2): a non-negative int concurrent_writer_commits
+        # attributes part of commits_since to a sanctioned concurrent writer, so
+        # only the REMAINDER counts against this cycle's own runaway budget.
+        # None/absent (ambiguous/unknown) → byte-identical to the raw comparison
+        # — the fail-safe default is to NEVER suppress on an unknown signal.
+        if (
+            isinstance(concurrent_writer_commits, int)
+            and not isinstance(concurrent_writer_commits, bool)
+            and concurrent_writer_commits >= 0
+        ):
+            chargeable_commits = max(0, commits_since - concurrent_writer_commits)
+        else:
+            chargeable_commits = commits_since
+        if chargeable_commits > budget:
             return {
                 "reason": "unexpected-commits",
                 "detail": (
                     f"HEAD advanced {commits_since} commits since --cycle-begin "
                     f"(begin_head_sha={(begin_head_sha or '')[:12]}, "
-                    f"sub_skill={sub_skill!r}, budget={budget})"
+                    f"sub_skill={sub_skill!r}, budget={budget}"
+                    + (
+                        f", concurrent_writer_commits={concurrent_writer_commits}, "
+                        f"chargeable={chargeable_commits}"
+                        if chargeable_commits != commits_since
+                        else ""
+                    )
+                    + ")"
                 ),
                 "sub_skill": sub_skill,
                 "commits_since": commits_since,
@@ -2037,6 +2074,66 @@ def _count_authored_commits_since(
         return None
 
 
+def _count_concurrent_writer_commits(
+    repo_root: Path, begin_head_sha: str | None
+) -> int | None:
+    """Best-effort count of commits in ``begin_head_sha..HEAD`` attributable to
+    a SANCTIONED CONCURRENT WRITER (concurrent-worktree-agent-coordination WU-2,
+    SPEC Requirement 2 — the 2026-07-18 false-friction incident).
+
+    Signal: a commit's COMMITTER EMAIL differs from THIS repo's own configured
+    committer (``git config user.email``). Any commit this cycle's own dispatch
+    made was authored under the repo's configured git identity (the harness
+    never overrides it per-cycle), so a commit carrying a DIFFERENT committer
+    email is affirmative, deterministic evidence it did NOT come from this
+    cycle. Merges are excluded (mirrors ``_count_authored_commits_since`` —
+    a merge is a branch-integration artifact, never an authored work unit
+    attributable to either party).
+
+    Known limitation (documented, not a defect): a concurrent writer sharing
+    THIS SAME repo's configured git identity — e.g. the operator's own second
+    interactive/scheduled session on this machine, which is exactly the
+    2026-07-18 motivating incident's shape — commits under the identical
+    committer email and is therefore invisible to this signal; those commits
+    correctly contribute 0 (never misattributed), which is the required
+    fail-safe direction (see ``detect_cycle_bracket_friction``'s
+    ``concurrent_writer_commits`` param: an unknown/ambiguous count must never
+    cause suppression). A genuinely distinct committer identity (a teammate, a
+    bot, a differently-configured clone) IS caught.
+
+    Returns:
+        The count of differing-committer, non-merge commits in the range, or
+        ``None`` on ANY degraded read (no begin sha, unreadable git config, a
+        git failure) — mirrors ``_count_authored_commits_since``'s contract:
+        never raises, degrades to None (which disables suppression at the
+        caller), never crashes ``--cycle-end``.
+    """
+    from .runtimeplane import _git  # deferred (runtime/git plane; function-local avoids import cycle)
+    if not begin_head_sha:
+        return None
+    try:
+        cfg_proc = _git(repo_root, "config", "user.email")
+        if cfg_proc.returncode != 0:
+            return None
+        own_email = (cfg_proc.stdout or "").strip()
+        if not own_email:
+            return None
+        log_proc = _git(
+            repo_root, "log", "--no-merges", "--format=%ae",
+            f"{begin_head_sha}..HEAD",
+        )
+        if log_proc.returncode != 0:
+            return None
+        emails = [
+            line.strip()
+            for line in (log_proc.stdout or "").splitlines()
+            if line.strip()
+        ]
+        return sum(1 for email in emails if email != own_email)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
     """--cycle-end I/O wiring (hardening-blind-to-process-friction Phase 2 / D1).
 
@@ -2122,6 +2219,12 @@ def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
     current_branch = current_branch_snapshot(root)
     expected_work_branch = (live_run or {}).get("work_branch")
 
+    # WU-2 (SPEC Requirement 2): best-effort concurrent-writer attribution —
+    # see _count_concurrent_writer_commits for the signal + its documented
+    # limitation. Degrades to None on ANY read failure, which is the required
+    # fail-safe default at the detector (no suppression on an unknown signal).
+    concurrent_writer_commits = _count_concurrent_writer_commits(root, begin_head_sha)
+
     descriptor = detect_cycle_bracket_friction(
         marker,
         current_run_started_at=current_run_started_at,
@@ -2132,6 +2235,7 @@ def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
         current_branch=current_branch,
         expected_work_branch=expected_work_branch,
         repo_root=root,
+        concurrent_writer_commits=concurrent_writer_commits,
     )
 
     # (5) log the friction as hardening debt (fail-open).

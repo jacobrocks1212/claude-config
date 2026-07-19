@@ -2485,6 +2485,82 @@ def git_guard_status(repo_root: Path) -> dict:
     }
 
 
+def git_safe_push(repo_root, *, branch=None, remote="origin", run=None,
+                   sleep=None, max_retries=3) -> dict:
+    """Fetch + fast-forward + push, bounded-retrying a rejected push, and
+    NEVER composing a force flag (SPEC Requirement 2 — git safety).
+
+    Each attempt runs ``fetch <remote>`` then ``merge --ff-only
+    <remote>/<branch>`` (never a rebase/merge that could invent a commit
+    from nothing, and never ``--force``/``-f``/``--force-with-lease`` on
+    the push itself) before pushing. A rejected/failed push re-fetches and
+    re-fast-forwards before the next attempt — the safe response to a race
+    with another writer is "catch up and retry", never "clobber the
+    remote". Bounded at ``max_retries`` push attempts; on exhaustion this
+    returns a structured ``conflict`` result rather than looping forever or
+    raising.
+
+    Best-effort and never raises: mirrors ``git_guard_status``'s
+    catch-and-report-safe-default contract — an ``OSError`` /
+    ``subprocess.SubprocessError`` from ``run`` (missing git binary,
+    timeout, ...) is caught and reported as a structured ``conflict``
+    result instead of propagating.
+
+    Args:
+        repo_root: the repo to operate on (bound into the default ``run``,
+            which shells out via ``_git(repo_root, *args)``).
+        branch: the branch name to fast-forward + push. ``None`` resolves
+            the current branch via ``rev-parse --abbrev-ref HEAD``.
+        remote: the git remote name (default ``"origin"``).
+        run: injectable ``run(*args) -> CompletedProcess``-shape callable,
+            invoked with the git subcommand args only — the same
+            injected-seam convention as ``probe_binary_capability``'s
+            ``run``. ``None`` binds the real default.
+        sleep: injectable single-arg sleep callable for the inter-retry
+            backoff. ``None`` binds the real ``time.sleep``.
+        max_retries: the bound on push ATTEMPTS across the whole call — the
+            loop makes at most this many push calls before giving up.
+
+    Returns:
+        ``{"status": "pushed", "retried": <int>}`` on a successful push,
+        where ``retried`` is the 0-based attempt index the push succeeded
+        at (0 when the very first attempt succeeds — no retry needed); or
+        ``{"status": "conflict", "retried": <max_retries>, "stderr": <str>}``
+        when every attempt was rejected/failed.
+    """
+    if run is None:
+        def run(*args):
+            return _git(repo_root, *args)
+    if sleep is None:
+        sleep = time.sleep
+
+    try:
+        if branch is None:
+            head = run("rev-parse", "--abbrev-ref", "HEAD")
+            branch = (getattr(head, "stdout", "") or "").strip() or "HEAD"
+
+        last_result = None
+        for attempt in range(max_retries):
+            run("fetch", remote)
+            run("merge", "--ff-only", f"{remote}/{branch}")
+            last_result = run("push", remote, branch)
+            if getattr(last_result, "returncode", 1) == 0:
+                return {"status": "pushed", "retried": attempt}
+            if attempt + 1 < max_retries:
+                sleep(min(2 ** attempt, 30))
+
+        return {
+            "status": "conflict",
+            "retried": max_retries,
+            "stderr": getattr(last_result, "stderr", "") or "",
+        }
+    except (OSError, subprocess.SubprocessError) as exc:
+        # Never propagate — an invocation failure is reported the same
+        # shape as a push conflict (best-effort, matches _git's callers'
+        # own wrap contract).
+        return {"status": "conflict", "retried": 0, "stderr": str(exc)}
+
+
 # ---------------------------------------------------------------------------
 # Phase 1 (lazy-cycle-containment, C8) — Self-edit reload discipline.
 #

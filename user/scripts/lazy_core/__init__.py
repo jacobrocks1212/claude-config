@@ -557,6 +557,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "_git": "runtimeplane",
     "git_guard_status": "runtimeplane",
     "git_head_short_sha": "runtimeplane",
+    "git_safe_push": "runtimeplane",
     "governing_files_touched": "runtimeplane",
     "self_edit_mode": "runtimeplane",
     # Phase 5 WU-3: cycle-header formatter + prompt-registry constants.

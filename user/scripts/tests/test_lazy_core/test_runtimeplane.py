@@ -4125,6 +4125,147 @@ def test_reconcile_non_git_tree_is_noop_fail_open():
         assert result["reconciled"] is False, f"non-git → no-op; got {result!r}"
 
 
+# ---------------------------------------------------------------------------
+# git_safe_push (net-new — RED until lazy_core/runtimeplane.py implements it).
+#
+# SPEC Requirement 2 (Git safety): "fetch + fast-forward before every push;
+# bounded push-retry on a non-ff rejection (never --force)". Validation row 2:
+# "Fetch+ff+retry succeeds; no --force; bounded attempts."
+#
+# Hermetic via an injected `run(*args)` (the _git(repo_root, *args) shape,
+# called with the git args only — mirrors probe_binary_capability's injected
+# `run` above) and an injected `sleep` recorder so retries never really sleep.
+# ---------------------------------------------------------------------------
+
+class _FakeGitCompleted:
+    """subprocess.CompletedProcess stand-in carrying stdout/stderr — the
+    module-level _FakeCompleted above (used by the probe_binary_capability
+    fixtures) only carries .returncode, so git_safe_push's non-ff-rejection
+    detection (which inspects stderr) needs this local twin with the same
+    minimal-stand-in style."""
+
+    def __init__(self, returncode, stdout="", stderr=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+_NON_FF_REJECTION_STDERR = (
+    "To github.com/example/repo.git\n"
+    " ! [rejected]        main -> main (non-fast-forward)\n"
+    "error: failed to push some refs to 'github.com/example/repo.git'\n"
+)
+
+
+def _make_git_safe_push_fake(push_results):
+    """Build a fake run(*args) for git_safe_push tests.
+
+    push_results: list of _FakeGitCompleted returned on successive PUSH
+    invocations (in call order); once exhausted the LAST entry repeats (so a
+    single-element list models "every push attempt is rejected"). Every
+    non-push invocation (fetch / merge / rebase fast-forward) unconditionally
+    succeeds (returncode 0) — these fixtures model the retry trigger solely
+    via the push outcome, per the SPEC's non-ff-rejection contract.
+
+    Returns (run, calls): `calls` records every composed argv tuple, in
+    order, for both the never-force scan and the fetch-before-retry ordering
+    assertion.
+    """
+    calls = []
+    state = {"push_n": 0}
+
+    def run(*args):
+        calls.append(args)
+        if "push" in args:
+            idx = min(state["push_n"], len(push_results) - 1)
+            state["push_n"] += 1
+            return push_results[idx]
+        return _FakeGitCompleted(0, "", "")
+
+    return run, calls
+
+
+def test_git_safe_push_retry_then_succeed():
+    """(a) Retry-then-succeed: a non-fast-forward REJECTION on the FIRST push
+    attempt followed by SUCCESS on the second → status 'pushed', retried == 1.
+    Also asserts the fetch+ff demonstrably ran again BEFORE the retried push
+    (a git call carrying 'fetch' appears strictly between the two push
+    calls' argv)."""
+    _guard()
+    run, calls = _make_git_safe_push_fake([
+        _FakeGitCompleted(1, "", _NON_FF_REJECTION_STDERR),
+        _FakeGitCompleted(0, "", ""),
+    ])
+    sleeps = []
+
+    with tempfile.TemporaryDirectory() as td:
+        result = lazy_core.git_safe_push(
+            Path(td), branch="main", remote="origin",
+            run=run, sleep=lambda s: sleeps.append(s), max_retries=3,
+        )
+
+    assert result["status"] == "pushed", result
+    assert result["retried"] == 1, result
+
+    push_indices = [i for i, c in enumerate(calls) if "push" in c]
+    assert len(push_indices) == 2, f"expected exactly 2 push attempts: {calls}"
+    between = calls[push_indices[0] + 1: push_indices[1]]
+    assert any("fetch" in c for c in between), (
+        f"no re-fetch between the rejected push and the retried push: {calls}"
+    )
+
+
+def test_git_safe_push_never_composes_force():
+    """(b) Never force: across EVERY attempt composed by git_safe_push —
+    including the retried push, so the retry path's argv is inspected too —
+    no argv may contain --force, -f, or --force-with-lease."""
+    _guard()
+    run, calls = _make_git_safe_push_fake([
+        _FakeGitCompleted(1, "", _NON_FF_REJECTION_STDERR),
+        _FakeGitCompleted(0, "", ""),
+    ])
+
+    with tempfile.TemporaryDirectory() as td:
+        result = lazy_core.git_safe_push(
+            Path(td), branch="main", remote="origin",
+            run=run, sleep=lambda s: None, max_retries=3,
+        )
+
+    assert result["status"] == "pushed", result
+    assert result["retried"] >= 1, "fixture must exercise the retry path"
+
+    forbidden = {"--force", "-f", "--force-with-lease"}
+    for argv in calls:
+        hit = forbidden.intersection(argv)
+        assert not hit, f"forbidden force flag {hit} composed in argv {argv!r}"
+
+
+def test_git_safe_push_bounded_retry_returns_structured_conflict():
+    """(c) Bounded retry / structured conflict: a non-ff rejection on EVERY
+    push attempt must bound the retries at max_retries (never loop forever)
+    and return a structured conflict result — never raise, never hang."""
+    _guard()
+    max_retries = 2
+    # Single-entry list ⇒ _make_git_safe_push_fake repeats the rejection on
+    # every push call — "every push attempt is rejected".
+    run, calls = _make_git_safe_push_fake([
+        _FakeGitCompleted(1, "", _NON_FF_REJECTION_STDERR),
+    ])
+
+    with tempfile.TemporaryDirectory() as td:
+        result = lazy_core.git_safe_push(
+            Path(td), branch="main", remote="origin",
+            run=run, sleep=lambda s: None, max_retries=max_retries,
+        )
+
+    push_indices = [i for i, c in enumerate(calls) if "push" in c]
+    assert len(push_indices) <= max_retries, (
+        f"push attempted {len(push_indices)} times, bound is {max_retries}: {calls}"
+    )
+    assert result["status"] == "conflict", result
+    assert result["retried"] == max_retries, result
+
+
 _TESTS = [
     ("test_bug_state_algobooth_baseline_wellformed", test_bug_state_algobooth_baseline_wellformed),
     ("test_lazy_state_no_plans_real_impl_row_still_write_plan", test_lazy_state_no_plans_real_impl_row_still_write_plan),
@@ -4248,6 +4389,9 @@ _TESTS = [
     ("test_reconcile_fresh_lock_preserved", test_reconcile_fresh_lock_preserved),
     ("test_reconcile_no_lock_is_noop", test_reconcile_no_lock_is_noop),
     ("test_reconcile_non_git_tree_is_noop_fail_open", test_reconcile_non_git_tree_is_noop_fail_open),
+    ("test_git_safe_push_retry_then_succeed", test_git_safe_push_retry_then_succeed),
+    ("test_git_safe_push_never_composes_force", test_git_safe_push_never_composes_force),
+    ("test_git_safe_push_bounded_retry_returns_structured_conflict", test_git_safe_push_bounded_retry_returns_structured_conflict),
 ]
 
 

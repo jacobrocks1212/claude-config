@@ -4005,6 +4005,96 @@ def test_detect_friction_over_budget_commits():
 
 
 
+def test_detect_friction_concurrent_writer_commits_suppressed():
+    """WU-2 (SPEC Requirement 2, Validation row 1 — the 2026-07-18 false-friction
+    incident): a HEAD advance attributable to a CONCURRENT WRITER (a separate
+    sanctioned session committing to `main` mid-cycle) must NOT append an
+    `unexpected-commits` process-friction entry. The new `concurrent_writer_commits`
+    kwarg tells signal (b) how many of `commits_since` are NOT this cycle's own —
+    the comparison against budget becomes
+    `(commits_since - concurrent_writer_commits) > budget`.
+
+    `execute-plan` declares `commit-cadence: multi` (SKILL.md frontmatter), so its
+    derived budget (no `budget_override`) is `_CYCLE_COMMIT_MULTI +
+    _CYCLE_COMMIT_NOISE_ALLOWANCE`. `commits_since` is set to `budget + 3` (over
+    budget on its own), and `concurrent_writer_commits=3` attributes exactly enough
+    of that excess to the concurrent writer that the REMAINDER
+    (`commits_since - concurrent_writer_commits == budget - 1`) sits comfortably
+    within budget.
+
+    RED TODAY: `detect_cycle_bracket_friction` does not yet accept
+    `concurrent_writer_commits` — this call raises TypeError (unexpected keyword
+    argument), the correct RED reason. GREEN after the impl adds the kwarg.
+    """
+    _guard()
+    budget = lazy_core._CYCLE_COMMIT_MULTI + lazy_core._CYCLE_COMMIT_NOISE_ALLOWANCE
+    marker = {
+        "feature_id": "f", "nonce": "n", "run_started_at": "2026-07-18T00:00:00Z",
+        "begin_head_sha": "aaaa1111",
+    }
+    got = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-07-18T00:00:00Z",  # identity intact — isolate signal (b)
+        current_head_sha="bbbb2222",
+        sub_skill="execute-plan",
+        commits_since=budget + 3,
+        concurrent_writer_commits=3,  # remainder = budget - 1, within budget
+    )
+    assert got is None, got
+
+
+def test_detect_friction_genuine_runaway_still_flags_with_zero_concurrent():
+    """WU-2: the SAME shape as the concurrent-writer-suppressed test above, but
+    with `concurrent_writer_commits=0` (no concurrent writer — every excess commit
+    is this cycle's OWN) — the descriptor STILL fires `unexpected-commits`
+    (existing behavior preserved; a genuine runaway is never suppressed).
+
+    RED TODAY for the same reason as the suppressed-case test: the kwarg does not
+    exist yet, so this call also raises TypeError."""
+    _guard()
+    budget = lazy_core._CYCLE_COMMIT_MULTI + lazy_core._CYCLE_COMMIT_NOISE_ALLOWANCE
+    marker = {
+        "feature_id": "f", "nonce": "n", "run_started_at": "2026-07-18T00:00:00Z",
+        "begin_head_sha": "aaaa1111",
+    }
+    got = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-07-18T00:00:00Z",
+        current_head_sha="bbbb2222",
+        sub_skill="execute-plan",
+        commits_since=budget + 3,
+        concurrent_writer_commits=0,  # no concurrent writer — remainder = commits_since, over budget
+    )
+    assert got is not None and got["reason"] == "unexpected-commits", got
+
+
+def test_detect_friction_ambiguous_concurrent_signal_falls_to_existing_behavior():
+    """WU-2: when the concurrent-writer signal is UNKNOWN (the new kwarg omitted
+    entirely — the exact pre-existing call shape), an over-budget `commits_since`
+    STILL fires `unexpected-commits` — an unknown/ambiguous concurrent count does
+    NOT suppress friction (fail-safe toward detecting runaways). This doubles as
+    the backward-compatibility pin: omitting `concurrent_writer_commits` must be
+    byte-identical to today's behavior, so this test is GREEN both before and
+    after the implementation lands."""
+    _guard()
+    budget = lazy_core._CYCLE_COMMIT_MULTI + lazy_core._CYCLE_COMMIT_NOISE_ALLOWANCE
+    marker = {
+        "feature_id": "f", "nonce": "n", "run_started_at": "2026-07-18T00:00:00Z",
+        "begin_head_sha": "aaaa1111",
+    }
+    got = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-07-18T00:00:00Z",
+        current_head_sha="bbbb2222",
+        sub_skill="execute-plan",
+        commits_since=budget + 3,
+        # concurrent_writer_commits omitted — ambiguous/unknown
+    )
+    assert got is not None and got["reason"] == "unexpected-commits", got
+
+
+
+
 def test_detect_friction_branch_divergence():
     """Harden Round 43 (2026-06-29): a cycle that ends on a branch OTHER than the
     run's work_branch self-announces as kind: process-friction reason
@@ -8427,6 +8517,9 @@ _TESTS = [
     ("test_detect_friction_torn_bracket_run_identity_changed", test_detect_friction_torn_bracket_run_identity_changed),
     ("test_detect_friction_torn_bracket_run_marker_now_absent", test_detect_friction_torn_bracket_run_marker_now_absent),
     ("test_detect_friction_over_budget_commits", test_detect_friction_over_budget_commits),
+    ("test_detect_friction_concurrent_writer_commits_suppressed", test_detect_friction_concurrent_writer_commits_suppressed),
+    ("test_detect_friction_genuine_runaway_still_flags_with_zero_concurrent", test_detect_friction_genuine_runaway_still_flags_with_zero_concurrent),
+    ("test_detect_friction_ambiguous_concurrent_signal_falls_to_existing_behavior", test_detect_friction_ambiguous_concurrent_signal_falls_to_existing_behavior),
     ("test_detect_friction_branch_divergence", test_detect_friction_branch_divergence),
     ("test_current_branch_snapshot_degrades_to_none", test_current_branch_snapshot_degrades_to_none),
     ("test_detect_friction_mark_complete_meta_cycle_multi_commit_within_budget", test_detect_friction_mark_complete_meta_cycle_multi_commit_within_budget),
