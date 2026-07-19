@@ -3638,6 +3638,27 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/_archive/merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head/FIXED.md": [
+    {
+      "id": "merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head/GATE_VERDICT.md": [
+    {
+      "id": "merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head/SPEC.md": [
+    {
+      "id": "merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/merged-head-research-exclusion-flag-gated-splits-cross-script/FIXED.md": [
     {
       "id": "external-owner-contracts-locked-without-consultation",
@@ -15315,6 +15336,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/interventions/harden-2026-07-r101.md": [
+    {
+      "id": "merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/harden-2026-07-r14.md": [
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -17445,6 +17473,11 @@
       "id": "merged-head-includes-parked-items-deadlocks-park-run",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "merged-head-research-exclusion-flag-gated-splits-cross-script",
