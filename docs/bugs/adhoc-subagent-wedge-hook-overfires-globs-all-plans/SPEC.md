@@ -3,13 +3,20 @@ kind: bug-investigation
 bug_id: adhoc-subagent-wedge-hook-overfires-globs-all-plans
 severity: P2
 discovered: 2026-07-18
-status: Concluded
+status: Fixed
 written_by: harden-harness
 ---
 
 # SubagentStop wedge-backstop over-fires: counts unchecked WUs in stray plans
 
-**Status:** Concluded
+**Status:** Fixed
+
+**Fix:** `subagent-wedge-backstop.sh::_active_plan_unchecked` now scopes the
+plan-WU signal to ONLY the active cycle's plan (via the cycle marker's
+`sub_skill == execute-plan` + `sub_skill_args`); a non-execute-plan cycle
+resolves no plan and never trips. Two regression tests added. Shipped
+out-of-pipeline via harden Round 99, commit `bd0948bc` (gated: `test_hooks`
+268/268). Receipt provenance: backfilled-unverified (hook fix, no MCP surface).
 
 **Related:** feature `subagent-wedge-backstop-hook` (origin); `user/hooks/CLAUDE.md`;
 `docs/specs/turn-routing-enforcement/` (hardening stage, Round 99); origin — observed live

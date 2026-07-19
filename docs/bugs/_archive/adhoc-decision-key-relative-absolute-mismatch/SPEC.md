@@ -3,13 +3,21 @@ kind: bug-investigation
 bug_id: adhoc-decision-key-relative-absolute-mismatch
 severity: P2
 discovered: 2026-07-18
-status: Concluded
+status: Fixed
 written_by: harden-harness
 ---
 
 # Decision-record sentinel key fails to reconcile relative vs absolute paths
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-18
+**Fix commit:** e48bb502
+
+**Fix:** `lazy_core/ledgers.py::_normalize_sentinel_key` now absolutizes via
+`os.path.abspath` so a relative record key and an absolute lookup key map to one
+key; regression test added. Shipped out-of-pipeline via harden Round 99, commit
+`bd0948bc` (gated: `test_lazy_core` 1255/1255). Receipt provenance:
+backfilled-unverified (script/ledger fix, no MCP surface).
 
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage, Round 99);
 `lazy_core/ledgers.py` decision-record ledger (`--record-decision` / `--emit-dispatch
