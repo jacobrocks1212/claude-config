@@ -8,6 +8,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-19
+**Fixed:** 2026-07-19
+**Fix commit:** 2cd4a3e9
 **Placement:** docs/bugs/adhoc-parity-audit-blind-to-compute-state-routing-branches
 **Related:** `docs/bugs/_archive/bug-state-verification-only-remainder-loops-write-plan` (Round 93 instance), the coupled-pairs contract in root `CLAUDE.md`, `user/scripts/CLAUDE.md` → "Coupling Rule"
 

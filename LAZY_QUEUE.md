@@ -33,7 +33,7 @@
 | | status: Spec · next: spec | | | |
 | 10 | [adhoc-unify-merged-head-coordinator-exemptions](docs/bugs/_archive/adhoc-unify-merged-head-coordinator-exemptions/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 11 | [adhoc-parity-audit-blind-to-compute-state-routing-branches](docs/bugs/adhoc-parity-audit-blind-to-compute-state-routing-branches/SPEC.md) | Spec | — |  |
+| 11 | [adhoc-parity-audit-blind-to-compute-state-routing-branches](docs/bugs/_archive/adhoc-parity-audit-blind-to-compute-state-routing-branches/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
 | 12 | [adhoc-plan-bug-no-guard-for-fixed-annotated-specs](docs/bugs/adhoc-plan-bug-no-guard-for-fixed-annotated-specs/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
