@@ -32,7 +32,7 @@ An unknown/ambiguous attribution must NEVER suppress a genuine runaway. The exte
 
 **Scope:** Introduce the concurrent-activity commit-sha ledger in the shared per-repo-keyed state dir and teach `_count_concurrent_writer_commits` to subtract window commits recorded in it by a DISTINCT run identity — closing the same-identity blind spot at the detector. This phase delivers the full read/consume mechanism with the producer side stubbed (tests seed the ledger directly), so the fix is verifiable before the commit sites are wired.
 
-**Status:** Complete (implementation); validation pending (bug pipeline `__mark_fixed__` gate)
+**Status:** Fixed
 
 **Deliverables:**
 - [x] `lazy_core.ledgers.append_concurrent_commit_sha(sha, *, run_started_at)` — appends one compact JSON line `{sha, run_started_at, ts}` to `claude_state_dir() / lazy-concurrent-activity.jsonl`, reusing `append_deny_ledger_entry`'s exact fail-open plain-append pattern (identity stamped from the live run marker exactly as that helper does; `None`/interactive → `run_started_at: null`). Never raises; returns True/False.
@@ -67,7 +67,7 @@ An unknown/ambiguous attribution must NEVER suppress a genuine runaway. The exte
 
 **Scope:** Wire every script-owned DIRECT-commit site in `lazy_core` to append its produced sha to the concurrent-activity ledger via `append_concurrent_commit_sha`, so a concurrent session's automated archive/mark/flush commits become subtractable at the detector. Best-effort at every site — a ledger-write error can NEVER fail or partial-abort a commit.
 
-**Status:** Complete (implementation); validation pending (bug pipeline `__mark_fixed__` gate)
+**Status:** Complete
 
 **Deliverables:**
 - [x] Grep audit: `grep -rn '"commit"' user/scripts/lazy_core/*.py` (excluding tests) returns EXACTLY two direct-commit sites — `gates.py:2296` (`archive_fixed`) and `ledgers.py` `flush_commit_artifacts` (the commit line shifted from 4025→4124 as WU-1 added helper lines above it). No additional direct-commit site exists; `apply_pseudo`/`reorder_queue`/`sync_deps` make no direct commit (the orchestrator commits their output). The instrumentation set is complete.

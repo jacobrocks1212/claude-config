@@ -5,7 +5,7 @@
 > single git identity is invisible — its commits inflate the count and trip a FALSE
 > unexpected-commits process-friction (self-announcing hardening debt that withholds the forward route).
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-18
 **Placement:** docs/bugs/adhoc-process-friction-detector-counts-concurrent-session-commits

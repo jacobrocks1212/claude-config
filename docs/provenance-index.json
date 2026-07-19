@@ -5108,6 +5108,27 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/adhoc-process-friction-detector-counts-concurrent-session-commits/PHASES.md": [
+    {
+      "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-process-friction-detector-counts-concurrent-session-commits/SPEC.md": [
+    {
+      "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-process-friction-detector-counts-concurrent-session-commits/plans/all-phases-concurrent-session-commit-friction.md": [
+    {
+      "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/adhoc-stale-state-script-parity-test-fixtures/ADHOC_BRIEF.md": [
     {
       "id": "adhoc-stale-state-script-parity-test-fixtures",
@@ -20196,6 +20217,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -20388,6 +20414,11 @@
   ],
   "user/scripts/lazy_core/gates.py": [
     {
+      "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -20437,6 +20468,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -20470,6 +20506,11 @@
   "user/scripts/lazy_core/markers.py": [
     {
       "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
       "type": "bug",
       "provenance": "pipeline-gated"
     },
@@ -22013,6 +22054,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -22046,6 +22092,11 @@
   "user/scripts/tests/test_lazy_core/test_markers.py": [
     {
       "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
       "type": "bug",
       "provenance": "pipeline-gated"
     },
@@ -22125,6 +22176,11 @@
     }
   ],
   "user/scripts/tests/test_lazy_core/test_pseudo.py": [
+    {
+      "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
