@@ -7281,6 +7281,72 @@ def run_smoke_tests() -> int:
         )
 
         # -------------------------------------------------------------------
+        # byref-updatedinput-unapplied-on-background-agent-dispatch WU-2
+        # (coupled-pair mirror of lazy-state.py): --resolve-ref <nonce> — the
+        # sanctioned consumed-nonce read a subagent runs to recover its full
+        # instructions after the platform drops the by-reference updatedInput
+        # rewrite (upstream #39814). Exercises the REAL bug-state.py CLI: hit →
+        # exact registered bytes + exit 0 (NOT cycle-refused under a subagent
+        # context); miss → empty stdout + exit 1. The nonce is the key, so the
+        # --feature-id/--bug-id divergence does not apply.
+        # -------------------------------------------------------------------
+        rref_name = "resolve-ref-cli"
+        rref_ok = True
+        rref_state = td_path / "rref-state"
+        rref_state.mkdir(parents=True, exist_ok=True)
+        rref_root = td_path / "rref-repo"
+        rref_root.mkdir(parents=True, exist_ok=True)
+        rref_prompt = "Fix bug part 2 for bug-rref — full resolved bytes."
+        _rref_prev = os.environ.get("LAZY_STATE_DIR")
+        os.environ["LAZY_STATE_DIR"] = str(rref_state)
+        try:
+            lazy_core.write_run_marker(pipeline="bug", cloud=False,
+                                       repo_root=str(rref_root))
+            _rref_entry = lazy_core.register_emission(rref_prompt, cls="cycle",
+                                                      item_id="bug-rref")
+            rref_nonce = _rref_entry["nonce"]
+            lazy_core.dispatch.consume_nonce(rref_nonce, consumer="toolu_rref")
+        finally:
+            if _rref_prev is None:
+                os.environ.pop("LAZY_STATE_DIR", None)
+            else:
+                os.environ["LAZY_STATE_DIR"] = _rref_prev
+
+        def _rref_env(**extra: str) -> dict:
+            e = {k: v for k, v in os.environ.items()
+                 if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+            e["LAZY_STATE_DIR"] = str(rref_state)
+            e.update(extra)
+            return e
+
+        _rref_script = str(Path(__file__).resolve())
+        r_rref_hit = subprocess.run(
+            [sys.executable, _rref_script, "--resolve-ref", rref_nonce,
+             "--repo-root", str(rref_root)],
+            capture_output=True, text=True, env=_rref_env(LAZY_CYCLE_SUBAGENT="1"),
+        )
+        if r_rref_hit.returncode != 0 \
+                or r_rref_hit.stdout.rstrip("\n") != rref_prompt:
+            failures.append(
+                f"[{rref_name}] hit: expected exit 0 + exact bytes (subagent NOT "
+                f"cycle-refused), got rc={r_rref_hit.returncode} "
+                f"stdout={r_rref_hit.stdout!r} stderr={r_rref_hit.stderr[:200]!r}"
+            )
+            rref_ok = False
+        r_rref_miss = subprocess.run(
+            [sys.executable, _rref_script, "--resolve-ref", "deadbeef" * 4,
+             "--repo-root", str(rref_root)],
+            capture_output=True, text=True, env=_rref_env(),
+        )
+        if r_rref_miss.returncode != 1 or r_rref_miss.stdout.strip() != "":
+            failures.append(
+                f"[{rref_name}] miss: expected exit 1 + empty stdout, got "
+                f"rc={r_rref_miss.returncode} stdout={r_rref_miss.stdout!r}"
+            )
+            rref_ok = False
+        print(f"  {'PASS' if rref_ok else 'FAIL'} [{rref_name}]")
+
+        # -------------------------------------------------------------------
         # Fixture: --cycle-end commit-bracket append is FAIL-OPEN
         # (code-doc-provenance-linkage Phase 1 / D4-A) — coupled-pair mirror of
         # lazy-state.py's fixture. A directory squatting on the ledger filename
@@ -8541,6 +8607,23 @@ def build_parser() -> argparse.ArgumentParser:
             "Never creates state. Used by the stray-branch write-time hook."
         ),
     )
+    # byref-updatedinput-unapplied-on-background-agent-dispatch WU-2 (coupled-pair
+    # mirror of lazy-state.py): the sanctioned consumed-nonce read. The platform
+    # silently drops the by-reference `hookSpecificOutput.updatedInput` rewrite for
+    # the Agent tool as a CLASS (upstream anthropics/claude-code#39814), so a
+    # `@@lazy-ref nonce=<hex>` dispatch lands the BARE token at the subagent. The
+    # nonce is the key, so the --feature-id/--bug-id divergence does NOT apply.
+    # Read-only, run-scoped, never un-consumes; NOT gated by refuse_if_cycle_active.
+    parser.add_argument(
+        "--resolve-ref", metavar="NONCE", default=None,
+        help=(
+            "Read-only: print the registered prompt bytes for a nonce the guard "
+            "already ALLOW+consumed this run (consumed + TTL-fresh + run-start-"
+            "gated), exit 0; print nothing + exit 1 on a miss (unknown / expired / "
+            "cross-run / still-unconsumed). The subagent-side resolve path for a "
+            "bare @@lazy-ref token."
+        ),
+    )
     parser.add_argument(
         "--session-id", default=None,
         help=(
@@ -8635,6 +8718,21 @@ def main() -> int:
         branch = lazy_core.marker_work_branch(session_id=args.session_id)
         if branch:
             sys.stdout.write(branch + "\n")
+            return 0
+        return 1
+
+    # byref-updatedinput-unapplied-on-background-agent-dispatch WU-2 (coupled-pair
+    # mirror of lazy-state.py): --resolve-ref <nonce> — the subagent-side resolve
+    # of a consumed nonce's registered prompt bytes (the platform drops the
+    # by-reference updatedInput rewrite for the Agent tool, upstream #39814).
+    # set_active_repo_root ran above, so resolve_consumed_emission_by_nonce
+    # resolves THIS repo's keyed registry. Read-only, run-scoped, never
+    # un-consumes; deliberately NOT gated by refuse_if_cycle_active (a dispatched
+    # subagent MUST be able to run it). Hit → exact bytes + exit 0; miss → exit 1.
+    if args.resolve_ref is not None:
+        resolved = lazy_core.resolve_consumed_emission_by_nonce(args.resolve_ref)
+        if resolved:
+            sys.stdout.write(resolved + "\n")
             return 0
         return 1
 

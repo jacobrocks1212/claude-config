@@ -86,6 +86,7 @@
   "path": null
 }
   PASS [sync-deps] cycle-subagent exit-3 refusal + hard-only projection + idempotent noop + enqueue --deps
+  PASS [resolve-ref-cli]
   PASS [cycle-end-bracket-fail-open] unwritable bracket ledger never blocks the --cycle-end clear
   PASS [lane-parent-run-marker] parent_run stamp/rogue-refusal/containment/serial-null
   PASS [notify-halt-call-site] bug halt + fake sender: one page (bug| identity), dedup on re-probe, kill switch inert

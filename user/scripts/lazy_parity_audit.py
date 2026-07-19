@@ -361,6 +361,15 @@ _SYNC_DEPS_RE = re.compile(r'"--sync-deps"')
 # script would silently un-page that pipeline's halts (the exact
 # time-to-notice gap the feature closes).  Match the call literal.
 _NOTIFY_HALT_RE = re.compile(r"lazy_core\.notify_halt\(")
+# byref-updatedinput-unapplied-on-background-agent-dispatch WU-2: the sanctioned
+# consumed-nonce read --resolve-ref <nonce> (returns the registered prompt bytes
+# for a nonce the guard ALREADY ALLOW+consumed this run; the subagent's designed
+# path after the platform drops the by-reference updatedInput rewrite, upstream
+# #39814) is a coupled-pair CLI surface — the nonce is the key, so the
+# --feature-id/--bug-id divergence does not apply; a drop from one script would
+# leave that pipeline's by-reference subagents with no resolve path. Match the
+# argparse flag literal.
+_RESOLVE_REF_RE = re.compile(r'"--resolve-ref"')
 
 
 def audit_state_script_parity(repo_root: str | Path) -> list[str]:
@@ -458,6 +467,15 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
                 f"chokepoint in main() (immediately before the state-JSON "
                 f"write) so halts on both pipelines page the operator "
                 f"(operator-halt-notifications coupled-pair parity)"
+            )
+        if _RESOLVE_REF_RE.search(text) is None:
+            findings.append(
+                f"lazy-parity [state-scripts] STATE: {script} must carry the "
+                f"--resolve-ref <nonce> read surface (calls "
+                f"lazy_core.resolve_consumed_emission_by_nonce; NOT gated by "
+                f"refuse_if_cycle_active — a read a by-reference subagent must "
+                f"run) so both state scripts expose the same consumed-nonce "
+                f"resolve path (byref-updatedinput coupled-pair parity)"
             )
     return findings
 

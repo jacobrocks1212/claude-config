@@ -8683,6 +8683,74 @@ def run_smoke_tests() -> int:
         print("  [sync-deps] cycle-subagent exit-3 refusal + hard-only "
               "projection + idempotent noop: ok")
 
+        # -------------------------------------------------------------------
+        # byref-updatedinput-unapplied-on-background-agent-dispatch WU-2:
+        # --resolve-ref <nonce> — the sanctioned consumed-nonce read a subagent
+        # runs to recover its full instructions after the platform drops the
+        # by-reference updatedInput rewrite (upstream #39814). Exercises the REAL
+        # CLI end-to-end: hit → exact registered bytes on stdout + exit 0; miss →
+        # empty stdout + exit 1; and — since a dispatched subagent MUST run it —
+        # the hit path is NOT cycle-refused even under LAZY_CYCLE_SUBAGENT=1.
+        # -------------------------------------------------------------------
+        rref_name = "resolve-ref-cli"
+        rref_ok = True
+        rref_state = td_path / "rref-state"
+        rref_state.mkdir(parents=True, exist_ok=True)
+        rref_root = td_path / "rref-repo"
+        rref_root.mkdir(parents=True, exist_ok=True)
+        rref_prompt = "Execute plan part 2 for feat-rref — full resolved bytes."
+        _rref_prev = os.environ.get("LAZY_STATE_DIR")
+        os.environ["LAZY_STATE_DIR"] = str(rref_state)
+        try:
+            lazy_core.write_run_marker(pipeline="feature", cloud=False,
+                                       repo_root=str(rref_root))
+            _rref_entry = lazy_core.register_emission(rref_prompt, cls="cycle",
+                                                      item_id="feat-rref")
+            rref_nonce = _rref_entry["nonce"]
+            lazy_core.dispatch.consume_nonce(rref_nonce, consumer="toolu_rref")
+        finally:
+            if _rref_prev is None:
+                os.environ.pop("LAZY_STATE_DIR", None)
+            else:
+                os.environ["LAZY_STATE_DIR"] = _rref_prev
+
+        def _rref_env(**extra: str) -> dict:
+            e = {k: v for k, v in os.environ.items()
+                 if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+            e["LAZY_STATE_DIR"] = str(rref_state)
+            e.update(extra)
+            return e
+
+        _rref_script = str(Path(__file__).resolve())
+        # Hit under a subagent context — must NOT be cycle-refused; prints the
+        # exact registered bytes + exit 0.
+        r_rref_hit = subprocess.run(
+            [sys.executable, _rref_script, "--resolve-ref", rref_nonce,
+             "--repo-root", str(rref_root)],
+            capture_output=True, text=True, env=_rref_env(LAZY_CYCLE_SUBAGENT="1"),
+        )
+        if r_rref_hit.returncode != 0 \
+                or r_rref_hit.stdout.rstrip("\n") != rref_prompt:
+            failures.append(
+                f"[{rref_name}] hit: expected exit 0 + exact bytes (subagent NOT "
+                f"cycle-refused), got rc={r_rref_hit.returncode} "
+                f"stdout={r_rref_hit.stdout!r} stderr={r_rref_hit.stderr[:200]!r}"
+            )
+            rref_ok = False
+        # Miss: an unknown nonce prints nothing + exits 1.
+        r_rref_miss = subprocess.run(
+            [sys.executable, _rref_script, "--resolve-ref", "deadbeef" * 4,
+             "--repo-root", str(rref_root)],
+            capture_output=True, text=True, env=_rref_env(),
+        )
+        if r_rref_miss.returncode != 1 or r_rref_miss.stdout.strip() != "":
+            failures.append(
+                f"[{rref_name}] miss: expected exit 1 + empty stdout, got "
+                f"rc={r_rref_miss.returncode} stdout={r_rref_miss.stdout!r}"
+            )
+            rref_ok = False
+        print(f"  {'PASS' if rref_ok else 'FAIL'} [{rref_name}]")
+
         # Functional check: enqueue_adhoc prepends the queue, seeds the brief,
         # creates the spec dir, and adds a ROADMAP row.
         enq_features = td_path / "enqueue-test" / "docs" / "features"
@@ -12296,6 +12364,24 @@ def build_parser() -> argparse.ArgumentParser:
                             "1 if absent/stale/legacy-no-branch. Never creates "
                             "state. Used by the stray-branch write-time hook."
                         ))
+    # byref-updatedinput-unapplied-on-background-agent-dispatch WU-2: the
+    # sanctioned consumed-nonce read. The platform silently drops the
+    # by-reference `hookSpecificOutput.updatedInput` rewrite for the Agent tool
+    # as a CLASS (upstream anthropics/claude-code#39814, closed not-planned), so
+    # a `@@lazy-ref nonce=<hex>` dispatch lands the BARE token at the subagent.
+    # This read returns the registered prompt bytes for a nonce the guard ALREADY
+    # ALLOW+consumed THIS run, so a subagent that booted with the bare token has a
+    # designed recovery path. Read-only, run-scoped, never un-consumes; NOT gated
+    # by refuse_if_cycle_active (a read a dispatched subagent MUST be able to run).
+    parser.add_argument("--resolve-ref", metavar="NONCE", default=None,
+                        help=(
+                            "Read-only: print the registered prompt bytes for a "
+                            "nonce the guard already ALLOW+consumed this run "
+                            "(consumed + TTL-fresh + run-start-gated), exit 0; "
+                            "print nothing + exit 1 on a miss (unknown / expired "
+                            "/ cross-run / still-unconsumed). The subagent-side "
+                            "resolve path for a bare @@lazy-ref token."
+                        ))
     # unified-pipeline-orchestrator Phase 1: merged work-list view. Reads BOTH
     # docs/features/queue.json and docs/bugs/queue.json (via the existing
     # loaders), orders them (priority desc / lower-tier-or-severity first; tie →
@@ -12664,6 +12750,21 @@ def main() -> int:
         branch = lazy_core.marker_work_branch(session_id=args.session_id)
         if branch:
             sys.stdout.write(branch + "\n")
+            return 0
+        return 1
+
+    # byref-updatedinput-unapplied-on-background-agent-dispatch WU-2:
+    # --resolve-ref <nonce> — the subagent-side resolve of a consumed nonce's
+    # registered prompt bytes (the platform drops the by-reference updatedInput
+    # rewrite for the Agent tool, upstream #39814). set_active_repo_root ran
+    # above, so resolve_consumed_emission_by_nonce resolves THIS repo's keyed
+    # registry. Read-only, run-scoped, never un-consumes; deliberately NOT gated
+    # by refuse_if_cycle_active (a dispatched subagent MUST be able to run it).
+    # Hit → print the exact bytes + exit 0; miss → print nothing + exit 1.
+    if args.resolve_ref is not None:
+        resolved = lazy_core.resolve_consumed_emission_by_nonce(args.resolve_ref)
+        if resolved:
+            sys.stdout.write(resolved + "\n")
             return 0
         return 1
 

@@ -68,7 +68,7 @@ All four WUs serialize: WU-1→WU-2→WU-3 share `dispatch.py` / the state scrip
 ## Work Units
 
 - [x] WU-1 — Consumed-nonce reader in `lazy_core.dispatch`
-- [ ] WU-2 — `--resolve-ref` CLI on both state scripts + parity registration
+- [x] WU-2 — `--resolve-ref` CLI on both state scripts + parity registration
 - [ ] WU-3 — Self-resolving `@@lazy-ref` dispatch-template wrapper
 - [ ] WU-4 — Coupled dispatch-skill prose (by-reference stays PREFERRED)
 
