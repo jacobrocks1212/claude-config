@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move
-status: Ready
+status: Complete
 created: 2026-07-19
 complexity: complex
 phases: [1]
@@ -50,7 +50,7 @@ Where this plan's repo uses non-default gates or component paths (claude-config 
 
 ## Work Units
 
-- [ ] WU-1 — Cross-file move reconciliation + regression fixtures for `gate_weakening`
+- [x] WU-1 — Cross-file move reconciliation + regression fixtures for `gate_weakening`
 
 ### Phase: adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move P1 — Content-identity cross-file move reconciliation for `gate_weakening`
 

@@ -57,6 +57,7 @@ import json
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 MANIFEST_REL = "docs/gate/control-surfaces.json"
@@ -270,6 +271,52 @@ def detect_overfit(hunks: list) -> dict:
     return {"result": "flag" if evidence else "pass", "evidence": evidence}
 
 
+def _cross_file_reconciled_net(removed_texts: dict, added_texts: dict) -> dict:
+    """Compute each file's GENUINE net removal count of a gate construct after two stages
+    of reconciliation, returning ``{file: net}`` only for files with a positive residual.
+
+    `removed_texts`/`added_texts` map a file path to the list of that file's removed/added
+    construct texts (the `_DENY_BRANCH_RE`-matched substrings, or the `_TEST_DEF_RE`-matched
+    def lines). Two stages, in order:
+
+    1. **Same-file COUNT-net (UNCHANGED reformat handling).** A file is reconciled by COUNT
+       (`len(removed) - len(added)`), so a single->multi-line REFORMAT that removes and
+       re-adds an equivalent construct — where the removed and added TEXT differ but the
+       match COUNTS are equal — nets to zero and is not a removal. This is the pre-existing
+       behavior; do NOT replace it with pure text-identity (that would re-break the reformat
+       FP fixtures, whose removed/added line texts differ).
+    2. **Cross-file CONTENT-IDENTITY move detection (Locked Decision option b).** A construct
+       removed from file A whose EXACT text is added in a DIFFERENT file within the same
+       change is a MOVE, not a removal — it is subtracted from A's residual net. Only an add
+       that EXCEEDS its own file's removals is available to absorb a cross-file removal (an
+       add already consumed cancelling a same-file removal cannot double-count), and the
+       cross-file add pool is CONSUMED as removals claim it (no double-crediting one add
+       against two files' removals). A removal with no equivalent re-add anywhere still HITs.
+    """
+    # Cross-file pool: each file's added texts that exceed its own removed texts.
+    pool: "Counter" = Counter()
+    for f, adds in added_texts.items():
+        pool += Counter(adds) - Counter(removed_texts.get(f, []))
+
+    result: "dict[str, int]" = {}
+    for f, rems in removed_texts.items():
+        same_file_added = added_texts.get(f, [])
+        net = len(rems) - len(same_file_added)
+        if net <= 0:
+            continue  # same-file count-net fully reconciles (reformat / rename / split)
+        residual_removed = Counter(rems) - Counter(same_file_added)
+        moved = 0
+        for text, cnt in residual_removed.items():
+            take = min(cnt, pool.get(text, 0))
+            if take:
+                pool[text] -= take
+                moved += take
+        genuine = net - moved
+        if genuine > 0:
+            result[f] = genuine
+    return result
+
+
 def detect_gate_weakening(hunks: list) -> dict:
     evidence = []
     # Per-file test-def rename/strengthen guard (gap 2 FP: a renamed test def).
@@ -288,38 +335,42 @@ def detect_gate_weakening(hunks: list) -> dict:
     # still HITs. `_DENY_BRANCH_RE` can match a line MORE than once (e.g. `refuse_x(` and
     # `exit 3` on one line is rare, but a line with two `refuse_*(` calls counts each), so
     # count matches, not lines, symmetrically on both sides.
-    removed_test_defs: "dict[str, int]" = {}
-    added_test_defs: "dict[str, int]" = {}
-    removed_deny: "dict[str, int]" = {}
-    added_deny: "dict[str, int]" = {}
+    #
+    # CROSS-FILE MOVE (adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move):
+    # the per-file count-net above was BLIND to a construct removed from file A and re-added
+    # VERBATIM in file B within the same change (a MOVE, net-zero across the change). We now
+    # track the actual removed/added construct TEXTS per file and reconcile a file's residual
+    # net removal against the same construct text added ELSEWHERE (content-identity, Locked
+    # Decision option b) via `_cross_file_reconciled_net` — which PRESERVES the same-file
+    # count-net reformat handling and subtracts only genuine cross-file moves. Only a residual
+    # removal with no equivalent re-add anywhere in the change still HITs.
+    removed_test_def_texts: "dict[str, list]" = {}
+    added_test_def_texts: "dict[str, list]" = {}
+    removed_deny_texts: "dict[str, list]" = {}
+    added_deny_texts: "dict[str, list]" = {}
     for h in hunks:
-        removed_test_defs[h.file] = removed_test_defs.get(h.file, 0) + sum(
-            1 for body in h.removed if _TEST_DEF_RE.match(body)
+        removed_test_def_texts.setdefault(h.file, []).extend(
+            body for body in h.removed if _TEST_DEF_RE.match(body)
         )
-        added_test_defs[h.file] = added_test_defs.get(h.file, 0) + sum(
-            1 for body in h.added if _TEST_DEF_RE.match(body)
+        added_test_def_texts.setdefault(h.file, []).extend(
+            body for body in h.added if _TEST_DEF_RE.match(body)
         )
-        removed_deny[h.file] = removed_deny.get(h.file, 0) + sum(
-            len(_DENY_BRANCH_RE.findall(body)) for body in h.removed
+        for body in h.removed:
+            removed_deny_texts.setdefault(h.file, []).extend(_DENY_BRANCH_RE.findall(body))
+        for body in h.added:
+            added_deny_texts.setdefault(h.file, []).extend(_DENY_BRANCH_RE.findall(body))
+    for f, net in _cross_file_reconciled_net(removed_test_def_texts, added_test_def_texts).items():
+        evidence.append(
+            f"{f}: gate-test definition removed without replacement "
+            f"(net {net}; {len(removed_test_def_texts.get(f, []))} removed, "
+            f"{len(added_test_def_texts.get(f, []))} added)"
         )
-        added_deny[h.file] = added_deny.get(h.file, 0) + sum(
-            len(_DENY_BRANCH_RE.findall(body)) for body in h.added
+    for f, net in _cross_file_reconciled_net(removed_deny_texts, added_deny_texts).items():
+        evidence.append(
+            f"{f}: gate-refusal construct removed without replacement "
+            f"(net {net}; {len(removed_deny_texts.get(f, []))} removed, "
+            f"{len(added_deny_texts.get(f, []))} added)"
         )
-    for f in removed_test_defs:
-        net = removed_test_defs[f] - added_test_defs.get(f, 0)
-        if net > 0:
-            evidence.append(
-                f"{f}: gate-test definition removed without replacement "
-                f"(net {net}; {removed_test_defs[f]} removed, "
-                f"{added_test_defs.get(f, 0)} added)"
-            )
-    for f in removed_deny:
-        net = removed_deny[f] - added_deny.get(f, 0)
-        if net > 0:
-            evidence.append(
-                f"{f}: gate-refusal construct removed without replacement "
-                f"(net {net}; {removed_deny[f]} removed, {added_deny.get(f, 0)} added)"
-            )
 
     for h in hunks:
         for body, ctx in h.added_ctx:

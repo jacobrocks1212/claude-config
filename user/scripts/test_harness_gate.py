@@ -402,6 +402,69 @@ def test_gate_weakening_renamed_def_signature_not_flagged():
     assert out["result"] == "pass", out["evidence"]
 
 
+# --- gate-weakening CROSS-FILE-MOVE regressions -----------------------------------
+# (adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move)
+# A construct/test-def removed from file A and re-added VERBATIM in file B within one
+# change is a MOVE, not a removal (Locked Decision option b — content-identity). The
+# per-file net loops were blind to the sibling add and false-flagged the moved-from file.
+
+def test_gate_weakening_cross_file_deny_move_not_flagged():
+    """FP FIXTURE (SPEC reproduction): a `permissionDecision: deny` gate-refusal construct
+    REMOVED from one hook and ADDED verbatim to a sibling hook in the same change is a MOVE
+    — net-zero across the change, must NOT hit."""
+    diff = _multi_diff(
+        _diff(
+            "user/hooks/block-sentinel-write-on-stray-branch.sh",
+            removed=['  echo \'{"permissionDecision": "deny",'],
+        ),
+        _diff(
+            "user/hooks/hook-prelude.sh",
+            added=['  echo \'{"permissionDecision": "deny",'],
+        ),
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+    assert out.get("evidence") == []
+
+
+def test_gate_weakening_cross_file_test_def_move_not_flagged():
+    """FP FIXTURE: a `def test_*` removed from one test file and added verbatim to another
+    test file is a MOVE (coverage preserved) — must NOT hit (the `def test_*` loop was blind
+    the same way as the deny loop)."""
+    diff = _multi_diff(
+        _diff(
+            "user/scripts/tests/test_lazy_core/test_markers.py",
+            removed=["def test_important_gate():", "    assert something"],
+        ),
+        _diff(
+            "user/scripts/tests/test_lazy_core/test_dispatch.py",
+            added=["def test_important_gate():", "    assert something"],
+        ),
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+    assert out.get("evidence") == []
+
+
+def test_gate_weakening_cross_file_nonmove_still_hits():
+    """TP FIXTURE (option-(b) false-negative bound): a GENUINE removal of a deny construct
+    from file A plus an add of a DIFFERENT deny construct text in file B is NOT a move — the
+    unrelated add must not mask the genuine removal, so it still HITs."""
+    diff = _multi_diff(
+        _diff(
+            "user/scripts/lazy_core.py",
+            removed=["    refuse_run_start_clobber(marker)"],
+        ),
+        _diff(
+            "user/hooks/lazy-cycle-containment.sh",
+            added=["  exit 3"],
+        ),
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "hit"
+    assert any("gate-refusal construct removed" in e for e in out["evidence"])
+
+
 # --- tautology detector (SPEC D2 / D6) -------------------------------------------
 
 def test_tautology_missing_hypothesis_flags(tmp_path):
