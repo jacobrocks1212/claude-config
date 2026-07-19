@@ -5,7 +5,7 @@
 > duplicated verbatim across both state scripts. Generalize to one predicate before a
 > third near-neighbor (demoted-serial-rerun) accretes its own carve-out.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** Low
 **Discovered:** 2026-07-18
 **Placement:** docs/bugs/adhoc-unify-merged-head-coordinator-exemptions

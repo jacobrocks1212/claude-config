@@ -24,7 +24,7 @@ No hard deps on Complete upstreams (this is a bug-pipeline refactor). Related pr
 
 ### Phase 1: Extract the `coordinator_arbitrated_emission` predicate (pure addition)
 
-**Status:** Complete
+**Status:** Fixed
 
 **Scope:** Add a new predicate `coordinator_arbitrated_emission(marker, feature_id, leases_path) -> None | str` to `user/scripts/lazy_core/dispatch.py`, next to `merged_head_override`. It answers the single question the two ad-hoc booleans express today — *"is this a coordinator-arbitrated emission the serial merged-head divergence premise does not apply to?"* — and returns the exemption **reason** (a stable short string) or `None`:
 

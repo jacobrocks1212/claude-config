@@ -5594,6 +5594,34 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/adhoc-unify-merged-head-coordinator-exemptions/GATE_VERDICT.md": [
+    {
+      "id": "adhoc-unify-merged-head-coordinator-exemptions",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-unify-merged-head-coordinator-exemptions/PHASES.md": [
+    {
+      "id": "adhoc-unify-merged-head-coordinator-exemptions",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-unify-merged-head-coordinator-exemptions/SPEC.md": [
+    {
+      "id": "adhoc-unify-merged-head-coordinator-exemptions",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-unify-merged-head-coordinator-exemptions/plans/all-phases-unify-merged-head-coordinator-exemptions.md": [
+    {
+      "id": "adhoc-unify-merged-head-coordinator-exemptions",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/agpl-sidecar-framing-strudel-only-second-sidecar/SPEC.md": [
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
@@ -9106,6 +9134,13 @@
       "id": "probe-full-read-before-dispatch",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/process-friction-counts-same-run-concurrent-dispatch-commits/SPEC.md": [
+    {
+      "id": "adhoc-unify-merged-head-coordinator-exemptions",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/production-sentinel-writes-bypass-atomic-write/SPEC.md": [
@@ -18043,6 +18078,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/specs/turn-routing-enforcement/NEEDS_INPUT_2026-07-19-process-friction-same-run-concurrent-dispatch-attribution.md": [
+    {
+      "id": "adhoc-unify-merged-head-coordinator-exemptions",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/specs/turn-routing-enforcement/NEEDS_INPUT_2026-07-19-wedge-backstop-integrator-vs-worker-identity.md": [
     {
       "id": "adhoc-incident-hook-deny-057921",
@@ -18156,6 +18198,11 @@
       "id": "adhoc-subagent-wedge-hook-overfires-globs-all-plans",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "adhoc-unify-merged-head-coordinator-exemptions",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "bug-state-verification-only-remainder-loops-write-plan",
@@ -19912,6 +19959,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-unify-merged-head-coordinator-exemptions",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "byref-dispatch-undercounts-forward-cycles",
       "type": "bug",
       "provenance": "backfilled"
@@ -20627,6 +20679,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-unify-merged-head-coordinator-exemptions",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "budget-guard-defers-near-complete-feature",
       "type": "bug",
       "provenance": "backfilled"
@@ -21202,6 +21259,11 @@
   "user/scripts/lazy_core/dispatch.py": [
     {
       "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "adhoc-unify-merged-head-coordinator-exemptions",
       "type": "bug",
       "provenance": "pipeline-gated"
     },
@@ -22935,6 +22997,11 @@
     },
     {
       "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "adhoc-unify-merged-head-coordinator-exemptions",
       "type": "bug",
       "provenance": "pipeline-gated"
     },
