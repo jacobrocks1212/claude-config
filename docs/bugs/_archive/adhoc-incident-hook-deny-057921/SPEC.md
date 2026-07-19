@@ -13,6 +13,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-19
+**Fixed:** 2026-07-19
+**Fix commit:** f965cb2d
 **Placement:** docs/bugs/adhoc-incident-hook-deny-057921
 **Related:** `docs/bugs/_archive/lazy-cycle-containment-misparses-grouped-feature-paths/` (a DIFFERENT root cause on the same tripwire — grouped-path `group(1)` misparse, fixed 2026-07-18 at `e66c02f6`; this bug is the SHARED-INDEX cross-contamination case, orthogonal to grouping). `docs/specs/turn-routing-enforcement/` (owns the containment hook + hardening stage). `docs/specs/concurrent-worktree-agent-coordination/` and the CLAUDE.md `<orchestration>` "sanctioned concurrent writers outside that tree are expected, not a defect" contract this tripwire violates.
 
