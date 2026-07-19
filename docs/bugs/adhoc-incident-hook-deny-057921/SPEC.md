@@ -178,6 +178,23 @@ harness's own "concurrent writers are expected, not a defect" contract.
 | Hook tests | `user/hooks/test_hooks.py` (or the containment test module) | A concurrent-lane-staged-foreign-file regression test is missing; add red→green. |
 | Hook docs | `user/hooks/CLAUDE.md` | Should note the tripwire now scopes to the commit's effective pathspec (post-fix). |
 
+## Intervention Hypothesis
+
+- **Hypothesis:** Scoping the second-feature-commit tripwire to the commit's effective pathspec
+  eliminates false-DENY of compliant concurrent-lane pathspec-scoped commits WITHOUT reducing
+  true-positive catches (bare/`-a`/ambiguity still deny whole-index).
+- **If BROKEN:** the metric would look like a DROP in the second-feature-commit deny-recurrence
+  count AND a rise in uncaught cross-feature commits (a bare/ambiguous commit that should have
+  denied silently allowing) — the two are distinguishable, so "denies stopped" alone would NOT
+  read as "working" (the canonical self-emitted tautology this declaration guards against).
+- signal_independence: independent — the `INCIDENT.md` incident_key deny-recurrence count in the
+  deny ledger (`claude-config|hook-deny|lazy-cycle-containment|second-feature-commit`), an
+  independent ledger observable this change does not itself emit or suppress. Expected: the
+  false-deny signature (pathspec-scoped commit denied for a foreign concurrent-lane staged path)
+  drops to zero recurrence, while the genuine bare/`-a` catch is unaffected (no new signature
+  needed to observe the negative case — its absence over subsequent concurrent-completion bursts
+  is the confirming signal).
+
 ## Open Questions
 
 - **(fix-design, deferred to `/plan-bug`)** Which scoping is correct for the tripwire's evaluated
