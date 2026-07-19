@@ -69,15 +69,22 @@ No premise-grade contradictions: the SPEC's serving-path trace matches the live 
 
 ---
 
-### Phase 2: Retire the oracle file-predicate supplement (the durable generalization)
+### Phase 2: Retire the oracle file-predicate supplement (the durable generalization)  ✅ Complete
 
 **Scope:** Remove the `_candidate_operator_deferred` supplement and its `_op_defer_dir` plumbing from `dispatch.py::merged_head_nondispatchable_ids`. With Phase 1 landed, the oracle's PRIMARY mechanism — `is_dispatchable(scoped_probe(iid))` at `dispatch.py:830` — now excludes operator-deferred features on its own for BOTH pipelines, so the churn-prone per-signal patch (re-added across R56/R57/R101/R102) retires. This fixes Reproduction B at its source.
 
 **Deliverables:**
-- [ ] Remove `_candidate_operator_deferred(iid)` (`dispatch.py:770–774`) and the `_op_defer_dir` map construction (`dispatch.py:750–768`).
-- [ ] Remove the walk-loop application (`dispatch.py:822–829`), so each candidate falls through to the primary `is_dispatchable(scoped_probe(iid))` classification. Preserve the `break`-on-first-dispatchable-head / `exclude`-and-continue control flow.
-- [ ] Confirm no other caller references `_candidate_operator_deferred` / `_op_defer_dir` (grep the module); leave `spec_dir_operator_deferred` (docmodel) intact — still consumed by both `compute_state`s.
-- [ ] Tests: keep the R102 oracle regression in `tests/test_lazy_core/test_dispatch.py` GREEN with the supplement gone (the primary mechanism must now carry the operator-deferred-feature exclusion). Add a regression asserting an operator-deferred FEATURE at the cross-pipeline merged head is excluded via `is_dispatchable(scoped_probe)` alone (no file-predicate). Keep the R56/R57/R101 oracle regressions green.
+- [x] Remove `_candidate_operator_deferred(iid)` (`dispatch.py:770–774`) and the `_op_defer_dir` map construction (`dispatch.py:750–768`).
+- [x] Remove the walk-loop application (`dispatch.py:822–829`), so each candidate falls through to the primary `is_dispatchable(scoped_probe(iid))` classification. Preserve the `break`-on-first-dispatchable-head / `exclude`-and-continue control flow.
+- [x] Confirm no other caller references `_candidate_operator_deferred` / `_op_defer_dir` (grep the module — clean); left `spec_dir_operator_deferred` (docmodel) intact — still consumed by both `compute_state`s (removed only the now-unused `from .docmodel import spec_dir_operator_deferred` import inside the oracle).
+- [x] Tests: kept the R102 oracle regression GREEN with the supplement gone (re-pointed its injected `scoped_probe` to model Phase-1 reality — the feature `compute_state` now returns the scoped operator-deferred terminal → excluded via `is_dispatchable(scoped_probe)` alone). Added a new SERVING-PATH subprocess regression (`test_subprocess_bug_emit_prompt_oracle_excludes_operator_deferred_feature_head_no_withhold`) driving the real `bug-state.py --emit-prompt` with an operator-deferred feature at the merged head → NO withhold, workable bug dispatched, NO file-predicate. R56/R57/R101 oracle regressions stay green.
+
+**Implementation Notes (2026-07-19):**
+- `dispatch.py::merged_head_nondispatchable_ids`: removed the `_op_defer_dir` map construction, the `_candidate_operator_deferred` helper, its walk-loop application, the rationale comment block, and the now-unused `from .docmodel import spec_dir_operator_deferred` import. The walk loop now classifies every candidate solely via `is_dispatchable(scoped_probe(iid))` (the primary mechanism), preserving break-on-first-dispatchable / exclude-and-continue.
+- Acceptance gate MET: the R102 regression (both the re-pointed unit test AND the new real-serving-path subprocess test) stays green with the supplement gone — Phase 1's feature branch carries the exclusion. No `BLOCKED.md` needed.
+- `spec_dir_operator_deferred` KEPT in docmodel.py — now consumed by both `compute_state`s' own park/skip classification (Phase 1's new feature branch is a consumer) rather than by the retired oracle supplement.
+- Registered the new test in `test_dispatch.py`'s `_TESTS` list (the `test_no_orphaned_test_functions` dead-coverage guard requires it).
+- Gates green: `pytest tests/test_lazy_core/` (851 passed — the whole suite, incl. `test_dispatch.py` 180, `test_depdag.py` 28, `test_markers.py` baseline 221, the orphan guard), `lazy-state.py --test`, `bug-state.py --test`, `lazy_parity_audit.py --repo-root .` (exit 0).
 
 **Minimum Verifiable Behavior:** `pytest tests/test_lazy_core/test_dispatch.py` passes with the supplement removed — specifically the operator-deferred-cross-pipeline-feature exclusion regression passes using only `is_dispatchable(scoped_probe(...))`. Runnable command; drives the real oracle.
 

@@ -6032,17 +6032,21 @@ def test_merged_head_nondispatchable_ids_excludes_parked_UNREACHED_same_pipeline
 
 def test_merged_head_nondispatchable_ids_excludes_operator_deferred_cross_pipeline_feature():
     """merged-head-oracle-blind-to-operator-deferred-cross-pipeline-feature
-    REGRESSION (Round 102): a bug-emit probe with an operator-deferred FEATURE
-    (DEFERRED.md) ranked ABOVE the dispatchable bug at the cross-pipeline merged
-    head. The oracle's scoped ``is_dispatchable`` re-inference is BLIND to
-    operator-defer on a FEATURE — the FEATURE ``compute_state`` has no
-    operator-defer branch, so ``scoped_probe`` reports it DISPATCHABLE — so before
-    this fix the deferred feature stayed the merged head and ``merged-head-diverged``
-    withheld ``cycle_prompt_ref`` on every probe (the 19-bug deadlock). The
-    restored ``spec_dir_operator_deferred`` file-predicate now excludes it
-    type-agnostically. Distinct from the same-pipeline parked regressions above:
-    here the non-dispatchable signal is a FILE the owning pipeline's
-    ``compute_state`` does not model, invisible to the scoped probe."""
+    REGRESSION (Round 102), NOW carried by the PRIMARY mechanism
+    (merged-head-oracle-per-signal-supplement-churn Phase 2): a bug-emit probe with
+    an operator-deferred FEATURE (DEFERRED.md) ranked ABOVE the dispatchable bug at
+    the cross-pipeline merged head. Round 102 patched this with a per-signal
+    file-predicate supplement (``spec_dir_operator_deferred`` re-applied inside the
+    oracle) because the FEATURE ``compute_state`` had no operator-defer branch and
+    ``scoped_probe`` reported the deferred feature DISPATCHABLE. Phase 1 gave the
+    FEATURE ``compute_state`` its own bare-``DEFERRED.md`` branch (a scoped
+    ``--feature-id`` probe now returns ``terminal_reason: operator-deferred`` →
+    non-dispatchable), so ``is_dispatchable(scoped_probe(feature))`` ALONE excludes
+    it and Phase 2 RETIRED the supplement. This unit test models that reality: the
+    injected ``scoped_probe`` returns the Phase-1 scoped terminal for the deferred
+    feature, and the oracle excludes it with NO file-predicate present. The
+    serving-path (real state scripts) twin is
+    ``test_subprocess_bug_emit_prompt_oracle_excludes_operator_deferred_feature_head_no_withhold``."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
@@ -6062,17 +6066,23 @@ def test_merged_head_nondispatchable_ids_excludes_operator_deferred_cross_pipeli
         # is NOT in the bug probe's parked/skip surface (parked: [] — the live JSON).
         state = {"feature_id": "adhoc-harness-gate", "parked": []}
 
-        # The FEATURE compute_state ignores DEFERRED.md → reports DISPATCHABLE.
-        # This is exactly the blindness the file-predicate must compensate for; in
-        # the fixed path the operator-defer check short-circuits BEFORE this runs.
-        def _feature_dispatchable(_id):
+        # Phase 1: the FEATURE compute_state now MODELS operator-defer — a scoped
+        # probe on a DEFERRED.md feature returns a scoped operator-deferred terminal
+        # (non-dispatchable). The oracle's PRIMARY is_dispatchable(scoped_probe)
+        # therefore excludes it with NO file-predicate supplement (Phase 2 retired
+        # it). The fake probe consults the real DEFERRED.md so the CONTROL below
+        # (delete it → dispatchable) still exercises the boundary.
+        def _feature_probe(_id):
             assert _id != "adhoc-harness-gate", "current is never probed (== break)"
+            if (feat_dir / "DEFERRED.md").exists():
+                return {"feature_id": _id, "feature_name": _id, "sub_skill": None,
+                        "terminal_reason": "operator-deferred"}
             return _dispatchable_state("spec")
 
         excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
             feats, bugs, str(root), "adhoc-harness-gate",
             same_pipeline="bug", same_pipeline_state=state,
-            scoped_probe=_feature_dispatchable,
+            scoped_probe=_feature_probe,
         )
         assert excluded == {"native-android"}, excluded
         # Merged head is the dispatchable bug, not the deferred feature.
@@ -6084,22 +6094,97 @@ def test_merged_head_nondispatchable_ids_excludes_operator_deferred_cross_pipeli
             feats, bugs, str(root), "adhoc-harness-gate", exclude_ids=excluded,
         ) is None
         # NON-VACUITY: without the exclusion the OLD behavior deadlocks — the
-        # scoped-DISPATCHABLE deferred feature is the merged head + withhold fires.
+        # deferred feature is the merged head + withhold fires.
         old = lazy_core.dispatch.merged_head_override(
             feats, bugs, str(root), "adhoc-harness-gate",
         )
         assert old is not None and old["merged_head"]["item_id"] == "native-android", old
 
-        # CONTROL: remove DEFERRED.md → the feature is scoped-DISPATCHABLE and is
-        # NOT excluded (the file-predicate is the ONLY thing that excluded it),
-        # proving the fix keys on the FILE, not on the feature id or type.
+        # CONTROL: remove DEFERRED.md → the feature's scoped probe reports
+        # DISPATCHABLE and it is NOT excluded (the scoped operator-deferred terminal
+        # is the ONLY thing that excluded it), proving the exclusion keys on the
+        # feature's OWN compute_state signal, not on its id or type.
         (feat_dir / "DEFERRED.md").unlink()
         not_excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
             feats, bugs, str(root), "adhoc-harness-gate",
             same_pipeline="bug", same_pipeline_state=state,
-            scoped_probe=_feature_dispatchable,
+            scoped_probe=_feature_probe,
         )
         assert "native-android" not in not_excluded, not_excluded
+
+
+def test_subprocess_bug_emit_prompt_oracle_excludes_operator_deferred_feature_head_no_withhold():
+    """merged-head-oracle-per-signal-supplement-churn Phase 2 (SERVING-PATH
+    regression, real state scripts): a bug-emit probe with an operator-deferred
+    FEATURE (a bare ``DEFERRED.md``, ``reason: operator-excluded``) ranked ABOVE the
+    workable bug at the cross-pipeline merged head must NOT withhold — the deferred
+    feature is excluded by the oracle's REAL cross-pipeline scoped
+    ``lazy-state.compute_state`` (Phase 1's operator-defer branch), with NO
+    file-predicate supplement present (Phase 2 retired it). This is the original
+    symptom's actual serving path: the 19-bug deadlock this bug fixes was a real
+    ``bug-state.py --emit-prompt`` withholding behind an operator-deferred feature
+    head. Coupled twin of
+    ``test_subprocess_bug_emit_prompt_oracle_excludes_nondispatchable_feature_head_no_withhold``."""
+    _guard()
+    bug_state_script = _SCRIPTS_DIR / "bug-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = td_path / "fixture-repo"
+        # Workable bug (current, P2).
+        bugs = fixture_repo / "docs" / "bugs"
+        bug_dir = bugs / "bug-w"
+        (bug_dir / "plans").mkdir(parents=True)
+        (bugs / "queue.json").write_text(json.dumps({
+            "queue": [{"id": "bug-w", "name": "Bug W", "spec_dir": "bug-w", "severity": "P2"}]
+        }), encoding="utf-8")
+        (bug_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (bug_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Fix\n- [ ] Tests\n", encoding="utf-8")
+        (bug_dir / "plans" / "all-phases-w.md").write_text("# Plan\n", encoding="utf-8")
+
+        # Higher-priority OPERATOR-DEFERRED feature at the merged head (tier 0) —
+        # a bare DEFERRED.md, no BLOCKED.md. Pre-Phase-1 the feature compute_state
+        # reported it dispatchable → withhold deadlock; Phase 1's branch now returns
+        # a scoped operator-deferred terminal → excluded by is_dispatchable alone.
+        features = fixture_repo / "docs" / "features"
+        fdir = features / "feat-def"
+        fdir.mkdir(parents=True)
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [{"id": "feat-def", "name": "Feature Deferred", "spec_dir": "feat-def", "tier": 0}]
+        }), encoding="utf-8")
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        (fdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (fdir / "DEFERRED.md").write_text(
+            "---\nkind: deferred\nfeature_id: feat-def\nreason: operator-excluded\n"
+            "deferred_at: 2026-07-19\n---\nOperator parked.\n", encoding="utf-8")
+
+        state_dir = td_path / "bug-state-dir"
+        state_dir.mkdir()
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="bug", cloud=False,
+                repo_root=str(fixture_repo), max_cycles=10, now=_time.time())
+        finally:
+            _clear_state_dir()
+
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        result = subprocess.run(
+            [sys.executable, str(bug_state_script),
+             "--repeat-count", "--probe", "--emit-prompt", "--repo-root", str(fixture_repo)],
+            capture_output=True, text=True, env=env)
+        assert result.returncode == 0, (
+            f"bug-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
+        state_json = json.loads(result.stdout)
+        assert state_json.get("route_overridden_by") is None, (
+            f"operator-deferred feature head must NOT withhold on the bug side; got "
+            f"route_overridden_by={state_json.get('route_overridden_by')!r}")
+        assert state_json.get("feature_id") == "bug-w", state_json.get("feature_id")
+        assert state_json.get("cycle_prompt"), "bug cycle_prompt must be emitted"
 
 
 def test_nondispatchable_item_ids_helper_is_retired():
@@ -7108,6 +7193,7 @@ _TESTS = [
     ("test_merged_head_nondispatchable_ids_excludes_parked_same_pipeline_head_no_deadlock", test_merged_head_nondispatchable_ids_excludes_parked_same_pipeline_head_no_deadlock),
     ("test_merged_head_nondispatchable_ids_excludes_parked_UNREACHED_same_pipeline_head", test_merged_head_nondispatchable_ids_excludes_parked_UNREACHED_same_pipeline_head),
     ("test_merged_head_nondispatchable_ids_excludes_operator_deferred_cross_pipeline_feature", test_merged_head_nondispatchable_ids_excludes_operator_deferred_cross_pipeline_feature),
+    ("test_subprocess_bug_emit_prompt_oracle_excludes_operator_deferred_feature_head_no_withhold", test_subprocess_bug_emit_prompt_oracle_excludes_operator_deferred_feature_head_no_withhold),
     ("test_nondispatchable_item_ids_helper_is_retired", test_nondispatchable_item_ids_helper_is_retired),
     ("test_merged_worklist_exclude_ids_drops_parked_items", test_merged_worklist_exclude_ids_drops_parked_items),
     ("test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug", test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug),

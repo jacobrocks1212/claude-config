@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: merged-head-oracle-per-signal-supplement-churn
-status: In-progress
+status: Complete
 created: 2026-07-19
 complexity: complex
 phases: [1, 2]
@@ -61,7 +61,7 @@ Where this plan's repo uses non-default gates or component paths (this is **clau
 ## Work Units
 
 - [x] WU-1 — Feature-side operator-defer branch in `lazy-state.py::compute_state`
-- [ ] WU-2 — Retire the `_candidate_operator_deferred` supplement in `dispatch.py`
+- [x] WU-2 — Retire the `_candidate_operator_deferred` supplement in `dispatch.py`
 
 ---
 
