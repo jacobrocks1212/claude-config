@@ -272,6 +272,25 @@ Sub-subagent dispatch policy (WORKSTATION DISPATCH — LOAD-BEARING):
     "Waiting for a sub-subagent's message" is NEVER a valid cycle state: if you
     catch yourself in it you have already diverged — dispatch-and-await each
     child, or do the batch inline with Read/Edit/Write.
+  - WEDGE RESILIENCE — a dispatched sub-subagent that WEDGES never strands your
+    cycle; you fall back to INLINE (2026-07-18 depth-2 nested-dispatch wedge). A
+    total tool-execution wedge is a dispatched child whose EVERY tool call errors
+    before executing — e.g. the Claude Code `No tools needed for summary`
+    message — a platform limitation of depth-2 (grandchild) dispatch under
+    async/background agents; YOUR OWN depth-1 Read/Grep/Glob/Bash keep working.
+    When a child you dispatched comes back wedged (an empty / all-errored result,
+    not real work): do NOT wait for it, and do NOT re-dispatch it — it wedges
+    identically. Instead PERFORM THAT WORK INLINE yourself with Read/Grep/Glob/
+    Bash and finish the cycle. A wedged fan-out is NEVER an excuse to return
+    without your skill's deliverable — if the spec-phases capability/reuse audits,
+    the plan-feature / spec-phases(-batch) / write-plan Sonnet fan-out, or an
+    /execute-plan test/impl split wedge, do their reads INLINE and still produce
+    PHASES.md / the plan / the tested code this cycle. "Waiting for the remaining
+    wedged agents" is the same forbidden cycle state as waiting on a child
+    message above — collapse to inline the instant a dispatch returns wedged.
+    (Resilience, not avoidance — this composes with a "trust the coordination
+    layer, don't defensively serialize" contract; you still PREFER dispatch when
+    it works, and only fall back on an observed wedge.)
 
 <!-- @section cloud-override pipelines=feature,bug modes=cloud skills=all -->
 Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
