@@ -2311,14 +2311,23 @@ def spec_dir_operator_deferred(spec_dir: "Path") -> bool:
 
     Kept SEPARATE from ``spec_dir_would_park`` precisely because it is not
     park-flag-gated. This predicate feeds ``compute_state``'s own park/skip
-    classification; the merged-head exclude computation is now the actionability
-    oracle (``dispatch.merged_head_nondispatchable_ids``), which scoped-probes
-    ``compute_state`` per candidate — so an operator-deferred item is excluded
-    from the merged head regardless of the active facets (it is non-dispatchable).
+    classification AND — restored by
+    ``merged-head-oracle-blind-to-operator-deferred-cross-pipeline-feature`` — the
+    merged-head actionability oracle (``dispatch.merged_head_nondispatchable_ids``).
+    The oracle's per-candidate scoped ``is_dispatchable`` re-inference covers an
+    operator-deferred BUG (``bug-state.py``'s branch surfaces
+    ``terminal_reason: operator-deferred``) but is BLIND to an operator-deferred
+    FEATURE (see below), so the oracle ALSO applies this file-predicate directly —
+    excluding an operator-deferred item from the merged head regardless of which
+    pipeline owns it.
 
-    Bug-pipeline-only: the feature pipeline has no operator-``DEFERRED.md`` branch
-    (a justified parity divergence), so a feature spec dir never carries the file
-    and this predicate contributes nothing there.
+    NOT bug-pipeline-only in practice: although the feature pipeline has no
+    operator-``DEFERRED.md`` dispatch branch (a justified parity divergence), an
+    operator CAN drop a ``DEFERRED.md`` on a FEATURE dir to exclude it "from
+    dispatch and merged" (observed 2026-07-19: ``native-android-pipeline-steering``).
+    The FEATURE ``compute_state`` ignores it, so the merged-head oracle's
+    file-predicate is the ONLY thing that excludes such a feature — do NOT re-assume
+    "a feature spec dir never carries the file".
 
     Pure + fail-safe: ``None`` / a missing or unreadable ``spec_dir`` → ``False``
     (byte-identical non-defer behavior; the caller's exclusion set stays empty).

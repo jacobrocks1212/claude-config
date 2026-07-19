@@ -6030,6 +6030,78 @@ def test_merged_head_nondispatchable_ids_excludes_parked_UNREACHED_same_pipeline
     )["merged_head"]["item_id"] == "byref-unreached"
 
 
+def test_merged_head_nondispatchable_ids_excludes_operator_deferred_cross_pipeline_feature():
+    """merged-head-oracle-blind-to-operator-deferred-cross-pipeline-feature
+    REGRESSION (Round 102): a bug-emit probe with an operator-deferred FEATURE
+    (DEFERRED.md) ranked ABOVE the dispatchable bug at the cross-pipeline merged
+    head. The oracle's scoped ``is_dispatchable`` re-inference is BLIND to
+    operator-defer on a FEATURE — the FEATURE ``compute_state`` has no
+    operator-defer branch, so ``scoped_probe`` reports it DISPATCHABLE — so before
+    this fix the deferred feature stayed the merged head and ``merged-head-diverged``
+    withheld ``cycle_prompt_ref`` on every probe (the 19-bug deadlock). The
+    restored ``spec_dir_operator_deferred`` file-predicate now excludes it
+    type-agnostically. Distinct from the same-pipeline parked regressions above:
+    here the non-dispatchable signal is a FILE the owning pipeline's
+    ``compute_state`` does not model, invisible to the scoped probe."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        feat_dir = root / "docs" / "features" / "native-android"
+        feat_dir.mkdir(parents=True)
+        (feat_dir / "DEFERRED.md").write_text(
+            "---\nkind: deferred\nreason: operator-excluded\n---\n", encoding="utf-8")
+        (feat_dir / "SPEC.md").write_text("**Status:** Draft\n", encoding="utf-8")
+        bug_dir = root / "docs" / "bugs" / "adhoc-harness-gate"
+        bug_dir.mkdir(parents=True)
+
+        # tier 1 (pre-release) < P2 bug(2) → the feature ranks ABOVE the bug.
+        feats = [{"id": "native-android", "tier": 1, "spec_dir": "native-android"}]
+        bugs = [{"id": "adhoc-harness-gate", "severity": "P2",
+                 "spec_path": str(bug_dir)}]
+        # Bug emit probe: dispatched the P2 bug; the cross-pipeline deferred feature
+        # is NOT in the bug probe's parked/skip surface (parked: [] — the live JSON).
+        state = {"feature_id": "adhoc-harness-gate", "parked": []}
+
+        # The FEATURE compute_state ignores DEFERRED.md → reports DISPATCHABLE.
+        # This is exactly the blindness the file-predicate must compensate for; in
+        # the fixed path the operator-defer check short-circuits BEFORE this runs.
+        def _feature_dispatchable(_id):
+            assert _id != "adhoc-harness-gate", "current is never probed (== break)"
+            return _dispatchable_state("spec")
+
+        excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+            feats, bugs, str(root), "adhoc-harness-gate",
+            same_pipeline="bug", same_pipeline_state=state,
+            scoped_probe=_feature_dispatchable,
+        )
+        assert excluded == {"native-android"}, excluded
+        # Merged head is the dispatchable bug, not the deferred feature.
+        assert lazy_core.next_merged(
+            feats, bugs, str(root), exclude_ids=excluded,
+        )["item_id"] == "adhoc-harness-gate"
+        # Emit probe for the bug → NO withhold (the deadlock is gone).
+        assert lazy_core.dispatch.merged_head_override(
+            feats, bugs, str(root), "adhoc-harness-gate", exclude_ids=excluded,
+        ) is None
+        # NON-VACUITY: without the exclusion the OLD behavior deadlocks — the
+        # scoped-DISPATCHABLE deferred feature is the merged head + withhold fires.
+        old = lazy_core.dispatch.merged_head_override(
+            feats, bugs, str(root), "adhoc-harness-gate",
+        )
+        assert old is not None and old["merged_head"]["item_id"] == "native-android", old
+
+        # CONTROL: remove DEFERRED.md → the feature is scoped-DISPATCHABLE and is
+        # NOT excluded (the file-predicate is the ONLY thing that excluded it),
+        # proving the fix keys on the FILE, not on the feature id or type.
+        (feat_dir / "DEFERRED.md").unlink()
+        not_excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+            feats, bugs, str(root), "adhoc-harness-gate",
+            same_pipeline="bug", same_pipeline_state=state,
+            scoped_probe=_feature_dispatchable,
+        )
+        assert "native-android" not in not_excluded, not_excluded
+
+
 def test_nondispatchable_item_ids_helper_is_retired():
     """merged-head-actionability-oracle Phase 3 (WU-4): the file-predicate
     ``nondispatchable_item_ids`` is DELETED — absent from the lazy_core facade AND
@@ -7035,6 +7107,7 @@ _TESTS = [
     ("test_spec_dir_research_pending_predicate", test_spec_dir_research_pending_predicate),
     ("test_merged_head_nondispatchable_ids_excludes_parked_same_pipeline_head_no_deadlock", test_merged_head_nondispatchable_ids_excludes_parked_same_pipeline_head_no_deadlock),
     ("test_merged_head_nondispatchable_ids_excludes_parked_UNREACHED_same_pipeline_head", test_merged_head_nondispatchable_ids_excludes_parked_UNREACHED_same_pipeline_head),
+    ("test_merged_head_nondispatchable_ids_excludes_operator_deferred_cross_pipeline_feature", test_merged_head_nondispatchable_ids_excludes_operator_deferred_cross_pipeline_feature),
     ("test_nondispatchable_item_ids_helper_is_retired", test_nondispatchable_item_ids_helper_is_retired),
     ("test_merged_worklist_exclude_ids_drops_parked_items", test_merged_worklist_exclude_ids_drops_parked_items),
     ("test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug", test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug),

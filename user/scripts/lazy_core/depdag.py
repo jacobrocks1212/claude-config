@@ -1438,7 +1438,12 @@ def merged_worklist(
     EXCLUDE from the ordering — the NON-DISPATCHABLE items the pipeline skips (parked
     items a park-mode run skips PLUS unconditional operator-deferred items; built by
     ``dispatch.merged_head_nondispatchable_ids`` — the actionability oracle that
-    RETIRED the former ``nondispatchable_item_ids`` file-predicate). Excluding them makes the merged head the
+    replaced the former ``nondispatchable_item_ids`` file-predicate with per-candidate
+    scoped ``is_dispatchable`` re-inference, but STILL applies the
+    ``spec_dir_operator_deferred`` file-predicate directly for the operator-deferred
+    signal a cross-pipeline FEATURE's ``compute_state`` cannot see
+    (``merged-head-oracle-blind-to-operator-deferred-cross-pipeline-feature``).
+    Excluding them makes the merged head the
     highest-priority DISPATCHABLE item, so the ``merged-head-diverged`` withhold never
     withholds behind an undriveable head. Default ``None`` → nothing excluded
     (byte-identical non-park behavior).

@@ -725,6 +725,53 @@ def merged_head_nondispatchable_ids(
         byte-identical common path (nothing skipped, no non-dispatchable head).
     """
     from .depdag import merged_worklist
+    from .docmodel import spec_dir_operator_deferred
+
+    # Operator-defer (DEFERRED.md) file-predicate — the CROSS-pipeline-invisible
+    # signal the scoped ``is_dispatchable`` re-inference MISSES
+    # (merged-head-oracle-blind-to-operator-deferred-cross-pipeline-feature). A
+    # ``DEFERRED.md`` dir is skipped UNCONDITIONALLY by its OWN pipeline —
+    # ``bug-state.py``'s operator-defer branch surfaces
+    # ``terminal_reason: operator-deferred``, so a BUG candidate is already excluded
+    # by ``is_dispatchable``. But a FEATURE candidate is scope-probed through the
+    # FEATURE ``compute_state``, which models NO operator-defer (the justified
+    # "no operator-``DEFERRED.md`` branch" divergence), so it reports DISPATCHABLE and
+    # the ``merged-head-diverged`` withhold deadlocks the run behind an
+    # operator-EXCLUDED feature. Re-apply the pure file-predicate Round 57
+    # (``merged-head-excludes-parked-not-operator-deferred-deadlocks``, ``c5a3b385``)
+    # introduced and the ``merged-head-actionability-oracle`` refactor RETIRED under
+    # the false premise that ``compute_state`` covers operator-defer on EVERY
+    # candidate (true for bugs, false for cross-pipeline features). Type-agnostic and
+    # fail-safe (no resolvable dir / no ``DEFERRED.md`` → not excluded → byte-identical
+    # when no ``DEFERRED.md`` exists; the injected-``scoped_probe`` unit tests, whose
+    # fake ids resolve to no real dir, are unchanged). Applied at this ONE oracle
+    # landing site, so BOTH pipelines' merged-head paths AND the stateless
+    # ``--next-merged`` path exclude operator-deferred items identically.
+    _rr = Path(repo_root) if repo_root else None
+    _op_defer_dir: dict[str, "Path | None"] = {}
+    if _rr is not None:
+        _feat_docs = _rr / "docs" / "features"
+        for _raw in (feature_items or []):
+            if not isinstance(_raw, dict):
+                continue
+            _fid = _raw.get("id")
+            if _fid:
+                _op_defer_dir[_fid] = _feat_docs / (_raw.get("spec_dir") or _fid)
+    for _raw in (bug_items or []):
+        if not isinstance(_raw, dict):
+            continue
+        _bid = _raw.get("id")
+        if not _bid:
+            continue
+        # Bug loader items carry ``spec_path`` = the item's already-resolved DIR.
+        _sp = _raw.get("spec_path")
+        _op_defer_dir.setdefault(_bid, Path(_sp) if _sp else None)
+
+    def _candidate_operator_deferred(_iid: str) -> bool:
+        try:
+            return spec_dir_operator_deferred(_op_defer_dir.get(_iid))
+        except Exception:  # noqa: BLE001 — a per-candidate file probe must never break the oracle
+            return False
 
     # (1) Same-pipeline skips — the current probe's own decisions, UNCHANGED (L2).
     # With no probe state (stateless read-only path) there are no same-pipeline
@@ -772,6 +819,14 @@ def merged_head_nondispatchable_ids(
             # Reached the emitted item — nothing below it can be the diverging
             # merged head, so no lower candidate needs an oracle evaluation.
             break
+        if _candidate_operator_deferred(iid):
+            # Operator-deferred (DEFERRED.md) — non-dispatchable UNCONDITIONALLY,
+            # even when the owning pipeline's scoped compute_state cannot see it
+            # (a cross-pipeline FEATURE). Exclude and keep walking; never break
+            # (an operator-deferred head is never the genuine divergence a withhold
+            # must fire on).
+            exclude.add(iid)
+            continue
         if is_dispatchable(scoped_probe(iid)):
             # First dispatchable head above the emitted item — a GENUINE
             # divergence the withhold must fire on. Stop (never exclude it).
