@@ -2,7 +2,7 @@
 
 > The harness-change canary for intervention `harden-2026-07-r48` tripped on a +334% band regression of `event:containment-refusal`, but the tripped change can only *reduce* that signal on its own path and no fresh incident was attributed to its surface — a band-only, confounded (noise) trip.
 
-**Status:** Investigating
+**Status:** Won't-fix
 **Severity:** P2
 **Discovered:** 2026-07-18
 **Placement:** docs/bugs/canary-revert-harden-2026-07-r48
@@ -38,7 +38,7 @@ The trip is already recorded; the finding is reproducible from committed state:
 1. Read the intervention record and its canary sub-map:
    `Read docs/interventions/harden-2026-07-r48.md` → `canary.surfaces: [user/hooks/lazy-cycle-containment.sh]`, `target_signal: event:containment-refusal`, `expected_direction: decrease`.
 2. Read the trip evidence:
-   `Read docs/bugs/canary-revert-harden-2026-07-r48/EVIDENCE.md` → band-only trip, `(none — band-only trip)` attributed incidents.
+   `Read docs/bugs/_archive/canary-revert-harden-2026-07-r48/EVIDENCE.md` → band-only trip, `(none — band-only trip)` attributed incidents.
 3. Inspect the tripped change's effect on the signal it is charged with:
    `git show 251187c8d620446d363c4477f31f89964d426f17 -- user/hooks/lazy-cycle-containment.sh`
    → the diff makes `_is_carve_out` (the *allow* predicate) group-aware and strictly MORE permissive for grouped features; ungrouped features are byte-identical; the 2nd-feature deny path denies iff `under-feature-dir AND not carve-out`.
@@ -102,3 +102,11 @@ The trip is already recorded; the finding is reproducible from committed state:
 
 - **Operator disposition (parked in `NEEDS_INPUT.md`):** revert / redesign / close-as-noise for `251187c8`.
 - If close-as-noise is confirmed: should the D2 tripwire require **non-empty D3 surface attribution** (not band-movement alone) before tripping for a self-emitted signal, or widen the band for high-volume signal classes? (A candidate `--enqueue-adhoc` harden follow-up, not in this bug's scope.)
+
+## Resolution
+
+Operator-accepted the recommended **close-as-noise** disposition (`NEEDS_INPUT.md`, recorded via
+`bug-state.py --record-decision`). `251187c8` is correct and tested — cause-traced as mechanically
+deny-*reducing*, band-only trip with zero surface attribution — and is **retained, not reverted**.
+Canary-band tuning for high-volume self-emitted signals (the Open Questions follow-up above) is
+tracked separately, not as a phase of this bug. Closed without a fix.

@@ -4,7 +4,7 @@
 > `event:gate-refusal`, but the shipped change provably does not emit that signal — this is a
 > band-only confound, not damage. Triage: revert / redesign / close-as-noise.
 
-**Status:** Investigating
+**Status:** Won't-fix
 **Severity:** P2
 **Discovered:** 2026-07-19
 **Placement:** docs/bugs/canary-revert-harden-2026-07-r54
@@ -155,3 +155,11 @@ lower-priority feature). A correctness fix; the common path stays byte-identical
   The investigation recommends **close-as-noise** (the change is correct and off the signal's serving
   path), which additionally feeds canary band/sub-signal tuning. This is a product-class choice
   (revert removes shipped behavior) on a stub-origin baseline, so it parks for the operator.
+
+## Resolution
+
+Operator-accepted the recommended **close-as-noise** disposition (`NEEDS_INPUT.md`, recorded via
+`bug-state.py --record-decision`). The shipped merged-head route-override fix (`1af48e1d`) is
+retained, not reverted — traced off the tripped `event:gate-refusal` signal's serving path;
+band-only trip, zero attributed incidents. Canary/sub-signal band tuning is tracked separately,
+not as a phase of this bug. Closed without a fix.

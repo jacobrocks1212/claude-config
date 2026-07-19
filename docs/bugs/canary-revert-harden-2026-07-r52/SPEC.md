@@ -2,7 +2,7 @@
 
 > The harness-change canary for intervention `harden-2026-07-r52` (mid-run budget + park controls) tripped on a band-only rise of `event:gate-refusal`; triage whether to revert, redesign, or close-as-noise.
 
-**Status:** Investigating
+**Status:** Won't-fix
 **Severity:** P2
 **Discovered:** 2026-07-18
 **Placement:** docs/bugs/canary-revert-harden-2026-07-r52
@@ -105,3 +105,11 @@ Revert target: `bc03240e065cb8ad8ac7bdbe203b7d555c09580c` (single commit; `degra
 
 - Did any of the six `gate-refusal` signatures actually rise in the window, or is the aggregate driven entirely by co-shipped activity? (Theory 2 — would need per-signature ledger counting to fully rule out an indirect regression; not resolvable from the frozen band-only evidence alone.)
 - Disposition — **revert / redesign / close-as-noise** — is a product-class operator decision (revert removes a shipped feature). Surfaced in `NEEDS_INPUT.md`.
+
+## Resolution
+
+Operator-accepted the recommended **close-as-noise** disposition (`NEEDS_INPUT.md`, recorded via
+`bug-state.py --record-decision`). The shipped mid-run budget/park controls (`bc03240e`) are
+correct and cause-traced as off the tripped `event:gate-refusal` signal's serving path — band-only
+trip, zero attributed incidents; **retained, not reverted**. Canary/sub-signal band tuning is
+tracked separately, not as a phase of this bug. Closed without a fix.

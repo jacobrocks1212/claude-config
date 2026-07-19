@@ -2,7 +2,7 @@
 
 > The `harden-2026-07-r53` canary tripped on a +333.8% band breach of `event:containment-refusal`, but the shipped change is not on that signal's serving path — a confounded, band-only false-positive. Triage disposition (revert / redesign / close-as-noise) is parked for the operator.
 
-**Status:** Investigating
+**Status:** Won't-fix
 **Severity:** P2
 **Discovered:** 2026-07-19
 **Placement:** docs/bugs/canary-revert-harden-2026-07-r53
@@ -110,3 +110,12 @@ The fix-site-on-path rule fails for a revert: the commit set is not read on the 
 
 - Operator disposition: close-as-noise (recommended) vs. revert vs. redesign — surfaced in `NEEDS_INPUT.md`.
 - Follow-up (independent of the disposition): should the r53 intervention record be re-based / re-declared (Theory 3) via `efficacy-eval.py --rebaseline`, and should the canary band for volume-aggregate `event:*` signals be tuned to suppress band-only, zero-attribution trips? These are canary-tuning items, not part of this bug's fix scope; noted here for the operator.
+
+## Resolution
+
+Operator-accepted the recommended **close-as-noise** disposition (`NEEDS_INPUT.md`, recorded via
+`bug-state.py --record-decision`). The shipped queue-mutation CLI (`8a7bc738`) is retained,
+not reverted — its sole emitter path (`markers.py`) is untouched, so the change is provably not
+on the regressed signal's serving path; band-only trip, zero surface-attributed incidents.
+Canary/record re-baseline tuning is tracked separately, not as a phase of this bug. Closed
+without a fix.
