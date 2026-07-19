@@ -316,6 +316,46 @@ cycles debit the parent budget.
 > NOT redirect the tail away from it. This is automatic (keyed on the item's own live lease); the
 > coordinator does nothing special beyond keeping the lease held across the validation cycle.
 
+## Step 4b: Temp-worktree merge-back + `Concurrent-Merge-Back:` trailer (write-conflict escape hatch)
+
+For a **large/complex but NON-semantic** conflict that SLIPS PAST the FIFO file-lock (Phase 3) —
+`lazy_core.classify_conflict(merge_result) == "write"`, i.e. git auto-merges OR the conflicting
+hunks touch DISJOINT logical surfaces — the coordinator does NOT halt and does NOT block a whole
+lane behind a simple in-place retry. It completes the work in a **temporary worktree spun as an
+ordinary coordinator lane** and merges it back in queue order (SPEC Requirement 6; Locked
+Decisions 3–4). A `semantic` verdict is the Phase-4 halt and NEVER reaches here.
+
+**Reuse the EXISTING lane machinery — no new merge engine (Locked Decision 3):**
+
+1. Spin the temp worktree as a lane: `lane_branch(<item>)` (`lane/<item>`) + `lane_pool_dir(<main
+   root>)` for the slot + `acquire_lease(LEASES, <item>, …)` for the fencing token — identical to
+   a Step-1/Step-2 lane claim.
+2. Complete the work in that worktree (ordinary serial cycles at the lane root).
+3. Merge back with `lazy_coord.merge_back_lanes(<main root>, LANES, <queue ids>)` — a thin
+   composition over `merge_order` (queue order, never completion order) + `merge_lane_branch`
+   (the EXISTING abort-and-demote path: a conflict aborts to a clean tree, records `demoted:
+   serial` in `lanes.json`, and PRESERVES the lane branch) + `ledger_record_merge` on a clean
+   land. It returns `{order, merged, demoted}`; a demoted item routes to the Step-5 serial re-run.
+
+**Cross-agent `Concurrent-Merge-Back:` trailer (Locked Decision 4 — zero new contended state):**
+when this agent BEATS the conflicting agent to the merge, it has no direct channel to warn the
+other agent, so it rides a structured git trailer on the merging commit's message:
+
+- **Writer (this agent):** compose the trailer with
+  `lazy_core.compose_concurrent_merge_back_trailer(affected_paths, guidance)` (grammar:
+  `Concurrent-Merge-Back: paths=<p1>,<p2>,…; guidance=<one-line resolution hint>`) and include
+  it as the LAST paragraph of the merge-back commit message. No lock, no shared file — the
+  trailer is carried by git's own object model.
+- **Reader (the conflicting agent):** on the fetch/rebase it MUST ALREADY perform to push (Phase
+  2 git-safety: fetch → ff-only → push), it reads the incoming history with
+  `lazy_core.read_concurrent_merge_back_trailers(<repo root>, "<remote>/<branch>..HEAD")`, applies
+  the one-line guidance, and CONTINUES — it does NOT halt (a message-less commit parses to empty,
+  no false positive).
+
+**Scope (workstation-only v1).** This temp-worktree merge-back + trailer channel is
+feature-pipeline, workstation-only. The **cloud and bug-pipeline merge-back paths are a documented
+follow-up — do NOT build them here** (SPEC Requirement 6 v1 boundary).
+
 ## Step 5: Demoted serial re-runs
 
 For each `demoted: serial` item, in queue order, while parent budget remains: run ordinary

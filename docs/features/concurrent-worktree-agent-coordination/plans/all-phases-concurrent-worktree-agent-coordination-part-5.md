@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: concurrent-worktree-agent-coordination
-status: Ready
+status: Complete
 complexity: complex
 created: 2026-07-18
 phases: [5]
@@ -59,9 +59,9 @@ Where this plan's repo uses non-default gates (claude-config — Python/lint/tes
 
 ## Work Units
 
-- [ ] WU-1 — Merge-back lane wiring (spin lane → work → merge_order → merge_lane_branch)
-- [ ] WU-2 — Concurrent-Merge-Back trailer compose/parse helper
-- [ ] WU-3 — Merge-back orchestration + trailer prose (lazy-batch-parallel)
+- [x] WU-1 — Merge-back lane wiring (spin lane → work → merge_order → merge_lane_branch)
+- [x] WU-2 — Concurrent-Merge-Back trailer compose/parse helper
+- [x] WU-3 — Merge-back orchestration + trailer prose (lazy-batch-parallel)
 
 ### Phase: concurrent-worktree-agent-coordination P5 — Temp-worktree merge-back + cross-agent trailer
 

@@ -4266,6 +4266,86 @@ def test_git_safe_push_bounded_retry_returns_structured_conflict():
     assert result["retried"] == max_retries, result
 
 
+# ---------------------------------------------------------------------------
+# Concurrent-Merge-Back commit-message trailer (concurrent-worktree-agent-
+# coordination Phase 5, WU-2 / Locked Decision 4).  A structured git trailer
+# rides the merging commit's message; the conflicting agent reads it on the
+# fetch/rebase it must perform to push.  Zero new contended state.
+# ---------------------------------------------------------------------------
+
+def test_concurrent_merge_back_trailer_round_trip():
+    """compose -> parse recovers the affected paths + guidance EXACTLY."""
+    _guard()
+    paths = ["user/scripts/lazy_coord.py", "user/skills/lazy-batch-parallel/SKILL.md"]
+    guidance = "rebased lane merge landed here; re-run your write through the FIFO lock"
+    trailer = lazy_core.compose_concurrent_merge_back_trailer(paths, guidance)
+    parsed = lazy_core.parse_concurrent_merge_back_trailer(
+        "feat: land lane feat-a\n\nbody text\n\n" + trailer
+    )
+    assert parsed.get("affected_paths") == paths, parsed
+    assert parsed.get("guidance") == guidance, parsed
+
+
+def test_concurrent_merge_back_trailer_absent_parses_empty():
+    """A commit message WITHOUT the trailer parses to empty (no false positive)."""
+    _guard()
+    assert lazy_core.parse_concurrent_merge_back_trailer(
+        "chore: ordinary commit\n\nno trailer here at all\n"
+    ) == {}
+    assert lazy_core.parse_concurrent_merge_back_trailer("") == {}
+
+
+def test_concurrent_merge_back_trailer_is_wellformed_git_trailer():
+    """The composed trailer is a well-formed git trailer: a single line whose
+    first token is exactly the `Concurrent-Merge-Back:` key."""
+    _guard()
+    trailer = lazy_core.compose_concurrent_merge_back_trailer(["a.py"], "do the thing")
+    lines = [ln for ln in trailer.splitlines() if ln.strip()]
+    assert len(lines) == 1, f"trailer must be a single line, got {lines!r}"
+    key, sep, _value = lines[0].partition(":")
+    assert sep == ":", lines[0]
+    assert key == "Concurrent-Merge-Back", key
+    # A git-trailer key is token-shaped (no spaces before the colon).
+    assert " " not in key, key
+
+
+def test_read_concurrent_merge_back_trailers_from_history():
+    """The reader parses Concurrent-Merge-Back trailers out of incoming git
+    history (the fetch/rebase range the conflicting agent must consult)."""
+    _guard()
+    env = dict(os.environ)
+    env.update({
+        "GIT_AUTHOR_NAME": "fixture", "GIT_AUTHOR_EMAIL": "f@x",
+        "GIT_COMMITTER_NAME": "fixture", "GIT_COMMITTER_EMAIL": "f@x",
+    })
+
+    def _git(cwd, *args):
+        return subprocess.run(
+            ["git", "-C", str(cwd)] + list(args),
+            check=True, capture_output=True, text=True, env=env,
+        )
+
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        _git(repo, "init", "-q", "-b", "main")
+        (repo / "a.txt").write_text("base\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-q", "-m", "base")
+        trailer = lazy_core.compose_concurrent_merge_back_trailer(
+            ["a.txt"], "re-run your write through the FIFO lock",
+        )
+        (repo / "a.txt").write_text("merged\n", encoding="utf-8")
+        _git(repo, "commit", "-q", "-am", "merge-back lane feat-a\n\n" + trailer)
+
+        found = lazy_core.read_concurrent_merge_back_trailers(repo, "HEAD~1..HEAD")
+        assert len(found) == 1, found
+        assert found[0]["affected_paths"] == ["a.txt"], found
+        assert found[0]["guidance"] == "re-run your write through the FIFO lock", found
+
+        # The base-only range carries no trailer (no false positive).
+        assert lazy_core.read_concurrent_merge_back_trailers(repo, "HEAD~1") == []
+
+
 _TESTS = [
     ("test_bug_state_algobooth_baseline_wellformed", test_bug_state_algobooth_baseline_wellformed),
     ("test_lazy_state_no_plans_real_impl_row_still_write_plan", test_lazy_state_no_plans_real_impl_row_still_write_plan),
@@ -4392,6 +4472,10 @@ _TESTS = [
     ("test_git_safe_push_retry_then_succeed", test_git_safe_push_retry_then_succeed),
     ("test_git_safe_push_never_composes_force", test_git_safe_push_never_composes_force),
     ("test_git_safe_push_bounded_retry_returns_structured_conflict", test_git_safe_push_bounded_retry_returns_structured_conflict),
+    ("test_concurrent_merge_back_trailer_round_trip", test_concurrent_merge_back_trailer_round_trip),
+    ("test_concurrent_merge_back_trailer_absent_parses_empty", test_concurrent_merge_back_trailer_absent_parses_empty),
+    ("test_concurrent_merge_back_trailer_is_wellformed_git_trailer", test_concurrent_merge_back_trailer_is_wellformed_git_trailer),
+    ("test_read_concurrent_merge_back_trailers_from_history", test_read_concurrent_merge_back_trailers_from_history),
 ]
 
 

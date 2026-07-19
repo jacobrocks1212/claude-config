@@ -1192,6 +1192,46 @@ def merge_lane_branch(repo_root, branch, *, no_ff=True) -> dict:
 	}
 
 
+def merge_back_lanes(repo_root, lanes_path, queue_ids, *, no_ff=True, now=None) -> dict:
+	"""Merge every lane-complete lane back into the CURRENT work branch in
+	QUEUE order — the merge-back orchestration wiring (concurrent-worktree-
+	agent-coordination Phase 5, WU-1 / SPEC Requirement 6, Locked Decision 3).
+
+	This is a THIN composition of the existing lane primitives — NO new merge
+	engine:
+
+	  * ``merge_order(read_lanes(lanes_path), queue_ids)`` gives the queue-order
+	    sequence of lane-complete items (never completion order — reproducible
+	    history regardless of lane timing);
+	  * each item is merged via ``merge_lane_branch`` (the EXISTING abort-and-
+	    demote path — a clean tree is guaranteed on conflict, and the lane branch
+	    is NEVER deleted);
+	  * a clean merge is recorded with ``ledger_record_merge`` (appends to
+	    merge_order); a conflict is recorded with ``ledger_record_demotion``
+	    (``demoted: serial``, lane branch preserved) and the run CONTINUES — a
+	    write-class conflict never halts (SPEC Requirement 6).
+
+	Coordinator-only: the caller holds the global lock and has verified fencing
+	for each item first (same contract as ``merge_lane_branch``).
+
+	Returns ``{"order": [...], "merged": [...], "demoted": [...]}`` — the
+	queue-order sequence attempted, and the ids that landed vs. demoted.
+	"""
+	order = merge_order(read_lanes(lanes_path), queue_ids)
+	merged: list = []
+	demoted: list = []
+	for item_id in order:
+		result = merge_lane_branch(repo_root, lane_branch(item_id), no_ff=no_ff)
+		if result.get("merged"):
+			ledger_record_merge(lanes_path, item_id, now=now)
+			merged.append(item_id)
+		else:
+			reason = result.get("detail", "merge conflict")
+			ledger_record_demotion(lanes_path, item_id, reason, now=now)
+			demoted.append(item_id)
+	return {"order": order, "merged": merged, "demoted": demoted}
+
+
 def effective_lanes(requested, shardable_count, pool_size) -> int:
 	"""D6: effective lanes = min(requested N, shardable count, pool_size)."""
 	return max(0, min(int(requested), int(shardable_count), int(pool_size)))
@@ -2711,6 +2751,169 @@ def run_smoke_tests() -> int:
 			failures.append(f"[{fix26_name}] FAIL: unexpected exception: {exc!r}")
 			fix26_ok = False
 		print(f"  {'PASS' if fix26_ok else 'FAIL'} [{fix26_name}]")
+
+		# -------------------------------------------------------------------
+		# Fixture 27: merge-back-in-queue-order
+		# (concurrent-worktree-agent-coordination Phase 5, WU-1.)  The merge-
+		# back orchestration helper merges lane-complete lanes back into the
+		# work branch in QUEUE order (never completion order), recording each
+		# clean merge in the ledger's merge_order.
+		# -------------------------------------------------------------------
+		fix27_name = "merge-back-in-queue-order"
+		fix27_ok = True
+		try:
+			fix27_dir = td_path / "fix27"
+			fix27_dir.mkdir()
+			_git_env_27 = dict(os.environ)
+			_git_env_27.update({
+				"GIT_AUTHOR_NAME": "fixture", "GIT_AUTHOR_EMAIL": "f@x",
+				"GIT_COMMITTER_NAME": "fixture", "GIT_COMMITTER_EMAIL": "f@x",
+			})
+
+			def _git27(cwd, *args, check=True):
+				return subprocess.run(
+					["git", "-C", str(cwd)] + list(args),
+					check=check, capture_output=True, text=True, env=_git_env_27,
+				)
+
+			work_27 = fix27_dir / "work"
+			work_27.mkdir()
+			_git27(fix27_dir, "init", "-q", "-b", "main", str(work_27))
+			(work_27 / "a.txt").write_text("base-a\n", encoding="utf-8")
+			(work_27 / "b.txt").write_text("base-b\n", encoding="utf-8")
+			_git27(work_27, "add", ".")
+			_git27(work_27, "commit", "-q", "-m", "base")
+			_git27(work_27, "checkout", "-q", "-b", "lane/feat-a")
+			(work_27 / "a.txt").write_text("lane-a\n", encoding="utf-8")
+			_git27(work_27, "commit", "-q", "-am", "feat-a work")
+			_git27(work_27, "checkout", "-q", "main")
+			_git27(work_27, "checkout", "-q", "-b", "lane/feat-b")
+			(work_27 / "b.txt").write_text("lane-b\n", encoding="utf-8")
+			_git27(work_27, "commit", "-q", "-am", "feat-b work")
+			_git27(work_27, "checkout", "-q", "main")
+			lanes_path_27 = fix27_dir / "lanes.json"
+			now_27 = 10_000_000.0
+			ledger_record_claim(lanes_path_27, "feat-a", "wt-00", "lane/feat-a", now=now_27)
+			ledger_record_claim(lanes_path_27, "feat-b", "wt-01", "lane/feat-b", now=now_27)
+			# Lanes complete OUT of queue order (b first) — the helper must
+			# still merge in queue order [feat-a, feat-b].
+			ledger_record_lane_complete(lanes_path_27, "feat-b", now=now_27 + 10)
+			ledger_record_lane_complete(lanes_path_27, "feat-a", now=now_27 + 20)
+			res_27 = merge_back_lanes(
+				work_27, lanes_path_27, ["feat-a", "feat-b"], now=now_27 + 30,
+			)
+			if res_27.get("merged") != ["feat-a", "feat-b"]:
+				failures.append(
+					f"[{fix27_name}] FAIL: must merge in queue order, got "
+					f"{res_27.get('merged')!r}"
+				)
+				fix27_ok = False
+			if res_27.get("demoted"):
+				failures.append(
+					f"[{fix27_name}] FAIL: disjoint lanes must not demote, got "
+					f"{res_27.get('demoted')!r}"
+				)
+				fix27_ok = False
+			if read_lanes(lanes_path_27).get("merge_order") != ["feat-a", "feat-b"]:
+				failures.append(
+					f"[{fix27_name}] FAIL: ledger merge_order must record queue "
+					f"order, got {read_lanes(lanes_path_27).get('merge_order')!r}"
+				)
+				fix27_ok = False
+			log_27 = _git27(
+				work_27, "log", "--merges", "--first-parent", "--reverse",
+				"--pretty=%s",
+			).stdout.strip().splitlines()
+			if len(log_27) != 2 or "lane/feat-a" not in log_27[0] \
+					or "lane/feat-b" not in log_27[1]:
+				failures.append(
+					f"[{fix27_name}] FAIL: work-branch merge history must land "
+					f"feat-a then feat-b, got {log_27!r}"
+				)
+				fix27_ok = False
+			if (work_27 / "a.txt").read_text() != "lane-a\n" \
+					or (work_27 / "b.txt").read_text() != "lane-b\n":
+				failures.append(f"[{fix27_name}] FAIL: merged tree must carry both edits")
+				fix27_ok = False
+		except Exception as exc:  # noqa: BLE001
+			failures.append(f"[{fix27_name}] FAIL: unexpected exception: {exc!r}")
+			fix27_ok = False
+		print(f"  {'PASS' if fix27_ok else 'FAIL'} [{fix27_name}]")
+
+		# -------------------------------------------------------------------
+		# Fixture 28: merge-back-conflict-aborts-and-demotes
+		# (concurrent-worktree-agent-coordination Phase 5, WU-1.)  A lane whose
+		# merge conflicts is ABORTED (clean tree), DEMOTED in the ledger
+		# (demoted: serial), and its lane branch is PRESERVED — the run
+		# continues (never halts).
+		# -------------------------------------------------------------------
+		fix28_name = "merge-back-conflict-aborts-and-demotes"
+		fix28_ok = True
+		try:
+			fix28_dir = td_path / "fix28"
+			fix28_dir.mkdir()
+			_git_env_28 = dict(os.environ)
+			_git_env_28.update({
+				"GIT_AUTHOR_NAME": "fixture", "GIT_AUTHOR_EMAIL": "f@x",
+				"GIT_COMMITTER_NAME": "fixture", "GIT_COMMITTER_EMAIL": "f@x",
+			})
+
+			def _git28(cwd, *args, check=True):
+				return subprocess.run(
+					["git", "-C", str(cwd)] + list(args),
+					check=check, capture_output=True, text=True, env=_git_env_28,
+				)
+
+			work_28 = fix28_dir / "work"
+			work_28.mkdir()
+			_git28(fix28_dir, "init", "-q", "-b", "main", str(work_28))
+			(work_28 / "c.txt").write_text("base\n", encoding="utf-8")
+			_git28(work_28, "add", ".")
+			_git28(work_28, "commit", "-q", "-m", "base")
+			_git28(work_28, "checkout", "-q", "-b", "lane/feat-x")
+			(work_28 / "c.txt").write_text("lane-x\n", encoding="utf-8")
+			_git28(work_28, "commit", "-q", "-am", "feat-x work")
+			_git28(work_28, "checkout", "-q", "main")
+			(work_28 / "c.txt").write_text("mainline\n", encoding="utf-8")
+			_git28(work_28, "commit", "-q", "-am", "overlapping mainline edit")
+			lanes_path_28 = fix28_dir / "lanes.json"
+			now_28 = 11_000_000.0
+			ledger_record_claim(lanes_path_28, "feat-x", "wt-00", "lane/feat-x", now=now_28)
+			ledger_record_lane_complete(lanes_path_28, "feat-x", now=now_28 + 10)
+			res_28 = merge_back_lanes(
+				work_28, lanes_path_28, ["feat-x"], now=now_28 + 20,
+			)
+			if res_28.get("merged") or res_28.get("demoted") != ["feat-x"]:
+				failures.append(
+					f"[{fix28_name}] FAIL: conflicting lane must demote (not "
+					f"merge), got {res_28!r}"
+				)
+				fix28_ok = False
+			status_28 = _git28(work_28, "status", "--porcelain").stdout.strip()
+			if status_28 or (work_28 / ".git" / "MERGE_HEAD").exists():
+				failures.append(
+					f"[{fix28_name}] FAIL: abort must leave a CLEAN tree, got "
+					f"{status_28!r}"
+				)
+				fix28_ok = False
+			lane_x_28 = read_lanes(lanes_path_28)["lanes"].get("feat-x", {})
+			if lane_x_28.get("demoted") != "serial" or lane_x_28.get("status") != "demoted":
+				failures.append(
+					f"[{fix28_name}] FAIL: ledger must record demoted: serial, "
+					f"got {lane_x_28!r}"
+				)
+				fix28_ok = False
+			if _git28(work_28, "rev-parse", "--verify", "lane/feat-x",
+					check=False).returncode != 0:
+				failures.append(
+					f"[{fix28_name}] FAIL: the lane branch must be PRESERVED "
+					f"after demotion"
+				)
+				fix28_ok = False
+		except Exception as exc:  # noqa: BLE001
+			failures.append(f"[{fix28_name}] FAIL: unexpected exception: {exc!r}")
+			fix28_ok = False
+		print(f"  {'PASS' if fix28_ok else 'FAIL'} [{fix28_name}]")
 
 	if failures:
 		print("\nFAILURES:")

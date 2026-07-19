@@ -2382,6 +2382,95 @@ def git_head_short_sha(repo_root: Path) -> str | None:
     sha = proc.stdout.strip()
     return sha or None
 
+
+# ---------------------------------------------------------------------------
+# Concurrent-Merge-Back commit-message trailer (concurrent-worktree-agent-
+# coordination Phase 5, WU-2 / Locked Decision 4).
+#
+# When a temp-worktree merge-back lands FIRST (beating the conflicting agent to
+# the push), the merging agent has no direct channel to warn the other agent.
+# It rides a structured git trailer on the merging commit's message; the
+# conflicting agent, on the fetch/rebase it must ALREADY perform to push
+# (Phase 2 git-safety), reads the trailer out of the incoming history and
+# applies the guidance. ZERO new contended state — the trailer is carried by
+# git's own object model, nothing new to lock or reconcile.
+#
+# Grammar (a well-formed single-line git trailer):
+#   Concurrent-Merge-Back: paths=<p1>,<p2>,...; guidance=<one-line text>
+# `paths` is comma-joined (v1 assumes no comma in a path — documented); the
+# `guidance` field is LAST so it may carry any remaining single-line text.
+# ---------------------------------------------------------------------------
+
+_CONCURRENT_MERGE_BACK_TRAILER_KEY = "Concurrent-Merge-Back"
+_CONCURRENT_MERGE_BACK_GUIDANCE_SEP = "; guidance="
+
+
+def compose_concurrent_merge_back_trailer(affected_paths, guidance) -> str:
+    """Compose the single-line ``Concurrent-Merge-Back:`` git trailer.
+
+    ``affected_paths`` is a list of repo-relative paths the merge-back touched;
+    ``guidance`` is a one-line resolution hint for the conflicting agent. The
+    guidance is whitespace-normalized to a single line (a trailer is one line by
+    construction).
+    """
+    paths = ",".join(str(p) for p in (affected_paths or []))
+    one_line_guidance = " ".join(str(guidance or "").split())
+    return (
+        f"{_CONCURRENT_MERGE_BACK_TRAILER_KEY}: paths={paths}"
+        f"{_CONCURRENT_MERGE_BACK_GUIDANCE_SEP}{one_line_guidance}"
+    )
+
+
+def parse_concurrent_merge_back_trailer(commit_message) -> dict:
+    """Parse a ``Concurrent-Merge-Back:`` trailer out of a commit message.
+
+    Returns ``{"affected_paths": [...], "guidance": "..."}`` when the trailer is
+    present and well-formed; returns an EMPTY dict for a message that does not
+    carry the trailer (no false positive) or that carries a malformed variant.
+    """
+    if not commit_message:
+        return {}
+    prefix = f"{_CONCURRENT_MERGE_BACK_TRAILER_KEY}:"
+    for line in commit_message.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith(prefix):
+            continue
+        value = stripped[len(prefix):].strip()
+        paths_part, sep, guidance = value.partition(_CONCURRENT_MERGE_BACK_GUIDANCE_SEP)
+        if not sep:
+            # Our key but not our grammar — do not guess.
+            continue
+        paths_part = paths_part.strip()
+        if paths_part.startswith("paths="):
+            paths_part = paths_part[len("paths="):]
+        affected = [p for p in paths_part.split(",") if p] if paths_part else []
+        return {"affected_paths": affected, "guidance": guidance}
+    return {}
+
+
+def read_concurrent_merge_back_trailers(repo_root, rev_range) -> list:
+    """Read ``Concurrent-Merge-Back:`` trailers from the commit messages in
+    ``rev_range`` (e.g. the ``origin/main..HEAD`` incoming history a conflicting
+    agent must fetch/rebase over before it can push).
+
+    Returns the list of parsed trailer dicts in git-log order (newest first),
+    empty on any failure (non-git tree, bad range, OS error) — fail-open, this
+    is an advisory channel and must never break the caller's push path.
+    """
+    try:
+        proc = _git(repo_root, "log", "--format=%B%x00", str(rev_range))
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if proc.returncode != 0:
+        return []
+    out = []
+    for message in proc.stdout.split("\x00"):
+        parsed = parse_concurrent_merge_back_trailer(message)
+        if parsed:
+            out.append(parsed)
+    return out
+
+
 def git_guard_status(repo_root: Path) -> dict:
     """Return a three-key git status snapshot for the probe payload.
 
