@@ -530,6 +530,19 @@ Agent({
 python3 ~/.claude/scripts/lazy-state.py --cloud --cycle-end
 ```
 
+#### 1d-await. Await the DIRECT cycle child — grandchild notifications are NOT your cycle (`grandchild-notification-misroute`)
+
+Mirrors `/lazy-batch` §1d-await. The `Agent` cycle dispatch runs in the BACKGROUND: the tool call returns immediately with the child's `agentId` and the orchestrator's turn ends; the cycle's result arrives LATER as a `<task-notification>` you are re-invoked on — NOT a synchronous return of the `Agent` call. **Act on ONLY the notification for the child THIS cycle dispatched** — the one whose `<task-id>` equals the `agentId` the `Agent` tool returned (a POSITIVE "this is my cycle" signal; on any non-matching / ambiguous notification the default is to WAIT). That matching notification is your cycle returning: run `--cloud --cycle-end` (§C1) and proceed.
+
+**Grandchild (sub-sub-agent) notifications bubble up to your session — IGNORE them.** A cycle subagent's own sub-subagents' `<task-notification>` surface to the TOP orchestrator session (you), not only to the cycle subagent that dispatched them. A grandchild notification carries a `<task-id>` you never dispatched and a `<summary>` naming the grandchild's sub-task, NOT your cycle's `description` ("lazy-batch-cloud cycle N: {sub_skill} …"). They are the CYCLE subagent's to handle — NORMAL, and **NOT signals for the orchestrator**:
+- Do NOT run `--cloud --cycle-end`, do NOT probe, do NOT route, do NOT print a cycle block on a grandchild notification.
+- **NEVER `TaskStop` your cycle child (or any descendant) on a grandchild's BLOCKED / failure / error notification** — killing the cycle on a grandchild failure destroys a productive cycle mid-work (the 2026-07-18 workstation incident — `grandchild-notification-misroute`).
+- The ONLY sanctioned reason to `TaskStop` the cycle child is an operator-directed pause/redirect (Step 0 standing-directive) — never an inference from a descendant's notification.
+
+**Cloud note.** `/lazy-batch-cloud` KEEPS the inline sub-subagent override (zero sub-subagents is the cloud steady state — see "Differences from /lazy-batch"), so cloud cycle subagents seldom dispatch grandchildren and this case is rare in cloud. The rule still holds defensively: a stray descendant notification is never a cloud-cycle intervention trigger.
+
+**Design note (undocumented platform behavior — do not over-depend).** Grandchild-notification bubbling and the task-id↔agentId correlation are UNDOCUMENTED Claude Code behavior (confirmed via `claude-code-guide`, 2026-07-18). The rule uses the task-id match as a POSITIVE signal with a WAIT default on any non-match — the safe direction. Never route off a grandchild notification's content.
+
 **F2a dispatch-by-reference (PREFERRED when available, mirrored from `/lazy-batch` Step 1d).** When the probe emits `cycle_prompt_ref` (a `@@lazy-ref nonce=<hex>` token), use it as the `prompt:` field instead of the full `cycle_prompt` text. The PreToolUse guard resolves the token → registered bytes and rewrites the tool input before the subagent runs. Fall back to `cycle_prompt` verbatim ONLY when `cycle_prompt_ref` is absent or null.
 
 **Model selection — script-owned, guard-pinned (a).** Copy `cycle_model` verbatim into `model:` (never omit it).
@@ -596,6 +609,8 @@ python3 ~/.claude/scripts/lazy-state.py \
 ```
 
 `friction_summary`/`friction_detail` are rebound into the shared evidence keys and observed-friction `probe_json`/`registry_state` placeholders are injected automatically (`normalize_hardening_dispatch_context`). **Block/background policy (D1):** run-blocking (stalls THIS cycle) → `blocking=true`, dispatch foreground, await, re-probe, continue; non-blocking (latent) → `blocking=false`, dispatch backgrounded (`Agent` `run_in_background: true`), checked at cycle boundaries. **Cloud note:** the cloud environment still runs the harden as an `Agent` dispatch against claude-config; the tree-separation concurrency argument is identical (cycle subagents edit the target repo). **Concurrency:** EXCEPTION `self_edit_mode` → force foreground/await. The dispatched harden authors a claude-config bug spec first (Step 2.5) and MUST record its intervention with a MEASURABLE `target_signal` where the fix targets a countable ledger signal (the efficacy-loop feed).
+
+**Sub-sub-agent tool-wedge (observed-friction species — transient carve-out; `grandchild-notification-misroute`).** A dispatched agent (usually a cycle subagent's grandchild — §1d-await) reporting a TOTAL tool-execution WEDGE (every tool call erroring BEFORE executing — e.g. the Claude Code `No tools needed for summary` gating message) is observed friction handled **POST-HOC only** (never a mid-cycle intervention — §1d-await forbids acting on a grandchild notification), and ONLY when NOT transient: a SINGLE wedge whose siblings/re-dispatch succeed, or one attributable to a platform/API blip (5xx/429, a one-off session-init failure like `No tools needed for summary`), is TRANSIENT → do NOT harden (note it, continue); a REPRODUCIBLE or ≥2×-recurring, non-platform-attributable wedge IS harden-worthy → emit an observed-friction harden with `friction_summary="sub-sub-agent tool-wedge"` after the current cycle resolves. When uncertain, treat a single occurrence as transient. (Cloud keeps the inline sub-subagent override, so grandchildren — and thus this case — are rare in cloud; the rule holds defensively.)
 
 **Depth cap (two deny shapes — the guard's reason text discriminates):**
 

@@ -96,6 +96,16 @@
       via the skill's own NEEDS_INPUT path). Batch multiple gaps found in one session
       into ONE dispatch, and relay the result (fixes + any NEEDS_INPUT) back. When the
       user TYPES `/harden-harness` themselves it runs inline — their explicit choice.
+    - A dispatched sub-sub-agent (a grandchild — an Explore/test/impl fan-out a cycle
+      subagent spawned) that WEDGES — total tool-execution failure, every tool call
+      erroring before executing (e.g. the Claude Code `No tools needed for summary`
+      message) — is a species of the harden trigger, handled POST-HOC only, NEVER as a
+      mid-cycle intervention (never `TaskStop` a live cycle over a grandchild's
+      notification — see `/lazy-batch` §1d-await). TRANSIENT wedges do NOT harden: a
+      single wedge whose siblings/re-dispatch succeed, or one attributable to a
+      platform/API blip (5xx/429, a one-off session-init failure like the undocumented
+      `No tools needed for summary`). A REPRODUCIBLE or ≥2×-recurring, non-platform
+      wedge IS harden-worthy. When uncertain, treat a single occurrence as transient.
   </auto-invoke>
 </skill-preferences>
 
