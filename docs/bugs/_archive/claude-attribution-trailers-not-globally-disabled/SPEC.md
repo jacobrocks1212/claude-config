@@ -2,6 +2,8 @@
 
 **Status:** Fixed
 **Discovered:** 2026-07-19
+**Fixed:** 2026-07-19
+**Fix commit:** 50938bc0
 **Severity:** P2
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage); `user/skills/commit/SKILL.md`, `user/skills/push/SKILL.md`, `.claude/skill-config/commit-policy.md`
 
