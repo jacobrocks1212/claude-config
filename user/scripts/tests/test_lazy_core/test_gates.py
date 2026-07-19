@@ -2861,7 +2861,151 @@ def test_no_duplicate_top_level_defs_in_state_scripts():
         assert dups == [], f"{path.name}: duplicate top-level definitions: {dups}"
 
 
+# ---------------------------------------------------------------------------
+# uncovered_verification_rows_remain — the shared Step-10 re-route predicate
+# (decision-2-6-uncovered-row-reroute-to-mcp-test WU-2)
+# ---------------------------------------------------------------------------
+
+_TWO_RV_ROWS_PHASES = (
+    "# Phases\n\n"
+    "### Phase 1\n\n"
+    "**Status:** In-progress\n\n"
+    "**Deliverables:**\n\n"
+    "- [x] implement the thing\n\n"
+    "**Runtime Verification** <!-- verification-only -->\n\n"
+    "- [ ] <!-- verification-only --> scenario A passes\n"
+    "- [ ] <!-- verification-only --> scenario B passes\n"
+)
+
+
+def test_uncovered_rows_partial_evidence_reroutes_true():
+    """≥2 verification rows, evidence covers only 1 (subset all-passing) →
+    autotick's cardinality lock would abort, leaving both uncovered →
+    reroute is True and both rows are listed."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _cc_write_validated(spec_dir)
+        _write_mcp_test_results(
+            spec_dir, ["scenario-a"], result="all-passing",
+            pass_count=1, total_count=1,
+        )
+        res = lazy_core.uncovered_verification_rows_remain(
+            spec_dir, _TWO_RV_ROWS_PHASES, spec_dir,
+        )
+        assert res["reroute"] is True, res
+        assert len(res["uncovered"]) == 2, res
+
+
+def test_uncovered_rows_full_evidence_terminates():
+    """All verification rows covered (pass_count >= row count) → autotick
+    would tick them all → reroute is False (TERMINATION)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _cc_write_validated(spec_dir)
+        _write_mcp_test_results(
+            spec_dir, ["a", "b"], result="all-passing",
+            pass_count=2, total_count=2,
+        )
+        res = lazy_core.uncovered_verification_rows_remain(
+            spec_dir, _TWO_RV_ROWS_PHASES, spec_dir,
+        )
+        assert res["reroute"] is False, res
+        assert res["uncovered"] == [], res
+
+
+def test_uncovered_host_deferred_row_excluded_terminates():
+    """The only uncovered verification row carries `<!-- requires-host: <cap> -->`
+    → excluded from the re-route (clause b — a host-deferred row can never pass
+    here) → reroute is False (would otherwise loop /mcp-test forever)."""
+    _guard()
+    phases = (
+        "# Phases\n\n### Phase 1\n\n**Status:** In-progress\n\n"
+        "- [x] implement\n\n"
+        "**Runtime Verification** <!-- verification-only -->\n\n"
+        "- [ ] <!-- verification-only --> <!-- requires-host: real-audio-device --> "
+        "sustained-timing on a real device\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _cc_write_validated(spec_dir)
+        # No MCP_TEST_RESULTS.md → evaluate_completion_evidence refuses →
+        # pass_count coerced to 0 → the single row is uncovered but host-deferred.
+        res = lazy_core.uncovered_verification_rows_remain(
+            spec_dir, phases, spec_dir,
+        )
+        assert res["reroute"] is False, res
+        assert res["uncovered"] == [], res
+
+
+def test_uncovered_observation_gap_partial_excluded_terminates():
+    """A sanctioned observation-gap partial (result: partial + every exemption
+    carries a spec_class) exempts its scope wholesale → reroute is False even
+    with an uncovered verification row present (clause a)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _cc_write_validated(spec_dir)
+        _write_mcp_test_results_with_exemptions(
+            spec_dir, ["a"],
+            exemptions=[{"surface": "ui-only", "spec_class": "unit-tier-locked"}],
+            result="partial", pass_count=1, total_count=1,
+        )
+        res = lazy_core.uncovered_verification_rows_remain(
+            spec_dir, _TWO_RV_ROWS_PHASES, spec_dir,
+        )
+        assert res["reroute"] is False, res
+
+
+def test_uncovered_superseded_and_descoped_rows_terminate():
+    """Unchecked verification rows that live only inside a Superseded phase or
+    under a `<!-- descoped -->` header are not-to-be-done → collected as zero
+    candidates → reroute is False."""
+    _guard()
+    phases = (
+        "# Phases\n\n"
+        "### Phase 1\n\n**Status:** Superseded\n\n"
+        "**Runtime Verification** <!-- verification-only -->\n\n"
+        "- [ ] <!-- verification-only --> superseded RV row\n\n"
+        "### Phase 2\n\n**Status:** In-progress\n\n"
+        "**Dropped work** <!-- descoped -->\n\n"
+        "- [ ] <!-- verification-only --> descoped RV row\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _cc_write_validated(spec_dir)
+        res = lazy_core.uncovered_verification_rows_remain(
+            spec_dir, phases, spec_dir,
+        )
+        assert res["reroute"] is False, res
+        assert res["uncovered"] == [], res
+
+
+def test_uncovered_predicate_is_evidence_driven_not_validated_gated():
+    """CALLER PRECONDITION (documentation test): "no VALIDATED.md" is the
+    Step-10 ENTRY gate's concern, NOT this predicate's. The predicate reasons
+    purely over PHASES + recorded MCP evidence — with no VALIDATED.md AND no
+    passing results, an uncovered matrix still yields reroute True (evidence,
+    not VALIDATED presence, drives it). It always returns the three keys and
+    never raises."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)  # deliberately NO VALIDATED.md, NO results
+        res = lazy_core.uncovered_verification_rows_remain(
+            spec_dir, _TWO_RV_ROWS_PHASES, spec_dir,
+        )
+        assert set(res.keys()) >= {"reroute", "uncovered", "reason"}, res
+        assert res["reroute"] is True, res
+
+
 _TESTS = [
+    ("test_uncovered_rows_partial_evidence_reroutes_true", test_uncovered_rows_partial_evidence_reroutes_true),
+    ("test_uncovered_rows_full_evidence_terminates", test_uncovered_rows_full_evidence_terminates),
+    ("test_uncovered_host_deferred_row_excluded_terminates", test_uncovered_host_deferred_row_excluded_terminates),
+    ("test_uncovered_observation_gap_partial_excluded_terminates", test_uncovered_observation_gap_partial_excluded_terminates),
+    ("test_uncovered_superseded_and_descoped_rows_terminate", test_uncovered_superseded_and_descoped_rows_terminate),
+    ("test_uncovered_predicate_is_evidence_driven_not_validated_gated", test_uncovered_predicate_is_evidence_driven_not_validated_gated),
     ("test_verify_ledger_spec_md_file_arg_normalizes_to_parent_dir", test_verify_ledger_spec_md_file_arg_normalizes_to_parent_dir),
     ("test_verify_ledger_all_green_passes", test_verify_ledger_all_green_passes),
     ("test_verify_ledger_dirty_tree_fails", test_verify_ledger_dirty_tree_fails),

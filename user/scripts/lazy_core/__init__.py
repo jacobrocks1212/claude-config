@@ -194,6 +194,8 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "_plan_wu_checkbox_counts": "gates",
     "_plan_wu_unchecked_row_detail": "gates",
     "autotick_verification_rows": "gates",
+    "uncovered_verification_rows_remain": "gates",
+    "_collect_uncovered_verification_rows": "gates",
     "commit_drift_verdict": "gates",
     "evaluate_completion_evidence": "gates",
     "evaluate_deferred_runtime_exemption": "gates",

@@ -904,6 +904,198 @@ def autotick_verification_rows(
 
 
 # ---------------------------------------------------------------------------
+# Step-10 uncovered-verification-row re-route predicate
+# (decision-2-6-uncovered-row-reroute-to-mcp-test WU-2)
+# ---------------------------------------------------------------------------
+
+def _collect_uncovered_verification_rows(phases_text: str) -> list[tuple[str, bool]]:
+    """Collect UNCHECKED verification-marked rows + a host-deferred flag each.
+
+    Shares the row-walk discipline of ``remaining_unchecked_are_verification_only``
+    / ``autotick_verification_rows``: fence-aware (illustrative rows in a ```
+    fence are skipped), phase-reset-aware, Superseded-aware, descope-aware
+    (canonical ``_DESCOPED_MARKER`` row/header-scope + the legacy
+    strikethrough+keyword shim), and verification-marker aware (the row OR its
+    enclosing subsection header carrying ``_VERIFICATION_ONLY_MARKER``).
+
+    Each collected row is tagged HOST-DEFERRED when the row (or its enclosing
+    subsection header) carries the ``<!-- requires-host: <cap> -->`` marker
+    (``docmodel.row_requires_host``) — clause (b) of the re-route predicate.
+
+    Returns a list of ``(row_text, is_host_deferred)`` for every unchecked row
+    that is verification-marked AND not Superseded / descoped / fenced. Pure —
+    no I/O, no mutation.
+    """
+    rows: list[tuple[str, bool]] = []
+    section_has_marker = False        # verification-only header scope
+    section_has_descope = False       # descope header scope
+    section_requires_host = False     # requires-host header scope (clause b)
+    in_superseded_phase = False
+    in_fence = False
+    for raw in phases_text.splitlines():
+        stripped = raw.strip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        heading = re.match(r"^#{1,6}\s+(.*)$", stripped)
+        if heading:
+            heading_text = heading.group(1)
+            if re.match(r"Phase\s+\d+", heading_text):
+                # New phase block — reset all subsection tracking.
+                in_superseded_phase = False
+                section_has_marker = False
+                section_has_descope = False
+                section_requires_host = False
+            else:
+                section_has_marker = docmodel._VERIFICATION_ONLY_MARKER in raw
+                section_has_descope = docmodel._DESCOPED_MARKER in raw
+                section_requires_host = docmodel.row_requires_host(raw) is not None
+            continue
+        if stripped.startswith("**"):
+            bold = re.match(r"^\*\*(.+?)\*\*", stripped)
+            if bold:
+                bold_text = bold.group(1)
+                if re.match(r"Status\s*:", bold_text) and "Superseded" in stripped:
+                    in_superseded_phase = True
+                    continue
+                # A named subsection header (Runtime Verification / Deliverables /
+                # a descope header) begins a new scope. Set each flag from THIS
+                # header line; a fresh named subsection resets the sibling scopes
+                # (mirrors autotick's marker handling, extended to the two new
+                # marker scopes).
+                if docmodel._VERIFICATION_ONLY_MARKER in raw:
+                    section_has_marker = True
+                section_has_descope = docmodel._DESCOPED_MARKER in raw
+                section_requires_host = docmodel.row_requires_host(raw) is not None
+                continue
+        m = _UNCHECKED_ROW_RE.match(raw.rstrip("\r\n"))
+        if not m:
+            continue
+        if in_superseded_phase:
+            continue
+        # Descoped-in-place rows are not-to-be-done (canonical marker row- or
+        # header-scope, or the legacy strikethrough+keyword shim).
+        if (
+            section_has_descope
+            or docmodel._DESCOPED_MARKER in raw
+            or docmodel._row_is_descoped_in_place(raw)
+        ):
+            continue
+        row_has_marker = docmodel._VERIFICATION_ONLY_MARKER in raw
+        if not (row_has_marker or section_has_marker):
+            continue
+        host_deferred = section_requires_host or (
+            docmodel.row_requires_host(raw) is not None
+        )
+        rows.append((raw.strip(), host_deferred))
+    return rows
+
+
+def uncovered_verification_rows_remain(feature_dir, phases_text, repo_root) -> dict:
+    """Does a Step-10 completion route still have uncovered verification rows?
+
+    The SHARED predicate serving both symptoms of
+    decision-2-6-uncovered-row-reroute-to-mcp-test: the partial-VALIDATED
+    oscillation (decision 2) and newly-discovered-coverage stranding
+    (decision 6). Pure, side-effect-free — safe on the read-only
+    ``compute_state`` probe path (it REASONS about what ``autotick_verification_rows``
+    WOULD tick given the recorded evidence; it NEVER mutates PHASES.md).
+
+    Returns ``{reroute: bool, uncovered: list[str], reason: str}``. When
+    ``reroute`` is True, the state script routes ``sub_skill="mcp-test"`` to
+    finish (or author) the matrix instead of the terminal ``__mark_complete__`` /
+    ``__mark_fixed__``. ``uncovered`` lists the row text(s) that drove the
+    decision (for the routing ``_diag``).
+
+    The operator-locked fix shape (SPEC Proven Findings): re-route iff a
+    non-Superseded phase has an unchecked runtime-verification row that is
+    (a) NOT observation-gap-exempt AND (b) NOT host-deferred
+    (``<!-- requires-host: <cap> -->``) AND (c) not covered by recorded evidence
+    (still unchecked after ``autotick_verification_rows``). **Termination is the
+    load-bearing contract** — the predicate returns False (falls through to the
+    terminal pseudo-skill) once every uncovered row is covered / host-deferred /
+    exempt, so it can never loop /mcp-test forever.
+
+    CALLER PRECONDITION: invoked at Step 10 with ``VALIDATED.md`` present (the
+    Step-10 entry gate). "No VALIDATED.md" is NOT this helper's concern — it
+    reasons purely over PHASES + the recorded MCP evidence.
+
+    CONSERVATIVE by construction (operator-accepted tradeoff): "still uncovered
+    after evidence reasoning" ⇒ re-route; one redundant /mcp-test pass on a
+    genuinely-complete-but-unticked matrix is tolerable.
+    """
+    feature_dir = Path(feature_dir)
+    repo_root = Path(repo_root)
+
+    # Clause (a): a sanctioned observation-gap partial (result: partial whose
+    # every exemption carries a spec_class provenance) is a WHOLE-FILE exempt
+    # disposition — its scope is spec_class-cited untestable-here, so NEVER
+    # re-route (rerouting would loop /mcp-test on rows with no MCP driver). This
+    # routes through the SAME observation_gap_promotable helper the apply +
+    # completion gates use, so all three cannot diverge.
+    results_meta = parse_sentinel(feature_dir / "MCP_TEST_RESULTS.md")
+    if isinstance(results_meta, dict) and observation_gap_promotable(results_meta):
+        return {
+            "reroute": False,
+            "uncovered": [],
+            "reason": "sanctioned observation-gap partial — no re-route (clause a)",
+        }
+
+    # Clause (c) numerator: the evidence pass_count autotick ticks against. Read
+    # it from the SAME evidence gate __mark_complete__ uses; a refuse verdict
+    # (forged / stale / missing results) yields 0 so every candidate row is
+    # treated as uncovered (finish / re-run the matrix).
+    verdict = evaluate_completion_evidence(feature_dir, repo_root)
+    pass_count = verdict.get("pass_count")
+    if not isinstance(pass_count, int) or pass_count < 0:
+        pass_count = 0
+
+    rows = _collect_uncovered_verification_rows(phases_text)
+
+    # Clause (c) mirrors autotick_verification_rows' cardinality lock: autotick
+    # ticks the verification rows ONLY when their total count <= pass_count
+    # (else it ABORTS, ticking nothing). So the rows are "covered" iff
+    # autotick would tick them all.
+    if len(rows) <= pass_count:
+        return {
+            "reroute": False,
+            "uncovered": [],
+            "reason": (
+                f"all {len(rows)} verification row(s) covered by recorded "
+                f"evidence (pass_count={pass_count}) — autotick would tick them"
+            ),
+        }
+
+    # autotick would abort → nothing ticked → rows remain uncovered. Re-route
+    # ONLY over rows a /mcp-test cycle can actually cover here: exclude
+    # host-deferred rows (clause b — they can never pass on a host lacking the
+    # capability, so re-routing loops). If the only uncovered rows are
+    # host-deferred, fall through to the terminal pseudo-skill (decision-5 owns
+    # their completion-time exemption).
+    reroutable = [text for (text, host_deferred) in rows if not host_deferred]
+    if reroutable:
+        return {
+            "reroute": True,
+            "uncovered": reroutable,
+            "reason": (
+                f"{len(reroutable)} uncovered verification row(s) exceed "
+                f"pass_count={pass_count} and are not host-deferred/exempt — "
+                "re-route to /mcp-test to finish the matrix"
+            ),
+        }
+    return {
+        "reroute": False,
+        "uncovered": [],
+        "reason": (
+            "remaining uncovered verification row(s) are all host-deferred — "
+            "no re-route (clause b termination; decision-5 owns their disposition)"
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Completion ledger verification
 # ---------------------------------------------------------------------------
 

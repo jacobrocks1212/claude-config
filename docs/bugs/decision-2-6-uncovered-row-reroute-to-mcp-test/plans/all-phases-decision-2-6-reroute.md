@@ -61,7 +61,7 @@ Upstream plans and PHASES.md files this plan was authored against.
 ## Work Units
 
 - [x] WU-1 — `row_requires_host` per-row host-defer recognizer (Phase 1)
-- [ ] WU-2 — `uncovered_verification_rows_remain` shared predicate (Phase 2)
+- [x] WU-2 — `uncovered_verification_rows_remain` shared predicate (Phase 2)
 - [ ] WU-3 — Wire the shared re-route into both state scripts + `--test` fixtures + parity (Phase 3)
 
 ---

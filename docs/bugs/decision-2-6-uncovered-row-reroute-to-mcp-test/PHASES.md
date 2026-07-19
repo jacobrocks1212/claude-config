@@ -62,17 +62,21 @@
 
 ### Phase 2: Shared uncovered-verification-row predicate (pure helper)
 
+**Status:** Complete
+
 **Scope:** Add ONE pure `lazy_core` helper — the SHARED predicate both state scripts call (SPEC: "ONE predicate serving both symptoms"). Given the feature/bug dir + PHASES.md text + repo root, it answers: *does a non-Superseded phase have an unchecked runtime-verification row that is (a) NOT observation-gap-exempt, (b) NOT host-deferred, and (c) not covered by recorded evidence?* Returns a small structured result (`{reroute: bool, uncovered: [...], reason: ...}`) so the routing `_diag` can name why. Pure/side-effect-free (no PHASES.md mutation — it REASONS about what `autotick_verification_rows` would tick; it does not tick).
 
 **Deliverables:**
-- [ ] `uncovered_verification_rows_remain(feature_dir, phases_text, repo_root) -> dict` in `gates.py`, composing:
+- [x] `uncovered_verification_rows_remain(feature_dir, phases_text, repo_root) -> dict` in `gates.py`, composing:
   - the row-walk of `remaining_unchecked_are_verification_only` (unchecked `- [ ]` rows carrying `_VERIFICATION_ONLY_MARKER`, fence-aware, Superseded/descoped-aware) to enumerate candidate rows — reuse `_UNCHECKED_ROW_RE` + `_VERIFICATION_ONLY_MARKER`, do NOT re-implement;
   - clause (a): exclude rows when the recorded `MCP_TEST_RESULTS.md` meta is a sanctioned observation-gap partial (`observation_gap_promotable(meta)` True);
   - clause (b): exclude a row for which `row_requires_host(row) is not None` (Phase 1);
   - clause (c): a row is "covered" iff the recorded evidence would tick it — i.e. `evaluate_completion_evidence` authorizes (`exempt-and-tick`/`warn-exempt`) AND the autotick cardinality is sufficient (`pass_count >=` the count of covered candidate rows). A subset/partial `VALIDATED.md` (pass_count < candidate rows) leaves the excess rows UNCOVERED ⇒ `reroute: True`.
-- [ ] The helper is CONSERVATIVE per the operator-locked fix shape: "still uncovered after evidence reasoning" ⇒ re-route; one redundant mcp-test pass on a genuinely-complete-but-unticked matrix is tolerable.
-- [ ] Facade export in `__init__.py` (`gates`).
-- [ ] Tests: `test_gates.py` — (1) partial VALIDATED over ≥2 verification rows, evidence covers only 1 ⇒ `reroute: True`, `uncovered` lists the excess; (2) all rows covered by evidence ⇒ `reroute: False` (TERMINATION); (3) uncovered row but `row_requires_host` set ⇒ excluded ⇒ `reroute: False`; (4) `result: partial` with valid `observation_gap_exemptions` ⇒ excluded ⇒ `reroute: False`; (5) all rows Superseded/descoped ⇒ `reroute: False`; (6) no VALIDATED.md is a caller precondition, not this helper's concern (document it).
+- [x] The helper is CONSERVATIVE per the operator-locked fix shape: "still uncovered after evidence reasoning" ⇒ re-route; one redundant mcp-test pass on a genuinely-complete-but-unticked matrix is tolerable.
+- [x] Facade export in `__init__.py` (`gates`).
+- [x] Tests: `test_gates.py` — (1) partial VALIDATED over ≥2 verification rows, evidence covers only 1 ⇒ `reroute: True`, `uncovered` lists the excess; (2) all rows covered by evidence ⇒ `reroute: False` (TERMINATION); (3) uncovered row but `row_requires_host` set ⇒ excluded ⇒ `reroute: False`; (4) `result: partial` with valid `observation_gap_exemptions` ⇒ excluded ⇒ `reroute: False`; (5) all rows Superseded/descoped ⇒ `reroute: False`; (6) no VALIDATED.md is a caller precondition, not this helper's concern (document it).
+
+**Implementation Notes (2026-07-19):** Landed `uncovered_verification_rows_remain` + the shared `_collect_uncovered_verification_rows` row-walk in `gates.py`, facade-exported. Clause (c) mirrors `autotick_verification_rows`' all-or-nothing cardinality lock exactly: rows are covered iff `len(rows) <= pass_count` (autotick ticks all) else the abort leaves them uncovered — `pass_count` read from `evaluate_completion_evidence` (refuse verdict → 0). Clause (a) routes through `observation_gap_promotable` (whole-file exempt). Clause (b) excludes host-deferred rows from `reroutable`; when ONLY host-deferred rows remain uncovered the predicate returns `reroute: False` (termination — decision-5 owns their completion exemption). 6 unit tests cover all branches + the caller-precondition doc; all green.
 
 **Minimum Verifiable Behavior:** `pytest user/scripts/tests/test_lazy_core/test_gates.py` — the six branches above pass, proving the predicate both fires on a genuine subset AND terminates on covered/host-deferred/exempt matrices.
 
