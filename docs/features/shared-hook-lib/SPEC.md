@@ -8,7 +8,7 @@
 > `test_hooks.py` suite after each. Copy-drift in this scaffolding has already produced real
 > bugs; a matcher-semantics change today must be hand-landed in three places.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-18
 **Source:** repo-exploration proposal session 2026-07-11

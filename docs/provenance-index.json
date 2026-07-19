@@ -425,6 +425,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -491,6 +496,11 @@
       "id": "adhoc-bug-pickup-routes-superseded-specs",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/adhoc-checkpoint-resume-field-complete-continuity/ADHOC_BRIEF.md": [
@@ -540,6 +550,20 @@
       "id": "adhoc-checkpoint-resume-field-complete-continuity",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/adhoc-cli-surface-registry-stale-set-independent/ADHOC_BRIEF.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/adhoc-cli-surface-registry-stale-set-independent/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/adhoc-derive-cycle-commit-budget/ADHOC_BRIEF.md": [
@@ -759,6 +783,34 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/agpl-sidecar-framing-strudel-only-second-sidecar/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/agpl-sidecar-framing-strudel-only-second-sidecar/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/archive-fixed-relative-spec-path-valueerror/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/archive-fixed-relative-spec-path-valueerror/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/block-terminal-kill-false-denies-heredoc-body-tokens/ADHOC_BRIEF.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -845,6 +897,55 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/block-terminal-kill-false-denies-quoted-argument-tokens/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/block-terminal-kill-false-denies-quoted-argument-tokens/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/block-terminal-kill-matches-separators-inside-quoted-args/DEFERRED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/block-terminal-kill-matches-separators-inside-quoted-args/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/block-terminal-kill-matches-separators-inside-quoted-args/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/blocked-add-phase-strands-originating-in-progress-plan/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/blocked-add-phase-strands-originating-in-progress-plan/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/budget-guard-defers-near-complete-feature/FIXED.md": [
@@ -1138,6 +1239,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/plans/all-phases-copy-lock-part-1.md": [
@@ -1596,6 +1702,55 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/_archive/build-queue-no-artifact-or-process-hygiene-on-crash/BLOCKED_RESOLVED_2026-07-18.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-no-artifact-or-process-hygiene-on-crash/PHASES.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-no-artifact-or-process-hygiene-on-crash/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-no-artifact-or-process-hygiene-on-crash/plans/fix-hygiene-part-1.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-no-artifact-or-process-hygiene-on-crash/plans/fix-hygiene-part-2.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-no-artifact-or-process-hygiene-on-crash/plans/fix-hygiene-part-3.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-recycle-kills-concurrent-worktree-build/PHASES.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/build-queue-recycle-kills-concurrent-worktree-build/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -1616,6 +1771,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/build-queue-runner-tests-dual-beforeall-fails-pester6/FIXED.md": [
@@ -1737,6 +1897,34 @@
       "id": "byref-dispatch-undercounts-forward-cycles",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/byref-forward-cycles-frozen-on-multicycle-same-step/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/byref-forward-cycles-frozen-on-multicycle-same-step/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/coherence-recovery-loop-no-terminal-on-unrunnable-verification-rows/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/coherence-recovery-loop-no-terminal-on-unrunnable-verification-rows/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo/FIXED.md": [
@@ -1956,6 +2144,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/cycle-subagent-over-cap-aggregate-gate-auto-backgrounds/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/cycle-subagent-over-cap-aggregate-gate-auto-backgrounds/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/cycle-subagent-runs-orchestrator-work/FIXED.md": [
     {
       "id": "cycle-subagent-runs-orchestrator-work",
@@ -2003,6 +2205,20 @@
       "id": "cycle-subagent-runs-orchestrator-work",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/descoped-marker-blind-completion-coherence-gate/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/descoped-marker-blind-completion-coherence-gate/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/dispatch-probe-and-inject-bypass-merged-head/FIXED.md": [
@@ -2096,6 +2312,34 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/dispatched-orchestrator-completed-notification-misread-as-terminal/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/dispatched-orchestrator-completed-notification-misread-as-terminal/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/emit-dispatch-residue-guard-flags-content-braces/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/emit-dispatch-residue-guard-flags-content-braces/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/ensure-runtime-false-hijacked-on-owned-serving-runtime/FIXED.md": [
@@ -2441,6 +2685,34 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/gate-scope-folds-concurrent-harden-commits/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/gate-scope-folds-concurrent-harden-commits/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/gemini-prompt-char-cap-above-hard-truncation-limit/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/gemini-prompt-char-cap-above-hard-truncation-limit/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/generic-execution-surfaces-lack-turn-end-gate/FIXED.md": [
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
@@ -2460,6 +2732,20 @@
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/harden-harness-feature-spec-lands-in-unmanaged-docs-specs/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/harden-harness-feature-spec-lands-in-unmanaged-docs-specs/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/harden-rounds-skip-docs-bugs-reconciliation-contract/FIXED.md": [
@@ -2589,6 +2875,34 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/kpi-drafted-row-never-promoted-to-registry/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/kpi-drafted-row-never-promoted-to-registry/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/lazy-batch-no-mid-run-budget-or-park-controls/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/lazy-batch-no-mid-run-budget-or-park-controls/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/lazy-batch-parallel-run-harness-gaps-round-2/FIXED.md": [
     {
       "id": "lazy-batch-parallel-run-harness-gaps-round-2",
@@ -2601,6 +2915,20 @@
       "id": "lazy-batch-parallel-run-harness-gaps-round-2",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/lazy-batch-parallel-run-harness-gaps/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/lazy-batch-parallel-run-harness-gaps/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/lazy-batch-unified-driver-parity-and-accounting/FIXED.md": [
@@ -2645,6 +2973,48 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/lazy-cycle-containment-misparses-grouped-feature-paths/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/lazy-cycle-containment-misparses-grouped-feature-paths/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/lazy-run-marker-park-arm-and-forward-cycle-inflation/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/lazy-run-marker-park-arm-and-forward-cycle-inflation/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/live-settings-probe-false-positive-in-consumer-repo/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/live-settings-probe-false-positive-in-consumer-repo/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/long-build-and-build-queue-matcher-bypasses/FIXED.md": [
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
@@ -2685,6 +3055,20 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/long-build-ownership-guard-misses-qg-gates/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/long-build-ownership-guard-misses-qg-gates/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/loop-detected-false-positives-from-probe-and-reboot-churn/FIXED.md": [
@@ -2938,6 +3322,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/merged-head-diverged-withholds-on-research-skipped-head/FIXED.md": [
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
@@ -3135,6 +3533,11 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/merged-head-research-exclusion-flag-gated-splits-cross-script/FIXED.md": [
@@ -3284,6 +3687,13 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/no-sanctioned-cli-for-queue-state-mutations/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/no-sanctioned-queue-reorder-command/FIXED.md": [
     {
       "id": "no-sanctioned-queue-reorder-command",
@@ -3415,6 +3825,27 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/NEEDS_INPUT_PROVISIONAL_RESOLVED_2026-07-18.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/per-feature-cycle-cap-defers-incomplete-work/FIXED.md": [
     {
       "id": "per-feature-cycle-cap-defers-incomplete-work",
@@ -3512,6 +3943,20 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/_archive/phases-slice-heading-regex-sync-unpinned/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/phases-slice-heading-regex-sync-unpinned/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/_archive/plan-skills-lack-targeted-phase-scoped-read/FIXED.md": [
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
@@ -3570,6 +4015,34 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/plan-structural-backstop-silent-disarm-on-infrastructure-failure/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/plan-structural-backstop-silent-disarm-on-infrastructure-failure/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/planning-audit-blind-to-inbound-module-path-loads/FIXED.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/planning-audit-blind-to-inbound-module-path-loads/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/planning-validation-misses-serving-path-and-data-reach/FIXED.md": [
@@ -3992,6 +4465,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/_archive/windows-portability-in-probe-glue-and-field-validators/FIXED.md": [
@@ -5845,6 +6323,11 @@
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/feature-queue-lacks-on-disk-autodiscovery/PHASES.md": [
@@ -7147,6 +7630,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/merged-head-diverged-withholds-on-research-skipped-head/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/merged-head-includes-parked-items-deadlocks-park-run/PHASES.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -8161,6 +8651,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -8338,6 +8833,11 @@
     }
   ],
   "docs/bugs/run-end-efficacy-breadcrumb-misattributed-under-concurrent-cross-repo-run/SPEC.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "subagent-wedge-backstop-hook",
       "type": "feature",
@@ -9005,6 +9505,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -9389,6 +9894,11 @@
       "id": "code-doc-provenance-linkage",
       "type": "feature",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/claude-config-ci/SPEC.md": [
@@ -9554,6 +10064,13 @@
       "id": "completion-coherence-gate-reconciliation",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/features/concurrent-worktree-agent-coordination/ADHOC_BRIEF.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/coupled-pair-generation/COMPLETED.md": [
@@ -12890,6 +13407,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -13007,6 +13529,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/features/shared-hook-lib/PHASES.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/shared-hook-lib/RESEARCH.md": [
     {
       "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
@@ -13017,6 +13546,20 @@
       "id": "lazy-batch-parallel-run-harness-gaps-round-2",
       "type": "bug",
       "provenance": "manual"
+    }
+  ],
+  "docs/features/shared-hook-lib/RESEARCH_PROMPT.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/shared-hook-lib/RESEARCH_SUMMARY.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/shared-hook-lib/SPEC.md": [
@@ -13071,7 +13614,33 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "skill-config-schema-and-reference-lint",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/shared-hook-lib/plans/all-phases-shared-hook-lib-part-1.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/shared-hook-lib/plans/all-phases-shared-hook-lib-part-2.md": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/shared-hook-lib/plans/all-phases-shared-hook-lib-part-3.md": [
+    {
+      "id": "shared-hook-lib",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -16283,6 +16852,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -16384,6 +16958,11 @@
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/specs/turn-routing-enforcement/NEEDS_INPUT_2026-07-17-research-gated-classification-and-skip-vs-halt.md": [
@@ -16573,6 +17152,11 @@
     {
       "id": "skip-mcp-test-frontmatter-unquoted-colon",
       "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
       "provenance": "pipeline-gated"
     },
     {
@@ -16964,6 +17548,11 @@
       "id": "harness-hardening-retro-fixes",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "repos/algobooth/.claude/skills/qg-rust/SKILL.md": [
@@ -17463,6 +18052,11 @@
       "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/hooks/block-sentinel-write-on-stray-branch.sh": [
@@ -17475,6 +18069,11 @@
       "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/hooks/block-terminal-kill.sh": [
@@ -17556,6 +18155,11 @@
       "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/hooks/execute-plan-compact-reorient.sh": [
@@ -17576,6 +18180,13 @@
     },
     {
       "id": "spec-excerpt-scoped-plans",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/hooks/hook-prelude.sh": [
+    {
+      "id": "shared-hook-lib",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -17647,6 +18258,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "spec-excerpt-scoped-plans",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -17657,6 +18273,11 @@
       "id": "multi-repo-concurrent-runs",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/hooks/lazy-route-inject.sh": [
@@ -17664,6 +18285,11 @@
       "id": "multi-repo-concurrent-runs",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/hooks/long-build-ownership-guard.sh": [
@@ -17696,6 +18322,11 @@
       "id": "long-build-and-runtime-ownership",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/hooks/subagent-wedge-backstop.sh": [
@@ -18580,6 +19211,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/scripts/hook_lib.py": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/scripts/incident-scan.py": [
     {
       "id": "incident-auto-capture",
@@ -18630,6 +19268,11 @@
     },
     {
       "id": "phases-slice-scoped-reads",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "shared-hook-lib",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -18873,6 +19516,11 @@
       "id": "queue-dependency-dag",
       "type": "feature",
       "provenance": "backfilled"
+    },
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "spike-pipeline-role",
@@ -19156,6 +19804,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "spike-pipeline-role",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -19208,6 +19861,11 @@
     },
     {
       "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "shared-hook-lib",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -19277,6 +19935,11 @@
     },
     {
       "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "shared-hook-lib",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -19925,6 +20588,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/scripts/test_hook_lib.py": [
+    {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/scripts/test_hooks.py": [
     {
       "id": "adhoc-incident-hook-deny-4b767b",
@@ -19997,6 +20667,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "shared-hook-lib",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "state-cli-contract-registry",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -20037,6 +20712,11 @@
     },
     {
       "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "shared-hook-lib",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -20784,6 +21464,11 @@
     },
     {
       "id": "merged-head-actionability-oracle",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "shared-hook-lib",
       "type": "feature",
       "provenance": "pipeline-gated"
     }

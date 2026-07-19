@@ -42,7 +42,7 @@ Per the Step 2.7 runtime-assumption gate. This feature has **no user-facing prod
 
 **Scope:** Author `user/hooks/hook-prelude.sh` — a sourced (never executed), fail-open-guarded bash prelude providing `HOOK_PYTHON` (python3→python resolution), `HOOK_SCRIPTS_DIR` (SELF-normalized, builtins-only SCRIPT_DIR derivation), and `hook_emit_error_event()` (a pure-bash `hook-events.jsonl` + `hook-error.json` writer — printf/date only, best-effort, no python needed). Wire it into the two thin prelude-only wrappers (`lazy-dispatch-guard.sh`, `lazy-route-inject.sh`) as first consumers via `. "$…/hook-prelude.sh" 2>/dev/null || exit 0`. Lands the `guard-fail-open-leaves-no-trace` fix-scope §1 (a no-python error path that leaves a trace) as a side effect.
 
-**Status:** ✅ Complete (2026-07-18)
+**Status:** Complete
 
 **Deliverables:**
 - [x] `user/hooks/hook-prelude.sh` — `HOOK_PYTHON` resolution (`command -v python3` → `command -v python` → fallback breadcrumb + `exit 0`), `HOOK_SCRIPTS_DIR` derivation (backslash-normalize, builtins-only), `hook_emit_error_event(hook, signature, detail)` pure-bash JSONL append (integer `date +%s` `ts`, `kind:"error"`) + single-line `hook-error.json` overwrite, all best-effort/fail-open.
@@ -79,7 +79,7 @@ Per the Step 2.7 runtime-assumption gate. This feature has **no user-facing prod
 
 **Scope:** Author `user/scripts/hook_lib.py` — the imported python substrate. Provides `allow()` / `deny(reason)` JSON emitters, `append_hook_event(kind, hook, signature, detail, repo_root=None)` (lazily delegating to `lazy_core.append_hook_event` when importable, with the current per-hook inline fallback branch collapsed to live here ONCE), `breadcrumb(hook, err)` (chaining into `append_hook_event("error", …)`), and the shared anchor constants `ENV_PREFIX` / `CMD_START` (single source for the pair triplicated across three hooks). **Import-light discipline (D4):** stdlib only at module top; `import lazy_core` deferred lazily inside `append_hook_event`. `hook_lib` import must never read stdin.
 
-**Status:** ✅ Complete (2026-07-18)
+**Status:** Complete
 
 **Deliverables:**
 - [x] `user/scripts/hook_lib.py` — `allow()`, `deny(reason)`, `append_hook_event(...)` (lazy `lazy_core` delegation + inline JSONL fallback), `breadcrumb(hook, err)`, `ENV_PREFIX` / `CMD_START` module constants, plus the shared path-prefix helper idiom.
@@ -120,7 +120,7 @@ Per the Step 2.7 runtime-assumption gate. This feature has **no user-facing prod
 
 ### Phase 3: Migrate the five inline-Python enforcement hooks (one per step)
 
-**Status:** ✅ Complete (2026-07-18)
+**Status:** Complete
 
 **Scope:** Migrate each of the five inline-Python enforcement hooks onto the prelude (`source` + `HOOK_PYTHON`/`HOOK_SCRIPTS_DIR`) and `hook_lib` (`import hook_lib` seeded from `HOOK_SCRIPTS_DIR`), in D3 lowest-blast-radius-first order. Each hook drops its inline `_allow`/`_deny`/`_append_hook_event`/`_breadcrumb` copies and (for the three anchor-bearing hooks) its `_ENV_PREFIX`/`_CMD_START` definitions, retaining only a minimal `except ImportError: sys.exit(0)` fallback. **Full `python user/scripts/test_hooks.py` after EACH single-hook migration** — the pipe-tests assert deny/allow output byte-identically, which is the no-behavior-change proof; a regression is attributable to exactly one hook.
 
@@ -163,7 +163,7 @@ Per the Step 2.7 runtime-assumption gate. This feature has **no user-facing prod
 
 **Scope:** Register the `repo-static-scan` signal source and `hook-duplicated-line-count` selector in `kpi-scorecard.py`'s `_SOURCES` map plus a deterministic counter (a static scan of `user/hooks/` that counts the remaining duplicated scaffolding lines), and move the SPEC's drafted `hook-plane-duplicated-lines` row from its non-claiming fence into `docs/kpi/registry.json`. Follows the `canary-trip-precision` / `session-log-mining` precedent (register the selector alongside the feature so the drafted row becomes claimable). Re-run `kpi-scorecard.py --lint` + `--lint --spec`.
 
-**Status:** ✅ Complete (2026-07-18)
+**Status:** Complete
 
 **Deliverables:**
 - [x] `user/scripts/kpi-scorecard.py` — add `"repo-static-scan": frozenset({"hook-duplicated-line-count"})` to `_SOURCES` (line ~75) + a `_sel_*` selector function computing the deterministic count (static scan of `user/hooks/`, honesty ladder: absent/unrecordable → NO-DATA, never a fabricated zero).

@@ -3,12 +3,6 @@
   "autodiscover": true,
   "queue": [
     {
-      "id": "shared-hook-lib",
-      "name": "Shared Hook Lib (hook-prelude.sh + hook_lib.py)",
-      "spec_dir": "shared-hook-lib",
-      "tier": 2
-    },
-    {
       "id": "claude-config-ci",
       "name": "CI for claude-config Itself",
       "spec_dir": "claude-config-ci",
