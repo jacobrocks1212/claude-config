@@ -342,6 +342,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "register_emission": "dispatch",
     "register_emission_if_marked": "dispatch",
     "registry_summary": "dispatch",
+    "resolve_consumed_emission_by_nonce": "dispatch",
     "resolve_emission_by_nonce": "dispatch",
     "skill_declares_multi_commit": "dispatch",
     "skill_declares_subagent_model": "dispatch",

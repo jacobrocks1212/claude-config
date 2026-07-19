@@ -2093,6 +2093,90 @@ def resolve_emission_by_nonce(
         return None
 
 
+def resolve_consumed_emission_by_nonce(
+    nonce: str,
+    *,
+    now: float | None = None,
+) -> str | None:
+    """Return the registered prompt bytes for a nonce the guard ALREADY consumed.
+
+    byref-updatedinput-unapplied-on-background-agent-dispatch (WU-1): the SANCTIONED
+    consumed-nonce read.  ``hookSpecificOutput.updatedInput`` is silently dropped
+    for the Agent tool as a CLASS in current Claude Code (upstream
+    anthropics/claude-code#39814, closed not-planned), so a by-reference
+    ``@@lazy-ref nonce=<hex>`` dispatch lands the BARE token at the subagent instead
+    of the resolved bytes.  This is the read a subagent runs (via the state scripts'
+    ``--resolve-ref`` CLI) to recover its full instructions from the prompt registry
+    AFTER the guard has already ALLOW+consumed the nonce this run.
+
+    This is a DISTINCT read surface from ``resolve_emission_by_nonce``: that one
+    filters CONSUMED entries (Gate-1 requires ``consumed`` falsy) because it feeds
+    the guard's single-use dispatch path.  This reader INVERTS only Gate-1 (require
+    ``consumed`` truthy) while reusing the identical TTL + run-start gates, so it
+    serves ONLY a nonce that was legitimately dispatched this run — never an
+    un-dispatched or cross-run entry.
+
+    READ-ONLY and run-scoped: it NEVER mutates the registry (never un-consumes) and
+    is fail-safe (any error → None).  ``resolve_emission_by_nonce`` is left
+    UNCHANGED — its consumed-filter is load-bearing for the guard.
+
+    Args:
+        nonce: the nonce hex string from the ``@@lazy-ref`` token.
+        now: epoch float for TTL comparison (injectable for hermetic tests;
+             defaults to time.time()).
+
+    Returns:
+        The entry's ``prompt_raw`` (fallback ``prompt_norm``) as a str when the
+        nonce resolves to a CONSUMED, TTL-fresh, run-start-gated entry; None when:
+          - the nonce does not exist in the registry, OR
+          - the entry is NOT consumed, OR
+          - the entry is beyond TTL, OR
+          - the entry predates the current run's started_at.
+    """
+    from .markers import read_run_marker  # deferred (marker plane; function-local avoids import cycle)
+    if now is None:
+        now = time.time()
+
+    try:
+        # Compute the run-start epoch gate (mirrors resolve_emission_by_nonce).
+        marker = read_run_marker(now=now)
+        run_started_epoch: float | None = None
+        if marker is not None:
+            started_at_str = marker.get("started_at", "")
+            try:
+                started_dt = datetime.datetime.strptime(
+                    started_at_str, "%Y-%m-%dT%H:%M:%SZ"
+                )
+                run_started_epoch = (
+                    started_dt - datetime.datetime(1970, 1, 1)
+                ).total_seconds()
+            except (ValueError, TypeError):
+                run_started_epoch = None
+
+        data = _load_registry()
+        for entry in data["entries"]:
+            if entry.get("nonce") != nonce:
+                continue
+            # Gate 1 (INVERTED vs resolve_emission_by_nonce): must be CONSUMED.
+            if not entry.get("consumed", False):
+                return None
+            # Gate 2: must be within TTL.
+            emitted_at = entry.get("emitted_at", 0.0)
+            if now - emitted_at > REGISTRY_ENTRY_TTL_SECONDS:
+                return None
+            # Gate 3: must not predate the current run (when a marker is present).
+            if run_started_epoch is not None and emitted_at < run_started_epoch:
+                return None
+            # All gates passed — return the exact registered bytes (raw, then norm).
+            return entry.get("prompt_raw") or entry.get("prompt_norm")
+        # Nonce not found in registry.
+        return None
+    except Exception:  # noqa: BLE001
+        # Fail-safe: any error → None (a subagent that gets None falls back to the
+        # documented verbatim path; never a spurious wrong-prompt return).
+        return None
+
+
 def append_dispatch_by_reference_event(
     *,
     tool_use_id: str,

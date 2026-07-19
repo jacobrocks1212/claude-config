@@ -4725,6 +4725,219 @@ def test_f2a_resolve_emission_stale_nonce_returns_none():
             _clear_state_dir()
 
 
+# ---------------------------------------------------------------------------
+# Tests: byref-updatedinput-unapplied-on-background-agent-dispatch — WU-1
+# The sanctioned CONSUMED-nonce reader. The platform drops the by-reference
+# updatedInput rewrite for the Agent tool (upstream #39814), so a subagent that
+# booted with a bare @@lazy-ref token needs a run-scoped, read-only way to
+# recover the registered prompt bytes for a nonce the guard ALREADY consumed
+# this run. resolve_consumed_emission_by_nonce is that read: it INVERTS Gate-1
+# of resolve_emission_by_nonce (require consumed truthy) while reusing the same
+# TTL + run-start gates, returns the entry's prompt_raw (fallback prompt_norm)
+# as a STRING, and NEVER un-consumes.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_consumed_emission_returns_prompt_raw_for_consumed_nonce():
+    """WU-1: resolve_consumed_emission_by_nonce returns the exact stored
+    prompt_raw for a consumed, TTL-fresh, run-gated entry.
+
+    RED until resolve_consumed_emission_by_nonce is implemented.
+    """
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            raw = "Execute the planned step — consumed-reader happy path."
+            entry = lazy_core.register_emission(raw, cls="cycle", item_id="feat-ref")
+            nonce = entry["nonce"]
+            lazy_core.dispatch.consume_nonce(nonce, consumer="toolu_abc123")
+
+            assert hasattr(lazy_core, "resolve_consumed_emission_by_nonce"), (
+                "lazy_core must export resolve_consumed_emission_by_nonce "
+                "(byref-updatedinput WU-1)"
+            )
+
+            resolved = lazy_core.resolve_consumed_emission_by_nonce(nonce)
+            assert resolved == raw, (
+                f"resolve_consumed_emission_by_nonce must return the exact stored "
+                f"prompt_raw string for a consumed fresh nonce; got {resolved!r}, "
+                f"expected {raw!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_resolve_consumed_emission_unknown_nonce_returns_none():
+    """WU-1: a nonce that does not exist in the registry → None."""
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            resolved = lazy_core.resolve_consumed_emission_by_nonce("deadbeef" * 4)
+            assert resolved is None, (
+                f"resolve_consumed_emission_by_nonce must return None for an "
+                f"unknown nonce; got {resolved!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_resolve_consumed_emission_unconsumed_returns_none():
+    """WU-1: Gate-1 inversion — an UNCONSUMED fresh entry returns None (this
+    reader serves ONLY nonces the guard already ALLOW+consumed this run)."""
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            raw = "Execute the planned step — still-unconsumed nonce."
+            entry = lazy_core.register_emission(raw, cls="cycle")
+            # Deliberately do NOT consume.
+            resolved = lazy_core.resolve_consumed_emission_by_nonce(entry["nonce"])
+            assert resolved is None, (
+                "resolve_consumed_emission_by_nonce must return None for an "
+                "UNCONSUMED entry (inverted Gate-1); "
+                f"got {resolved!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_resolve_consumed_emission_ttl_expired_returns_none():
+    """WU-1: a consumed entry beyond REGISTRY_ENTRY_TTL_SECONDS → None."""
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            base = _time.time()
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=base,
+            )
+            raw = "Execute the planned step — TTL-expired nonce."
+            entry = lazy_core.register_emission(raw, cls="cycle", now=base)
+            lazy_core.dispatch.consume_nonce(entry["nonce"])
+
+            # Resolve well beyond the 1800s TTL.
+            future = base + lazy_core.dispatch.REGISTRY_ENTRY_TTL_SECONDS + 100
+            resolved = lazy_core.resolve_consumed_emission_by_nonce(
+                entry["nonce"], now=future
+            )
+            assert resolved is None, (
+                "resolve_consumed_emission_by_nonce must return None for a "
+                "consumed entry beyond TTL; "
+                f"got {resolved!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_resolve_consumed_emission_predates_run_returns_none():
+    """WU-1: a consumed, TTL-fresh entry whose emitted_at predates the run
+    marker's started_at → None (run-start gate)."""
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            old_time = _time.time() - 7200  # 2 hours ago
+            raw = "Execute the planned step — predates-run nonce."
+            entry = lazy_core.register_emission(raw, cls="cycle", now=old_time)
+            lazy_core.dispatch.consume_nonce(entry["nonce"])
+
+            # Marker written NOW — started_at > emitted_at makes the entry stale.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+
+            # Resolve within TTL of emitted_at so ONLY the run-start gate can fail.
+            resolved = lazy_core.resolve_consumed_emission_by_nonce(
+                entry["nonce"], now=old_time + 10
+            )
+            assert resolved is None, (
+                "resolve_consumed_emission_by_nonce must return None for a "
+                "consumed entry predating the run's started_at (run-start gate); "
+                f"got {resolved!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_resolve_consumed_emission_never_mutates_consumed():
+    """WU-1: the reader is READ-ONLY — it never un-consumes. After resolving,
+    the registry entry's consumed flag / consumed_by must be unchanged."""
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            raw = "Execute the planned step — read-only invariant."
+            entry = lazy_core.register_emission(raw, cls="cycle")
+            nonce = entry["nonce"]
+            lazy_core.dispatch.consume_nonce(nonce, consumer="toolu_readonly")
+
+            before = lazy_core.dispatch._load_registry()
+            before_entry = next(e for e in before["entries"] if e["nonce"] == nonce)
+            before_consumed = before_entry.get("consumed")
+            before_consumer = before_entry.get("consumed_by")
+
+            resolved = lazy_core.resolve_consumed_emission_by_nonce(nonce)
+            assert resolved == raw, "pre-condition: the consumed reader must hit"
+
+            after = lazy_core.dispatch._load_registry()
+            after_entry = next(e for e in after["entries"] if e["nonce"] == nonce)
+            assert after_entry.get("consumed") == before_consumed == True, (  # noqa: E712
+                "resolve_consumed_emission_by_nonce must NEVER un-consume; "
+                f"consumed flag changed: before={before_consumed!r} "
+                f"after={after_entry.get('consumed')!r}"
+            )
+            assert after_entry.get("consumed_by") == before_consumer, (
+                "resolve_consumed_emission_by_nonce must not alter consumed_by; "
+                f"before={before_consumer!r} after={after_entry.get('consumed_by')!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
 def test_f2a_append_dispatch_by_reference_event_writes_ledger():
     """F2a: append_dispatch_by_reference_event writes a 'dispatch_by_reference: true'
     event to the deny ledger (same JSONL file) so the by-reference path is
@@ -6725,6 +6938,12 @@ _TESTS = [
     ("test_f2a_resolve_emission_fresh_nonce_returns_entry", test_f2a_resolve_emission_fresh_nonce_returns_entry),
     ("test_f2a_resolve_emission_consumed_nonce_returns_none", test_f2a_resolve_emission_consumed_nonce_returns_none),
     ("test_f2a_resolve_emission_stale_nonce_returns_none", test_f2a_resolve_emission_stale_nonce_returns_none),
+    ("test_resolve_consumed_emission_returns_prompt_raw_for_consumed_nonce", test_resolve_consumed_emission_returns_prompt_raw_for_consumed_nonce),
+    ("test_resolve_consumed_emission_unknown_nonce_returns_none", test_resolve_consumed_emission_unknown_nonce_returns_none),
+    ("test_resolve_consumed_emission_unconsumed_returns_none", test_resolve_consumed_emission_unconsumed_returns_none),
+    ("test_resolve_consumed_emission_ttl_expired_returns_none", test_resolve_consumed_emission_ttl_expired_returns_none),
+    ("test_resolve_consumed_emission_predates_run_returns_none", test_resolve_consumed_emission_predates_run_returns_none),
+    ("test_resolve_consumed_emission_never_mutates_consumed", test_resolve_consumed_emission_never_mutates_consumed),
     ("test_f2a_append_dispatch_by_reference_event_writes_ledger", test_f2a_append_dispatch_by_reference_event_writes_ledger),
     ("test_governing_file_set_includes_orchestrator_and_components", test_governing_file_set_includes_orchestrator_and_components),
     ("test_merged_priority_normalizes_tier_and_severity", test_merged_priority_normalizes_tier_and_severity),
