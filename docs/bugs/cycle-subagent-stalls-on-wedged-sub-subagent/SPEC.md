@@ -1,6 +1,6 @@
 # Bug: cycle subagent stalls on wedged sub-sub-agent instead of falling back to inline
 
-**Status:** Concluded
+**Status:** Fixed
 **Reported:** 2026-07-18
 **Pipeline:** claude-config harness (lazy-batch cycle-dispatch contract)
 **Origin:** harden-harness round (observed-friction), item in flight `concurrent-worktree-agent-coordination`
