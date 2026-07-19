@@ -2,9 +2,11 @@
 
 > The /execute-plan rule 1a.6a strict-order prerequisite audit ("for a `Plan series` mandating strict order, every prerequisite part must be `status: Complete` before a later part") is prose-driven — the execute-plan subagent (and the orchestrator's cycle-base-prompt mirror) audit prerequisite-ness by RAW PART-NUMBER (filename `-part-K`), ignoring the plan frontmatter `series_index:` field that records operator reschedules. When a part is deliberately rescheduled to run LAST via a high `series_index`, the audit still treats it as an unmet prerequisite of the earlier-`series_index` (but higher-part-number) parts, and false-blocks them.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-19
+**Fixed:** 2026-07-19
+**Fix commit:** 91e811f4
 **Placement:** docs/bugs/execute-plan-strict-order-prereq-ignores-series-index-reschedule
 **Related:** `docs/specs/turn-routing-enforcement/` (harden stage — this spec is the Step-2.5 audit trail for harden Round 110); `user/scripts/lazy_core/docmodel.py` (`_plan_series_index` / `_plan_sort_key` — the ROUTING ordering primitive that ALREADY honors `series_index`, and whose semantics the fixed audit prose now mirrors); `user/scripts/validate-plan.py` Rule 5 (`rule_series_dependency_order` — the authoring-side series-index closure)
 
