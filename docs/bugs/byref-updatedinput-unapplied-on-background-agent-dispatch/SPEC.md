@@ -1,7 +1,7 @@
 # By-reference dispatch `updatedInput` rewrite unapplied on a background Agent dispatch
 
 **Status:** Concluded
-**Severity:** P2
+**Severity:** P0
 **Discovered:** 2026-07-17
 **Related:** `docs/specs/turn-routing-enforcement/` (the hardening stage + the operator-owned
 dispatch-preference park — this SPEC is NEW evidence for its `NEEDS_INPUT.md` **decision #1**:
