@@ -1019,3 +1019,207 @@ class TestMergedViewDispatchParity:
             "audit_all_pairs surfaced merged-view findings:\n"
             + "\n".join(f"  {f}" for f in merged_findings)
         )
+
+
+# ===========================================================================
+# Class 6 — compute_state routing-branch parity
+# (compute-state-routing-parity.json / lazy_parity_audit.audit_compute_state_routing_parity)
+# ===========================================================================
+#
+# audit_compute_state_routing_parity(repo_root) DOES NOT EXIST YET — this class is RED
+# by construction (AttributeError on lazy_parity_audit.audit_compute_state_routing_parity)
+# until the sibling audit function is implemented. It is a sibling of
+# audit_state_script_parity / audit_merged_view_dispatch_parity: it extracts each state
+# script's compute_state() region and checks the declared branches in
+# user/scripts/compute-state-routing-parity.json against both regions (mirrored ->
+# present in both, token-substituted for bug-state.py; tabulated-divergence -> present
+# only in its declared owner).
+
+
+class TestComputeStateRoutingParity:
+    """compute_state routing-branch symmetry between lazy-state.py (canonical) and
+    bug-state.py (derived), backed by the committed
+    user/scripts/compute-state-routing-parity.json allowlist."""
+
+    def test_fires_when_mirrored_branch_dropped_from_one_script(
+        self, tmp_path: Path
+    ) -> None:
+        """A 'mirrored' branch whose signature is present in lazy-state.py's
+        compute_state region but ABSENT from bug-state.py's must fire exactly the
+        kind of finding the audit exists to catch: named branch id, script it is
+        missing from, and the '[compute-state-routing]' tag."""
+        scripts = tmp_path / "user" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "lazy-state.py").write_text(
+            "def compute_state(args):\n"
+            "    if MIRRORED_SENTINEL_TOKEN:\n"
+            "        pass\n"
+            "\n"
+            "def other_function():\n"
+            "    pass\n",
+            encoding="utf-8",
+        )
+        # bug-state.py's compute_state OMITS the sentinel token entirely.
+        (scripts / "bug-state.py").write_text(
+            "def compute_state(args):\n"
+            "    if SOMETHING_ELSE:\n"
+            "        pass\n"
+            "\n"
+            "def other_function():\n"
+            "    pass\n",
+            encoding="utf-8",
+        )
+        allowlist = {
+            "schema_version": 1,
+            "branches": [
+                {
+                    "id": "my-mirrored-branch",
+                    "signature": "MIRRORED_SENTINEL_TOKEN",
+                    "classification": "mirrored",
+                }
+            ],
+        }
+        import json
+
+        (scripts / "compute-state-routing-parity.json").write_text(
+            json.dumps(allowlist), encoding="utf-8"
+        )
+
+        findings = lazy_parity_audit.audit_compute_state_routing_parity(tmp_path)
+
+        assert findings, "expected >=1 finding when a mirrored branch is dropped from bug-state.py"
+        assert any(
+            "my-mirrored-branch" in f
+            and "bug-state.py" in f
+            and "[compute-state-routing]" in f
+            for f in findings
+        ), f"expected a my-mirrored-branch/bug-state.py/[compute-state-routing] finding; got: {findings}"
+        # lazy-state.py carries the token — it must NOT be named as missing-from.
+        assert not any(
+            "my-mirrored-branch" in f and "lazy-state.py" in f and "missing" in f.lower()
+            for f in findings
+        ), f"lazy-state.py carries the token; it should not be flagged missing; got: {findings}"
+
+    def test_tabulated_divergence_present_only_in_owner_passes(
+        self, tmp_path: Path
+    ) -> None:
+        """A 'tabulated-divergence' branch owned by lazy-state.py, present ONLY in
+        lazy-state.py's compute_state region (absent from bug-state.py's), is a
+        JUSTIFIED divergence and must yield NO findings."""
+        scripts = tmp_path / "user" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "lazy-state.py").write_text(
+            "def compute_state(args):\n"
+            "    if TABULATED_TOKEN:\n"
+            "        pass\n"
+            "\n"
+            "def other_function():\n"
+            "    pass\n",
+            encoding="utf-8",
+        )
+        (scripts / "bug-state.py").write_text(
+            "def compute_state(args):\n"
+            "    pass\n"
+            "\n"
+            "def other_function():\n"
+            "    pass\n",
+            encoding="utf-8",
+        )
+        allowlist = {
+            "schema_version": 1,
+            "branches": [
+                {
+                    "id": "my-tabulated-branch",
+                    "signature": "TABULATED_TOKEN",
+                    "classification": "tabulated-divergence",
+                    "owner": "lazy-state.py",
+                    "reason": "Feature-only routing branch; bug pipeline has no analog in v1.",
+                }
+            ],
+        }
+        import json
+
+        (scripts / "compute-state-routing-parity.json").write_text(
+            json.dumps(allowlist), encoding="utf-8"
+        )
+
+        findings = lazy_parity_audit.audit_compute_state_routing_parity(tmp_path)
+
+        assert findings == [], (
+            "a tabulated-divergence branch present only in its declared owner must "
+            f"yield NO findings; got: {findings}"
+        )
+
+    def test_malformed_allowlist_yields_loud_error_not_silent_pass(
+        self, tmp_path: Path
+    ) -> None:
+        """An unreadable/malformed-JSON allowlist must produce ONE loud
+        '[compute-state-routing]'/'ERROR' finding — NEVER a silent empty pass."""
+        scripts = tmp_path / "user" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "lazy-state.py").write_text(
+            "def compute_state(args):\n    pass\n\ndef other_function():\n    pass\n",
+            encoding="utf-8",
+        )
+        (scripts / "bug-state.py").write_text(
+            "def compute_state(args):\n    pass\n\ndef other_function():\n    pass\n",
+            encoding="utf-8",
+        )
+        # Malformed JSON (not merely absent) — must still yield a loud ERROR finding.
+        (scripts / "compute-state-routing-parity.json").write_text(
+            "{ not json", encoding="utf-8"
+        )
+
+        findings = lazy_parity_audit.audit_compute_state_routing_parity(tmp_path)
+
+        assert findings, "a malformed allowlist must NEVER yield a silent empty pass"
+        assert any(
+            "[compute-state-routing]" in f and "ERROR" in f for f in findings
+        ), f"expected a [compute-state-routing]/ERROR finding; got: {findings}"
+
+    def test_missing_allowlist_yields_loud_error_not_silent_pass(
+        self, tmp_path: Path
+    ) -> None:
+        """An ABSENT allowlist file must also produce a loud
+        '[compute-state-routing]'/'ERROR' finding — NEVER a silent empty pass."""
+        scripts = tmp_path / "user" / "scripts"
+        scripts.mkdir(parents=True)
+        (scripts / "lazy-state.py").write_text(
+            "def compute_state(args):\n    pass\n\ndef other_function():\n    pass\n",
+            encoding="utf-8",
+        )
+        (scripts / "bug-state.py").write_text(
+            "def compute_state(args):\n    pass\n\ndef other_function():\n    pass\n",
+            encoding="utf-8",
+        )
+        # No compute-state-routing-parity.json written at all.
+
+        findings = lazy_parity_audit.audit_compute_state_routing_parity(tmp_path)
+
+        assert findings, "a missing allowlist must NEVER yield a silent empty pass"
+        assert any(
+            "[compute-state-routing]" in f and "ERROR" in f for f in findings
+        ), f"expected a [compute-state-routing]/ERROR finding; got: {findings}"
+
+    def test_live_compute_state_routing_parity_zero_drift(self) -> None:
+        """Hard gate: the real lazy-state.py + bug-state.py compute_state regions,
+        checked against the committed user/scripts/compute-state-routing-parity.json
+        allowlist, must yield ZERO findings."""
+        repo_root = Path(__file__).resolve().parents[2]
+        findings = lazy_parity_audit.audit_compute_state_routing_parity(repo_root)
+        assert findings == [], (
+            "compute_state routing-branch parity drift:\n"
+            + "\n".join(f"  {f}" for f in findings)
+        )
+
+    def test_included_in_audit_all_pairs(self) -> None:
+        """audit_all_pairs runs the compute_state routing-branch check against the
+        real repo with zero findings (regression: the new check is wired into the
+        default whole-repo audit)."""
+        repo_root = Path(__file__).resolve().parents[2]
+        findings = audit_all_pairs(repo_root)
+        routing_findings = [f for f in findings if "compute-state-routing" in f]
+        assert routing_findings == [], (
+            "audit_all_pairs surfaced compute-state-routing findings:\n"
+            + "\n".join(f"  {f}" for f in routing_findings)
+        )

@@ -125,6 +125,9 @@ directly runnable via its own `_TESTS` manual runner).
 ```bash
 # Parity audit — REQUIRED before committing a change to either half of a coupled pair.
 python3 user/scripts/lazy_parity_audit.py --repo-root .                      # audit ALL pairs
+# The whole-repo (no --pair) audit ALSO asserts compute_state routing-branch symmetry
+# between lazy-state.py and bug-state.py, via the declared allowlist
+# user/scripts/compute-state-routing-parity.json (mirrored vs. tabulated-divergence rows).
 python3 user/scripts/lazy_parity_audit.py --repo-root . --pair lazy-bug-batch
 python3 user/scripts/lazy_parity_audit.py --repo-root . --merged-view
 ```
@@ -1021,6 +1024,21 @@ When the state machine changes:
 4. **Keep schemas in lockstep** — `_components/sentinel-frontmatter.md` ↔
    `check-docs-consistency.ts` (features) / `check-bugs-consistency.ts` (bugs) ↔ these
    scripts' sentinel readers (`lazy_core.py`).
+5. **Keep `compute_state` routing branches mirrored — now mechanically audited.**
+   `lazy_parity_audit.py::audit_compute_state_routing_parity` (run inside the default
+   whole-repo `--repo-root .` audit) asserts the two scripts' `compute_state` ROUTING
+   branches stay symmetric, backed by the declared allowlist
+   **`user/scripts/compute-state-routing-parity.json`**. Each branch is classified
+   `mirrored` (a structural signature that MUST appear in both scripts' `compute_state`)
+   or `tabulated-divergence` (present in ONE script only — a justified feature/bug-only
+   branch, e.g. the feature-pipeline research-pending exclusion or the host-capability
+   miss-defer, each carrying a REQUIRED `reason`). This closes the gap that let an
+   unmirrored routing fix (the Round 92 research exclusion / Round 93 verification-only
+   bypass conjunct) pass the audit clean and stall a live run weeks later — the audit
+   historically covered only named CLI/call-site literals, never `compute_state` routing
+   logic, the highest-churn coupled surface. **To add a NEW justified divergence, add a
+   `tabulated-divergence` row (owner + reason) to the allowlist** — exactly as the
+   SKILL-pair manifest tabulates its divergences.
 
 ## Testing
 
