@@ -93,6 +93,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-parity-audit-blind-to-compute-state-routing-branches",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -5454,6 +5459,27 @@
   "docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke/plans/all-phases-recovery-discriminator-part-2.md": [
     {
       "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-parity-audit-blind-to-compute-state-routing-branches/PHASES.md": [
+    {
+      "id": "adhoc-parity-audit-blind-to-compute-state-routing-branches",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-parity-audit-blind-to-compute-state-routing-branches/SPEC.md": [
+    {
+      "id": "adhoc-parity-audit-blind-to-compute-state-routing-branches",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-parity-audit-blind-to-compute-state-routing-branches/plans/all-phases-routing-branch-parity.md": [
+    {
+      "id": "adhoc-parity-audit-blind-to-compute-state-routing-branches",
       "type": "bug",
       "provenance": "pipeline-gated"
     }
@@ -19715,6 +19741,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "adhoc-parity-audit-blind-to-compute-state-routing-branches",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "budget-guard-defers-near-complete-feature",
       "type": "bug",
       "provenance": "backfilled"
@@ -20285,6 +20316,13 @@
     {
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "user/scripts/compute-state-routing-parity.json": [
+    {
+      "id": "adhoc-parity-audit-blind-to-compute-state-routing-branches",
+      "type": "bug",
       "provenance": "pipeline-gated"
     }
   ],
@@ -21632,6 +21670,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-parity-audit-blind-to-compute-state-routing-branches",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref",
       "type": "bug",
       "provenance": "backfilled"
@@ -22449,6 +22492,11 @@
   "user/scripts/test_lazy_parity.py": [
     {
       "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "adhoc-parity-audit-blind-to-compute-state-routing-branches",
       "type": "bug",
       "provenance": "pipeline-gated"
     },

@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Fixed
 
 **MCP runtime:** not-required — claude-config is a pure-Python/docs harness repo with no Tauri/dev runtime and no MCP server; `lazy_parity_audit.py` is a stdlib static checker whose entire validation surface is its own pytest suite (`test_lazy_parity.py`) + the whole-repo audit exit code. This is the build-tooling / standalone-checker class in `docs/features/mcp-testing/SPEC.md` (structurally outside MCP reach).
 

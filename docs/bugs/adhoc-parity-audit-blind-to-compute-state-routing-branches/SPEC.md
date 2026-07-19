@@ -5,7 +5,7 @@
 > and `bug-state.py` — so an unmirrored routing fix passes the audit clean and surfaces as a live
 > run stall weeks later.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-19
 **Placement:** docs/bugs/adhoc-parity-audit-blind-to-compute-state-routing-branches
