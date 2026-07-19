@@ -1,6 +1,6 @@
 # Implementation Phases — Decision 11: dispatch-time forward-advance (probe path becomes PEEK)
 
-**Status:** In-progress
+**Status:** Fixed
 
 > Phases for [`SPEC.md`](./SPEC.md)
 

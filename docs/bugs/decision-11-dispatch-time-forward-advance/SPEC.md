@@ -2,7 +2,7 @@
 
 > Implement turn-routing-enforcement NEEDS_INPUT decision 11: `forward_cycles` must advance at the real dispatch bracket, never on the every-turn inject-hook `--repeat-count` probe. The core mechanism already landed (commit `e91bd305`); the residual is retargeting two pinned tests that still assert the retired probe-path advance, retiring the now-dead `consume_gate` trigger, and reconciling stale docs.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-18
 **Placement:** docs/bugs/decision-11-dispatch-time-forward-advance

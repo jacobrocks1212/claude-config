@@ -6551,6 +6551,27 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/decision-11-dispatch-time-forward-advance/PHASES.md": [
+    {
+      "id": "decision-11-dispatch-time-forward-advance",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/decision-11-dispatch-time-forward-advance/SPEC.md": [
+    {
+      "id": "decision-11-dispatch-time-forward-advance",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/decision-11-dispatch-time-forward-advance/plans/all-phases-dispatch-time-forward-advance.md": [
+    {
+      "id": "decision-11-dispatch-time-forward-advance",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test/GATE_VERDICT.md": [
     {
       "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
@@ -19667,6 +19688,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "decision-11-dispatch-time-forward-advance",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -21405,6 +21431,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "decision-11-dispatch-time-forward-advance",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -23089,6 +23120,11 @@
     },
     {
       "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "decision-11-dispatch-time-forward-advance",
       "type": "bug",
       "provenance": "pipeline-gated"
     },
