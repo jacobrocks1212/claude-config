@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-19
+**Fixed:** 2026-07-19
+**Fix commit:** 082a8d7c
 **Placement:** docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke
 **Related:** `user/skills/_components/dispatched-agent-liveness.md` · `user/skills/_components/turn-end-gate.md` · `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` (turn-end §1) · `docs/specs/turn-routing-enforcement/` (dispatched-agent liveness decision #12, HARD-PARKED)
 
