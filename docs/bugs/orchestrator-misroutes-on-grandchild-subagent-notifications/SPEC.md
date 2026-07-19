@@ -1,6 +1,6 @@
 # Bug: Orchestrator misroutes on grandchild (sub-sub-agent) task-notifications
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1 (destroys productive cycles mid-work; wastes forward-cycle budget)
 **Pipeline:** feature (observed in `/lazy-batch`; applies to the whole coupled trio)
 **Origin:** harden-harness Round 98 (2026-07-18), live `/lazy-batch` run on feature
