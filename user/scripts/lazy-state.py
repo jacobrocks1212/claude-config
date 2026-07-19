@@ -14199,14 +14199,37 @@ def main() -> int:
             # keeps a research-gated merged head SURFACING its needs-research halt.
             _rh_bug_state_mod = _load_bug_state_module()
             _rh_real_device = resolve_real_device(args.real_device)
+            # TYPE-AWARE scoped probe (merged-head-oracle-deadlocks-on-unreached-
+            # parked-same-pipeline-head): the oracle now scope-probes a
+            # same-pipeline (feature) head the emit walk never reached, not only
+            # cross-pipeline (bug) candidates — so the probe dispatches each
+            # candidate to the correct pipeline's compute_state via an id->type map
+            # (mirrors the stateless --next-merged _nm_scoped_probe).
+            _rh_types = {}
+            for _rh_it in _rh_feats:
+                if isinstance(_rh_it, dict) and _rh_it.get("id"):
+                    _rh_types[_rh_it["id"]] = "feature"
+            for _rh_it in _rh_bugs:
+                if isinstance(_rh_it, dict) and _rh_it.get("id"):
+                    _rh_types.setdefault(_rh_it["id"], "bug")
 
-            def _rh_bug_scoped_probe(_bug_id):
-                if _rh_bug_state_mod is None:
-                    return {}
+            def _rh_scoped_probe(_iid):
                 try:
-                    return _rh_bug_state_mod.compute_state(
-                        _rh_repo, cloud=args.cloud, real_device=_rh_real_device,
-                        scope_bug_id=_bug_id,
+                    if _rh_types.get(_iid) == "bug":
+                        if _rh_bug_state_mod is None:
+                            return {}
+                        return _rh_bug_state_mod.compute_state(
+                            _rh_repo, cloud=args.cloud, real_device=_rh_real_device,
+                            scope_bug_id=_iid,
+                            park_needs_input=_eff_park_ni, park_blocked=_eff_park_bl,
+                            park_provisional=_eff_park_pv,
+                            strict_research_halt=args.strict_research_halt,
+                        )
+                    # same-pipeline feature → this module's own scoped compute_state
+                    return compute_state(
+                        _rh_repo, cloud=args.cloud,
+                        skip_needs_research=args.skip_needs_research,
+                        real_device=_rh_real_device, scope_feature_id=_iid,
                         park_needs_input=_eff_park_ni, park_blocked=_eff_park_bl,
                         park_provisional=_eff_park_pv,
                         strict_research_halt=args.strict_research_halt,
@@ -14220,7 +14243,7 @@ def main() -> int:
                     _rh_feats, _rh_bugs, str(lazy_core.active_repo_root()),
                     state.get("feature_id"),
                     same_pipeline="feature", same_pipeline_state=state,
-                    scoped_probe=_rh_bug_scoped_probe,
+                    scoped_probe=_rh_scoped_probe,
                 )
             finally:
                 lazy_core._DIAGNOSTICS[:] = _rh_diag_snapshot
@@ -14387,14 +14410,37 @@ def main() -> int:
                 # oracle (the primary `state` dict is already a captured snapshot).
                 _mo_bug_state_mod = _load_bug_state_module()
                 _mo_real_device = resolve_real_device(args.real_device)
+                # TYPE-AWARE scoped probe (merged-head-oracle-deadlocks-on-
+                # unreached-parked-same-pipeline-head): the oracle now scope-probes
+                # a same-pipeline (feature) head the emit walk never reached, not
+                # only cross-pipeline (bug) candidates — so the probe dispatches
+                # each candidate to the correct pipeline's compute_state via an
+                # id->type map (mirrors the stateless --next-merged _nm_scoped_probe).
+                _mo_types = {}
+                for _mo_it in _mo_feats:
+                    if isinstance(_mo_it, dict) and _mo_it.get("id"):
+                        _mo_types[_mo_it["id"]] = "feature"
+                for _mo_it in _mo_bugs:
+                    if isinstance(_mo_it, dict) and _mo_it.get("id"):
+                        _mo_types.setdefault(_mo_it["id"], "bug")
 
-                def _mo_bug_scoped_probe(_bug_id):
-                    if _mo_bug_state_mod is None:
-                        return {}
+                def _mo_scoped_probe(_iid):
                     try:
-                        return _mo_bug_state_mod.compute_state(
-                            _mo_repo, cloud=args.cloud, real_device=_mo_real_device,
-                            scope_bug_id=_bug_id,
+                        if _mo_types.get(_iid) == "bug":
+                            if _mo_bug_state_mod is None:
+                                return {}
+                            return _mo_bug_state_mod.compute_state(
+                                _mo_repo, cloud=args.cloud, real_device=_mo_real_device,
+                                scope_bug_id=_iid,
+                                park_needs_input=_eff_park_ni, park_blocked=_eff_park_bl,
+                                park_provisional=_eff_park_pv,
+                                strict_research_halt=args.strict_research_halt,
+                            )
+                        # same-pipeline feature → this module's own scoped compute_state
+                        return compute_state(
+                            _mo_repo, cloud=args.cloud,
+                            skip_needs_research=args.skip_needs_research,
+                            real_device=_mo_real_device, scope_feature_id=_iid,
                             park_needs_input=_eff_park_ni, park_blocked=_eff_park_bl,
                             park_provisional=_eff_park_pv,
                             strict_research_halt=args.strict_research_halt,
@@ -14408,7 +14454,7 @@ def main() -> int:
                         _mo_feats, _mo_bugs, str(lazy_core.active_repo_root()),
                         state.get("feature_id"),
                         same_pipeline="feature", same_pipeline_state=state,
-                        scoped_probe=_mo_bug_scoped_probe,
+                        scoped_probe=_mo_scoped_probe,
                     )
                 finally:
                     lazy_core._DIAGNOSTICS[:] = _mo_diag_snapshot

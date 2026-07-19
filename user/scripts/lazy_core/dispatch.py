@@ -658,8 +658,15 @@ def merged_head_nondispatchable_ids(
          current probe's own skip decisions are the authoritative, context-rich
          source for its OWN queue (they carry the cross-item skip-ahead ordering,
          ``--strict-research-halt``, the two-key readiness predicate, the
-         fully-gated terminal). NOT replaced by the oracle — a per-item oracle
-         would lose that ordering context.
+         fully-gated terminal). NOT replaced by the oracle for items the probe
+         REACHED — a per-item oracle would lose that ordering context. BUT a
+         same-pipeline head the probe NEVER reached (absent from its skip/park
+         surface — e.g. an ``/execute-plan`` walk that returned a lower-priority
+         workable item in queue order before reaching a higher-SEVERITY parked
+         head) IS classified by ``scoped_probe`` re-inference (source 2), so it is
+         excluded when non-dispatchable instead of re-arming the park-mode
+         merged-head deadlock
+         (merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head).
       2. **Cross-pipeline → the injected ``scoped_probe`` oracle.** For each
          cross-pipeline candidate ranked AT-OR-ABOVE the emitted item in the
          merged ordering (L5 bound), run its scoped ``compute_state`` (via the
@@ -692,12 +699,13 @@ def merged_head_nondispatchable_ids(
             ``probe_skipped_ids`` UNCHANGED.
         scoped_probe: ``Callable[[str], dict]`` returning a candidate's scoped
             ``compute_state`` output. Called for each candidate the walk must
-            classify (cross-pipeline candidates on the ``--emit-prompt`` path;
-            EVERY candidate on a stateless read-only ordering path — see
-            ``same_pipeline_state`` below), at-or-above the emitted item and never
-            below the first dispatchable head. For a stateless caller it must be
-            TYPE-AWARE (probe features via the feature ``compute_state`` and bugs
-            via the bug ``compute_state``).
+            classify (cross-pipeline candidates AND unreached same-pipeline
+            candidates on the ``--emit-prompt`` path; EVERY candidate on a
+            stateless read-only ordering path — see ``same_pipeline_state``
+            below), at-or-above the emitted item and never below the first
+            dispatchable head. It must be TYPE-AWARE on every path that can reach
+            a same-pipeline candidate — i.e. always (probe features via the
+            feature ``compute_state`` and bugs via the bug ``compute_state``).
         same_pipeline: ``"feature"`` or ``"bug"`` — which queue the emit probe
             walked. Consulted ONLY when ``same_pipeline_state`` is provided (to
             select the same-pipeline queue for ``probe_skipped_ids``).
@@ -727,28 +735,34 @@ def merged_head_nondispatchable_ids(
         exclude: set[str] = set(probe_skipped_ids(same_pipeline_state, same_items))
         # Fold the probe's OWN parked ids too (park mode): a parked item is the
         # probe's skip decision, but it lives in ``state["parked"]`` — NOT in the
-        # gated/deferred lists ``probe_skipped_ids`` reads. Without this a parked
-        # SAME-pipeline item ranked above the emitted item would fall to the
-        # `iid in same_ids` "dispatchable same head" break below and NOT be
-        # excluded → the park-mode merged-head deadlock the retired file predicate
-        # closed (merged-head-includes-parked-items-deadlocks-park-run). Still the
-        # probe's own decision (L2), just its separately-tracked park list.
+        # gated/deferred lists ``probe_skipped_ids`` reads. These probe-DECIDED
+        # ids are dropped from the worklist below (``exclude_ids=exclude``), so the
+        # loop never re-probes them — L2's "the live probe's ordering context is
+        # authoritative for the items it REACHED" invariant. A parked head the
+        # probe never REACHED is absent here and is handled by the scoped
+        # re-inference in the walk below (the byte-identity is the fold covers the
+        # reached items; the walk covers the unreached ones).
         for _pe in (same_pipeline_state.get("parked") or []):
             _pid = _pe.get("id") if isinstance(_pe, dict) else _pe
             if _pid:
                 exclude.add(_pid)
-        same_ids = {
-            raw.get("id") for raw in (same_items or [])
-            if isinstance(raw, dict) and raw.get("id")
-        }
     else:
         exclude = set()
-        same_ids = set()
 
-    # (2) Walk the merged ordering (same-pipeline skips already dropped so the
-    # walk sees the driver's view of its own queue) from the head; classify each
-    # candidate until we reach the emitted item or the first dispatchable head
-    # (L5 short-circuit).
+    # (2) Walk the merged ordering (probe-decided skips/parks already dropped so
+    # the walk sees the driver's view of its own queue) from the head; classify
+    # each remaining candidate until we reach the emitted item or the first
+    # dispatchable head (L5 short-circuit). Every candidate — cross-pipeline AND
+    # a same-pipeline item the probe NEVER reached — is classified by scoped
+    # ``is_dispatchable`` re-inference, so a parked head absent from the emit
+    # probe's own ``parked``/skip surface (an ``/execute-plan`` walk that
+    # returned a lower-priority workable item in queue order before reaching the
+    # higher-SEVERITY parked head —
+    # merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head) is
+    # excluded instead of re-arming the park-mode merged-head deadlock. This makes
+    # the emit-path walk IDENTICAL to the stateless ``--next-merged`` walk;
+    # probe-decided items were dropped from the worklist above so they are never
+    # re-probed (L2 ordering-context preserved for the items the probe reached).
     worklist = merged_worklist(
         feature_items, bug_items, repo_root, today=today, exclude_ids=exclude
     )
@@ -757,12 +771,6 @@ def merged_head_nondispatchable_ids(
         if iid == current_item_id:
             # Reached the emitted item — nothing below it can be the diverging
             # merged head, so no lower candidate needs an oracle evaluation.
-            break
-        if iid in same_ids:
-            # A same-pipeline item ranked above the emitted item that the probe
-            # did NOT skip is (by the probe's own choice) a dispatchable
-            # same-pipeline head → the first dispatchable head (L2 fast path,
-            # no scoped re-probe of the current probe's own queue).
             break
         if is_dispatchable(scoped_probe(iid)):
             # First dispatchable head above the emitted item — a GENUINE

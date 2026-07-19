@@ -5347,9 +5347,12 @@ def test_is_dispatchable_predicate_table():
 
 def test_merged_head_nondispatchable_ids_same_pipeline_uses_probe_skipped_unchanged():
     """L2: the same-pipeline contribution is probe_skipped_ids(state, same_items)
-    UNCHANGED (the cross-item skip-ahead ordering context). The injected
-    scoped_probe is applied ONLY to the cross-pipeline queue — never to a
-    same-pipeline item — and the current dispatch target is discarded."""
+    UNCHANGED (the cross-item skip-ahead ordering context). A same-pipeline item
+    the probe REACHED and skipped (here `blocked-feat`, in gated_heads) is folded
+    into exclude and DROPPED from the worklist, so the injected scoped_probe is
+    never called for it (the `_never` guard) — the current dispatch target is
+    discarded. (A same-pipeline head the probe NEVER reached IS scope-probed; see
+    test_..._excludes_parked_UNREACHED_same_pipeline_head — no such item here.)"""
     _guard()
     feats = [{"id": "blocked-feat", "tier": 0}, {"id": "workable", "tier": 2}]
     state = {"feature_id": "workable", "gated_heads": ["blocked-feat"]}
@@ -5361,11 +5364,17 @@ def test_merged_head_nondispatchable_ids_same_pipeline_uses_probe_skipped_unchan
         feats, [], "/r", "workable",
         same_pipeline="feature", same_pipeline_state=state, scoped_probe=_never,
     )
-    # Same-pipeline skip folded in; current target discarded; no cross items.
+    # Same-pipeline skip folded in; current target discarded; no cross items. The
+    # skipped head is DROPPED from the worklist (exclude_ids), so `_never` (which
+    # forbids probing) is never reached — the fold, not a fast-path, excludes it.
     assert got == {"blocked-feat"}, got
-    # Byte-identical common path: probe skipped nothing, no cross items → empty.
+    # Byte-identical common path: only the current item in its own queue and no
+    # cross items → the walk breaks on the current head, nothing is probed → empty.
+    # (A higher-priority same-pipeline sibling the probe did NOT skip is no longer
+    # a no-op — it is scope-probed; see
+    # test_..._excludes_parked_UNREACHED_same_pipeline_head.)
     assert lazy_core.dispatch.merged_head_nondispatchable_ids(
-        feats, [], "/r", "workable",
+        [{"id": "workable", "tier": 2}], [], "/r", "workable",
         same_pipeline="feature", same_pipeline_state={"feature_id": "workable"},
         scoped_probe=_never,
     ) == set()
@@ -5955,6 +5964,70 @@ def test_merged_head_nondispatchable_ids_excludes_parked_same_pipeline_head_no_d
     assert old is not None and old["merged_head"]["item_id"] == (
         "adhoc-hydra-sidecar-dist-esm-no-frames"
     ), old
+
+
+def test_merged_head_nondispatchable_ids_excludes_parked_UNREACHED_same_pipeline_head():
+    """merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head
+    REGRESSION: a PARKED, highest-SEVERITY, same-pipeline head that the emit
+    probe's queue-order walk NEVER reached (so it is ABSENT from state["parked"]
+    — the walk returned a lower-priority workable item first) is now scope-probed
+    and EXCLUDED via per-item re-inference. Previously the `iid in same_ids`
+    fast-path treated any same-pipeline head above current as dispatchable,
+    leaving byref the merged head → the merged-head-diverged withhold fired on
+    every probe → park-mode deadlock (cycle_prompt_ref null, no
+    queue-exhausted-all-parked). Distinct from the parked-FOLD regression
+    (test_..._excludes_parked_same_pipeline_head_no_deadlock), where the parked
+    heads ARE in state["parked"]."""
+    _guard()
+    bugs = [
+        {"id": "byref-unreached", "severity": "P0"},   # highest sev → merged head
+        {"id": "adhoc-harness-gate", "severity": "P2"},  # current (dispatchable)
+    ]
+    # The emit probe dispatched adhoc-harness-gate WITHOUT parking byref (its
+    # queue-order walk returned before reaching byref): parked[] is EMPTY, so the
+    # only signal for byref's parked state is a scoped re-probe.
+    state = {"feature_id": "adhoc-harness-gate", "parked": []}
+    calls = []
+
+    def _probe(_id):
+        calls.append(_id)
+        # byref scope-probes to a needs-input-scoped (parked) non-dispatch state.
+        if _id == "byref-unreached":
+            return _nondispatch_state("needs-input-scoped")
+        raise AssertionError(f"only the unreached head is probed, got {_id!r}")
+
+    excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        [], bugs, "/echo", "adhoc-harness-gate",
+        same_pipeline="bug", same_pipeline_state=state, scoped_probe=_probe,
+    )
+    assert excluded == {"byref-unreached"}, excluded
+    assert calls == ["byref-unreached"], calls
+    # Merged head is now the dispatchable item → NO merged-head-diverged withhold.
+    assert lazy_core.dispatch.merged_head_override(
+        [], bugs, "/echo", "adhoc-harness-gate", exclude_ids=excluded,
+    ) is None
+    # Without the exclusion the OLD behavior deadlocks: head is the parked P0.
+    assert lazy_core.dispatch.merged_head_override(
+        [], bugs, "/echo", "adhoc-harness-gate",
+    )["merged_head"]["item_id"] == "byref-unreached"
+
+    # Byte-identity for a GENUINE divergence: a DISPATCHABLE same-pipeline head
+    # above current is NOT excluded — the withhold still fires for a real P0 bug
+    # jumping the queue (the emit path routes to it exactly as before).
+    def _probe_dispatchable(_id):
+        return _dispatchable_state() if _id == "byref-unreached" \
+            else _nondispatch_state("blocked")
+
+    excluded2 = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        [], bugs, "/echo", "adhoc-harness-gate",
+        same_pipeline="bug",
+        same_pipeline_state={"feature_id": "adhoc-harness-gate", "parked": []},
+        scoped_probe=_probe_dispatchable,
+    )
+    assert excluded2 == set(), excluded2
+    assert lazy_core.dispatch.merged_head_override(
+        [], bugs, "/echo", "adhoc-harness-gate", exclude_ids=excluded2,
+    )["merged_head"]["item_id"] == "byref-unreached"
 
 
 def test_nondispatchable_item_ids_helper_is_retired():
@@ -6961,6 +7034,7 @@ _TESTS = [
     ("test_spec_dir_operator_deferred_predicate", test_spec_dir_operator_deferred_predicate),
     ("test_spec_dir_research_pending_predicate", test_spec_dir_research_pending_predicate),
     ("test_merged_head_nondispatchable_ids_excludes_parked_same_pipeline_head_no_deadlock", test_merged_head_nondispatchable_ids_excludes_parked_same_pipeline_head_no_deadlock),
+    ("test_merged_head_nondispatchable_ids_excludes_parked_UNREACHED_same_pipeline_head", test_merged_head_nondispatchable_ids_excludes_parked_UNREACHED_same_pipeline_head),
     ("test_nondispatchable_item_ids_helper_is_retired", test_nondispatchable_item_ids_helper_is_retired),
     ("test_merged_worklist_exclude_ids_drops_parked_items", test_merged_worklist_exclude_ids_drops_parked_items),
     ("test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug", test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug),
