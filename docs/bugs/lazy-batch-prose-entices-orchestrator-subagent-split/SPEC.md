@@ -20,7 +20,7 @@ bug_id: lazy-batch-prose-entices-orchestrator-subagent-split
 > paragraph whose header and worked examples advertise the sub-subagent split, enticing the
 > orchestrator to set that split up itself.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** Low
 **Discovered:** 2026-07-19
 **Placement:** docs/bugs/lazy-batch-prose-entices-orchestrator-subagent-split
