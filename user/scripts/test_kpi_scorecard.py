@@ -141,8 +141,11 @@ class TestLintGreen:
         # ledgered)
         # + subagent-wedge-strand-recurrence (the count was silently drifted to
         # 22 by a prior promotion that did not update this assertion; corrected
-        # here).
-        assert len(registry["kpis"]) == 22
+        # here)
+        # + hook-plane-duplicated-lines (shared-hook-lib Phase 4: promoted from
+        # the SPEC's non-claiming fence once the repo-static-scan source +
+        # hook-duplicated-line-count selector were registered).
+        assert len(registry["kpis"]) == 23
         ids = {r["id"] for r in registry["kpis"]}
         assert "canary-trip-precision" in ids
         assert {"efficacy-verdicts-produced", "confounded-verdict-ratio",
@@ -155,6 +158,7 @@ class TestLintGreen:
         assert "lazy-core-monolith-intervention-drag" in ids
         assert {"generalized-runner-raw-invocation-deny-recurrence",
                 "runner-turn-end-stall-recurrence"} <= ids
+        assert "hook-plane-duplicated-lines" in ids
 
     def test_up_is_good_band_ordering_valid(self):
         row = _row(direction="up-is-good", band={"warn": 90, "breach": 80})

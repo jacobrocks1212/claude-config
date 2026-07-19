@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: shared-hook-lib
-status: In-progress
+status: Complete
 created: 2026-07-18
 complexity: complex
 phases: [4]
@@ -56,7 +56,7 @@ Where this plan's repo uses non-default gates or component paths (this is `claud
 ## Work Units
 
 - [x] WU-1 — Register `repo-static-scan` source + `hook-duplicated-line-count` selector + counter in `kpi-scorecard.py` (+ tests)
-- [ ] WU-2 — Promote the `hook-plane-duplicated-lines` row into `docs/kpi/registry.json`
+- [x] WU-2 — Promote the `hook-plane-duplicated-lines` row into `docs/kpi/registry.json`
 
 ---
 

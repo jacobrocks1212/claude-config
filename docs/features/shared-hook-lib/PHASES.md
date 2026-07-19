@@ -163,9 +163,11 @@ Per the Step 2.7 runtime-assumption gate. This feature has **no user-facing prod
 
 **Scope:** Register the `repo-static-scan` signal source and `hook-duplicated-line-count` selector in `kpi-scorecard.py`'s `_SOURCES` map plus a deterministic counter (a static scan of `user/hooks/` that counts the remaining duplicated scaffolding lines), and move the SPEC's drafted `hook-plane-duplicated-lines` row from its non-claiming fence into `docs/kpi/registry.json`. Follows the `canary-trip-precision` / `session-log-mining` precedent (register the selector alongside the feature so the drafted row becomes claimable). Re-run `kpi-scorecard.py --lint` + `--lint --spec`.
 
+**Status:** ✅ Complete (2026-07-18)
+
 **Deliverables:**
 - [x] `user/scripts/kpi-scorecard.py` — add `"repo-static-scan": frozenset({"hook-duplicated-line-count"})` to `_SOURCES` (line ~75) + a `_sel_*` selector function computing the deterministic count (static scan of `user/hooks/`, honesty ladder: absent/unrecordable → NO-DATA, never a fabricated zero).
-- [ ] `docs/kpi/registry.json` — append the `hook-plane-duplicated-lines` row verbatim from the SPEC's KPI Declaration (idempotent — do not duplicate an existing id).
+- [x] `docs/kpi/registry.json` — append the `hook-plane-duplicated-lines` row verbatim from the SPEC's KPI Declaration (idempotent — do not duplicate an existing id).
 - [x] Tests: extend `user/scripts/test_kpi_scorecard.py` — cover the new source/selector registration + the counter (deterministic count on a fixture tree; NO-DATA on an unrecordable input).
 - **Completion (gate-owned):** the `__mark_complete__` gate flips SPEC.md `**Status:**` to Complete and writes `COMPLETED.md` once this phase lands — do NOT author a status-flip checkbox.
 
@@ -180,5 +182,10 @@ Per the Step 2.7 runtime-assumption gate. This feature has **no user-facing prod
 - `user/scripts/test_kpi_scorecard.py` — coverage for the new source/selector.
 
 **Testing Strategy:** Deterministic counter unit-tested against a fixture hook tree (known duplicated-line count). Registry `--lint` and the `--lint --spec` gate are the end-to-end proof that the drafted row is now live and claimable. No wall-clock in the scorecard render (byte-stable, per the script's existing contract).
+
+**Implementation Notes (2026-07-18):**
+- **Counter definition (WU-1):** `_sel_hook_duplicated_line_count` uses the classic cross-file duplicated-line metric — a normalized substantive line (stripped, ≥ `_HOOK_DUP_MIN_LINE_CHARS`=8 chars, non-comment) present in ≥2 distinct `user/hooks/*.sh` files contributes (total_occurrences − 1) redundant copies. No hardcoded knowledge of which blocks are "scaffolding" (so it can't drift as blocks evolve); trends to zero as hooks migrate onto the shared substrate. Honesty ladder honored: absent tree / no `.sh` / all-unreadable → NO-DATA; a deduplicated readable tree → a real `0.0`.
+- **⚖ policy: draft window `n/a-static` fails schema → promote with `1d`.** The SPEC draft's `"window": "n/a-static"` is a non-claiming-fence value that fails the registry schema's `^(\d+)d$`; product behavior (a down-is-good static KPI) is identical, so the row was promoted (WU-2) with the point-in-time-scan precedent `"1d"` (as the `bug-backlog-*` sentinel-scan rows use) so Phase 4's own MVB (`--lint` exit 0) is met. Everything else verbatim from the SPEC draft.
+- **Pre-existing drift corrected:** `test_real_seeded_registry_lints_green`'s hardcoded row-count assertion was already stale (`== 21` while the untouched registry held 22 — a prior promotion never updated it); corrected to 23 (22 pre-existing + this row) with the id assertion added.
 
 **Integration Notes for Next Phase:** Terminal phase. Once landed, the drafted row in the SPEC's KPI Declaration is a live `docs/kpi/registry.json` row reachable by a future `--capture-baseline`. The existing `build-queue-raw-invocation-deny-recurrence` row's deferred hook-side-append signal is now un-blockable via `hook_lib.append_hook_event` (documented downstream beneficiary; not this feature's headline metric).

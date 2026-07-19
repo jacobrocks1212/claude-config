@@ -476,6 +476,27 @@
       "review_by": "2026-11-01",
       "repo_scope": "claude-config",
       "notes": "v1 rides the registered deny-ledger process-friction-count selector — the coarse channel incident-scan clusters recurring tool-error / premature-stall friction into (same channel as runner-turn-end-stall-recurrence). Honest NO-DATA until such entries accrue; the field-evidence blind window (2026-06-11 to 2026-07-12, guards unregistered) undercounts, treat a low count there as partially-blind not zero. The implementation MAY register a dedicated selector (e.g. wedge-backstop block-count over the subagent-stops breadcrumb dir) and re-point this row then — the canary-trip-precision precedent (enum registered ahead of computation, NO-DATA until wired), following the same registry-follow-up pattern as build-queue-wait-time-p50."
+    },
+    {
+      "id": "hook-plane-duplicated-lines",
+      "system": "hook-plane",
+      "title": "Hook-plane duplicated scaffolding lines",
+      "friction": "Copy-pasted hook scaffolding drifts per copy; each drifted copy is a latent guard bug (breadcrumb-path defect, never-migrated payload pattern) and every cross-cutting matcher change costs one coordinated edit per copy.",
+      "signal": {
+        "source": "repo-static-scan",
+        "selector": "hook-duplicated-line-count"
+      },
+      "unit": "lines",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": 467,
+        "captured_at": "2026-07-11",
+        "window": "1d",
+        "provenance": "retro-derived"
+      },
+      "band": null,
+      "review_by": "2026-12-01",
+      "notes": "Baseline hand-counted 2026-07-11 (grep inventory in the SPEC's Executive Summary). Source 'repo-static-scan' + selector 'hook-duplicated-line-count' registered in kpi-scorecard.py Phase 4 (a deterministic cross-file duplicated-line scan of user/hooks/*.sh; honesty ladder: absent/unreadable target -> NO-DATA, a deduplicated tree -> a real 0). Promoted from the SPEC's non-claiming fence per the canary-trip-precision precedent; window normalized from the draft's 'n/a-static' to the '1d' point-in-time-scan precedent so it lints. band null until a regression band is declared."
     }
   ]
 }
