@@ -68,12 +68,6 @@
       "severity": null
     },
     {
-      "id": "canary-revert-harden-2026-07-r31",
-      "name": "Revert-or-redesign canary trip: harden-2026-07-r31",
-      "spec_dir": "canary-revert-harden-2026-07-r31",
-      "severity": null
-    },
-    {
       "id": "adhoc-incident-hook-deny-19343d-r3",
       "name": "Repeated hook deny: lazy-cycle-containment loop-formation-flag (4x/24h)",
       "spec_dir": "adhoc-incident-hook-deny-19343d-r3",
