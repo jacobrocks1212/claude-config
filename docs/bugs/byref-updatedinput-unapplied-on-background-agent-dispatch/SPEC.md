@@ -80,10 +80,50 @@ design fork and (b) an unconfirmed platform behavior (below).
 - Subagent's received prompt was the literal `@@lazy-ref nonce=884c53da…` line, not the resolved
   bytes → subagent improvised recovery by reading the prompt registry.
 
-## Fix scope — DEFERRED to the operator-owned park (nothing implemented this round)
+## Fix scope — RESOLVED (operator-locked 2026-07-18)
 
-The candidate fixes all either (a) preempt the **already-hard-parked** operator decision, or
-(b) depend on / band-aid over the unconfirmed platform behavior:
+> **The park is resolved.** Both entangled questions were driven to a decision on 2026-07-18
+> (records: `NEEDS_INPUT_RESOLVED_2026-07-18.md` `## Resolution (final — fix fork)`, and
+> `PLATFORM_CONFIRMATION.md`). This section now states the locked, plannable fix scope; the
+> original deferral rationale is retained below as history.
+
+**Platform behavior — CONFIRMED (no longer asserted).** `PLATFORM_CONFIRMATION.md` establishes,
+via an operator-authorized read-only `claude-code-guide` confirmation, that
+`hookSpecificOutput.updatedInput` is **confirmed BROKEN for the Agent tool as a CLASS** in current
+Claude Code — upstream **anthropics/claude-code#39814** reproduces our exact symptom (allow
+honored, `additionalContext` honored, `updatedInput` silently dropped, subagent gets the original
+prompt) and is **closed as "not planned."** Background vs. foreground is **not** the axis — the
+rewrite never applies to an Agent dispatch. This retires the SPEC's earlier "unconfirmed-platform-
+behavior" dependency: the symptom→cause link is now traced (guard ALLOW+consume at
+`lazy_core/dispatch.py:1703` / `lazy_guard._allow_with_updated_input` → platform drops the
+`updatedInput` rewrite for the Agent tool → subagent boots with the bare `@@lazy-ref` token).
+
+**Locked fix (operator, AskUserQuestion 2026-07-18 — option (c), designed-contract form):** a
+subagent-side resolve of the registered prompt, made a first-class delivery mechanism rather than
+an improvisation. Scope:
+
+1. **Sanctioned consumed-nonce read on BOTH state scripts** — `--resolve-ref <nonce>` returns the
+   registered prompt bytes for a nonce the guard already ALLOW+consumed **this run** (read-only,
+   run-scoped, never un-consumes; the existing `resolve_emission_by_nonce` filters consumed
+   entries, so this is a distinct sanctioned read surface). Coupled/parity-audited across
+   `lazy-state.py` ↔ `bug-state.py`.
+2. **Emitted dispatch templates gain a contractual FIRST STEP for by-reference dispatches** —
+   "your instructions are registered under nonce X; resolve them via `--resolve-ref X` before
+   anything else," so a subagent that receives a bare `@@lazy-ref` token has a designed path and
+   never takes zero tool-uses / returns "no task attached."
+3. **Coupled dispatch-skill prose updated** (`lazy-batch` ↔ `lazy-bug-batch` ↔ `lazy-batch-cloud`)
+   — by-reference stays PREFERRED with the new delivery mechanism; verbatim remains the documented
+   fallback.
+4. **Regression tests** — including the zero-tool-use dead-return near-miss.
+
+**Interim behavior until the resolver ships:** verbatim dispatch (the de-facto mitigation the
+2026-07-18 run used; the guard's `lookup_emission` ALLOW+consume hash-validation is unaffected by
+the bug and stays the integrity mechanism).
+
+### Original deferral rationale (2026-07-17 — superseded by the 2026-07-18 resolution above)
+
+The candidate fixes all either (a) preempt the **then-hard-parked** operator decision, or
+(b) depend on / band-aid over the (then-)unconfirmed platform behavior:
 
 1. **Carve background dispatches out of the by-reference preference** (dispatch verbatim for any
    `run_in_background: true` Agent dispatch; by-reference stays a foreground-only convenience).
@@ -102,11 +142,11 @@ The candidate fixes all either (a) preempt the **already-hard-parked** operator 
    correct FIRST step but requires an Agent-tool dispatch that this marked hardening run is
    forbidden from making (subagent policy).
 
-**Blocker (why nothing shipped):** the root cause hinges on unconfirmed Claude Code platform
-behavior (Step-2 platform-confirmation mandate; harden Round 83). Confirming it requires
-`claude-code-guide`, which the marked-run subagent policy forbids this session. Per Step-2
-guidance ("if an undocumented dependency is unavoidable, hard-park it for the operator rather than
-shipping on the assumption") AND because the disposition is an **already operator-owned** design
-fork, this is a hard-park carve-out: the new evidence is fed into the existing park
-(`turn-routing-enforcement/NEEDS_INPUT.md` decision #1) and a bug-local `NEEDS_INPUT.md` halts this
-item pending the operator decision. **No gate weakened; no registry/marker edited.**
+**Blocker (why nothing shipped in the 2026-07-17 round):** the root cause then hinged on
+unconfirmed Claude Code platform behavior (Step-2 platform-confirmation mandate; harden Round 83),
+and confirming it required `claude-code-guide`, which that marked hardening run's subagent policy
+forbade. The evidence was fed into the existing park (`turn-routing-enforcement/NEEDS_INPUT.md`
+decision #1) and a bug-local `NEEDS_INPUT.md` halted the item. **This blocker is now cleared** (see
+**Fix scope — RESOLVED** above): the platform behavior was confirmed on 2026-07-18
+(`PLATFORM_CONFIRMATION.md`), the operator locked option (c) as the fix, and this item is ready to
+plan. No gate was weakened and no registry/marker was edited to resolve it.
