@@ -8,6 +8,8 @@
 **Status:** Fixed
 **Severity:** Low
 **Discovered:** 2026-07-18
+**Fixed:** 2026-07-19
+**Fix commit:** 5a6c8b92
 **Placement:** docs/bugs/adhoc-unify-merged-head-coordinator-exemptions
 **Related:** `docs/bugs/dispatch-probe-and-inject-bypass-merged-head` (the guard's origin), `parallel-worktree-batch-execution` / `lazy-batch-parallel-run-harness-gaps` (round-1 gap 1 = lane exemption; round-2 gap 8 = serial-tail lease exemption), `merged-head-actionability-oracle`
 
