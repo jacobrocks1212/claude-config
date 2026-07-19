@@ -138,8 +138,11 @@ class TestLintGreen:
         # runner-turn-end-stall-recurrence — appended VERBATIM from that
         # feature's SPEC `## KPI Declaration`; honest NO-DATA / PENDING-
         # BASELINE, null baselines by design until denies/friction are
-        # ledgered).
-        assert len(registry["kpis"]) == 21
+        # ledgered)
+        # + subagent-wedge-strand-recurrence (the count was silently drifted to
+        # 22 by a prior promotion that did not update this assertion; corrected
+        # here).
+        assert len(registry["kpis"]) == 22
         ids = {r["id"] for r in registry["kpis"]}
         assert "canary-trip-precision" in ids
         assert {"efficacy-verdicts-produced", "confounded-verdict-ratio",
@@ -538,6 +541,101 @@ class TestBugBacklogSelectors:
         value_count, _ = ksc.compute_reading(row_count, repo_root=tmp_path, now=_NOW)
         assert value_age is not None
         assert value_count == 1.0
+
+
+class TestHookDuplicatedLineCountSelector:
+    """shared-hook-lib Phase 4: the repo-static-scan / hook-duplicated-line-count
+    selector — a deterministic count of duplicated scaffolding lines across
+    user/hooks/*.sh (down-is-good; honesty ladder: absent/unreadable → NO-DATA,
+    never a fabricated zero)."""
+
+    def _hooks(self, tmp_path, files: dict):
+        hooks = tmp_path / "user" / "hooks"
+        hooks.mkdir(parents=True)
+        for name, body in files.items():
+            (hooks / name).write_text(body, encoding="utf-8")
+        return hooks
+
+    # Two substantive (>= threshold, non-comment) scaffolding lines.
+    _L1 = 'HOOK_PYTHON=$(command -v python3 || command -v python)'
+    _L2 = 'SCRIPT_DIR="$(cd "$(dirname "$0")/../scripts" && pwd)"'
+
+    def test_deterministic_count_on_fixture_tree(self, tmp_path):
+        # _L1 in a,b (2 files) -> +1 redundant copy; _L2 in a,b,c (3 files)
+        # -> +2 redundant copies. Trivial/short lines (fi, exit 0), comments,
+        # and unique lines never count. Known total = 3.
+        self._hooks(tmp_path, {
+            "hook_a.sh": (
+                "#!/usr/bin/env bash\n"
+                "# a fail-open comment that happens to repeat\n"
+                f"{self._L1}\n"
+                f"{self._L2}\n"
+                'a_unique_line_only_in_a="alpha"\n'
+                "exit 0\n"
+            ),
+            "hook_b.sh": (
+                "#!/usr/bin/env bash\n"
+                "# a fail-open comment that happens to repeat\n"
+                f"{self._L1}\n"
+                f"{self._L2}\n"
+                'b_unique_line_only_in_b="beta"\n'
+                "fi\n"
+            ),
+            "hook_c.sh": (
+                "#!/usr/bin/env bash\n"
+                f"{self._L2}\n"
+                'c_unique_line_only_in_c="gamma"\n'
+            ),
+        })
+        value, note = ksc._sel_hook_duplicated_line_count(tmp_path)
+        assert value == 3.0, note
+
+    def test_no_duplication_is_zero_not_no_data(self, tmp_path):
+        # A present, readable, fully-deduplicated tree is a real zero — NOT
+        # NO-DATA (the honesty ladder's zero is for measured absence of
+        # duplication, distinct from an unrecordable scan target).
+        self._hooks(tmp_path, {
+            "hook_a.sh": f"#!/usr/bin/env bash\n{self._L1}\nexit 0\n",
+            "hook_b.sh": f"#!/usr/bin/env bash\n{self._L2}\nexit 0\n",
+        })
+        value, note = ksc._sel_hook_duplicated_line_count(tmp_path)
+        assert value == 0.0, note
+
+    def test_missing_hooks_tree_is_no_data(self, tmp_path):
+        value, note = ksc._sel_hook_duplicated_line_count(tmp_path)
+        assert value is None
+        assert note
+
+    def test_no_sh_files_is_no_data(self, tmp_path):
+        hooks = tmp_path / "user" / "hooks"
+        hooks.mkdir(parents=True)
+        (hooks / "README.md").write_text("not a hook", encoding="utf-8")
+        value, note = ksc._sel_hook_duplicated_line_count(tmp_path)
+        assert value is None
+        assert note
+
+    def test_compute_reading_dispatches_selector(self, tmp_path):
+        self._hooks(tmp_path, {
+            "hook_a.sh": f"#!/usr/bin/env bash\n{self._L1}\n",
+            "hook_b.sh": f"#!/usr/bin/env bash\n{self._L1}\n",
+        })
+        row = _row(id="hook-dup", system="hook-plane",
+                   signal={"source": "repo-static-scan",
+                           "selector": "hook-duplicated-line-count"},
+                   unit="lines")
+        value, _ = ksc.compute_reading(row, repo_root=tmp_path, now=_NOW)
+        assert value == 1.0
+
+    def test_lint_accepts_registered_source_and_selector(self):
+        row = _row(id="hook-plane-duplicated-lines", system="hook-plane",
+                   signal={"source": "repo-static-scan",
+                           "selector": "hook-duplicated-line-count"},
+                   unit="lines",
+                   baseline={"value": 467, "captured_at": "2026-07-11",
+                             "window": "1d", "provenance": "retro-derived"},
+                   band=None)
+        errors, _ = _lint(_registry(row))
+        assert errors == []
 
 
 class TestStatusEngine:

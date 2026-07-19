@@ -55,7 +55,7 @@ Where this plan's repo uses non-default gates or component paths (this is `claud
 
 ## Work Units
 
-- [ ] WU-1 — Register `repo-static-scan` source + `hook-duplicated-line-count` selector + counter in `kpi-scorecard.py` (+ tests)
+- [x] WU-1 — Register `repo-static-scan` source + `hook-duplicated-line-count` selector + counter in `kpi-scorecard.py` (+ tests)
 - [ ] WU-2 — Promote the `hook-plane-duplicated-lines` row into `docs/kpi/registry.json`
 
 ---

@@ -144,6 +144,16 @@ _SOURCES: dict[str, frozenset] = {
         "false-positive-rate",            # flags judged spurious / total flags
         "verdict-efficacy-disagreement",  # passed-then-REFUTED + flagged-then-CONFIRMED
     }),
+    # shared-hook-lib Phase 4: a deterministic point-in-time static scan of the
+    # repo tree (NOT a windowed ledger read). Its lone v1 selector counts the
+    # remaining duplicated scaffolding lines across user/hooks/*.sh — the
+    # headline down-is-good KPI the shared-hook-lib extraction drives toward
+    # zero. Compute IS wired (_sel_hook_duplicated_line_count); honesty ladder:
+    # an absent/unreadable scan target → NO-DATA, never a fabricated zero (a
+    # measured, fully-deduplicated tree IS a real zero — a distinct outcome).
+    "repo-static-scan": frozenset({
+        "hook-duplicated-line-count",
+    }),
 }
 
 # vantage.host closed enum (efficacy-signal-integrity D3).
@@ -983,6 +993,61 @@ def _sel_concluded_unfixed_count(repo_root) -> Tuple[Optional[float], Optional[s
     return (float(n), None)
 
 
+# -- shared-hook-lib Phase 4: user/hooks/ duplicated-scaffolding-line counter ----
+#
+# A deterministic, point-in-time static scan (NOT a windowed ledger read): over
+# every user/hooks/*.sh file, a NORMALIZED substantive line (stripped; length
+# >= _HOOK_DUP_MIN_LINE_CHARS; not a pure `#` comment) that appears in >= 2
+# DISTINCT hook files contributes (total_occurrences - 1) redundant copies to
+# the count. This is the classic cross-file duplicated-line metric — it needs no
+# hardcoded knowledge of WHICH blocks are "scaffolding" (so it can't drift as the
+# blocks evolve), and it trends toward zero exactly as hooks migrate off their
+# inline copies onto the shared hook-prelude.sh / hook_lib.py substrate. The
+# short-line + comment filter keeps trivial shell syntax (fi/esac/done/}/exit 0)
+# and drifting comment prose out of the signal so it measures functional
+# scaffolding duplication, not boilerplate punctuation.
+_HOOK_DUP_MIN_LINE_CHARS = 8
+
+
+def _sel_hook_duplicated_line_count(repo_root) -> Tuple[Optional[float], Optional[str]]:
+    """Count duplicated scaffolding lines across user/hooks/*.sh.
+
+    Honesty ladder: an absent user/hooks tree, no *.sh files, or a tree whose
+    every *.sh is unreadable → NO-DATA (never a fabricated zero). A present,
+    readable, fully-deduplicated tree returns a real 0.0 (measured absence of
+    duplication, distinct from an unrecordable scan target)."""
+    hooks_dir = Path(repo_root) / "user" / "hooks"
+    if not hooks_dir.is_dir():
+        return (None, "user/hooks tree absent — nothing to scan")
+    sh_files = sorted(hooks_dir.glob("*.sh"))
+    if not sh_files:
+        return (None, "no *.sh hooks under user/hooks — nothing to scan")
+    file_count: dict[str, int] = {}   # normalized line -> distinct files
+    occur_count: dict[str, int] = {}  # normalized line -> total occurrences
+    readable = 0
+    for f in sh_files:
+        try:
+            text = f.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        readable += 1
+        seen_here: set[str] = set()
+        for raw in text.splitlines():
+            s = raw.strip()
+            if len(s) < _HOOK_DUP_MIN_LINE_CHARS or s.startswith("#"):
+                continue
+            occur_count[s] = occur_count.get(s, 0) + 1
+            if s not in seen_here:
+                seen_here.add(s)
+                file_count[s] = file_count.get(s, 0) + 1
+    if readable == 0:
+        return (None, "user/hooks/*.sh present but none readable — no "
+                      "fabricated zero")
+    dup = sum(occur_count[s] - 1 for s, files in file_count.items()
+              if files >= 2)
+    return (float(dup), None)
+
+
 # -- dispatcher -------------------------------------------------------------------
 
 def compute_reading(row, *, repo_root,
@@ -1021,6 +1086,9 @@ def compute_reading(row, *, repo_root,
                 return _sel_oldest_open_bug_age_days(repo_root)
             if selector == "concluded-unfixed-count":
                 return _sel_concluded_unfixed_count(repo_root)
+        elif source == "repo-static-scan":
+            if selector == "hook-duplicated-line-count":
+                return _sel_hook_duplicated_line_count(repo_root)
         return (None, f"no computation registered for "
                       f"{source!r}/{selector!r}")
     except Exception as exc:  # noqa: BLE001 — honest NO-DATA, never a crash
