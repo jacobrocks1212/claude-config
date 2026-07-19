@@ -43,7 +43,7 @@
 | | status: Spec · next: spec | | | |
 | 15 | [canary-revert-harden-2026-07-r44](docs/bugs/_archive/canary-revert-harden-2026-07-r44/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 16 | [canary-revert-harden-2026-07-r32](docs/bugs/canary-revert-harden-2026-07-r32/SPEC.md) | Spec | — |  |
+| 16 | [canary-revert-harden-2026-07-r32](docs/bugs/_archive/canary-revert-harden-2026-07-r32/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
 | 17 | [canary-revert-harden-2026-07-r31](docs/bugs/canary-revert-harden-2026-07-r31/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |

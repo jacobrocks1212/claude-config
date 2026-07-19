@@ -68,12 +68,6 @@
       "severity": null
     },
     {
-      "id": "canary-revert-harden-2026-07-r32",
-      "name": "Revert-or-redesign canary trip: harden-2026-07-r32",
-      "spec_dir": "canary-revert-harden-2026-07-r32",
-      "severity": null
-    },
-    {
       "id": "canary-revert-harden-2026-07-r31",
       "name": "Revert-or-redesign canary trip: harden-2026-07-r31",
       "spec_dir": "canary-revert-harden-2026-07-r31",
