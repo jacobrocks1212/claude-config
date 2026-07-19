@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: decision-2-6-uncovered-row-reroute-to-mcp-test
-status: Ready
+status: In-progress
 created: 2026-07-19
 complexity: complex
 phases: [1, 2, 3]
