@@ -83,6 +83,11 @@
   ],
   "CLAUDE.md": [
     {
+      "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -4723,12 +4728,22 @@
   ],
   "docs/bugs/_archive/subagent-wedge-backstop-dirty-tree-predicate-repo-wide/FIXED.md": [
     {
+      "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "subagent-wedge-backstop-dirty-tree-predicate-repo-wide",
       "type": "bug",
       "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/subagent-wedge-backstop-dirty-tree-predicate-repo-wide/SPEC.md": [
+    {
+      "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "subagent-wedge-backstop-dirty-tree-predicate-repo-wide",
       "type": "bug",
@@ -4957,14 +4972,45 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/adhoc-cycle-return-omits-decision-classification-ledger/IMPLEMENTATION_NOTES.md": [
+    {
+      "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/adhoc-cycle-return-omits-decision-classification-ledger/PHASES.md": [
+    {
+      "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "subagent-wedge-backstop-dirty-tree-predicate-repo-wide",
       "type": "bug",
       "provenance": "manual"
     }
   ],
+  "docs/bugs/adhoc-cycle-return-omits-decision-classification-ledger/RUNTIME_GATES.md": [
+    {
+      "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-cycle-return-omits-decision-classification-ledger/SPEC.md": [
+    {
+      "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/adhoc-cycle-return-omits-decision-classification-ledger/plans/all-phases-cycle-return-ledger.md": [
+    {
+      "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "subagent-wedge-backstop-dirty-tree-predicate-repo-wide",
       "type": "bug",
@@ -17724,6 +17770,11 @@
       "provenance": "manual"
     },
     {
+      "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "adhoc-decision-key-relative-absolute-mismatch",
       "type": "bug",
       "provenance": "manual"
@@ -19071,6 +19122,11 @@
     }
   ],
   "user/hooks/subagent-wedge-backstop.sh": [
+    {
+      "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "concurrent-worktree-agent-coordination",
       "type": "feature",
@@ -21459,6 +21515,11 @@
   ],
   "user/scripts/test_hooks.py": [
     {
+      "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "adhoc-incident-hook-deny-4b767b",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -22841,6 +22902,11 @@
     }
   ],
   "user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md": [
+    {
+      "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
       "type": "bug",
@@ -24450,6 +24516,11 @@
   ],
   "user/skills/plan-bug/SKILL.md": [
     {
+      "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "execute-plan-skill-diet",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -24640,6 +24711,11 @@
     }
   ],
   "user/skills/spec-bug/SKILL.md": [
+    {
+      "id": "adhoc-cycle-return-omits-decision-classification-ledger",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "stub-origin-provisional-exclusion",
       "type": "feature",

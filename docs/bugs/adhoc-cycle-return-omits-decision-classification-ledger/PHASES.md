@@ -1,6 +1,6 @@
 # Implementation Phases — Cycle-subagent return omits Decision-Classification Ledger
 
-**Status:** In-progress
+**Status:** Fixed
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
@@ -28,7 +28,7 @@
 
 ### Phase 1: Add the ledger to the authoritative return contract (root fix)
 
-**Status:** Complete — RUNTIME GATES PENDING (1)
+**Status:** Complete
 
 **Scope:** Add the Decision-Classification Ledger as a required return element of `cycle-base-prompt.md` item 4 "REPORT" in BOTH `@section hard-contract` blocks (workstation, L575–585; cloud, L621–631), scoped to the decision-bearing cycles (`/spec`, `/spec-phases`, `/write-plan`, `/add-phase`, `/plan-feature`, `/spec-bug`, `/plan-bug`). The requirement mirrors how the NEEDS_INPUT disposition is already mandated in the same item: the return summary MUST carry a `### Decision-Classification Ledger` section (or the explicit empty-ledger line `_(no decisions surfaced this cycle — auto-finalized)_`) on those cycles. This is the load-bearing fix — the base return contract, not the skill body, is authoritative for the batch return shape.
 

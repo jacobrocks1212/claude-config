@@ -2,7 +2,7 @@
 
 > The `/lazy-batch(-bug)` cycle subagent's return summary systematically arrives WITHOUT the mandatory Decision-Classification Ledger, forcing the Step 1d.5 input-audit into its weaker diff-only fallback and silently losing the cycle's own product-decision classification.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-19
 **Placement:** docs/bugs/adhoc-cycle-return-omits-decision-classification-ledger
