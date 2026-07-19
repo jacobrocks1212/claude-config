@@ -3778,6 +3778,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/orchestrator-misroutes-on-grandchild-subagent-notifications/FIXED.md": [
+    {
+      "id": "orchestrator-misroutes-on-grandchild-subagent-notifications",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/orchestrator-misroutes-on-grandchild-subagent-notifications/SPEC.md": [
+    {
+      "id": "orchestrator-misroutes-on-grandchild-subagent-notifications",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/park-mode-halts-on-blocked/FIXED.md": [
     {
       "id": "park-mode-halts-on-blocked",
@@ -16370,6 +16384,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/interventions/harden-2026-07-r98.md": [
+    {
+      "id": "orchestrator-misroutes-on-grandchild-subagent-notifications",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/hardening-intervention-records-unmeasurable-or-missing.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -17146,6 +17167,11 @@
     },
     {
       "id": "merged-head-research-exclusion-flag-gated-splits-cross-script",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "orchestrator-misroutes-on-grandchild-subagent-notifications",
       "type": "bug",
       "provenance": "manual"
     },
