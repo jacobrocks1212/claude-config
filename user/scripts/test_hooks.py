@@ -8025,6 +8025,53 @@ def test_guard_worker_subdispatch_denied_before_consume():
         )
 
 
+def test_guard_subagent_model_improvisation_deny_self_announces():
+    """dispatch-guard-improvisation-deny-not-self-announcing (harden Round 112):
+    an unregistered prompt under an armed subagent-model cycle whose OWN emission
+    is NOT consumed (the orchestrator improvising the skill's internal worker
+    split) is DENIED with a SELF-ANNOUNCING reason that names the specific
+    mistake + the single-cycle_prompt corrective — AND the deny still accrues
+    hardening debt (verdict + debt semantics UNCHANGED; a message upgrade, not a
+    gate change)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        session = str(uuid.uuid4())
+        # Armed subagent-model (execute-plan) cycle, bound workstation marker,
+        # but the cycle's own emission NEVER consumed → improvisation-caught.
+        _arm_worker_in_flight(state_dir, session, consume=False)
+
+        result = _run_guard_py(
+            _e1_preToolUse_json(_WORKER_PROMPT, session_id=session), env
+        )
+        payload = json.loads(result.stdout.strip())
+        hso = payload["hookSpecificOutput"]
+        assert hso["permissionDecision"] == "deny", payload
+        reason = hso.get("permissionDecisionReason", "")
+        # Self-announcing: names the improvisation, the one-Agent-per-cycle rule,
+        # the single-cycle_prompt corrective, and the offending sub_skill.
+        assert "orchestrator-improvised" in reason, reason
+        assert "EXACTLY ONE Agent per cycle" in reason, reason
+        assert "cycle_prompt" in reason, reason
+        assert "execute-plan" in reason, reason
+        # Not the bare generic recipe: the specific diagnosis precedes it.
+        assert reason.index("orchestrator-improvised") < reason.index(
+            "dispatch prompt not script-emitted this turn"
+        ), "diagnosis must PREPEND the standard corrective recipe"
+
+        # Debt semantics UNCHANGED: a bound-marker improvisation deny still books
+        # hardening debt exactly like the generic default deny (non-weakening).
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.pending_hardening() == 1, (
+                "improvisation deny under a bound marker must still accrue debt"
+            )
+        finally:
+            _clear_state_dir()
+
+
 def test_guard_worker_subdispatch_denied_without_capability():
     """A cycle marker whose sub_skill does NOT declare a sub-subagent model
     (subagent_model=False) keeps the deny even with the emission consumed."""
@@ -8142,6 +8189,8 @@ _TESTS = _TESTS + [
      test_guard_worker_subdispatch_exemption_allows_fresh_cycle_nonce),
     ("test_guard_worker_subdispatch_denied_before_consume",
      test_guard_worker_subdispatch_denied_before_consume),
+    ("test_guard_subagent_model_improvisation_deny_self_announces",
+     test_guard_subagent_model_improvisation_deny_self_announces),
     ("test_guard_worker_subdispatch_denied_without_capability",
      test_guard_worker_subdispatch_denied_without_capability),
     ("test_guard_worker_subdispatch_denied_on_cloud",

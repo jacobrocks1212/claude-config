@@ -280,6 +280,44 @@ def _hardening_cap_deny_reason() -> str:
     return _HARDENING_DEPTH_CAP_REASON
 
 
+def _subagent_model_improvisation_deny_reason(cycle: dict) -> str:
+    """Return the SELF-ANNOUNCING deny reason for the improvisation-caught case:
+    an unregistered Agent prompt dispatched under an ACTIVE ``subagent_model: true``
+    cycle whose OWN emitted ``cycle_prompt`` has NOT been consumed yet (the 2b
+    consumed-fence FALSE branch — dispatch-guard-improvisation-deny-not-self-announcing).
+
+    Structural meaning (why this reason is safe to name a SPECIFIC mistake):
+    session tool calls are serial and the cycle worker only exists AFTER its
+    emission is consumed, so an unregistered prompt arriving while (marker active
+    AND subagent_model AND emission NOT consumed) can ONLY be the orchestrator
+    composing the dispatched skill's INTERNAL sub-subagent worker prompt itself
+    (``/execute-plan``'s test-agent/impl-agent split, an Explore fan-out, …)
+    instead of dispatching the single emitted ``cycle_prompt`` to ONE subagent.
+
+    The generic ``_CORRECTIVE_RECIPE`` is still appended verbatim (the corrective
+    path — re-probe / hardening routing — is identical). This helper only PREPENDS
+    the specific diagnosis so the deny self-announces the exact orchestrator error.
+    The deny VERDICT and debt semantics are unchanged at the call site (routed via
+    the same ``_deny_default`` as the generic path) — this is a message upgrade,
+    NOT a gate change.
+    """
+    sub_skill = cycle.get("sub_skill") or "the dispatched skill"
+    feature_id = cycle.get("feature_id") or "?"
+    return (
+        f"orchestrator-improvised sub-subagent dispatch — an active '{sub_skill}' "
+        f"cycle (feature '{feature_id}') declares a sub-subagent model but its OWN "
+        "emitted cycle_prompt has NOT been dispatched/consumed yet, so NO cycle "
+        "worker is in flight and this unregistered Agent prompt can only be the "
+        f"orchestrator composing '{sub_skill}''s INTERNAL worker prompt itself "
+        "(e.g. the test-agent/impl-agent split, an Explore fan-out). The orchestrator "
+        "dispatches EXACTLY ONE Agent per cycle: dispatch the SINGLE emitted "
+        f"cycle_prompt VERBATIM to ONE subagent — the '{sub_skill}' SUBAGENT performs "
+        "its own test-agent/impl-agent (or Explore) split INTERNALLY once running; do "
+        "NOT compose or dispatch the subagent's worker prompts yourself. Standard "
+        "recovery: "
+    ) + _CORRECTIVE_RECIPE
+
+
 def _transcription_slip_deny_reason() -> str:
     """F2c (lazy-validation-readiness Phase 2): return the cheap-deny reason for a
     shape-(a) transcription-slip denial.
@@ -1006,25 +1044,39 @@ def guard(stdin_text: str) -> str | None:
             and marker.get("session_id") is not None
         ):
             cycle = lazy_core.read_cycle_marker()
-            if (
-                cycle is not None
-                and cycle.get("subagent_model") is True
-                and lazy_core.emission_consumed_by_nonce(cycle.get("nonce"))
-            ):
-                lazy_core.append_worker_subdispatch_event(
-                    tool_use_id=tool_use_id,
-                    sha12=sha[:12],
-                    item_id=cycle.get("feature_id"),
-                    sub_skill=cycle.get("sub_skill"),
+            if cycle is not None and cycle.get("subagent_model") is True:
+                if lazy_core.emission_consumed_by_nonce(cycle.get("nonce")):
+                    lazy_core.append_worker_subdispatch_event(
+                        tool_use_id=tool_use_id,
+                        sha12=sha[:12],
+                        item_id=cycle.get("feature_id"),
+                        sub_skill=cycle.get("sub_skill"),
+                    )
+                    reason = (
+                        "workstation sub-subagent dispatch allowed — active cycle "
+                        f"marker ({cycle.get('feature_id')}, sub_skill "
+                        f"{cycle.get('sub_skill')}) declares a sub-subagent model "
+                        "and its cycle dispatch is consumed (worker in flight); "
+                        f"prompt sha12 {sha[:12]} audited as worker_subdispatch"
+                    )
+                    return _allow_json(reason)
+                # --- 2b(improv). Consumed fence FALSE → improvisation-caught. -----
+                # dispatch-guard-improvisation-deny-not-self-announcing: the cycle
+                # is armed (subagent_model) but its OWN emitted cycle_prompt has NOT
+                # been consumed, so NO worker is in flight (session calls are serial;
+                # the worker only exists after its emission is consumed).  This
+                # unregistered Agent prompt can ONLY be the orchestrator improvising
+                # the dispatched skill's INTERNAL sub-subagent split at the
+                # orchestrator level.  DENY exactly as the generic site below (verdict
+                # + debt semantics UNCHANGED — routed via _deny_default; a bound
+                # marker still accrues hardening debt), but with a SELF-ANNOUNCING
+                # reason that names the specific mistake + the single-cycle_prompt
+                # corrective.  This is a message upgrade, NOT a gate change.
+                return _deny_default(
+                    marker,
+                    _subagent_model_improvisation_deny_reason(cycle),
+                    tool_use_id=tool_use_id, sha=sha, prompt=prompt,
                 )
-                reason = (
-                    "workstation sub-subagent dispatch allowed — active cycle "
-                    f"marker ({cycle.get('feature_id')}, sub_skill "
-                    f"{cycle.get('sub_skill')}) declares a sub-subagent model "
-                    "and its cycle dispatch is consumed (worker in flight); "
-                    f"prompt sha12 {sha[:12]} audited as worker_subdispatch"
-                )
-                return _allow_json(reason)
     except Exception:  # noqa: BLE001
         # Fail-closed for the exemption: fall through to the deny paths below.
         pass
