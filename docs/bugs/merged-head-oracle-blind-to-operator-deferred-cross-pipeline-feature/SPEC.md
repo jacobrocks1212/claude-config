@@ -1,8 +1,10 @@
 # Merged-head oracle blind to an operator-deferred CROSS-PIPELINE feature → deadlock
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P0
 **Discovered:** 2026-07-19
+**Fixed:** 2026-07-19
+**Fix commit:** a1f98e4d
 **Related:** `docs/bugs/_archive/merged-head-excludes-parked-not-operator-deferred-deadlocks/`
 (Round 57 — the ORIGINAL operator-defer merged-head exclusion, whose file-predicate this bug
 proves was silently retired); `docs/bugs/_archive/merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head/`
