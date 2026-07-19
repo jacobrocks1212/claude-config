@@ -5895,11 +5895,16 @@ def test_advance_forward_cycle_pseudo_cleanup_routes_meta():
 
 
 def test_advance_forward_cycle_verbatim_real_skill_theory_1b():
-    """WU-2 case (d) — Theory-1b closure: a real-skill sub_skill change advances
-    forward_cycles once even on a verbatim (consume-missed) dispatch.
+    """Theory-1b closure, retargeted to the DISPATCH-TIME bracket (decision-11): a
+    verbatim (consume-missed) real Agent dispatch advances forward_cycles exactly ONCE
+    per completed ``--cycle-end`` real bracket — via ``advance_cycle_bracket_counter``
+    with a ``kind: "real"`` cycle marker, NOT via the retired
+    ``advance_forward_cycle(consume_gate=…)`` probe-path advance.
 
     No consume is simulated (the verbatim dispatch missed the guard ALLOW), yet the
-    state change drives the advance."""
+    closed real bracket is the budget authority and drives the advance. RED against a
+    hypothetical un-relocated (probe/consume-gated) mechanism that would freeze at 0
+    with no consume; GREEN against the shipped bracket counter."""
     _guard()
     import time as _time
     with tempfile.TemporaryDirectory() as td:
@@ -5909,19 +5914,21 @@ def test_advance_forward_cycle_verbatim_real_skill_theory_1b():
                 pipeline="feature", cloud=False, repo_root="/tmp/r",
                 max_cycles=20, now=_time.time(),
             )
-            # First real cycle.
-            s1 = {"sub_skill": "/plan-feature", "feature_id": "feat-x",
-                  "current_step": "plan-feature"}
-            m1 = lazy_core.advance_forward_cycle(s1)
+            # First real bracket closes → advances once (no consume needed).
+            cm1 = {"kind": "real", "feature_id": "feat-x"}
+            m1 = lazy_core.advance_cycle_bracket_counter(cm1)
             assert m1["forward_cycles"] == 1, m1
-            # Second real cycle — different current_step → advances again, no consume.
-            s2 = {"sub_skill": "/execute-plan", "feature_id": "feat-x",
-                  "current_step": "execute-plan"}
-            m2 = lazy_core.advance_forward_cycle(s2)
+            assert m1["per_feature_forward_cycles"]["feat-x"] == 1, m1
+            # Second real bracket → advances again with no consume (the bracket, not
+            # the consume oracle, is the authority — Theory-1b).
+            cm2 = {"kind": "real", "feature_id": "feat-x"}
+            m2 = lazy_core.advance_cycle_bracket_counter(cm2)
             assert m2["forward_cycles"] == 2, (
-                f"a verbatim real-skill state change must advance forward_cycles to "
-                f"2 with no consume (Theory-1b), got {m2['forward_cycles']!r}"
+                f"a verbatim real-skill dispatch bracket must advance forward_cycles "
+                f"to 2 with no consume (Theory-1b, dispatch-time), got "
+                f"{m2['forward_cycles']!r}"
             )
+            assert m2["per_feature_forward_cycles"]["feat-x"] == 2, m2
         finally:
             _clear_state_dir()
 
@@ -5959,16 +5966,20 @@ def test_advance_forward_cycle_legacy_marker_no_state_key_advances():
 
 
 
-def test_advance_forward_cycle_consume_gate_advances_multicycle_same_step():
-    """byref-forward-cycles-frozen-on-multicycle-same-step (2026-07-16):
-    ``advance_forward_cycle(state, consume_gate=True)`` advances forward_cycles ONCE
-    per distinct consumed dispatch across >=3 cycles that all share an IDENTICAL
-    (feature_id, current_step, sub_skill) tuple — the multi-part /execute-plan case.
+def test_bracket_counter_advances_once_per_multicycle_same_step_bracket():
+    """decision-11 (retarget of the retired byref-forward-cycles-frozen-on-
+    multicycle-same-step consume-gate test): a multi-part /execute-plan dispatches the
+    SAME real sub_skill for the SAME feature at the SAME (feature_id, current_step,
+    sub_skill) tuple, one Agent dispatch per plan part. Each completed ``--cycle-end``
+    real bracket advances forward_cycles exactly ONCE via
+    ``advance_cycle_bracket_counter`` — NOT frozen at 1 (the freeze the retired
+    consume_gate trigger addressed), NOT over-counted.
 
-    RED without the fix: the state-change trigger alone freezes forward_cycles at 1
-    for every same-tuple cycle, so max_cycles can never trip. The consume-gate OR
-    trigger advances off each dispatch's registry consume. A bare re-fire between
-    dispatches (same tuple AND no new consume) must still no-op (idempotence)."""
+    The bracket counter keys on the CYCLE marker's ``kind`` (one bracket == one
+    dispatch), so the unchanging state tuple is irrelevant: N real brackets ⇒
+    forward_cycles == N. RED against a hypothetical un-relocated state-change-only
+    mechanism that would freeze at 1 on the identical tuple; GREEN against the shipped
+    dispatch-time bracket counter."""
     _guard()
     import time as _time
     with tempfile.TemporaryDirectory() as td:
@@ -5978,82 +5989,26 @@ def test_advance_forward_cycle_consume_gate_advances_multicycle_same_step():
                 pipeline="feature", cloud=False, repo_root="/tmp/r",
                 max_cycles=10, now=_time.time(),
             )
-            # A single, UNCHANGING tuple for the whole multi-part phase.
-            state = {
-                "sub_skill": "/execute-plan",
-                "feature_id": "hydra-overlay",
-                "current_step": "Step 7a: execute plan",
-            }
-
-            # Cycle 1: first probe advances via the state-change trigger (census 0).
-            m1 = lazy_core.advance_forward_cycle(state, consume_gate=True)
-            assert m1["forward_cycles"] == 1, m1
-
-            # A bare re-fire BEFORE the cycle-1 dispatch is consumed → no-op.
-            m1b = lazy_core.advance_forward_cycle(state, consume_gate=True)
-            assert m1b["forward_cycles"] == 1, (
-                f"bare re-fire (same tuple, no new consume) must not advance, got "
-                f"{m1b['forward_cycles']!r}"
-            )
-
-            # Cycles 2 and 3: each consumes one distinct dispatch, then the next
-            # dispatch-bound probe advances off the census rise DESPITE the identical
-            # tuple. This is exactly what froze at 1 before the fix.
-            for expected in (2, 3):
-                entry = lazy_core.register_emission("p", "cycle")
-                lazy_core.dispatch.consume_nonce(entry["nonce"])
-                mN = lazy_core.advance_forward_cycle(state, consume_gate=True)
+            # N real brackets at the UNCHANGING multi-part-phase tuple — each closes
+            # one dispatch, each advances exactly once.
+            N = 3
+            mN = None
+            for expected in range(1, N + 1):
+                cm = {"kind": "real", "feature_id": "hydra-overlay"}
+                mN = lazy_core.advance_cycle_bracket_counter(cm)
                 assert mN["forward_cycles"] == expected, (
-                    f"a distinct consumed dispatch must advance forward_cycles to "
-                    f"{expected} even on an identical tuple, got "
+                    f"real bracket {expected} must advance forward_cycles to "
+                    f"{expected} even on an identical multi-part tuple, got "
                     f"{mN['forward_cycles']!r}"
                 )
-                # Per-feature counter rides the same gate.
+                # Per-feature counter rides the same bracket classification.
                 assert mN["per_feature_forward_cycles"]["hydra-overlay"] == expected, (
                     f"per_feature must track the same advance, got "
                     f"{mN['per_feature_forward_cycles']!r}"
                 )
-                # Idempotent re-fire after the advance, before the next consume.
-                mNb = lazy_core.advance_forward_cycle(state, consume_gate=True)
-                assert mNb["forward_cycles"] == expected, (
-                    f"re-fire after advance must no-op, got {mNb['forward_cycles']!r}"
-                )
-        finally:
-            _clear_state_dir()
-
-
-
-
-def test_advance_forward_cycle_consume_gate_default_off_preserves_freeze():
-    """The consume gate is OPT-IN: with the default (consume_gate omitted), an
-    identical tuple across cycles still no-ops even as the consume census rises —
-    the pseudo ``--apply-pseudo`` caller relies on the pure state-change trigger and
-    must stay byte-identical (a consume from an unrelated real dispatch must not
-    spuriously advance a pseudo re-fire)."""
-    _guard()
-    import time as _time
-    with tempfile.TemporaryDirectory() as td:
-        _set_state_dir(Path(td))
-        try:
-            lazy_core.write_run_marker(
-                pipeline="feature", cloud=False, repo_root="/tmp/r",
-                max_cycles=10, now=_time.time(),
-            )
-            state = {
-                "sub_skill": "/execute-plan",
-                "feature_id": "feat-x",
-                "current_step": "execute-plan",
-            }
-            m1 = lazy_core.advance_forward_cycle(state)
-            assert m1["forward_cycles"] == 1, m1
-            # A consume lands, but the default path ignores the census entirely.
-            entry = lazy_core.register_emission("p", "cycle")
-            lazy_core.dispatch.consume_nonce(entry["nonce"])
-            m2 = lazy_core.advance_forward_cycle(state)
-            assert m2["forward_cycles"] == 1, (
-                f"default (no consume_gate) must keep the pure state-change trigger — "
-                f"identical tuple no-ops despite a census rise, got "
-                f"{m2['forward_cycles']!r}"
+            assert mN["forward_cycles"] == N, (
+                f"{N} same-step real brackets must total forward_cycles == {N} "
+                f"(not frozen at 1, not over-counted), got {mN['forward_cycles']!r}"
             )
         finally:
             _clear_state_dir()
@@ -8682,8 +8637,7 @@ _TESTS = [
     ("test_advance_forward_cycle_pseudo_cleanup_routes_meta", test_advance_forward_cycle_pseudo_cleanup_routes_meta),
     ("test_advance_forward_cycle_verbatim_real_skill_theory_1b", test_advance_forward_cycle_verbatim_real_skill_theory_1b),
     ("test_advance_forward_cycle_legacy_marker_no_state_key_advances", test_advance_forward_cycle_legacy_marker_no_state_key_advances),
-    ("test_advance_forward_cycle_consume_gate_advances_multicycle_same_step", test_advance_forward_cycle_consume_gate_advances_multicycle_same_step),
-    ("test_advance_forward_cycle_consume_gate_default_off_preserves_freeze", test_advance_forward_cycle_consume_gate_default_off_preserves_freeze),
+    ("test_bracket_counter_advances_once_per_multicycle_same_step_bracket", test_bracket_counter_advances_once_per_multicycle_same_step_bracket),
     ("test_run_start_park_umbrella_arms_both_facets_both_scripts", test_run_start_park_umbrella_arms_both_facets_both_scripts),
     ("test_write_run_marker_initializes_per_feature_map", test_write_run_marker_initializes_per_feature_map),
     ("test_advance_forward_cycle_increments_per_feature", test_advance_forward_cycle_increments_per_feature),

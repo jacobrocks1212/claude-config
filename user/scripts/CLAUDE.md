@@ -797,27 +797,35 @@ independent triggers**, both marker-gated:
    fixed the ISSUE-5 forward-cycle inflation.
 2. **State-change advance — `advance_forward_cycle(state)`** (Fix-A, item 1). Advances when the
    `[feature_id, current_step, sub_skill]` tuple DIFFERS from the marker's `last_advance_state_key`
-   field — **independent of the consume oracle**. This covers the cycles trigger (1) misses:
+   field — **independent of the consume oracle**. It now serves EXACTLY ONE caller: the
    forward-advancing inline **pseudo-skills** (`--apply-pseudo __mark_*__` / `__write_validated_*`
-   / `__grant_skip_no_mcp_surface__` / `__flip_plan_complete_cloud_saturated__`) dispatch no Agent
-   and consume nothing, and a verbatim real-skill dispatch can miss its guard ALLOW (Theory-1b).
-   A re-fire with the SAME tuple is a no-op (idempotent, same as trigger 1's consume gate).
-   As of `byref-dispatch-undercounts-forward-cycles` Phase 1 this trigger is ALSO the authoritative
-   forward-advance on the `--repeat-count` **real-skill probe path** — where it REPLACED the
-   consume-gated `advance_run_counters` (form-1 reconciliation; `advance_run_counters` no longer
-   runs there). That moves the real-skill forward COUNT off the non-monotonic `consumed_emission_count()`
-   oracle entirely, so a by-ref dispatch whose consume the ring-capped census no longer reflects (the
-   "stuck at 16 / frozen at 50" freeze) still advances. Do NOT re-introduce a forward-advance
-   dependence on the consume oracle on this path.
+   / `__grant_skip_no_mcp_surface__` / `__flip_plan_complete_cloud_saturated__`), which dispatch no
+   Agent and consume nothing — so trigger (1) misses them. Each distinct apply is a distinct
+   `(slug, pseudo_name, pseudo_name)` tuple; a re-fire with the SAME tuple is a no-op (idempotent).
+   **NOT the real-dispatch budget authority** — see the dispatch-time bracket counter below.
+
+**Dispatch-time budget authority — `advance_cycle_bracket_counter(cycle_marker)` at `--cycle-end`
+(decision-11-dispatch-time-forward-advance / commit `e91bd305`).** The forward budget for real
+Agent dispatches advances when a `--cycle-begin`/`--cycle-end` bracket CLOSES (one bracket == one
+dispatch), keyed on the CYCLE marker's `kind` (`real` → `forward_cycles`, `meta` → `meta_cycles`),
+via the SAME `_bump_per_feature_forward` helper. The `--repeat-count` real-skill probe path is now
+a **PEEK** — it advances the loop-detection streaks (`update_repeat_counts`) but NO forward budget
+(the former probe-path advance was REMOVED). Do NOT re-introduce a forward-advance on the probe
+path, and do NOT re-introduce a forward-advance dependence on the non-monotonic
+`consumed_emission_count()` oracle for real dispatches — the bracket, observed directly by the
+script, is the authority.
 
 **Classifier** (`_FORWARD_ADVANCING_PSEUDO_SKILLS`, the SSOT frozenset): a real (non-`__`)
 sub_skill OR a `__`-prefixed pseudo-skill IN that set → `forward_cycles`; any other `__`-prefixed
-or falsy sub_skill → `meta_cycles`. **Marker fields:** `last_advance_consume_count` (trigger 1
-watermark) and `last_advance_state_key` (trigger 2 tuple, a JSON list; legacy markers lack it →
-defaults to None → first state change always advances). The state-change advance is wired into BOTH
-the `lazy-state.py --apply-pseudo` handler AND the `--repeat-count` real-skill probe path (both
-fail-open); `bug-state.py` mirrors the `--repeat-count` site (audited by `lazy_parity_audit.py`).
-Shared `lazy_core`, so `bug-state.py` inherits the helper too.
+or falsy sub_skill → `meta_cycles`. `advance_cycle_bracket_counter` reuses the SAME classifier via
+the cycle marker's `kind`. **Marker fields:** `last_advance_consume_count` (trigger 1 watermark)
+and `last_advance_state_key` (trigger 2 tuple, a JSON list; legacy markers lack it → defaults to
+None → first state change always advances). The state-change advance is wired ONLY into the
+`lazy-state.py --apply-pseudo` handler (fail-open); the `--repeat-count` real-skill probe path is a
+PEEK that advances no forward budget (decision-11 — it no longer calls `advance_forward_cycle`).
+The dispatch-time `advance_cycle_bracket_counter` is wired at BOTH scripts' `--cycle-end` handlers
+(`lazy-state.py` + `bug-state.py`, audited by `lazy_parity_audit.py`). Shared `lazy_core`, so
+`bug-state.py` inherits every helper too.
 
 > **Watermark hardening (`byref-dispatch-undercounts-forward-cycles` Phase 2).** The residual
 > consume-watermark consumers (`advance_run_counters`'s `last_advance_consume_count` gate,

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: decision-11-dispatch-time-forward-advance
-status: Ready
+status: Complete
 created: 2026-07-19
 complexity: complex
 phases: [1]
@@ -61,8 +61,8 @@ All four must pass (each exits 0) before the phase's commit. Run them synchronou
 
 ## Work Units
 
-- [ ] WU-1 — Retarget pinned tests to the dispatch-time bracket + retire the dead `consume_gate` trigger
-- [ ] WU-2 — Reconcile the stale `user/scripts/CLAUDE.md` "two orthogonal triggers" doc
+- [x] WU-1 — Retarget pinned tests to the dispatch-time bracket + retire the dead `consume_gate` trigger
+- [x] WU-2 — Reconcile the stale `user/scripts/CLAUDE.md` "two orthogonal triggers" doc
 
 ---
 

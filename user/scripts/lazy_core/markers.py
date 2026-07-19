@@ -3296,34 +3296,19 @@ _FORWARD_ADVANCING_PSEUDO_SKILLS = frozenset({
 })
 
 
-def advance_forward_cycle(state: dict, *, consume_gate: bool = False) -> dict | None:
+def advance_forward_cycle(state: dict) -> dict | None:
     """Fix-A (item 1): a CONSUME-INDEPENDENT forward/meta advance keyed on a change
     in the marker-recorded ``(feature_id, current_step, sub_skill)`` tuple.
 
-    SECOND-TRIGGER FIX (byref-forward-cycles-frozen-on-multicycle-same-step,
-    2026-07-16): the state-change trigger ALONE freezes ``forward_cycles`` whenever
-    consecutive genuine cycles share an IDENTICAL ``(feature_id, current_step,
-    sub_skill)`` tuple — the canonical case being a multi-part ``/execute-plan``
-    implementation that dispatches the SAME real sub_skill for the SAME feature at
-    the SAME step, one cycle per plan part. After the first advance sets
-    ``last_advance_state_key``, every later same-step cycle sees ``prior_key ==
-    current_key`` and no-ops, so ``forward_cycles`` stuck at 1 for the whole phase,
-    ``max_cycles`` could never trip (unbounded run vs. the operator's cost budget),
-    and the derived ``cycle_header`` (``[1/10]``) + inject-banner turn
-    (``forward_cycles + meta_cycles + 1`` → "turn 2") froze too. The ``consume_gate``
-    parameter adds the registry consume-census rise as a SECOND advance trigger
-    (OR): on the real-skill ``--repeat-count`` probe path each distinct consumed
-    dispatch advances the budget even when the state tuple is unchanged. The census
-    is non-monotonic under ring-cap eviction, so the same down-step CLAMP as
-    ``advance_run_counters`` is applied and the shared ``last_advance_consume_count``
-    watermark is maintained (so the meta path's +1 absorb still prevents
-    double-count). Advancing on EITHER trigger, at most once per probe, is
-    double-count-safe: a feature/step transition that changes the tuple AND raises
-    the census still advances exactly once. A bare re-fire (SAME tuple AND no new
-    consume) still no-ops, preserving within-cycle idempotence. ``consume_gate``
-    defaults False so the pseudo-skill ``--apply-pseudo`` caller — whose distinct
-    ``(slug, pseudo_name, pseudo_name)`` tuple per apply already discriminates and
-    which emits no consume — stays byte-identical.
+    This is the state-change trigger that serves the inline ``--apply-pseudo``
+    forward-advancing pseudo-skills — whose distinct ``(slug, pseudo_name,
+    pseudo_name)`` tuple per apply already discriminates each advance, and which
+    dispatch no Agent and emit no consume. The dispatch-time forward budget for real
+    Agent dispatches is owned by ``advance_cycle_bracket_counter`` at ``--cycle-end``
+    (one ``--cycle-begin``/``--cycle-end`` bracket == one dispatch), NOT by this
+    helper — see decision-11-dispatch-time-forward-advance, which RETIRED the former
+    consume-census-rise second trigger (the ``--repeat-count`` real-skill probe path
+    is now a PEEK that advances nothing).
 
     ROOT CAUSE (lazy-batch-unified-driver-parity-and-accounting, 2026-06-17):
     forward-advancing inline pseudo-skills (``__mark_complete__``/``__mark_fixed__``/
@@ -3375,29 +3360,8 @@ def advance_forward_cycle(state: dict, *, consume_gate: bool = False) -> dict | 
     prior_key = marker.get("last_advance_state_key")
     state_changed = prior_key != current_key
 
-    # Second trigger (consume_gate): a consume-census rise since the last advance.
-    # Only consulted on the real-skill probe path so a genuine NEXT cycle of the
-    # SAME tuple (multi-part execute-plan) still advances the budget. Mirrors the
-    # advance_run_counters clamp/watermark discipline so ring-cap eviction and the
-    # meta path's +1 absorb are both respected.
-    consume_rose = False
-    current_consume: int | None = None
-    if consume_gate:
-        current_consume = consumed_emission_count()
-        prior_consume = marker.get("last_advance_consume_count", 0)
-        try:
-            prior_consume = int(prior_consume)
-        except (TypeError, ValueError):
-            prior_consume = 0
-        # Non-monotonic-oracle CLAMP (identical to advance_run_counters): a census
-        # stranded below the watermark after ring-cap eviction re-arms exactly once
-        # rather than freezing the gate forever.
-        if current_consume < prior_consume:
-            prior_consume = current_consume - 1
-        consume_rose = current_consume > prior_consume
-
-    if not state_changed and not consume_rose:
-        # Same state AND no new dispatch consumed — a bare re-fire. Do NOT advance.
+    if not state_changed:
+        # Same state tuple — a bare re-fire. Do NOT advance.
         return marker
 
     # Classify: forward iff a real skill OR a forward-advancing pseudo-skill.
@@ -3414,13 +3378,6 @@ def advance_forward_cycle(state: dict, *, consume_gate: bool = False) -> dict | 
         marker["meta_cycles"] = marker.get("meta_cycles", 0) + 1
 
     marker["last_advance_state_key"] = current_key
-    # Maintain the shared consume watermark whenever the consume gate is active, so
-    # the next probe compares against this advance (and the meta path's +1 absorb
-    # stays coherent). Only written on the consume-gated path; the pseudo path never
-    # touches it (byte-identical to prior behavior).
-    if consume_gate and current_consume is not None:
-        marker["last_advance_consume_count"] = current_consume
-
     marker_path = claude_state_dir() / _MARKER_FILENAME
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
     return marker
