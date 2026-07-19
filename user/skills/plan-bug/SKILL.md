@@ -131,6 +131,20 @@ Print a structured summary so the orchestrator's per-cycle log captures what adv
 **Skipped steps:** {"spec-phases (PHASES.md existed)" | "write-plan (plan existed)" | "none"}
 ```
 
+**Decision-Classification Ledger (MANDATORY return — same contract as `/spec --batch`).** The cycle MUST also emit, as a structured section of this return summary, the `### Decision-Classification Ledger` that `/spec --batch` mandates — a row for EVERY decision the planning cycle considered (phase boundaries, partition cuts, helper/anchor choices, deferred-to-research items), classified `product-behavior` vs `mechanical-internal`. This closes the bug-axis parity gap with `/plan-feature` (which already carries this mandate): a fix-scope decision that quietly collapses during phase/plan authoring is caught by the orchestrator's audit against this ledger rather than slipping past prose self-classification. Use the EXACT shape `/spec --batch` defines (see `~/.claude/skills/spec/SKILL.md` "Decision-Classification Ledger"):
+
+```
+### Decision-Classification Ledger
+
+| # | Decision (one line) | Classification | Chosen option | Surfaced via | Rationale |
+|---|---------------------|----------------|---------------|--------------|-----------|
+| 1 | <decision title>    | product-behavior \| mechanical-internal | <option taken or "deferred to user"> | NEEDS_INPUT.md \| auto-accept \| Open Questions | <one-line why> |
+```
+
+- Any `product-behavior` row MUST have `Surfaced via: NEEDS_INPUT.md` (or `Open Questions`) — a `product-behavior` + `auto-accept` row is a self-declared contract violation; surface it instead.
+- If the cycle made zero decisions, emit the heading + `_(no decisions surfaced this cycle — auto-finalized)_`. The empty ledger is still required.
+- The ledger lives in this return summary, NOT in any committed doc — the orchestrator reads it from the response.
+
 If `<bug-dir>/NEEDS_INPUT.md` was written by either sub-skill, surface that path in the summary and STOP.
 
 ---

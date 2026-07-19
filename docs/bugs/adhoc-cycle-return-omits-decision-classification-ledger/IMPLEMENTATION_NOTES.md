@@ -16,3 +16,20 @@
 - None encountered. This was a pure additive prose edit; no existing sentence was removed, so no other cross-references to item 4's wording broke.
 **Files modified:**
 - `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` — added the ledger-return requirement to item 4 REPORT in both `@section hard-contract` blocks.
+
+## Phase 2 — Close the bug-axis skill-body mandate gap
+
+#### Implementation Notes (Phase 2)
+**Completed:** 2026-07-19
+**Work completed:**
+- Added a "Decision-Classification Ledger (MANDATORY return under `--batch`)" block to `user/skills/spec-bug/SKILL.md`, mirroring `spec/SKILL.md:117-135` — same table shape, the `product-behavior ⇒ Surfaced via must be NEEDS_INPUT.md` rule, the empty-ledger fallback line, and the "lives in the return summary, not a committed doc" note, with vocabulary adapted to investigation/root-cause-scope decisions. Placed it directly after the Batch/non-interactive status-transition block in Step 6 ("Transition to /fix"), before the interactive `AskUserQuestion` block.
+- Added the analogous mandate to `user/skills/plan-bug/SKILL.md`, mirroring `plan-feature/SKILL.md:114-126` ("same contract as `/spec --batch`"), covering phase-boundary/partition-cut/helper-anchor decisions. Placed it in Step 3 ("Summarize and Stop"), directly after the structured summary block and before the existing "surface NEEDS_INPUT.md" closing line — the identical placement pattern used in `plan-feature/SKILL.md`.
+- Ran `python3 user/scripts/lazy_parity_audit.py --repo-root .`: exits 0 with no findings. The new headings did not require registering a divergence in `user/scripts/lazy-parity-manifest.json` — the manifest was left untouched (the plan's WU-3 instruction to touch it "only if the audit requires it" did not trigger).
+**Integration notes:**
+- Both bug-axis skill bodies now carry the same ledger mandate their feature-axis coupled partners (`spec`, `plan-feature`) already had, closing the parity gap the SPEC identified. Combined with Phase 1's base-contract fix, the ledger requirement now exists at both layers (authoritative return contract + skill body) on the bug axis, matching the feature axis.
+**Pitfalls & guidance:**
+- None encountered. Both WUs were file-disjoint (`spec-bug/SKILL.md` vs `plan-bug/SKILL.md`); the parity audit was run once after both landed, per the plan's own recommended ordering for Batch 2.
+**Files modified:**
+- `user/skills/spec-bug/SKILL.md` — added the ledger return mandate.
+- `user/skills/plan-bug/SKILL.md` — added the ledger return mandate.
+- `user/scripts/lazy-parity-manifest.json` — NOT modified (parity audit passed without requiring registration).

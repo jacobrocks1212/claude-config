@@ -1,5 +1,7 @@
 # Implementation Phases — Cycle-subagent return omits Decision-Classification Ledger
 
+**Status:** In-progress
+
 > Phases for [`SPEC.md`](./SPEC.md)
 
 **MCP runtime:** not-required — harness skill/component prose edits only; no MCP-reachable surface (docs/config-only class per `docs/features/mcp-testing/SPEC.md` — not app behavior, stores, audio, UI, or events). Verification is deterministic (grep + `lint-skills.py` + `lazy_parity_audit.py`).
@@ -26,7 +28,7 @@
 
 ### Phase 1: Add the ledger to the authoritative return contract (root fix)
 
-**Status:** Complete
+**Status:** Complete — RUNTIME GATES PENDING (1)
 
 **Scope:** Add the Decision-Classification Ledger as a required return element of `cycle-base-prompt.md` item 4 "REPORT" in BOTH `@section hard-contract` blocks (workstation, L575–585; cloud, L621–631), scoped to the decision-bearing cycles (`/spec`, `/spec-phases`, `/write-plan`, `/add-phase`, `/plan-feature`, `/spec-bug`, `/plan-bug`). The requirement mirrors how the NEEDS_INPUT disposition is already mandated in the same item: the return summary MUST carry a `### Decision-Classification Ledger` section (or the explicit empty-ledger line `_(no decisions surfaced this cycle — auto-finalized)_`) on those cycles. This is the load-bearing fix — the base return contract, not the skill body, is authoritative for the batch return shape.
 
@@ -57,18 +59,20 @@
 
 ### Phase 2: Close the bug-axis skill-body mandate gap
 
+**Status:** Complete
+
 **Scope:** Add the Decision-Classification Ledger return mandate to `spec-bug/SKILL.md` and `plan-bug/SKILL.md`, mirroring the feature-axis mandates (`spec/SKILL.md:117-135` and `plan-feature/SKILL.md:114-126`) so the bug pipeline's own skill bodies match the feature pipeline. This is defense-in-depth beneath Phase 1's authoritative fix, and it satisfies the bug-axis parity contract (`spec-bug`↔`spec`, `plan-bug`↔`plan-feature`) that `lazy_parity_audit.py` enforces.
 
 **Deliverables:**
-- [ ] `user/skills/spec-bug/SKILL.md`: add a "Decision-Classification Ledger (MANDATORY return under `--batch`)" block mirroring `spec/SKILL.md:117-135` — same `### Decision-Classification Ledger` table shape (`# | Decision | Classification | Chosen option | Surfaced via | Rationale`), the product-behavior⇒`NEEDS_INPUT.md` rule, the empty-ledger fallback line, and the "ledger lives in the return summary, not a committed doc" note. Adapt vocabulary to the bug axis (investigation decisions / root-cause-scope calls; `NEEDS_INPUT.md` sentinel).
-- [ ] `user/skills/plan-bug/SKILL.md`: add the analogous mandate mirroring `plan-feature/SKILL.md:114-126` ("same contract as `/spec --batch`"), covering the decisions a bug planning cycle considers (phase boundaries, partition cuts, helper/anchor choices).
-- [ ] Bug-axis parity: run `python3 user/scripts/lazy_parity_audit.py --repo-root .` and confirm exit 0 (the coupled-pair obligation the SPEC flags — `spec-bug`↔`spec`, `plan-bug`↔`plan-feature`). If the audit's manifest requires the new heading to be registered as a mirrored/diverged block, update `user/scripts/lazy-parity-manifest.json` accordingly so the audit stays green.
-- [ ] Re-project + lint: `python ~/.claude/scripts/project-skills.py` then `python ~/.claude/scripts/lint-skills.py` — both clean.
+- [x] `user/skills/spec-bug/SKILL.md`: add a "Decision-Classification Ledger (MANDATORY return under `--batch`)" block mirroring `spec/SKILL.md:117-135` — same `### Decision-Classification Ledger` table shape (`# | Decision | Classification | Chosen option | Surfaced via | Rationale`), the product-behavior⇒`NEEDS_INPUT.md` rule, the empty-ledger fallback line, and the "ledger lives in the return summary, not a committed doc" note. Adapt vocabulary to the bug axis (investigation decisions / root-cause-scope calls; `NEEDS_INPUT.md` sentinel).
+- [x] `user/skills/plan-bug/SKILL.md`: add the analogous mandate mirroring `plan-feature/SKILL.md:114-126` ("same contract as `/spec --batch`"), covering the decisions a bug planning cycle considers (phase boundaries, partition cuts, helper/anchor choices).
+- [x] Bug-axis parity: run `python3 user/scripts/lazy_parity_audit.py --repo-root .` and confirm exit 0 (the coupled-pair obligation the SPEC flags — `spec-bug`↔`spec`, `plan-bug`↔`plan-feature`). If the audit's manifest requires the new heading to be registered as a mirrored/diverged block, update `user/scripts/lazy-parity-manifest.json` accordingly so the audit stays green.
+- [x] Re-project + lint: `python ~/.claude/scripts/project-skills.py` then `python ~/.claude/scripts/lint-skills.py` — both clean.
 
 **Minimum Verifiable Behavior:** `grep -l "Decision-Classification Ledger" user/skills/spec-bug/SKILL.md user/skills/plan-bug/SKILL.md` lists BOTH files (was neither), and `python3 user/scripts/lazy_parity_audit.py --repo-root .` exits 0.
 
 **Runtime Verification** *(checked by deterministic verification — NOT by the implementation agent):*
-- [ ] <!-- verification-only --> `lazy_parity_audit.py --repo-root .` exits 0 after the edits (bug-axis parity intact); `lint-skills.py` reports no new findings.
+- [x] <!-- verification-only --> `lazy_parity_audit.py --repo-root .` exits 0 after the edits (bug-axis parity intact); `lint-skills.py` reports no new findings.
 
 **MCP Integration Test Assertions:** N/A — no runtime-observable behavior via MCP; skill-body prose plus a deterministic parity/lint gate.
 
