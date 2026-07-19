@@ -2835,6 +2835,77 @@ def test_gate_verdict_ok_malformed_verdict_refuses_not_crashes():
 
 
 
+def test_item_scoped_gate_report_agrees_with_ship_seam_for_merged_item():
+    """Regression pin (gate-verdict-dispatch-derives-scope-from-empty-range-for-
+    merged-item): for an item whose control-surface fix is ALREADY MERGED to
+    origin/main (origin/main..HEAD EMPTY — the range the OLD dispatch template
+    derived scope from), the completion-time authoring seam
+    (item_scoped_gate_report) MUST agree with the ship seam (gate_verdict_ok) on
+    in_scope + scope, because both derive scope from the item's OWN commit set —
+    NOT a git range that empties out once merged. Before the fix the template's
+    `harness-gate.py --range origin/main..HEAD` reported in_scope: false and the
+    subagent authored nothing, while gate_verdict_ok still demanded a verdict →
+    permanent completion deadlock."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        _gate_write_manifest(repo_root, ["scoped/**"])
+        spec_dir = _prov_spec_dir(repo_root, "feat-merged-item")
+        _prov_git_commit_file(
+            repo_root, "scoped/thing.py", "fix(feat-merged-item): work")
+        # Simulate the item's fix being fully merged + pushed: origin/main == HEAD
+        # so `origin/main..HEAD` (the OLD scope basis) is genuinely EMPTY.
+        subprocess.run(
+            ["git", "-C", str(repo_root), "update-ref",
+             "refs/remotes/origin/main", "HEAD"],
+            check=True, capture_output=True, text=True)
+        empty = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-list", "--count",
+             "origin/main..HEAD"],
+            check=True, capture_output=True, text=True).stdout.strip()
+        # The merged precondition: the OLD range basis is empty.
+        assert empty == "0", f"expected empty origin/main..HEAD, got {empty}"
+
+        gv = lazy_core.gate_verdict_ok(spec_dir, repo_root)
+        report = lazy_core.item_scoped_gate_report(spec_dir, repo_root)
+
+        # (1) The ship seam holds the item in scope even for a merged item.
+        assert gv["ok"] is False and gv["in_scope"] is True, gv
+        # (2) The authoring seam AGREES: in_scope True and a verdict is required
+        # (no GATE_VERDICT.md written), so it does NOT spuriously stop.
+        assert report["in_scope"] is True, report
+        assert report["verdict_required"] is True, report
+        # (3) The authoring seam's scope == the ship seam's own scope derivation,
+        # by construction (the SAME item-commit file list, filtered by the SAME
+        # manifest globs). This is the anti-drift pin.
+        changed = lazy_core._item_commit_touched_files(spec_dir, repo_root)
+        globs = lazy_core._load_control_surface_globs(repo_root)
+        expected_hits = sorted(
+            f for f in changed
+            if any(lazy_core._manifest_glob_match(f, g) for g in globs))
+        assert sorted(report["scope_hit"]) == expected_hits, (
+            report["scope_hit"], expected_hits)
+        assert "scoped/thing.py" in report["scope_hit"], report
+        # (4) The report carries the item's own commits it diffed over.
+        assert report.get("item_commits"), report
+
+
+def test_item_scoped_gate_report_out_of_scope_when_no_manifest():
+    """No control-surface manifest -> item_scoped_gate_report is a pure no-op
+    (in_scope False, byte-identical to a repo this gate never touched), mirroring
+    gate_verdict_ok's own no-manifest disarm."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        spec_dir = _prov_spec_dir(repo_root, "feat-nomanifest")
+        _prov_git_commit_file(
+            repo_root, "scoped/thing.py", "fix(feat-nomanifest): work")
+        report = lazy_core.item_scoped_gate_report(spec_dir, repo_root)
+    assert report["in_scope"] is False and report["verdict_required"] is False, report
+
+
 def test_no_duplicate_top_level_defs_in_state_scripts():
     """Self-checking meta-test: every lazy_core/ package module, lazy-state.py,
     and bug-state.py each carry ZERO duplicate top-level def/class names (the
@@ -3280,6 +3351,8 @@ _TESTS = [
     ("test_gate_verdict_ok_unsigned_gate_weakening_refuses", test_gate_verdict_ok_unsigned_gate_weakening_refuses),
     ("test_gate_verdict_ok_signed_gate_weakening_ok", test_gate_verdict_ok_signed_gate_weakening_ok),
     ("test_gate_verdict_ok_malformed_verdict_refuses_not_crashes", test_gate_verdict_ok_malformed_verdict_refuses_not_crashes),
+    ("test_item_scoped_gate_report_agrees_with_ship_seam_for_merged_item", test_item_scoped_gate_report_agrees_with_ship_seam_for_merged_item),
+    ("test_item_scoped_gate_report_out_of_scope_when_no_manifest", test_item_scoped_gate_report_out_of_scope_when_no_manifest),
     ("test_no_duplicate_top_level_defs_in_state_scripts", test_no_duplicate_top_level_defs_in_state_scripts),
 ]
 

@@ -8611,6 +8611,21 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--gate-verdict-check", default=None, metavar="SPEC_PATH",
+        help=(
+            "Completion-time item-scoped anti-overfit design-gate report "
+            "(lazy_core.item_scoped_gate_report): run the harness-gate checker "
+            "over the item's OWN shipped commits (the SAME derivation "
+            "gate_verdict_ok uses), so in_scope/scope_hit AGREE with the ship "
+            "seam even when the fix is ALREADY MERGED to origin/main (an empty "
+            "origin/main..HEAD range would falsely report out-of-scope). Prints "
+            "the harness-gate JSON (in_scope/scope_hit/checks/verdict_required/"
+            "gate_weakening_hit) + item_commits. Read-only; the authoring seam of "
+            "the gate-verdict dispatch class. Exit 1 iff verdict_required. "
+            "Coupled-pair mirror of lazy-state.py --gate-verdict-check."
+        ),
+    )
+    parser.add_argument(
         "--apply-pseudo", nargs=2, default=None, metavar=("NAME", "SPEC_PATH"),
         help="Single-author the deterministic sentinel/receipt write for a lazy pseudo-skill.",
     )
@@ -10062,6 +10077,17 @@ def main() -> int:
         result = lazy_core.backfill_provenance(Path(args.repo_root))
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result.get("ok") else 1
+
+    if args.gate_verdict_check is not None:
+        # Authoring seam of the gate-verdict dispatch class: the item-scoped
+        # design-gate report, merge-independent (agrees with gate_verdict_ok even
+        # when origin/main..HEAD is empty). Read-only — callable by a cycle
+        # subagent, like --verify-ledger (NOT cycle-refused). Coupled-pair mirror
+        # of lazy-state.py --gate-verdict-check.
+        result = lazy_core.item_scoped_gate_report(
+            Path(args.gate_verdict_check), Path(args.repo_root))
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 1 if result.get("verdict_required") else 0
 
     if args.verify_ledger is not None:
         # Scripted completion-ledger guard: verify the four preconditions for

@@ -215,23 +215,25 @@ def _files_from_commits(repo_root: Path, shas: "list[str]") -> "list[str]":
     return sorted(files)
 
 
-def _item_commit_touched_files(spec_path: Path, repo_root: Path) -> "list[str]":
-    """The touched-file set for an item's shipped commits, reusing the
-    EXISTING derivation ``write_provenance`` already uses (commit-brackets
-    primary, message-grep fallback via ``derive_touched_from_brackets`` /
-    ``derive_touched_from_grep``) — never re-implemented. ``spec_path`` may
-    be the item's SPEC.md file or its containing dir; the item id is the
-    dir's basename either way.
+def _item_commit_derivation(spec_path: Path, repo_root: Path) -> dict:
+    """The item's shipped-commit derivation — the SINGLE shared home reused by
+    BOTH the ship seam (``_item_commit_touched_files`` → scope) AND the
+    completion-time item-scoped checker (``item_scoped_gate_report`` → diff), so
+    the two seams cannot drift on WHICH commits are an item's own
+    (gate-verdict-dispatch-derives-scope-from-empty-range-for-merged-item).
 
-    FOREIGN-HARDEN EXCLUSION (gate-scope-folds-concurrent-harden-commits): the
-    bracket ledger records each cycle as a ``begin_sha..end_sha`` RANGE, so a
-    foreground observed-friction ``harden(...)`` commit the orchestrator lands
-    mid-run is swept into the range diff even though it is a DIFFERENT
-    workstream from the queue item. Those foreign commits are excluded from the
-    item's completion-gate scope so a feature is never forced to answer for a
-    concurrent harden workstream's control-surface changes. When no foreign
-    commit is present (the common case), the pre-existing range-derived file
-    set is returned BYTE-IDENTICALLY (no re-derivation, no behavior change).
+    Reuses the EXISTING ``write_provenance`` derivation (commit-brackets primary,
+    message-grep fallback via ``derive_touched_from_brackets`` /
+    ``derive_touched_from_grep``) — never re-implemented — and applies the same
+    FOREIGN-HARDEN EXCLUSION the ship seam applies. This derivation is
+    merge-INDEPENDENT: the bracket ledger persists and ``git log`` reachability
+    includes merged commits, so an item whose fix is already on ``origin/main``
+    still resolves its own commits (the exact property the empty
+    ``origin/main..HEAD`` range lacked). ``spec_path`` may be the SPEC.md file or
+    its containing dir; the item id is the dir basename either way.
+
+    Returns ``{"all_commits": [...], "non_foreign_commits": [...],
+    "derived_files": [...]}``.
     """
     from .ledgers import (  # ledger plane (re-pointed at Phase-4 WU-2)
         derive_touched_from_brackets,
@@ -244,15 +246,116 @@ def _item_commit_touched_files(spec_path: Path, repo_root: Path) -> "list[str]":
     derived = derive_touched_from_brackets(repo_root, item_id)
     if derived is None:
         derived = derive_touched_from_grep(repo_root, item_id)
-    commit_shas = list((derived or {}).get("commits") or [])
+    all_commits = list((derived or {}).get("commits") or [])
     non_foreign = [
-        c for c in commit_shas
+        c for c in all_commits
         if not _commit_subject_is_foreign_harden(repo_root, c)]
-    if non_foreign == commit_shas:
+    return {
+        "all_commits": all_commits,
+        "non_foreign_commits": non_foreign,
+        "derived_files": list((derived or {}).get("files") or []),
+    }
+
+
+def _item_commit_touched_files(spec_path: Path, repo_root: Path) -> "list[str]":
+    """The touched-file set for an item's shipped commits, reusing the
+    EXISTING derivation ``write_provenance`` already uses (commit-brackets
+    primary, message-grep fallback) via the shared ``_item_commit_derivation``
+    (never re-implemented). ``spec_path`` may be the item's SPEC.md file or its
+    containing dir; the item id is the dir's basename either way.
+
+    FOREIGN-HARDEN EXCLUSION (gate-scope-folds-concurrent-harden-commits): the
+    bracket ledger records each cycle as a ``begin_sha..end_sha`` RANGE, so a
+    foreground observed-friction ``harden(...)`` commit the orchestrator lands
+    mid-run is swept into the range diff even though it is a DIFFERENT
+    workstream from the queue item. Those foreign commits are excluded from the
+    item's completion-gate scope so a feature is never forced to answer for a
+    concurrent harden workstream's control-surface changes. When no foreign
+    commit is present (the common case), the pre-existing range-derived file
+    set is returned BYTE-IDENTICALLY (no re-derivation, no behavior change).
+    """
+    d = _item_commit_derivation(spec_path, repo_root)
+    if d["non_foreign_commits"] == d["all_commits"]:
         # No foreign harden commit was filtered — preserve the exact prior
         # file set (byte-identical common-case behavior).
-        return list((derived or {}).get("files") or [])
-    return _files_from_commits(repo_root, non_foreign)
+        return d["derived_files"]
+    return _files_from_commits(repo_root, d["non_foreign_commits"])
+
+
+def _diff_from_commits(repo_root: Path, shas: "list[str]") -> str:
+    """The concatenated unified diff of each commit's OWN patch — the DIFF analog
+    of ``_files_from_commits`` (which unions their file NAMES). Each commit's
+    non-merge patch via ``git show`` with the commit header suppressed
+    (``--format=``); ``harness_gate.parse_diff`` keys on ``diff --git`` / ``@@``
+    and skips the leading blank line, so the header-less patch parses cleanly.
+    Empty string on any per-commit read failure (fail-open, never raises)."""
+    from .ledgers import _git_capture_lines  # ledger plane (re-pointed at Phase-4 WU-2)
+    parts: list[str] = []
+    for sha in shas:
+        lines = _git_capture_lines(
+            repo_root,
+            ["show", "--no-merges", "--no-color", "--format=", str(sha)])
+        if lines:
+            parts.append("\n".join(lines))
+    return "\n".join(parts)
+
+
+def item_scoped_gate_report(spec_path: Path, repo_root: Path) -> dict:
+    """Completion-time item-scoped harness-gate report — the AUTHORING-seam twin
+    of ``gate_verdict_ok``'s scope check (anti-overfit-design-gate; the mechanical
+    checker step of the ``gate-verdict`` completion-time dispatch class).
+
+    Runs ``harness_gate.run_checker`` over the item's OWN shipped commits — the
+    SAME derivation (``_item_commit_derivation`` → ``_item_commit_touched_files``)
+    the ship seam uses — so its ``in_scope`` / ``scope_hit`` AGREE with
+    ``gate_verdict_ok`` BY CONSTRUCTION. Closes the deadlock where the dispatch
+    template derived scope from ``origin/main..HEAD`` (EMPTY for an item whose fix
+    is already merged), reporting ``in_scope: false`` and authoring nothing while
+    the ship seam still demanded a verdict
+    (gate-verdict-dispatch-derives-scope-from-empty-range-for-merged-item).
+
+    PURE READ (shells ``git show`` + the imported harness-gate checker; never
+    writes). Returns the ``run_checker`` dict (``in_scope`` / ``scope_hit`` /
+    ``checks`` / ``verdict_required`` / ``gate_weakening_hit``) plus
+    ``item_commits`` (the non-foreign shas the diff was built over, for audit).
+    Manifest absent → ``{in_scope: False, ...}`` (byte-identical to a repo this
+    gate never touched); a checker error → a conservative verdict-required report
+    naming the error (a ship-seam twin must report, never crash completion)."""
+    manifest_globs = _load_control_surface_globs(repo_root)
+    item_dir = Path(spec_path)
+    if item_dir.name == "SPEC.md":
+        item_dir = item_dir.parent
+    # Resolve a repo-relative item dir against repo_root so the tautology check
+    # (which reads item_dir/SPEC.md) finds the SPEC regardless of the caller's
+    # cwd. The dispatch template passes `--repo-root .` with cwd == repo root, but
+    # a caller with a different cwd (e.g. --repo-root <path> from elsewhere) must
+    # still resolve the SPEC. The ship-seam scope derivation below keys on the dir
+    # BASENAME, so it is unaffected either way.
+    if not item_dir.is_absolute():
+        item_dir = Path(repo_root) / item_dir
+    if manifest_globs is None:
+        return {
+            "in_scope": False, "scope_hit": [], "checks": {},
+            "verdict_required": False, "item_commits": [],
+            "reason": "no control-surface manifest",
+        }
+    # SAME scope basis as gate_verdict_ok (the ship-seam file list), so in_scope /
+    # scope_hit agree by construction; the diff is built over the item's OWN
+    # commits (merge-independent), NOT a git range that empties out once merged.
+    changed = _item_commit_touched_files(spec_path, repo_root)
+    commits = _item_commit_derivation(spec_path, repo_root)["non_foreign_commits"]
+    diff_text = _diff_from_commits(repo_root, commits)
+    try:
+        hg = _load_harness_gate_module()
+        result = hg.run_checker(repo_root, diff_text, changed, item_dir, manifest_globs)
+    except Exception as exc:  # noqa: BLE001 — a ship-seam twin must report, never crash
+        return {
+            "in_scope": True, "scope_hit": [], "checks": {},
+            "verdict_required": True, "item_commits": commits,
+            "reason": f"harness-gate checker error: {exc}",
+        }
+    result["item_commits"] = commits
+    return result
 
 
 def evaluate_completion_evidence(feature_dir: Path, repo_root: Path) -> dict:

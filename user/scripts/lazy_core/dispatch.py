@@ -1449,6 +1449,14 @@ def emit_dispatch_prompt(
     # are overlaid on top (context wins on collision — the caller provides the
     # class-specific tokens; standard tokens above are the fallback defaults).
     bindings: dict[str, str] = _standard_dispatch_bindings(pipeline)
+    # {state_script} — the pipeline's own state-script basename, so a shared
+    # feature+bug dispatch template names the right script DETERMINISTICALLY
+    # (e.g. the gate-verdict template's --gate-verdict-check call) instead of a
+    # `<lazy-state.py|bug-state.py>` prose choice the subagent must resolve
+    # (gate-verdict-dispatch-derives-scope-from-empty-range-for-merged-item). A
+    # local binding (not in _standard_dispatch_bindings) keeps the cycle emitter
+    # byte-identical; context still wins on collision.
+    bindings["state_script"] = "bug-state.py" if pipeline == "bug" else "lazy-state.py"
     for key, value in context.items():
         bindings[key] = str(value) if value is not None else ""
 

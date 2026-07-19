@@ -388,6 +388,19 @@
           "required": false
         },
         {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Completion-time item-scoped anti-overfit design-gate report (lazy_core.item_scoped_gate_report): run the harness-gate checker over the item's OWN shipped commits (the SAME derivation gate_verdict_o...",
+          "metavar": "SPEC_PATH",
+          "name": "--gate-verdict-check",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
           "action": "_HelpAction",
           "aliases": [
             "-h"
@@ -2079,6 +2092,19 @@
           "help_head": "Deterministic Gate-1 MCP-coverage verdict for a feature/bug spec dir: print JSON {ok, decisions:[{id,title,keywords,covered}], uncovered:[id], scenario_count}.",
           "metavar": "SPEC_PATH",
           "name": "--gate-coverage",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Completion-time item-scoped anti-overfit design-gate report (lazy_core.item_scoped_gate_report): run the harness-gate checker over the item's OWN shipped commits (the SAME derivation gate_verdict_o...",
+          "metavar": "SPEC_PATH",
+          "name": "--gate-verdict-check",
           "nargs": null,
           "positional": false,
           "required": false
