@@ -9,6 +9,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-18
+**Fixed:** 2026-07-19
+**Fix commit:** 1f4780ff
 **Placement:** docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test
 **Related:** `docs/specs/turn-routing-enforcement/NEEDS_INPUT.md` decisions **2** (partial-VALIDATED oscillation, harden Round 45), **6** (corrective-coverage dispatch, harden Round 22), and **5** (per-row host-defer marker); the interacting sibling bug `docs/bugs/feature-operator-host-defer-not-honored-over-validated/` (decision 5, **Concluded, unimplemented**); the completion-coherence machinery in `docs/features/.../completion-coherence-gate-reconciliation`.
 
