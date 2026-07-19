@@ -3791,6 +3791,60 @@ def test_descoped_marker_lockstep_producer_matches_ssot():
 
 
 
+# ---------------------------------------------------------------------------
+# row_requires_host — per-row host-defer recognizer
+# (decision-2-6-uncovered-row-reroute-to-mcp-test WU-1)
+# ---------------------------------------------------------------------------
+
+def test_row_requires_host_bare_row_returns_none():
+    """A plain checkbox row with no requires-host marker → None."""
+    _guard()
+    assert lazy_core.row_requires_host("- [ ] plain verification row") is None
+
+
+def test_row_requires_host_valid_marker_returns_capability():
+    """A row carrying `<!-- requires-host: <cap> -->` (alongside the
+    verification-only marker) → the capability id."""
+    _guard()
+    row = ("- [ ] <!-- verification-only --> "
+           "<!-- requires-host: real-audio-device --> sustained-timing check")
+    assert lazy_core.row_requires_host(row) == "real-audio-device"
+
+
+def test_row_requires_host_invalid_capability_id_returns_none():
+    """A marker whose captured id is not shape-valid (`^[a-z0-9][a-z0-9-]*$`)
+    is IGNORED — a mis-shaped token is not a capability."""
+    _guard()
+    assert lazy_core.row_requires_host("- [ ] <!-- requires-host: BadId! -->") is None
+    # An empty value is likewise not a capability.
+    assert lazy_core.row_requires_host("- [ ] <!-- requires-host: -->") is None
+
+
+def test_row_requires_host_honors_header_line_text():
+    """The recognizer is position-agnostic: it returns the capability from a
+    subsection HEADER line's text too — this is what lets the WU-2 row-walk
+    honor requires-host header-scope exactly as the verification-only marker's
+    header-scope works. (mirrors remaining_unchecked_are_verification_only)."""
+    _guard()
+    header = "### Runtime Verification <!-- requires-host: gpu -->"
+    assert lazy_core.row_requires_host(header) == "gpu"
+
+
+def test_row_requires_host_is_context_free_fence_is_walk_concern():
+    """The pure recognizer has NO notion of code fences — a bare fence
+    delimiter is not a marker (→ None), and a marker line returns its cap
+    regardless of surrounding fence context. Excluding an ILLUSTRATIVE marker
+    that sits inside a ``` fence is the WU-2 row-walk's responsibility (it
+    tracks fence state), asserted in test_gates.py — not this primitive's."""
+    _guard()
+    assert lazy_core.row_requires_host("```") is None
+    # Context-free: the primitive extracts the cap even from a line a walk
+    # would treat as fenced.
+    assert lazy_core.row_requires_host("<!-- requires-host: gpu -->") == "gpu"
+
+
+
+
 def test_ctx_rebindable_globals_via_accessors():
     """The two rebindable globals _active_repo_root / _legacy_state_migrated
     must be reachable through lazy_core._ctx's accessor functions, AND a
@@ -3835,6 +3889,11 @@ def test_ctx_rebindable_globals_via_accessors():
 
 _TESTS = [
     ("test_symbols_present", test_symbols_present),
+    ("test_row_requires_host_bare_row_returns_none", test_row_requires_host_bare_row_returns_none),
+    ("test_row_requires_host_valid_marker_returns_capability", test_row_requires_host_valid_marker_returns_capability),
+    ("test_row_requires_host_invalid_capability_id_returns_none", test_row_requires_host_invalid_capability_id_returns_none),
+    ("test_row_requires_host_honors_header_line_text", test_row_requires_host_honors_header_line_text),
+    ("test_row_requires_host_is_context_free_fence_is_walk_concern", test_row_requires_host_is_context_free_fence_is_walk_concern),
     ("test_count_deliverables_empty", test_count_deliverables_empty),
     ("test_count_deliverables_mixed", test_count_deliverables_mixed),
     ("test_count_deliverables_only_unchecked", test_count_deliverables_only_unchecked),

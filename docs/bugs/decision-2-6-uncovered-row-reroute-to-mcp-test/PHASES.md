@@ -29,13 +29,17 @@
 
 ### Phase 1: Per-row host-defer recognizer (`<!-- requires-host: <cap> -->`)
 
+**Status:** Complete
+
 **Scope:** Land the minimal per-row host-defer marker recognizer that clause (b) of the re-route predicate depends on (per SPEC **Locked Decision 1** — landed as a phase of THIS bug, NOT a queue `deps` on the decision-5 sibling). A pure string recognizer mirroring `_VERIFICATION_ONLY_MARKER` / `_DESCOPED_MARKER`: given a PHASES.md row's text, return the declared host-capability id (or `None`). This is the ONLY new primitive; everything downstream composes existing helpers.
 
 **Deliverables:**
-- [ ] `_REQUIRES_HOST_ROW_RE` (or an equivalent module constant) in `docmodel.py`, placed beside `_DESCOPED_MARKER` (~:1163), matching `<!-- requires-host: <cap> -->` where `<cap>` matches the existing closed-registry id shape `^[a-z0-9][a-z0-9-]*$` (consistent with `lazy_core.parse_requires_host` capability ids).
-- [ ] `row_requires_host(row_text: str) -> str | None` — pure, returns the capability id when the row (or, mirroring the marker convention, its enclosing subsection header) carries the marker; `None` otherwise. Header-scope handling mirrors `remaining_unchecked_are_verification_only`.
-- [ ] Facade export: add `_REQUIRES_HOST_ROW_RE`/`row_requires_host` to the `__init__.py` name→submodule map (`docmodel`).
-- [ ] Tests: `test_docmodel.py` — a bare row (no marker) ⇒ `None`; a row carrying `<!-- requires-host: real-audio-device -->` ⇒ `"real-audio-device"`; an invalid id ⇒ `None`; a row inside a ``` fence ⇒ `None` (illustrative, per the existing fence convention).
+- [x] `_REQUIRES_HOST_ROW_RE` (or an equivalent module constant) in `docmodel.py`, placed beside `_DESCOPED_MARKER` (~:1163), matching `<!-- requires-host: <cap> -->` where `<cap>` matches the existing closed-registry id shape `^[a-z0-9][a-z0-9-]*$` (consistent with `lazy_core.parse_requires_host` capability ids).
+- [x] `row_requires_host(row_text: str) -> str | None` — pure, returns the capability id when the row (or, mirroring the marker convention, its enclosing subsection header) carries the marker; `None` otherwise. Header-scope handling mirrors `remaining_unchecked_are_verification_only`.
+- [x] Facade export: add `_REQUIRES_HOST_ROW_RE`/`row_requires_host` to the `__init__.py` name→submodule map (`docmodel`).
+- [x] Tests: `test_docmodel.py` — a bare row (no marker) ⇒ `None`; a row carrying `<!-- requires-host: real-audio-device -->` ⇒ `"real-audio-device"`; an invalid id ⇒ `None`; a row inside a ``` fence ⇒ `None` (illustrative, per the existing fence convention).
+
+**Implementation Notes (2026-07-19):** Landed `_REQUIRES_HOST_ROW_RE` (capturing `<!--\s*requires-host\s*:\s*([^>]*?)\s*-->`, case-insensitive) + `_REQUIRES_HOST_CAP_ID_RE` (mirrors `hostcaps._HOST_CAPABILITY_ID_RE` shape, kept local with a keep-in-sync comment to preserve docmodel's light import surface — the `_PHASE_HEADING_RE`-copy precedent) + pure `row_requires_host` in `docmodel.py`, facade-exported. The function is position-agnostic (works on row OR header text) — the caller's walk (WU-2) owns fence/phase context; the "fenced illustrative marker ⇒ excluded" behavior is therefore asserted in WU-2's `test_gates.py` walk, while `test_docmodel.py` pins the pure recognizer (bare/valid/invalid/header-line/context-free). 5 unit tests, all green.
 
 **Minimum Verifiable Behavior:** `python3 -c "import sys; sys.path.insert(0, 'user/scripts'); import lazy_core; print(lazy_core.row_requires_host('- [ ] <!-- verification-only --> <!-- requires-host: real-audio-device --> foo'))"` prints `real-audio-device`; the same call on an unmarked row prints `None`.
 

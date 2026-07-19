@@ -1180,6 +1180,68 @@ def _row_is_descoped_in_place(row_text: str) -> bool:
     )
 
 
+# ---------------------------------------------------------------------------
+# Per-row host-defer marker recognizer
+# (decision-2-6-uncovered-row-reroute-to-mcp-test WU-1 — the minimal recognizer
+# half of decision 5's per-row ``<!-- requires-host: <cap> -->`` marker).
+#
+# Mirrors ``_VERIFICATION_ONLY_MARKER`` / ``_DESCOPED_MARKER``: a per-row HTML
+# comment, invisible in rendered markdown, PHRASING-INDEPENDENT — but unlike
+# those two it CARRIES A VALUE (the required host-capability id), so it is
+# matched by a CAPTURING regex rather than a bare substring test.
+#
+# A PHASES.md runtime-verification row (or its enclosing subsection header) may
+# declare that it can only be exercised on a host bearing a named capability:
+#
+#   - [ ] <!-- verification-only --> <!-- requires-host: real-audio-device --> ...
+#
+# Such a row is HOST-DEFERRED: on a host lacking the capability it can never be
+# ticked, so the Step-10 uncovered-row re-route (WU-2) MUST exclude it — else the
+# re-route would loop /mcp-test forever against a row that cannot pass here (the
+# termination contract, SPEC Proven Findings clause (b)).
+# ---------------------------------------------------------------------------
+_REQUIRES_HOST_ROW_RE = re.compile(
+    r"<!--\s*requires-host\s*:\s*([^>]*?)\s*-->",
+    re.IGNORECASE,
+)
+# keep-in-sync: the capability-id shape is the closed-registry shape owned by
+# ``hostcaps._HOST_CAPABILITY_ID_RE`` (the vocabulary SSOT). Mirrored here (a
+# trivial, stable contract) rather than imported to keep docmodel's import
+# surface light — the same keep-in-sync duplication precedent as
+# phases-slice.py's copy of ``_PHASE_HEADING_RE``.
+_REQUIRES_HOST_CAP_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+def row_requires_host(row_text: str) -> str | None:
+    """Return the host-capability id a PHASES.md row/line declares, else None.
+
+    Pure, single-string recognizer for the per-row / per-header
+    ``<!-- requires-host: <cap> -->`` marker. Returns the FIRST shape-valid
+    capability id declared in ``row_text`` (case-insensitive marker key), or
+    ``None`` when no marker is present OR the captured id is not shape-valid
+    (``^[a-z0-9][a-z0-9-]*$`` — a mis-shaped/empty token is not a capability).
+
+    Position-agnostic BY DESIGN: it recognizes the marker in a checkbox row's
+    text OR in a subsection HEADER line's text — this is what lets the WU-2
+    row-walk honor requires-host header-scope (a marker on the enclosing header
+    defers every row beneath it) exactly as
+    ``remaining_unchecked_are_verification_only`` honors
+    ``_VERIFICATION_ONLY_MARKER`` header-scope. It has NO notion of code fences
+    or phase boundaries — those are the caller's (the walk's) concern.
+
+    No I/O, no mutation — safe on the read-only ``compute_state`` probe path.
+    """
+    if not row_text:
+        return None
+    m = _REQUIRES_HOST_ROW_RE.search(row_text)
+    if not m:
+        return None
+    cap = m.group(1).strip()
+    if not _REQUIRES_HOST_CAP_ID_RE.match(cap):
+        return None
+    return cap
+
+
 def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
     """Return True iff every '- [ ]' line in PHASES.md is runtime-verification-only.
 
