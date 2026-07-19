@@ -1,9 +1,10 @@
 # Bug — bug-pipeline gate-verdict authoring seam + fixed/spec-path/emit detector gaps
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** High (GAP 1 blocked a bug this run) · Medium/Low (GAPs 2–4)
 **Discovered:** 2026-07-19 (during a `/lazy-bug-batch` run over claude-config)
-**Fixed:** 2026-07-19 - implemented out-of-pipeline via `/harden-harness` (see FIXED.md)
+**Fix commit:** 1839ae4f
+**Fixed:** 2026-07-19
 
 / harden-harness Step-2.5 investigation spec. Batch of four real, reproducible
 bug-pipeline defects observed during a `/lazy-bug-batch` run. The mechanical fix for each
