@@ -67,6 +67,25 @@ Agents DETECT write contention and coordinate via a FIFO/queue lock so each proc
 - **Semantic conflict (HALT).** The two agents' work is logically incompatible → write `NEEDS_INPUT.md` (class `product`), add semantic-conflict to `provisional_eligibility`'s fail-closed carve-out (no auto-accept even under `--park-provisional`), HALT. **The semantic/non-semantic discriminator is LOCKED to the git-mergeability + coupled-surface heuristic** (Locked Decision 2): a conflict is NON-semantic when git auto-merges it (no conflict markers) OR the conflicting hunks touch disjoint logical surfaces (different files/decision-doc sections with no shared symbol); it is SEMANTIC when git reports an un-auto-resolvable conflict on the SAME logical artifact (same function, same Locked-Decision row, same sentinel). Deterministic and conservative — an ambiguous case falls to SEMANTIC/halt (the fail-safe direction).
 - **Large/complex non-semantic conflict (temp-worktree merge-back).** Orchestrator completes the work in a temporary worktree, merges back, resolves conflicts. If this agent beats the conflicting agent to the merge, it COMMUNICATES to the other agent that conflicts are expected + how to resolve. Does NOT halt the run. **The merge-back lifecycle is LOCKED to reusing the `lazy_coord.py` lane machinery** (Locked Decision 3): spin the temp worktree as a coordinator lane (`lane/<item-id>` + lane marker + fencing lease), do the work there, and merge back in queue order via the existing `merge_lane_branch` (abort-and-demote on conflict, lane branch preserved, `lanes.json` audit ledger). Workstation-only for v1; the cloud/bug path is a documented follow-up. **The communication channel is LOCKED to a commit-message trailer** (Locked Decision 4): the merging agent writes a structured `Concurrent-Merge-Back:` trailer (affected paths + resolution guidance) into its commit message, which the conflicting agent reads in the incoming history it must fetch/rebase to push — zero new contended state, scoped to exactly the conflicting commits.
 
+### Requirement 7 — Orchestrator parallel-dispatch trust (retire foreground-await defensiveness)
+
+The orchestrator (`/lazy-batch` and the `/lazy-batch-parallel` coordinator) MUST **rely on this
+coordination layer to resolve write conflicts, not prevent parallel work by pre-serializing
+dispatches.** Concretely: the `self_edit_mode` foreground-await discipline in `/lazy-batch` §1d.1 —
+which today forces a background harden (or any dispatch) that touches claude-config to run
+FOREGROUND/AWAIT whenever the run is itself editing claude-config — is REPLACED by
+coordination-layer-trusted parallel dispatch. Background hardens and cycle work run CONCURRENTLY on
+the shared tree, trusting the FIFO lock + conflict-routing (Requirements 3–6) to serialize genuine
+contention and to halt only on a true semantic conflict. The orchestrator no longer refuses to
+parallelize on the mere *possibility* of a write collision ("no monsters-in-the-closet
+serialization"). The dispatched subagents + the lock/merge-back machinery own conflict correctness;
+the orchestrator owns dispatch, not defensive serialization. This retires the
+`self_edit_mode → foreground/await` coupling as an explicit deliverable (update `/lazy-batch` §1d.1
+and its coupled twins `lazy-bug-batch` / `lazy-batch-cloud`); the awareness note (Requirement 1)
+documents the new trust contract so a future orchestrator does not reintroduce the defensiveness.
+*(Operator-directed scope, 2026-07-18: added mid-run after the orchestrator foreground-awaited a
+harden precisely because this layer did not yet exist — the behavior this feature must correct.)*
+
 ### Cross-repo scope
 
 claude-config is the primary home (the harness owns the contracts); AlgoBooth consumes the same contracts. Workstation + cloud both supported via the two-implementation lock. `/spec-phases` will decompose per-repo wiring.
@@ -84,6 +103,7 @@ claude-config is the primary home (the harness owns the contracts); AlgoBooth co
 | FIFO lock serializes contending writers | Two agents claim the same lock target | Second waits for unlock, then proceeds in turn | `lazy_coord` / FIFO-lock test |
 | Semantic conflict halts, never auto-accepted | Semantic conflict detected under `--park-provisional` | `NEEDS_INPUT.md` (class `product`) written; `provisional_eligibility` returns ineligible | `test` fixture on the new carve-out |
 | Large non-semantic conflict merges back without halting | Large non-semantic conflict | Temp worktree created, merged back, run continues; conflicting agent notified | merge-back integration test |
+| Orchestrator parallelizes under self_edit_mode | Background harden (or dispatch) touching claude-config while a cycle edits the same tree | Both run CONCURRENTLY; no `self_edit_mode` foreground-await serialization; genuine contention resolved by the FIFO lock / conflict-routing, not by pre-serialization | `/lazy-batch` §1d.1 dispatch discipline + coordination-layer integration test |
 
 ## Locked Decisions
 
