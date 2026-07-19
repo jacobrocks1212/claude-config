@@ -88,6 +88,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -19741,6 +19746,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "adhoc-parity-audit-blind-to-compute-state-routing-branches",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -19983,6 +19993,11 @@
       "id": "adhoc-cycle-begin-real-requires-sub-skill",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
@@ -20712,6 +20727,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -21158,6 +21178,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -21296,6 +21321,11 @@
   ],
   "user/scripts/lazy_core/dispatch.py": [
     {
+      "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -21337,6 +21367,11 @@
     }
   ],
   "user/scripts/lazy_core/docmodel.py": [
+    {
+      "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
       "type": "bug",
@@ -21414,6 +21449,11 @@
     }
   ],
   "user/scripts/lazy_core/gates.py": [
+    {
+      "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
       "type": "bug",
@@ -21579,6 +21619,11 @@
     }
   ],
   "user/scripts/lazy_core/pseudo.py": [
+    {
+      "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
@@ -23044,6 +23089,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -23138,6 +23188,11 @@
   ],
   "user/scripts/tests/test_lazy_core/test_gates.py": [
     {
+      "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -23190,6 +23245,11 @@
       "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "adhoc-process-friction-detector-counts-concurrent-session-commits",
@@ -23736,6 +23796,13 @@
     },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/skills/_components/lazy-batch-prompts/dispatch-gate-verdict.md": [
+    {
+      "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
       "type": "bug",
       "provenance": "manual"
     }
@@ -24619,6 +24686,11 @@
   ],
   "user/skills/lazy-batch/SKILL.md": [
     {
+      "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -24795,6 +24867,11 @@
     }
   ],
   "user/skills/lazy-bug-batch/SKILL.md": [
+    {
+      "id": "adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
       "type": "bug",
