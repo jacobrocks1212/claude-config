@@ -1,6 +1,6 @@
 # Claude commit/PR attribution trailers not globally disabled
 
-**Status:** Concluded
+**Status:** Fixed
 **Discovered:** 2026-07-19
 **Severity:** P2
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage); `user/skills/commit/SKILL.md`, `user/skills/push/SKILL.md`, `.claude/skill-config/commit-policy.md`
