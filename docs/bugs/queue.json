@@ -14,12 +14,6 @@
       "severity": null
     },
     {
-      "id": "canary-revert-harden-2026-07-r92",
-      "name": "Revert-or-redesign canary trip: harden-2026-07-r92",
-      "spec_dir": "canary-revert-harden-2026-07-r92",
-      "severity": null
-    },
-    {
       "id": "adhoc-incident-hook-deny-057921",
       "name": "Repeated hook deny: lazy-cycle-containment second-feature-commit (3x/24h)",
       "spec_dir": "adhoc-incident-hook-deny-057921",
