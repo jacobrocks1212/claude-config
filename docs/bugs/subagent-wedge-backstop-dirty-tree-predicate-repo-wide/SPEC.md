@@ -3,13 +3,15 @@ kind: bug-investigation
 bug_id: subagent-wedge-backstop-dirty-tree-predicate-repo-wide
 severity: P2
 discovered: 2026-07-19
-status: Concluded
+status: Fixed
 written_by: harden-harness
 ---
 
 # SubagentStop wedge-backstop dirty-tree predicate is repo-wide — false-fires on concurrent-writer / foreign-lane residue
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-19
+**Fix commit:** 4a12e218
 **Root-cause class:** hook-defect
 
 **Fix scope (concluded):** scope the wedge-backstop's git-dirty half to the STOPPING
