@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-18
+**Fixed:** 2026-07-19
+**Fix commit:** 5a2b4a17
 **Placement:** docs/bugs/adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move
 **Related:** `docs/features/anti-overfit-design-gate/` (the gate this checker implements) · `docs/bugs/adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose` (DISTINCT sibling — path-scoping fix, does NOT apply here) · `user/scripts/harness-gate.py` · `user/skills/_components/harness-change-gate.md`
 
