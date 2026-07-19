@@ -73,13 +73,7 @@ The "user" is the harness operator; the observable surfaces are cycle telemetry 
 
 ## Implementation Phases
 
-**Phase 1 — Measurement harness + baseline capture.** Add the assembled-profile measurement to `skill-size-ratchet.py` (or a sibling reusing its baseline machinery); enumerate the real dispatchable profiles; capture current assembled sizes as seed ceilings in `skill-size-baseline.json`. No prompt edits yet — this locks the "before" numbers and stops further accretion immediately. Deliverable: per-profile byte census committed; gate green at current sizes.
-
-**Phase 2 — Trim-in-place the top-3 boilerplate sections.** Deflate `turn-end`, `workstation-dispatch`, `hard-contract` to terse rules, preserving every policy as an equivalent rule. Regenerate coupled-pair mirrors (`--write`) and confirm `--check` green. Lower affected profile ceilings via `--lock-in`. Deliverable: assembled-size reduction measured + semantic-equivalence review artifact.
-
-**Phase 3 — Trim remaining boilerplate + evidence-backed scope-tightening.** Deflate `d7`, `env-dialect-*`, `status-honesty`, `terminal-stop`, `task`; then narrow any `skills=all` selector proven safe to exclude a cycle class. Each narrowing carries an explicit safety justification. `--lock-in` the new floor. Deliverable: final assembled census vs. target ceiling; regression review.
-
-**Phase 4 — KPI baseline + gate wiring.** Capture the friction KPI baseline (below) from the post-deflation measurement; confirm the ratchet is wired into the lint battery and gate-battery. Deliverable: registry row populated with a measured baseline; lint battery green.
+See [`PHASES.md`](./PHASES.md) for the detailed phase breakdown (4 phases: measurement harness + baseline seed + KPI/gate wiring → trim top-3 sections → trim remaining + scope-tightening → measured KPI baseline).
 
 ## Validation Criteria
 
