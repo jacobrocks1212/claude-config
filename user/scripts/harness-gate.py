@@ -82,6 +82,12 @@ _EXEMPTION_SET_NAMES = (
 _QUOTED_RE = re.compile(r"""(['"])(?P<body>(?:\\.|(?!\1).)*)\1""")
 # A regex-alternation append: an added fragment introducing a new `|...` alternative.
 _ALTERNATION_ADD_RE = re.compile(r"\|\s*[\w\\\s.\-+*?()\[\]'\"]")
+# Shell-operator shapes that use `|` as an OPERATOR, not a regex alternation: shell
+# logical-OR `||`, command substitution `$( … )`, an fd redirection `2>`, or a ` | `
+# command pipe (spaces both sides). A line carrying any of these is a shell breadcrumb,
+# not a matcher-alternation append — case (a) must not fire on it
+# (adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose, S4).
+_SHELL_PIPE_SHAPE_RE = re.compile(r"\|\||\$\(|\d>|\s\|\s")
 # A bare list/set string element line: `+    'foo',` / `+  "bar"` (optional trailing comma).
 _LIST_ELEMENT_RE = re.compile(r"""^\+\s*(['"]).*\1\s*,?\s*$""")
 # docs/{features,bugs}/<slug> id, dated path, or session-shaped path — overfit-to-incident tells.
@@ -232,8 +238,20 @@ def detect_overfit(hunks: list) -> dict:
     for h in hunks:
         for body, ctx in h.added_ctx:
             plus = "+" + body
-            # (a) regex-alternation append: the added fragment introduces a new `|...`
-            if "|" in body and _ALTERNATION_ADD_RE.search(body) and _QUOTED_RE.search(body):
+            # (a) regex-alternation append: a new `|...` alternative added INSIDE a
+            # matcher/regex literal. Key on the genuine tell — a `|` between quoted
+            # alternatives (the alternation lives in a QUOTED string body) — and exclude
+            # shell logical-OR / pipe / command-substitution breadcrumb lines, where `|`
+            # is a shell OPERATOR, not a regex alternation (S4:
+            # adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose).
+            if (
+                "|" in body
+                and not _SHELL_PIPE_SHAPE_RE.search(body)
+                and any(
+                    "|" in m.group("body") and _ALTERNATION_ADD_RE.search(m.group("body"))
+                    for m in _QUOTED_RE.finditer(body)
+                )
+            ):
                 evidence.append(f"{h.file}: alternation literal appended: {body.strip()[:80]}")
                 continue
             # (b) bare quoted list/set element added into a membership construct

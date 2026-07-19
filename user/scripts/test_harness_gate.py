@@ -175,6 +175,33 @@ def test_overfit_incident_slug_literal_flags():
     assert any("incident-shaped" in e for e in out["evidence"])
 
 
+def test_overfit_shell_breadcrumb_pipe_not_alternation():
+    """Phase 2 / S4: a fail-open shell breadcrumb line in an ON-manifest hook
+    (`_HOOK_*_TS="$(date +%s 2>/dev/null || echo 0)"`) uses `||` / `$( )` / `2>` as
+    SHELL operators, not a regex-alternation matcher append — must NOT flag."""
+    diff = _diff(
+        "user/hooks/foo.sh",
+        added=['  _HOOK_NOPY_TS="$(date +%s 2>/dev/null || echo 0)"'],
+    )
+    out = hg.detect_overfit(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+
+
+def test_overfit_genuine_regex_alternation_append_still_flags():
+    """Phase 2 positive control (over-narrowing guard): a quoted literal genuinely
+    added into a real `|`-alternation matcher STILL flags — the detector's real
+    coverage is preserved (SPEC Open Question FP3/S4). GREEN both before and after."""
+    diff = _diff(
+        "user/scripts/lazy_core.py",
+        context=["_STEP_RE = re.compile("],
+        removed=[r'    r"spec|plan|execute"'],
+        added=[r'    r"spec|plan|execute|new_slug"'],
+    )
+    out = hg.detect_overfit(hg.parse_diff(diff))
+    assert out["result"] == "flag", out["evidence"]
+    assert any("alternation" in e for e in out["evidence"])
+
+
 def test_overfit_structural_change_passes():
     """A structural refactor (no literal appended to a matcher) does NOT flag."""
     diff = _diff(

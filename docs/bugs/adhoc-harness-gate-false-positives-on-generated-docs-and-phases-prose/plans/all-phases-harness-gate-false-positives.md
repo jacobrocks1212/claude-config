@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose
-status: In-progress
+status: Complete
 created: 2026-07-19
 complexity: complex
 phases: [1, 2]
@@ -71,7 +71,7 @@ Where this plan's repo uses non-default gates or component paths (this is `claud
 ## Work Units
 
 - [x] WU-1 — Scope `run_checker` detector input to manifest control-surface hunks (S1/S2/S3)
-- [ ] WU-2 — Tighten `detect_overfit` alternation heuristic against shell breadcrumb pipes (S4)
+- [x] WU-2 — Tighten `detect_overfit` alternation heuristic against shell breadcrumb pipes (S4)
 
 ---
 

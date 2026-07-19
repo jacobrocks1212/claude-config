@@ -2,6 +2,8 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
+**Status:** In-progress
+
 **MCP runtime:** not-required — claude-config has no Tauri/MCP runtime surface; `harness-gate.py` is pure stdlib detector logic validated by the `test_harness_gate.py` unit suite (mcp-testing "no runtime-observable surface" class).
 
 ## Touchpoint Audit (verified inline — dispatch unavailable in cycle subagent)
@@ -59,9 +61,9 @@ The SPEC's Reproduction Steps consume only `harness-gate.py`'s own public functi
 **Scope:** Fix the secondary root cause — `detect_overfit` case (a) (`:236`) treats any added line with `|` + a matched `_ALTERNATION_ADD_RE` + a quoted literal as a regex-alternation matcher append. A legitimate fail-open shell breadcrumb line in an ON-manifest hook (`_HOOK_*_TS="$(date +%s 2>/dev/null || echo 0)"`) satisfies this via the shell `||` and the quoted `"$( … )"`, producing a persistent (judgment-passable but trust-eroding) `overfit=flag`. Tighten case (a) so a shell `||`/pipe in real hook code is not misread as a matcher alternation, WITHOUT over-narrowing the detector's genuine coverage (a literal appended to a real regex-alternation matcher).
 
 **Deliverables:**
-- [ ] Tighten `detect_overfit` case (a) (`user/scripts/harness-gate.py:236`) so a shell logical-OR / pipe (`||`, or a shell `|` in a `$( … )` command substitution / redirection context) does NOT match as a regex-alternation append. Prefer keying on the genuine tell of a regex-alternation matcher append (the added `|`-fragment sits inside a regex/matcher-literal context — an alternation between quoted alternatives), and exclude the shell-operator shapes (`||`, ` | ` pipe between commands, `2>/dev/null`, `$( … )`). Keep the change minimal and structural; do not weaken the detection of a literal genuinely appended to a `re.compile`/alternation string.
-- [ ] Tests: add an S4 regression fixture to `user/scripts/test_harness_gate.py` — the SPEC's `user/hooks/foo.sh` breadcrumb line `_HOOK_NOPY_TS="$(date +%s 2>/dev/null || echo 0)"` (an ON-manifest hook) now returns `detect_overfit(...)['result'] == 'pass'`.
-- [ ] Tests: a POSITIVE-control fixture proving a TRUE regex-alternation matcher append (a quoted literal added into an actual `|`-alternation matcher, the detector's real coverage) STILL flags — guarding against over-narrowing (SPEC Open Question FP3/S4: "Guard against over-narrowing the overfit detector").
+- [x] Tighten `detect_overfit` case (a) (`user/scripts/harness-gate.py:236`) so a shell logical-OR / pipe (`||`, or a shell `|` in a `$( … )` command substitution / redirection context) does NOT match as a regex-alternation append. Prefer keying on the genuine tell of a regex-alternation matcher append (the added `|`-fragment sits inside a regex/matcher-literal context — an alternation between quoted alternatives), and exclude the shell-operator shapes (`||`, ` | ` pipe between commands, `2>/dev/null`, `$( … )`). Keep the change minimal and structural; do not weaken the detection of a literal genuinely appended to a `re.compile`/alternation string.
+- [x] Tests: add an S4 regression fixture to `user/scripts/test_harness_gate.py` — the SPEC's `user/hooks/foo.sh` breadcrumb line `_HOOK_NOPY_TS="$(date +%s 2>/dev/null || echo 0)"` (an ON-manifest hook) now returns `detect_overfit(...)['result'] == 'pass'`.
+- [x] Tests: a POSITIVE-control fixture proving a TRUE regex-alternation matcher append (a quoted literal added into an actual `|`-alternation matcher, the detector's real coverage) STILL flags — guarding against over-narrowing (SPEC Open Question FP3/S4: "Guard against over-narrowing the overfit detector").
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/test_harness_gate.py` passes with the S4 shell-breadcrumb fixture returning `pass` AND the genuine-alternation positive-control fixture still returning `flag`. The SPEC S4 repro assert now yields no flag.
 
