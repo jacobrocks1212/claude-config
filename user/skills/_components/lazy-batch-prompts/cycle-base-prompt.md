@@ -317,7 +317,14 @@ Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
   - EXECUTE ONLY THE DISPATCHED PLAN PART (HARD — ISSUE 2, d8-effect-chains run):
     run EXACTLY the plan file passed to you — never a sibling part, never "the part
     that's actually ready." Check the dispatched part's `> **Entry criteria:**` /
-    `Plan series` "execute parts strictly in order" prerequisites FIRST. If a
+    `Plan series` "execute parts strictly in order" prerequisites FIRST. Order those
+    prerequisites by `series_index` (frontmatter-honored — the same order the router
+    uses), NOT by raw part-number: a sibling P is a prerequisite of the dispatched
+    part D iff `series_index(P) < series_index(D)`. A part rescheduled to a HIGHER
+    `series_index` (`series_index: N  # RESCHEDULED …`) to run LAST is NOT a
+    prerequisite of a lower-`series_index` part even when its filename `-part-K`
+    number is lower — do NOT block on it (hydra-overlay false-block, 2026-07-19).
+    Absent a `series_index` field, fall back to the raw part-number. If a genuine
     prerequisite part is not `status: Complete`, STOP and write BLOCKED.md
     (`blocker_kind: prerequisite-part-incomplete`) naming the unmet part — do NOT
     silently switch to it. (Live incident: dispatched on Sonnet for the mechanical
@@ -344,7 +351,14 @@ Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
   - EXECUTE ONLY THE DISPATCHED PLAN PART (HARD — ISSUE 2, d8-effect-chains run):
     run EXACTLY the plan file passed to you — never a sibling part, never "the part
     that's actually ready." Check the dispatched part's `> **Entry criteria:**` /
-    `Plan series` "execute parts strictly in order" prerequisites FIRST. If a
+    `Plan series` "execute parts strictly in order" prerequisites FIRST. Order those
+    prerequisites by `series_index` (frontmatter-honored — the same order the router
+    uses), NOT by raw part-number: a sibling P is a prerequisite of the dispatched
+    part D iff `series_index(P) < series_index(D)`. A part rescheduled to a HIGHER
+    `series_index` (`series_index: N  # RESCHEDULED …`) to run LAST is NOT a
+    prerequisite of a lower-`series_index` part even when its filename `-part-K`
+    number is lower — do NOT block on it (hydra-overlay false-block, 2026-07-19).
+    Absent a `series_index` field, fall back to the raw part-number. If a genuine
     prerequisite part is not `status: Complete`, STOP and write BLOCKED.md
     (`blocker_kind: prerequisite-part-incomplete`) naming the unmet part — do NOT
     silently switch to it. (Live incident: dispatched on Sonnet for the mechanical

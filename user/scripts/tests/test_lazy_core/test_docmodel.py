@@ -1979,6 +1979,65 @@ def test_find_implementation_plans_non_series_phase_order_preserved():
 
 
 
+def test_rescheduled_high_series_index_part_not_prerequisite_of_lower():
+    """harden Round 110 (observed-friction, hydra-overlay) — a part RESCHEDULED to
+    a HIGH ``series_index`` (to run LAST) is NOT a strict-order prerequisite of a
+    LOWER-``series_index`` but HIGHER-part-NUMBERED part.
+
+    The live incident: hydra-overlay part-10 carried
+    ``series_index: 15  # RESCHEDULED: projector re-spike runs LAST …`` (operator
+    reschedule 2026-07-19), deliberately moving Phase 10 to execute after parts
+    11-14. The /execute-plan rule 1a.6a strict-order prerequisite audit is
+    prose-driven and (before the round's prose fix) ordered parts by RAW
+    part-number, so it treated part-10 (part-number 10 < 12) as an unmet
+    prerequisite of part-12 and false-blocked part-12 (BLOCKED.md
+    ``blocker_kind: prerequisite-part-incomplete``).
+
+    Prerequisite-ness for a strict-order series is DEFINED by the same execution
+    order the router uses (``_plan_sort_key`` → ``series_index`` first,
+    frontmatter-honored): P is a prerequisite of D iff ``series_index(P) <
+    series_index(D)``. This test pins the ordering primitive the fixed audit prose
+    points to: the rescheduled part-10 (series 15) must sort AFTER part-12
+    (series 12) — i.e. part-10 is NOT a prerequisite of part-12 — even though its
+    filename ``-part-K`` number is LOWER. It also asserts the frontmatter reads
+    correctly through the inline ``# RESCHEDULED`` YAML comment (yaml.safe_load
+    strips it), the exact shape that would otherwise silently fall back to the
+    filename part-number 10 and re-introduce the false-block.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        # part-10 RESCHEDULED to run last (series_index 15, inline comment) …
+        part10 = d / "all-phases-hydra-overlay-part-10.md"
+        # … part-12 un-rescheduled (series index derived from the filename = 12).
+        part12 = d / "all-phases-hydra-overlay-part-12.md"
+        part10.write_text(
+            "---\nkind: implementation-plan\nstatus: Ready\nphases: [10]\n"
+            "series_index: 15  # RESCHEDULED: projector re-spike runs LAST "
+            "(after parts 11-14) — operator decision 2026-07-19\n---\n",
+            encoding="utf-8",
+        )
+        part12.write_text(
+            "---\nkind: implementation-plan\nstatus: Ready\nphases: [12]\n---\n",
+            encoding="utf-8",
+        )
+        # Frontmatter reschedule survives the inline YAML comment (else it would
+        # fall back to the filename part-number 10 and re-introduce the bug).
+        assert lazy_core._plan_series_index(part10) == 15
+        assert lazy_core._plan_series_index(part12) == 12
+        k10 = lazy_core._plan_sort_key(part10)
+        k12 = lazy_core._plan_sort_key(part12)
+        # part-12 sorts BEFORE the rescheduled part-10 ⇒ part-10 is scheduled
+        # AFTER part-12 ⇒ part-10 is NOT a strict-order prerequisite of part-12.
+        assert k12 < k10, (
+            f"rescheduled part-10 (series_index 15) must sort AFTER part-12 "
+            f"(series_index 12) — it is not a prerequisite of part-12: "
+            f"k10={k10} k12={k12}"
+        )
+
+
+
+
 # ---------------------------------------------------------------------------
 # Tests: plan_complexity — Phase 9 per-part complexity tag (lazy-validation-readiness)
 #
@@ -3983,6 +4042,7 @@ _TESTS = [
     ("test_plan_sort_key_series_beats_phase", test_plan_sort_key_series_beats_phase),
     ("test_find_implementation_plans_part_series_order", test_find_implementation_plans_part_series_order),
     ("test_find_implementation_plans_non_series_phase_order_preserved", test_find_implementation_plans_non_series_phase_order_preserved),
+    ("test_rescheduled_high_series_index_part_not_prerequisite_of_lower", test_rescheduled_high_series_index_part_not_prerequisite_of_lower),
     ("test_plan_complexity_mechanical", test_plan_complexity_mechanical),
     ("test_plan_complexity_complex_explicit", test_plan_complexity_complex_explicit),
     ("test_plan_complexity_absent_defaults_complex", test_plan_complexity_absent_defaults_complex),

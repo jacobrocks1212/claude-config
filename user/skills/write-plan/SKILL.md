@@ -233,6 +233,8 @@ Every part file MUST start (after the existing "Mobile plan" preamble) with a `P
 >
 > Execute parts strictly in order. Each part is self-contained — do NOT cross-reference siblings during execution.
 
+**"In order" means `series_index` order, not filename order.** The executing skill's strict-order prerequisite audit (execute-plan rule 1a.6a) treats a sibling part P as a prerequisite of part D iff `series_index(P) < series_index(D)`, honoring a frontmatter `series_index:` override. When an operator reschedules a part (e.g. adds `series_index: 15  # RESCHEDULED: runs LAST` to a `-part-10` file to move it after parts 11-14), that part is no longer a prerequisite of the lower-`series_index` parts even though its filename number is lower. Emit parts in dependency order so the default filename `-part-K` order matches the intended execution order; the `series_index:` frontmatter override is the machine-readable escape hatch for a later reschedule without renaming files.
+
 Each part is otherwise **fully self-contained** per the existing /write-plan contract (execution model, mandatory rules, component reference card, blocking-issue protocol, completion section). Generate each part with the full template; do not abbreviate later parts.
 
 ---
