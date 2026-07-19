@@ -1985,6 +1985,30 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/_archive/canary-band-only-trip-auto-enqueues-without-attribution/FIXED.md": [
+    {
+      "id": "canary-band-only-trip-auto-enqueues-without-attribution",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "park-provisional-parks-claude-config-auto-generated-stubs",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/canary-band-only-trip-auto-enqueues-without-attribution/SPEC.md": [
+    {
+      "id": "canary-band-only-trip-auto-enqueues-without-attribution",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "park-provisional-parks-claude-config-auto-generated-stubs",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/coherence-recovery-loop-no-terminal-on-unrunnable-verification-rows/FIXED.md": [
     {
       "id": "shared-hook-lib",
@@ -3982,6 +4006,42 @@
       "id": "park-mode-halts-on-blocked",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/park-provisional-parks-claude-config-auto-generated-stubs/FIXED.md": [
+    {
+      "id": "canary-band-only-trip-auto-enqueues-without-attribution",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "park-provisional-parks-claude-config-auto-generated-stubs",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/park-provisional-parks-claude-config-auto-generated-stubs/GATE_VERDICT.md": [
+    {
+      "id": "canary-band-only-trip-auto-enqueues-without-attribution",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "park-provisional-parks-claude-config-auto-generated-stubs",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/park-provisional-parks-claude-config-auto-generated-stubs/SPEC.md": [
+    {
+      "id": "canary-band-only-trip-auto-enqueues-without-attribution",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "park-provisional-parks-claude-config-auto-generated-stubs",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/FIXED.md": [
@@ -15418,6 +15478,30 @@
       "provenance": "manual"
     }
   ],
+  "docs/interventions/harden-2026-07-r103.md": [
+    {
+      "id": "canary-band-only-trip-auto-enqueues-without-attribution",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "park-provisional-parks-claude-config-auto-generated-stubs",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r104.md": [
+    {
+      "id": "canary-band-only-trip-auto-enqueues-without-attribution",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "park-provisional-parks-claude-config-auto-generated-stubs",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/harden-2026-07-r14.md": [
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -17254,6 +17338,11 @@
       "provenance": "manual"
     },
     {
+      "id": "canary-band-only-trip-auto-enqueues-without-attribution",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -17475,6 +17564,11 @@
       "provenance": "manual"
     },
     {
+      "id": "canary-band-only-trip-auto-enqueues-without-attribution",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -17566,6 +17660,11 @@
     },
     {
       "id": "orchestrator-misroutes-on-grandchild-subagent-notifications",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "park-provisional-parks-claude-config-auto-generated-stubs",
       "type": "bug",
       "provenance": "manual"
     },
