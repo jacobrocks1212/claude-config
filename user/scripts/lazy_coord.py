@@ -693,6 +693,69 @@ def release_lease(leases_path, wi_id, expected_token, *, now=None) -> None:
 		release_lock(lock_dir)
 
 
+class ItemLockTimeout(TimeoutError):
+	"""Raised when acquire_item_lock cannot claim the per-queue-item lock within
+	its timeout budget (Leg 5 — a timeout is NEVER a successful acquire)."""
+
+
+def acquire_item_lock(
+	leases_path, wi_id, worker_pid, slot, ttl_seconds,
+	*, timeout=10.0, poll=0.05, now=None, clock=None, sleep=None,
+) -> dict:
+	"""Acquire the per-queue-item FIFO lock for wi_id (concurrent-lock-contract.md).
+
+	The stdlib-Python plane of the ONE documented concurrent-lock grammar. Built
+	on the existing lease layer — a polling mutex over ``acquire_lease`` keyed by
+	``wi_id`` verbatim, inventing NO new locking substrate:
+
+	- **Per-item grain (Leg 1):** two workers contending on the SAME wi_id
+	  serialize; two workers on DIFFERENT wi_ids never block each other.
+	- **Wait-for-unlock FIFO (Leg 2):** while a live holder holds the item's
+	  lease, ``acquire_lease`` returns None; this waits (bounded exponential
+	  backoff) and retries until the holder releases (or its lease expires), then
+	  proceeds in turn.
+	- **Fencing token (Leg 3):** returns the lease entry dict — the caller carries
+	  ``entry["term_token"]`` to ``verify_fencing`` / ``release_item_lock``.
+	- **Confirmed-dead reclaim (Leg 4):** ``acquire_lease``'s inline TTL-expiry
+	  ``_reclaim`` (a holder that stopped heart-beating) plus the global lock's
+	  ``_confirmed_dead_owner`` reclaim it; an ambiguous/live holder is NEVER
+	  falsely reclaimed and still times out within the budget.
+	- **Authoritative timeout (Leg 5):** on budget exhaustion raises
+	  ``ItemLockTimeout`` — never a false ACQUIRED.
+
+	Time is injected (the module convention): ``now`` is the lease-expiry epoch
+	float threaded into ``acquire_lease``; ``clock``/``sleep`` (default
+	``time.monotonic``/``time.sleep``) drive the timeout budget so ``--test``
+	fixtures are hermetic.
+
+	Returns the acquired lease entry dict. Raises ItemLockTimeout on timeout.
+	"""
+	clock = clock or time.monotonic
+	sleep = sleep or time.sleep
+	start = clock()
+	delay = poll
+	while True:
+		entry = acquire_lease(leases_path, wi_id, worker_pid, slot, ttl_seconds, now=now)
+		if entry is not None:
+			return entry  # acquired (carries the fencing term_token)
+		elapsed = clock() - start
+		if elapsed >= timeout:
+			raise ItemLockTimeout(
+				f"Could not acquire item lock for wi_id={wi_id!r} within {timeout}s"
+			)
+		sleep(min(delay, timeout - elapsed))
+		delay = min(delay * 2, 1.0)
+
+
+def release_item_lock(leases_path, wi_id, expected_token, *, now=None) -> None:
+	"""Release the per-queue-item FIFO lock (Leg 3 — fencing-token release).
+
+	Thin alias over ``release_lease``: verifies the fencing token first, so a
+	superseded holder (its ``term_token`` changed underneath it) raises
+	``FencingError`` and MUST NOT release someone else's lock."""
+	release_lease(leases_path, wi_id, expected_token, now=now)
+
+
 def provision_pool(repo_root, pool_dir, k) -> list:
 	"""Provision k worktree slots in pool_dir, returning a list of slot paths.
 
@@ -2492,6 +2555,162 @@ def run_smoke_tests() -> int:
 			failures.append(f"[{fix22_name}] FAIL: unexpected exception: {exc!r}")
 			fix22_ok = False
 		print(f"  {'PASS' if fix22_ok else 'FAIL'} [{fix22_name}]")
+
+		# -------------------------------------------------------------------
+		# Fixture 23: item-lock-same-key-serializes (concurrent-lock Leg 1/2/5)
+		#
+		# Two agents on the SAME item key serialize: while the holder is live a
+		# bounded acquire TIMES OUT (waits, never steals); after the holder
+		# releases, the contender proceeds in turn with a STRICTLY GREATER
+		# fencing token (watermark monotonicity on release).
+		# -------------------------------------------------------------------
+		fix23_name = "item-lock-same-key-serializes"
+		fix23_ok = True
+		try:
+			fix23_dir = td_path / "fix23"
+			fix23_dir.mkdir()
+			leases_23 = fix23_dir / "leases.json"
+			leases_23.write_text(json.dumps({}), encoding="utf-8")
+			now_23 = 4_000_000.0
+			holder = acquire_item_lock(leases_23, "item-K", 111, "wt-00", 300, timeout=1.0, now=now_23)
+			if holder is None or holder["term_token"] != 1:
+				failures.append(f"[{fix23_name}] FAIL: holder did not acquire token 1")
+				fix23_ok = False
+			t1 = holder["term_token"] if holder else 0
+			# Contender: bounded acquire while the holder is live -> ItemLockTimeout.
+			jumped_23 = {"n": 0}
+			def _clock_23():
+				jumped_23["n"] += 1
+				return 0.0 if jumped_23["n"] == 1 else 999.0
+			timed_out_23 = False
+			try:
+				acquire_item_lock(
+					leases_23, "item-K", 222, "wt-01", 300,
+					timeout=1.0, now=now_23, clock=_clock_23, sleep=lambda _s: None,
+				)
+			except ItemLockTimeout:
+				timed_out_23 = True
+			if not timed_out_23:
+				failures.append(f"[{fix23_name}] FAIL: contender did not time out while holder live")
+				fix23_ok = False
+			# Holder releases; contender proceeds in turn with a greater token.
+			release_item_lock(leases_23, "item-K", t1, now=now_23)
+			h2 = acquire_item_lock(leases_23, "item-K", 222, "wt-01", 300, timeout=1.0, now=now_23)
+			if h2 is None or h2["term_token"] <= t1:
+				failures.append(f"[{fix23_name}] FAIL: contender did not proceed with a greater token after unlock")
+				fix23_ok = False
+		except Exception as exc:  # noqa: BLE001
+			failures.append(f"[{fix23_name}] FAIL: unexpected exception: {exc!r}")
+			fix23_ok = False
+		print(f"  {'PASS' if fix23_ok else 'FAIL'} [{fix23_name}]")
+
+		# -------------------------------------------------------------------
+		# Fixture 24: item-lock-different-keys-no-block (concurrent-lock Leg 1)
+		#
+		# Two agents on DIFFERENT item keys never block each other — both
+		# acquire immediately and hold live leases simultaneously.
+		# -------------------------------------------------------------------
+		fix24_name = "item-lock-different-keys-no-block"
+		fix24_ok = True
+		try:
+			fix24_dir = td_path / "fix24"
+			fix24_dir.mkdir()
+			leases_24 = fix24_dir / "leases.json"
+			leases_24.write_text(json.dumps({}), encoding="utf-8")
+			now_24 = 5_000_000.0
+			a = acquire_item_lock(leases_24, "item-A", 111, "wt-00", 300, timeout=1.0, now=now_24)
+			b = acquire_item_lock(leases_24, "item-B", 222, "wt-01", 300, timeout=1.0, now=now_24)
+			if a is None or b is None:
+				failures.append(f"[{fix24_name}] FAIL: a different-key acquire blocked")
+				fix24_ok = False
+			data_24 = json.loads(leases_24.read_text(encoding="utf-8"))
+			if "item-A" not in data_24 or "item-B" not in data_24:
+				failures.append(f"[{fix24_name}] FAIL: both leases not held simultaneously")
+				fix24_ok = False
+		except Exception as exc:  # noqa: BLE001
+			failures.append(f"[{fix24_name}] FAIL: unexpected exception: {exc!r}")
+			fix24_ok = False
+		print(f"  {'PASS' if fix24_ok else 'FAIL'} [{fix24_name}]")
+
+		# -------------------------------------------------------------------
+		# Fixture 25: item-lock-confirmed-dead-reclaimed (concurrent-lock Leg 4)
+		#
+		# A dead holder's EXPIRED lease is reclaimed (lease TTL-expiry _reclaim)
+		# and the waiter proceeds, minting a STRICTLY GREATER fencing token than
+		# the reclaimed holder's (watermark survives reclamation).
+		# -------------------------------------------------------------------
+		fix25_name = "item-lock-confirmed-dead-reclaimed"
+		fix25_ok = True
+		try:
+			fix25_dir = td_path / "fix25"
+			fix25_dir.mkdir()
+			leases_25 = fix25_dir / "leases.json"
+			now_25 = 6_000_000.0
+			expired_25 = datetime.fromtimestamp(now_25 - 1000, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+			leases_25.write_text(json.dumps({
+				"item-D": {
+					"worker_pid": 9999,
+					"worktree_slot": "wt-00",
+					"term_token": 5,
+					"heartbeat_timestamp": expired_25,
+					"ttl_seconds": 300,
+				}
+			}), encoding="utf-8")
+			w = acquire_item_lock(leases_25, "item-D", 222, "wt-01", 300, timeout=1.0, now=now_25)
+			if w is None or w["term_token"] <= 5:
+				failures.append(f"[{fix25_name}] FAIL: dead holder not reclaimed with a greater token")
+				fix25_ok = False
+		except Exception as exc:  # noqa: BLE001
+			failures.append(f"[{fix25_name}] FAIL: unexpected exception: {exc!r}")
+			fix25_ok = False
+		print(f"  {'PASS' if fix25_ok else 'FAIL'} [{fix25_name}]")
+
+		# -------------------------------------------------------------------
+		# Fixture 26: item-lock-live-holder-times-out (concurrent-lock Leg 4/5)
+		#
+		# A genuinely LIVE holder is NEVER falsely reclaimed: a bounded acquire
+		# times out and the holder's lease is left untouched (no false reclaim).
+		# -------------------------------------------------------------------
+		fix26_name = "item-lock-live-holder-times-out"
+		fix26_ok = True
+		try:
+			fix26_dir = td_path / "fix26"
+			fix26_dir.mkdir()
+			leases_26 = fix26_dir / "leases.json"
+			now_26 = 7_000_000.0
+			live_26 = datetime.fromtimestamp(now_26, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+			leases_26.write_text(json.dumps({
+				"item-L": {
+					"worker_pid": 9999,
+					"worktree_slot": "wt-00",
+					"term_token": 3,
+					"heartbeat_timestamp": live_26,
+					"ttl_seconds": 300,
+				}
+			}), encoding="utf-8")
+			jumped_26 = {"n": 0}
+			def _clock_26():
+				jumped_26["n"] += 1
+				return 0.0 if jumped_26["n"] == 1 else 999.0
+			timed_out_26 = False
+			try:
+				acquire_item_lock(
+					leases_26, "item-L", 222, "wt-01", 300,
+					timeout=1.0, now=now_26, clock=_clock_26, sleep=lambda _s: None,
+				)
+			except ItemLockTimeout:
+				timed_out_26 = True
+			if not timed_out_26:
+				failures.append(f"[{fix26_name}] FAIL: acquire did not time out against a live holder")
+				fix26_ok = False
+			data_26 = json.loads(leases_26.read_text(encoding="utf-8"))
+			if data_26.get("item-L", {}).get("term_token") != 3:
+				failures.append(f"[{fix26_name}] FAIL: live holder's lease was mutated (false reclaim)")
+				fix26_ok = False
+		except Exception as exc:  # noqa: BLE001
+			failures.append(f"[{fix26_name}] FAIL: unexpected exception: {exc!r}")
+			fix26_ok = False
+		print(f"  {'PASS' if fix26_ok else 'FAIL'} [{fix26_name}]")
 
 	if failures:
 		print("\nFAILURES:")

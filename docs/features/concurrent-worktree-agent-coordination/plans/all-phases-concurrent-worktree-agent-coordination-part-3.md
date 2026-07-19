@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: concurrent-worktree-agent-coordination
-status: In-progress
+status: Complete
 complexity: complex
 created: 2026-07-18
 phases: [3]
@@ -59,10 +59,10 @@ Where this plan's repo uses non-default gates (claude-config — Python/lint/tes
 
 ## Work Units
 
-- [ ] WU-1 — Lock contract component (documented grammar)
-- [ ] WU-2 — Stdlib-Python per-queue-item FIFO lock in lazy_coord.py
-- [ ] WU-3 — PowerShell concurrent-lock.ps1 (workstation plane)
-- [ ] WU-4 — Doc-table + component registration (root CLAUDE.md + user/scripts/CLAUDE.md)
+- [x] WU-1 — Lock contract component (documented grammar)
+- [x] WU-2 — Stdlib-Python per-queue-item FIFO lock in lazy_coord.py
+- [x] WU-3 — PowerShell concurrent-lock.ps1 (workstation plane)
+- [x] WU-4 — Doc-table + component registration (root CLAUDE.md + user/scripts/CLAUDE.md)
 
 ### Phase: concurrent-worktree-agent-coordination P3 — Cross-platform FIFO file-lock
 

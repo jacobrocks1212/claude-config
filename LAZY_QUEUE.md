@@ -1,31 +1,29 @@
-# Lazy Queue — claude-config   (run active 🔒)
+# Lazy Queue — .   (run active 🔒)
 
-## Features (4)
+## Features (3)
 
 | # | item | state | tier |
 |---|------|-------|------|
-| 1 | [shared-hook-lib](docs/features/shared-hook-lib/SPEC.md) | Implement | T2 |
-| | status: Implement · phase 3/4 · next: execute plan · Extract the ~470 duplicated scaffolding lines (~20% of the 2,411-line `user/hooks/` plane) into a shared, fail-open-guarded pair — `hook-prelude.sh` (sourced bash: python resolution, SCRIPT_DIR derivation, no-python fallback breadcrumb) and `hook_lib.py` (allow/deny emitters, `_append_hook_event`, `_breadcrumb`, the shared `_ENV_PREFIX`/`_CMD_START` anchor regexes) — then migrate the seven python-bearing hooks one at a time, re-running the full 157-test `test_hooks.py` suite after each. | | |
+| 1 | [concurrent-worktree-agent-coordination](docs/features/concurrent-worktree-agent-coordination/SPEC.md) | Implement | T0 |
+| | status: Implement · phase 2/6 · next: execute plan · Make concurrent multi-session agent work on a SHARED worktree/branch safe and non-panicking: awareness, safe git, a FIFO file-lock, and consistent conflict handling across claude-config + AlgoBooth. | | |
 | 2 | [claude-config-ci](docs/features/claude-config-ci/SPEC.md) | ⬡ Needs-input | T3 |
 | | status: Needs-input · next: answer needs-input · The harness ships ~18 pytest suites, `lint-skills.py`, the parity audit, the doc-drift linter, a skill-projection check, and a Pester/PSScriptAnalyzer PowerShell family — but no `.github/workflows/`, so those integrity gates only run when someone remembers to run them locally. | | |
 | 3 | [native-android-pipeline-steering](docs/features/native-android-pipeline-steering/SPEC.md) | Research | T3 |
 | | status: Research · next: research · A real mobile client on the `mobile-queue-control` foundation: browse every lazy-enabled repo's queues, drill into SPECs and halt sentinels, and — the point — **write back** from the phone: answer `NEEDS_INPUT.md` decisions, resolve `BLOCKED.md` halts, and reorder/enqueue the queue. | | |
-| 4 | [concurrent-worktree-agent-coordination](docs/features/concurrent-worktree-agent-coordination/SPEC.md) | Spec | T3 |
-| | status: Spec · next: spec | | |
 
 ## Bugs (19)
 
 | # | item | state | sev | aging |
 |---|------|-------|------|------|
-| 1 | [adhoc-process-friction-detector-counts-concurrent-session-commits](docs/bugs/adhoc-process-friction-detector-counts-concurrent-session-commits/SPEC.md) | Spec | — |  |
+| 1 | [adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move](docs/bugs/adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 2 | [decision-2-6-uncovered-row-reroute-to-mcp-test](docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test/SPEC.md) | Spec | — |  |
+| 2 | [adhoc-process-friction-detector-counts-concurrent-session-commits](docs/bugs/adhoc-process-friction-detector-counts-concurrent-session-commits/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 3 | [decision-11-dispatch-time-forward-advance](docs/bugs/decision-11-dispatch-time-forward-advance/SPEC.md) | Spec | — |  |
+| 3 | [decision-2-6-uncovered-row-reroute-to-mcp-test](docs/bugs/decision-2-6-uncovered-row-reroute-to-mcp-test/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 4 | [adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose](docs/bugs/adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose/SPEC.md) | Spec | — |  |
+| 4 | [decision-11-dispatch-time-forward-advance](docs/bugs/decision-11-dispatch-time-forward-advance/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
-| 5 | [adhoc-subagent-wedge-hook-overfires-globs-all-plans](docs/bugs/_archive/adhoc-subagent-wedge-hook-overfires-globs-all-plans/SPEC.md) | Spec | — |  |
+| 5 | [adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose](docs/bugs/adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
 | 6 | [canary-revert-harden-2026-07-r54](docs/bugs/canary-revert-harden-2026-07-r54/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |
