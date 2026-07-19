@@ -4721,6 +4721,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/subagent-wedge-backstop-dirty-tree-predicate-repo-wide/FIXED.md": [
+    {
+      "id": "subagent-wedge-backstop-dirty-tree-predicate-repo-wide",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/subagent-wedge-backstop-dirty-tree-predicate-repo-wide/SPEC.md": [
+    {
+      "id": "subagent-wedge-backstop-dirty-tree-predicate-repo-wide",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/test-filtered-stale-check-hardcodes-bin-debug/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -4941,6 +4955,20 @@
       "id": "adhoc-cycle-begin-real-requires-sub-skill",
       "type": "bug",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-cycle-return-omits-decision-classification-ledger/PHASES.md": [
+    {
+      "id": "subagent-wedge-backstop-dirty-tree-predicate-repo-wide",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/adhoc-cycle-return-omits-decision-classification-ledger/plans/all-phases-cycle-return-ledger.md": [
+    {
+      "id": "subagent-wedge-backstop-dirty-tree-predicate-repo-wide",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/adhoc-decision-key-relative-absolute-mismatch/SPEC.md": [
@@ -17834,6 +17862,11 @@
       "id": "skip-mcp-test-frontmatter-unquoted-colon",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "subagent-wedge-backstop-dirty-tree-predicate-repo-wide",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "concurrent-worktree-agent-coordination",
