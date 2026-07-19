@@ -2,7 +2,7 @@
 
 > Phases for [`SPEC.md`](./SPEC.md)
 
-**Status:** In-progress
+**Status:** Fixed
 
 **MCP runtime:** not-required — claude-config has no Tauri/MCP runtime surface; `harness-gate.py` is pure stdlib detector logic validated by the `test_harness_gate.py` unit suite (mcp-testing "no runtime-observable surface" class).
 

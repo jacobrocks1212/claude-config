@@ -275,6 +275,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "adhoc-lazy-core-tests-not-isolated-from-live-cycle-marker",
       "type": "bug",
       "provenance": "manual"
@@ -4910,6 +4915,27 @@
       "id": "adhoc-ensure-runtime-test-injects-signal-under-test",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose/PHASES.md": [
+    {
+      "id": "adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose/SPEC.md": [
+    {
+      "id": "adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose/plans/all-phases-harness-gate-false-positives.md": [
+    {
+      "id": "adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/bugs/adhoc-incident-hook-deny-19343d-r3/ADHOC_BRIEF.md": [
@@ -19624,6 +19650,11 @@
   ],
   "user/scripts/harness-gate.py": [
     {
+      "id": "adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -21055,6 +21086,11 @@
     }
   ],
   "user/scripts/test_harness_gate.py": [
+    {
+      "id": "adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
