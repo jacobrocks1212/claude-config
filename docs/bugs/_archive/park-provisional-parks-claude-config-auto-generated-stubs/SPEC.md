@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-19
+**Fixed:** 2026-07-19
+**Fix commit:** 71cabd6b
 **Placement:** docs/bugs/park-provisional-parks-claude-config-auto-generated-stubs
 **Related:** `user/scripts/lazy_core/docmodel.py` (`provisional_eligibility`) · `user/scripts/efficacy-eval.py` (`_canary_evidence_text` / `_canary_enqueue_revert`) · `user/scripts/incident-scan.py` (`_capsule_text` / `_enqueue`) · `user/skills/spec-bug/SKILL.md` · `user/skills/_components/lazy-batch-prompts/input-audit-prompt.md` · `user/skills/_components/sentinel-frontmatter.md` · `docs/bugs/canary-band-only-trip-auto-enqueues-without-attribution` (batched sibling — reduces the noise at the source)
 
