@@ -133,3 +133,13 @@ Fix-site-on-path (Gap 1): the enforcement seam for "no backgrounded long gate in
 
 - **Fix approach (baseline-gating — surfaced in `NEEDS_INPUT.md`):** mechanically enforce foreground gate-running (Gap 1), give the orchestrator a deterministic pause-vs-terminal signal (Gap 2), or both. Product-class fork on a stub the operator has never seen → parked.
 - **Harness re-invocation truth (informs the fix, not blocking):** does a dispatched cycle subagent reliably get background-completion re-invocation (contradicting `turn-end-gate.md` L13–18), or is it inconsistent/undocumented? If re-invocation is UNreliable, Gap 1 backgrounding also risks a genuine resultless stall — strengthening the case for mechanical prevention. `/plan-bug` should confirm the documented behavior before finalizing the fix.
+
+## Locked Decisions
+
+1. **Fix approach — Gap 1 vs Gap 2 vs both** (`NEEDS_INPUT.md`, operator-accepted 2026-07-19,
+   recorded via `bug-state.py --record-decision`): **Both** — the deterministic orchestrator
+   pause signal (Gap 2, load-bearing: consult the existing `dispatched-agent-liveness.md` marker
+   + plan-status signal in `lazy-batch`/`lazy-bug-batch` Step 1e before dispatching recovery) AND
+   mechanical foreground enforcement (Gap 1: a `user/hooks/` PreToolUse guard denying a
+   `run_in_background` long-gate launch inside an armed cycle subagent). Locked for `/spec-bug` to
+   conclude against and `/plan-bug` to phase — do not ship Gap 2 alone or Gap 1 alone.

@@ -178,3 +178,13 @@ first made a matrix-incomplete `VALIDATED.md` reachable, exposing the gap.
 - **Coverage-precision dial.** The accepted conservative form treats "still unchecked after
   autotick" as "evidence does not cover." A future tightening could compute precise row↔scenario
   coverage; out of scope for this fix (operator accepted the redundant-pass tradeoff).
+
+## Locked Decisions
+
+1. **Where the per-row host-defer recognizer lives** (`NEEDS_INPUT.md`, operator-accepted
+   2026-07-19, recorded via `bug-state.py --record-decision`): **land a minimal per-row
+   `<!-- requires-host: <cap> -->` recognizer as a phase of THIS bug** — do NOT declare a hard
+   queue `deps` on `feature-operator-host-defer-not-honored-over-validated`, and do NOT ship the
+   re-route without clause (b). Locked for `/plan-bug`: all three clauses of the operator-locked
+   fix shape (non-observation-gap-exempt, non-host-deferred, not evidence-covered) must be honored
+   in one self-contained cycle.

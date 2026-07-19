@@ -107,3 +107,11 @@ detect_gate_weakening(...) result == "hit"          user/scripts/harness-gate.py
 ## Open Questions
 
 - **(Design fork — for `/plan-bug`, PRODUCT-class: false-negative surface of a security gate.)** Whole-change reconciliation admits two shapes with different false-negative risk: (a) **aggregate net** (sum removed across all files vs sum added across all files) — simplest, but a genuine removal in file A masked by an *unrelated* deny construct added in file B nets to zero and evades the gate; (b) **content-identity move detection** (reconcile a removal in A only when the same construct text is added in B) — precise, near-zero false-negative surface, more code. `/plan-bug`'s SEAM A findings gate and the anti-overfit/`harness-change-gate` (this fix edits a control surface AND relaxes a detector — it will itself route to operator sign-off) should decide (b) vs (a). Recommendation: **(b)**, to avoid weakening the gate-weakening detector.
+
+## Locked Decisions
+
+1. **Cross-file reconciliation shape for `gate_weakening`** (`NEEDS_INPUT.md`, operator-accepted
+   2026-07-19, recorded via `bug-state.py --record-decision`): **(b) Content-identity move
+   detection** — reconcile a removal in file A only when the same construct text is added in file
+   B within the same change; anything else still counts as a removal. Locked for `/plan-bug`: do
+   NOT implement (a) aggregate-net or (c) exemption-marker shapes.
