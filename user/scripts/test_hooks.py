@@ -9800,6 +9800,24 @@ def _wedge_breadcrumb_path(state_dir: Path, agent_id: str) -> Path:
     return state_dir / _WEDGE_STOPS_SUBDIR / f"{agent_id}.json"
 
 
+def _write_wedge_integrator(
+    state_dir: Path, agent_id: str, nonce: str = "deadbeef",
+) -> None:
+    """Record *agent_id* as the cycle INTEGRATOR for *nonce* (Option A breadcrumb,
+    subagent-wedge-backstop-blocks-nested-wu-workers). The wedge-backstop blocks a
+    predicate-true stop ONLY when the stopping agent_id matches this record; a
+    nested WU worker (a distinct agent_id) is exempted. Written to the sibling
+    cycle-integrator/ dir the hook reads; default nonce matches the 'deadbeef'
+    nonce _write_wedge_cycle_marker writes."""
+    integ = state_dir / "cycle-integrator"
+    integ.mkdir(parents=True, exist_ok=True)
+    (integ / f"{nonce}.json").write_text(
+        json.dumps({"nonce": nonce, "integrator_agent_id": agent_id,
+                    "written_at": time.time()}),
+        encoding="utf-8",
+    )
+
+
 def test_wedge_hook_file_exists():
     """The SubagentStop wedge-backstop hook must exist on disk."""
     assert _WEDGE_SH.exists(), (
@@ -9819,6 +9837,7 @@ def test_wedge_blocks_once_predicate_true():
         _write_marker_in_dir(state_dir, repo_root=str(repo))
         _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names the plan
         agent_id = "agent_" + uuid.uuid4().hex[:16]
+        _write_wedge_integrator(state_dir, agent_id)  # this agent IS the integrator
         result = _run_wedge(
             _subagentstop_json(agent_id, cwd=str(repo)), state_dir
         )
@@ -9847,6 +9866,7 @@ def test_wedge_second_attempt_same_agent_allows():
         _write_marker_in_dir(state_dir, repo_root=str(repo))
         _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names the plan
         agent_id = "agent_" + uuid.uuid4().hex[:16]
+        _write_wedge_integrator(state_dir, agent_id)  # this agent IS the integrator
         first = _run_wedge(_subagentstop_json(agent_id, cwd=str(repo)), state_dir)
         assert first.returncode == 2, f"first attempt must block; got {first.returncode}"
         second = _run_wedge(_subagentstop_json(agent_id, cwd=str(repo)), state_dir)
@@ -9952,9 +9972,12 @@ def test_wedge_no_marker_allows():
         )
 
 
-def test_wedge_two_distinct_agents_independent_breadcrumbs():
-    """Two distinct agent_ids under one predicate-true state → each blocks ONCE,
-    with its own independent breadcrumb (nested subagents never share)."""
+def test_wedge_integrator_blocks_distinct_worker_exempt():
+    """Option A (subagent-wedge-backstop-blocks-nested-wu-workers): under ONE
+    predicate-true cycle, the recorded INTEGRATOR blocks ONCE (then its own second
+    stop allows — loop-guard), while a DISTINCT agent (a nested WU worker, whose
+    agent_id is NOT the integrator) is EXEMPTED and ALLOWED — the false-fire this
+    fixes. Before Option A both distinct agents blocked (the bug)."""
     _guard()
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
@@ -9963,17 +9986,25 @@ def test_wedge_two_distinct_agents_independent_breadcrumbs():
         repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
         _write_marker_in_dir(state_dir, repo_root=str(repo))
         _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names the plan
-        agent_a = "agent_" + uuid.uuid4().hex[:16]
-        agent_b = "agent_" + uuid.uuid4().hex[:16]
-        r_a1 = _run_wedge(_subagentstop_json(agent_a, cwd=str(repo)), state_dir)
-        r_b1 = _run_wedge(_subagentstop_json(agent_b, cwd=str(repo)), state_dir)
-        assert r_a1.returncode == 2, f"agent A first stop must block; {r_a1.returncode}"
-        assert r_b1.returncode == 2, f"agent B first stop must block; {r_b1.returncode}"
-        assert _wedge_breadcrumb_path(state_dir, agent_a).exists()
-        assert _wedge_breadcrumb_path(state_dir, agent_b).exists()
-        # Each blocks only ONCE — A's second attempt allows, B's remains armed.
-        r_a2 = _run_wedge(_subagentstop_json(agent_a, cwd=str(repo)), state_dir)
-        assert r_a2.returncode == 0, f"agent A second stop must allow; {r_a2.returncode}"
+        integrator = "agent_" + uuid.uuid4().hex[:16]
+        worker = "agent_" + uuid.uuid4().hex[:16]
+        _write_wedge_integrator(state_dir, integrator)  # integrator = first agent
+        # The integrator (owns commit/completion duty) blocks once.
+        r_i1 = _run_wedge(_subagentstop_json(integrator, cwd=str(repo)), state_dir)
+        assert r_i1.returncode == 2, f"integrator first stop must block; {r_i1.returncode}"
+        assert _wedge_breadcrumb_path(state_dir, integrator).exists()
+        # A DISTINCT nested WU worker under the SAME predicate-true state is EXEMPTED.
+        r_w = _run_wedge(_subagentstop_json(worker, cwd=str(repo)), state_dir)
+        assert r_w.returncode == 0, (
+            f"a nested WU worker (non-integrator) must be EXEMPTED (allow); "
+            f"got {r_w.returncode}"
+        )
+        assert not _wedge_breadcrumb_path(state_dir, worker).exists(), (
+            "an exempted worker must NOT write a loop-guard breadcrumb"
+        )
+        # Loop-guard: the integrator's second stop allows (block at most once).
+        r_i2 = _run_wedge(_subagentstop_json(integrator, cwd=str(repo)), state_dir)
+        assert r_i2.returncode == 0, f"integrator second stop must allow; {r_i2.returncode}"
 
 
 def test_wedge_breadcrumb_write_failure_allows():
@@ -9990,6 +10021,7 @@ def test_wedge_breadcrumb_write_failure_allows():
         _write_marker_in_dir(state_dir, repo_root=str(repo))
         _write_wedge_cycle_marker(state_dir)  # predicate-true: reach the breadcrumb write
         agent_id = "agent_" + uuid.uuid4().hex[:16]
+        _write_wedge_integrator(state_dir, agent_id)  # integrator → reach breadcrumb write
         result = _run_wedge(
             _subagentstop_json(agent_id, cwd=str(repo)), state_dir
         )
@@ -10105,6 +10137,7 @@ def test_wedge_execute_plan_scoped_plan_wu_blocks_on_clean_tree():
         _write_marker_in_dir(state_dir, repo_root=str(repo))
         _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names THIS plan
         agent_id = "agent_" + uuid.uuid4().hex[:16]
+        _write_wedge_integrator(state_dir, agent_id)  # this agent IS the integrator
         result = _run_wedge(
             _subagentstop_json(agent_id, cwd=str(repo)), state_dir
         )
@@ -10172,6 +10205,7 @@ def test_wedge_own_source_dirty_blocks():
         _write_marker_in_dir(state_dir, repo_root=str(repo))
         _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names THIS plan
         agent_id = "agent_" + uuid.uuid4().hex[:16]
+        _write_wedge_integrator(state_dir, agent_id)  # this agent IS the integrator
         result = _run_wedge(
             _subagentstop_json(agent_id, cwd=str(repo)), state_dir
         )
@@ -10202,6 +10236,7 @@ def test_wedge_own_item_dir_dirty_blocks():
         _write_marker_in_dir(state_dir, repo_root=str(repo))
         _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names THIS plan
         agent_id = "agent_" + uuid.uuid4().hex[:16]
+        _write_wedge_integrator(state_dir, agent_id)  # this agent IS the integrator
         result = _run_wedge(
             _subagentstop_json(agent_id, cwd=str(repo)), state_dir
         )
@@ -10212,10 +10247,70 @@ def test_wedge_own_item_dir_dirty_blocks():
         assert _wedge_breadcrumb_path(state_dir, agent_id).exists()
 
 
+def test_wedge_no_integrator_breadcrumb_allows():
+    """Option A bias-to-false-negative (subagent-wedge-backstop-blocks-nested-wu-workers):
+    predicate TRUE but NO integrator breadcrumb recorded (e.g. a cycle that predates
+    the recording seam, or the containment hook failed to record) → ALLOW (exit 0).
+    The hook never force-spins an agent it cannot attribute to the cycle integrator."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # predicate-true, but NO integrator recorded
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(_subagentstop_json(agent_id, cwd=str(repo)), state_dir)
+        assert result.returncode == 0, (
+            f"no integrator breadcrumb must ALLOW (bias to false-negative); "
+            f"got {result.returncode}; stderr={result.stderr!r}"
+        )
+        assert not _wedge_breadcrumb_path(state_dir, agent_id).exists(), (
+            "an allowed (unattributed) stop must NOT write a loop-guard breadcrumb"
+        )
+
+
+def test_containment_records_cycle_integrator_first_writer_wins():
+    """Option A recording seam (subagent-wedge-backstop-blocks-nested-wu-workers):
+    lazy-cycle-containment.sh records the FIRST subagent agent_id seen under a cycle
+    nonce as the integrator (cycle-integrator/<nonce>.json), and a later DISTINCT
+    agent_id does NOT overwrite it (first-writer-wins — the integrator acts before it
+    dispatches any worker; session tool calls are serial)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)  # cycle marker with nonce "deadbeef"
+        integrator = "agent_" + uuid.uuid4().hex[:16]
+        worker = "agent_" + uuid.uuid4().hex[:16]
+        # First subagent tool call under the nonce → recorded as integrator.
+        _run_containment(
+            _bash_preToolUse_json("echo hi", agent_id=integrator), state_dir
+        )
+        crumb = state_dir / "cycle-integrator" / "deadbeef.json"
+        assert crumb.exists(), "containment must record the cycle integrator breadcrumb"
+        data = json.loads(crumb.read_text(encoding="utf-8"))
+        assert data.get("integrator_agent_id") == integrator, data
+        # A later DISTINCT agent_id (a nested worker) must NOT overwrite it.
+        _run_containment(
+            _bash_preToolUse_json("echo hi", agent_id=worker), state_dir
+        )
+        data2 = json.loads(crumb.read_text(encoding="utf-8"))
+        assert data2.get("integrator_agent_id") == integrator, (
+            f"first-writer-wins: a later worker must not overwrite the integrator; "
+            f"got {data2}"
+        )
+
+
 _TESTS = _TESTS + [
     # subagent-wedge-backstop-hook — SubagentStop wedge-backstop hook (WU-1)
     ("test_wedge_hook_file_exists", test_wedge_hook_file_exists),
     ("test_wedge_blocks_once_predicate_true", test_wedge_blocks_once_predicate_true),
+    ("test_wedge_no_integrator_breadcrumb_allows",
+     test_wedge_no_integrator_breadcrumb_allows),
+    ("test_containment_records_cycle_integrator_first_writer_wins",
+     test_containment_records_cycle_integrator_first_writer_wins),
     ("test_wedge_second_attempt_same_agent_allows",
      test_wedge_second_attempt_same_agent_allows),
     ("test_wedge_malformed_json_allows", test_wedge_malformed_json_allows),
@@ -10224,8 +10319,8 @@ _TESTS = _TESTS + [
      test_wedge_clean_tree_all_checked_allows),
     ("test_wedge_plan_complete_allows", test_wedge_plan_complete_allows),
     ("test_wedge_no_marker_allows", test_wedge_no_marker_allows),
-    ("test_wedge_two_distinct_agents_independent_breadcrumbs",
-     test_wedge_two_distinct_agents_independent_breadcrumbs),
+    ("test_wedge_integrator_blocks_distinct_worker_exempt",
+     test_wedge_integrator_blocks_distinct_worker_exempt),
     ("test_wedge_breadcrumb_write_failure_allows",
      test_wedge_breadcrumb_write_failure_allows),
     ("test_wedge_sessionend_gcs_session_breadcrumbs",

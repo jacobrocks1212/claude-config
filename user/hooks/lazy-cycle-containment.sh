@@ -709,6 +709,46 @@ def _increment_tally(marker):
         _breadcrumb(f"commit_tally increment failed: {exc}")
 
 
+def _record_integrator(marker, agent_id):
+    """Option A (subagent-wedge-backstop-blocks-nested-wu-workers): record the
+    cycle INTEGRATOR's agent_id — the FIRST subagent to act under this cycle-marker
+    generation (keyed by the marker nonce) — into a sibling breadcrumb
+    ``<state>/cycle-integrator/<nonce>.json``, so the SubagentStop wedge-backstop
+    (subagent-wedge-backstop.sh) can BLOCK only the integrator and EXEMPT nested WU
+    workers (great-grandchildren) that stop mid-cycle.
+
+    FIRST-writer-wins: the integrator must act (read the plan, etc.) BEFORE it can
+    dispatch any worker, and session tool calls are serial (the SAME ordering the
+    guard's consumed-fence at lazy_guard.py already relies on), so the first
+    agent_id observed under this nonce IS the integrator; a worker's later agent_id
+    never overwrites it.
+
+    Best-effort / FAIL-OPEN: never raises, never affects the allow/deny decision. A
+    recording miss only weakens the wedge-backstop's integrator identification for
+    one cycle (it then biases to ALLOW — false-negative — per that hook's
+    allow-on-doubt posture)."""
+    try:
+        if not isinstance(marker, dict):
+            return
+        nonce = marker.get("nonce")
+        if not nonce or not agent_id:
+            return
+        integ_dir = os.path.join(os.path.dirname(MARKER), "cycle-integrator")
+        safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in str(nonce))
+        p = os.path.join(integ_dir, safe + ".json")
+        if os.path.exists(p):
+            return  # first-writer-wins — the integrator is already recorded
+        import time as _time
+        os.makedirs(integ_dir, exist_ok=True)
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"nonce": nonce, "integrator_agent_id": agent_id,
+                       "written_at": _time.time()}, fh)
+        os.replace(tmp, p)
+    except Exception:
+        pass
+
+
 def main():
     global MARKER, _EVT_CWD
     raw = sys.stdin.read()
@@ -728,6 +768,14 @@ def main():
     # arming required. The main-thread orchestrator (agent_id absent) is never
     # self-denied for these ops.
     is_subagent = bool(payload.get("agent_id"))
+
+    # Option A (subagent-wedge-backstop-blocks-nested-wu-workers): record the cycle
+    # INTEGRATOR's agent_id (the first subagent to act under this cycle nonce) so the
+    # SubagentStop wedge-backstop blocks only the integrator and exempts nested WU
+    # workers. Best-effort / fail-open; never affects the allow/deny below. Runs
+    # before the fast-allow (a subagent never reaches the fast-allow anyway).
+    if is_subagent and marker is not None:
+        _record_integrator(marker, payload.get("agent_id"))
 
     # Fast-allow the common cheap case: not a subagent AND no marker → there is
     # nothing this hook can trip (recursion/lifecycle/routing need a subagent;

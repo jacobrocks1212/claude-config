@@ -358,6 +358,27 @@ def _own_work_dirty(repo_root, own_item_dir):
     return False
 
 
+def _integrator_agent_id(stops_dir, nonce):
+    """Read the recorded integrator agent_id for this cycle nonce (Option A
+    breadcrumb written by lazy-cycle-containment.sh, a sibling of subagent-stops/
+    in the same keyed state dir: <state>/cycle-integrator/<nonce>.json). Returns
+    the agent_id string, or None (nonce absent, breadcrumb absent, or unreadable)
+    — the caller then biases to ALLOW: a stopping agent we cannot attribute to the
+    cycle integrator is never force-spun
+    (subagent-wedge-backstop-blocks-nested-wu-workers)."""
+    if not nonce:
+        return None
+    try:
+        integ_dir = os.path.join(os.path.dirname(stops_dir), "cycle-integrator")
+        p = os.path.join(integ_dir, _safe_name(nonce) + ".json")
+        with open(p, encoding="utf-8") as fh:
+            data = json.load(fh)
+        aid = data.get("integrator_agent_id")
+        return aid or None
+    except Exception:
+        return None
+
+
 def _write_breadcrumb(stops_dir, agent_id, session_id, now):
     """Persist the loop-guard breadcrumb (atomic). Returns True on success; a
     write failure returns False so the caller ALLOWS rather than blocking without
@@ -387,6 +408,10 @@ def main():
 
     # Staleness sweep on entry (non-fatal) — keeps subagent-stops/ from growing.
     _sweep_stale(stops_dir, now)
+    # Option A (subagent-wedge-backstop-blocks-nested-wu-workers): GC the sibling
+    # cycle-integrator/ breadcrumbs too, so per-nonce integrator records never
+    # accumulate. Same threshold + written_at schema as the stops sweep.
+    _sweep_stale(os.path.join(os.path.dirname(stops_dir), "cycle-integrator"), now)
 
     # SessionEnd / agent_id-less branch: GC this session's breadcrumbs, allow.
     if not agent_id:
@@ -431,8 +456,32 @@ def main():
     if not (_own_work_dirty(repo_root, own_item_dir) or plan_pending):
         _allow()
 
-    # Predicate TRUE → block ONCE. Write the breadcrumb BEFORE blocking; a write
-    # failure ⇒ allow (never block without a persisted loop-guard).
+    # Condition 4 — AGENT IDENTITY (Option A,
+    # subagent-wedge-backstop-blocks-nested-wu-workers). The predicate above is
+    # cycle-scoped but NOT agent-scoped: the cycle INTEGRATOR AND every nested WU
+    # worker it dispatches stop under the SAME cycle marker, naming the same
+    # non-terminal plan with the same unchecked WUs, so plan_pending is UNAVOIDABLY
+    # true for any worker that stops mid-cycle (the integrator ticks WUs only after
+    # workers return). Only the integrator owns the commit/completion duty; a nested
+    # WU worker (great-grandchild) must be EXEMPTED. Block ONLY when the stopping
+    # agent_id IS the integrator recorded for this cycle nonce by
+    # lazy-cycle-containment.sh. If the integrator cannot be identified (breadcrumb
+    # absent — e.g. a cycle that predates the recording seam), bias to ALLOW
+    # (false-negative), per this hook's allow-on-doubt posture. Platform-confirmed
+    # NON-dependent: uses only the documented `agent_id` (claude-code-guide,
+    # 2026-07-19: SubagentStop exposes agent_id but NO parent/depth lineage field).
+    try:
+        cyc = lc.read_cycle_marker()
+        cyc_nonce = cyc.get("nonce") if isinstance(cyc, dict) else None
+    except Exception:
+        cyc_nonce = None
+    integrator_id = _integrator_agent_id(stops_dir, cyc_nonce)
+    if integrator_id is None or str(agent_id) != str(integrator_id):
+        _allow()
+
+    # Predicate TRUE and the stopping agent IS the cycle integrator → block ONCE.
+    # Write the breadcrumb BEFORE blocking; a write failure ⇒ allow (never block
+    # without a persisted loop-guard).
     if not _write_breadcrumb(stops_dir, agent_id, session_id, now):
         _allow()
     _block(repo_root)
