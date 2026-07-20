@@ -520,6 +520,30 @@ def test_await_timeout_seconds_zero_with_no_result_returns_124_immediately(tmp_p
     assert "RESULT=PASS" not in combined
 
 
+def test_committed_manifest_registers_coupled_overlay_drift_gate():
+    """Recurrence guard: the REAL, COMMITTED repo manifest at
+    .claude/skill-config/gate-battery.json must register generate-coupled-skills.py --check as
+    one of its gates, so coupled-pair SKILL.md drift is caught by the standard gate battery
+    instead of silently going unchecked. Unlike every other test in this file (which uses
+    hermetic tmp_path fixture repos), this test reads the ACTUAL on-disk manifest -- its whole
+    purpose is to guard that file against a future silent removal of this gate row."""
+    repo_root = _SCRIPTS_DIR.parent.parent
+    manifest_path = repo_root / ".claude" / "skill-config" / "gate-battery.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    matching = [
+        gate for gate in manifest["gates"]
+        if isinstance(gate.get("cmd"), str)
+        and "generate-coupled-skills.py" in gate["cmd"]
+        and "--check" in gate["cmd"]
+    ]
+    assert matching, (
+        "expected at least one gate in the committed manifest "
+        f"({manifest_path}) whose cmd invokes both 'generate-coupled-skills.py' and "
+        f"'--check'; got gates={manifest['gates']!r}"
+    )
+
+
 def test_await_does_not_require_a_manifest_in_a_manifest_less_repo(tmp_path):
     repo = tmp_path / "repo"
     repo.mkdir()

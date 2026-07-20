@@ -5,6 +5,7 @@
     { "id": "lazy-state-test", "cmd": "python3 user/scripts/lazy-state.py --test" },
     { "id": "bug-state-test", "cmd": "python3 user/scripts/bug-state.py --test" },
     { "id": "parity-audit", "cmd": "python3 user/scripts/lazy_parity_audit.py --repo-root ." },
+    { "id": "coupled-overlay-drift", "cmd": "python3 user/scripts/generate-coupled-skills.py --check --repo-root ." },
     { "id": "cli-surface", "cmd": "python3 user/scripts/cli_surface_gen.py --check --repo-root ." },
     { "id": "doc-drift", "cmd": "python3 user/scripts/doc-drift-lint.py --repo-root ." },
     { "id": "lint-skills", "cmd": "python3 user/scripts/lint-skills.py --check-skill-size" }

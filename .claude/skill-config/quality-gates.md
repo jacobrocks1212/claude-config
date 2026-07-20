@@ -16,12 +16,13 @@ before flipping any plan part or feature to Complete.
 
 - **Lazy skill-family changes** (any `lazy*` skill, `lazy-state.py`, `bug-state.py`, `lazy_core.py`, `lazy_coord.py`, or either coupled pair):
   - `python user/scripts/lazy_parity_audit.py --report` — no unexplained drift; a new canonical behavioral unit must be mirrored to every derived twin or registered as a per-pair divergence.
+  - `python user/scripts/generate-coupled-skills.py --check --repo-root .` — coupled-overlay drift check; no byte-diff between a canonical coupled skill and its derived twin's committed overlay.
   - plus the pytest gate above.
 
 - **Plugin changes** (`user/plugins/local-tools/**`):
   - `python -m pytest user/plugins/local-tools/plugins/work-logging-plugin/tests/ -q`
 
-- **Mixed / feature completion** → run the FULL set: `project-skills.py` + `lint-skills.py --check-projected --check-capabilities` + `python -m pytest user/scripts/ -q` + `lazy_parity_audit.py --report`.
+- **Mixed / feature completion** → run the FULL set: `project-skills.py` + `lint-skills.py --check-projected --check-capabilities` + `python -m pytest user/scripts/ -q` + `lazy_parity_audit.py --report` + `generate-coupled-skills.py --check`.
 
 #### MCP exemption (Step 9)
 

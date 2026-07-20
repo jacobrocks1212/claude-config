@@ -1,7 +1,7 @@
 ---
 kind: fix-plan
 feature_id: coupled-overlay-drift-gate-not-in-mandatory-gates
-status: Ready
+status: Complete
 created: 2026-07-19
 complexity: mechanical
 phases: [1]
@@ -56,8 +56,8 @@ Where this plan's repo uses non-default gates or component paths (e.g. a harness
 
 ## Work Units
 
-- [ ] WU-1 — Register the drift gate in the battery manifest + recurrence-guard test
-- [ ] WU-2 — Name the drift gate in prose + correct stale battery-count claims
+- [x] WU-1 — Register the drift gate in the battery manifest + recurrence-guard test
+- [x] WU-2 — Name the drift gate in prose + correct stale battery-count claims
 
 ## Touchpoint Audit (verified inline during /spec-phases — dispatch not warranted for config+doc scope)
 
