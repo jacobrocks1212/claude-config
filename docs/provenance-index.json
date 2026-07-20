@@ -2835,6 +2835,41 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/execute-plan-liveness-blind-to-dead-lineage-stall/FIXED.md": [
+    {
+      "id": "execute-plan-liveness-blind-to-dead-lineage-stall",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/execute-plan-liveness-blind-to-dead-lineage-stall/IMPLEMENTED.md": [
+    {
+      "id": "execute-plan-liveness-false-terminal-on-live-mid-commit-cycle",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/execute-plan-liveness-blind-to-dead-lineage-stall/SPEC.md": [
+    {
+      "id": "execute-plan-liveness-blind-to-dead-lineage-stall",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/execute-plan-liveness-false-terminal-on-live-mid-commit-cycle/FIXED.md": [
+    {
+      "id": "execute-plan-liveness-false-terminal-on-live-mid-commit-cycle",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/execute-plan-liveness-false-terminal-on-live-mid-commit-cycle/SPEC.md": [
+    {
+      "id": "execute-plan-liveness-false-terminal-on-live-mid-commit-cycle",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/execute-plan-strict-order-prereq-ignores-series-index-reschedule/FIXED.md": [
     {
       "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
@@ -4981,6 +5016,27 @@
       "id": "shared-hook-lib",
       "type": "feature",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/_archive/verify-ledger-deliverables-done-fails-pre-decomposition-feature/FIXED.md": [
+    {
+      "id": "verify-ledger-deliverables-done-fails-pre-decomposition-feature",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/verify-ledger-deliverables-done-fails-pre-decomposition-feature/IMPLEMENTED.md": [
+    {
+      "id": "execute-plan-liveness-blind-to-dead-lineage-stall",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/verify-ledger-deliverables-done-fails-pre-decomposition-feature/SPEC.md": [
+    {
+      "id": "verify-ledger-deliverables-done-fails-pre-decomposition-feature",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/windows-portability-in-probe-glue-and-field-validators/FIXED.md": [
@@ -16460,6 +16516,27 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/interventions/harden-2026-07-r118.md": [
+    {
+      "id": "verify-ledger-deliverables-done-fails-pre-decomposition-feature",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r129.md": [
+    {
+      "id": "execute-plan-liveness-blind-to-dead-lineage-stall",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r130.md": [
+    {
+      "id": "execute-plan-liveness-false-terminal-on-live-mid-commit-cycle",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/harden-2026-07-r14.md": [
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -18336,6 +18413,16 @@
       "provenance": "manual"
     },
     {
+      "id": "execute-plan-liveness-blind-to-dead-lineage-stall",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "execute-plan-liveness-false-terminal-on-live-mid-commit-cycle",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
       "type": "bug",
       "provenance": "manual"
@@ -18658,6 +18745,16 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "execute-plan-liveness-blind-to-dead-lineage-stall",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "execute-plan-liveness-false-terminal-on-live-mid-commit-cycle",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "execute-plan-strict-order-prereq-ignores-series-index-reschedule",
       "type": "bug",
       "provenance": "manual"
@@ -18759,6 +18856,11 @@
     },
     {
       "id": "subagent-wedge-backstop-dirty-tree-predicate-repo-wide",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "verify-ledger-deliverables-done-fails-pre-decomposition-feature",
       "type": "bug",
       "provenance": "manual"
     },
