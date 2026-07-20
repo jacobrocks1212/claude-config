@@ -1,6 +1,6 @@
 # Cycle-subagent background Agent/Task deny is dead code — `lazy-cycle-containment.sh` not registered on `Agent|Task`
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-19
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage — this SPEC is the Step-2.5
