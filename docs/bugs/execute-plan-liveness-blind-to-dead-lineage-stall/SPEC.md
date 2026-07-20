@@ -1,6 +1,8 @@
 # Bug: execute-plan-liveness discriminator is blind to a dead-lineage stall (mis-verdicts a wedged cycle as `paused`, stalling the orchestrator forever)
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-20
+**Fix commit:** 3f2294a5
 **Reported:** 2026-07-20
 **Pipeline:** claude-config harness (lazy-batch/lazy-bug-batch orchestrator — Gap-2 pause-vs-terminal discriminator)
 **Origin:** harden-harness round (observed-friction), item in flight `inspector-track-dashboard` (part-2)
