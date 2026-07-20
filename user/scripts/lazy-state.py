@@ -33,6 +33,7 @@ Output schema (stdout JSON):
                             | "blocked" | "needs-research" | "needs-input"
                             | "needs-spec-input" | "queue-missing"
                             | "completion-unverified" | "stale_upstream"
+                            | "all-remaining-deferred"
                             | "scoped-id-not-found",
   "notify_message":    "<string>"      | null,
   "diagnostics":       []                                  # always present; non-empty
@@ -74,6 +75,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import cli_surface
 from _console_encoding import enable_utf8_stdio
 
+# adhoc-unify-merged-head-coordinator-exemptions: the --emit-prompt merged-head
+# lane/serial-tail-lease exemptions moved into ONE shared predicate,
+# lazy_core.dispatch.coordinator_arbitrated_emission, which owns the (local,
+# fail-safe) lazy_coord.has_live_lease call. This script no longer references
+# lazy_coord directly, so its top-level import was retired here (the dependency
+# now lives with the predicate in lazy_core/dispatch.py).
+
 # Domain-agnostic helpers live in lazy_core (WU-1.2 extraction). Import the
 # module itself so lazy_core._DIAGNOSTICS is the canonical list object and
 # lazy-state.py's _state() / compute_state() always reference the same list.
@@ -107,9 +115,12 @@ from lazy_core import (
     repo_has_no_app_surface,
     repo_uses_cognito_planner,
     phases_mcp_runtime_not_required,
+    phases_spike_required,
+    spike_verdict_is_pass,
     spec_status,
     commit_drift_verdict,
     observation_gap_promotable,
+    uncovered_verification_rows_remain,
     _coerce_evidence_count,
 )
 
@@ -160,6 +171,12 @@ def _state(
         # device_deferred_features) so orchestrators surface lingering
         # In-progress host-deferrals deterministically, not only at exhaustion.
         "host_deferred_features": list(_HOST_DEFERRED),
+        # merged-head-oracle-per-signal-supplement-churn Phase 1: features the
+        # operator parked via a bare DEFERRED.md this probe (the feature-side
+        # mirror of bug-state.py's operator_deferred key). Always present so
+        # /lazy-status + orchestrators surface lingering operator-deferred
+        # features deterministically, not only at queue exhaustion.
+        "operator_deferred": list(_OPERATOR_DEFERRED),
     }
     # CRITICAL INVARIANT: "parked" is ONLY included when _PARK_MODE is True.
     # When False the key must be entirely absent so default output (no flag) is
@@ -187,6 +204,24 @@ def _state(
     # end-of-run gated-head flush.
     if _GATED_HEADS:
         out["gated_heads"] = list(_GATED_HEADS)
+    # research-gated-head-buried-by-skip-ahead-and-merged-fallthrough: the
+    # RESEARCH-pending subset of the skipped gated heads (a subset of gated_heads
+    # above). Same absent-when-empty discipline so default output stays
+    # byte-identical; the --emit-prompt merged-head path reads it (via
+    # lazy_core.dispatch.research_halt_head) to surface a needs-research halt when
+    # a research head outranks the fallthrough the driver would otherwise dispatch.
+    if _RESEARCH_GATED_HEADS:
+        out["research_gated_heads"] = list(_RESEARCH_GATED_HEADS)
+    # merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone: the
+    # candidates skip-ahead skipped because they FAILED the two-key readiness
+    # predicate (dep-unready / not independent) — surfaced ONLY when the walk
+    # blocked at least one (_SKIP_AHEAD_BLOCKED non-empty). Absent-when-empty so
+    # default output stays byte-identical — same discipline as "gated_heads". The
+    # --emit-prompt merged-head exclude path reads it (via
+    # lazy_core.dispatch.probe_skipped_ids) so the merged-head-diverged guard
+    # cannot withhold the route pointing at a non-dispatchable dep-unready item.
+    if _SKIP_AHEAD_BLOCKED:
+        out["skip_ahead_blocked"] = list(_SKIP_AHEAD_BLOCKED)
     # queue-dependency-dag Phase 2 (D10): the items the dep-gate HELD this
     # probe — [{id, missing: [<incomplete dep ids>]}] — are ONLY surfaced when
     # the walk held at least one item (_DEP_GATED non-empty). When empty the
@@ -259,6 +294,14 @@ _DEVICE_DEFERRED: list[str] = []
 _HOST_DEFERRED: list[str] = []
 _HOST_SATURATED: list[dict] = []
 
+# merged-head-oracle-per-signal-supplement-churn Phase 1: operator-deferred
+# features (a bare DEFERRED.md sentinel is present) observed this invocation —
+# the feature-side mirror of bug-state.py's _OPERATOR_DEFERRED. Surfaced in the
+# always-present operator_deferred probe key; when the queue exhausts to only
+# these, the global all-remaining-deferred terminal fires. Reset at the start of
+# each compute_state().
+_OPERATOR_DEFERRED: list[str] = []
+
 # Park mode: when True (--park-needs-input and/or --park-blocked flag),
 # NEEDS_INPUT.md and/or feature-local BLOCKED.md items are skipped (parked)
 # instead of halting. The parked items accumulate in _PARKED.
@@ -291,6 +334,31 @@ _BUDGET_GUARD: dict | None = None
 # absent from default output (no gated head / --strict-research-halt) so byte-
 # identity with the pre-Phase-3 baseline is preserved.
 _GATED_HEADS: list = []
+
+# research-gated-head-buried-by-skip-ahead-and-merged-fallthrough: the RESEARCH-
+# pending subset of _GATED_HEADS (heads carrying RESEARCH_PROMPT.md / NEEDS_RESEARCH.md
+# with no RESEARCH*.md — NOT BLOCKED heads). Surfaced as the "research_gated_heads"
+# probe key so the --emit-prompt merged-head path can distinguish an operator-
+# resolvable research gap (which must SURFACE a needs-research halt when it outranks
+# the fallthrough target) from a BLOCKED head (which legitimately skips-ahead to
+# independent ready work). Reset + cleared in lockstep with _GATED_HEADS; the key is
+# absent when empty (byte-identity with the pre-fix baseline).
+_RESEARCH_GATED_HEADS: list = []
+
+# merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone: the candidates
+# skip-ahead advanced PAST this probe because they FAILED the two-key readiness
+# predicate (skip_ahead_ready — a hard dep on a skipped gated id, or not
+# `independent: true`) — e.g. a dependency-gated milestone with unmet hard deps.
+# Formerly a write-only local (`skip_ahead_blocked`) never surfaced, so
+# lazy_core.dispatch.probe_skipped_ids could not fold it into the merged-head
+# exclude set — letting the merged-head-diverged guard WITHHOLD the route pointing
+# at a NON-dispatchable dep-unready item (null cycle_prompt AND null
+# terminal_reason → no-route, observed live 2026-07-17 on
+# 'prerelease-complete-milestone'). Now surfaced via the "skip_ahead_blocked" probe
+# key (mirrors _GATED_HEADS: absent when empty; cleared in the gated_head_fallback
+# branch where no skip is realized) and consumed by probe_skipped_ids. Reset at the
+# start of each compute_state().
+_SKIP_AHEAD_BLOCKED: list = []
 
 # budget-guard-defers-near-complete-feature Phase 3: the feature_id the end-of-run
 # resume flush auto-resumed this probe (None when the flush did not resume one →
@@ -351,9 +419,12 @@ STEP_STALE_UPSTREAM = "Step 2.9: stale-upstream"
 # null-identity terminal (cloud-queue-exhausted / device-queue-exhausted /
 # host-capability-saturated / queue-exhausted-all-parked).
 #
-# Parity with bug-state.py's literals where the axis matches (cloud/device/park);
-# the feature side adds the host-capability axis (no bug-side analog) and has NO
-# operator-DEFERRED.md branch (bug-pipeline-only — JUSTIFIED divergence).
+# Parity with bug-state.py's literals where the axis matches
+# (cloud/device/park/operator-defer); the feature side adds the host-capability
+# axis (no bug-side analog). The operator-DEFERRED.md branch is now present on
+# BOTH pipelines — the former feature/bug divergence was CLOSED by
+# merged-head-oracle-per-signal-supplement-churn (the feature side gained the
+# bare-DEFERRED.md skip the bug side already had).
 # Part 3 (curated_stage.py) maps these literals VERBATIM:
 #   cloud-queue-exhausted-scoped     → Deferred
 #   device-queue-exhausted-scoped    → Deferred
@@ -363,6 +434,14 @@ STEP_STALE_UPSTREAM = "Step 2.9: stale-upstream"
 TR_CLOUD_DEFERRED_SCOPED = "cloud-queue-exhausted-scoped"
 TR_DEVICE_DEFERRED_SCOPED = "device-queue-exhausted-scoped"
 TR_HOST_DEFERRED_SCOPED = "host-capability-saturated-scoped"
+# merged-head-oracle-per-signal-supplement-churn Phase 1: the feature-side
+# operator-deferred literals, matching bug-state.py's exactly (a scoped
+# --feature-id query on a DEFERRED.md feature returns its own identity + this
+# scoped terminal; the global all-remaining-deferred terminal fires when only
+# operator-deferred features remain). NOT registered in SANCTIONED_STOP_TERMINAL
+# — matching the bug side, which does not register them either.
+TR_OPERATOR_DEFERRED_SCOPED = "operator-deferred"
+TR_ALL_DEFERRED = "all-remaining-deferred"
 TR_BLOCKED_SCOPED = "blocked-scoped"
 TR_NEEDS_INPUT_SCOPED = "needs-input-scoped"
 # A --feature-id scoped query matching an entry that is ALREADY genuinely done
@@ -385,6 +464,11 @@ STEP_NEEDS_INPUT_PARKED_SCOPED = "Needs-input, parked (scoped)"
 STEP_COMPLETE_SCOPED = "Complete (scoped)"
 STEP_NEEDS_RATIFICATION = "Step 3.6: needs-ratification"
 STEP_PROVISIONAL_PARKED_SCOPED = "Provisional, parked (scoped)"
+# merged-head-oracle-per-signal-supplement-churn Phase 1: the operator-deferred
+# scoped current_step (kept GENERIC — the curated stage resolves from the
+# terminal_reason, which dominates). Mirrors bug-state.py's
+# STEP_OPERATOR_DEFERRED_SCOPED.
+STEP_OPERATOR_DEFERRED_SCOPED = "Operator-deferred (scoped)"
 
 
 def resolve_real_device(flag_value: str) -> bool:
@@ -650,6 +734,40 @@ def _load_bug_queue_for_merged(repo_root: Path) -> list[dict[str, Any]]:
             f"merged-view bug-side load failed ({exc}) — degrading to features-only"
         )
         return []
+
+
+_BUG_STATE_MODULE_CACHE: dict = {}
+
+
+def _load_bug_state_module():
+    """Load ``bug-state.py`` as a module (cached), or ``None`` when unavailable.
+
+    The importlib precedent from :func:`_load_bug_queue_for_merged`, reused by
+    the merged-head actionability oracle (merged-head-actionability-oracle) so
+    the ``--emit-prompt`` merged-override site can run the REAL cross-pipeline
+    scoped ``bug-state.compute_state`` per candidate. Cached module-level so the
+    (large) script body is exec'd at most once per process. Best-effort: a
+    missing/unloadable ``bug-state.py`` returns ``None`` — the oracle then treats
+    every cross candidate as non-dispatchable (fail toward EMITTING the workable
+    item, never toward a spurious withhold)."""
+    if "mod" in _BUG_STATE_MODULE_CACHE:
+        return _BUG_STATE_MODULE_CACHE["mod"]
+    import importlib.util
+
+    mod = None
+    bug_state_path = Path(__file__).parent / "bug-state.py"
+    if bug_state_path.exists():
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "_bug_state_for_oracle", str(bug_state_path)
+            )
+            if spec is not None and spec.loader is not None:
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+        except Exception:  # noqa: BLE001 — degrade to None (features-only) on load error
+            mod = None
+    _BUG_STATE_MODULE_CACHE["mod"] = mod
+    return mod
 
 
 def enqueue_adhoc(
@@ -1673,10 +1791,12 @@ def compute_state(
     _DEVICE_DEFERRED.clear()
     _HOST_DEFERRED.clear()
     _HOST_SATURATED.clear()
+    _OPERATOR_DEFERRED.clear()
     # Park mode: set the module global from the param so _state() can gate
     # the "parked" key on it.  _PARKED accumulates items skipped this invocation.
     global _PARK_MODE, _PARKED, _DEFERRED_BUDGET, _BUDGET_GUARD, _GATED_HEADS
-    global _BUDGET_RESUMED, _DEP_GATED, _PROVISIONAL
+    global _BUDGET_RESUMED, _DEP_GATED, _PROVISIONAL, _RESEARCH_GATED_HEADS
+    global _SKIP_AHEAD_BLOCKED
     _PARK_MODE = park_needs_input or park_blocked
     _PARKED.clear()
     # park-provisional-acceptance: park_provisional is a strict modifier of
@@ -1699,6 +1819,12 @@ def compute_state(
     # feature-budget-guard-and-skip-ahead Phase 3: reset the skip-ahead gated-head
     # surfaced list for this invocation.
     _GATED_HEADS = []
+    # research-gated-head-buried-by-skip-ahead-and-merged-fallthrough: reset the
+    # research-pending subset in lockstep with _GATED_HEADS.
+    _RESEARCH_GATED_HEADS = []
+    # merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone: reset the
+    # not-skip-ahead-ready (dep-unready) skip list for this invocation.
+    _SKIP_AHEAD_BLOCKED = []
     # budget-guard-defers-near-complete-feature Phase 3: reset the end-of-run
     # resume-flush surfaced feature_id for this invocation.
     _BUDGET_RESUMED = None
@@ -1754,11 +1880,12 @@ def compute_state(
     # feature-budget-guard-and-skip-ahead Phase 3: skip-ahead bookkeeping.
     # gated_ids accumulates the feature ids of gated heads skipped this probe
     # (research-pending or BLOCKED) so a downstream candidate with a hard dep on
-    # ANY of them is correctly NOT skipped onto. skip_ahead_blocked tracks
-    # candidates we declined to dispatch (downstream or unmarked) so the all-gated
-    # terminal can distinguish "blocked behind a gated head" from a clean queue.
+    # ANY of them is correctly NOT skipped onto. The not-skip-ahead-ready skips
+    # (candidates that failed the two-key readiness predicate — downstream/unmarked
+    # or dep-unready) are tracked in the SURFACED module global _SKIP_AHEAD_BLOCKED
+    # (reset above) so probe_skipped_ids can fold them into the merged-head exclude
+    # set — see merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone.
     gated_ids: set[str] = set()
-    skip_ahead_blocked: list[str] = []
     # The first gated head encountered — dispatched as a fallback if the loop
     # exhausts without finding a skip-ahead-ready alternative (so a single gated
     # item still reaches its per-feature terminal; only a realized skip past a
@@ -1816,7 +1943,16 @@ def compute_state(
     # branch uses, plus BLOCKED. Cheap filesystem read; no per-feature state
     # machine. Used by the skip-ahead branch below (default-on; --strict-research-
     # halt disables it).
-    def _is_gated_head(sp: Path) -> bool:
+    def _gated_head_kind(sp: Path) -> "str | None":
+        # research-gated-head-buried-by-skip-ahead-and-merged-fallthrough:
+        # classify a gated head as 'research' (operator-resolvable research gap),
+        # 'blocked' (canonical BLOCKED.md — external gate / host), or None (not
+        # gated). Research-pending takes PRECEDENCE when a head carries BOTH a
+        # research prompt and a BLOCKED.md — aligning with the Step-1h
+        # research-blocked carve-out (a research gap is filled by a Gemini upload,
+        # not a corrective phase). The gated-vs-not verdict is unchanged from the
+        # old _is_gated_head boolean (research_pending OR BLOCKED); this only adds
+        # the KIND so the merged-head path can surface research heads distinctly.
         needs_research_file = sp / "NEEDS_RESEARCH.md"
         research_prompt = sp / "RESEARCH_PROMPT.md"
         research = sp / "RESEARCH.md"
@@ -1829,7 +1965,11 @@ def compute_state(
                 and not research_summary.exists()
             )
         )
-        return research_pending or (sp / "BLOCKED.md").exists()
+        if research_pending:
+            return "research"
+        if (sp / "BLOCKED.md").exists():
+            return "blocked"
+        return None
 
     # host-capability-declaration-for-gated-features Phase 5: lazily-resolved
     # host present-capability set. Injected (host_present is not None) ⇒ used as-is
@@ -2136,6 +2276,45 @@ def compute_state(
                         f"host that provides the capability."
                     )
                     continue
+        # -----------------------------------------------------------------------
+        # Operator-deferred skip (merged-head-oracle-per-signal-supplement-churn
+        # Phase 1 — feature-side mirror of bug-state.py's operator-deferred branch,
+        # closing the former feature/bug divergence): a bare DEFERRED.md means the
+        # operator parked this feature. Skip and continue so the queue keeps
+        # moving; re-include by deleting DEFERRED.md. UNCONDITIONAL (independent of
+        # any park flag), exactly like the bug side — the merged-head oracle relies
+        # on an operator-deferred feature being non-dispatchable at its own
+        # pipeline. Placed after the device/host skips and before the park branches
+        # to mirror the bug-side ordering. Uses the shared
+        # lazy_core.spec_dir_operator_deferred predicate (never an inline
+        # DEFERRED.md existence check) + _scoped_skip_state for the scoped return,
+        # exactly as the sibling cloud/device/host scoped branches do.
+        if lazy_core.spec_dir_operator_deferred(spec_path):
+            # Scoped-match identity preservation: when --feature-id targets THIS
+            # feature, return its identity + a per-feature scoped deferred terminal
+            # instead of `continue`-ing into the global null-identity
+            # all-remaining-deferred terminal (which renders "unknown" downstream).
+            # UNSCOPED behavior (scope_feature_id is None) is byte-identical.
+            if scope_feature_id is not None and feature_id == scope_feature_id:
+                return _scoped_skip_state(
+                    feature_id=feature_id,
+                    feature_name=name,
+                    spec_path=spec_path,
+                    current_step=STEP_OPERATOR_DEFERRED_SCOPED,
+                    terminal_reason=TR_OPERATOR_DEFERRED_SCOPED,
+                    notify_message=(
+                        f"{name}: operator-deferred (DEFERRED.md). Scoped query "
+                        "returns its identity; re-include by deleting DEFERRED.md."
+                    ),
+                )
+            _OPERATOR_DEFERRED.append(name)
+            meta = parse_sentinel(spec_path / "DEFERRED.md") or {}
+            reason = meta.get("reason") or "(no reason recorded)"
+            _diag(
+                f"operator-deferred skipped: {name} — DEFERRED.md "
+                f"(reason: {reason}); re-include by deleting DEFERRED.md."
+            )
+            continue
         if skip_needs_research:
             # Cheap filesystem peek — don't run the full per-feature state machine.
             # Skip features that would terminate the loop with needs-research.
@@ -2628,9 +2807,15 @@ def compute_state(
         #       strict halt for that item) — recorded in skip_ahead_blocked and
         #       skipped. A candidate that PASSES dispatches normally below.
         if not strict_research_halt:
-            if _is_gated_head(spec_path):
+            _gk = _gated_head_kind(spec_path)
+            if _gk is not None:
                 gated_ids.add(feature_id)
                 _GATED_HEADS.append(feature_id)
+                # research-gated-head-buried-by-skip-ahead-and-merged-fallthrough:
+                # track the research-pending subset so the merged-head path can
+                # surface it distinctly from a BLOCKED head.
+                if _gk == "research":
+                    _RESEARCH_GATED_HEADS.append(feature_id)
                 # Remember the FIRST gated head as a fallback dispatch target. If
                 # the loop exhausts with NO skip-ahead-ready candidate found (e.g.
                 # a single-item queue, or every other item is downstream/unmarked),
@@ -2687,7 +2872,7 @@ def compute_state(
                     f"→ {'DISPATCH' if _sa_ready else 'SKIP (not skip-ahead-ready)'}"
                 )
                 if not _sa_ready:
-                    skip_ahead_blocked.append(feature_id)
+                    _SKIP_AHEAD_BLOCKED.append(feature_id)
                     continue
         current = {
             "name": name,
@@ -2716,6 +2901,18 @@ def compute_state(
     if current is None and gated_head_fallback is not None:
         current = gated_head_fallback
         _GATED_HEADS = []
+        # research-gated-head-buried-by-skip-ahead-and-merged-fallthrough: the
+        # skip was NOT realized (the gated head IS the dispatched item → its
+        # Step-5 needs-research / Step-3 blocked terminal fires directly), so
+        # clear the research subset in lockstep — no research-halt surfacing is
+        # needed when the research head is already the dispatched current item.
+        _RESEARCH_GATED_HEADS = []
+        # merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone: clear
+        # the not-skip-ahead-ready skip list in lockstep — no independent skip was
+        # realized (the gated head is dispatched directly), so the skip_ahead_blocked
+        # probe key stays absent, preserving byte-identity with the pre-surfacing
+        # baseline exactly as _GATED_HEADS is cleared here.
+        _SKIP_AHEAD_BLOCKED = []
         gated_ids = set()
         _diag(
             f"skip-ahead: no skip-ahead-ready alternative to gated head "
@@ -2871,6 +3068,26 @@ def compute_state(
                     "host."
                 ),
             )
+        # merged-head-oracle-per-signal-supplement-churn Phase 1: the global
+        # all-remaining-deferred terminal (feature-side mirror of bug-state.py).
+        # When the walk advanced past every workable feature and the ONLY reason
+        # nothing dispatched is that the remaining features were operator-parked
+        # via DEFERRED.md, return a distinct terminal — NOT all-features-complete,
+        # which would be a false completion. Placed beside the device/host
+        # terminals (after budget/cloud/device/host, before research/scoped-id/
+        # all-parked) so an operator-deferred remainder is honestly surfaced. The
+        # queue isn't empty — it's paused by the operator; re-include by deleting
+        # each DEFERRED.md. NOT in SANCTIONED_STOP_TERMINAL (matching the bug side).
+        if _OPERATOR_DEFERRED:
+            return _state(
+                terminal_reason=TR_ALL_DEFERRED,
+                current_step="All remaining features are operator-deferred",
+                notify_message=(
+                    f"All remaining features are operator-deferred — "
+                    f"{len(_OPERATOR_DEFERRED)} feature(s) parked via DEFERRED.md. "
+                    "Re-include by deleting DEFERRED.md in each feature dir."
+                ),
+            )
         if skip_needs_research and research_pending_skipped:
             for fname in research_pending_skipped:
                 _diag(f"research-pending skipped: {fname}")
@@ -2961,6 +3178,51 @@ def compute_state(
     blocked_file = spec_path / "BLOCKED.md"
     if blocked_file.exists():
         meta = parse_sentinel(blocked_file) or {}
+        # spike-pipeline-role Phase 2 (WU-2): a BLOCKED.md naming Spike as its
+        # resolver routes to a `spike` cycle instead of the generic manual-block
+        # terminal — the second spike entry signal (the ad-hoc / blocked one).
+        # Fires unconditionally on the blocker_kind (the retry-past-threshold
+        # `spike_escalation` predicate is a separate Part-3-consumed signal, not
+        # a gate on this routing). Placed before the generic `blocked` terminal.
+        if meta.get("blocker_kind") == "runtime-spike-verdict-pending":
+            # spike-pipeline-role Phase 4 (WU-2): the bounded tooling-existence
+            # loop guard — a persisted spike_tooling_rounds count at/above the
+            # cap means the tooling gap keeps recurring, so route to an
+            # operator NEEDS_INPUT halt instead of dispatching another spike
+            # round (checked BEFORE the unconditional route-to-spike below).
+            if lazy_core.spike_tooling_cap_exceeded(meta):
+                lazy_core.write_spike_tooling_cap_needs_input(
+                    spec_path, feature_name, meta.get("spike_tooling_rounds")
+                )
+                lazy_core._diag(
+                    "Step 3: spike_tooling_rounds cap exceeded → needs-input "
+                    "(loop bounded, no further spike route)"
+                )
+                return _state(
+                    **common,
+                    current_step="Step 3: spike tooling-round cap exceeded",
+                    terminal_reason="needs-input",
+                    notify_message=(
+                        f"NEEDS INPUT: {feature_name} — spike tooling gap "
+                        "persists after the corrective-round cap; operator "
+                        "decision needed."
+                    ),
+                )
+            lazy_core._diag(
+                "Step 3: BLOCKED.md blocker_kind=runtime-spike-verdict-pending "
+                "→ routing to spike (blocked resolver)"
+            )
+            return _state(
+                **common,
+                current_step="Step 3: spike verdict pending (blocked resolver)",
+                sub_skill="spike",
+                sub_skill_args=(
+                    f"resolve the spike blocker for {feature_name}: run the "
+                    f"runtime proof and write SPIKE_VERDICT.md (verdict: "
+                    f"PASS|FAIL, with observed evidence) in {spec_path_str}, "
+                    f"then neutralize BLOCKED.md. See {spec_path_str}/SPEC.md."
+                ),
+            )
         phase = meta.get("phase", "unknown")
         notify_message = f"BLOCKED: {feature_name} — {phase}. Awaiting input."
         # Validation-escalation payload (Phase 11 WU-1a): blocker_kind
@@ -3722,6 +3984,52 @@ def compute_state(
                 sub_skill_args=f"validate {feature_name} — see {spec_path_str}/SPEC.md",
             )
 
+    # Step 9.5: spike verdict gate (spike-pipeline-role Phase 2, WU-1).
+    # Control reaches here only when the Step-9 MCP gate fell through — i.e.
+    # VALIDATED.md exists (or the cloud/deferred entry holds). If the active
+    # PHASES.md declares `**Spike:** required` and no PASS spike verdict is on
+    # disk yet, the phase's completion rests on an un-run runtime proof: route
+    # to a `spike` cycle BEFORE Step 10 mark-complete instead of completing.
+    # A `verdict: PASS` SPIKE_VERDICT.md (or no `**Spike:**` line at all) falls
+    # through byte-identically to today's Step-10 path.
+    if phases_spike_required(spec_path) and not spike_verdict_is_pass(spec_path):
+        # spike-pipeline-role Phase 4 (WU-2): the bounded tooling-existence
+        # loop guard on this seam too — a SPIKE_VERDICT.md carrying a
+        # spike_tooling_rounds count at/above the cap means the tooling gap
+        # keeps recurring across corrective rounds; route to an operator
+        # NEEDS_INPUT halt instead of dispatching another spike round.
+        _sv_meta = parse_sentinel(spec_path / "SPIKE_VERDICT.md") or {}
+        if lazy_core.spike_tooling_cap_exceeded(_sv_meta):
+            lazy_core.write_spike_tooling_cap_needs_input(
+                spec_path, feature_name, _sv_meta.get("spike_tooling_rounds")
+            )
+            lazy_core._diag(
+                "Step 9.5: spike_tooling_rounds cap exceeded → needs-input "
+                "(loop bounded)"
+            )
+            return _state(
+                **common,
+                current_step="Step 9.5: spike tooling-round cap exceeded",
+                terminal_reason="needs-input",
+                notify_message=(
+                    f"NEEDS INPUT: {feature_name} — spike tooling gap "
+                    "persists after the corrective-round cap; operator "
+                    "decision needed."
+                ),
+            )
+        _variant, _goal = lazy_core._read_spike_decision(spec_path)
+        lazy_core._diag("Step 9.5: **Spike:** required with no PASS verdict → routing to spike")
+        return _state(
+            **common,
+            current_step="Step 9.5: spike verdict pending",
+            sub_skill="spike",
+            sub_skill_args=(
+                f"run the runtime proof for {feature_name} — goal: {_goal}. "
+                f"Write SPIKE_VERDICT.md (verdict: PASS|FAIL, with observed "
+                f"evidence) in {spec_path_str}; see {spec_path_str}/SPEC.md."
+            ),
+        )
+
     # Step 10: Mark complete.
     # Entry: VALIDATED.md OR (cloud AND DEFERRED_NON_CLOUD.md). (Retro is
     # unwired — there is no longer a RETRO_DONE.md precondition.)
@@ -3773,6 +4081,45 @@ def compute_state(
                 f"{feature_name}: ready to complete but "
                 f"{lazy_core.PROVISIONAL_SENTINEL} is unratified — ratify or "
                 "redirect the provisional decision(s) first."
+            ),
+        )
+
+    # decision-2-6-uncovered-row-reroute-to-mcp-test: before dispatching the
+    # terminal __mark_complete__, re-route back to /mcp-test when a matrix-
+    # incomplete VALIDATED.md leaves uncovered, non-exempt, non-host-deferred
+    # runtime-verification rows (the partial-VALIDATED oscillation / stranded-
+    # coverage symptoms). SHARED predicate (uncovered_verification_rows_remain)
+    # — the bug-state.py Step-10 twin mirrors this branch. TERMINATION is
+    # load-bearing: the re-route fires ONLY while such a row remains, then falls
+    # through to __mark_complete__ once every row is covered/host-deferred/exempt.
+    #
+    # NO-MCP-SURFACE GUARD (load-bearing): suppress the re-route on a
+    # structurally-MCP-skipped feature — `**MCP runtime:** not-required` AND a
+    # repo with no app surface (the SAME condition the Step-9 structural skip
+    # uses). Such a feature has NO /mcp-test surface to re-route to (its
+    # VALIDATED.md was granted by the structural skip, not a real run), so
+    # firing here would loop forever. This is exactly claude-config's own bugs.
+    _structurally_skipped = phases_mcp_runtime_not_required(spec_path) and \
+        repo_has_no_app_surface(repo_root)
+    _reroute = (
+        {} if _structurally_skipped
+        else uncovered_verification_rows_remain(spec_path, phases_text, repo_root)
+    )
+    if _reroute.get("reroute"):
+        _uncov = _reroute.get("uncovered") or []
+        lazy_core._diag(
+            "Step 10: uncovered verification rows over a partial VALIDATED.md → "
+            f"re-route to mcp-test ({_reroute.get('reason')})"
+        )
+        return _state(
+            **common,
+            current_step="Step 10: re-route to mcp-test (uncovered verification rows)",
+            sub_skill="mcp-test",
+            sub_skill_args=(
+                f"finish the runtime-verification matrix for {feature_name} — "
+                f"{len(_uncov)} uncovered row(s) remain after a partial "
+                f"VALIDATED.md; author/run the missing scenario(s) then "
+                f"re-validate. See {spec_path_str}/SPEC.md and PHASES.md."
             ),
         )
 
@@ -3874,6 +4221,88 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             feature_id="feat-b", phase="MCP Validation",
             blocked_at="2026-05-19T12:00:00Z", retry_count=0,
         )
+    elif name == "spike-blocker-resolver":
+        # spike-pipeline-role WU-2: same shape as the "blocker" fixture
+        # above, but blocker_kind is runtime-spike-verdict-pending — the
+        # Step-3 BLOCKED block must route this to sub_skill "spike"
+        # (non-terminal) instead of the generic terminal "blocked" halt.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-spkb", "name": "Feature SpikeBlocker", "spec_dir": "feat-spkb", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        fdir = features / "feat-spkb"
+        fdir.mkdir()
+        (fdir / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        _write_yaml_sentinel(
+            fdir / "BLOCKED.md", "blocked",
+            feature_id="feat-spkb", phase="MCP Validation",
+            blocker_kind="runtime-spike-verdict-pending",
+            blocked_at="2026-05-19T12:00:00Z", retry_count=0,
+        )
+    elif name == "operator-deferred-skip":
+        # merged-head-oracle-per-signal-supplement-churn Phase 1 (feature-side
+        # mirror of bug-state.py's operator-deferred-skip). Two features:
+        # feat-deferred carries a bare DEFERRED.md (operator-parked, must be
+        # skipped) and feat-actionable is Draft-with-no-research (must dispatch
+        # /spec). Queue lists the deferred one first.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-deferred", "name": "Deferred Feature",
+                 "spec_dir": "feat-deferred", "tier": 1},
+                {"id": "feat-actionable", "name": "Actionable Feature",
+                 "spec_dir": "feat-actionable", "tier": 2},
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        fdd = features / "feat-deferred"
+        fdd.mkdir()
+        (fdd / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        _write_yaml_sentinel(
+            fdd / "DEFERRED.md", "deferred",
+            feature_id="feat-deferred",
+            reason="Operator parked pending an upstream decision.",
+            deferred_at="2026-07-19",
+        )
+        faa = features / "feat-actionable"
+        faa.mkdir()
+        (faa / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+    elif name == "all-operator-deferred":
+        # Only feature carries DEFERRED.md → no actionable features remain. The
+        # global all-remaining-deferred terminal fires (feature_id None,
+        # operator_deferred non-empty). Mirror of bug-state.py's fixture.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-only-deferred", "name": "Only Deferred Feature",
+                 "spec_dir": "feat-only-deferred", "tier": 1},
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        fod = features / "feat-only-deferred"
+        fod.mkdir()
+        (fod / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        _write_yaml_sentinel(
+            fod / "DEFERRED.md", "deferred",
+            feature_id="feat-only-deferred",
+            reason="Pending hardware setup.",
+            deferred_at="2026-07-19",
+        )
+    elif name == "operator-deferred-control":
+        # Control: identical shape to all-operator-deferred but with NO
+        # DEFERRED.md → the feature is dispatchable (Draft SPEC + no research
+        # routes /spec at Step 5), proving the bare-DEFERRED.md branch is the
+        # ONLY thing that excludes it.
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-ctrl", "name": "Control Feature",
+                 "spec_dir": "feat-ctrl", "tier": 1},
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        fcc = features / "feat-ctrl"
+        fcc.mkdir()
+        (fcc / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
     elif name == "mid-implementation":
         (features / "queue.json").write_text(json.dumps({
             "queue": [
@@ -4145,6 +4574,101 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             "status: Complete\ncreated: 2026-05-01\nphases: [9]\n---\n\n"
             "# Plan (complete)\n"
         )
+    elif name in (
+        "step10-uncovered-reroute",
+        "step10-covered-terminates",
+        "step10-host-deferred-terminates",
+        "step10-no-mcp-surface-no-reroute",
+    ):
+        # decision-2-6-uncovered-row-reroute-to-mcp-test WU-3: all share a
+        # feature that reaches Step 10 with VALIDATED.md present (plans Complete,
+        # PHASES has only verification-only unchecked rows so the workstation
+        # bypass falls through Step 7 → Step 9 → Step 10 entry gate).
+        _fid = {
+            "step10-uncovered-reroute": "feat-d26re",
+            "step10-covered-terminates": "feat-d26term",
+            "step10-host-deferred-terminates": "feat-d26host",
+            "step10-no-mcp-surface-no-reroute": "feat-d26nomcp",
+        }[name]
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": _fid, "name": _fid, "spec_dir": _fid, "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        d = features / _fid
+        d.mkdir()
+        (d / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (d / "RESEARCH.md").write_text("# R\n")
+        (d / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        plans = d / "plans"
+        plans.mkdir()
+        (plans / f"all-phases-{_fid}.md").write_text(
+            f"---\nkind: implementation-plan\nfeature_id: {_fid}\n"
+            "status: Complete\ncreated: 2026-05-01\nphases: [1]\n---\n\n"
+            "# Plan (complete)\n"
+        )
+        _write_yaml_sentinel(
+            d / "VALIDATED.md", "validated",
+            feature_id=_fid, date="2026-07-19",
+            mcp_scenarios=[], result="all-passing",
+        )
+        if name == "step10-uncovered-reroute":
+            # Two unchecked verification rows, but recorded evidence covers only
+            # a SUBSET (pass_count=1) → autotick's cardinality lock would abort →
+            # both rows uncovered → re-route to mcp-test (NOT __mark_complete__).
+            (d / "PHASES.md").write_text(
+                "# Phases\n\n### Phase 1\n- [x] implement\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> scenario A passes\n"
+                "- [ ] <!-- verification-only --> scenario B passes\n"
+            )
+            _write_yaml_sentinel(
+                d / "MCP_TEST_RESULTS.md", "mcp-test-results",
+                feature_id=_fid, result="all-passing",
+                pass_count=1, total_count=1,
+            )
+        elif name == "step10-covered-terminates":
+            # Two unchecked verification rows, evidence covers both
+            # (pass_count=2) → autotick would tick them all → TERMINATION:
+            # falls through to __mark_complete__ (no re-route).
+            (d / "PHASES.md").write_text(
+                "# Phases\n\n### Phase 1\n- [x] implement\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> scenario A passes\n"
+                "- [ ] <!-- verification-only --> scenario B passes\n"
+            )
+            _write_yaml_sentinel(
+                d / "MCP_TEST_RESULTS.md", "mcp-test-results",
+                feature_id=_fid, result="all-passing",
+                pass_count=2, total_count=2,
+            )
+        elif name == "step10-host-deferred-terminates":
+            # The sole uncovered verification row is host-deferred
+            # (<!-- requires-host: real-audio-device -->) → excluded from the
+            # re-route (clause b) → TERMINATION: __mark_complete__ (never loops
+            # /mcp-test on a row that cannot pass on this host). No results file
+            # → pass_count 0, so the row is genuinely uncovered but host-deferred.
+            (d / "PHASES.md").write_text(
+                "# Phases\n\n### Phase 1\n- [x] implement\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> "
+                "<!-- requires-host: real-audio-device --> real-device timing\n"
+            )
+        else:  # step10-no-mcp-surface-no-reroute
+            # NO-MCP-SURFACE GUARD regression: `**MCP runtime:** not-required` +
+            # a fixture repo with no app surface = the Step-9 structural-skip
+            # condition. Two uncovered verification rows + a skip-granted
+            # VALIDATED.md (no MCP_TEST_RESULTS.md) — WITHOUT the guard the
+            # predicate would fire (pass_count 0, 2 uncovered) and loop /mcp-test
+            # forever. The guard suppresses the re-route → __mark_complete__.
+            (d / "PHASES.md").write_text(
+                "# Phases\n\n**MCP runtime:** not-required\n\n"
+                "### Phase 1\n- [x] implement\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> scenario A passes\n"
+                "- [ ] <!-- verification-only --> scenario B passes\n"
+            )
     elif name == "cloud-saturated-in-progress-plan":
         # In-progress plan whose only unchecked WU is documented in
         # DEFERRED_NON_CLOUD.md as workstation-only. Cloud Step 7a should emit
@@ -4637,6 +5161,66 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
         (p / "RESEARCH_SUMMARY.md").write_text("# S\n")
         (p / "PHASES.md").write_text(
             "# Phases\n\n**MCP runtime:** not-required\n\n### Phase 1\n- [x] Done\n"
+        )
+    elif name == "spike-required-no-verdict":
+        # spike-pipeline-role Phase 2 (WU-1): PHASES.md declares a
+        # `**Spike:** required` header and VALIDATED.md is present (Step 9
+        # satisfied, non-cloud) but NO SPIKE_VERDICT.md exists on disk. The
+        # Step 9.5 spike-routing gate must intercept BEFORE Step 10 and route
+        # to sub_skill "spike" instead of falling through to mark-complete.
+        # RED today: the Step 9.5 gate does not exist — this fixture falls
+        # straight through to Step 10 (sub_skill: "__mark_complete__").
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-spk", "name": "Feature SPK",
+                 "spec_dir": "feat-spk", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        p = features / "feat-spk"
+        p.mkdir()
+        (p / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (p / "RESEARCH.md").write_text("# R\n")
+        (p / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (p / "PHASES.md").write_text(
+            "# Phases\n\n**Spike:** required — prove projector holds 30fps\n\n"
+            "### Phase 1\n- [x] Done\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            p / "VALIDATED.md", "validated",
+            feature_id="feat-spk", date="2026-07-17",
+            mcp_scenarios=[], result="all-passing",
+        )
+    elif name == "spike-required-pass-verdict":
+        # Same shape, but a SPIKE_VERDICT.md with verdict: PASS is already on
+        # disk — the gate must fall through to Step 10 exactly as it would
+        # with no **Spike:** header at all (sub_skill: "__mark_complete__").
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-spkp", "name": "Feature SPKP",
+                 "spec_dir": "feat-spkp", "tier": 1}
+            ]
+        }))
+        (features / "ROADMAP.md").write_text("# Roadmap\n")
+        p = features / "feat-spkp"
+        p.mkdir()
+        (p / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        (p / "RESEARCH.md").write_text("# R\n")
+        (p / "RESEARCH_SUMMARY.md").write_text("# S\n")
+        (p / "PHASES.md").write_text(
+            "# Phases\n\n**Spike:** required — prove projector holds 30fps\n\n"
+            "### Phase 1\n- [x] Done\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            p / "VALIDATED.md", "validated",
+            feature_id="feat-spkp", date="2026-07-17",
+            mcp_scenarios=[], result="all-passing",
+        )
+        _write_yaml_sentinel(
+            p / "SPIKE_VERDICT.md", "spike-verdict",
+            feature_id="feat-spkp", verdict="PASS",
         )
     elif name == "phases-complete-retro-done":
         # All phases complete + a stale RETRO_DONE.md on disk, no VALIDATED.md
@@ -6075,6 +6659,14 @@ def run_smoke_tests() -> int:
             # (fixture_name, cloud, skip_needs_research, expectations dict)
             ("fresh-queue", False, False, {"terminal_reason": "needs-spec-input"}),
             ("blocker", False, False, {"terminal_reason": "blocked", "feature_id": "feat-b"}),
+            # spike-pipeline-role WU-2: a BLOCKED.md carrying blocker_kind:
+            # runtime-spike-verdict-pending routes to the spike blocked-
+            # resolver (sub_skill "spike", NON-terminal) instead of the
+            # generic terminal_reason="blocked" halt above.
+            ("spike-blocker-resolver", False, False, {
+                "sub_skill": "spike", "feature_id": "feat-spkb",
+                "current_step": "Step 3: spike verdict pending (blocked resolver)",
+            }),
             # noncanonical-blocker-filename-invisible-to-state-machine: a stray
             # blocker (non-canonical name, no canonical BLOCKED.md) → distinct
             # `blocked-misnamed` terminal (loop-risk fix).
@@ -6152,6 +6744,36 @@ def run_smoke_tests() -> int:
                 "sub_skill": "mcp-test",
                 "feature_id": "feat-sup",
                 "current_step": "Step 9: run MCP tests",
+            }),
+            # decision-2-6-uncovered-row-reroute-to-mcp-test WU-3: at Step 10 with
+            # VALIDATED.md present but a matrix-incomplete PHASES, re-route back to
+            # /mcp-test (partial evidence covers 1 of 2 verification rows).
+            ("step10-uncovered-reroute", False, False, {
+                "sub_skill": "mcp-test",
+                "feature_id": "feat-d26re",
+                "current_step": "Step 10: re-route to mcp-test (uncovered verification rows)",
+            }),
+            # TERMINATION: evidence covers both verification rows → __mark_complete__
+            # (the re-route does NOT fire — the load-bearing termination contract).
+            ("step10-covered-terminates", False, False, {
+                "sub_skill": "__mark_complete__",
+                "feature_id": "feat-d26term",
+                "current_step": "Step 10: mark complete",
+            }),
+            # TERMINATION: the sole uncovered row is host-deferred (requires-host)
+            # → excluded → __mark_complete__ (never loops /mcp-test on this host).
+            ("step10-host-deferred-terminates", False, False, {
+                "sub_skill": "__mark_complete__",
+                "feature_id": "feat-d26host",
+                "current_step": "Step 10: mark complete",
+            }),
+            # NO-MCP-SURFACE GUARD: MCP-not-required + no-app-surface repo (e.g.
+            # claude-config itself) has no /mcp-test surface → re-route suppressed
+            # → __mark_complete__ (else it would loop /mcp-test forever).
+            ("step10-no-mcp-surface-no-reroute", False, False, {
+                "sub_skill": "__mark_complete__",
+                "feature_id": "feat-d26nomcp",
+                "current_step": "Step 10: mark complete",
             }),
             # Ad-hoc enqueue: ADHOC_BRIEF.md present, no SPEC.md → /spec with
             # the ad-hoc-specific arg (Step 4 ad-hoc branch).
@@ -6339,6 +6961,25 @@ def run_smoke_tests() -> int:
                 "sub_skill": "__write_deferred_non_cloud__",
                 "feature_id": "feat-pcrdc",
                 "current_step": "Step 9: cloud defers MCP test",
+            }),
+            # spike-pipeline-role Phase 2 (WU-1): PHASES.md declares
+            # `**Spike:** required` and NO SPIKE_VERDICT.md exists — the
+            # Step 9.5 gate must route to sub_skill "spike" instead of
+            # falling through to Step 10 mark-complete.
+            # RED today: no Step 9.5 gate exists yet — this fixture reaches
+            # Step 10 directly (sub_skill: "__mark_complete__").
+            ("spike-required-no-verdict", False, False, {
+                "sub_skill": "spike",
+                "feature_id": "feat-spk",
+                "current_step": "Step 9.5: spike verdict pending",
+            }),
+            # Same PHASES.md, but a SPIKE_VERDICT.md with verdict: PASS is
+            # already on disk — must fall through to Step 10 exactly as
+            # today (sub_skill: "__mark_complete__"), never routed to spike.
+            ("spike-required-pass-verdict", False, False, {
+                "sub_skill": "__mark_complete__",
+                "feature_id": "feat-spkp",
+                "current_step": "Step 10: mark complete",
             }),
             # Cloud-saturation gate: In-progress plan whose only unchecked
             # WU is documented in DEFERRED_NON_CLOUD.md → flip pseudo-skill.
@@ -6637,6 +7278,30 @@ def run_smoke_tests() -> int:
                 "feature_id": "feat-sau",
             }),
 
+            # merged-head-oracle-per-signal-supplement-churn Phase 1: the
+            # feature-side operator-defer branch (mirror of bug-state.py). RED
+            # until the walk-loop DEFERRED.md skip + global terminal land.
+            # Deferred feature skipped, actionable feature dispatched; the
+            # operator_deferred probe key names the parked feature.
+            ("operator-deferred-skip", False, False, {
+                "feature_id": "feat-actionable",
+                "sub_skill": "spec",
+                "operator_deferred": ["Deferred Feature"],
+            }),
+            # Only the deferred feature remains → the global all-remaining-deferred
+            # terminal fires with a null identity (NOT all-features-complete).
+            ("all-operator-deferred", False, False, {
+                "terminal_reason": TR_ALL_DEFERRED,
+                "feature_id": None,
+                "operator_deferred": ["Only Deferred Feature"],
+            }),
+            # Control: DEFERRED.md absent → the same feature is dispatchable
+            # (proving the branch is the sole exclusion mechanism).
+            ("operator-deferred-control", False, False, {
+                "sub_skill": "spec",
+                "feature_id": "feat-ctrl",
+                "operator_deferred": [],
+            }),
             # NOTE: WU-8 Fixture 3 (step10-unexpected-writes-needs-input) is NOT a
             # compute_state routing case. The Step 10 "unexpected state" branch is
             # GENUINELY UNREACHABLE through compute_state's inputs (workstation Step 9
@@ -8363,6 +9028,74 @@ def run_smoke_tests() -> int:
         print("  [sync-deps] cycle-subagent exit-3 refusal + hard-only "
               "projection + idempotent noop: ok")
 
+        # -------------------------------------------------------------------
+        # byref-updatedinput-unapplied-on-background-agent-dispatch WU-2:
+        # --resolve-ref <nonce> — the sanctioned consumed-nonce read a subagent
+        # runs to recover its full instructions after the platform drops the
+        # by-reference updatedInput rewrite (upstream #39814). Exercises the REAL
+        # CLI end-to-end: hit → exact registered bytes on stdout + exit 0; miss →
+        # empty stdout + exit 1; and — since a dispatched subagent MUST run it —
+        # the hit path is NOT cycle-refused even under LAZY_CYCLE_SUBAGENT=1.
+        # -------------------------------------------------------------------
+        rref_name = "resolve-ref-cli"
+        rref_ok = True
+        rref_state = td_path / "rref-state"
+        rref_state.mkdir(parents=True, exist_ok=True)
+        rref_root = td_path / "rref-repo"
+        rref_root.mkdir(parents=True, exist_ok=True)
+        rref_prompt = "Execute plan part 2 for feat-rref — full resolved bytes."
+        _rref_prev = os.environ.get("LAZY_STATE_DIR")
+        os.environ["LAZY_STATE_DIR"] = str(rref_state)
+        try:
+            lazy_core.write_run_marker(pipeline="feature", cloud=False,
+                                       repo_root=str(rref_root))
+            _rref_entry = lazy_core.register_emission(rref_prompt, cls="cycle",
+                                                      item_id="feat-rref")
+            rref_nonce = _rref_entry["nonce"]
+            lazy_core.dispatch.consume_nonce(rref_nonce, consumer="toolu_rref")
+        finally:
+            if _rref_prev is None:
+                os.environ.pop("LAZY_STATE_DIR", None)
+            else:
+                os.environ["LAZY_STATE_DIR"] = _rref_prev
+
+        def _rref_env(**extra: str) -> dict:
+            e = {k: v for k, v in os.environ.items()
+                 if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+            e["LAZY_STATE_DIR"] = str(rref_state)
+            e.update(extra)
+            return e
+
+        _rref_script = str(Path(__file__).resolve())
+        # Hit under a subagent context — must NOT be cycle-refused; prints the
+        # exact registered bytes + exit 0.
+        r_rref_hit = subprocess.run(
+            [sys.executable, _rref_script, "--resolve-ref", rref_nonce,
+             "--repo-root", str(rref_root)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=_rref_env(LAZY_CYCLE_SUBAGENT="1"),
+        )
+        if r_rref_hit.returncode != 0 \
+                or r_rref_hit.stdout.rstrip("\n") != rref_prompt:
+            failures.append(
+                f"[{rref_name}] hit: expected exit 0 + exact bytes (subagent NOT "
+                f"cycle-refused), got rc={r_rref_hit.returncode} "
+                f"stdout={r_rref_hit.stdout!r} stderr={r_rref_hit.stderr[:200]!r}"
+            )
+            rref_ok = False
+        # Miss: an unknown nonce prints nothing + exits 1.
+        r_rref_miss = subprocess.run(
+            [sys.executable, _rref_script, "--resolve-ref", "deadbeef" * 4,
+             "--repo-root", str(rref_root)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=_rref_env(),
+        )
+        if r_rref_miss.returncode != 1 or r_rref_miss.stdout.strip() != "":
+            failures.append(
+                f"[{rref_name}] miss: expected exit 1 + empty stdout, got "
+                f"rc={r_rref_miss.returncode} stdout={r_rref_miss.stdout!r}"
+            )
+            rref_ok = False
+        print(f"  {'PASS' if rref_ok else 'FAIL'} [{rref_name}]")
+
         # Functional check: enqueue_adhoc prepends the queue, seeds the brief,
         # creates the spec dir, and adds a ROADMAP row.
         enq_features = td_path / "enqueue-test" / "docs" / "features"
@@ -9256,6 +9989,90 @@ def run_smoke_tests() -> int:
             )
         except SystemExit as exc:
             failures.append(f"[{fix_scoped_host}] SystemExit: {exc.code}")
+
+        # Fixture D (scoped operator-deferred identity):
+        # merged-head-oracle-per-signal-supplement-churn Phase 1. A feature
+        # carrying a bare DEFERRED.md queried with --feature-id returns its OWN
+        # identity + TR_OPERATOR_DEFERRED_SCOPED, NOT the global null-identity
+        # all-remaining-deferred terminal. Feature-side twin of bug-state.py's
+        # scoped-operator-deferred-identity fixture.
+        fix_scoped_opdef = "scoped-operator-deferred-identity"
+        sod_root = td_path / "scoped-operator-deferred"
+        sod_feat = sod_root / "docs" / "features"
+        sod_feat.mkdir(parents=True, exist_ok=True)
+        (sod_feat / "ROADMAP.md").write_text("# Roadmap\n")
+        (sod_feat / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-sod", "name": "Feature SOD", "spec_dir": "feat-sod", "tier": 1},
+            ]
+        }))
+        sod_d = sod_feat / "feat-sod"
+        sod_d.mkdir()
+        (sod_d / "SPEC.md").write_text("# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n")
+        _write_yaml_sentinel(
+            sod_d / "DEFERRED.md", "deferred",
+            feature_id="feat-sod",
+            reason="Operator parked for scoped-identity test.",
+            deferred_at="2026-07-19",
+        )
+        try:
+            got_sod = compute_state(
+                sod_root, cloud=False, real_device=True,
+                scope_feature_id="feat-sod",
+            )
+            sod_ok = True
+            if got_sod.get("feature_id") != "feat-sod":
+                failures.append(
+                    f"[{fix_scoped_opdef}] expected feature_id='feat-sod', "
+                    f"got {got_sod.get('feature_id')!r}"
+                )
+                sod_ok = False
+            if got_sod.get("terminal_reason") != TR_OPERATOR_DEFERRED_SCOPED:
+                failures.append(
+                    f"[{fix_scoped_opdef}] expected terminal_reason="
+                    f"{TR_OPERATOR_DEFERRED_SCOPED!r}, got "
+                    f"{got_sod.get('terminal_reason')!r}"
+                )
+                sod_ok = False
+            if got_sod.get("terminal_reason") == TR_ALL_DEFERRED:
+                failures.append(
+                    f"[{fix_scoped_opdef}] scoped query erroneously returned global "
+                    f"{TR_ALL_DEFERRED!r} (identity lost)"
+                )
+                sod_ok = False
+            print(
+                f"  {'PASS' if sod_ok else 'FAIL'} [{fix_scoped_opdef}] "
+                f"scoped operator-deferred query returns feat-sod + scoped terminal"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_scoped_opdef}] SystemExit: {exc.code}")
+
+        # Unscoped regression twin: the SAME single-deferred-feature root queried
+        # WITHOUT a scope id returns the global all-remaining-deferred terminal
+        # (feature_id None) — proving the scoped branch fires ONLY on a match and
+        # the unscoped walk still `continue`s into the global terminal.
+        fix_unscoped_opdef = "unscoped-operator-deferred-regression"
+        try:
+            got_uod = compute_state(sod_root, cloud=False, real_device=True)
+            uod_ok = True
+            if got_uod.get("terminal_reason") != TR_ALL_DEFERRED:
+                failures.append(
+                    f"[{fix_unscoped_opdef}] expected terminal_reason="
+                    f"{TR_ALL_DEFERRED!r}, got {got_uod.get('terminal_reason')!r}"
+                )
+                uod_ok = False
+            if got_uod.get("feature_id") is not None:
+                failures.append(
+                    f"[{fix_unscoped_opdef}] expected feature_id=None (global), "
+                    f"got {got_uod.get('feature_id')!r}"
+                )
+                uod_ok = False
+            print(
+                f"  {'PASS' if uod_ok else 'FAIL'} [{fix_unscoped_opdef}] "
+                f"unscoped returns global all-remaining-deferred"
+            )
+        except SystemExit as exc:
+            failures.append(f"[{fix_unscoped_opdef}] SystemExit: {exc.code}")
 
         # -------------------------------------------------------------------
         # Fixture WU-1-park: --park-needs-input mode (Phase 4)
@@ -11363,6 +12180,90 @@ def run_smoke_tests() -> int:
             dym_ok = False
     print(f"  {'PASS' if dym_ok else 'FAIL'} [{dym_name}]")
 
+    # -------------------------------------------------------------------
+    # concurrent-worktree-agent-coordination WU-2 (SPEC Requirement 2): the
+    # concurrent_writer_commits carve-out, end-to-end through the REAL
+    # --cycle-begin / --cycle-end CLI path (not just the pure
+    # detect_cycle_bracket_friction unit — those live in
+    # tests/test_lazy_core/test_markers.py). Two legitimate execute-plan
+    # commits are made under the repo's OWN configured committer email
+    # ("t@t"); three MORE commits are made under a DIFFERENT committer email
+    # ("concurrent@writer.example") to simulate a sanctioned concurrent
+    # writer. Budget (execute-plan, no plan file → table budget
+    # _CYCLE_COMMIT_MULTI(3) + _CYCLE_COMMIT_NOISE_ALLOWANCE(1) = 4).
+    # commits_since = 5 (over budget on its own), but
+    # _count_concurrent_writer_commits attributes the 3 differing-email
+    # commits away, leaving a chargeable count of 2 — well within budget —
+    # so --cycle-end must report NO process_friction key.
+    # -------------------------------------------------------------------
+    fix_cwc = "concurrent-writer-commits-carve-out"
+    cwc_ok = True
+    try:
+        cwc_state = td_path / "cwc-state"
+        cwc_state.mkdir(parents=True, exist_ok=True)
+        cwc_repo = td_path / "cwc-repo"
+        cwc_repo.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["git", "-C", str(cwc_repo), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(cwc_repo), "config", "user.email", "t@t"], check=True)
+        subprocess.run(["git", "-C", str(cwc_repo), "config", "user.name", "t"], check=True)
+        subprocess.run(["git", "-C", str(cwc_repo), "config", "commit.gpgsign", "false"], check=True)
+        (cwc_repo / "seed.txt").write_text("seed", encoding="utf-8")
+        subprocess.run(["git", "-C", str(cwc_repo), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(cwc_repo), "commit", "-q", "-m", "seed"], check=True)
+        cwc_env = {k: v for k, v in os.environ.items()
+                   if k not in ("LAZY_CYCLE_SUBAGENT",)}
+        cwc_env["LAZY_STATE_DIR"] = str(cwc_state)
+        cwc_env["LAZY_ORCHESTRATOR"] = "1"
+        r = subprocess.run(
+            [sys.executable, _this_script, "--cycle-begin",
+             "--feature-id", "feat-cwc", "--nonce", "beef",
+             "--sub-skill", "execute-plan",
+             "--repo-root", str(cwc_repo)],
+            capture_output=True, text=True, env=cwc_env,
+        )
+        if r.returncode != 0:
+            failures.append(f"[{fix_cwc}] --cycle-begin must exit 0; got {r.returncode}: {r.stderr}")
+            cwc_ok = False
+        # Two OWN commits (this cycle's own dispatch, same configured identity).
+        for i in range(2):
+            (cwc_repo / f"own{i}.txt").write_text(f"own{i}", encoding="utf-8")
+            subprocess.run(["git", "-C", str(cwc_repo), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(cwc_repo), "commit", "-q", "-m", f"own{i}"], check=True)
+        # Three CONCURRENT-WRITER commits (a different committer identity).
+        for i in range(3):
+            (cwc_repo / f"conc{i}.txt").write_text(f"conc{i}", encoding="utf-8")
+            subprocess.run(["git", "-C", str(cwc_repo), "add", "-A"], check=True)
+            subprocess.run(
+                ["git", "-C", str(cwc_repo),
+                 "-c", "user.email=concurrent@writer.example",
+                 "-c", "user.name=concurrent-writer",
+                 "commit", "-q", "-m", f"conc{i}"],
+                check=True,
+            )
+        r = subprocess.run(
+            [sys.executable, _this_script, "--cycle-end",
+             "--repo-root", str(cwc_repo)],
+            capture_output=True, text=True, env=cwc_env,
+        )
+        if r.returncode != 0:
+            failures.append(f"[{fix_cwc}] --cycle-end must exit 0; got {r.returncode}: {r.stderr}")
+            cwc_ok = False
+        try:
+            cwc_out = json.loads(r.stdout)
+            if "process_friction" in cwc_out:
+                failures.append(
+                    f"[{fix_cwc}] a concurrent-writer HEAD advance must NOT trip "
+                    f"process_friction; got {cwc_out.get('process_friction')!r}"
+                )
+                cwc_ok = False
+        except (json.JSONDecodeError, TypeError):
+            failures.append(f"[{fix_cwc}] --cycle-end stdout must be JSON; got {r.stdout!r}")
+            cwc_ok = False
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"[{fix_cwc}] unexpected error: {exc!r}")
+        cwc_ok = False
+    print(f"  {'PASS' if cwc_ok else 'FAIL'} [{fix_cwc}] concurrent-writer commits suppressed via committer-email carve-out")
+
     if failures:
         print("\nFAILURES:")
         for f in failures:
@@ -11398,7 +12299,12 @@ def live_settings_probe(repo_root, live_path=None):
     split-brain, Fix Scope 4 / D2)."""
     try:
         ddl = _load_doc_drift_module()
-        ok, detail = ddl.live_settings_status(Path(repo_root), live_path=live_path)
+        # live-settings-probe-false-positive-in-consumer-repo (Gap 2): resolve
+        # the tracked settings SSOT against the claude-config checkout when the
+        # RUN targets a consumer repo (AlgoBooth has no user/settings.json) —
+        # else every consumer-repo probe false-reports 'missing settings'.
+        ssot_root = ddl.settings_ssot_root(repo_root)
+        ok, detail = ddl.live_settings_status(ssot_root, live_path=live_path)
         return bool(ok), str(detail)
     except Exception:  # noqa: BLE001 — benign default, never propagate
         return True, "live-settings check unavailable (doc-drift-lint not loadable)"
@@ -11469,6 +12375,68 @@ def build_parser() -> argparse.ArgumentParser:
                               "(requires --session-id). Gated by "
                               "refuse_if_cycle_active (exit 3 for a cycle "
                               "subagent). single-slot-marker-ownership-race."))
+    # lazy-batch-no-mid-run-budget-or-park-controls: operator-authorized mid-run
+    # controls. Each is orchestrator-only (refuse_if_cycle_active), requires an
+    # ACTIVE marker, and REFUSES without --operator-authorized (parallel to the
+    # --run-end --reason checkpoint authorization gate). They mutate the active
+    # marker IN PLACE — no clobber, no restart, no run-end flush.
+    parser.add_argument("--set-max-cycles", dest="set_max_cycles",
+                        type=int, default=None, metavar="N",
+                        help=("Orchestrator-only, --operator-authorized: update the "
+                              "ACTIVE run marker's max_cycles to N in place (mid-run "
+                              "budget change). Atomic — no clobber/restart/run-end "
+                              "flush. After this the marker is the authoritative live "
+                              "budget: the cycle header and per-feature budget guard "
+                              "both agree with N. Refused without --operator-authorized."))
+    parser.add_argument("--set-park", dest="set_park",
+                        choices=["on", "off"], default=None,
+                        help=("Orchestrator-only, --operator-authorized: toggle park "
+                              "mode on the ACTIVE run marker mid-run. 'on' arms BOTH "
+                              "park_needs_input and park_blocked (the --park umbrella); "
+                              "'off' clears both AND park_provisional. The probe reads "
+                              "the marker each cycle. Refused without --operator-authorized."))
+    parser.add_argument("--set-park-provisional", dest="set_park_provisional",
+                        choices=["on", "off"], default=None,
+                        help=("Orchestrator-only, --operator-authorized: toggle "
+                              "park-provisional-acceptance on the ACTIVE run marker "
+                              "mid-run. 'on' requires park mode already on "
+                              "(park_provisional requires park_needs_input, SPEC D1) — "
+                              "else refused. Refused without --operator-authorized."))
+    # no-sanctioned-cli-for-queue-state-mutations: operator-directed in-place
+    # queue mutators (the sanctioned replacement for hand-editing queue.json).
+    # Each is refuse_if_cycle_active FIRST + requires --operator-authorized.
+    # --set-tier atomically RE-SORTS listed order to match the new merged
+    # priority (the load-bearing side effect). Coupled-pair: bug-state.py
+    # exposes --set-severity (the bug analog) + the same deps mutators + --unpin.
+    parser.add_argument("--set-tier", dest="set_tier", nargs=2,
+                        metavar=("ID", "TIER"), default=None,
+                        help=("Orchestrator-only, --operator-authorized: set feature ID's "
+                              "queue tier to TIER and ATOMICALLY re-position it in listed "
+                              "order to match its new merged priority — one write, never a "
+                              "stale reorder. TIER is a bare int (lower = higher priority), "
+                              "a named tier enum (pre-release/commercialization/milestone/"
+                              "major-initiative/follow-up/non-audio/4a/4b), or a "
+                              "comma-separated list of those (a multi-enum feature — "
+                              "merged priority is the MIN). "
+                              "refuse_if_cycle_active (exit 3 for a cycle subagent)."))
+    parser.add_argument("--set-independent", dest="set_independent", nargs=2,
+                        metavar=("ID", "VALUE"), default=None,
+                        help=("Orchestrator-only, --operator-authorized: set (or CLEAR) "
+                              "feature ID's `independent: true` shard-eligibility marker "
+                              "(the /lazy-batch-parallel claim_shardable gate) — the "
+                              "sanctioned replacement for hand-editing queue.json. VALUE is "
+                              "true|false (false REMOVES the key, the byte-clean not-"
+                              "independent state). Does NOT reposition (independent is an "
+                              "isolation marker, not priority). refuse_if_cycle_active FIRST."))
+    parser.add_argument("--add-deps", dest="add_deps", metavar="ID", default=None,
+                        help=("Orchestrator-only, --operator-authorized: add the --deps "
+                              "id list as hard queue dependencies on feature ID (post-hoc, "
+                              "arbitrary — the non-SPEC sibling of --sync-deps). Deduped; "
+                              "post-mutation cycle-guarded. refuse_if_cycle_active FIRST."))
+    parser.add_argument("--remove-deps", dest="remove_deps", metavar="ID", default=None,
+                        help=("Orchestrator-only, --operator-authorized: remove the --deps "
+                              "id list from feature ID's hard queue dependencies (empty "
+                              "result drops the deps key). refuse_if_cycle_active FIRST."))
     parser.add_argument("--record-intervention", dest="record_intervention",
                         action="store_true",
                         help=("intervention-efficacy-tracking: write the "
@@ -11644,6 +12612,18 @@ def build_parser() -> argparse.ArgumentParser:
                             "An unratified provisional file blocks completion mechanically and "
                             "halts non-park probes on `needs-ratification`."
                         ))
+    parser.add_argument("--park", dest="park_umbrella", action="store_true",
+                        help=(
+                            "Umbrella park flag — the /lazy-batch `--park` invocation flag. "
+                            "Arms BOTH --park-needs-input AND --park-blocked in one token "
+                            "(mirroring `--set-park on`), so `--run-start --park` persists park "
+                            "mode into the run marker and the probe reads it from cycle 1. "
+                            "Equivalent to passing the two granular flags; combine with "
+                            "--park-provisional for provisional-acceptance. Default off → "
+                            "byte-identical to a non-park run. (Fixes lazy-run-marker-park-arm: "
+                            "Step 0.55 forwards the operator's `--park` verbatim, no "
+                            "re-translation to forget.)"
+                        ))
     parser.add_argument("--provisionalize-sentinel", default=None, metavar="PATH",
                         help=(
                             "Provisionally accept the NEEDS_INPUT.md at PATH on its "
@@ -11813,10 +12793,47 @@ def build_parser() -> argparse.ArgumentParser:
                             "1 if absent/stale/legacy-no-branch. Never creates "
                             "state. Used by the stray-branch write-time hook."
                         ))
+    # adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke Phase 1
+    # (Gap 2): read-only pause-vs-terminal discriminator for a just-returned
+    # /execute-plan cycle. Reads the execute-plan run marker
+    # (~/.claude/state/execute-plan/<md5(repo_root)[:12]>.json) NON-destructively
+    # + the plan (--plan) frontmatter status; prints the JSON verdict and ALWAYS
+    # exits 0 (a probe never gates). Consumed by lazy-batch/lazy-bug-batch Step
+    # 1e/4a BEFORE emitting --emit-dispatch recovery. The execute-plan marker is
+    # pipeline-agnostic, so this is a parity-audited coupled-pair surface
+    # (identical flag on bug-state.py).
+    parser.add_argument("--execute-plan-liveness", action="store_true",
+                        help=(
+                            "Read-only: print the execute-plan pause-vs-terminal "
+                            "verdict JSON {marker_present, plan_status, verdict} "
+                            "for --plan PLAN in --repo-root REPO. marker present + "
+                            "plan not Complete => paused (recovery should be "
+                            "suppressed); marker absent or plan Complete or any "
+                            "read error => terminal (fail-safe). Always exits 0."
+                        ))
+    # byref-updatedinput-unapplied-on-background-agent-dispatch WU-2: the
+    # sanctioned consumed-nonce read. The platform silently drops the
+    # by-reference `hookSpecificOutput.updatedInput` rewrite for the Agent tool
+    # as a CLASS (upstream anthropics/claude-code#39814, closed not-planned), so
+    # a `@@lazy-ref nonce=<hex>` dispatch lands the BARE token at the subagent.
+    # This read returns the registered prompt bytes for a nonce the guard ALREADY
+    # ALLOW+consumed THIS run, so a subagent that booted with the bare token has a
+    # designed recovery path. Read-only, run-scoped, never un-consumes; NOT gated
+    # by refuse_if_cycle_active (a read a dispatched subagent MUST be able to run).
+    parser.add_argument("--resolve-ref", metavar="NONCE", default=None,
+                        help=(
+                            "Read-only: print the registered prompt bytes for a "
+                            "nonce the guard already ALLOW+consumed this run "
+                            "(consumed + TTL-fresh + run-start-gated), exit 0; "
+                            "print nothing + exit 1 on a miss (unknown / expired "
+                            "/ cross-run / still-unconsumed). The subagent-side "
+                            "resolve path for a bare @@lazy-ref token."
+                        ))
     # unified-pipeline-orchestrator Phase 1: merged work-list view. Reads BOTH
     # docs/features/queue.json and docs/bugs/queue.json (via the existing
     # loaders), orders them (priority desc / lower-tier-or-severity first; tie →
-    # bug before feature; stable within each queue), and prints the next
+    # feature before bug — only a genuine P0 bug precedes a P1 feature; stable
+    # within each queue), and prints the next
     # actionable head as JSON {item_id, type, repo_root}. Read-only ordering
     # ONLY — never re-infers per-item state. Empty on both queues → null.
     parser.add_argument("--next-merged", action="store_true",
@@ -11850,6 +12867,21 @@ def build_parser() -> argparse.ArgumentParser:
                             "symlink/64-byte-pointer targets (the Windows blindspot). "
                             "Exit 1 iff any decision uncovered. Promotes the "
                             "mcp-coverage-audit.md algorithm to code."
+                        ))
+    parser.add_argument("--gate-verdict-check", default=None, metavar="SPEC_PATH",
+                        help=(
+                            "Completion-time item-scoped anti-overfit design-gate "
+                            "report (lazy_core.item_scoped_gate_report): run the "
+                            "harness-gate checker over the item's OWN shipped "
+                            "commits (the SAME derivation gate_verdict_ok uses), so "
+                            "in_scope/scope_hit AGREE with the ship seam even when "
+                            "the fix is ALREADY MERGED to origin/main (an empty "
+                            "origin/main..HEAD range would falsely report "
+                            "out-of-scope). Prints the harness-gate JSON "
+                            "(in_scope/scope_hit/checks/verdict_required/"
+                            "gate_weakening_hit) + item_commits. Read-only; the "
+                            "authoring seam of the gate-verdict dispatch class. "
+                            "Exit 1 iff verdict_required."
                         ))
     # lazy-cycle-containment C1 (Phase 2): the cycle-subagent marker bracket.
     # The orchestrator issues --cycle-begin immediately before every Agent
@@ -12072,6 +13104,7 @@ def build_parser() -> argparse.ArgumentParser:
                             "ad-hoc grep. Missing file → 0."
                         ))
     cli_surface.add_dump_cli_surface_flag(parser)
+    cli_surface.add_ops_query_flags(parser)
     return parser
 
 
@@ -12088,6 +13121,12 @@ def main() -> int:
     if _dump is not None:
         return _dump
 
+    # no-sanctioned-cli-for-queue-state-mutations: op-discoverability search —
+    # read-only introspection, handled before any side effect (like the dump).
+    _ops = cli_surface.maybe_handle_ops_query(args, parser, "lazy-state.py")
+    if _ops is not None:
+        return _ops
+
     # multi-repo-concurrent-runs: bind the active repo ONCE so claude_state_dir()
     # scopes all run-scoped state (marker/registry/ledger/cycle/checkpoint) to
     # this repo's subdir.  --repo-root defaults to os.getcwd(), so an explicit
@@ -12099,6 +13138,17 @@ def main() -> int:
     # advance and peek the persisted streak.
     if args.repeat_count and args.repeat_count_peek:
         _die("--repeat-count and --repeat-count-peek are mutually exclusive")
+
+    # --park is the umbrella that arms BOTH park facets (needs-input + blocked),
+    # matching the /lazy-batch `--park` invocation flag and `--set-park on`. Fold
+    # it into the granular flags EARLY — BEFORE the pairing guard below and the
+    # run-start marker threading — so every downstream read sees the same shape
+    # whether the umbrella or the two granular flags were passed. (harden fix
+    # lazy-run-marker-park-arm-and-forward-cycle-inflation: Step 0.55 forwards the
+    # operator's `--park` verbatim; the CLI expands it here.)
+    if getattr(args, "park_umbrella", False):
+        args.park_needs_input = True
+        args.park_blocked = True
 
     # park-provisional-acceptance (SPEC D1): --park-provisional is a strict
     # modifier of --park-needs-input — alone it is a hard CLI error, never a
@@ -12166,12 +13216,38 @@ def main() -> int:
             return 0
         return 1
 
+    # adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke Phase 1
+    # (Gap 2): --execute-plan-liveness — read-only pause-vs-terminal verdict for
+    # a just-returned /execute-plan cycle. Shells the shared discriminator and
+    # prints its JSON verdict. ALWAYS exits 0 (a probe never gates); a missing
+    # --plan resolves fail-safe to terminal like any unreadable signal.
+    if args.execute_plan_liveness:
+        verdict = lazy_core.execute_plan_liveness(args.repo_root, args.plan or "")
+        sys.stdout.write(json.dumps(verdict) + "\n")
+        return 0
+
+    # byref-updatedinput-unapplied-on-background-agent-dispatch WU-2:
+    # --resolve-ref <nonce> — the subagent-side resolve of a consumed nonce's
+    # registered prompt bytes (the platform drops the by-reference updatedInput
+    # rewrite for the Agent tool, upstream #39814). set_active_repo_root ran
+    # above, so resolve_consumed_emission_by_nonce resolves THIS repo's keyed
+    # registry. Read-only, run-scoped, never un-consumes; deliberately NOT gated
+    # by refuse_if_cycle_active (a dispatched subagent MUST be able to run it).
+    # Hit → print the exact bytes + exit 0; miss → print nothing + exit 1.
+    if args.resolve_ref is not None:
+        resolved = lazy_core.resolve_consumed_emission_by_nonce(args.resolve_ref)
+        if resolved:
+            sys.stdout.write(resolved + "\n")
+            return 0
+        return 1
+
     # unified-pipeline-orchestrator Phase 1: --next-merged — read-only merged
     # work-list head. Reuses BOTH existing queue loaders (this script's
     # load_queue for features; bug-state.py's load_bug_queue for bugs, imported
     # via importlib because the filename is hyphenated) and the lazy_core
     # ordering helper (priority normalized across the two queues' divergent
-    # tier/severity fields; bug breaks ties; stable within each queue). Pure
+    # tier/severity fields; feature breaks ties so only a genuine P0 bug precedes
+    # a P1 feature; stable within each queue). Pure
     # ordering — it NEVER calls compute_state / re-infers per-item state. The
     # active repo was bound above, so repo_root in the output is the resolved
     # active repo. Prints JSON {item_id, type, repo_root} or null; exits like
@@ -12180,8 +13256,66 @@ def main() -> int:
         repo_root = Path(args.repo_root)
         feature_items = load_queue(repo_root)
         bug_items = _load_bug_queue_for_merged(repo_root)
+        # merged-head-actionability-oracle (SPEC L1/L5): EXCLUDE every
+        # NON-DISPATCHABLE item so the merged head is the highest-priority item
+        # that would actually DISPATCH, else the orchestrator routes to a head
+        # that just re-parks/re-defers/halts (deadlock). This is a STATELESS
+        # read-only ordering query — there is no live probe, so there is no
+        # same-pipeline skip context to reuse (L2): EVERY at-or-above candidate
+        # is scoped-probed via a TYPE-AWARE `scoped_probe` (feature → this
+        # module's `compute_state`, bug → bug-state's), honoring the SAME run
+        # flags a real probe would use. Effective (marker-authoritative) park
+        # facets so a mid-run --set-park toggle takes effect; a dispatchable head
+        # short-circuits the walk (byte-identical common path when the head is
+        # dispatchable — the head is probed once and the loop stops).
+        _nm_marker = lazy_core.read_run_marker()
+        _nm_ni, _nm_bl, _nm_pv = lazy_core.fold_park_flags(
+            args.park_needs_input, args.park_blocked, args.park_provisional, _nm_marker
+        )
+        _nm_bug_state_mod = _load_bug_state_module()
+        _nm_real_device = resolve_real_device(args.real_device)
+        _nm_types = {}
+        for _it in feature_items:
+            if isinstance(_it, dict) and _it.get("id"):
+                _nm_types[_it["id"]] = "feature"
+        for _it in bug_items:
+            if isinstance(_it, dict) and _it.get("id"):
+                _nm_types.setdefault(_it["id"], "bug")
+
+        def _nm_scoped_probe(_iid):
+            try:
+                if _nm_types.get(_iid) == "bug":
+                    if _nm_bug_state_mod is None:
+                        return {}
+                    return _nm_bug_state_mod.compute_state(
+                        repo_root, cloud=args.cloud, real_device=_nm_real_device,
+                        scope_bug_id=_iid,
+                        park_needs_input=_nm_ni, park_blocked=_nm_bl,
+                        park_provisional=_nm_pv,
+                        strict_research_halt=args.strict_research_halt,
+                    )
+                return compute_state(
+                    repo_root, cloud=args.cloud,
+                    skip_needs_research=args.skip_needs_research,
+                    real_device=_nm_real_device, scope_feature_id=_iid,
+                    park_needs_input=_nm_ni, park_blocked=_nm_bl,
+                    park_provisional=_nm_pv,
+                    strict_research_halt=args.strict_research_halt,
+                )
+            except Exception:  # noqa: BLE001 — a per-candidate probe error must not break the ordering query
+                return {}
+
+        _nm_diag_snapshot = list(lazy_core._DIAGNOSTICS)
+        try:
+            _nm_excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+                feature_items, bug_items, str(repo_root), None,
+                scoped_probe=_nm_scoped_probe,
+            )
+        finally:
+            lazy_core._DIAGNOSTICS[:] = _nm_diag_snapshot
         head = lazy_core.next_merged(
-            feature_items, bug_items, lazy_core.active_repo_root()
+            feature_items, bug_items, lazy_core.active_repo_root(),
+            exclude_ids=_nm_excluded,
         )
         sys.stdout.write(json.dumps(head) + "\n")
         return 0
@@ -12257,6 +13391,16 @@ def main() -> int:
             )
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if not result["uncovered"] else 1
+
+    if args.gate_verdict_check is not None:
+        # Authoring seam of the gate-verdict dispatch class: the item-scoped
+        # design-gate report, merge-independent (agrees with gate_verdict_ok even
+        # when origin/main..HEAD is empty). Read-only — callable by a cycle
+        # subagent, like --verify-ledger / --gate-coverage (NOT cycle-refused).
+        result = lazy_core.item_scoped_gate_report(
+            Path(args.gate_verdict_check), Path(args.repo_root))
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 1 if result.get("verdict_required") else 0
 
     # Phase 1 run-lifecycle dispatch: --run-start / --run-end exit immediately
     # like all other action flags so they compose cleanly with orchestrator
@@ -12386,10 +13530,25 @@ def main() -> int:
         # /spec or plan-feature cycle. record_audit_obligation is a no-op on
         # a non-audited sub_skill and marker-gated (no-op with no live run),
         # so this is byte-identical unless the withhold actually applies.
+        # adhoc-audit-obligation-fires-on-zero-commit-failed-cycle: pass the
+        # commit-delta signal (begin vs current HEAD) so a ZERO-COMMIT (failed /
+        # no-op) close arms NO obligation, and a real-commit close records the
+        # bracket's ACTUAL end sha + subject. The summary git call is skipped on
+        # the zero-commit path (the hot failed-cycle path this bug targets).
         if _tl_cycle is not None:
+            _aud_begin = _tl_cycle.get("begin_head_sha")
+            _aud_end = lazy_core.head_sha_snapshot(Path(args.repo_root))
+            _aud_summary = (
+                lazy_core.head_commit_subject(Path(args.repo_root))
+                if _aud_end and _aud_end != _aud_begin
+                else None
+            )
             lazy_core.record_audit_obligation(
                 item_id=_tl_cycle.get("feature_id"),
                 cycle_kind=_tl_cycle.get("sub_skill"),
+                begin_head_sha=_aud_begin,
+                end_sha=_aud_end,
+                cycle_summary=_aud_summary,
             )
         friction = lazy_core.cycle_end_friction_check(repo_root=Path(args.repo_root))
         # code-doc-provenance-linkage Phase 1 (D4-A): record this cycle's commit
@@ -12399,6 +13558,15 @@ def main() -> int:
         bracket = lazy_core.record_cycle_commit_bracket(
             repo_root=Path(args.repo_root)
         )
+        # cycle-budget-counters-double-count-on-probes-and-inject-hook: THE budget
+        # authority for bracketed Agent dispatches. A completed --cycle-begin/
+        # --cycle-end bracket wraps exactly one dispatch, so count it here keyed on
+        # the cycle marker's --kind: real → forward_cycles (+ per-feature sibling),
+        # meta → meta_cycles. Read BEFORE clear_cycle_marker() so the marker's kind
+        # is still available. Marker-gated (no run marker → no-op) and idempotent
+        # per bracket (the marker is cleared right below). This replaces the removed
+        # probe-path forward advance and the --emit-dispatch meta advance.
+        lazy_core.advance_cycle_bracket_counter(_tl_cycle)
         cleared = lazy_core.clear_cycle_marker()
         # harness-telemetry-ledger Phase 2 (D4-B): cycle-bracket emission
         # (marker-gated + fail-open inside the emitter; adds NO output keys).
@@ -12455,6 +13623,13 @@ def main() -> int:
             session_id=args.session_id,
             attended=not args.unattended,
             parent_run=parent_run,
+            # lazy-batch-no-mid-run-budget-or-park-controls: SEED park mode into
+            # the marker from the invocation --park flags so the probe reads it
+            # each cycle and --set-park can toggle it in place. Default False →
+            # byte-identical to a non-park run's marker.
+            park_needs_input=args.park_needs_input,
+            park_blocked=args.park_blocked,
+            park_provisional=args.park_provisional,
         )
         out: dict = dict(marker)
         # Phase 7 WU-7.4: consume any checkpoint left by a prior checkpoint
@@ -12518,6 +13693,19 @@ def main() -> int:
         if reason not in ("terminal", "checkpoint"):
             _die("--run-end --reason must be 'terminal' or 'checkpoint'")
 
+        # lazy-batch-parallel-run-harness-gaps gaps 4+5: a /lazy-batch-parallel
+        # LANE marker carries a non-null `parent_run` (the coordinator's identity).
+        # A lane is a coordinator-authorized CHILD retirement, not a top-level run
+        # boundary — so (gap 5) it does NOT owe the efficacy/canary/incident trio
+        # (the PARENT owes it once at the coordinator flush, SKILL Step 6.3), and
+        # (gap 4) it may retire on a park-class terminal without
+        # --operator-authorized (SKILL P6 park is the parallel mode's defining
+        # failure isolation). Read the marker RAW (non-deleting) once here.
+        _re_marker = lazy_core.read_run_marker()
+        _is_lane_marker = bool(
+            isinstance(_re_marker, dict) and _re_marker.get("parent_run")
+        )
+
         # WU-7.1: refuse to retire the marker while unacked guard denials remain,
         # unless --ack-unhardened was passed (the override is recorded for retros).
         # This gate is INDEPENDENT of the Phase 7 stop-authorization gate below —
@@ -12574,7 +13762,12 @@ def main() -> int:
         # perturbs the idempotent teardown below.
         # -----------------------------------------------------------------------
         efficacy_skip_note = None
-        if not lazy_core.efficacy_breadcrumb_present():
+        if _is_lane_marker:
+            # gap 5: a lane child never owes the trio — the parent coordinator
+            # flushes it once at Step 6.3. Skipping keeps lane retirement clean
+            # (a lane cannot run the trio; it retires before the serial tail).
+            pass
+        elif not lazy_core.efficacy_breadcrumb_present():
             if not args.efficacy_skip_authorized:
                 sys.stdout.write(json.dumps({
                     "run_marker_deleted": False,
@@ -12684,7 +13877,18 @@ def main() -> int:
             # is allowed but adds a deprecation note (the caller should migrate).
             terminal_reason = getattr(args, "terminal_reason", None)
             if terminal_reason is not None:
+                # gap 4: a lane marker (parent_run set) may retire on a park-class
+                # terminal (SKILL P6 park / budget-deferred) WITHOUT
+                # --operator-authorized — the coordinator authorized the lane, and
+                # park-on-sentinel is the parallel mode's defining failure
+                # isolation. Serial runs (not a lane marker) are unaffected: the
+                # lane set is consulted only when _is_lane_marker holds.
+                _lane_sanctioned = (
+                    _is_lane_marker
+                    and terminal_reason in lazy_core.SANCTIONED_LANE_PARK_TERMINAL
+                )
                 if (terminal_reason not in lazy_core.SANCTIONED_STOP_TERMINAL
+                        and not _lane_sanctioned
                         and not args.operator_authorized):
                     # REFUSE: non-sanctioned reason without authorization.
                     # Marker LEFT IN PLACE.
@@ -12873,15 +14077,13 @@ def main() -> int:
                 item_id=context.get("item_id"),
                 model=model,
             )
-            # ISSUE 5 (d8-effect-chains live run): a meta/recovery dispatch goes
-            # through --emit-dispatch (NOT the --repeat-count probe path), so the
-            # meta budget was never advancing (meta_cycles stayed 0 through 2 live
-            # recoveries). Advance it here on a registered (marker-present) meta
-            # emission so recovery/hardening/apply-resolution dispatches count
-            # against the meta-cycle budget. Gated on _ref_entry (marker present →
-            # this is a real, registered dispatch — not a no-marker peek).
-            if _ref_entry is not None:
-                lazy_core.advance_meta_cycle()
+            # cycle-budget-counters-double-count-on-probes-and-inject-hook: the
+            # meta-cycle advance formerly fired HERE at --emit-dispatch. It has moved
+            # to the --cycle-end bracket (advance_cycle_bracket_counter, keyed on the
+            # cycle marker's --kind meta) — every meta/recovery/apply-resolution/
+            # hardening dispatch is bracketed --kind meta, so counting at emit AND at
+            # the bracket would double-count. --cycle-end is now the sole budget
+            # authority for bracketed dispatches; emit no longer touches the budget.
             # mechanize-prose-only-orchestrator-contracts (b) / D2-A: a
             # REGISTERED (marker-present) input-audit emission discharges the
             # D2-A obligation — this IS the "the audit dispatch itself" the
@@ -13133,14 +14335,149 @@ def main() -> int:
         ) + "\n")
         return 0
 
+    if args.set_max_cycles is not None:
+        # lazy-batch-no-mid-run-budget-or-park-controls: operator-authorized
+        # mid-run budget change. Orchestrator-only — refuse FIRST (exit 3, zero
+        # side effects), exactly like --reassert-owner / --run-start. Then require
+        # --operator-authorized (parallel to the --run-end checkpoint gate) and a
+        # positive N, and require an ACTIVE marker before mutating in place.
+        lazy_core.refuse_if_cycle_active("--set-max-cycles")
+        if not args.operator_authorized:
+            _die("--set-max-cycles requires --operator-authorized (the operator must "
+                 "have approved the mid-run budget change).")
+        if args.set_max_cycles < 1:
+            _die("--set-max-cycles requires a positive integer N (>= 1).")
+        result = lazy_core.set_marker_max_cycles(args.set_max_cycles)
+        if result is None:
+            _die("--set-max-cycles: no active run marker to update.")
+        out = {"max_cycles_updated": True, **result}
+        sys.stdout.write(json.dumps(out, indent=2) + "\n")
+        return 0
+
+    if args.set_park is not None:
+        # lazy-batch-no-mid-run-budget-or-park-controls: operator-authorized
+        # mid-run park toggle. 'on' arms BOTH park facets (the --park umbrella);
+        # 'off' clears both AND park_provisional (provisional requires needs-input).
+        lazy_core.refuse_if_cycle_active("--set-park")
+        if not args.operator_authorized:
+            _die("--set-park requires --operator-authorized (the operator must have "
+                 "approved the mid-run park toggle).")
+        _on = args.set_park == "on"
+        result = lazy_core.set_marker_park(
+            park_needs_input=_on,
+            park_blocked=_on,
+            # Turning park OFF also clears the provisional modifier (it requires
+            # needs-input); turning park ON leaves provisional untouched (armed
+            # separately via --set-park-provisional).
+            park_provisional=(None if _on else False),
+        )
+        if result is None:
+            _die("--set-park: no active run marker to update.")
+        out = {"park_updated": True, **result}
+        sys.stdout.write(json.dumps(out, indent=2) + "\n")
+        return 0
+
+    if args.set_park_provisional is not None:
+        # lazy-batch-no-mid-run-budget-or-park-controls: operator-authorized
+        # mid-run park-provisional toggle. set_marker_park enforces the standing
+        # invariant (provisional requires needs-input) and refuses 'on' when park
+        # is off (exit, zero writes).
+        lazy_core.refuse_if_cycle_active("--set-park-provisional")
+        if not args.operator_authorized:
+            _die("--set-park-provisional requires --operator-authorized (the operator "
+                 "must have approved the mid-run park-provisional toggle).")
+        result = lazy_core.set_marker_park(
+            park_provisional=(args.set_park_provisional == "on"),
+        )
+        if result is None:
+            _die("--set-park-provisional: no active run marker to update.")
+        out = {"park_updated": True, **result}
+        sys.stdout.write(json.dumps(out, indent=2) + "\n")
+        return 0
+
+    if args.set_tier is not None:
+        # no-sanctioned-cli-for-queue-state-mutations: operator-directed in-place
+        # tier change. Refuse FIRST (exit 3, zero side effects for a cycle
+        # subagent — the --reorder-queue/--enqueue-adhoc contract), then require
+        # --operator-authorized (this is an operator-directed priority change).
+        # set_queue_priority ATOMICALLY re-sorts listed order to match the new
+        # merged priority in the SAME write.
+        lazy_core.refuse_if_cycle_active("--set-tier")
+        if not args.operator_authorized:
+            _die("--set-tier requires --operator-authorized (the operator must have "
+                 "approved the priority change).")
+        _id, _tier = args.set_tier
+        result = lazy_core.set_queue_priority(
+            Path(args.repo_root) / "docs" / "features" / "queue.json",
+            _id, "feature", _tier, queue_label="queue.json",
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.set_independent is not None:
+        # no-sanctioned-cli-for-queue-state-mutations /
+        # lazy-batch-parallel-run-harness-gaps gap 3: operator-directed in-place
+        # independent-marker change (the sanctioned replacement for hand-editing
+        # queue.json's shard-eligibility marker). Refuse FIRST (exit 3, zero side
+        # effects for a cycle subagent — the --set-tier contract), then require
+        # --operator-authorized. VALUE is true|false; false CLEARS the marker.
+        lazy_core.refuse_if_cycle_active("--set-independent")
+        if not args.operator_authorized:
+            _die("--set-independent requires --operator-authorized (the operator must "
+                 "have approved the shard-eligibility change).")
+        _id, _raw = args.set_independent
+        _norm = _raw.strip().lower()
+        if _norm not in ("true", "false"):
+            _die(f"--set-independent VALUE must be 'true' or 'false', got {_raw!r}.")
+        result = lazy_core.set_independent_marker(
+            Path(args.repo_root) / "docs" / "features" / "queue.json",
+            _id, _norm == "true", queue_label="queue.json",
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.add_deps or args.remove_deps:
+        # no-sanctioned-cli-for-queue-state-mutations: post-hoc arbitrary deps
+        # edit (the non-SPEC sibling of --sync-deps). Refuse FIRST + require
+        # --operator-authorized. --add-deps / --remove-deps are separate ops so a
+        # cycle-guard failure names the exact direction.
+        lazy_core.refuse_if_cycle_active("--add-deps/--remove-deps")
+        if args.add_deps and args.remove_deps:
+            _die("--add-deps and --remove-deps are mutually exclusive (one op per call).")
+        if not args.operator_authorized:
+            _die("--add-deps/--remove-deps requires --operator-authorized.")
+        _target = args.add_deps or args.remove_deps
+        _dep_ids = (
+            [s.strip() for s in args.deps.split(",") if s.strip()]
+            if args.deps else None
+        )
+        if not _dep_ids:
+            _die("--add-deps/--remove-deps requires a non-empty --deps id list.")
+        result = lazy_core.mutate_queue_deps(
+            Path(args.repo_root) / "docs" / "features" / "queue.json",
+            _target,
+            add=(_dep_ids if args.add_deps else None),
+            remove=(_dep_ids if args.remove_deps else None),
+            queue_label="queue.json",
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
     if args.record_intervention:
         # intervention-efficacy-tracking Phase 1: the manual / hardening-round /
         # D9-backfill capture path (the completion-gate capture lives inside
         # lazy_core.apply_pseudo — this CLI covers captures with no completion
         # event). Orchestrator-only: the record is committed pipeline state, so
         # refuse a cycle subagent FIRST (exit 3, zero side effects), exactly
-        # like --enqueue-adhoc / --reorder-queue.
-        lazy_core.refuse_if_cycle_active("--record-intervention")
+        # like --enqueue-adhoc / --reorder-queue — EXCEPT a dispatched HARDENING
+        # cycle subagent, which its SKILL contract REQUIRES to record its own
+        # round's intervention (capture-only telemetry, no lifecycle mutation).
+        # allow_hardening_subagent permits it ONLY when the cycle marker's
+        # sub_skill is a hardening class; every other cycle subagent is still
+        # refused (dispatched-harden-record-intervention-refused-by-containment).
+        lazy_core.refuse_if_cycle_active(
+            "--record-intervention", allow_hardening_subagent=True
+        )
         if not args.id:
             _die("--record-intervention requires --id")
         # D9 honesty convention: an explicit shipped_commit/shipped_date
@@ -13297,18 +14634,138 @@ def main() -> int:
     if args.test:
         return run_smoke_tests()
 
+    # lazy-batch-no-mid-run-budget-or-park-controls: resolve the EFFECTIVE park
+    # state — the marker is authoritative for a live run (so a mid-run --set-park
+    # toggle takes effect), with the CLI flags as the no-marker / legacy-marker
+    # fallback (byte-identical back-compat). Threaded into compute_state AND the
+    # emit path below so header/park behavior update immediately.
+    _park_marker = lazy_core.read_run_marker()
+    _eff_park_ni, _eff_park_bl, _eff_park_pv = lazy_core.fold_park_flags(
+        args.park_needs_input, args.park_blocked, args.park_provisional,
+        _park_marker,
+    )
     state = compute_state(
         Path(args.repo_root),
         cloud=args.cloud,
         skip_needs_research=args.skip_needs_research,
         real_device=resolve_real_device(args.real_device),
         scope_feature_id=args.feature_id,
-        park_needs_input=args.park_needs_input,
-        park_blocked=args.park_blocked,
-        park_provisional=args.park_provisional,
+        park_needs_input=_eff_park_ni,
+        park_blocked=_eff_park_bl,
+        park_provisional=_eff_park_pv,
         per_feature_cycle_cap=args.per_feature_cycle_cap,
         strict_research_halt=args.strict_research_halt,
     )
+    # research-gated-head-buried-by-skip-ahead-and-merged-fallthrough: when THIS
+    # dispatch-bound probe (--emit-prompt) REALIZED a skip PAST a research-pending
+    # gated head and that head OUTRANKS (full merged ordering incl. the type
+    # tie-break) the item the driver would otherwise dispatch — a lower-priority
+    # bug or feature the Round-64 merged fallthrough would route to — re-emit as
+    # that head's SCOPED needs-research terminal so the driver's EXISTING
+    # needs-research (Step 4) halt SURFACES the research prompt instead of burying
+    # it. A research gap is operator-resolvable in seconds; a BLOCKED head is not,
+    # so BLOCKED heads keep skipping-ahead to independent ready work (unchanged).
+    # Loop-free: the scoped re-run lands on the head's own Step-5 needs-research
+    # terminal (no re-dispatch, no stall). Feature-pipeline only + marker-gated +
+    # fail-safe (any error → keep the original state; never fabricate a halt).
+    if args.emit_prompt and _park_marker is not None and state.get("research_gated_heads"):
+        _rh_head = None
+        try:
+            _rh_repo = Path(args.repo_root)
+            _rh_feats = load_queue(_rh_repo)
+            _rh_bugs = _load_bug_queue_for_merged(_rh_repo)
+            # merged-head-actionability-oracle (SPEC L1/L2/L3 tail): build the FULL
+            # merged-head exclude set via the oracle (same-pipeline = features via
+            # probe_skipped_ids unchanged; cross-pipeline = bugs via the real scoped
+            # bug probe), then pass it to research_halt_head, which RE-INCLUDES the
+            # research-gated ids exactly as today — the byte-identity invariant that
+            # keeps a research-gated merged head SURFACING its needs-research halt.
+            _rh_bug_state_mod = _load_bug_state_module()
+            _rh_real_device = resolve_real_device(args.real_device)
+            # TYPE-AWARE scoped probe (merged-head-oracle-deadlocks-on-unreached-
+            # parked-same-pipeline-head): the oracle now scope-probes a
+            # same-pipeline (feature) head the emit walk never reached, not only
+            # cross-pipeline (bug) candidates — so the probe dispatches each
+            # candidate to the correct pipeline's compute_state via an id->type map
+            # (mirrors the stateless --next-merged _nm_scoped_probe).
+            _rh_types = {}
+            for _rh_it in _rh_feats:
+                if isinstance(_rh_it, dict) and _rh_it.get("id"):
+                    _rh_types[_rh_it["id"]] = "feature"
+            for _rh_it in _rh_bugs:
+                if isinstance(_rh_it, dict) and _rh_it.get("id"):
+                    _rh_types.setdefault(_rh_it["id"], "bug")
+
+            def _rh_scoped_probe(_iid):
+                try:
+                    if _rh_types.get(_iid) == "bug":
+                        if _rh_bug_state_mod is None:
+                            return {}
+                        return _rh_bug_state_mod.compute_state(
+                            _rh_repo, cloud=args.cloud, real_device=_rh_real_device,
+                            scope_bug_id=_iid,
+                            park_needs_input=_eff_park_ni, park_blocked=_eff_park_bl,
+                            park_provisional=_eff_park_pv,
+                            strict_research_halt=args.strict_research_halt,
+                        )
+                    # same-pipeline feature → this module's own scoped compute_state
+                    return compute_state(
+                        _rh_repo, cloud=args.cloud,
+                        skip_needs_research=args.skip_needs_research,
+                        real_device=_rh_real_device, scope_feature_id=_iid,
+                        park_needs_input=_eff_park_ni, park_blocked=_eff_park_bl,
+                        park_provisional=_eff_park_pv,
+                        strict_research_halt=args.strict_research_halt,
+                    )
+                except Exception:  # noqa: BLE001 — a per-candidate probe error must not break the base probe
+                    return {}
+
+            _rh_diag_snapshot = list(lazy_core._DIAGNOSTICS)
+            try:
+                _rh_excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+                    _rh_feats, _rh_bugs, str(lazy_core.active_repo_root()),
+                    state.get("feature_id"),
+                    same_pipeline="feature", same_pipeline_state=state,
+                    scoped_probe=_rh_scoped_probe,
+                )
+            finally:
+                lazy_core._DIAGNOSTICS[:] = _rh_diag_snapshot
+            _rh_head = lazy_core.dispatch.research_halt_head(
+                state, _rh_feats, _rh_bugs, str(lazy_core.active_repo_root()),
+                exclude_ids=_rh_excluded,
+            )
+        except Exception:  # noqa: BLE001 — detection must never break the base probe
+            _rh_head = None
+        if _rh_head is not None:
+            try:
+                _rh_state = compute_state(
+                    Path(args.repo_root),
+                    cloud=args.cloud,
+                    skip_needs_research=args.skip_needs_research,
+                    real_device=resolve_real_device(args.real_device),
+                    scope_feature_id=_rh_head,
+                    park_needs_input=_eff_park_ni,
+                    park_blocked=_eff_park_bl,
+                    park_provisional=_eff_park_pv,
+                    per_feature_cycle_cap=args.per_feature_cycle_cap,
+                    strict_research_halt=True,
+                )
+            except Exception:  # noqa: BLE001 — fail toward the original state
+                _rh_state = None
+            # Adopt the scoped terminal ONLY when it is actually the needs-research
+            # halt (fail-safe: never manufacture a halt from a mis-scoped re-run).
+            if _rh_state is not None and _rh_state.get("terminal_reason") == "needs-research":
+                _rh_state["route_overridden_by"] = "research-gated-head"
+                state = _rh_state
+    # Surface the effective park state on the probe JSON when a marker is present
+    # (byte-identical no-marker output preserved) so the orchestrator can confirm
+    # a --set-park toggle took effect mid-run.
+    if _park_marker is not None and "park_needs_input" in _park_marker:
+        state["park_active"] = {
+            "park_needs_input": _eff_park_ni,
+            "park_blocked": _eff_park_bl,
+            "park_provisional": _eff_park_pv,
+        }
     # --repeat-count / --repeat-count-peek are strictly additive and flag-gated
     # so that default output remains byte-identical when neither is passed.
     # --repeat-count ADVANCES the persisted streak; --repeat-count-peek computes
@@ -13322,25 +14779,16 @@ def main() -> int:
         )
         state["repeat_count"] = _counts["repeat_count"]
         state["step_repeat_count"] = _counts["step_repeat_count"]
-    # Counter advance: at dispatch-bound probe time (--repeat-count, NOT
-    # --repeat-count-peek) advance the marker-persisted forward/meta counters.
-    # Mirror of the peek discipline for update_repeat_counts: only the one
-    # dispatch-bound probe per cycle advances any persisted state.
-    #
-    # FORWARD-CYCLE AUTHORITY (byref-dispatch-undercounts-forward-cycles, Phase 1,
-    # WU-1 — form 1 reconciliation): advance_forward_cycle is the AUTHORITATIVE
-    # forward-advance trigger on this real-skill (by-reference) probe path. It keys
-    # on the consume-INDEPENDENT [feature_id, current_step, sub_skill] state change,
-    # so a by-ref dispatch that does NOT bump the consume census (the frozen-census
-    # / Theory-1b case) still advances forward_cycles — defeating BOTH the
-    # advance_meta_cycle +1 over-absorb and the ring-cap census regression at once.
-    # advance_run_counters (the consume-gated oracle) is NO LONGER the forward
-    # authority on this path — it was non-monotonic here and silently undercounted,
-    # letting the max-cycles cap never fire. Meta accounting via --emit-dispatch /
-    # advance_meta_cycle is untouched, so nothing on this path double-counts.
-    # No marker present → no-op (advance_forward_cycle returns None).
-    if args.repeat_count:
-        lazy_core.advance_forward_cycle(state)
+    # cycle-budget-counters-double-count-on-probes-and-inject-hook: the forward
+    # budget advance formerly fired HERE on the --repeat-count probe path. REMOVED —
+    # probes (inspection probes AND the per-turn inject hook, lazy_inject.py) fire
+    # this path with NO dispatch, so coupling the budget to it double-counted /
+    # inflated forward_cycles (0→3 over three distinct-item inspection probes; a
+    # non-dispatch inject turn bumped 1→2). The budget now advances ONLY on a
+    # completed dispatch bracket (advance_cycle_bracket_counter at --cycle-end, keyed
+    # on the cycle marker's --kind) and on --apply-pseudo. update_repeat_counts
+    # (the loop-detection STREAKS) stays probe-driven above — only the BUDGET
+    # decoupled from the probe path.
     # --emit-prompt is strictly additive and flag-gated so that default output
     # remains byte-identical when the flag is absent. Placed AFTER the repeat
     # flags so the same-invocation count (from EITHER --repeat-count or
@@ -13359,6 +14807,161 @@ def main() -> int:
         # probe; the extractor now fails loudly on the missing key.
         _emit_marker = lazy_core.read_run_marker()
         _emit_debt = lazy_core.pending_hardening() if _emit_marker is not None else 0
+        # dispatch-probe-and-inject-bypass-merged-head: compute whether the
+        # MERGED work-list head diverges from the item this feature probe would
+        # emit for (a P0 bug that jumped the bug-queue head mid-feature-run).
+        # The unified driver is contracted to probe --next-merged FIRST and
+        # type-dispatch, but an orchestrator that calls this enriched
+        # --emit-prompt probe DIRECTLY (the manual Step-1a path) would otherwise
+        # get a stale feature route with no signal that a P0 bug outranks it.
+        # Marker-gated + fail-safe (any error → None → emit normally; never a
+        # spurious withhold). Reuses the SAME next_merged ordering the
+        # --next-merged surface uses — never a second ordering rule.
+        #
+        # adhoc-unify-merged-head-coordinator-exemptions: the two
+        # coordinator-arbitration exemptions the serial merged-head divergence
+        # premise does NOT apply to now live behind ONE shared predicate in
+        # lazy_core.dispatch (single home; the anti-accretion contract). It
+        # returns "lane" | "lease" | None (lane precedence over lease), fail-safe
+        # (never raises into the base probe):
+        #   * "lane" — round-1 gap 1: a /lazy-batch-parallel lane marker carries a
+        #     non-null `parent_run`; claim_shardable ALREADY arbitrated the queue
+        #     (queue-order + independent:true + lease) when it assigned this lane
+        #     its --feature-id, so the serial "one active item == the global head"
+        #     premise is void by design and the lane must not withhold.
+        #   * "lease" — round-2 gap 8: a non-lane main-root SERIAL-TAIL probe whose
+        #     OWN feature_id holds a LIVE coordinator lease is discharging the
+        #     coordinator's in-flight, lane-merged obligation BEFORE any new head
+        #     work (heartbeat-fresh actively-owned work, never the stale route the
+        #     guard exists to catch), delegating the liveness I/O to
+        #     lazy_coord.has_live_lease(leases_path, feature_id).
+        # A future third exemption (demoted-serial-rerun) is a one-line addition
+        # THERE. The reason drives BOTH the skip decision here and the
+        # observability diagnostic below (via coordinator_exemption_diag), so the
+        # two-boolean fragmentation collapses into one predicate call.
+        _emit_exempt_reason = lazy_core.dispatch.coordinator_arbitrated_emission(
+            _emit_marker,
+            state.get("feature_id"),
+            lazy_core.claude_state_dir() / "leases.json",
+        )
+        _merged_override = None
+        if _emit_marker is not None and _emit_exempt_reason is None:
+            try:
+                _mo_repo = Path(args.repo_root)
+                _mo_feats = load_queue(_mo_repo)
+                _mo_bugs = _load_bug_queue_for_merged(_mo_repo)
+                # merged-head-actionability-oracle (SPEC L1/L2/L3/L5): build the
+                # merged-head exclude set via the AUTHORITATIVE actionability
+                # oracle — the single replacement for the file-predicate
+                # `nondispatchable_item_ids` ∪ `probe_skipped_ids` union that had
+                # accreted five/six `merged-head-diverged-withholds-on-<X>` facets.
+                #   (1) same-pipeline (features) → `probe_skipped_ids(state, feats)`
+                #       UNCHANGED (L2 — the cross-item skip-ahead ordering context).
+                #   (2) cross-pipeline (bugs) → the REAL scoped `bug-state.compute_state`
+                #       per at-or-above candidate, EXCLUDED iff non-dispatchable
+                #       (`is_dispatchable` false), honoring the SAME run flags the emit
+                #       probe used (cloud/real_device/park facets/strict_research_halt;
+                #       the bug pipeline has no --skip-needs-research). A candidate the
+                #       probe can't classify (module unloadable / probe error) is treated
+                #       non-dispatchable → fail toward EMITTING the workable item.
+                #   (3) `.discard(current)` (invariant preserved, inside the oracle).
+                # Byte-identical for a dispatchable head (a P0 bug jumping the queue
+                # still withholds); previously-uncovered non-dispatchable categories
+                # (cloud/completion-unverified/blocked/…) are now correctly excluded,
+                # ending the recurring stall class by construction. In-process safety
+                # (Phase-1 OQ1/L4): the scoped bug probe calls `clear_diagnostics()` on
+                # the SHARED lazy_core._DIAGNOSTICS, so snapshot/restore it around the
+                # oracle (the primary `state` dict is already a captured snapshot).
+                _mo_bug_state_mod = _load_bug_state_module()
+                _mo_real_device = resolve_real_device(args.real_device)
+                # TYPE-AWARE scoped probe (merged-head-oracle-deadlocks-on-
+                # unreached-parked-same-pipeline-head): the oracle now scope-probes
+                # a same-pipeline (feature) head the emit walk never reached, not
+                # only cross-pipeline (bug) candidates — so the probe dispatches
+                # each candidate to the correct pipeline's compute_state via an
+                # id->type map (mirrors the stateless --next-merged _nm_scoped_probe).
+                _mo_types = {}
+                for _mo_it in _mo_feats:
+                    if isinstance(_mo_it, dict) and _mo_it.get("id"):
+                        _mo_types[_mo_it["id"]] = "feature"
+                for _mo_it in _mo_bugs:
+                    if isinstance(_mo_it, dict) and _mo_it.get("id"):
+                        _mo_types.setdefault(_mo_it["id"], "bug")
+
+                def _mo_scoped_probe(_iid):
+                    try:
+                        if _mo_types.get(_iid) == "bug":
+                            if _mo_bug_state_mod is None:
+                                return {}
+                            return _mo_bug_state_mod.compute_state(
+                                _mo_repo, cloud=args.cloud, real_device=_mo_real_device,
+                                scope_bug_id=_iid,
+                                park_needs_input=_eff_park_ni, park_blocked=_eff_park_bl,
+                                park_provisional=_eff_park_pv,
+                                strict_research_halt=args.strict_research_halt,
+                            )
+                        # same-pipeline feature → this module's own scoped compute_state
+                        return compute_state(
+                            _mo_repo, cloud=args.cloud,
+                            skip_needs_research=args.skip_needs_research,
+                            real_device=_mo_real_device, scope_feature_id=_iid,
+                            park_needs_input=_eff_park_ni, park_blocked=_eff_park_bl,
+                            park_provisional=_eff_park_pv,
+                            strict_research_halt=args.strict_research_halt,
+                        )
+                    except Exception:  # noqa: BLE001 — a per-candidate probe error must not break the base probe
+                        return {}
+
+                _mo_diag_snapshot = list(lazy_core._DIAGNOSTICS)
+                try:
+                    _mo_excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+                        _mo_feats, _mo_bugs, str(lazy_core.active_repo_root()),
+                        state.get("feature_id"),
+                        same_pipeline="feature", same_pipeline_state=state,
+                        scoped_probe=_mo_scoped_probe,
+                    )
+                finally:
+                    lazy_core._DIAGNOSTICS[:] = _mo_diag_snapshot
+                # Retained for the observability diagnostic below (the same-pipeline
+                # skip set the withhold folded in) — the oracle already includes it.
+                _mo_skipped = lazy_core.dispatch.probe_skipped_ids(state, _mo_feats)
+                _merged_override = lazy_core.dispatch.merged_head_override(
+                    _mo_feats,
+                    _mo_bugs,
+                    str(lazy_core.active_repo_root()),
+                    state.get("feature_id"),
+                    exclude_ids=_mo_excluded,
+                )
+                # Observability (skip is NON-withholding): a gated head the probe
+                # skipped is surfaced in the existing gated_heads /
+                # device_deferred_features / host_deferred_features / dep_gated
+                # keys; add a diagnostic naming the skip so retro/telemetry can
+                # see the merged-head divergence was correctly SKIPPED (not
+                # withheld) when a workable item existed downstream.
+                if _mo_skipped and _merged_override is None:
+                    _diag_line = (
+                        "merged-head: skipped gated/deferred head(s) "
+                        f"{sorted(_mo_skipped)!r} — dispatching the workable merged "
+                        f"item '{state.get('feature_id')}' (merged-head-diverged "
+                        "NOT withheld; skip observable via gated_heads / "
+                        "device_deferred_features / host_deferred_features / "
+                        "dep_gated)."
+                    )
+                    if isinstance(state.get("diagnostics"), list):
+                        state["diagnostics"].append(_diag_line)
+            except Exception:  # noqa: BLE001 — divergence probe must never break the base probe
+                _merged_override = None
+        elif _emit_exempt_reason is not None:
+            # Observability: the merged-head divergence guard was SKIPPED because
+            # this is a coordinator-arbitrated emission (lane probe / serial-tail
+            # lease probe — round-1 gap 1 / round-2 gap 8; never withheld). The
+            # per-reason diag text is selected by coordinator_exemption_diag,
+            # preserving both historical messages verbatim; an unrecognized future
+            # reason still skips + emits a generic coordinator-arbitrated diag.
+            if isinstance(state.get("diagnostics"), list):
+                state["diagnostics"].append(
+                    lazy_core.dispatch.coordinator_exemption_diag(_emit_exempt_reason)
+                )
         if _emit_marker is not None and _emit_debt > 0:
             # Withhold: no cycle_prompt, no cycle_model, no registration.
             _oldest = lazy_core.oldest_unacked_deny()
@@ -13395,14 +14998,42 @@ def main() -> int:
                 if state.get("feature_id") == _obligation.get("item_id")
                 else None
             ) or str(Path(args.repo_root) / "docs" / "features" / _aud_item_id)
+            # GAP 4 (adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps):
+            # feature_name describes THIS probe's item, which — when the audit is
+            # owed for a PRIOR item — is the NEXT queued item, not the pending-audit
+            # one. Mirror the _aud_spec_path guard: use feature_name only when this
+            # probe IS the pending-audit item; otherwise fall back to its own slug.
+            _aud_item_name = (
+                state.get("feature_name")
+                if state.get("feature_id") == _obligation.get("item_id")
+                else None
+            ) or _aud_item_id
             state["input_audit_emit_command"] = lazy_core.build_input_audit_emit_command(
                 "lazy-state.py",
                 item_id=_aud_item_id,
-                item_name=state.get("feature_name") or _aud_item_id,
+                item_name=_aud_item_name,
                 spec_path=_aud_spec_path,
                 cycle_kind=_obligation.get("cycle_kind") or "",
                 cwd=str(args.repo_root),
+                # adhoc-audit-obligation-fires-on-zero-commit-failed-cycle P2:
+                # bind the emit command to the bracket's ACTUAL end commit
+                # (recorded on the obligation in P1), never positional HEAD~1.
+                cycle_commit_sha=_obligation.get("cycle_commit_sha"),
+                cycle_summary=_obligation.get("cycle_summary"),
             )
+        elif _merged_override is not None:
+            # dispatch-probe-and-inject-bypass-merged-head: the MERGED head is a
+            # DIFFERENT, higher-priority item than this feature probe would emit
+            # for (typically a P0 bug that jumped the bug-queue head). WITHHOLD
+            # the wrong-item forward route — same shape as the two withholds
+            # above (no cycle_prompt/cycle_model/registration side-effect this
+            # probe). The orchestrator must re-probe --next-merged and
+            # type-dispatch to the merged head's script (bug → bug-state.py).
+            # Lowest-precedence of the three withholds: a hardening/audit debt on
+            # the CURRENT item is discharged first; only then does a merged-head
+            # divergence redirect the route.
+            state["route_overridden_by"] = "merged-head-diverged"
+            state["merged_head"] = _merged_override["merged_head"]
         else:
             rc = state.get("repeat_count") if (args.repeat_count or args.repeat_count_peek) else None
             # Phase 9 (lazy-validation-readiness) — per-part model tiering.
@@ -13421,8 +15052,10 @@ def main() -> int:
                 # selects the park=park template sections (the stub-spec
                 # sentinel-mediation contract). Non-park emission is
                 # byte-identical (the attribute is absent on every
-                # pre-existing section).
-                park_mode=args.park_needs_input,
+                # pre-existing section). lazy-batch-no-mid-run-budget-or-park-
+                # controls: uses the EFFECTIVE (marker-authoritative) park state
+                # so a mid-run --set-park toggle drives the emitted template.
+                park_mode=_eff_park_ni,
             )
             if emitted is None:
                 state["cycle_prompt"] = None
@@ -13507,9 +15140,14 @@ def main() -> int:
             args.forward_cycles, args.meta_cycles,
             _marker,
         )
+        # lazy-batch-no-mid-run-budget-or-park-controls: the marker is the
+        # authoritative live budget — fold max_cycles from it when present so a
+        # mid-run --set-max-cycles update shows in the header immediately (no
+        # re-passing --max-cycles). No marker → the explicit flag (byte-identical).
+        _max_cycles = lazy_core.fold_max_cycles(args.max_cycles, _marker)
         state["cycle_header"] = lazy_core.format_cycle_header(
             state, forward_cycles=_fwd,
-            max_cycles=args.max_cycles, meta_cycles=_meta,
+            max_cycles=_max_cycles, meta_cycles=_meta,
         )
         # Phase 7 WU-7.1: deny-ledger enrichment — MARKER-GATED so default
         # (no-marker) probe output stays byte-identical to the committed

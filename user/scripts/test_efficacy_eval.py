@@ -834,6 +834,70 @@ def test_canary_band_regression_trips(state_env):
     assert "regressed" in t["reason"]
 
 
+# --- confound guard: band-only trip requires attribution or independence ----
+# (canary-band-only-trip-auto-enqueues-without-attribution)
+
+
+def test_canary_band_only_self_emitted_zero_attribution_suppressed(state_env):
+    """A band-only trip on a NON-independent (self-emitted) signal with ZERO
+    attributed incidents is SUPPRESSED — surfaced for triage (D4), NOT
+    auto-enqueued; the record stays open (never closed, never consequence-fired)."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)                          # baseline 1.0 ev/run (decrease)
+    rec = _capture(repo, "self-emitted-band",
+                   independence="self-emitted — the changed hook emits this signal")
+    _add_canary(rec, opened=_CANARY_OPENED_PAST)
+    _seed_runs(4, 3, start=4)                 # post 3.0 ev/run → +200% band trip
+    code, payload = _run_canary(repo)
+    assert code == 0
+    assert _trip_of(payload, "self-emitted-band") is None      # NOT auto-enqueued
+    sup = next((s for s in payload["suppressed"]
+                if s["id"] == "self-emitted-band"), None)
+    assert sup is not None, payload
+    assert sup["band"]["rel"] >= 25.0
+    assert "confounded" in sup["suppress_reason"]
+    assert payload["suppressed_notify"]
+    # Record stays OPEN — neither closed nor tripped-stamped.
+    meta = lazy_core.parse_sentinel(rec)
+    assert meta["canary"]["status"] == "open"
+    assert "self-emitted-band" not in payload["closed_clean"]
+    assert "self-emitted-band" not in payload["closed_no_data"]
+
+
+def test_canary_band_trip_independent_signal_enqueues_not_suppressed(state_env):
+    """An `independent` signal's band swing is meaningful on its own — it still
+    auto-enqueues (the confound guard applies only to non-independent signals)."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)
+    rec = _capture(repo, "indep-band",
+                   independence="independent — external counter")
+    _add_canary(rec, opened=_CANARY_OPENED_PAST)
+    _seed_runs(4, 3, start=4)
+    code, payload = _run_canary(repo)
+    assert _trip_of(payload, "indep-band") is not None, payload
+    assert all(s["id"] != "indep-band" for s in payload["suppressed"])
+
+
+def test_canary_band_trip_self_emitted_with_attribution_enqueues(state_env):
+    """A band trip on a self-emitted signal WITH ≥1 attributed fresh incident on
+    the change's own surface is corroborated — it enqueues (not suppressed), even
+    below the ≥2 incident-trip threshold."""
+    repo = state_env["repo"]
+    _seed_runs(4, 1)
+    rec = _capture(repo, "attrib-band",
+                   independence="self-emitted — the changed hook emits this signal")
+    _add_canary(rec, surfaces=["user/hooks/lazy-cycle-containment.sh"],
+                opened=_CANARY_OPENED_PAST)
+    _seed_runs(4, 3, start=4)                 # band trip
+    _write_hook_events([                      # 1 attributed incident (< trip count)
+        {"hook": "lazy-cycle-containment.sh", "kind": "error", "ts": _BASE_NOW},
+    ])
+    code, payload = _run_canary(repo)
+    t = _trip_of(payload, "attrib-band")
+    assert t is not None, payload
+    assert all(s["id"] != "attrib-band" for s in payload["suppressed"])
+
+
 def test_canary_incident_attribution_trips_on_surface_match(state_env):
     """≥2 fresh incidents whose emitting surface ∈ canary.surfaces trip."""
     repo = state_env["repo"]

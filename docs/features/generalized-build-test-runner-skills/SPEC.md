@@ -62,7 +62,7 @@ All brief claims re-verified this session:
 | The 7-command battery | `docs/features/lazy-core-package-decomposition/plans/all-phases-lazy-core-package-decomposition-part-2.md` note 1: `python -m pytest user/scripts/ -q`; `lazy-state.py --test`; `bug-state.py --test`; `lazy_parity_audit.py --repo-root .`; `cli_surface_gen.py --check --repo-root .`; `doc-drift-lint.py --repo-root .`; `lint-skills.py` |
 | Turn-end gate is canonical | `user/skills/_components/turn-end-gate.md` exists (Round 39); referenced, never copied |
 | AlgoBooth path is non-standard | `C:\Users\Jacob\repos\AlgoBooth` (not under `~/source/repos`); `~/.claude/lazy-repos.json` does not exist on this box; hooks key on payload-cwd git toplevel, so per-repo keying is unaffected |
-| Turn-end failure class is live | `docs/bugs/_archive/subagent-backgrounds-verification-ends-turn-before-green/` (Fixed, P1); `docs/bugs/generic-execution-surfaces-lack-turn-end-gate/` (Concluded, P1, 4 recurrences 2026-07-13) |
+| Turn-end failure class is live | `docs/bugs/_archive/subagent-backgrounds-verification-ends-turn-before-green/` (Fixed, P1); `docs/bugs/_archive/generic-execution-surfaces-lack-turn-end-gate/` (Concluded, P1, 4 recurrences 2026-07-13) |
 
 ## User Experience (agent-facing)
 

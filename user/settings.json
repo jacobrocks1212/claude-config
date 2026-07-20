@@ -102,11 +102,6 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/block-work-repo-git-push.sh",
             "timeout": 5
-          },
-          {
-            "type": "command",
-            "command": "bash ~/.claude/hooks/block-terminal-kill.sh",
-            "timeout": 5
           }
         ]
       },
@@ -121,6 +116,11 @@
           {
             "type": "command",
             "command": "bash ~/.claude/hooks/long-build-ownership-guard.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/cycle-subagent-bg-gate-guard.sh",
             "timeout": 5
           },
           {
@@ -162,6 +162,35 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/lazy-dispatch-guard.sh",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/lazy-cycle-containment.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/subagent-wedge-backstop.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/subagent-wedge-backstop.sh",
+            "timeout": 5
           }
         ]
       }
@@ -219,6 +248,7 @@
   "autoUpdatesChannel": "latest",
   "tui": "default",
   "autoMemoryEnabled": false,
+  "includeCoAuthoredBy": false,
   "skipDangerousModePermissionPrompt": true,
   "theme": "dark",
   "remoteControlAtStartup": true,

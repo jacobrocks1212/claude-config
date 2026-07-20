@@ -3,16 +3,24 @@ kind: needs-input
 feature_id: turn-routing-enforcement
 written_by: harden-harness
 decisions:
-  - "Dispatch-preference contract for Agent dispatches: keep `dispatch_prompt_ref` (@@lazy-ref) PREFERRED, or flip to verbatim `dispatch_prompt`?"
-  - "Partial-VALIDATED → `__mark_complete__` oscillation: route back to `mcp-test` when the PHASES verification matrix is incomplete, or change what mints VALIDATED.md? (harden Round 45)"
-  - "forward_cycles under-count in interleaved real+meta by-ref dispatch: reopen the archived `byref-dispatch-undercounts-forward-cycles` bug, or accept the low-impact under-count? (harden Round 45)"
+  - "Dispatch-preference contract for Agent dispatches: keep `dispatch_prompt_ref` (@@lazy-ref) PREFERRED, or flip to verbatim `dispatch_prompt`? NEW EVIDENCE (harden Round 84, 2026-07-17): a background (`run_in_background: true`) Agent dispatch's F2a ALLOW+consume fires but the `updatedInput` rewrite is NOT applied — the subagent gets the bare `@@lazy-ref` token. See `docs/bugs/byref-updatedinput-unapplied-on-background-agent-dispatch/`. Confirm `updatedInput` platform behavior for background Agent dispatches (claude-code-guide) before deciding; a background-only carve-out is a partial flip of this decision."
+  - "[RESOLVED 2026-07-18 → re-route to mcp-test on incomplete matrix] Partial-VALIDATED → `__mark_complete__` oscillation: route back to `mcp-test` when the PHASES verification matrix is incomplete, or change what mints VALIDATED.md? (harden Round 45)"
+  - "[RESOLVED 2026-07-18 → subsumed by decision #11 dispatch-time advance] forward_cycles under-count in interleaved real+meta by-ref dispatch: reopen the archived `byref-dispatch-undercounts-forward-cycles` bug, or accept the low-impact under-count? (harden Round 45)"
   - "Dispatch-guard contract for WORKSTATION sub-subagent dispatches: how should `lazy_guard.py` distinguish a cycle worker's now-authorized test-agent/impl-agent split from an orchestrator improvising an unregistered cycle prompt, without weakening the integrity guard? (harden Round 9, 2026-07)"
-  - "Completion-gate treatment of un-migrated + host-blocked verification rows: add a per-row host-capability deferral so a feature blocked only on host-unavailable backend verification can complete-modulo-deferral instead of all-or-nothing, and/or converge the completion recognizer with the routing bypass? (harden Round 22, 2026-07)"
-  - "Corrective-coverage dispatch: add a registered `--emit-dispatch corrective-coverage` class (or a Step-10→mcp-test re-route) to author NEW mcp-test coverage for a genuinely-untested-but-testable row discovered at completion, since coherence-recovery correctly refuses implementation work and no legitimate dispatch path exists? (harden Round 22, 2026-07)"
+  - "[RESOLVED 2026-07-18 → per-row requires-host deferral marker] Completion-gate treatment of un-migrated + host-blocked verification rows: add a per-row host-capability deferral so a feature blocked only on host-unavailable backend verification can complete-modulo-deferral instead of all-or-nothing, and/or converge the completion recognizer with the routing bypass? (harden Round 22, 2026-07)"
+  - "[RESOLVED 2026-07-18 → Step-10 re-route to mcp-test] Corrective-coverage dispatch: add a registered `--emit-dispatch corrective-coverage` class (or a Step-10→mcp-test re-route) to author NEW mcp-test coverage for a genuinely-untested-but-testable row discovered at completion, since coherence-recovery correctly refuses implementation work and no legitimate dispatch path exists? (harden Round 22, 2026-07)"
   - "GATE_VERDICT.md authoring route: no sanctioned emit-dispatch class authors GATE_VERDICT.md for a genuinely-in-scope control-surface feature at __mark_complete__ — add a `gate-verdict` emit class, make it interactive-only, or move the gate to planning-time? (harden Round 36, 2026-07)"
   - "Provisional gate at the ship seam: should gate_verdict_ok (D3, STRUCTURALLY PROVISIONAL/unratified) hard-block completion before anti-overfit-design-gate is ratified, or degrade to advisory/planning-time until then? (harden Round 36, 2026-07)"
+  - "[RESOLVED 2026-07-18 → re-derive fence at guard time] Consumed-fence robustness under a re-emit after `--cycle-begin`: the operator-blessed sub-subagent exemption fence (decision 4) binds ONE nonce at `--cycle-begin`, but the freshness-rule re-emit makes the worker consume a DIFFERENT emission → fence dead → sub-subagent denied. Re-derive the fence at guard time, re-bind at re-emit, or enforce emit-before-cycle-begin — without weakening the integrity guard? (harden Round 46, 2026-07)"
+  - "[RESOLVED 2026-07-18 → register constant-False caps + honor operator sentinel] Operator per-feature host-defer not machine-enforced over a VALIDATED feature: an operator's 'defer whole feature' resolution (apply-resolution writes DEFERRED_REQUIRES_HOST.md, deferred_by: operator) drives NO skip because (a) the named capability ids are unregistered → unknown-capability BLOCKED.md fail-fast, and (b) the host-defer branch is `not VALIDATED.md`-gated but the feature has a validated-modulo-observation-gaps VALIDATED.md → re-routes to __mark_complete__ → gate re-refuses → re-writes NEEDS_INPUT, re-asking an answered decision. Register the service capabilities + honor an operator DEFERRED_REQUIRES_HOST.md over a validated-modulo feature, or add a per-feature host-defer of verification rows — without weakening the completion gate or false-greening? Bundles with #5/#6. (harden Round 47, 2026-07)"
+  - "[RESOLVED 2026-07-18 → scope verify-ledger substep to completion-capable skills] Turn-end verify-ledger mis-scoped for PLANNING cycles: the cycle-subagent `@section turn-end` TERMINAL VERIFY GATE injects `--verify-ledger` reconcile-until-ok:true with `skills=all`, but verify-ledger is the COMPLETION gate — a planning cycle (spec-phases/write-plan/plan-bug/plan-feature/spec/spec-bug) authors a Ready plan with unchecked deliverables → structurally ok:false → the reconcile loop is unsatisfiable without fabricating completion (Status-honesty forbids). Scope the verify-ledger substep to completion-capable skills only (mirror the orchestrator's already-shipped guardrail-D scope), or add a 'planning-ok' verdict mode to verify_ledger — which terminal guarantee should planning cycles carry? (harden Round 51, 2026-07)"
+  - "[RESOLVED 2026-07-18 → move forward-advance to dispatch time; probe path becomes PEEK] forward_cycles OVER-count on non-dispatch inject-hook turns: the inject-hook `--repeat-count` probe advances forward_cycles via the consume-INDEPENDENT state-change trigger on notification turns (route changes, no dispatch), ballooning forward_cycles and false-hitting max_cycles so overnight runs end early. The evidence's consume-only fix reverses the 2026-07-16 `byref-forward-cycles-frozen-on-multicycle-same-step` + Theory-1b decisions and their pinned tests (symmetric under-count catastrophe). Move the forward-advance OFF banner-emission to actual dispatch time (subsuming decision #3's under-count too), or accept? (harden Round 55, 2026-07)"
+  - "[RESOLVED 2026-07-18 → liveness teardown + --recover-stale-marker + crash terminal reasons (operator-authorized still required)] Operator recovery of a CRASHED run's orphaned markers is under-served: the containment guards (`refuse_if_cycle_active` / `refuse_cycle_marker_mutation_if_subagent`) key ONLY on marker-presence + env, consulting neither the marker's recorded session_id/started_at nor process liveness, so an operator tearing down a dead run's corpse from a fresh session is refused as a 'single cycle subagent' and must climb a 4-gate cascade (containment → efficacy-flush → terminal-reason) with no chain-aware guidance and no crash/disconnect terminal reason. Add a session-liveness/ownership teardown path, a first-class `--recover-stale-marker`/`--force-run-end` op, chain-aware messages, and/or a `crashed-run` sanctioned terminal reason — all authority/gate-semantics changes? (harden Round 58, 2026-07)"
+  - "A `partial` MCP_TEST_RESULTS.md whose only uncovered rows are all documented-test-exempt/build-deferred has no AUTHORABLE path to VALIDATED.md: the `observation_gap_exemptions`→scoped-VALIDATED mechanism EXISTS (gates.py/pseudo.py, wired to 3 sites) but (a) the `mcp-test` SKILL never surfaces it so the producer invents a non-promoting `carve_outs` block, (b) the results file is engine-written and 'the model NEVER authors sentinels' so no shipped path emits the spec_class-bearing exemptions block, and (c) 'build-artifact-deferred' is not the documented observation-gap class. Bless model-authored exemptions / add an emit path, and classify build-artifact-deferred? Bundles with #2 and #9. (harden Round 59, 2026-07)"
+  - "[RESOLVED 2026-07-17 → operator-authorized, enqueued as feature subagent-wedge-backstop-hook] Mechanical `SubagentStop`-hook backstop for a GENUINELY-WEDGED dispatched orchestrator (child never resumes parent; work left uncommitted): a `SubagentStop` hook can BLOCK a subagent's premature stop and force it to continue. Firing semantics are FAVORABLE (fires only at genuine agentic-loop end, not at foreground-child yields), and execute-plan's existing run-marker lifecycle supplies the operator-requested paused-with-live-children opt-out for free — but (a) the loop-guard field `stop_hook_active` is GENUINELY UNDOCUMENTED (a wrong assumption risks an infinite block→continue→block loop; claude-code-guide advised not shipping load-bearing logic on it without confirmation), and (b) blocking a subagent's stop is a NEW subagent-lifecycle enforcement authority a false-positive predicate could use to force-spin a genuinely-done agent — the exact dual-writer harm. Add the hook (authority + undocumented-field dependency), or keep the wedge path prose-only? (harden Round 81, 2026-07)"
 date: 2026-06-16
 class: product
+divergence: structural
 next_skill: harden-harness
 ---
 
@@ -49,6 +57,13 @@ This preference was introduced deliberately in Phase 7 / lazy-validation-readine
 
 **Recommendation:** Route to `mcp-test` when the matrix is incomplete (option 1) — it is self-healing and preserves the partial-results contract. But the row↔scenario coverage check is the load-bearing detail (false-positives re-run mcp-test, false-negatives re-loop), so the operator should own the approach + the conservatism dial. This is a gate-semantics / routing fork, not a mechanical fix.
 
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** Option 1 — route back to `mcp-test` when the verification
+matrix is incomplete: before routing to `__mark_complete__`, an In-progress phases state with
+unchecked, non-exempt, non-host-deferred runtime-verification rows that the recorded evidence does
+not cover re-routes to `mcp-test` (conservative form accepted — one redundant mcp-test pass on a
+genuinely-complete-but-unticked matrix is tolerable). The coverage predicate is SHARED with
+decision #6's Step-10 re-route — implement as ONE predicate serving both.
+
 ### 3. forward_cycles under-count in interleaved real+meta by-ref dispatch: reopen `byref-dispatch-undercounts-forward-cycles`, or accept the low-impact under-count?
 
 *(harden Round 45 — 2026-06-29, from the same run.)*
@@ -61,6 +76,10 @@ This preference was introduced deliberately in Phase 7 / lazy-validation-readine
 - **Add an independent forward-advance cross-check** — Advance `forward_cycles` when a real-skill probe observes HEAD advanced + a new commit since the last advance, independent of the consume oracle. Rejected as the recommended path: it reintroduces exactly the multi-signal accounting that caused the ISSUE-5 inflation, and risks double-counting.
 
 **Recommendation:** Reopen + investigate (option 1) — but gated on the operator judging budget-signal accuracy worth the regression risk; otherwise accept (option 2), especially noting the unattended-run exposure. I deliberately did NOT attempt an autonomous fix: the archived bug's inflation-regression history makes a blind counter patch higher-risk than the low-impact under-count it would address.
+
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** resolved by decision #11's resolution — the dispatch-time
+forward-advance retires BOTH this under-count and #11's over-count at the shared root. No reopen
+of the archived `byref-dispatch-undercounts-forward-cycles` bug beyond the #11 implementation.
 
 ### 4. Dispatch-guard contract for WORKSTATION sub-subagent dispatches: how should `lazy_guard.py` distinguish a cycle worker's authorized test-agent/impl-agent split from an orchestrator improvising an unregistered cycle prompt?
 
@@ -100,6 +119,12 @@ The instance is NOT hard-blocked — the worker's documented fallback ("When you
 
 **Recommendation:** The per-row host-capability deferral marker — it directly resolves the observed managed-llm-credits block (backend rows deferred, feature completes on validated scope) without weakening the gate or false-greening, and mirrors an existing feature-level pattern.
 
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** per-row `<!-- requires-host: <cap> -->` deferral marker — the
+completion gate treats marked rows as legitimately-deferred (NOT ticked, NOT blocking), folded into
+the `DEFERRED_REQUIRES_HOST.md` receipt and re-opened on a capability-bearing host. Composes with
+decision #9's registered constant-False capabilities; implement jointly (implementation home:
+`docs/bugs/feature-operator-host-defer-not-honored-over-validated/`).
+
 ### 6. Corrective-coverage dispatch for newly-discovered coverage at completion
 
 **Problem:** When Gate 1 / Gate 2 at Step 10 reveal a genuinely-untested but MCP-testable-HERE behavior needing a NEW scenario authored + run (managed-llm-credits Purchase-CTA `ui_action` + auto-refill toggle-persistence), there is NO legitimate dispatch path. The `coherence-recovery` dispatch CORRECTLY refuses implementation work (its contract is PHASES reconciliation, not scenario authoring); a hand-composed mcp-test/implementation prompt is DENIED by the validate-deny guard (no registered emission); and the state machine will not re-route Step 10 → mcp-test while VALIDATED.md + MCP_TEST_RESULTS.md already exist. So authoring newly-discovered coverage at completion is stranded — the operator had to choose between deferring or a manual out-of-band cycle. Resolve together with decisions #2 and #5.
@@ -111,13 +136,18 @@ The instance is NOT hard-blocked — the worker's documented fallback ("When you
 
 **Recommendation:** The Step-10 → mcp-test re-route (option 2) IF a clean "uncovered non-exempt verification row remains" predicate can be defined (it reuses the shipped mcp-test dispatch); otherwise the dedicated `corrective-coverage` emit class.
 
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** Step-10 → `mcp-test` re-route on uncovered non-exempt,
+non-host-deferred verification rows (option 2 — no new dispatch class). The load-bearing
+predicate is shared with decision #2's re-route; it must terminate (never re-trigger on
+already-exempt / host-deferred rows).
+
 ### 7. GATE_VERDICT.md has no in-pipeline authoring route + a provisional gate is live-blocking the ship seam
 
 *(harden Round 36 — 2026-07-13, from the claude-config `state-cli-contract-registry` `/lazy-batch` run.)*
 
 Round 36 mechanically fixed the **run-blocking** half of this dispatch — the completion-gate scope
 derivation was folding a concurrent harden workstream's commits into the active feature's scope
-(`docs/bugs/gate-scope-folds-concurrent-harden-commits/`), so a feature whose OWN commits touch
+(`docs/bugs/_archive/gate-scope-folds-concurrent-harden-commits/`), so a feature whose OWN commits touch
 zero control surfaces is no longer dragged into `gate_verdict_ok` scope. The two forks below are the
 **latent** half the mechanical fix deliberately does NOT close — they bite a feature whose OWN
 commits genuinely touch a control surface, and they are operator-owned, not mechanical defects.
@@ -157,6 +187,376 @@ no-route dead-end for a genuinely-in-scope feature without weakening the gate's 
 gate-semantics / authority fork, surfaced rather than baked silently (Round 36 did NOT self-dispatch
 a second hardening stage — depth-1 cap; the run-blocking half is already fixed mechanically).
 
+### 8. Consumed-fence robustness under a re-emit after `--cycle-begin`
+
+*(harden Round 46 — 2026-07-16, from the AlgoBooth `d8-signal-flow-viz` `/lazy-batch` run,
+session `40e929ed`, part-8 `/execute-plan` cycle; background observed-friction harden.)*
+
+**Problem:** Decision 4 (RESOLVED 2026-07-10, implemented hardening Round 16 `e3f5702`) blessed
+the **consumed fence** as the safety proof for the workstation sub-subagent exemption: the guard
+ALLOWs an unregistered worker-composed prompt only once `emission_consumed_by_nonce(cycle.nonce)`
+holds (the cycle's own registered dispatch is consumed ⇒ the worker is in flight ⇒ an unregistered
+prompt can only come from inside it). Round 16 wired this by having `--cycle-begin`
+(`resolve_cycle_worker_nonce`) bind the fence nonce to "the newest UNCONSUMED `class==cycle`
+emission then present," on the documented assumption that "`--emit-prompt` registers the cycle
+emission IMMEDIATELY before `--cycle-begin`."
+
+That assumption is VIOLATED by `/lazy-batch`'s own freshness rule (SKILL.md §1d, ~690/742:
+"Continuation cycles re-emit"; a by-reference dispatch is dispatchable only on the turn its
+emission was registered, else RE-PROBE `--emit-prompt` in-turn and dispatch THAT fresh ref). When
+a turn boundary/staleness intervenes between `--cycle-begin` and the actual worker dispatch, the
+orchestrator RE-EMITS — and that re-emission is registered AFTER `--cycle-begin`. The fence was
+bound at `--cycle-begin` to a stale/fresh nonce; the worker consumes the RE-EMITTED nonce; the two
+never match; `emission_consumed_by_nonce(cycle.nonce)` reads False for the whole cycle; the
+exemption never fires; every worker-composed test-agent/impl-agent dispatch is denied as false
+hardening debt.
+
+**Forensic evidence** (per-repo keyed state dir `~/.claude/state/37850b6e…/`; ledger + registry +
+telemetry, quoted in `docs/bugs/consumed-fence-dies-on-reemit-after-cycle-begin/SPEC.md`):
+- The exemption is LIVE and works: **108** `worker_subdispatch: true` (pre-acked) allows across the
+  run, all `execute-plan`, the last for `d8` at `ts 1784197418` inside the immediately-preceding
+  part-7 cycle.
+- Part-8 anomaly: ONE denied hand-composed test-agent (`denied_sha12 8ecb32c73a97`, `ts 1784198590`,
+  `prompt_head` "You are a TEST-AGENT for one work unit … (d8-signal-flow-viz, Phase 7, WU-2)…"),
+  the canonical corrective-recipe deny.
+- It falls INSIDE a `sub_skill=execute-plan` cycle (telemetry `cycle-begin ts 1784197993`,
+  `cycle-end ts 1784199546`) → condition 3 (`subagent_model True`) held; conditions 1–2
+  (workstation, bound) held. Only condition 4 (the fence) failed.
+- The smoking gun: the part-8 worker emission `nonce 5e508da3…` (`class cycle`, `consumed True`,
+  `consumed_by toolu_01AKox…`) has **`emitted_at 1784198002` — 9 s AFTER `--cycle-begin`
+  (1784197993)**, and the prior cycle emission `b4b15231` (`emitted_at 1784194061`) was already
+  consumed. So at `--cycle-begin` there was NO unconsumed cycle emission to bind; `resolve_cycle_
+  worker_nonce` fell to its "safe pre-fix degradation" branch and preserved the fresh hex, which is
+  absent from the registry → `emission_consumed_by_nonce(fresh_hex)` = False all cycle.
+
+This is the **2nd occurrence of the Round-16 shipped-exemption-mis-wiring class at the same symbol**
+(`resolve_cycle_worker_nonce` / the consumed fence). Round 16 fixed the fresh-hex-with-emission-
+already-present case; this is the re-emit-after-cycle-begin case. Round 16's regression test
+`_arm_worker_in_flight` (`test_hooks.py`) hard-codes the emit-BEFORE-`write_cycle_marker` order,
+masking this case exactly as the pre-Round-16 test masked the fresh-hex case.
+
+**Why this is a fork and not a mechanical fix:** a **write-side-only** fix is impossible — at
+`--cycle-begin` the worker's eventual re-emitted nonce does not exist yet, so no smarter binding at
+that moment can point the fence at it. The robust fix must either RE-DERIVE the fence at guard time
+or RE-BIND at re-emit/dispatch time — either modifies the **operator-blessed integrity-guard allow
+computation** (`lazy_guard.py` §2b condition 4 / the consumed-fence security window that decision 4
+explicitly reserved). Round 16 already made one unilateral mechanical change to this exact fence and
+it proved incomplete; a second unilateral re-wire of a security fence, without operator sign-off, is
+precisely what the hardening prohibitions (#2, never weaken/re-wire a gate to clear a denial) and the
+Round 9–13 precedent ("touches the security fence → surface, don't bake") counsel against.
+
+**Options:**
+- **Re-derive the fence at guard time (Recommended)** — Replace condition 4's single-nonce check with:
+  the NEWEST `class==cycle` registry emission is consumed AND its `emitted_at >= cycle.started_at`.
+  Pro: robust to any re-emit / ordering; keys off data the guard already reads; preserves the exact
+  pre-dispatch-window closure the operator blessed (before the worker dispatch, no cycle emission
+  registered-since-cycle-begin is consumed → fence closed). Con: changes the guard's allow
+  computation — the operator owns the soundness proof (does the "newest-cycle-emission-consumed-
+  since-begin" predicate admit any window where the orchestrator itself, not the worker, consumes a
+  re-emitted cycle emission before dispatching the worker? By construction the by-reference worker
+  dispatch IS the consume, so the invariant appears preserved — but "appears" on a security fence is
+  the operator's call). Requires a regression test that registers the consumed emission AFTER
+  `write_cycle_marker`.
+- **Re-bind the fence nonce at re-emit/dispatch time** — Have the re-emit path (or the guard's own
+  by-reference consume of a `class==cycle` entry) update the active cycle marker's fence nonce to the
+  emission actually consumed. Pro: keeps condition 4's single-nonce shape. Con: adds a marker write
+  from the re-emit/guard path (a new writer of the cycle marker), and must fence against the
+  orchestrator re-binding to its own improvised emission.
+- **Enforce/keep emit-before-cycle-begin and make a violation self-announcing** — Keep Round 16's
+  binding but detect at `--cycle-begin` (for a `subagent_model` cycle) that no bindable unconsumed
+  cycle emission exists, and emit a loud diagnostic/breadcrumb ("exemption fence will be DEAD this
+  cycle") so the silent 108:1 flake becomes observable. Pro: no gate-semantics change; pure
+  observability. Con: does NOT fix the deny — the re-emit is a legitimate, freshness-mandated move,
+  so a warning that fires on every such cycle is noisy and the sub-subagent still gets denied.
+
+**Recommendation:** Re-derive the fence at guard time (option 1) — it is the only option that both
+FIXES the deny AND stays faithful to the operator-blessed pre-dispatch-window closure, and it removes
+the fragile snapshot-nonce coupling at the root (so a 3rd variant cannot recur). The operator owns the
+soundness proof of the `emitted_at >= cycle.started_at` predicate on the integrity guard. Cross-
+reference: `docs/bugs/consumed-fence-dies-on-reemit-after-cycle-begin/SPEC.md` (Concluded); origin
+is decision 4 / hardening Round 16 (`e3f5702`), owned by `turn-routing-enforcement`.
+
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** Option 1 — re-derive the fence at guard time. Condition 4's
+single-nonce check is replaced with: the NEWEST `class==cycle` registry emission is consumed AND its
+`emitted_at >= cycle.started_at`. The operator signs off the soundness argument (the by-reference
+worker dispatch IS the consume, so the pre-dispatch window stays closed — before the worker
+dispatch, no cycle emission registered-since-cycle-begin can be consumed). Required regression test:
+register the consumed emission AFTER `write_cycle_marker` (the ordering Round 16's fixture
+hard-coded away). Implementation home: `docs/bugs/consumed-fence-dies-on-reemit-after-cycle-begin/`.
+
+### 9. Operator per-feature host-defer not machine-enforced over a VALIDATED feature
+
+*(harden Round 47 — 2026-07-16, from the AlgoBooth `managed-llm-credits` `/lazy-batch` run;
+blocking observed-friction harden. Bundles with OPEN decisions #5 and #6 — all three name the
+SAME four rows.)*
+
+**Problem:** At the completion-integrity `NEEDS_INPUT.md` halt (the terminal hardening Round 44
+added), the operator answered "defer the whole feature to a capability-bearing host" for
+`managed-llm-credits` (4 unchecked Runtime-Verification rows: Phase 1 live-OAuth JWT-shape live
+capture, Phase 4 credits-proxy reachability smoke, Phase 7 Purchase CTA `ui_action`, Phase 8
+auto-refill toggle persistence). The apply-resolution subagent authored
+`docs/features/managed-llm-credits/DEFERRED_REQUIRES_HOST.md`
+(`missing_capabilities: [credits-proxy-host, live-oauth-host]`, `deferred_by: operator`). But that
+sentinel drives NO state-machine skip, for TWO independent reasons:
+
+1. **Unregistered capability ids.** `credits-proxy-host` and `live-oauth-host` are absent from the
+   closed `lazy_core.hostcaps._HOST_CAPABILITY_REGISTRY` (`hostcaps.py:74-110`). Declaring them in a
+   `requires_host:` set trips the Phase-4 unknown-capability fail-fast
+   (`lazy-state.py:2045-2078` → `blocker_kind: unknown-host-capability` BLOCKED.md) — a HARD blocked
+   terminal, the opposite of a clean defer. Unlike the registered hardware/OS capabilities, these are
+   SERVICE-REACHABILITY / configuration capabilities with no deterministic workstation self-probe.
+2. **The host-defer branch is `not VALIDATED.md`-gated.** `lazy-state.py:2087-2091` runs the
+   capability-miss defer only `if not host_validated and _phases_effectively_complete(...)`. This
+   feature carries a `VALIDATED.md` (`result: validated-modulo-observation-gaps` — the intended
+   output of the observation-gap path: MCP-driveable scope passed, some rows host-unobservable), so
+   the branch is skipped. With `VALIDATED.md` present the router goes straight to Step 10
+   `__mark_complete__` (the Step 9-pre re-open guard at `lazy-state.py:3520` checks only
+   `DEFERRED_REQUIRES_DEVICE.md`, never the host sentinel).
+
+So the deferral is documentation-only: the mechanical `--apply-pseudo` completion gate
+(`verify_ledger`, which never consults `DEFERRED_REQUIRES_HOST.md`) re-refuses on the 4 unchecked
+rows, the Round-44 `coherence-recovery` terminal reconciles 0 rows (they never ran on THIS host) and
+re-writes `NEEDS_INPUT.md` — re-asking a decision the operator already made. `DEFERRED_REQUIRES_HOST.md`
+is additionally a WRITE-ONLY sentinel on the routing side: the Step-2 branch re-derives
+`missing = required_host - host.present` each probe and never READS a pre-existing operator-authored
+sentinel as a skip driver.
+
+**Why this is a fork and not a mechanical fix:** the feature pipeline DELIBERATELY has NO
+operator-defer branch (`lazy-state.py:353-356`: "the feature side … has NO operator-DEFERRED.md
+branch (bug-pipeline-only — JUSTIFIED divergence)"; mirror note `bug-state.py:980-988`). Honoring the
+operator's "defer whole feature" answer therefore requires ADDING an operator-defer authority to the
+feature side AND either registering un-probeable service capabilities or teaching the completion gate
+to treat host-deferred rows as legitimately-deferred. Every path changes gate/authority semantics —
+and letting a sentinel waive the completion gate's unchecked-row refusal is exactly the gate-weakening
+Prohibition #2 reserves for the operator. Round 44 gave the loop a terminal; this decision gives the
+terminal's RESOLUTION a machine-honored home. This is the 3rd distinct round on the managed-llm-credits
+honest-stuck class (Round 22 #5/#6, Round 44 terminal, Round 47 resolution) — over-fit signal 2 is met.
+
+**Options:**
+- **Register the service capabilities (constant-False, no self-probe) + honor an operator
+  `DEFERRED_REQUIRES_HOST.md` over a validated-modulo feature (Recommended)** — Add `credits-proxy-host`
+  and `live-oauth-host` to the registry with a constant-False placeholder (mirroring `link-multi-peer`
+  — no workstation self-probe, so they re-open only under an explicit operator/env signal), AND relax
+  the completion path so an operator-authored `DEFERRED_REQUIRES_HOST.md` (`deferred_by: operator`)
+  routes the feature to the host-capability-saturated (Deferred) terminal instead of `__mark_complete__`,
+  even when a `validated-modulo-observation-gaps` VALIDATED.md is present. Pro: honors the operator's
+  answer with a clean Deferred terminal; no false-green (rows are deferred, not ticked); re-opens on a
+  capability host. **Load-bearing detail the operator owns:** the completion path (Step 9-pre and/or
+  `verify_ledger`) must recognize the host sentinel as a legitimate deferral without opening a
+  side-door that lets the PIPELINE (not the operator) waive the gate — the `deferred_by: operator`
+  provenance is the discriminator, and its trust model is the operator's call.
+- **General per-feature host-defer of specific verification ROWS** — The whole-feature analog of
+  decision #5's per-row `<!-- requires-host: <cap> -->` marker: the operator's deferral scopes to the
+  named rows, the feature completes-modulo-deferral on the validated scope, host-deferred rows are
+  tracked (not ticked, not blocking) and re-open on a capability host. Pro: finishes the feature on
+  validated scope rather than parking it whole; unifies with #5. Con: larger surface (per-row marker +
+  gate branch + receipt folding); the operator must confirm "complete-modulo-deferral" is the desired
+  disposition vs. a whole-feature Deferred park.
+- **Add an operator-DEFERRED authority branch to the FEATURE pipeline** — Give the feature side the
+  operator-defer affordance `lazy-state.py:353-356` currently reserves to the bug pipeline, reading an
+  operator-authored `DEFERRED_REQUIRES_HOST.md` as a skip driver. Pro: closest to what the
+  apply-resolution subagent already attempted. Con: reverses a JUSTIFIED parity divergence — the
+  operator owns whether the feature side SHOULD gain this authority, and how it fences against the
+  pipeline authoring its own defer.
+
+**Recommendation:** Option 1 (register service capabilities + honor the operator sentinel over a
+validated-modulo feature) — it directly ends the re-ask loop with a clean Deferred terminal and no
+false-green, keys off the existing `deferred_by: operator` provenance, and mirrors the `link-multi-peer`
+no-self-probe precedent. Resolve jointly with #5/#6 (all four managed-llm-credits rows): #6 authors the
+2 genuinely-MCP-testable-HERE rows (Phase 7 CTA, Phase 8 toggle), leaving the 2 truly host-blocked rows
+(Phase 1 live-OAuth, Phase 4 credits-proxy) for this decision's operator host-defer. Cross-reference:
+`docs/bugs/feature-operator-host-defer-not-honored-over-validated/SPEC.md` (Concluded).
+
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** Option 1 — register `credits-proxy-host` + `live-oauth-host` as
+constant-False no-self-probe registry capabilities (the `link-multi-peer` precedent), AND honor an
+operator-authored `DEFERRED_REQUIRES_HOST.md` over a `validated-modulo-observation-gaps`
+VALIDATED.md, routing the feature to the host-capability-saturated (Deferred) terminal instead of
+`__mark_complete__`. `deferred_by: operator` is the trust discriminator — the pipeline must never
+be able to author its own waiver. Resolve jointly with #5 (per-row marker) and #6 (the re-route
+authors the 2 genuinely-MCP-testable rows, leaving the 2 host-blocked rows to this deferral).
+Implementation home: `docs/bugs/feature-operator-host-defer-not-honored-over-validated/`.
+
+### 10. Turn-end verify-ledger mis-scoped for PLANNING cycles: scope the substep, or add a "planning-ok" verdict?
+
+*(harden Round 51 — 2026-07-16, observed-friction from the AlgoBooth `/lazy-batch` bug pipeline, item `adhoc-hydra-load-code-mcp-tool`, a `/plan-bug` cycle. Bug: `docs/bugs/verify-ledger-planning-scope-and-file-arg/` (Concluded). The sibling ARG-ambiguity half of that bug was fixed mechanically this round — `harden(script)` `3d2311ce`; only this SCOPE half is escalated.)*
+
+**Problem:** `--verify-ledger` is the COMPLETION gate — it checks `plan_complete` (a plan is `status: Complete`) and `deliverables_done` (zero unchecked deliverable/WU rows). The cycle-subagent turn-end contract `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` injects the "TERMINAL VERIFY GATE" (item 3ii/iii: run `--verify-ledger`, then "RECONCILE ... RE-RUN the verifier until `ok` is true") via the two `@section turn-end` blocks (workstation line ~618, cloud line ~663), BOTH marked `skills=all`. A PLANNING cycle (`spec-phases`, `write-plan`, `plan-bug`, `plan-feature`, `spec`, `spec-bug`) authors a `Ready` plan with intentionally-unchecked deliverables, so `verify_ledger` STRUCTURALLY returns `ok:false`. The "reconcile until ok:true" instruction is then unsatisfiable without fabricating completion (flip `Ready`→`Complete`, tick unimplemented rows) — both forbidden by the `@section status-honesty` contract. This bites the CYCLE-SUBAGENT turn-end path specifically: the ORCHESTRATOR already scopes its OWN guardrail-D verify-ledger (`lazy-batch/SKILL.md` Step 1e.4a) to fire only "When the cycle that just returned was `/execute-plan` or `/mcp-test`" — so the two enforcement sites of the same gate DISAGREE, and the cycle-prompt site over-fires on planning cycles the orchestrator would never verify.
+
+**Why not mechanical:** the turn-end contract's UNIVERSAL conditions — (a) no background job still running, (b) `git status --short` empty, (c) branch pushed, (d) owed result sentinel on disk — DO apply to planning cycles (a planning cycle must still commit+push its Ready plan and write its sentinel). The current prose makes verify-ledger's `ok:true` the MECHANISM that certifies those four. So this is not a "delete the section for planning skills" edit — it is a gate-semantics choice about what terminal guarantee planning cycles carry, and which mechanism certifies it. That is operator-owned.
+
+**Options:**
+- **Scope the verify-ledger substep to completion-capable skills (Recommended)** — Split each `@section turn-end` into a universal part (`skills=all`: the four conditions, self-asserted / lighter scripted check) and a completion part scoped to the completion-capable skills — `execute-plan`, `mcp-test`, `retro-feature` (feature) and the bug-pipeline analogs (`execute-plan`, `mcp-test`/mark-fixed) — mirroring the orchestrator's already-shipped guardrail-D scope. Pro: brings the two enforcement sites of the SAME gate into agreement with an ALREADY-decided scoping (not new policy); no verify_ledger code change; planning cycles stop hitting an unsatisfiable loop. Con: planning cycles lose the SCRIPTED `clean_tree`/`head_matches_origin` certification that verify-ledger currently provides (checks 1+2 DO apply to them) and fall back to self-asserting clean-tree/pushed — a small reduction in scripted rigor for planning cycles. The load-bearing detail is the completion-capable skill LIST (a planning skill wrongly included re-introduces the false-fail; a completion skill wrongly omitted skips real verification).
+- **Add a "planning-ok" verdict mode to `verify_ledger`** — For a planning cycle, evaluate checks 1+2 (clean_tree, head_matches_origin — the universal push/commit conditions) but treat checks 3+4 (plan_complete, deliverables_done) as N/A → a `planning-ok` verdict (`ok:true`, `mode: planning`). Keeps a SINGLE scripted terminal gate for ALL skills, just with the completion checks relaxed when the cycle is planning. Pro: planning cycles KEEP scripted clean-tree/pushed certification; no cycle-prompt section split; one gate to reason about. Con: `verify_ledger` must learn the caller's cycle KIND (a new arg/flag threaded from the cycle prompt), enlarging the gate's contract and adding a "planning" verdict surface that retro/telemetry must understand; risk of a completion cycle mislabeled `planning` self-granting a pass (the new flag becomes security-relevant).
+- **Accept the friction (status quo)** — Leave `skills=all`; rely on the planning subagent recognizing the gate is completion-only and returning without forcing ok:true. Pro: no change. Con: the injected prose literally says "RE-RUN the verifier until `ok` is true ... a return without it is a resultless return" — a compliant subagent is told to do the impossible or fabricate; this IS the observed friction, and it recurs every planning cycle.
+
+**Recommendation:** Option 1 (scope the substep to completion-capable skills, mirroring guardrail-D) — it harmonizes an already-decided scoping across the two enforcement sites and needs no gate code change. The operator should own the completion-capable skill LIST (the load-bearing detail) and confirm whether the small loss of scripted clean-tree/pushed certification for planning cycles is acceptable, or whether Option 2's "planning-ok" verdict is preferred to retain it. This is a gate-semantics / cycle-prompt-contract fork, not a mechanical fix — surfaced here rather than baked silently.
+
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** Option 1 — scope the verify-ledger substep to
+completion-capable skills (`execute-plan`, `mcp-test`, `retro-feature` + the bug-pipeline analogs),
+mirroring the orchestrator's shipped guardrail-D scope; the universal turn-end conditions
+(committed, pushed, sentinel-on-disk) stay `skills=all` as self-asserted checks. The operator
+accepts the small loss of scripted clean-tree/pushed certification for planning cycles. The
+completion-capable skill LIST is the load-bearing detail — enumerate it explicitly in the split
+section. Implementation home: `docs/bugs/verify-ledger-planning-scope-and-file-arg/`.
+
+### 11. forward_cycles OVER-counts on non-dispatch inject-hook turns: gate the advance on consume (reversing two 2026-07-16 decisions), or move the advance off banner-emission to dispatch time?
+
+*(harden Round 55 — 2026-07-17, observed-friction from the AlgoBooth overnight `/lazy-batch 25 --park --park-provisional` run, item `adhoc-hydra-sidecar-dist-esm-no-frames`. Bug: `docs/bugs/_archive/lazy-run-marker-park-arm-and-forward-cycle-inflation/SPEC.md` (Concluded, DEFECT 1). The sibling park-arm half of that bug was fixed mechanically this round — `harden(skill-prose)`/`harden(script)`; only this forward-cycle-counting half is escalated. This is the OVER-count MIRROR of OPEN decision #3's UNDER-count — both name the `forward_cycles` counting oracle.)*
+
+**Problem:** After ONE real dispatch (cycle 1, `/execute-plan hydra-overlay`) the run marker showed `forward_cycles=3`, with `per_feature_forward_cycles = {hydra-overlay: 2 (dispatched once), adhoc-hydra-sidecar-dist-esm-no-frames: 1 (never dispatched)}`. The increments line up 1:1 with `lazy-route-inject.sh` LAZY-ROUTE banner emissions (turns 2+4 routed hydra → hydra=2; turn 5 routed the bug → bug=1) — i.e. forward_cycles advanced at banner-EMISSION time on turns where NO dispatch occurred (background-agent-completion NOTIFICATION turns). On a long overnight run with many notification turns this balloons forward_cycles and FALSE-hits `max_cycles`, ending the run early — the opposite of intended.
+
+**Mechanism (root cause located):** the inject hook (`lazy_inject.py::_run_probe`) runs the full probe `--repeat-count --probe --emit-prompt` on EVERY UserPromptSubmit turn while a marker is present. `--repeat-count` calls `lazy_core.advance_forward_cycle(state, consume_gate=True)` (`lazy-state.py` ~line 13538). `advance_forward_cycle` advances on `state_changed OR consume_rose`. On a notification turn the routed `(feature_id, current_step, sub_skill)` tuple CHANGES (a completed background dispatch flipped queue state), so `state_changed` is true with NO consume → a false forward advance. This is systematic: notification turns are exactly the turns where the route changes without a this-turn dispatch.
+
+**Why this is a fork and not a mechanical fix:** the evidence's prescribed fix (gate the advance on consume; drop the bare state-change trigger on the `consume_gate=True` inject path) DIRECTLY conflicts with two deliberate, one-day-old prior decisions, each with a pinned test:
+- `test_advance_forward_cycle_consume_gate_advances_multicycle_same_step` (`byref-forward-cycles-frozen-on-multicycle-same-step`, **2026-07-16**) asserts that on the `consume_gate=True` path the FIRST probe advances via the state-change trigger at census 0 / no consume (`test_markers.py` ~line 5724-5726).
+- `test_advance_forward_cycle_verbatim_real_skill_theory_1b` (Theory-1b) asserts a real-skill state change advances even on a consume-MISSED (verbatim) dispatch.
+
+The two named failure modes are SYMMETRIC catastrophes: DEFECT 1 (over-count → false EARLY halt) vs. byref-forward-cycles-frozen / Theory-1b (under-count → `max_cycles` never trips → UNBOUNDED overnight run). Neither the consume oracle (under-counts under ring-cap eviction / consume-missed verbatim dispatch) nor the state-change oracle (over-counts on notification turns) alone distinguishes "first probe of a genuine dispatch cycle" from "notification turn" — both present as `state_changed AND no consume`. Choosing consume-only REVERSES the 2026-07-16 decision and requires inverting/retargeting its pinned tests — precisely the "invert a deliberate prior decision to make a symptom pass" a hardening cycle must not do silently (Prohibition #2). Bundles with decision #3 (the under-count mirror; one root fix should resolve both).
+
+**Options:**
+- **Move the forward-advance OFF banner-emission to actual DISPATCH time (Recommended)** — Stop advancing forward_cycles in the inject-hook `--repeat-count` probe path entirely (make that path PEEK). Advance exactly once at the real dispatch bracket — at the guard-ALLOW consume of the cycle emission, or at `--cycle-begin` for the in-flight cycle — so the counter counts DISPATCHES, not banner emissions. Pro: kills BOTH the DEFECT-1 over-count (notification turns emit a banner but never dispatch → no advance) AND decision #3's under-count (every real dispatch advances exactly once, no consume-oracle non-monotonicity, no meta-absorb masking); the state-change and consume oracles are both retired as forward-advance triggers on the probe path. This is the "most general within reason" fix — it removes the fragile probe-time advance at its structural root rather than re-tuning which OR-trigger fires. Con: relocates WHERE the advance happens (a routing-contract change the operator owns) and needs the pinned-test suite retargeted (the multicycle-same-step + Theory-1b tests move from asserting probe-time advance to asserting dispatch-time advance); must preserve within-cycle idempotence and the `--apply-pseudo` forward-advancing-pseudo-skill path (which emits no consume — it would advance at its own apply bracket, as today).
+- **Gate the probe-path advance on consume only (drop the state-change trigger when `consume_gate=True`)** — Minimal change: on the inject path require `consume_rose`, never bare `state_changed`. Pro: smallest diff; directly implements the evidence's fixture (N bare probes → 0 advance). Con: reverses the 2026-07-16 decision and re-opens Theory-1b / the census-non-monotonicity under-count that the state-change trigger was ADDED to fix — trading the early-halt catastrophe for the never-halt catastrophe unless the consume clamp is proven sufficient. Requires inverting two pinned tests.
+- **Accept the over-count (status quo)** — Leave it; rely on the operator noticing an overnight run ended early and re-invoking. Con: on an UNATTENDED overnight `--park` run (the exact case observed) `max_cycles` is the only stop, and a false-early halt silently truncates the roadmap; the friction recurs every run with notification turns.
+
+**Recommendation:** Option 1 (move the advance to dispatch time) — it is the only option that resolves BOTH the DEFECT-1 over-count AND the decision-#3 under-count at the shared root (the counter should count dispatches, and the reliable dispatch bracket — not the every-turn banner probe — is where to count them), without leaving a residual oracle to re-tune. The operator owns the routing-contract change (advance relocates off the probe path) and the pinned-test retargeting. This is a gate/counter-semantics fork, surfaced rather than baked silently. Cross-reference: `docs/bugs/_archive/lazy-run-marker-park-arm-and-forward-cycle-inflation/SPEC.md` (DEFECT 1, Concluded); origin is `byref-forward-cycles-frozen-on-multicycle-same-step` (2026-07-16) + Theory-1b, owned by `turn-routing-enforcement`; bundles with decision #3.
+
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion):** Option 1 — move the forward-advance OFF banner-emission to
+actual dispatch time; the inject-hook `--repeat-count` probe path becomes a pure PEEK. The advance
+happens exactly once at the real dispatch bracket (guard-ALLOW consume / `--cycle-begin`), the
+`--apply-pseudo` forward-advancing-pseudo-skill path keeps advancing at its own apply bracket, and
+within-cycle idempotence is preserved. The two pinned tests (multicycle-same-step + Theory-1b) are
+RETARGETED to assert dispatch-time advance, not inverted. Subsumes decision #3 (the under-count
+mirror). Implementation home: enqueue as a harness bug (the originating bug is archived).
+
+### 12. Operator recovery of a CRASHED run's orphaned markers is under-served: add a liveness/ownership teardown path, a first-class recovery op, chain-aware messages, and/or a crash terminal reason?
+
+*(harden Round 58 — 2026-07-17, manual invocation. Firsthand friction: a `/lazy-batch` session died on a remote-control disconnect, leaving `lazy-run-marker.json` + `lazy-cycle-active.json` orphaned; an operator in a later session hit a cascade of misleading refusals tearing the corpse down. Bug: `docs/bugs/operator-recovery-of-crashed-run-orphaned-markers-underserved/` (Concluded).)*
+
+**Problem:** The two containment guards decide subagent-vs-orchestrator using ONLY cycle-marker PRESENCE + two env signals (`LAZY_ORCHESTRATOR`, `LAZY_CYCLE_SUBAGENT`), and consult NEITHER ownership NOR liveness. `refuse_if_cycle_active` (`markers.py:2171`, guards `--run-end`/`--run-start`/`--apply-pseudo`/`--enqueue-adhoc`/`--emit-dispatch`) and `refuse_cycle_marker_mutation_if_subagent` (`markers.py:2233`, guards `--cycle-end`/`--cycle-begin`) both branch on `read_cycle_marker()` being present → refuse. So an operator in a FRESH session (no `LAZY_ORCHESTRATOR`, no dispatch in flight) cleaning up a DEAD run's markers is indistinguishable from a live contained subagent, and is refused as "a single cycle subagent." The signals to tell them apart already exist on disk — the cycle marker records `session_id`/`started_at`/`run_started_at` (`write_cycle_marker`, `markers.py:1486-1513`), the run marker records `session_id`/`started_at`, and the owning process's liveness is probeable — but no guard reads them. The dead run's `session_id` (61489c4f…) was plainly foreign to the operator's session and its task-watcher parent PIDs were all gone. The harness even HAS non-destructive ownership machinery it does not apply here (`marker_owner_status` → `absent|owned-by-me|foreign-stamped`, `markers.py:1022`; `read_run_marker` staleness path A age>24h + path B session-mismatch), but path A does not fire on a freshly-crashed run (<24h) and `read_cycle_marker` has NO staleness logic at all. Once containment is bypassed (`export LAZY_ORCHESTRATOR=1`), the `--run-end` handler (`lazy-state.py:12613`) layers three more gates the operator must satisfy one-by-one — pending-hardening (`--ack-unhardened`), efficacy-flush (`--efficacy-skip-authorized`), and the terminal-reason gate against `SANCTIONED_STOP_TERMINAL` (`markers.py:650`, which has NO crash/disconnect reason). The only working teardown was `LAZY_ORCHESTRATOR=1` + `--cycle-end`, then `--run-end --efficacy-skip-authorized --operator-authorized --terminal-reason <borrowed-sanctioned-reason>`. No single refusal pointed at this sequence.
+
+**Why not mechanical:** every candidate grants NEW authority or changes gate semantics. (a) A liveness/ownership teardown path CHANGES the deny decision (a foreign+dead owner would now be allowed to tear down) and must not reintroduce the 2026-06-12 silent-disarm-by-delete a non-owner could trigger against a LIVE run — the exact hazard path B's non-destructive rule and `marker_owner_status` exist to prevent. (b) A first-class `--recover-stale-marker`/`--force-run-end` op is a NEW operator authority surface. Adding `crashed-run`/`remote-control-disconnect` to `SANCTIONED_STOP_TERMINAL` lets such a reason end a run WITHOUT `--operator-authorized` — a gate-semantics change (that set is the "authoritative list of reasons that allow an unattended or operator-authorized terminal stop"). Even (c) chain-aware refusal messages should point at whichever recovery UX the operator picks, so baking a message ahead of the decision risks enshrining the awkward current path. Operator-owned.
+
+**Options:**
+- **(a) Session-liveness/ownership teardown path (Recommended, composed with the crash terminal reason)** — When the marker's `session_id` is present, differs from the caller, AND the owning session is provably stale/dead (a process-liveness probe, or an age threshold shorter than the 24h path-A window), let an operator teardown proceed. Reuse `marker_owner_status`'s non-destructive `foreign-stamped` detect + a liveness check; require an explicit operator opt-in so a mere session mismatch never auto-tears a LIVE foreign run. Pro: keys recovery on the real signal (dead + foreign), collapses the containment refusal at its root. Con: needs a reliable cross-platform liveness probe and a careful "provably dead" definition; must preserve the non-destructive-on-live-mismatch invariant.
+- **(b) First-class `--recover-stale-marker` / `--force-run-end` op** — One sanctioned, audited step that cycle-ends + run-ends + records a crash/disconnect terminal reason, gated on `--operator-authorized` + a provable-staleness precondition. Pro: collapses the 4-gate cascade into one discoverable command; leaves an explicit audit trail. Con: a new authority surface to design + test; overlaps (a)'s staleness precondition.
+- **(c) Chain-aware refusal messages only (minimum)** — Make each refusal in the cascade name the full recovery invocation. Pro: cheap, no authority change. Con: does not remove the cascade; points at whichever recovery UX is chosen, so it follows (a)/(b) rather than leading.
+- **New sanctioned terminal reason** (orthogonal, composes with any above) — Add `crashed-run` / `remote-control-disconnect` to `SANCTIONED_STOP_TERMINAL` so an honest operator teardown need not borrow an unrelated sanctioned reason.
+
+**Recommendation:** (a) + the crash terminal reason, with (b) as the ergonomic wrapper if the operator wants a single command; (c) folded into whichever lands. The operator owns the "provably dead" definition (liveness probe vs. a short age threshold) and whether a crash reason may end a run without `--operator-authorized`. Surfaced rather than baked — this is an authority-model fork.
+
+**HARD-PARK (harden Round 60, 2026-07-17, park-provisional protocol).** Assessed under the park-provisional default and DELIBERATELY NOT implemented — this decision hits BOTH hard-park carve-outs. (1) **Gate-weakening (Prohibition #2):** the recommended option (a) softens the containment deny decision (`refuse_if_cycle_active` / `refuse_cycle_marker_mutation_if_subagent` would now ALLOW a foreign+dead-owner teardown they currently refuse), and the composed `crashed-run`/`remote-control-disconnect` sanctioned terminal reason lets a run END WITHOUT `--operator-authorized` (removing an authorization requirement) — both are softenings of an existing denial/validation, never provisional-eligible. (2) **`divergence: structural`:** it forks the operator recovery workflow and the containment/terminal-reason authority model, and the "provably dead" cross-platform liveness definition is exactly the expensive-to-redirect wrong-pick the structural carve-out reserves for the operator. A purely-additive `--recover-stale-marker` op gated on `--operator-authorized` (no new no-auth terminal reason) would be provisional-eligible in isolation, but it does not resolve the recommended fix and would pre-empt the operator's authority-model choice, so the whole decision stays a blocking park for operator sign-off. Nothing implemented.
+
+**RESOLVED 2026-07-18 (operator — Jacob, interactive AskUserQuestion) — operator sign-off on the HARD-PARK:** all three composable
+pieces authorized — (a) the session-liveness/ownership teardown path (foreign `session_id` +
+provably-dead owner + explicit operator opt-in; `marker_owner_status`'s non-destructive
+`foreign-stamped` detect reused; the non-destructive-on-live-mismatch invariant MUST be preserved),
+(b) the first-class `--recover-stale-marker` / `--force-run-end` op as the ergonomic wrapper (one
+sanctioned audited step: cycle-end + run-end + crash terminal reason), and the `crashed-run` /
+`remote-control-disconnect` sanctioned terminal reasons, with (c) chain-aware refusal messages
+folded into whichever surfaces land. CONSERVATIVE DEFAULT RETAINED: the crash terminal reasons
+still REQUIRE `--operator-authorized` — the no-auth relaxation was NOT granted. The "provably
+dead" definition is delegated to implementation: process-liveness probe preferred, short age
+threshold as the fallback where a cross-platform probe is unreliable. Implementation home:
+`docs/bugs/operator-recovery-of-crashed-run-orphaned-markers-underserved/`.
+
+### 13. A `partial` MCP_TEST_RESULTS.md whose only uncovered rows are all test-exempt/build-deferred has no AUTHORABLE path to VALIDATED.md: bless model-authored exemptions + classify build-artifact-deferred?
+
+*(harden Round 59 — 2026-07-17, manual invocation. Surfaced by the AlgoBooth `/lazy-bug-batch` run in two `NEEDS_INPUT.md` docs flagged "for a future claude-config harden": `sidecar-integrity-gate-blocks-user-modified-sidecar` (this class) and `adhoc-hydra-load-code-mcp-tool` (adjacent). Bug: `docs/bugs/_archive/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/` (Concluded). Bundles with #2 (Round 45) and #9 (Round 47).)*
+
+**Problem:** A fully-implemented, Rust-validated AlgoBooth bug fix with coherent PHASES.md produced a `result: partial` `MCP_TEST_RESULTS.md` (pass 4/4) whose ONLY two uncovered verification rows are both legitimately un-MCP-drivable this cycle — row 1 a Tauri command with no registered MCP-tool mirror ("Cannot Prove" class), row 2 a `Mismatch` branch reachable only against a packaged build ("build-artifact-deferred"). `__write_validated_from_results__` refuses a non-`all-passing` result, so the state machine loops on mcp-test forever and the item never reaches `__mark_fixed__`. A scoped-validated escape hatch ALREADY EXISTS — `observation_gap_promotable` (`gates.py:608`) promotes a `partial` to a `validated-modulo-observation-gaps` VALIDATED.md when its `observation_gap_exemptions` list is non-empty with a `spec_class` on every entry AND `pass_count == total_count`, wired to the apply gate (`pseudo.py:631`), the completion gate, and Step-9, documented in `sentinel-frontmatter.md:538-552`. But three things block reaching it: (a) the `mcp-test` SKILL never surfaces it — it teaches `partial` = "does NOT complete" (SKILL.md:338) and "the model NEVER authors sentinels — the engine writes them" (SKILL.md:248) — so the agent invented a `carve_outs:` block (`kind: host-artifact`), which SOFTENS an otherwise-all-passing run and does NOT promote a partial (sentinel-frontmatter.md:532-537), and the gate correctly refused; (b) `MCP_TEST_RESULTS.md` is written by the deterministic engine (`scripts/mcp-test/run.ts`, in the AlgoBooth target repo — out of harness scope), and the engine cannot make the `spec_class` judgment the exemptions block requires, so NO shipped path ever emits it — it can only appear if the model amends the engine's file, contradicting the "model NEVER authors sentinels" invariant; and (c) "build-artifact-deferred" is not the documented observation-gap class ("no MCP tool exists AND SPEC-locked to the unit/WDIO tier") — the assertion IS MCP-driveable, it just needs a packaged build, making it a deferral (closer to `DEFERRED_REQUIRES_DEVICE/HOST`) not a structural observation gap.
+
+**Why not mechanical:** the core asks reverse an invariant and set gate semantics. Blessing a model-authored/model-amended `observation_gap_exemptions` block deliberately carves out the "engine writes sentinels" rule (the invariant that keeps a model from hand-forging a passing attestation) — a workflow-contract decision. Deciding whether "build-artifact-deferred" qualifies for observation-gap promotion (vs. needing its own partial-completable disposition) is a gate-semantics decision. And the file's writer is `run.ts` in the target repo, which this harness must not touch. Surfacing the escape hatch in the `mcp-test` SKILL prose is the only near-mechanical piece, but it is only actionable once (a) is decided (it is contradictory to tell the model to author a block it is told never to author).
+
+**Scope note:** the two AlgoBooth bugs are DIFFERENT classes. `sidecar-integrity-gate-blocks-user-modified-sidecar` IS this write-validated deadlock. `adhoc-hydra-load-code-mcp-tool` already HAS a `VALIDATED.md` (all-passing reachability); its blocker is the COMPLETION gate refusing an unchecked row (row 3) genuinely blocked on an EXTERNAL sibling bug (a broken hydra `dist` ESM build) — a true dependency block, correctly escalated by its own NEEDS_INPUT, not a write-validated defect. The fix must not be mis-scoped to cover it.
+
+**Options:**
+- **(1) Bless a model-authored `observation_gap_exemptions` amendment + document it in the `mcp-test` SKILL (Recommended)** — Explicitly permit the model, when the engine writes a `result: partial` whose uncovered rows are all documented-untestable, to amend the results file's `observation_gap_exemptions` block (each entry `spec_class`-cited) — a NARROW carve-out of "engine writes sentinels" scoped to the exemptions block only (the counts + result literal stay engine-owned; the gate still refuses a provenance-less or genuine-failure partial). Surface the hatch + the `carve_outs`-vs-`observation_gap_exemptions` distinction in `mcp-test/SKILL.md`. Pro: reuses the shipped promotion gate; unblocks the D7-test-exempt-completable class without touching the AlgoBooth engine. Con: relaxes the model-never-authors invariant (mitigated: the spec_class provenance + pass==total cross-check + the gate's existing refusals bound the blast radius).
+- **(2) Add a claude-config-side emit path** that stamps `observation_gap_exemptions` from a structured input (e.g. an `--emit-observation-gap` state-script op the cycle drives after the engine run), keeping the model out of the file. Pro: preserves "engine writes sentinels." Con: a new emit surface + the model still supplies the spec_class judgment as input, so it re-introduces the same trust question one layer out.
+- **(3) Teach the AlgoBooth engine (`run.ts`) to emit exemptions** — OUT of harness scope (target-repo change); listed only to note the boundary.
+- **Build-artifact-deferred classification** (orthogonal): either admit it as an observation-gap `spec_class`, or route it to a distinct partial-completable deferral disposition (a `DEFERRED_REQUIRES_BUILD.md`-style sentinel) so a dev-session partial can complete-modulo-deferral and re-open on a packaged build.
+
+**Recommendation:** (1) for the authoring path (narrow, reuses the shipped gate) plus a decision on build-artifact-deferred — most cleanly, admit it as an observation-gap `spec_class` given it is already Rust-covered and PHASES pre-classifies it. The operator owns whether the model may amend the exemptions block and how build-artifact-deferred is classified. Surfaced rather than baked — a workflow-contract + gate-semantics fork that bundles with #2 and #9.
+
+**PROVISIONALLY RESOLVED + RELOCATED (harden Round 61, 2026-07-17, park-provisional protocol).** Re-graded `divergence: contained` (the promotion gate `observation_gap_promotable` and its refusals are UNCHANGED; `spec_class` is a free-form provenance string so `build-artifact-deferred` is already admissible with no gate code change; the only change is making a SHIPPED mechanism reachable via `mcp-test/SKILL.md` prose + a narrow scoped carve-out of the "engine writes sentinels" discipline) and therefore IMPLEMENTED provisionally per option 1 rather than parked. Because this shared file bundles 13 decisions (over the 4-cap) and is graded `divergence: structural` (fail-closed / non-provisionalizable), this decision was relocated to its own provisional-eligible sentinel to be accepted independently: `docs/bugs/_archive/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/NEEDS_INPUT_PROVISIONAL.md` (`resolved_by: auto-provisional`, ratification-pending). The `mcp-test/SKILL.md` "Scoped-validated partial" subsection + the `build-artifact-deferred` regression lock (`test_gates.py::test_observation_gap_promotable_admits_build_artifact_deferred_class`) are the shipped change.
+
+### 14. [RESOLVED 2026-07-17 → enqueued as feature `subagent-wedge-backstop-hook`] Mechanical `SubagentStop`-hook backstop for a GENUINELY-WEDGED dispatched orchestrator: add the hook (new subagent-lifecycle enforcement authority + undocumented-field dependency), or keep the wedge path prose-only?
+
+> **RESOLVED 2026-07-17 (operator-authorized).** Jacob authorized the hook conditioned on a
+> `claude-code-guide` confirmation of the mechanism, which was obtained: `SubagentStop` fires only
+> at genuine loop-end (not yields); block via exit 2 / `{"decision":"block"}` is documented;
+> `agent_id` is a documented stable per-subagent breadcrumb key; `stop_hook_active` is UNDOCUMENTED
+> for `SubagentStop` and is NOT used. Recommended option (a)/(ii) adopted — marker-gated predicate,
+> self-managed `agent_id` breadcrumb loop-guard, fail-open. Split out of this sentinel and enqueued
+> as feature **`subagent-wedge-backstop-hook`** (`docs/features/`, queue.json tier 1, ROADMAP Tier
+> 1) for the pipeline to build. See the full Resolution note at the end of this file. Decision #12
+> (marker-teardown authority) remains parked — not re-opened by this hook (it reads state only).
+
+*(harden Round 81 — 2026-07-17, manual invocation, operator-steered. The "agent stopped waiting on a test/build" harden. The FALSE-COMPLETION half (the main session misreading a `completed` `<task-notification>` from a still-yielding orchestrator) was fixed mechanically this round as a RECEIVER-side prose contract — `user/skills/_components/dispatched-agent-liveness.md`, commit `4197e5d8`. This decision is the OTHER, genuinely-distinct half the operator asked to keep separate: a GENUINE WEDGE where a dispatched orchestrator's turn truly ends with pending work uncommitted and nothing re-invokes it. Bug: `docs/bugs/_archive/dispatched-orchestrator-completed-notification-misread-as-terminal/` (Concluded). Prior sender-side fixes of the same broad class: Rounds 39 & 45 (`turn-end-gate.md`). Directly bundles with #12 — the descendant-liveness/ownership authority.)*
+
+**Problem:** The genuine-wedge variant (observed earlier the same session: three consecutive sub-subagents of a part-10 `/execute-plan` cycle wedged, every tool call erroring, leaving work uncommitted and the pipeline dead until a manual `TaskStop` + inline recovery) has no MECHANICAL backstop — only the SENDER-side `turn-end-gate.md` prose (which a wedged/erroring agent cannot self-enforce). The operator steer: evaluate a `SubagentStop` hook as the LEAD mechanical candidate (it fires ONLY for dispatched agents, never the top-level orchestrator — so it excludes the main lazy-batch session for free), blocking a premature stop (exit 2 / `{"decision":"block","reason":…}`) to force the subagent to continue instead of returning dead.
+
+**What the evaluation FOUND (mostly favorable):**
+- **Firing semantics are SAFE (claude-code-guide, cited docs).** `SubagentStop` fires only when a subagent's agentic loop genuinely ends — NOT at the mid-turn foreground-child yields that produce the false-`completed` `<task-notification>`s. So a correctly-fanning-out orchestrator's yields do NOT trip the hook; it fires only at genuine terminal. This dissolves the operator's #4 "don't force-spin a correct yield" concern at the mechanism level. (The `<task-notification>` and the `SubagentStop` HOOK are DIFFERENT surfaces with different firing rules — the notification fires per-yield, the hook only at loop-end.)
+- **The opt-out marker the operator asked for ALREADY EXISTS.** `/execute-plan`'s run marker (`~/.claude/state/execute-plan/<key>.json`) is present iff in-flight and is REMOVED at genuine completion AND on every `BLOCKED.md`/`NEEDS_INPUT.md` halt (Step 1d / Step 4 / Blocking Issues). So a marker-gated predicate — *block iff: run marker present + plan not `Complete` + (uncommitted changes OR unchecked in-scope plan-WU checkboxes)* — reuses the existing lifecycle: a correct completion (marker removed / `status: Complete`) and a legitimate halt (marker removed) both make the predicate FALSE with NO new hot-path write contract. `cwd` in the payload resolves the repo; the predicate is structural (git + plan file), never a transcript phrase-match (honoring operator #3).
+
+**Why NOT mechanical (the two blockers that make it operator-owned):**
+1. **`stop_hook_active` is GENUINELY UNDOCUMENTED.** The loop-prevention field the operator's design leans on (constraint #2) appears in the SDK input but has NO authoritative documented semantics; claude-code-guide's explicit caution: *"You must NOT rely on this field for production logic without confirmation from Jacob."* Blocking a subagent whose wedge CANNOT self-clear (children keep erroring) risks an infinite block→continue→block loop unless a reliable loop-guard exists. A self-managed `agent_id`-keyed "blocked-once" breadcrumb could substitute, but choosing the loop-guard mechanism (trust the undocumented field vs. roll our own vs. Jacob confirms it) is an operator call.
+2. **A new subagent-lifecycle ENFORCEMENT authority.** A `SubagentStop` block is the harness overriding a subagent's decision to stop — an authority the operator has never ratified. Even with the favorable firing semantics + marker gate, a false-positive predicate (e.g. an orchestrator that legitimately stops with a dirty tree the marker did not cover) would force-spin a done agent — the dual-writer harm this whole harden prevents. Bias-to-false-negative mitigates but does not remove the authority question.
+
+**Options:**
+- **(a) Add the marker-gated `SubagentStop` hook, loop-guarded by a self-managed `agent_id` breadcrumb (Recommended, pending Jacob's `stop_hook_active` call).** New hook `user/hooks/subagent-wedge-backstop.sh` (matcher `*`), registered in `user/settings.json` under a `SubagentStop` key. Predicate exactly as above (marker present + plan not `Complete` + uncommitted-or-unchecked-WU), fail-OPEN on any error (never wedge the pipeline), block at most ONCE per `agent_id` (breadcrumb in the state dir) so a genuinely-stuck agent stops on the second attempt rather than looping, with a `reason` that says "you stopped with pending plan work and the Step-4 completion protocol has not run — commit + complete, or write BLOCKED.md, then stop." Tests in `test_hooks.py`. Pro: reuses the existing marker lifecycle (no new write contract), fires only at genuine terminal, excludes the main orchestrator for free, no dependency on the undocumented field. Con: a new enforcement authority; the once-per-agent_id loop-guard is our own invention (needs a hermetic test); residual false-positive force-spin risk on an uncovered dirty-tree terminal.
+- **(b) Same hook but gated on the undocumented `stop_hook_active`** instead of a self-managed breadcrumb — simpler if Jacob confirms the field's semantics; unshippable until then per the guide's caution.
+- **(c) Keep the genuine-wedge path PROSE-ONLY** (status quo + this round's receiver contract): rely on `turn-end-gate.md` (sender) + `dispatched-agent-liveness.md` (receiver, recovery procedure) + manual operator recovery. Pro: zero new authority, zero force-spin risk. Con: no mechanical backstop — a wedge still needs a human to notice and `TaskStop`.
+
+**Recommendation:** (a), once Jacob rules on the loop-guard (`stop_hook_active` vs. the self-managed breadcrumb). The firing semantics + existing marker lifecycle make this far safer than initially feared, and it is the only lever that reaches a wedged agent mechanically. Surfaced not baked because it adds a subagent-lifecycle enforcement authority AND depends on an undocumented harness field the guide flagged as needing confirmation — an authority-model fork the operator owns. Bundles with #12 (both concern the liveness/lifecycle authority around dispatched work).
+
+**HARD-PARK (harden Round 81, 2026-07-17, park-provisional protocol).** Assessed under the park-provisional default and DELIBERATELY NOT implemented — `divergence: structural`: (1) it introduces a NEW subagent-lifecycle enforcement authority (blocking a subagent's stop) the operator has never ratified, and (2) the recommended option depends on the UNDOCUMENTED `stop_hook_active` (or a self-invented loop-guard substitute), a wrong assumption about which risks an infinite block-loop — the expensive-to-redirect wrong-pick the structural carve-out reserves for the operator, and claude-code-guide explicitly advised against shipping load-bearing logic on that field without confirmation. Not a gate-weakening (it ADDS enforcement, removes no gate), so the block is on the structural/undocumented-dependency carve-out, not Prohibition #2. The FALSE-COMPLETION half was shipped mechanically this round (prose receiver contract, `4197e5d8`); only this genuine-wedge MECHANICAL backstop is parked. Nothing implemented for it.
+
 ## Why this is surfaced and not auto-applied
 
 Per the hardening prohibitions and decision-class tiering: D-A and D-B were applied mechanically under full gates (Round 19). D-C's mechanical half (guard deny) was ALSO applied mechanically — a bare unresolved ref token now hard-denies. The ONLY thing escalated here is the dispatch-preference contract flip, which reverses a deliberate Phase 7 design decision and trades one real failure class for another. That is a `product`-class fork, so it is surfaced via this file rather than baked silently.
+
+---
+
+## Resolution — Decision 14 (SubagentStop wedge-backstop) — 2026-07-17
+
+**Status:** RESOLVED → operator-authorized → enqueued as a pipeline feature.
+
+**Authorization:** Jacob authorized adding the hook, conditioned on a `claude-code-guide`
+confirmation that the strategy is sound. Confirmation obtained 2026-07-17:
+
+- `SubagentStop` fires ONLY at a subagent's genuine agentic-loop termination, NOT at mid-turn
+  foreground-child yields (distinct from the `<task-notification>` surface). A correct yield never
+  trips it.
+- Blocking via exit code 2 (stderr `reason`) or `{"decision":"block","reason":…}` is documented +
+  supported; the subagent continues.
+- `stop_hook_active` is **undocumented for `SubagentStop`** (Stop-only) — NOT used.
+- `agent_id` is a documented, stable per-subagent identifier — the sanctioned breadcrumb key.
+- `SubagentStop` fires at every nesting level, each with a unique `agent_id`, so per-`agent_id`
+  breadcrumbing is well-defined and nested orchestrators don't share a breadcrumb.
+
+**Decision:** adopt recommended option (a)/(ii) — a marker-gated `SubagentStop` hook with a
+self-managed `agent_id` breadcrumb loop-guard (no `stop_hook_active` dependency), fail-open, block
+at most once per subagent. The structural-divergence blocker (undocumented-field dependency) is
+removed by keying the loop-guard on the documented `agent_id`; the new enforcement authority is
+operator-authorized.
+
+**Enacted:** split out of this multi-decision sentinel into a standalone feature
+**`subagent-wedge-backstop-hook`** — `docs/features/subagent-wedge-backstop-hook/{SPEC.md,PHASES.md}`
+(Status: Ready), queue.json (tier 1) + ROADMAP.md (Tier 1). `/lazy-batch` builds it from there
+(→ `/write-plan` → `/execute-plan`).
+
+**Not re-opened:** decision #12 (descendant-liveness / marker-teardown authority) stays parked —
+this hook READS liveness/ownership state, it does not mutate marker teardown.
+
+## Resolution (decision #1 ONLY — dispatch-preference contract; decisions #2-#5 remain open)
+
+- **Decision #1:** RESOLVED by the operator (AskUserQuestion, 2026-07-18): **by-reference stays
+  the preferred dispatch form**, with prompt DELIVERY moved to a subagent-side resolve — a
+  sanctioned `--resolve-ref` consumed-nonce read the subagent runs as its contractual first
+  step. Platform basis: updatedInput rewrite confirmed broken for the Agent tool
+  (anthropics/claude-code#39814, closed not-planned; see
+  docs/bugs/byref-updatedinput-unapplied-on-background-agent-dispatch/PLATFORM_CONFIRMATION.md).
+  Verbatim dispatch is the interim behavior until the resolver ships (fix scope locked on that
+  bug). This file's decisions #2-#5 are NOT resolved and this sentinel stays live for them.
+- date: 2026-07-18

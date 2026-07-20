@@ -8,7 +8,7 @@
 **Fixed:** 2026-07-13
 **Fix commit:** 7ece6da
 **Placement:** docs/bugs/build-queue-copy-lock-stale-dll-false-success
-**Related:** [`PHASES.md`](./PHASES.md) (fix decomposition), `docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash/` (Concluded — Phases 1–5; this is a distinct, uncovered failure mode extending that work), `docs/bugs/build-queue-orphaned-result-on-wrapper-kill/`, `repos/cognito-forms/.claude/skills/{msbuild,mstest,nxbuild,nxtest}/`
+**Related:** [`PHASES.md`](./PHASES.md) (fix decomposition), `docs/bugs/_archive/build-queue-no-artifact-or-process-hygiene-on-crash/` (Concluded — Phases 1–5; this is a distinct, uncovered failure mode extending that work), `docs/bugs/build-queue-orphaned-result-on-wrapper-kill/`, `repos/cognito-forms/.claude/skills/{msbuild,mstest,nxbuild,nxtest}/`
 
 <!-- Status lifecycle: Investigating → Concluded. Root cause proven; ready for /plan-bug. -->
 

@@ -45,11 +45,35 @@ If the feature introduces new MCP tools or observable behaviors, the spec should
 
 ## AGPL / IP Placement (AlgoBooth — required SPEC section)
 
-Any SPEC for a feature touching **pattern evaluation, the sidecar, or IPC** MUST include an `## AGPL / IP Placement` section answering, in order:
+AlgoBooth ships AGPL-3.0 code in **public sidecars** — currently `strudel-sidecar/` (Strudel: `@strudel/*`, `superdough`) and `hydra-sidecar/` (`hydra-synth`), plus any future one. Every file in a public sidecar is disclosed at release, so where code lands is an IP decision — keep business-differentiating AlgoBooth IP host-side in the proprietary app.
 
-- **(a)** Does any part need `@strudel/*`/`superdough`, live `Pattern` objects, or the eval scheduler? If **no** → all code lands host-side; state that and move on (the remaining questions are N/A).
-- **(b)** For each sidecar-side piece: why can't it be host-side computation over data that already crosses the wire? (`strudel-sidecar/` is public AGPL code — see `docs/legal/AGPL_PUBLICATION_MANIFEST.md`.)
+Any SPEC for a feature touching **pattern/visual evaluation, a public AGPL sidecar, or IPC** MUST include an `## AGPL / IP Placement` section answering, in order:
+
+- **(a)** Does any part need a sidecar's AGPL library (`@strudel/*`/`superdough`, `hydra-synth`, …), its live objects (e.g. Strudel `Pattern` objects), or the eval scheduler? If **no** → all code lands host-side in the proprietary app; state that and move on (the remaining questions are N/A).
+- **(b)** For each sidecar-side piece: why can't it be host-side computation over data that already crosses the wire? (Every public sidecar — `strudel-sidecar/`, `hydra-sidecar/` — is public AGPL code, see `docs/legal/AGPL_PUBLICATION_MANIFEST.md`.)
 - **(c)** Does it add a new kind of payload to `audio_event.capnp`? → `docs/legal/AGPL_ISOLATION.md` must be updated in the same commit.
-- **(d)** Does it introduce a new AGPL dependency (e.g. `hydra-synth`) or any server-side Strudel execution? → manifest entry first.
+- **(d)** Does it introduce a new AGPL dependency (e.g. `hydra-synth`) or any server-side execution of a sidecar's AGPL library (Strudel, hydra, …)? → manifest entry first.
 
-Features with no contact with pattern evaluation, the sidecar, or IPC may omit the section. Downstream gates enforce this: `/spec-phases`' AGPL / IP Placement audit refuses to draft phases against a touching SPEC that lacks the section, and the planning/fix touchpoint gate refuses unjustified new files under `strudel-sidecar/`.
+Features with no contact with pattern/visual evaluation, a public AGPL sidecar, or IPC may omit the section. Downstream gates enforce this: `/spec-phases`' AGPL / IP Placement audit refuses to draft phases against a touching SPEC that lacks the section, and the planning/fix touchpoint gate refuses unjustified new files under any public AGPL sidecar (`strudel-sidecar/`, `hydra-sidecar/`).
+
+## Runtime-Proof Spikes (when behavior rests on an unproven runtime fact)
+
+When a SPEC's design rests on a runtime fact that is not yet PROVEN — a sustained
+measurement (fps/latency/throughput), a GO/NO-GO architectural fork whose choice depends on
+real runtime cost, or a confirm/deny of how the running system actually behaves — do NOT bake
+the assumption into the design silently. Note in the SPEC that a **Spike** (the pipeline's
+runtime-proof stage) will prove it at runtime, and document the two courses the proof selects
+between:
+
+- **On PASS** — the prescribed baseline design proceeds (name it).
+- **On FAIL / NO-GO** — the prescribed fallback (name it); the Spike halts with a
+  `NEEDS_INPUT.md` presenting exactly this fork, and is NEVER auto-accepted.
+
+A Spike verdict MUST be backed by REAL observed evidence (a measured number, a test result, an
+`/investigate` ledger) — NEVER an inferred or fabricated value, NEVER a static-trace substitute
+for the real measurement. Spike is the general "prove it at runtime, honestly" role; a
+behavior-confirmation spike may use `/investigate`. See
+`docs/specs/spike-pipeline-role/SPEC.md` (originating incident:
+`docs/features/visuals/hydra-overlay/SPIKE_PROJECTOR_FPS.md`, where a missing runtime-proof
+stage dead-ended into a manual block). `/spec-phases` turns this into a `**Spike:** required`
+phase declaration.

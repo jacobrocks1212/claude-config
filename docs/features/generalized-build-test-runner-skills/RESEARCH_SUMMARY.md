@@ -18,7 +18,7 @@ DESKTOP-GHTC5K6, 2026-07-13.
 
 2. **The failure class is current, named, and half-generalized already.**
    `docs/bugs/_archive/subagent-backgrounds-verification-ends-turn-before-green/` (Fixed, P1)
-   closed the Cognito build-queue instance; `docs/bugs/generic-execution-surfaces-lack-turn-end-gate/`
+   closed the Cognito build-queue instance; `docs/bugs/_archive/generic-execution-surfaces-lack-turn-end-gate/`
    (Concluded, P1, 2026-07-13) recorded 4 recurrences on GENERIC surfaces in one orchestrated
    run — including executors of the lazy-core decomposition hand-rolling the battery. The
    prose/turn-end half is generalized (`_components/turn-end-gate.md`, Round 39); the

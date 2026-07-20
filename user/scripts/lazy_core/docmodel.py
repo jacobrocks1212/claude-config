@@ -227,6 +227,99 @@ def phases_mcp_runtime_not_required(spec_path: Path) -> bool:
     return bool(re.search(r"(?mi)^\*\*MCP runtime:\*\*\s*not-required\b", text))
 
 
+# harden Round 80 (docs/specs/spike-pipeline-role) — the ``**Spike:**`` PHASES
+# header parse primitive. Mirrors ``phases_mcp_runtime_not_required`` /
+# ``_read_mcp_runtime_decision`` exactly: an ANCHORED value-token match so a
+# ``**Spike:**`` line whose REASON PROSE mentions "required"/"not-required" as a
+# substring is not mis-classified. INERT until Phase 2 wires it into
+# ``compute_state`` — shipped now as the tested primitive routing will consume.
+def _read_spike_decision(spec_path: "Path | str | None") -> tuple[str, str | None]:
+    """Decide the spike routing variant + proof goal from PHASES.md.
+
+    Reads ``{spec_path}/PHASES.md`` and looks for a line starting ``**Spike:**``:
+      - ``**Spike:** required`` → ``("spike-required", <goal>)`` where ``<goal>``
+        is the text after the first ``-``/``—`` dash on that line (or a fallback
+        when no dash is present). This phase's completion rests on a runtime
+        proof — the state machine routes it through a ``spike`` cycle.
+      - any other value, line absent, or file/dir absent → ``("no-spike", None)``.
+
+    Never raises: an unreadable file is treated as "line absent" → no-spike.
+    A phase whose completion rests on a runtime proof carries the ``required``
+    value; a phase that merely mentions a spike in prose does not (the anchor is
+    what keeps prose out of the routing decision).
+    """
+    fallback_goal = "the phase declares a runtime proof but names no goal"
+    if not spec_path:
+        return ("no-spike", None)
+    phases = Path(spec_path) / "PHASES.md"
+    try:
+        text = phases.read_text(encoding="utf-8")
+    except OSError:
+        return ("no-spike", None)
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("**Spike:**"):
+            # ANCHORED value-token test — mirror phases_mcp_runtime_not_required.
+            # Match ``required`` ONLY as the VALUE token right after the marker
+            # (word-boundary terminated), NOT as a substring anywhere on the line.
+            if re.match(r"(?i)\*\*Spike:\*\*\s*required\b", stripped):
+                goal = fallback_goal
+                for dash in ("—", "-"):
+                    idx = stripped.find(dash)
+                    if idx != -1:
+                        candidate = stripped[idx + len(dash):].strip()
+                        if candidate:
+                            goal = candidate
+                        break
+                return ("spike-required", goal)
+            # Line present but not the required value → no-spike.
+            return ("no-spike", None)
+    # No **Spike:** line at all → no-spike.
+    return ("no-spike", None)
+
+
+def phases_spike_required(spec_path: Path) -> bool:
+    """True iff ``spec_path/PHASES.md`` declares ``**Spike:** required``.
+
+    The boolean companion to ``_read_spike_decision`` (mirrors the
+    ``phases_mcp_runtime_not_required`` / ``_read_mcp_runtime_decision`` pairing):
+    a phase whose completion rests on a runtime proof carries this header, and the
+    state machine (Phase 2) routes that phase's completion through a ``spike``
+    cycle before the phase is considered done. ROUTING, not a waiver.
+    """
+    phases_path = spec_path / "PHASES.md"
+    if not phases_path.exists():
+        return False
+    try:
+        text = phases_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return bool(re.search(r"(?mi)^\*\*Spike:\*\*\s*required\b", text))
+
+
+def spike_verdict_is_pass(spec_path: "Path | str | None") -> bool:
+    """True iff ``{spec_path}/SPIKE_VERDICT.md`` carries a ``verdict: PASS`` field.
+
+    Tolerant, never raises: absent dir/file, unreadable file, missing/other
+    verdict value ⇒ False (route to spike). PASS match is case-insensitive on
+    the value token (mirrors ``_read_spike_decision``'s anchored-value
+    discipline). Shared by both state scripts (lazy-state.py Step 9.5 +
+    bug-state.py mirror).
+    """
+    if not spec_path:
+        return False
+    verdict_path = Path(spec_path) / "SPIKE_VERDICT.md"
+    try:
+        text = verdict_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if re.match(r"(?i)verdict:\s*PASS\b", stripped):
+            return True
+    return False
+
+
 def skip_waiver_refusal(
     meta: dict[str, Any] | None, repo_root: Path | None = None
 ) -> str | None:
@@ -329,6 +422,97 @@ def spec_status(spec_path: Path | None) -> str | None:
     except OSError:
         pass
     return None
+
+def spec_fixed_annotation(spec_path: Path | None) -> str | None:
+    """Return the bug SPEC.md ``**Fixed:**`` evidence-annotation value, or None.
+
+    Sibling of ``spec_status`` — reads the ``**Fixed:** <date> - ...`` evidence
+    line that marks a fix already implemented OUT-OF-PIPELINE (a ``/harden-harness``
+    round or a manual in-session fix; see docs/bugs/CLAUDE.md → "Fixing a bug
+    OUT-OF-PIPELINE" and _components/mark-fixed-archive.md). The FIRST ``**Fixed:**``
+    line wins, mirroring ``spec_status``'s first-occurrence rule.
+
+    ``spec_status`` reads ONLY ``**Status:**`` and never consults this annotation,
+    so a ``Concluded`` SPEC whose fix already landed is invisible to it — this
+    reader is the load-bearing signal the ``is_fixed_unreconciled`` predicate uses
+    to divert such an item to reconciliation instead of a wasted plan-bug dispatch.
+    Read+regex shape is byte-parallel to ``spec_status`` (do NOT re-open the file
+    with a divergent reader).
+    """
+    if spec_path is None:
+        return None
+    spec_md = spec_path / "SPEC.md"
+    if not spec_md.exists():
+        return None
+    try:
+        for line in spec_md.read_text(encoding="utf-8").splitlines():
+            m = re.match(r"^\*\*Fixed:\*\*\s*(.+?)\s*$", line)
+            if m:
+                return m.group(1).strip()
+    except OSError:
+        pass
+    return None
+
+# A SECOND out-of-pipeline-fix signal alongside `**Fixed:**` — a `## Fix
+# (implemented <date>)` section heading (adhoc-harden-bug-pipeline-gate-verdict-
+# and-detector-gaps GAP 2). Some SPECs record a landed out-of-pipeline fix under
+# this heading instead of the inline `**Fixed:**` evidence line (observed:
+# docs/bugs/build-queue-timeout-kill-reaps-detached-runner/SPEC.md, fix landed
+# 2026-07-10). `is_fixed_unreconciled` keys on EITHER signal so such a SPEC is
+# diverted to reconciliation instead of burning a wasted plan-bug round.
+_FIX_IMPLEMENTED_HEADING_RE = re.compile(
+    r"^##\s+Fix\s*\(\s*implemented\b.*\)\s*$", re.IGNORECASE
+)
+
+def spec_fix_implemented_heading(spec_path: Path | None) -> str | None:
+    """Return the bug SPEC.md ``## Fix (implemented <date>)`` heading text, or None.
+
+    Sibling of ``spec_fixed_annotation`` — the alternate out-of-pipeline-fix
+    signal (a `## Fix (implemented …)` SECTION HEADING rather than the inline
+    `**Fixed:** <date>` evidence line). The FIRST matching heading wins,
+    mirroring ``spec_fixed_annotation``/``spec_status`` first-occurrence rules.
+    Read+scan shape is byte-parallel to ``spec_fixed_annotation`` (do NOT re-open
+    the file with a divergent reader). ``is_fixed_unreconciled`` treats
+    ``spec_fixed_annotation(...) or spec_fix_implemented_heading(...)`` as the
+    already-fixed signal, so a SPEC recording its fix under EITHER convention is
+    diverted to reconciliation instead of a wasted re-plan.
+    """
+    if spec_path is None:
+        return None
+    spec_md = spec_path / "SPEC.md"
+    if not spec_md.exists():
+        return None
+    try:
+        for line in spec_md.read_text(encoding="utf-8").splitlines():
+            m = _FIX_IMPLEMENTED_HEADING_RE.match(line)
+            if m:
+                return m.group(0).strip()
+    except OSError:
+        pass
+    return None
+
+def normalize_item_dir(spec_path: Path | None) -> Path | None:
+    """Resolve a polymorphic ``spec_path`` positional to the item DIRECTORY.
+
+    The state-script CLI is polymorphic at every ``<spec_path>``-taking
+    subcommand (adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps GAP 3):
+    ``--apply-pseudo __mark_fixed__`` / ``__grant_skip_no_mcp_surface__`` /
+    ``__write_validated_from_skip__`` and ``--archive-fixed`` treat the positional
+    as the item DIRECTORY (``spec_path / "FIXED.md"``; ``bug_id = spec_path.name``),
+    while ``--verify-ledger`` / ``--gate-coverage`` treat it as the ``SPEC.md``
+    FILE. Passing the wrong shape yielded a confusing precondition refusal that
+    was really a path-shape mismatch. This normalizer lets a dir-expecting caller
+    accept EITHER shape: a ``SPEC.md`` file is resolved to its parent dir; a dir
+    (or any non-``SPEC.md`` path) is returned unchanged. Conservative on purpose
+    (keys on the exact ``SPEC.md`` basename, never a bare ``.md``, so a stray plan
+    path is never silently re-rooted).
+    """
+    if spec_path is None:
+        return None
+    p = Path(spec_path)
+    if p.name == "SPEC.md":
+        return p.parent
+    return p
 
 # park-provisional-acceptance: the filename state a provisionally-accepted
 # NEEDS_INPUT.md is renamed to by provisionalize_sentinel(). It stays
@@ -1085,6 +1269,68 @@ def _row_is_descoped_in_place(row_text: str) -> bool:
     return bool(_DESCOPE_STRIKETHROUGH_RE.search(row_text)) and bool(
         _DESCOPE_MARKER_RE.search(row_text)
     )
+
+
+# ---------------------------------------------------------------------------
+# Per-row host-defer marker recognizer
+# (decision-2-6-uncovered-row-reroute-to-mcp-test WU-1 — the minimal recognizer
+# half of decision 5's per-row ``<!-- requires-host: <cap> -->`` marker).
+#
+# Mirrors ``_VERIFICATION_ONLY_MARKER`` / ``_DESCOPED_MARKER``: a per-row HTML
+# comment, invisible in rendered markdown, PHRASING-INDEPENDENT — but unlike
+# those two it CARRIES A VALUE (the required host-capability id), so it is
+# matched by a CAPTURING regex rather than a bare substring test.
+#
+# A PHASES.md runtime-verification row (or its enclosing subsection header) may
+# declare that it can only be exercised on a host bearing a named capability:
+#
+#   - [ ] <!-- verification-only --> <!-- requires-host: real-audio-device --> ...
+#
+# Such a row is HOST-DEFERRED: on a host lacking the capability it can never be
+# ticked, so the Step-10 uncovered-row re-route (WU-2) MUST exclude it — else the
+# re-route would loop /mcp-test forever against a row that cannot pass here (the
+# termination contract, SPEC Proven Findings clause (b)).
+# ---------------------------------------------------------------------------
+_REQUIRES_HOST_ROW_RE = re.compile(
+    r"<!--\s*requires-host\s*:\s*([^>]*?)\s*-->",
+    re.IGNORECASE,
+)
+# keep-in-sync: the capability-id shape is the closed-registry shape owned by
+# ``hostcaps._HOST_CAPABILITY_ID_RE`` (the vocabulary SSOT). Mirrored here (a
+# trivial, stable contract) rather than imported to keep docmodel's import
+# surface light — the same keep-in-sync duplication precedent as
+# phases-slice.py's copy of ``_PHASE_HEADING_RE``.
+_REQUIRES_HOST_CAP_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+def row_requires_host(row_text: str) -> str | None:
+    """Return the host-capability id a PHASES.md row/line declares, else None.
+
+    Pure, single-string recognizer for the per-row / per-header
+    ``<!-- requires-host: <cap> -->`` marker. Returns the FIRST shape-valid
+    capability id declared in ``row_text`` (case-insensitive marker key), or
+    ``None`` when no marker is present OR the captured id is not shape-valid
+    (``^[a-z0-9][a-z0-9-]*$`` — a mis-shaped/empty token is not a capability).
+
+    Position-agnostic BY DESIGN: it recognizes the marker in a checkbox row's
+    text OR in a subsection HEADER line's text — this is what lets the WU-2
+    row-walk honor requires-host header-scope (a marker on the enclosing header
+    defers every row beneath it) exactly as
+    ``remaining_unchecked_are_verification_only`` honors
+    ``_VERIFICATION_ONLY_MARKER`` header-scope. It has NO notion of code fences
+    or phase boundaries — those are the caller's (the walk's) concern.
+
+    No I/O, no mutation — safe on the read-only ``compute_state`` probe path.
+    """
+    if not row_text:
+        return None
+    m = _REQUIRES_HOST_ROW_RE.search(row_text)
+    if not m:
+        return None
+    cap = m.group(1).strip()
+    if not _REQUIRES_HOST_CAP_ID_RE.match(cap):
+        return None
+    return cap
 
 
 def remaining_unchecked_are_verification_only(phases_text: str) -> bool:
@@ -2134,6 +2380,169 @@ def detect_noncanonical_blocker(spec_dir: Path) -> Path | None:
     return None
 
 
+def spec_dir_would_park(
+    spec_dir: "Path",
+    *,
+    park_needs_input: bool = False,
+    park_blocked: bool = False,
+    park_provisional: bool = False,
+) -> bool:
+    """Return True iff an item whose sentinels live in ``spec_dir`` would be
+    SKIPPED (parked) — not dispatched — this run, given the active park facets.
+
+    This mirrors the compute_state park branches in ``lazy-state.py`` /
+    ``bug-state.py`` (the SAME predicate that populates each probe's ``parked[]``
+    array), factored into one place so the merged-head computation
+    (``merged_worklist`` / ``next_merged`` / ``merged_head_override``) can EXCLUDE
+    parked items — otherwise a parked, undriveable item at the merged head makes
+    the ``merged-head-diverged`` withhold deadlock a park-mode run
+    (``docs/bugs/merged-head-includes-parked-items-deadlocks-park-run``).
+
+    Park families covered (the two cited by the bug + the stray-blocker parity the
+    ``parked[]`` array already includes):
+
+      * ``--park-blocked``: a canonical ``BLOCKED.md`` OR a stray mis-named
+        blocker (``detect_noncanonical_blocker``) → parked.
+      * ``--park-needs-input``: an unresolved ``NEEDS_INPUT.md`` → parked, with
+        two mirrored guards from compute_state — (a) ``BLOCKED.md`` retains
+        precedence (a dir carrying BOTH still HALTS as blocked when
+        ``--park-blocked`` is off, so it is NOT a needs-input park here); (b) under
+        ``--park-provisional`` a provisional-ELIGIBLE sentinel ROUTES the
+        ``__provisional_accept__`` pseudo-skill (the item keeps moving — actionable,
+        NOT parked); an ineligible one parks.
+
+    Deliberately OUT of scope (class boundary): the narrower "unratified
+    ``NEEDS_INPUT_PROVISIONAL.md`` + ``VALIDATED.md`` parks at completion" branch —
+    that item is workable up to completion (driveable), not part of the observed
+    deadlock.
+
+    Pure + fail-safe: no facet active, a missing/unreadable ``spec_dir``, or a
+    ``None`` → ``False`` (byte-identical non-park behavior; the exclusion set the
+    callers build stays empty).
+    """
+    if spec_dir is None:
+        return False
+    try:
+        if not spec_dir.exists():
+            return False
+    except OSError:
+        return False
+    blocked = (spec_dir / "BLOCKED.md").exists()
+    # BLOCKED park (canonical or stray mis-named blocker) — --park-blocked.
+    if park_blocked:
+        if blocked:
+            return True
+        if detect_noncanonical_blocker(spec_dir) is not None:
+            return True
+    # NEEDS_INPUT park — --park-needs-input. BLOCKED retains precedence (the
+    # `and not BLOCKED.md` guard mirrors compute_state): a dir with BOTH still
+    # halts as blocked when --park-blocked is off, so it is not a needs-input park.
+    if park_needs_input and (spec_dir / "NEEDS_INPUT.md").exists() and not blocked:
+        # park-provisional-acceptance: a provisional-ELIGIBLE sentinel ROUTES the
+        # __provisional_accept__ pseudo-skill (actionable — keeps moving), so it is
+        # NOT parked. Ineligible → parked exactly as compute_state parks it.
+        if park_provisional:
+            eligible, _ = provisional_eligibility(spec_dir / "NEEDS_INPUT.md")
+            if eligible:
+                return False
+        return True
+    return False
+
+
+def spec_dir_operator_deferred(spec_dir: "Path") -> bool:
+    """Return True iff an item whose sentinels live in ``spec_dir`` is
+    OPERATOR-DEFERRED — a ``DEFERRED.md`` sentinel is present.
+
+    UNCONDITIONAL, unlike the park families in ``spec_dir_would_park``: the
+    ``compute_state`` walk in ``bug-state.py`` skips an operator-deferred bug with
+    a bare ``continue`` the moment ``DEFERRED.md`` exists, INDEPENDENT of any park
+    flag (bug-state.py's operator-deferred branch). So an operator-deferred item is
+    NEVER the dispatched item, and the merged-head computation must EXCLUDE it on
+    EVERY run (park or not) or the ``merged-head-diverged`` withhold deadlocks the
+    run behind an undriveable operator-deferred head
+    (``docs/bugs/merged-head-excludes-parked-not-operator-deferred-deadlocks``).
+
+    Kept SEPARATE from ``spec_dir_would_park`` precisely because it is not
+    park-flag-gated. This predicate now feeds ``compute_state``'s own park/skip
+    classification DIRECTLY in BOTH state scripts: ``bug-state.py``'s original
+    operator-deferred branch, and ``lazy-state.py``'s own operator-deferred branch
+    (added by ``merged-head-oracle-per-signal-supplement-churn`` Phase 1, mirroring
+    the bug pipeline). The merged-head actionability oracle
+    (``dispatch.merged_head_nondispatchable_ids``) no longer applies this
+    file-predicate directly as a supplement — that direct application was RETIRED by
+    ``merged-head-oracle-per-signal-supplement-churn`` Phase 2, because it is no
+    longer needed: the oracle's primary ``is_dispatchable(scoped_probe(iid))``
+    re-inference now correctly classifies an operator-deferred FEATURE too (since the
+    feature's own ``compute_state`` has the branch above), exactly as it already did
+    for an operator-deferred BUG (``bug-state.py``'s branch surfaces
+    ``terminal_reason: operator-deferred``).
+
+    Both pipelines now model operator-defer directly in their own
+    ``compute_state``, so there is no cross-pipeline blind spot left for the oracle
+    to compensate for.
+
+    Pure + fail-safe: ``None`` / a missing or unreadable ``spec_dir`` → ``False``
+    (byte-identical non-defer behavior; the caller's exclusion set stays empty).
+    """
+    if spec_dir is None:
+        return False
+    try:
+        return (spec_dir / "DEFERRED.md").exists()
+    except OSError:
+        return False
+
+
+def spec_dir_research_pending(spec_dir: "Path") -> bool:
+    """Return True iff an item whose sentinels live in ``spec_dir`` is
+    RESEARCH-PENDING — a ``NEEDS_RESEARCH.md`` is present, OR a
+    ``RESEARCH_PROMPT.md`` is present with neither ``RESEARCH.md`` nor
+    ``RESEARCH_SUMMARY.md`` filling the gap.
+
+    This is the pure, file-only twin of the ``compute_state`` research-pending
+    peek (the ``if skip_needs_research:`` branch in ``lazy-state.py`` and the
+    ``_gated_head_kind`` 'research' classifier) — the SAME predicate. The merged
+    head now EXCLUDES a research-pending head via the actionability oracle
+    (``dispatch.merged_head_nondispatchable_ids`` scoped-probes ``compute_state``,
+    which classifies a research-pending head non-dispatchable). The exclusion is UNCONDITIONAL: a
+    research-pending head is non-dispatchable on EVERY run (it HALTS at the Step-5
+    walk gate, or is SKIPPED under ``--skip-needs-research``), and the on-disk
+    sentinel IS the deliberate research-defer decision — so no flag context is
+    needed to classify it. Excluding it always keeps the two COUPLED scripts'
+    merged-head-override computations consistent: ``bug-state.py``'s caller reads
+    the feature queue too but has no ``--skip-needs-research`` flag and cannot fold
+    a feature head into its bug-scoped ``probe_skipped_ids`` — so this file
+    predicate is the ONLY reachable exclusion on the bug side. A flag-gated
+    exclusion split the two scripts' merged heads on the same on-disk state and
+    deadlocked both emits (``docs/bugs/merged-head-research-exclusion-flag-gated-splits-cross-script``,
+    the 6th facet of the merged-head exclude-set recurring class; completes
+    ``docs/bugs/merged-head-diverged-withholds-on-research-skipped-head``, Round 91,
+    which flag-gated it at the ``lazy-state.py`` caller only).
+
+    Feature-pipeline mechanic: research gating is feature-only (a documented
+    parity divergence — ``bug-state.py`` has no ``--skip-needs-research``), so a
+    bug spec dir never carries these files and this contributes nothing to a bug
+    queue's own items (it fires only against the FEATURE items the merged-head
+    caller passes in).
+
+    Pure + fail-safe: ``None`` / a missing or unreadable ``spec_dir`` → ``False``
+    (byte-identical non-research behavior; the caller's exclusion set stays empty).
+    """
+    if spec_dir is None:
+        return False
+    try:
+        if not spec_dir.exists():
+            return False
+        if (spec_dir / "NEEDS_RESEARCH.md").exists():
+            return True
+        return (
+            (spec_dir / "RESEARCH_PROMPT.md").exists()
+            and not (spec_dir / "RESEARCH.md").exists()
+            and not (spec_dir / "RESEARCH_SUMMARY.md").exists()
+        )
+    except OSError:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # neutralize_sentinel — WU-3: rename a resolved sentinel to the canonical
 #   *_RESOLVED_<date> form (collision-safe, git-mv-aware).
@@ -2300,6 +2709,170 @@ def _extract_recommended_label(h3_text: str) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Conflict routing (concurrent-worktree-agent-coordination Phase 4)
+# ---------------------------------------------------------------------------
+# SSOT for the semantic-conflict NEEDS_INPUT.md marker. WU-1 defines it here;
+# the WU-2 provisional_eligibility carve-out below keys on it, and the schema
+# doc (_components/sentinel-frontmatter.md) + the conflict-routing prose
+# (_components/lazy-batch-prompts/cycle-base-prompt.md) reference the same
+# literal `conflict_kind: semantic` frontmatter shape.
+_SEMANTIC_CONFLICT_MARKER_FIELD = "conflict_kind"
+_SEMANTIC_CONFLICT_MARKER_VALUE = "semantic"
+
+# park-provisional-parks-claude-config-auto-generated-stubs: the closed set of
+# HARNESS-AUTO-GENERATED bug-stub origins. A stub whose seeded capsule (and, via
+# spec-bug propagation, its NEEDS_INPUT.md) carries `auto_generated: true` +
+# `auto_generated_origin: <one of these>` was machine-enqueued by the harness
+# self-improvement loop (canary revert-triage / incident capture), NOT authored
+# by the operator — so its stub-origin baseline is machine triage noise, and in
+# claude-config `--park-provisional` should AUTO-ACCEPT its recommended option
+# rather than parking. Structural origin tag — NEVER an id prefix like
+# `canary-revert-*` (that would be an anti-overfit literal-alternation finding).
+_AUTO_GENERATED_HARNESS_ORIGINS = frozenset({"canary-revert", "incident-capture"})
+
+# Surface-key extractors for the coupled-surface half of the discriminator. A
+# conflict is on a SHARED logical surface when both sides touch the same named
+# symbol (def/class), the same Locked-Decision row id (D<n>/LD<n>), or the same
+# sentinel filename (BLOCKED.md / NEEDS_INPUT.md / …).
+_CONFLICT_SYMBOL_RE = re.compile(r"\b(?:def|class)\s+([A-Za-z_]\w*)")
+_CONFLICT_DECISION_ROW_RE = re.compile(r"\b((?:LD|D)\d+)\b")
+_CONFLICT_SENTINEL_RE = re.compile(r"\b([A-Z][A-Z0-9_]*\.md)\b")
+
+
+def _conflict_surface_keys(hunk_text: str) -> set[str]:
+    """Extract the set of logical surface keys a conflict hunk touches.
+
+    An EMPTY set means no finer-than-file surface was extractable — the
+    ambiguity signal ``classify_conflict`` fails safe on (a bare assignment,
+    a data-only region). Namespaced so a symbol named like a sentinel can
+    never collide with an actual sentinel filename.
+    """
+    keys: set[str] = set()
+    for m in _CONFLICT_SYMBOL_RE.finditer(hunk_text or ""):
+        keys.add("sym:" + m.group(1))
+    for m in _CONFLICT_DECISION_ROW_RE.finditer(hunk_text or ""):
+        keys.add("row:" + m.group(1))
+    for m in _CONFLICT_SENTINEL_RE.finditer(hunk_text or ""):
+        keys.add("sentinel:" + m.group(1))
+    return keys
+
+
+def classify_conflict(merge_result: dict) -> tuple[str, str]:
+    """Discriminate a conflict that slipped past the FIFO file-lock.
+
+    Returns ``("write" | "semantic", reason)``. A **write** conflict is
+    non-halting (retry/queue through the lock, log, continue); a **semantic**
+    conflict HALTS with a class-``product`` ``NEEDS_INPUT.md`` carrying
+    ``conflict_kind: semantic`` (never auto-accepted under ``--park-provisional``
+    — see ``provisional_eligibility`` below).
+
+    PURE with an **injectable git seam**: ``merge_result`` is a plain dict the
+    caller builds from git (e.g. ``git merge-tree``); ``--test`` passes literals.
+      - ``auto_merges``: bool — git merged cleanly (no conflict markers).
+      - ``conflicts``: ``list[{"file", "ours", "theirs"}]`` — consulted only
+        when ``auto_merges`` is not True; ``ours``/``theirs`` are the
+        conflicting hunk text from each side.
+
+    Heuristic, in order (LOCKED — SPEC Locked Decision 2, Requirements 4–5):
+      1. ``auto_merges`` True → ``write`` (git reconciled it mechanically).
+      2. Any conflict whose ours & theirs share a surface key (same symbol /
+         Locked-Decision row / sentinel) → ``semantic`` (two edits to the same
+         logical artifact cannot be mechanically reconciled).
+      3. Every conflict on DISJOINT surfaces (both sides have extractable keys,
+         no overlap) → ``write``.
+      4. Empty/undeterminable/ambiguous (a side with no extractable key) →
+         ``semantic`` (FAIL-SAFE direction).
+    """
+    if not isinstance(merge_result, dict):
+        return ("semantic", "un-parseable merge result — fail-safe to semantic")
+    if merge_result.get("auto_merges") is True:
+        return ("write", "git auto-merged cleanly — no conflict markers")
+    conflicts = merge_result.get("conflicts") or []
+    if not conflicts:
+        return (
+            "semantic",
+            "conflict reported with no analyzable hunks — fail-safe to semantic",
+        )
+    all_disjoint = True
+    for c in conflicts:
+        if not isinstance(c, dict):
+            all_disjoint = False
+            continue
+        ours_keys = _conflict_surface_keys(str(c.get("ours", "")))
+        theirs_keys = _conflict_surface_keys(str(c.get("theirs", "")))
+        shared = ours_keys & theirs_keys
+        if ours_keys and theirs_keys and shared:
+            return (
+                "semantic",
+                "conflict on a shared logical surface "
+                f"{sorted(shared)} — needs human reconciliation",
+            )
+        # Provably disjoint iff BOTH sides carry extractable keys that do not
+        # overlap; anything else is ambiguous and must fail safe.
+        if not (ours_keys and theirs_keys):
+            all_disjoint = False
+    if all_disjoint:
+        return (
+            "write",
+            "conflicting hunks touch disjoint logical surfaces — mechanically mergeable",
+        )
+    return ("semantic", "conflict surface undeterminable — fail-safe to semantic")
+
+
+def _sentinel_repo_is_claude_config(sentinel_path: Path) -> bool:
+    """True iff ``sentinel_path`` lives under the claude-config checkout.
+
+    park-provisional-parks-claude-config-auto-generated-stubs: the auto-generated-
+    stub carve-out is claude-config-scoped (the operator directive names it
+    specifically). Self-contained + deterministic: walk up from the sentinel and
+    report claude-config when a parent carries BOTH ``manifest.psd1`` (the symlink
+    manifest — unique to this repo's root) AND ``user/settings.json`` (the
+    user-scope settings SSOT that exists ONLY in the claude-config checkout — the
+    same discriminator ``doc-drift-lint.py`` uses). Depth-bounded; a fixture repo
+    that seeds those two paths is recognized (hermetic tests), any other repo is
+    not. Any filesystem error fails closed to False (the carve-out never applies
+    on an unresolvable path)."""
+    try:
+        cur = sentinel_path.resolve().parent
+    except OSError:
+        return False
+    for _ in range(8):
+        try:
+            if (cur / "manifest.psd1").is_file() and \
+                    (cur / "user" / "settings.json").is_file():
+                return True
+        except OSError:
+            return False
+        if cur.parent == cur:
+            break
+        cur = cur.parent
+    return False
+
+
+def _auto_generated_carveout_applies(meta: dict, sentinel_path: Path) -> bool:
+    """Whether the claude-config auto-generated-stub carve-out rescues an
+    otherwise stub-origin-excluded sentinel (park-provisional-parks-claude-
+    config-auto-generated-stubs). ALL of:
+
+      - ``auto_generated`` is explicitly truthy (an explicit ``false``/``no`` or
+        an absent field does NOT rescue — a genuine operator stub stays parked);
+      - ``auto_generated_origin`` is in the closed harness-origin set
+        (``_AUTO_GENERATED_HARNESS_ORIGINS`` — a structural tag, never an id
+        prefix);
+      - the sentinel lives under the claude-config checkout.
+
+    Fail-CLOSED: any missing/malformed piece ⇒ the carve-out does not apply, so
+    the stub-origin exclusion stands (byte-identical to before)."""
+    _ag = meta.get("auto_generated")
+    if not (_ag is True or str(_ag).strip().lower() in ("true", "yes")):
+        return False
+    origin = str(meta.get("auto_generated_origin", "")).strip().lower()
+    if origin not in _AUTO_GENERATED_HARNESS_ORIGINS:
+        return False
+    return _sentinel_repo_is_claude_config(sentinel_path)
+
+
 def provisional_eligibility(sentinel_path: Path) -> tuple[bool, str]:
     """Deterministic, FAIL-CLOSED provisional-acceptance predicate (SPEC D3/D4/D8).
 
@@ -2343,6 +2916,21 @@ def provisional_eligibility(sentinel_path: Path) -> tuple[bool, str]:
         return (False, f"{len(decisions)} decisions exceeds the 4-decision cap")
     if str(meta.get("written_by", "")).strip() == "completion-integrity-gate":
         return (False, "written_by completion-integrity-gate — never provisional")
+    # Spike-FAIL carve-out (harden Round 80, docs/specs/spike-pipeline-role):
+    # a Spike is a runtime PROOF — a FAIL means the running system did not exhibit
+    # the proven-required behavior, which is NEVER a "pick the recommended option"
+    # design fork. A Spike-authored NEEDS_INPUT (written_by: spike) or one carrying
+    # spike_verdict: fail is NEVER auto-accepted, even under --park --park-provisional
+    # (the feature PARKS instead). This is a deliberate carve-out from the normal
+    # park-provisional path — both callers (the park-mode routing peek and the
+    # --provisionalize-sentinel CLI action) re-run this predicate, so it is airtight.
+    if str(meta.get("written_by", "")).strip() == "spike":
+        return (False, "written_by spike — Spike FAIL is never auto-accepted "
+                       "(park, do not provisionally accept)")
+    _sv = str(meta.get("spike_verdict", "")).strip().lower()
+    if _sv == "fail":
+        return (False, "spike_verdict: fail — Spike FAIL is never auto-accepted "
+                       "(park, do not provisionally accept)")
     # stub-origin-provisional-exclusion: decisions that shaped a baseline the
     # operator never saw (park-mode stub-spec /spec Phase-1 round, /spec-bug
     # pre-conclusion halt) are NEVER provisionally accepted, regardless of
@@ -2352,8 +2940,27 @@ def provisional_eligibility(sentinel_path: Path) -> tuple[bool, str]:
     if "stub_origin" in meta:
         _so = meta.get("stub_origin")
         if not (_so is False or str(_so).strip().lower() in ("false", "no")):
-            return (False, "stub_origin baseline decision — never provisional "
-                           "(fail-closed)")
+            # CARVE-OUT (park-provisional-parks-claude-config-auto-generated-
+            # stubs): a claude-config HARNESS-AUTO-GENERATED stub (canary-revert
+            # / incident-capture) is machine triage noise, not an operator-shaped
+            # baseline — its recommended option is AUTO-ACCEPTED under
+            # --park-provisional. Every OTHER stub_origin sentinel still parks.
+            if not _auto_generated_carveout_applies(meta, sentinel_path):
+                return (False, "stub_origin baseline decision — never provisional "
+                               "(fail-closed)")
+    # Semantic-conflict carve-out (concurrent-worktree-agent-coordination Phase 4):
+    # a NEEDS_INPUT.md written by the conflict router for a SEMANTIC concurrent-
+    # writer conflict (classify_conflict above) reconciles two agents' divergent
+    # intent on the SAME logical artifact — never a "pick the recommended option"
+    # design fork. It is NEVER auto-accepted, even under --park --park-provisional
+    # (the feature PARKS for the operator). Keyed on the WU-1 SSOT marker field;
+    # both callers (the park-mode routing peek and --provisionalize-sentinel)
+    # re-run this predicate, so the carve-out is airtight. Placed with the
+    # Spike-FAIL / stub_origin exclusions, before the divergence two-key.
+    if (str(meta.get(_SEMANTIC_CONFLICT_MARKER_FIELD, "")).strip().lower()
+            == _SEMANTIC_CONFLICT_MARKER_VALUE):
+        return (False, "semantic conflict — never auto-accepted "
+                       "(park, do not provisionally accept)")
     if meta.get("class") == "mechanical" and meta.get("audit_concurs") is True:
         return (False, "two-key mechanical — flush auto-accept path wins (D4)")
     divergence = str(meta.get("divergence", "")).strip().lower()
@@ -2380,6 +2987,57 @@ def provisional_eligibility(sentinel_path: Path) -> tuple[bool, str]:
         if "**Recommendation:**" not in h3:
             return (False, f"decision {i + 1} lacks a **Recommendation:** block")
     return (True, "eligible")
+
+
+def write_spike_tooling_cap_needs_input(spec_dir: Path, item_name: str, rounds: int) -> None:
+    """Write a well-formed NEEDS_INPUT.md for a Spike tooling-round cap halt.
+
+    spike-pipeline-role Phase 4 (WU-2) — the shared writer for the tooling-
+    existence loop's machine-enforced bound (SPEC "The tooling-existence loop
+    (bounded)" / "Loop guard (bound)"). Modeled on
+    ``lazy-state.py::_write_step10_needs_input`` (same NEEDS_INPUT.md schema
+    per ``~/.claude/skills/_components/sentinel-frontmatter.md``: YAML
+    frontmatter — kind, feature_id, written_by, decisions list, date — and a
+    ``## Decision Context`` body with one H3 per decision).
+
+    ``written_by: spike`` is CRITICAL: it is what makes
+    ``provisional_eligibility`` (the Spike-FAIL carve-out above) refuse to
+    auto-accept this halt under ``--park --park-provisional`` — a persistent
+    Spike tooling gap is never a "pick the recommended option" design fork.
+
+    Idempotent: overwrites an existing NEEDS_INPUT.md without error.
+    """
+    today = datetime.date.today().isoformat()
+    feature_id = spec_dir.name
+    decision_title = (
+        f"Spike tooling gap persists after {rounds} corrective rounds — "
+        "operator decision needed"
+    )
+    content = (
+        "---\n"
+        "kind: needs-input\n"
+        f"feature_id: {feature_id}\n"
+        "written_by: spike\n"
+        "spike_verdict: pending\n"
+        "decisions:\n"
+        f'  - "{decision_title}"\n'
+        f"date: {today}\n"
+        "---\n"
+        "\n"
+        "## Decision Context\n"
+        "\n"
+        f"### 1. {decision_title}\n"
+        "\n"
+        f"**Problem:** The Spike role for `{item_name}` has run through "
+        f"{rounds} corrective tooling rounds without resolving the required "
+        "tooling gap (SPEC \"The tooling-existence loop (bounded)\"). The "
+        "loop is bounded to prevent an unbounded corrective cycle — operator "
+        "input is needed to decide how to proceed (e.g. install/author the "
+        "missing tooling manually, relax the Spike's runtime-proof "
+        "requirement, or reassess the goal).\n"
+    )
+    needs_input_path = spec_dir / "NEEDS_INPUT.md"
+    _atomic_write(needs_input_path, content)
 
 
 def provisionalize_sentinel(path: Path, repo_root: Path,

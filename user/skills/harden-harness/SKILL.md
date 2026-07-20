@@ -1,6 +1,6 @@
 ---
 name: harden-harness
-description: Harness-hardening stage: USE WHEN a marked orchestrator run hits a misroute, no-route condition, inject-hook error, or process-friction ledger entry — root-causes the broken route, fixes mechanically under full gates, forks policy via NEEDS_INPUT.md.
+description: Harness-hardening stage: USE WHEN a marked orchestrator run hits a misroute, no-route condition, inject-hook error, or process-friction ledger entry — root-causes the broken route, fixes mechanically under full gates, and resolves design forks park-provisionally (selects the recommended option and IMPLEMENTS it, recording a ratification-pending NEEDS_INPUT_PROVISIONAL.md) — hard-parking only gate-weakening or structural forks.
 argument-hint: [description of the observed friction or no-route condition]
 ---
 
@@ -106,6 +106,43 @@ Root-cause classes (pick the most specific that applies):
 - **hook-defect:** a bug in `lazy-route-inject.sh` or `lazy-dispatch-guard.sh` produced an
   incorrect allow/deny/inject or an error breadcrumb on a run that should have proceeded.
 
+**Confirm Claude Code platform behavior before relying on it — SELF-RESOLVE via `claude-code-guide`, then provisionally accept.**
+When the root cause OR the proposed fix hinges on how the Claude Code PLATFORM itself behaves —
+hook firing rules (which of `Stop` / `SubagentStop` / `PreToolUse` / … fires, and exactly when),
+the subagent / tool lifecycle, the fields a hook receives on stdin, the `settings.json` hook
+schema, or any SDK/runtime field — and that behavior is NOT authoritatively documented in this
+repo, do NOT ship load-bearing logic on an UNCONFIRMED assumption. But an unconfirmed platform
+assumption is a blocker to RESOLVE, **not** an automatic hard-park.
+
+**The self-resolve-then-provisional-accept flow (operator-authorized 2026-07-19, replaces the
+Round-81 blanket prohibition):** when the ONLY blocker to an otherwise-recommendable harden
+decision is an unconfirmed platform / Claude-Code capability, the harden agent MUST attempt to
+RESOLVE it by consulting the **`claude-code-guide`** agent ITSELF (`subagent_type: claude-code-guide`)
+— *even during a marked lazy run*. This consultation is now SANCTIONED at the enforcement plane:
+`lazy_guard.py` admits an unregistered `subagent_type == "claude-code-guide"` Agent dispatch under a
+bound workstation marker (a read-only agent that cannot advance the pipeline — not a gate-weakening),
+and `lazy-cycle-containment.sh` already allows a foreground Agent dispatch from a subagent. So the
+old "the marked-run harden agent is prohibited from dispatching `claude-code-guide`" rule is RETIRED
+— the agent self-checks. CITE the guide's finding in the Step-4 round (and the Step-2.5 bug spec).
+
+Then decide by what the consultation returned:
+- **Resolved → provisionally accept (the common case).** If the guide confirms the recommended
+  option is NON-platform-dependent (e.g. a self-managed substitute that uses only documented
+  fields), OR confirms the platform capability the option needs IS present, the blocker is cleared:
+  proceed with the recommended option as a PROVISIONAL auto-accept per Step 3 (`--park-provisional`).
+  Operator scope is "non-platform-dependent only" — once the check resolves the assumption, auto-accept.
+- **Genuinely unresolvable → hard-park.** ONLY when the guide reports the behavior as UNDOCUMENTED /
+  unconfirmable AND the recommended option cannot avoid depending on it does the decision still
+  hard-park for the operator per Step 3. Prefer a design that does not depend on the undocumented
+  behavior (a self-managed substitute) over one that does; a self-managed substitute is
+  non-platform-dependent by construction and takes the provisional-accept path.
+
+(Origin: harden Round 81 — the `SubagentStop` wedge-backstop leaned on the undocumented
+`stop_hook_active`; the guide's caution against shipping load-bearing logic on an UNCONFIRMED field
+is preserved. Round 109 replaced the Round-81 blanket hard-park + consultation-prohibition with this
+self-resolve flow: consulting the guide is exactly how the field stops being unconfirmed —
+`docs/bugs/harden-hard-parks-on-unconfirmed-platform-assumptions/`.)
+
 State your classification and cite the evidence (file path + line or field, transcript
 artifact, probe JSON field, or registry entry).
 
@@ -134,23 +171,43 @@ Operator directive (Jacob, 2026-07-11): "every /harden-harness invocation [must]
 bug spec (or /spec if scope warrants, but unlikely) in claude-config before implementation
 begins. This ensures the fix is well investigated beforehand, and serves as an audit trail."
 
-- **Where:** `docs/bugs/<slug>/SPEC.md` in the claude-config repo (descriptive kebab slug;
-  same investigation-spec contract as `/spec-bug` — see `docs/bugs/CLAUDE.md`). Use `/spec`
-  under `docs/specs/` ONLY when the change is a genuine new feature/capability whose scope
-  warrants it (rare — most harness friction is a defect → `/spec-bug`).
+- **Where (choose the directory by SCOPE — land it where the pipeline can manage it):**
+  - **Defect / regression / friction (the common case)** → `docs/bugs/<slug>/SPEC.md` in the
+    claude-config repo (descriptive kebab slug; same investigation-spec contract as `/spec-bug`
+    — see `docs/bugs/CLAUDE.md`). `docs/bugs/` is lazy-managed (drained by the bug pipeline).
+  - **Genuine new feature / capability (rare — most harness friction is a defect)** → author it
+    under **`docs/features/<slug>/`** (the lazy-managed home) via `/spec`, **AND enqueue it**:
+    add a `queue.json` entry **and** a `ROADMAP.md` row so `/lazy-batch` can drive it. A
+    feature-scope deliverable that is not both in `docs/features/` AND enqueued is invisible to
+    the pipeline.
+  - **NEVER land a feature-scope deliverable under `docs/specs/`.** That directory is the
+    historical / manually-authored spec ARCHIVE and is explicitly NOT under pipeline management
+    (per `docs/features/ROADMAP.md`; `depdag.py` resolves a queue `spec_dir` only under
+    `docs/features/`). A spec left in `docs/specs/` cannot be driven and must be relocated +
+    enqueued by hand later (observed 2026-07-17: the `spike-pipeline-role` feature spec landed
+    in `docs/specs/` and had to be manually `git mv`'d to `docs/features/` + given a queue.json
+    tier-1 entry + ROADMAP row before `/lazy-batch` could pick it up — commit `be8acba4`).
+  - **The ONE sanctioned `docs/specs/` use for this skill** is the harness's own
+    manually-maintained contract/audit area under `docs/specs/turn-routing-enforcement/` — the
+    Step-4 hardening-log and the Step-3 design-fork `NEEDS_INPUT(_PROVISIONAL).md` sentinels.
+    Those are NOT pipeline-driven deliverables and correctly stay there.
 - **Contents:** the reconstructed route (Step 1) + the root-cause classification (Step 2) +
   the verified symptom + the proposed fix scope. `**Status:** Investigating` while root cause
   is unproven; `**Status:** Concluded` once proven and the fix scope is understood. This is
   the durable investigation record; the Step-4 HARDENING.md round CITES its slug.
-- **How to produce it:** in a dispatched/subagent harden, invoke `/spec-bug` (batch) so the
-  investigation is a real skill pass; when running inline with the investigation already done
-  this session, author the equivalent `docs/bugs/<slug>/SPEC.md` directly (the artifact is the
-  deliverable, not the interactive pass). Commit it under `harden(docs):` BEFORE the fix
-  commit, so the audit trail predates the change.
+- **How to produce it:** for a **defect**, in a dispatched/subagent harden invoke `/spec-bug`
+  (batch) so the investigation is a real skill pass; when running inline with the investigation
+  already done this session, author the equivalent `docs/bugs/<slug>/SPEC.md` directly (the
+  artifact is the deliverable, not the interactive pass). For a **feature-scope** change, invoke
+  `/spec` and enqueue (queue.json + ROADMAP.md), or — inline — author `docs/features/<slug>/`
+  directly and add the queue.json + ROADMAP entries yourself. Commit the deliverable under
+  `harden(docs):` BEFORE the fix commit, so the audit trail predates the change.
 - **Proportionality:** even a trivial one-line fix gets a SHORT bug spec (verified symptom +
   root cause + fix scope in a few lines) — "every invocation" is literal, but the spec scales
-  to the fix. A pure NEEDS_INPUT design-fork round still authors the bug spec (Status:
-  Investigating / Concluded) documenting WHY it is operator-owned.
+  to the fix. A design-fork round still authors the bug spec (Status: Investigating /
+  Concluded) documenting the fork; under the park-provisional default (Step 3) it ALSO
+  implements the recommended option and records a provisional sentinel — only the
+  gate-weakening / structural carve-outs remain pure operator-owned parks that ship nothing.
 - **Then** proceed to Step 3 and implement the fix the concluded spec describes.
 
 ### Step 3: Act by decision class (tiered authority)
@@ -166,6 +223,7 @@ python -m pytest ~/.claude/scripts/tests/test_lazy_core/   # full suite — NO b
 python ~/.claude/scripts/lazy-state.py --test
 python ~/.claude/scripts/bug-state.py --test
 python ~/.claude/scripts/test_hooks.py
+python ~/.claude/scripts/bug-state.py --repo-root . --fsck   # docs/bugs/ invariant check — surfaces unarchived-fixed / fixed-without-receipt / stale-queue-entry debt (read-only; runs for a cycle subagent)
 ```
 
 > **Dead-coverage guard (harness-hardening-retro-fixes Phase 5).** The `tests/test_lazy_core/`
@@ -183,8 +241,49 @@ Plus:
   (`sentinel-frontmatter.md`), keep in lockstep with AlgoBooth's
   `scripts/check-docs-consistency.ts` `SENTINEL_SCHEMAS`.
 
-Commit under the `harden(<area>):` prefix (see §Commit discipline below). Commits stay
-local — do NOT `git push`; the orchestrator/operator owns pushes for claude-config.
+Commit under the `harden(<area>):` prefix (see §Commit discipline below), then **`git push`** —
+claude-config's remote is always kept in sync with local (see the Push rule in
+`.claude/skill-config/commit-policy.md`); never leave a `harden(...)` commit unpushed.
+
+#### Reconcile the round's own `docs/bugs/` spec (the `docs/bugs/CLAUDE.md` OUT-OF-PIPELINE contract — MANDATORY)
+
+Your Step-2.5 bug spec lives in the **lazy-managed** `docs/bugs/<slug>/` tree — `bug-state.py`
+auto-discovers it, so the bug pipeline WILL re-drive it. When this round's Step-3 fix FULLY
+resolves that spec's scope, the fix has shipped OUT-OF-PIPELINE (a `harden(...)` commit, never the
+bug pipeline's gated `__mark_fixed__` path), so `docs/bugs/CLAUDE.md` → "Fixing a bug
+OUT-OF-PIPELINE" applies: you MUST do ONE of {finish the contract, explicit deferral} — **NEVER a
+silent `**Status:** Concluded` exit with the fix already committed.** Leaving it at `Concluded`
+is exactly the burned-cycle state this contract closes: the merged-head driver dispatches a full
+`/plan-bug` that discovers the whole fix already landed (observed 2026-07-18 — THREE consecutive
+cycles burned this way; the origin of this very step). Note `bug-state.py --fsck` does NOT catch a
+`Concluded`-with-fix-shipped spec (its checks key on `**Status:** Fixed`) — the `--fsck` gate above
+is the defence-in-depth complement, this step owns the `Concluded`-limbo state.
+
+Choose by fix completeness, then by run mode:
+
+- **Partial fix, or mid-pipeline** (the fix is incomplete, OR a `PHASES.md` already exists so the
+  bug is progressing through the normal tail): **leave `**Status:**` UNTOUCHED** (explicit
+  deferral). Record `reconcile: deferred (<reason>)` in the round + Return. Never archive a bug
+  another writer / the pipeline tail owns.
+- **Full fix, inline manual `/harden-harness`** (no cycle marker): reconcile DIRECTLY — write the
+  hand `FIXED.md` receipt (`kind: fixed`, `provenance: backfilled-unverified`, citing the fix
+  commit + green regression evidence), flip `**Status:** Concluded → Fixed`, then
+  `python3 user/scripts/bug-state.py --repo-root . --archive-fixed docs/bugs/<slug>` and
+  `python3 user/scripts/lazy-state.py --link-provenance --id <slug> --commits <fix-sha>`.
+- **Full fix, DISPATCHED harden** (the common case — you are a **meta-cycle subagent**, the run's
+  `lazy-cycle-active.json` carries `sub_skill: harden-harness`): `--archive-fixed` and
+  `--link-provenance` are ORCHESTRATOR-ONLY and are REFUSED for you (`refuse_if_cycle_active` →
+  exit 3). Do NOT try to bypass that (exempting those queue-mutating / `git mv` ops for a subagent
+  is gate-weakening — Prohibition #2). Instead: write the hand `FIXED.md` receipt + flip
+  `**Status:** → Fixed` (ordinary Write/Edit — NOT cycle-refused; satisfies `--archive-fixed`'s
+  precondition), then hand the two orchestrator-only ops back via the Return `reconcile:` field
+  (name the slug + fix sha + the exact `--archive-fixed` / `--link-provenance` commands). The
+  orchestrator honors it at the harden-return seam (`/lazy-batch` + `/lazy-bug-batch` §1d.1 — it is
+  authorized for those ops, the same ones it runs on the normal archive-on-fix path).
+  - **If you cannot rely on the orchestrator honoring the handback** (a bootstrap run predating the
+    §1d.1 honor step, or any doubt): hand the WHOLE reconciliation back — receipt included — and
+    leave `**Status:** Concluded` UNTOUCHED, so no `unarchived-fixed` debt is stranded. State this
+    explicitly in the round.
 
 #### Over-fit detector (anti-overfit reflex — runs AFTER the mechanical fix lands)
 
@@ -282,25 +381,63 @@ the round + Return format, and continue. Do NOT manufacture a spurious spin-off.
 **Contract / policy / design forks** (new pipeline steps, authority changes, gate semantics
 changes, anything an operator would want to own):
 
-Write `NEEDS_INPUT.md` into the relevant spec dir (usually
-`docs/specs/turn-routing-enforcement/` or the spec whose contract is at issue), following the
-canonical sentinel schema + rich-body convention from
-`~/.claude/skills/_components/sentinel-frontmatter.md`:
+**Default disposition: park-provisional — select the recommended option and IMPLEMENT it.**
+`/harden-harness` runs as if `--park --park-provisional` is always active: a design fork is NOT a
+blocking halt that ships nothing. For every design choice you:
 
-```yaml
----
-kind: needs-input
-feature_id: turn-routing-enforcement
-written_by: harden-harness
-decisions:
-  - "<one-line description of the design fork>"
-date: <YYYY-MM-DD>
----
-```
+1. **Author the decision** as a `NEEDS_INPUT.md` in the relevant spec dir (usually
+   `docs/specs/turn-routing-enforcement/` or the spec whose contract is at issue), following the
+   canonical schema + rich-body convention from `~/.claude/skills/_components/sentinel-frontmatter.md`
+   — with a full `## Decision Context` body, **recommendation-first options** (each decision carries a
+   `**Recommendation:**` block), and a file-level `divergence:` grade (`isolated | contained |
+   structural`, most-severe across decisions):
 
-With a full `## Decision Context` body per the rich-body convention. Never bake a
-harness-design fork in silently — the NEEDS_INPUT.md is the triage signal that surfaces it to
-the operator.
+   ```yaml
+   ---
+   kind: needs-input
+   feature_id: turn-routing-enforcement
+   written_by: harden-harness
+   divergence: isolated | contained | structural
+   decisions:
+     - "<one-line description of the design fork>"
+   date: <YYYY-MM-DD>
+   ---
+   ```
+
+2. **Select the recommended option and implement it** under full gates (the mechanical path above),
+   committing + pushing under `harden(<area>):`. The run ships a real change, not a park.
+
+3. **Provisionally accept the decision** so it is ratification-pending (never silently baked in):
+   run `python3 ~/.claude/scripts/lazy-state.py --provisionalize-sentinel <path-to-NEEDS_INPUT.md>`.
+   This appends a `## Resolution` block (`resolved_by: auto-provisional`, `decision_commit: <HEAD sha>`)
+   and RENAMES the file to `NEEDS_INPUT_PROVISIONAL.md` (keeps `kind: needs-input`; the filename is the
+   state carrier). That sentinel is the ratification signal: a later operator ratify/redirect pass (the
+   `provisional-ratification` affordance) closes it, and a redirect authors a `corrective` phase scoped
+   by `git diff <decision_commit>..HEAD`. Commit + push the provisionalized sentinel with (or right
+   after) the implementing commit.
+
+**The two carve-outs that STILL hard-park** (write a blocking `NEEDS_INPUT.md`, implement nothing):
+
+- **Gate-weakening (ALWAYS — Prohibition #2).** A fork whose recommended option would remove/soften a
+  gate, threshold, denial, or validation is NEVER implemented provisionally — it halts for explicit
+  operator sign-off. Weakening a gate to clear a denial is prohibited, not a "design choice."
+- **`structural` divergence, or a baseline the operator has never ratified (`stub_origin`).** When the
+  options fork architecture, persistent data, or a user-visible workflow — so a wrong provisional pick
+  is expensive to redirect — grade it `divergence: structural` and park it for the operator, exactly as
+  `--park-provisional` itself fails a structural/stub-origin decision closed. Bias toward
+  provisional-implement for anything genuinely `isolated`/`contained`; reserve the hard park for these.
+
+**An unconfirmed platform / Claude-Code capability is NOT a third carve-out.** It is a blocker to
+SELF-RESOLVE via the Step-2 `claude-code-guide` consultation first (retired Round-81 blanket). Once
+the guide confirms the recommended option is non-platform-dependent OR the capability is present, the
+platform blocker is cleared and the decision takes the normal disposition (provisional-implement
+unless it independently hits gate-weakening or `structural`/`stub_origin`). Only a GENUINELY
+unconfirmable platform dependency the recommended option cannot avoid still hard-parks. (A decision
+the operator has EXPLICITLY authorized to ship provisionally overrides the `structural` carve-out for
+that instance — record the operator authorization in the `## Resolution` and the Step-4 round.)
+
+Never bake a harness-design fork in silently — the provisional sentinel (or, for the two carve-outs,
+the blocking `NEEDS_INPUT.md`) is the triage signal that surfaces it to the operator.
 
 ### Step 4: Deliverable — HARDENING.md round
 
@@ -324,12 +461,19 @@ template (the harness's own hypothesis-ledger discipline):
 
 **Action:**
 <one of:>
-  - Mechanical fix applied: <description>. Gates run: tests/test_lazy_core/ N/N, test_hooks.py N/N, lint-skills.py OK, lazy-state.py/bug-state.py --test suites OK. Commit: <hash>.
-  - NEEDS_INPUT.md written: <path>. Decisions: <decision titles>.
+  - Mechanical fix applied: <description>. Gates run: tests/test_lazy_core/ N/N, test_hooks.py N/N, lint-skills.py OK, lazy-state.py/bug-state.py --test suites OK. Commit + push: <hash>.
+  - Provisional design-fork resolved: implemented recommended option for <decision titles>. Gates run: <as above>. Commit + push: <hash>. Provisional sentinel: <path to NEEDS_INPUT_PROVISIONAL.md> (decision_commit: <sha>).
+  - NEEDS_INPUT.md written (hard-park carve-out — gate-weakening / structural, nothing implemented): <path>. Decisions: <decision titles>.
 
 **Over-fit spin-off:** <one of:>
   - none — fix is structural / class has not recurred; no over-fit smell tripped.
   - harden(spinoff): <smell signal(s) that tripped — e.g. "literal-phrase-to-matcher (signal 1)"> → front-enqueued <`/spec`|`/spec-bug`> `<item_id>` for the class «<one-line class boundary>». Cited instance(s): <round#(s) / file:symbol / phrase>. PushNotification sent.
+
+**Reconciliation:** <one of:>
+  - none — this round shipped no `docs/bugs/` fix (pure hard-park, or the fix was not a bug spec).
+  - done — inline manual reconciliation completed (receipt + `--archive-fixed` + `--link-provenance`).
+  - deferred (<reason>) — partial fix / mid-pipeline; `**Status:**` left untouched.
+  - handback → orchestrator: <slug(s)> — receipt written + Status flipped; `--archive-fixed` + `--link-provenance --commits <sha>` handed back via the Return `reconcile:` field.
 
 **Gates run:**
   tests/test_lazy_core/: <N/N>
@@ -347,9 +491,10 @@ If the hardening log directory or the current month's file does not yet exist, c
 
 ### Intervention record for the round (intervention-efficacy-tracking, additive)
 
-After appending a **mechanical-fix** round (the `Mechanical fix applied:` action form — a
-NEEDS_INPUT round records no intervention; nothing shipped), ALSO capture the round as a
-hypothesis-ledger intervention record so its efficacy is measured instead of assumed. This is
+After appending a round that SHIPPED a change (the `Mechanical fix applied:` OR the
+`Provisional design-fork resolved:` action form — a pure hard-park `NEEDS_INPUT.md` round records
+no intervention; nothing shipped), ALSO capture the round as a hypothesis-ledger intervention
+record so its efficacy is measured instead of assumed. This is
 ADDITIVE to the HARDENING.md round above — it replaces nothing. From the claude-config root:
 
 ```bash
@@ -445,9 +590,12 @@ The commit prefix is load-bearing for retro grading: the HARDENING.md log cites 
 ## Outputs
 
 1. A round APPENDED to `docs/specs/turn-routing-enforcement/hardening-log/YYYY-MM.md`.
-2. Either:
-   - A committed mechanical fix (under full gates, `harden(<area>):` prefix), OR
-   - A `NEEDS_INPUT.md` written to the relevant spec dir.
+2. One of:
+   - A committed + pushed mechanical fix (under full gates, `harden(<area>):` prefix), OR
+   - A committed + pushed provisional design-fork resolution (recommended option implemented under
+     gates) PLUS a `NEEDS_INPUT_PROVISIONAL.md` (ratification-pending), OR
+   - For a gate-weakening / structural carve-out only: a blocking `NEEDS_INPUT.md` written to the
+     relevant spec dir (nothing implemented).
    PLUS, when the over-fit detector trips: a front-enqueued `/spec`/`/spec-bug` for the
    generalized class (via `adhoc-enqueue`), recorded in the round's `**Over-fit spin-off:**`
    line and surfaced via `PushNotification`. The mechanical fix and the spin-off are both
@@ -461,7 +609,8 @@ Structured summary:
 - `trigger_kind`: one of validate-deny | no-route | inject-hook-error | process-friction | manual
 - `divergence_point`: one-line naming the step and dispatch class
 - `root_cause_class`: one of missing-emit-section | unbound-token | ambiguous-prose | script-defect | missing-contract | hook-defect
-- `action`: "mechanical-fix" (with commit hash) or "needs-input" (with path)
+- `action`: "mechanical-fix" (with commit hash), "provisional-resolve" (with commit hash + NEEDS_INPUT_PROVISIONAL.md path + decision_commit), or "needs-input" (gate-weakening / structural hard-park carve-out, with path)
 - `spinoff`: the over-fit spin-off, if any — `<item_id> (reason: <smell signal + one-line class>)`, or `none`. When non-`none`, the orchestrator fires a `PushNotification` ("spun off `<item_id>` — `<reason>`") and adds a D7 digest entry; the front-enqueued item is worked next.
+- `reconcile`: the `docs/bugs/CLAUDE.md` OUT-OF-PIPELINE handback for the round's own bug spec — one of: `done` (inline manual: receipt + `--archive-fixed` + `--link-provenance` already run); `deferred (<reason>)` (partial / mid-pipeline: Status left untouched); `none` (this round shipped no docs/bugs fix — e.g. a pure hard-park); or an **orchestrator handback** naming the slug + fix sha + the exact `--archive-fixed` / `--link-provenance` commands to run at the harden-return seam (`/lazy-batch` + `/lazy-bug-batch` §1d.1). When a handback is present, the orchestrator runs those script-owned ops (it is authorized — same as the normal archive-on-fix path), then commits + pushes.
 - `gates_run`: summary of counts (tests/test_lazy_core/ N/N, test_hooks.py N/N, etc.)
 - `log_path`: path to the hardening-log round (e.g. docs/specs/turn-routing-enforcement/hardening-log/2026-06.md)

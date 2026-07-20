@@ -159,3 +159,140 @@ def test_real_baseline_and_repo_are_clean():
     baseline = ratchet.load_baseline(ratchet.default_baseline_path())
     findings = ratchet.check(repo_root, baseline)
     assert findings == [], f"real-repo ratchet findings: {findings}"
+
+
+# ---------------------------------------------------------------------------
+# Assembled-cycle-prompt profile measurement (cycle-prompt-deflation Phase 1)
+# ---------------------------------------------------------------------------
+
+def _write_fixture_template(tmp_path: Path, *, with_unbound: bool = False) -> Path:
+    """Write a minimal sectioned cycle-base-prompt.md the real emitter parses.
+
+    Uses ONLY bindable tokens ({item_id}/{sub_skill}/{work_branch}/{cwd}/
+    {sub_skill_args}) unless with_unbound is set (then a genuine unbound token is
+    injected so the emitter's residue guard refuses)."""
+    tdir = tmp_path / "lazy-batch-prompts"
+    tdir.mkdir(parents=True, exist_ok=True)
+    extra = " {this_token_is_not_bound}" if with_unbound else ""
+    (tdir / "cycle-base-prompt.md").write_text(
+        "template metadata before the first section\n"
+        "<!-- @section task pipelines=feature,bug modes=workstation,cloud skills=all -->\n"
+        f"Task {{item_id}}: run {{sub_skill}} on {{work_branch}}.{extra}\n"
+        "<!-- @section execute pipelines=feature,bug modes=workstation skills=execute-plan -->\n"
+        "Execute {sub_skill_args} at {cwd}.\n",
+        encoding="utf-8",
+    )
+    return tdir
+
+
+def test_enumerate_profiles_derives_from_matrix(tmp_path):
+    tdir = _write_fixture_template(tmp_path)
+    profiles = ratchet.enumerate_profiles(tdir)
+    ids = {ratchet._profile_id(p) for p in profiles}
+    # 4 generic (skills=all shape) + execute-plan where its workstation section matches.
+    assert "feature/workstation/spec-phases" in ids   # generic shape
+    assert "bug/cloud/spec-phases" in ids
+    assert "feature/workstation/execute-plan" in ids
+    assert "bug/workstation/execute-plan" in ids
+    # execute section is workstation-only → no cloud execute-plan profile.
+    assert "feature/cloud/execute-plan" not in ids
+
+
+def test_measure_assembled_profile_positive_bytes(tmp_path):
+    tdir = _write_fixture_template(tmp_path)
+    profile = {"pipeline": "feature", "mode": "workstation", "skill": "execute-plan"}
+    byte_count, long_lines, note = ratchet.measure_assembled_profile(
+        tmp_path, profile, template_dir=tdir
+    )
+    assert note is None
+    assert byte_count > 0
+    assert long_lines == 0
+
+
+def test_measure_assembled_profile_refuse_surfaced_honestly(tmp_path):
+    """An emitter refusal is reported as (None, None, note) — never a bogus 0."""
+    tdir = _write_fixture_template(tmp_path, with_unbound=True)
+    profile = {"pipeline": "feature", "mode": "workstation", "skill": "execute-plan"}
+    byte_count, long_lines, note = ratchet.measure_assembled_profile(
+        tmp_path, profile, template_dir=tdir
+    )
+    assert byte_count is None
+    assert long_lines is None
+    assert note and "refused" in note
+
+
+def test_measure_assembled_profile_is_repo_root_independent(tmp_path):
+    """The measurement must not vary with the repo path (deterministic ceilings)."""
+    tdir = _write_fixture_template(tmp_path)
+    profile = {"pipeline": "feature", "mode": "workstation", "skill": "execute-plan"}
+    a = ratchet.measure_assembled_profile(Path("/short"), profile, template_dir=tdir)
+    b = ratchet.measure_assembled_profile(
+        Path("/a/much/longer/checkout/path/root"), profile, template_dir=tdir
+    )
+    assert a == b
+
+
+def test_check_profiles_flags_over_ceiling(tmp_path):
+    tdir = _write_fixture_template(tmp_path)
+    baseline = {
+        "schema_version": 1, "files": {},
+        "profiles": {
+            "feature/workstation/execute-plan": {"byte_ceiling": 1, "long_line_ceiling": 0},
+        },
+    }
+    findings = ratchet.check_profiles(tmp_path, baseline, template_dir=tdir)
+    assert len(findings) == 1
+    assert findings[0]["profile"] == "feature/workstation/execute-plan"
+    assert findings[0]["metric"] == "byte_ceiling"
+    assert findings[0]["current"] > findings[0]["ceiling"]
+
+
+def test_check_profiles_skips_metadata_keys(tmp_path):
+    tdir = _write_fixture_template(tmp_path)
+    baseline = {"schema_version": 1, "files": {}, "profiles": {"_notes": "meta"}}
+    # An `_`-prefixed key must never be parsed as a profile id (no crash).
+    assert ratchet.check_profiles(tmp_path, baseline, template_dir=tdir) == []
+
+
+def test_lock_in_profile_only_lowers(tmp_path):
+    tdir = _write_fixture_template(tmp_path)
+    bp = tmp_path / "baseline.json"
+    pid = "feature/workstation/execute-plan"
+    baseline = {
+        "schema_version": 1, "files": {},
+        "profiles": {pid: {"byte_ceiling": 100000, "long_line_ceiling": 50}},
+    }
+    lowered = ratchet.lock_in_profile(tmp_path, bp, baseline, pid, template_dir=tdir)
+    assert lowered["action"] == "lowered"
+    assert lowered["byte_ceiling"] < 100000
+    # A profile already at/below its (tiny) ceiling never raises it.
+    baseline2 = {
+        "schema_version": 1, "files": {},
+        "profiles": {pid: {"byte_ceiling": 1, "long_line_ceiling": 0}},
+    }
+    noop = ratchet.lock_in_profile(tmp_path, bp, baseline2, pid, template_dir=tdir)
+    assert noop["action"] == "noop"
+    assert baseline2["profiles"][pid]["byte_ceiling"] == 1
+
+
+def test_lock_in_profile_seeds_new_only_with_flag(tmp_path):
+    tdir = _write_fixture_template(tmp_path)
+    bp = tmp_path / "baseline.json"
+    pid = "feature/workstation/execute-plan"
+    baseline = {"schema_version": 1, "files": {}, "profiles": {}}
+    refused = ratchet.lock_in_profile(tmp_path, bp, baseline, pid, template_dir=tdir)
+    assert refused["action"] == "refused"
+    seeded = ratchet.lock_in_profile(tmp_path, bp, baseline, pid, seed_new=True, template_dir=tdir)
+    assert seeded["action"] == "seeded"
+    assert baseline["profiles"][pid]["byte_ceiling"] == seeded["byte_ceiling"]
+
+
+def test_real_baseline_profiles_are_clean():
+    """Live self-check: every seeded assembled profile is within its ceiling on
+    the real committed baseline + template (the assembled analog of the per-file
+    self-check above)."""
+    repo_root = _SCRIPTS_DIR.resolve().parents[1]
+    baseline = ratchet.load_baseline(ratchet.default_baseline_path())
+    assert baseline.get("profiles"), "real baseline carries no assembled profiles"
+    findings = ratchet.check_profiles(repo_root, baseline)
+    assert findings == [], f"real-repo assembled-profile findings: {findings}"

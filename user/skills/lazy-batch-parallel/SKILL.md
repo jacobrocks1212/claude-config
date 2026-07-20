@@ -86,6 +86,14 @@ P7. **Containment unchanged, armed per lane (D9).** Export `LAZY_ORCHESTRATOR=1`
     builds: existing machinery only (D8) — a lane's `LONG-BUILD-OWNERSHIP-TAKEOVER` deny bubbles
     to the coordinator, which runs the build serially under the Transient Build contract.
 
+P8. **Concurrent-writer awareness — no monsters-in-the-closet serialization.** Lanes ARE
+    other agents committing to shared state (the trio + the work branch at merge time)
+    concurrently with each other and with any outside session touching the same worktree/branch.
+    An unexpected incoming commit / moved HEAD is EXPECTED, not a defect to panic on or halt for.
+    Genuine write contention is resolved by the coordination layer (git safety + the FIFO
+    file-lock + conflict-routing) — not by pre-serializing lane dispatches on the mere
+    possibility of a collision.
+
 ---
 
 ## Step 0: Parse Arguments
@@ -175,13 +183,15 @@ for e in queue:
     candidates.append({"id": e["id"], "dep_ready": dep_ready,
                        "independent": lazy_core.parse_independent_marker(spec_text, e)})
 
-lock = os.path.join(os.path.dirname(LEASES), "global.lock.d")
-lazy_coord.acquire_lock(lock)
-try:
-    lazy_coord.reclaim_expired(LEASES, "<POOL>")          # dead-lane sweep first
-    print(json.dumps(lazy_coord.claim_shardable(candidates, LEASES)))
-finally:
-    lazy_coord.release_lock(lock)
+# reclaim_expired + acquire_lease are SELF-LOCKING (each takes global.lock.d
+# INTERNALLY via a non-reentrant os.mkdir lock); claim_shardable is a lock-free
+# READ. Do NOT wrap them in an outer acquire_lock — the inner mkdir would fail on
+# the dir this process already holds and TimeoutError after 10s (self-deadlock,
+# lazy-batch-parallel-run-harness-gaps gap 2). The primitives are individually
+# atomic; acquire_lease re-checks liveness under its own lock and returns None on
+# a double-claim, so the sequence is safe without an outer hold.
+lazy_coord.reclaim_expired(LEASES, "<POOL>")             # dead-lane sweep (self-locks)
+print(json.dumps(lazy_coord.claim_shardable(candidates, LEASES)))  # lock-free read
 PY
 ```
 
@@ -189,8 +199,9 @@ PY
 `no-independent-marker` / `live-lease`). Effective lanes =
 `lazy_coord.effective_lanes(requested, len(claimed), pool_size)`; truncate `claimed` to that
 count — the remainder stays queued for the serial phase / a later wave. Take ONE
-`acquire_lease(LEASES, item_id, pid, slot, ttl)` per claimed item (under the same lock hold),
-capturing each `term_token`, and `ledger_record_claim(LANES, item_id, slot, lane_branch)`.
+`acquire_lease(LEASES, item_id, pid, slot, ttl)` per claimed item (each call self-locks — do
+NOT hold an outer lock across them), capturing each `term_token`, and
+`ledger_record_claim(LANES, item_id, slot, lane_branch)`.
 
 Print the **shard report** (T6 zone):
 
@@ -232,7 +243,11 @@ lane subagents follow the `/lazy-batch` cycle-subagent execution model exactly, 
 workstation dispatch policy (workstation-recursive-subagent-dispatch, 2026-07-09): a lane cycle
 subagent MAY dispatch sub-subagents per the emitted prompt's "WORKSTATION DISPATCH —
 LOAD-BEARING" guardrails; sub-subagents inherit the terminal-stop ban and work only inside the
-lane's worktree + item scope, so the fencing/lease/single-writer-trio model is unaffected):
+lane's worktree + item scope, so the fencing/lease/single-writer-trio model is unaffected).
+**Concurrent-writer awareness:** other agents may be working this same worktree/branch
+concurrently — an unexpected commit / moved HEAD is expected, not a defect. Genuine write
+contention is resolved by the coordination layer (git safety + the FIFO file-lock +
+conflict-routing) — not by halting:
 
 1. **Probe:** `lazy-state.py --repeat-count --probe --repo-root <worktree> --feature-id <id>
    [--forward-cycles/--meta-cycles/--max-cycles from the LANE's counters]`.
@@ -284,6 +299,62 @@ returns) → `--gate-coverage` → `--apply-pseudo __mark_complete__` (receipt +
 queue trim, exactly as today) → `python3 ~/.claude/scripts/lazy-queue-doc.py --repo-root <main
 root>` riding the coordinator commit → `release_lease` → `scrub_slot` the freed slot. Tail
 cycles debit the parent budget.
+
+> **`--ensure-runtime` is FOREGROUND-ONLY (round-2 gap 9).** The tail's `--ensure-runtime` call
+> is a FOREGROUND, blocking `Bash` call — NEVER `run_in_background`. It owns its own background
+> `dev:restart` + a synchronous multi-minute health poll; backgrounding it under the active
+> parent marker lets the recovery `dev:restart` → `kill-dev.js` sweep kill the background
+> launcher's own process tree (observed: two instant zero-byte kills). See
+> `user/scripts/CLAUDE.md` → `--ensure-runtime` FOREGROUND-ONLY CONTRACT.
+
+> **Serial-tail `--emit-prompt` is lease-exempt from the merged-head guard (round-2 gap 8).** The
+> tail's `--emit-prompt --feature-id <merged item>` runs at the MAIN root against the PARENT
+> marker (`parent_run: null`), so the round-1 lane exemption does NOT apply. Because the probed
+> item still holds its LIVE lease until `release_lease` (below), `lazy-state.py` exempts it from
+> the `merged-head-diverged` withhold — completing the merged, lease-held item is the
+> coordinator's obligation before any new head work, so a freshly-dispatchable merged head does
+> NOT redirect the tail away from it. This is automatic (keyed on the item's own live lease); the
+> coordinator does nothing special beyond keeping the lease held across the validation cycle.
+
+## Step 4b: Temp-worktree merge-back + `Concurrent-Merge-Back:` trailer (write-conflict escape hatch)
+
+For a **large/complex but NON-semantic** conflict that SLIPS PAST the FIFO file-lock (Phase 3) —
+`lazy_core.classify_conflict(merge_result) == "write"`, i.e. git auto-merges OR the conflicting
+hunks touch DISJOINT logical surfaces — the coordinator does NOT halt and does NOT block a whole
+lane behind a simple in-place retry. It completes the work in a **temporary worktree spun as an
+ordinary coordinator lane** and merges it back in queue order (SPEC Requirement 6; Locked
+Decisions 3–4). A `semantic` verdict is the Phase-4 halt and NEVER reaches here.
+
+**Reuse the EXISTING lane machinery — no new merge engine (Locked Decision 3):**
+
+1. Spin the temp worktree as a lane: `lane_branch(<item>)` (`lane/<item>`) + `lane_pool_dir(<main
+   root>)` for the slot + `acquire_lease(LEASES, <item>, …)` for the fencing token — identical to
+   a Step-1/Step-2 lane claim.
+2. Complete the work in that worktree (ordinary serial cycles at the lane root).
+3. Merge back with `lazy_coord.merge_back_lanes(<main root>, LANES, <queue ids>)` — a thin
+   composition over `merge_order` (queue order, never completion order) + `merge_lane_branch`
+   (the EXISTING abort-and-demote path: a conflict aborts to a clean tree, records `demoted:
+   serial` in `lanes.json`, and PRESERVES the lane branch) + `ledger_record_merge` on a clean
+   land. It returns `{order, merged, demoted}`; a demoted item routes to the Step-5 serial re-run.
+
+**Cross-agent `Concurrent-Merge-Back:` trailer (Locked Decision 4 — zero new contended state):**
+when this agent BEATS the conflicting agent to the merge, it has no direct channel to warn the
+other agent, so it rides a structured git trailer on the merging commit's message:
+
+- **Writer (this agent):** compose the trailer with
+  `lazy_core.compose_concurrent_merge_back_trailer(affected_paths, guidance)` (grammar:
+  `Concurrent-Merge-Back: paths=<p1>,<p2>,…; guidance=<one-line resolution hint>`) and include
+  it as the LAST paragraph of the merge-back commit message. No lock, no shared file — the
+  trailer is carried by git's own object model.
+- **Reader (the conflicting agent):** on the fetch/rebase it MUST ALREADY perform to push (Phase
+  2 git-safety: fetch → ff-only → push), it reads the incoming history with
+  `lazy_core.read_concurrent_merge_back_trailers(<repo root>, "<remote>/<branch>..HEAD")`, applies
+  the one-line guidance, and CONTINUES — it does NOT halt (a message-less commit parses to empty,
+  no false positive).
+
+**Scope (workstation-only v1).** This temp-worktree merge-back + trailer channel is
+feature-pipeline, workstation-only. The **cloud and bug-pipeline merge-back paths are a documented
+follow-up — do NOT build them here** (SPEC Requirement 6 v1 boundary).
 
 ## Step 5: Demoted serial re-runs
 

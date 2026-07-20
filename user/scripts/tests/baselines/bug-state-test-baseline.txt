@@ -8,9 +8,14 @@
   PASS [plan-structural-backstop-mid-execution-warns] cloud=False real_device=True: Step 7a: execute plan
   PASS [bug-stale-plan-flips] cloud=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)
   PASS [phases-complete-no-retro] cloud=False real_device=True: Step 9: run MCP tests
+  PASS [verification-only-remainder-no-plan] cloud=False real_device=True: Step 9: run MCP tests
   PASS [phases-complete-no-mcp-surface] cloud=False real_device=True: Step 9: structural MCP-skip (no app surface)
   PASS [retro-done-needs-mcp] cloud=False real_device=True: Step 9: run MCP tests
   PASS [ready-to-mark-fixed] cloud=False real_device=True: Step 10: mark fixed
+  PASS [step10-uncovered-reroute-bug] cloud=False real_device=True: Step 10: re-route to mcp-test (uncovered verification rows)
+  PASS [step10-covered-terminates-bug] cloud=False real_device=True: Step 10: mark fixed
+  PASS [step10-host-deferred-terminates-bug] cloud=False real_device=True: Step 10: mark fixed
+  PASS [step10-no-mcp-surface-no-reroute-bug] cloud=False real_device=True: Step 10: mark fixed
   PASS [device-deferred] cloud=False real_device=False: device-queue-exhausted
   PASS [hybrid-ordering] cloud=False real_device=True: Step 4: investigate bug
   PASS [wont-fix-exempt] cloud=False real_device=True: all-bugs-fixed
@@ -31,6 +36,7 @@
   PASS [unqueued-fixed-no-receipt-halt] cloud=False real_device=True: Step 2: completion claimed without receipt
   PASS [concluded-investigation-plan-bug] cloud=False real_device=True: Step 5: plan bug from concluded investigation
   PASS [concluded-investigation-guard-still-spec-bug] cloud=False real_device=True: Step 4: investigate bug
+  PASS [concluded-fixed-unreconciled-diverts] cloud=False real_device=True: Step 3: blocked
   PASS [step9-skip-pipeline-granted] cloud=False real_device=True: Step 9: pipeline-granted skip needs operator confirmation
   PASS [step9-skip-operator-granted] cloud=False real_device=True: Step 9: skip-mcp-test → validated
   PASS [step9-skip-mcp-test-granted-with-class] cloud=False real_device=True: Step 9: skip-mcp-test → validated
@@ -42,6 +48,8 @@
   PASS [malformed-queue-entry-diagnostic] cloud=False real_device=True: Step 4: investigate bug
   PASS [requires-host-unknown-failfast] cloud=False real_device=True: Step 3: blocked
   PASS [requires-host-registered-no-failfast] cloud=False real_device=True: Step 4: investigate bug
+  PASS [spike-required-no-verdict] cloud=False real_device=True: Step 9.5: spike verdict pending
+  PASS [spike-blocker-resolver] cloud=False real_device=True: Step 3: spike verdict pending (blocked resolver)
   PASS [enqueue-adhoc-writes-entry] entry written with correct fields
   PASS [enqueue-adhoc-idempotent] idempotent: 1 entry(ies) after 2 calls
   PASS [scope-bug-id-two-bugs] scoped-bug-id: feature_id='bug-scope-beta'
@@ -83,6 +91,7 @@
   "path": null
 }
   PASS [sync-deps] cycle-subagent exit-3 refusal + hard-only projection + idempotent noop + enqueue --deps
+  PASS [resolve-ref-cli]
   PASS [cycle-end-bracket-fail-open] unwritable bracket ledger never blocks the --cycle-end clear
   PASS [lane-parent-run-marker] parent_run stamp/rogue-refusal/containment/serial-null
   PASS [notify-halt-call-site] bug halt + fake sender: one page (bug| identity), dedup on re-probe, kill switch inert
@@ -90,5 +99,6 @@
   PASS [record-intervention-hardening-undeclared-explicit-ok] (non-regression guard for the explicit escape hatch)
   PASS [record-intervention-unknown-event-rejected]
   PASS [did-you-mean-cli-suggestion]
+  PASS [superseded-dir-excluded-from-pickup] found=['bug-open']
 
 All smoke tests passed.

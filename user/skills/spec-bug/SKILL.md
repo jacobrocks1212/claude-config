@@ -308,6 +308,21 @@ When the investigation reaches a proven conclusion — root cause identified, af
 **Batch/non-interactive path** (`--batch`, as dispatched by `/lazy-bug-batch`): Use this rule:
 - If the investigation reached a **proven conclusion** (root cause identified, sufficient findings for fix planning): write the SPEC with `**Status:** Concluded`. The pipeline will advance to `/plan-bug` on its next cycle.
 - If the investigation did **NOT** conclude (needs more evidence, an ambiguous root cause, or a human decision required): leave `**Status:** Investigating` and write `NEEDS_INPUT.md` explaining what is still unresolved. **This pre-conclusion sentinel MUST carry `stub_origin: true` in its frontmatter** (stub-origin-provisional-exclusion): the root cause the fix would build on is unconfirmed, so the decisions are foundation-shaping and permanently excluded from `--park-provisional` auto-acceptance — they always park for the operator. (Sentinels written AFTER the investigation concluded do not carry the marker.) Do NOT falsely mark `Concluded` — a premature `Concluded` causes `/plan-bug` to fabricate phases from incomplete findings, which is worse than pausing.
+  - **Auto-generated-stub carve-out** (park-provisional-parks-claude-config-auto-generated-stubs): if this bug dir was HARNESS-AUTO-GENERATED — i.e. it carries a seeded capsule (`INCIDENT.md` `kind: incident-capture`, or `EVIDENCE.md` `kind: canary-evidence`) whose frontmatter carries `auto_generated: true` — then ALSO stamp `auto_generated: true` and copy the capsule's `auto_generated_origin:` value (`incident-capture` / `canary-revert`) into this `NEEDS_INPUT.md`'s frontmatter, ALONGSIDE `stub_origin: true`. This marks the sentinel as machine triage noise, not an operator-shaped baseline, so `lazy_core.provisional_eligibility`'s claude-config carve-out auto-accepts its recommended option under `--park-provisional` instead of parking. Author the options recommendation-first (a `**Recommendation:**` block per decision, e.g. "close-as-noise") and set `divergence`/`audit_divergence` grades so the sentinel is otherwise provisional-eligible. NEVER add these two fields to a NEEDS_INPUT.md whose bug dir has no auto-generated capsule (a genuine operator stub stays parked).
+
+**Decision-Classification Ledger (MANDATORY return under `--batch`).** Every `/spec-bug --batch` cycle MUST emit, as a structured section of its return summary back to the orchestrator, a ledger of every decision the cycle considered — investigation-scope calls (which theories to pursue, how much evidence is "enough"), root-cause-scope calls, and anything deferred to `NEEDS_INPUT.md`. Same contract as `/spec --batch` — see `~/.claude/skills/spec/SKILL.md` "Decision-Classification Ledger" for the full rationale: the ledger is what lets the orchestrator's Step 1d.5 input-audit subagent verify your classification against the SPEC diff instead of falling back to a diff-only heuristic. Use the EXACT shape:
+
+```
+### Decision-Classification Ledger
+
+| # | Decision (one line) | Classification | Chosen option | Surfaced via | Rationale |
+|---|---------------------|----------------|---------------|--------------|-----------|
+| 1 | <decision title>    | product-behavior \| mechanical-internal | <option taken or "deferred to user"> | NEEDS_INPUT.md \| auto-accept \| Open Questions | <one-line why> |
+```
+
+- Any `product-behavior` row MUST have `Surfaced via: NEEDS_INPUT.md` — a `product-behavior` + `auto-accept` row is a self-declared contract violation; surface it instead.
+- If the cycle made zero decisions (the investigation converged cleanly on a single defensible theory with no judgment calls), emit the heading + `_(no decisions surfaced this cycle — auto-finalized)_`. The empty ledger is still required.
+- The ledger lives in this return summary, NOT in the SPEC — the orchestrator reads it from the response, never commit it as a document.
 
 Use **AskUserQuestion** (interactive only):
 - **"Create fix plan now"** — Flip SPEC to `**Status:** Concluded`, then invoke the `fix` skill, passing the SPEC path and a synthesized bug description derived from the verified symptoms and strongest theory

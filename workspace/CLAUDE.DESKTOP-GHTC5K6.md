@@ -72,6 +72,31 @@ session that invokes the batch orchestrator with a bounded budget (`/lazy-batch-
 run-marker arbitration (exit 3, zero side effects — never delete a marker to "fix" this).
 Canonical docs: `claude-config/docs/features/scheduled-autonomous-runs/`.
 
+### Concurrent-writer coordination (this shared worktree is multi-writer-safe)
+
+This claude-config worktree has **robust multi-writer coordination** from the shipped
+`concurrent-worktree-agent-coordination` feature: the FIFO per-item file-lock
+(`user/scripts/lazy_coord.py` `acquire_item_lock`/`release_item_lock`; PowerShell plane
+`concurrent-lock.ps1`; one documented grammar in
+`user/skills/_components/concurrent-lock-contract.md`) **+ git-safety + conflict-routing**
+(`lazy_core.py`) serialize *genuine* write contention and halt only on a **true SEMANTIC
+conflict**. Multiple sanctioned writers (a `/lazy-batch-parallel` lane, a background
+`/harden-harness` dispatch, a second interactive/scheduled session) legitimately commit to this
+same branch at once.
+
+- **The orchestrator must NOT pre-serialize or delay a dispatch on the MERE POSSIBILITY of write
+  contention** — e.g. do not hold a background `/harden-harness` or other concurrent worker until
+  an in-flight cycle's boundary "just in case." Dispatch concurrently and trust the coordination
+  layer; an unexpected incoming commit / moved HEAD is **EXPECTED, not a defect**. This is the
+  local restatement of the user-global `<orchestration>` "Concurrent-writer awareness" block and
+  `/lazy-batch` **HARD CONSTRAINT 11** ("no monsters-in-the-closet serialization",
+  `user/skills/lazy-batch/SKILL.md`) — see those for the full policy; this note does not duplicate it.
+- **The ONE real caveat that DOES need care — the single-slot cycle-active marker**
+  (`~/.claude/state/lazy-cycle-active.json`): a concurrently-dispatched background worker must
+  **NOT open a competing `--cycle-begin` bracket** while an in-flight cycle holds it — that
+  clobbers the running cycle's `--cycle-end` accounting. Dispatch the concurrent worker via the
+  **registered emit-dispatch path WITHOUT a competing bracket** instead.
+
 ## Navigation Pattern
 
 When asked to work on a specific project, `cd` into that repo first and check: (1) root

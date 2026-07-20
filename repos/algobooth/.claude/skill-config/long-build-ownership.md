@@ -8,12 +8,15 @@ session — never backgrounded from inside a dispatched cycle subagent.
 > A request-time `PreToolUse(Bash)` guard — `user/hooks/long-build-ownership-guard.sh`, registered in
 > `user/settings.json` — **denies** any Bash command whose first real token (after an optional
 > `NAME=value` env-assignment prefix) is an exact long-build invocation (`tauri build`,
-> `cargo build --release`, `npm run build`). The deny carries the orchestrator-takeover signature
+> `cargo build --release`, `npm run build`) OR a heavy quality gate (`npm run qg -- rust`,
+> `npm run qg -- ts`, `npm run qg -- sidecar`, and the `npm run quality-gate -- …` alias — the fast
+> `arch`/`docs`/`lint` groups are NOT redirected). The deny carries the orchestrator-takeover signature
 > `LONG-BUILD-OWNERSHIP-TAKEOVER`, signalling that the **orchestrator** must take over the spawn (the
 > main session re-launches the build via `run_in_background`, or runs the `lazy_core.run_transient_build`
 > **Transient Build contract** — spawn-detached-and-await over the one `spawn_detached` primitive, so the
 > build survives the subagent tear by construction). The guard is fail-OPEN (any internal error allows +
-> a breadcrumb) and tightly scoped — it never redirects `ls`/`cat`/`npm run lint`/`cargo check --release`.
+> a breadcrumb) and tightly scoped — it never redirects `ls`/`cat`/`npm run lint`/`cargo check --release`
+/ the fast `npm run qg -- {arch,docs}` groups.
 
 ## Why
 A process backgrounded from inside a subagent **dies when that subagent's turn ends** — its process

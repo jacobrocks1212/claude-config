@@ -17,11 +17,11 @@
 # Slow path: pipe the captured stdin to lazy_guard.py which performs the full
 # registry lookup and emits allow/deny hookSpecificOutput JSON.
 #
-# Python resolution: `python3` preferred (WSL / Linux), falling back to
-# `python` (Windows git-bash where python3 may not be on PATH).
-# Script path: resolved relative to this file's own directory so the hook
-# works both from the repo checkout (user/hooks/) and via symlinks from
-# ~/.claude/hooks/ that point into the same layout.
+# Python resolution + scripts-dir derivation are provided by the shared
+# hook-prelude.sh (sourced below): HOOK_PYTHON (`python3` preferred, then
+# `python`) and HOOK_SCRIPTS_DIR (resolved relative to this file's own
+# directory so the hook works both from the repo checkout (user/hooks/) and via
+# symlinks from ~/.claude/hooks/ that point into the same layout).
 #
 # State dir: LAZY_STATE_DIR env var overrides ~/.claude/state/ for hermetic
 # pipe-tests (the same override used by tests/test_lazy_core/ and test_hooks.py).
@@ -37,44 +37,21 @@
 # marker-presence query (to read the tool-call cwd) and by lazy_guard.py.
 PAYLOAD="$(cat)"
 
-# Resolve python interpreter: prefer python3, fall back to python.
-if command -v python3 >/dev/null 2>&1; then
-  PYTHON=python3
-elif command -v python >/dev/null 2>&1; then
-  PYTHON=python
-else
-  # No python at all — fail open (exit 0, no output). guard-fail-open-leaves-no-trace:
-  # this is the severest failure class (the ENTIRE python-bearing guard plane is
-  # dead) and precisely the one no python-side appender can record, so the
-  # breadcrumb is written here in pure bash (no python required). Best-effort —
-  # every write is `2>/dev/null || true` so a breadcrumb failure never turns into
-  # a deny or a non-zero exit. Kept as an identical copied block across every
-  # python-bearing hook (interim per docs/bugs/guard-fail-open-leaves-no-trace D4
-  # — the natural long-term home is a shared hook-prelude, not yet built; keep
-  # the copies in lockstep).
-  _HOOK_NOPY_BASE="${LAZY_STATE_DIR:-$HOME/.claude/state}"
-  _HOOK_NOPY_TS="$(date +%s 2>/dev/null || echo 0)"
-  mkdir -p "$_HOOK_NOPY_BASE" 2>/dev/null
-  printf '{"hook":"lazy-dispatch-guard","error":"no python interpreter on PATH","at":"%s"}' \
-    "$_HOOK_NOPY_TS" > "$_HOOK_NOPY_BASE/hook-error.json" 2>/dev/null || true
-  printf '{"ts":%s,"kind":"error","hook":"lazy-dispatch-guard","repo_root":"","signature":"","detail":"no python interpreter on PATH"}\n' \
-    "$_HOOK_NOPY_TS" >> "$_HOOK_NOPY_BASE/hook-events.jsonl" 2>/dev/null || true
-  exit 0
-fi
-
-# Resolve the scripts dir relative to this hook's own directory.
-# Builtins only (${0%/*}, cd, pwd) — `dirname` is a coreutils binary that is
-# NOT guaranteed on PATH when git-bash runs non-login (observed: hook env
-# without /usr/bin → "dirname: command not found" → mangled script path).
-# $0 may carry Windows backslashes (invoked as `bash C:\...\hook.sh`);
-# normalize to forward slashes before splitting (builtin string ops only).
+# Source the shared hook prelude, fail-open-guarded (shared-hook-lib, SPEC D2).
+# A missing/broken prelude ALLOWS (exit 0), never wedges. We derive this hook's
+# own directory here ONLY to locate the prelude; the prelude then provides
+# HOOK_PYTHON (python3→python resolution; total absence ⇒ pure-bash breadcrumb
+# + exit 0 — guard-fail-open-leaves-no-trace §1) and HOOK_SCRIPTS_DIR (the
+# sibling user/scripts/ dir). Builtins only for the bootstrap ($0 may carry
+# Windows backslashes; `dirname` is not guaranteed on a non-login git-bash PATH).
 SELF="${0//\\//}"
 case "$SELF" in
-  */*) SCRIPT_DIR="$(cd "${SELF%/*}" && pwd)" ;;
-  *)   SCRIPT_DIR="$(pwd)" ;;
+  */*) _HOOK_DIR="$(cd "${SELF%/*}" && pwd)" ;;
+  *)   _HOOK_DIR="$(pwd)" ;;
 esac
-GUARD_PY="$SCRIPT_DIR/../scripts/lazy_guard.py"
-STATE_PY="$SCRIPT_DIR/../scripts/lazy-state.py"
+. "$_HOOK_DIR/hook-prelude.sh" 2>/dev/null || exit 0
+GUARD_PY="$HOOK_SCRIPTS_DIR/lazy_guard.py"
+STATE_PY="$HOOK_SCRIPTS_DIR/lazy-state.py"
 
 # Extract the tool-call's cwd AND the caller's session_id from the payload in a
 # SINGLE python invocation (the cwd is the repo whose marker we consult; the
@@ -87,7 +64,7 @@ STATE_PY="$SCRIPT_DIR/../scripts/lazy-state.py"
 # degrades (CWD empty → skipped → fall through to the guard; SID empty → the
 # gate is queried WITHOUT --session-id, i.e. today's session-blind behavior) —
 # fail-OPEN: a parse miss never silently disables enforcement.
-PARSED="$(printf '%s' "$PAYLOAD" | "$PYTHON" -c \
+PARSED="$(printf '%s' "$PAYLOAD" | "$HOOK_PYTHON" -c \
   'import sys,json
 try:
     d = json.load(sys.stdin) or {}
@@ -133,10 +110,10 @@ SID="${SID//$'\r'/}"
 # degrades to the session-blind gate (fail-OPEN).
 if [ -n "$CWD" ] && [ -f "$STATE_PY" ]; then
   if [ -n "$SID" ]; then
-    LAZY_STATE_DIR="${LAZY_STATE_DIR}" "$PYTHON" "$STATE_PY" \
+    LAZY_STATE_DIR="${LAZY_STATE_DIR}" "$HOOK_PYTHON" "$STATE_PY" \
       --marker-present --repo-root "$CWD" --session-id "$SID" >/dev/null 2>&1
   else
-    LAZY_STATE_DIR="${LAZY_STATE_DIR}" "$PYTHON" "$STATE_PY" \
+    LAZY_STATE_DIR="${LAZY_STATE_DIR}" "$HOOK_PYTHON" "$STATE_PY" \
       --marker-present --repo-root "$CWD" >/dev/null 2>&1
   fi
   MARKER_RC=$?
@@ -161,5 +138,5 @@ fi
 # allowed and the breakage is announced via the hook-error.json breadcrumb on
 # the next inject turn.  Unconditional exit 0 enforces this contract from the
 # shell side.
-printf '%s' "$PAYLOAD" | "$PYTHON" "$GUARD_PY"
+printf '%s' "$PAYLOAD" | "$HOOK_PYTHON" "$GUARD_PY"
 exit 0

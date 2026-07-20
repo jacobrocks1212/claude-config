@@ -215,23 +215,25 @@ def _files_from_commits(repo_root: Path, shas: "list[str]") -> "list[str]":
     return sorted(files)
 
 
-def _item_commit_touched_files(spec_path: Path, repo_root: Path) -> "list[str]":
-    """The touched-file set for an item's shipped commits, reusing the
-    EXISTING derivation ``write_provenance`` already uses (commit-brackets
-    primary, message-grep fallback via ``derive_touched_from_brackets`` /
-    ``derive_touched_from_grep``) — never re-implemented. ``spec_path`` may
-    be the item's SPEC.md file or its containing dir; the item id is the
-    dir's basename either way.
+def _item_commit_derivation(spec_path: Path, repo_root: Path) -> dict:
+    """The item's shipped-commit derivation — the SINGLE shared home reused by
+    BOTH the ship seam (``_item_commit_touched_files`` → scope) AND the
+    completion-time item-scoped checker (``item_scoped_gate_report`` → diff), so
+    the two seams cannot drift on WHICH commits are an item's own
+    (gate-verdict-dispatch-derives-scope-from-empty-range-for-merged-item).
 
-    FOREIGN-HARDEN EXCLUSION (gate-scope-folds-concurrent-harden-commits): the
-    bracket ledger records each cycle as a ``begin_sha..end_sha`` RANGE, so a
-    foreground observed-friction ``harden(...)`` commit the orchestrator lands
-    mid-run is swept into the range diff even though it is a DIFFERENT
-    workstream from the queue item. Those foreign commits are excluded from the
-    item's completion-gate scope so a feature is never forced to answer for a
-    concurrent harden workstream's control-surface changes. When no foreign
-    commit is present (the common case), the pre-existing range-derived file
-    set is returned BYTE-IDENTICALLY (no re-derivation, no behavior change).
+    Reuses the EXISTING ``write_provenance`` derivation (commit-brackets primary,
+    message-grep fallback via ``derive_touched_from_brackets`` /
+    ``derive_touched_from_grep``) — never re-implemented — and applies the same
+    FOREIGN-HARDEN EXCLUSION the ship seam applies. This derivation is
+    merge-INDEPENDENT: the bracket ledger persists and ``git log`` reachability
+    includes merged commits, so an item whose fix is already on ``origin/main``
+    still resolves its own commits (the exact property the empty
+    ``origin/main..HEAD`` range lacked). ``spec_path`` may be the SPEC.md file or
+    its containing dir; the item id is the dir basename either way.
+
+    Returns ``{"all_commits": [...], "non_foreign_commits": [...],
+    "derived_files": [...]}``.
     """
     from .ledgers import (  # ledger plane (re-pointed at Phase-4 WU-2)
         derive_touched_from_brackets,
@@ -244,15 +246,116 @@ def _item_commit_touched_files(spec_path: Path, repo_root: Path) -> "list[str]":
     derived = derive_touched_from_brackets(repo_root, item_id)
     if derived is None:
         derived = derive_touched_from_grep(repo_root, item_id)
-    commit_shas = list((derived or {}).get("commits") or [])
+    all_commits = list((derived or {}).get("commits") or [])
     non_foreign = [
-        c for c in commit_shas
+        c for c in all_commits
         if not _commit_subject_is_foreign_harden(repo_root, c)]
-    if non_foreign == commit_shas:
+    return {
+        "all_commits": all_commits,
+        "non_foreign_commits": non_foreign,
+        "derived_files": list((derived or {}).get("files") or []),
+    }
+
+
+def _item_commit_touched_files(spec_path: Path, repo_root: Path) -> "list[str]":
+    """The touched-file set for an item's shipped commits, reusing the
+    EXISTING derivation ``write_provenance`` already uses (commit-brackets
+    primary, message-grep fallback) via the shared ``_item_commit_derivation``
+    (never re-implemented). ``spec_path`` may be the item's SPEC.md file or its
+    containing dir; the item id is the dir's basename either way.
+
+    FOREIGN-HARDEN EXCLUSION (gate-scope-folds-concurrent-harden-commits): the
+    bracket ledger records each cycle as a ``begin_sha..end_sha`` RANGE, so a
+    foreground observed-friction ``harden(...)`` commit the orchestrator lands
+    mid-run is swept into the range diff even though it is a DIFFERENT
+    workstream from the queue item. Those foreign commits are excluded from the
+    item's completion-gate scope so a feature is never forced to answer for a
+    concurrent harden workstream's control-surface changes. When no foreign
+    commit is present (the common case), the pre-existing range-derived file
+    set is returned BYTE-IDENTICALLY (no re-derivation, no behavior change).
+    """
+    d = _item_commit_derivation(spec_path, repo_root)
+    if d["non_foreign_commits"] == d["all_commits"]:
         # No foreign harden commit was filtered — preserve the exact prior
         # file set (byte-identical common-case behavior).
-        return list((derived or {}).get("files") or [])
-    return _files_from_commits(repo_root, non_foreign)
+        return d["derived_files"]
+    return _files_from_commits(repo_root, d["non_foreign_commits"])
+
+
+def _diff_from_commits(repo_root: Path, shas: "list[str]") -> str:
+    """The concatenated unified diff of each commit's OWN patch — the DIFF analog
+    of ``_files_from_commits`` (which unions their file NAMES). Each commit's
+    non-merge patch via ``git show`` with the commit header suppressed
+    (``--format=``); ``harness_gate.parse_diff`` keys on ``diff --git`` / ``@@``
+    and skips the leading blank line, so the header-less patch parses cleanly.
+    Empty string on any per-commit read failure (fail-open, never raises)."""
+    from .ledgers import _git_capture_lines  # ledger plane (re-pointed at Phase-4 WU-2)
+    parts: list[str] = []
+    for sha in shas:
+        lines = _git_capture_lines(
+            repo_root,
+            ["show", "--no-merges", "--no-color", "--format=", str(sha)])
+        if lines:
+            parts.append("\n".join(lines))
+    return "\n".join(parts)
+
+
+def item_scoped_gate_report(spec_path: Path, repo_root: Path) -> dict:
+    """Completion-time item-scoped harness-gate report — the AUTHORING-seam twin
+    of ``gate_verdict_ok``'s scope check (anti-overfit-design-gate; the mechanical
+    checker step of the ``gate-verdict`` completion-time dispatch class).
+
+    Runs ``harness_gate.run_checker`` over the item's OWN shipped commits — the
+    SAME derivation (``_item_commit_derivation`` → ``_item_commit_touched_files``)
+    the ship seam uses — so its ``in_scope`` / ``scope_hit`` AGREE with
+    ``gate_verdict_ok`` BY CONSTRUCTION. Closes the deadlock where the dispatch
+    template derived scope from ``origin/main..HEAD`` (EMPTY for an item whose fix
+    is already merged), reporting ``in_scope: false`` and authoring nothing while
+    the ship seam still demanded a verdict
+    (gate-verdict-dispatch-derives-scope-from-empty-range-for-merged-item).
+
+    PURE READ (shells ``git show`` + the imported harness-gate checker; never
+    writes). Returns the ``run_checker`` dict (``in_scope`` / ``scope_hit`` /
+    ``checks`` / ``verdict_required`` / ``gate_weakening_hit``) plus
+    ``item_commits`` (the non-foreign shas the diff was built over, for audit).
+    Manifest absent → ``{in_scope: False, ...}`` (byte-identical to a repo this
+    gate never touched); a checker error → a conservative verdict-required report
+    naming the error (a ship-seam twin must report, never crash completion)."""
+    manifest_globs = _load_control_surface_globs(repo_root)
+    item_dir = Path(spec_path)
+    if item_dir.name == "SPEC.md":
+        item_dir = item_dir.parent
+    # Resolve a repo-relative item dir against repo_root so the tautology check
+    # (which reads item_dir/SPEC.md) finds the SPEC regardless of the caller's
+    # cwd. The dispatch template passes `--repo-root .` with cwd == repo root, but
+    # a caller with a different cwd (e.g. --repo-root <path> from elsewhere) must
+    # still resolve the SPEC. The ship-seam scope derivation below keys on the dir
+    # BASENAME, so it is unaffected either way.
+    if not item_dir.is_absolute():
+        item_dir = Path(repo_root) / item_dir
+    if manifest_globs is None:
+        return {
+            "in_scope": False, "scope_hit": [], "checks": {},
+            "verdict_required": False, "item_commits": [],
+            "reason": "no control-surface manifest",
+        }
+    # SAME scope basis as gate_verdict_ok (the ship-seam file list), so in_scope /
+    # scope_hit agree by construction; the diff is built over the item's OWN
+    # commits (merge-independent), NOT a git range that empties out once merged.
+    changed = _item_commit_touched_files(spec_path, repo_root)
+    commits = _item_commit_derivation(spec_path, repo_root)["non_foreign_commits"]
+    diff_text = _diff_from_commits(repo_root, commits)
+    try:
+        hg = _load_harness_gate_module()
+        result = hg.run_checker(repo_root, diff_text, changed, item_dir, manifest_globs)
+    except Exception as exc:  # noqa: BLE001 — a ship-seam twin must report, never crash
+        return {
+            "in_scope": True, "scope_hit": [], "checks": {},
+            "verdict_required": True, "item_commits": commits,
+            "reason": f"harness-gate checker error: {exc}",
+        }
+    result["item_commits"] = commits
+    return result
 
 
 def evaluate_completion_evidence(feature_dir: Path, repo_root: Path) -> dict:
@@ -905,6 +1008,198 @@ def autotick_verification_rows(
 
 
 # ---------------------------------------------------------------------------
+# Step-10 uncovered-verification-row re-route predicate
+# (decision-2-6-uncovered-row-reroute-to-mcp-test WU-2)
+# ---------------------------------------------------------------------------
+
+def _collect_uncovered_verification_rows(phases_text: str) -> list[tuple[str, bool]]:
+    """Collect UNCHECKED verification-marked rows + a host-deferred flag each.
+
+    Shares the row-walk discipline of ``remaining_unchecked_are_verification_only``
+    / ``autotick_verification_rows``: fence-aware (illustrative rows in a ```
+    fence are skipped), phase-reset-aware, Superseded-aware, descope-aware
+    (canonical ``_DESCOPED_MARKER`` row/header-scope + the legacy
+    strikethrough+keyword shim), and verification-marker aware (the row OR its
+    enclosing subsection header carrying ``_VERIFICATION_ONLY_MARKER``).
+
+    Each collected row is tagged HOST-DEFERRED when the row (or its enclosing
+    subsection header) carries the ``<!-- requires-host: <cap> -->`` marker
+    (``docmodel.row_requires_host``) — clause (b) of the re-route predicate.
+
+    Returns a list of ``(row_text, is_host_deferred)`` for every unchecked row
+    that is verification-marked AND not Superseded / descoped / fenced. Pure —
+    no I/O, no mutation.
+    """
+    rows: list[tuple[str, bool]] = []
+    section_has_marker = False        # verification-only header scope
+    section_has_descope = False       # descope header scope
+    section_requires_host = False     # requires-host header scope (clause b)
+    in_superseded_phase = False
+    in_fence = False
+    for raw in phases_text.splitlines():
+        stripped = raw.strip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        heading = re.match(r"^#{1,6}\s+(.*)$", stripped)
+        if heading:
+            heading_text = heading.group(1)
+            if re.match(r"Phase\s+\d+", heading_text):
+                # New phase block — reset all subsection tracking.
+                in_superseded_phase = False
+                section_has_marker = False
+                section_has_descope = False
+                section_requires_host = False
+            else:
+                section_has_marker = docmodel._VERIFICATION_ONLY_MARKER in raw
+                section_has_descope = docmodel._DESCOPED_MARKER in raw
+                section_requires_host = docmodel.row_requires_host(raw) is not None
+            continue
+        if stripped.startswith("**"):
+            bold = re.match(r"^\*\*(.+?)\*\*", stripped)
+            if bold:
+                bold_text = bold.group(1)
+                if re.match(r"Status\s*:", bold_text) and "Superseded" in stripped:
+                    in_superseded_phase = True
+                    continue
+                # A named subsection header (Runtime Verification / Deliverables /
+                # a descope header) begins a new scope. Set each flag from THIS
+                # header line; a fresh named subsection resets the sibling scopes
+                # (mirrors autotick's marker handling, extended to the two new
+                # marker scopes).
+                if docmodel._VERIFICATION_ONLY_MARKER in raw:
+                    section_has_marker = True
+                section_has_descope = docmodel._DESCOPED_MARKER in raw
+                section_requires_host = docmodel.row_requires_host(raw) is not None
+                continue
+        m = _UNCHECKED_ROW_RE.match(raw.rstrip("\r\n"))
+        if not m:
+            continue
+        if in_superseded_phase:
+            continue
+        # Descoped-in-place rows are not-to-be-done (canonical marker row- or
+        # header-scope, or the legacy strikethrough+keyword shim).
+        if (
+            section_has_descope
+            or docmodel._DESCOPED_MARKER in raw
+            or docmodel._row_is_descoped_in_place(raw)
+        ):
+            continue
+        row_has_marker = docmodel._VERIFICATION_ONLY_MARKER in raw
+        if not (row_has_marker or section_has_marker):
+            continue
+        host_deferred = section_requires_host or (
+            docmodel.row_requires_host(raw) is not None
+        )
+        rows.append((raw.strip(), host_deferred))
+    return rows
+
+
+def uncovered_verification_rows_remain(feature_dir, phases_text, repo_root) -> dict:
+    """Does a Step-10 completion route still have uncovered verification rows?
+
+    The SHARED predicate serving both symptoms of
+    decision-2-6-uncovered-row-reroute-to-mcp-test: the partial-VALIDATED
+    oscillation (decision 2) and newly-discovered-coverage stranding
+    (decision 6). Pure, side-effect-free — safe on the read-only
+    ``compute_state`` probe path (it REASONS about what ``autotick_verification_rows``
+    WOULD tick given the recorded evidence; it NEVER mutates PHASES.md).
+
+    Returns ``{reroute: bool, uncovered: list[str], reason: str}``. When
+    ``reroute`` is True, the state script routes ``sub_skill="mcp-test"`` to
+    finish (or author) the matrix instead of the terminal ``__mark_complete__`` /
+    ``__mark_fixed__``. ``uncovered`` lists the row text(s) that drove the
+    decision (for the routing ``_diag``).
+
+    The operator-locked fix shape (SPEC Proven Findings): re-route iff a
+    non-Superseded phase has an unchecked runtime-verification row that is
+    (a) NOT observation-gap-exempt AND (b) NOT host-deferred
+    (``<!-- requires-host: <cap> -->``) AND (c) not covered by recorded evidence
+    (still unchecked after ``autotick_verification_rows``). **Termination is the
+    load-bearing contract** — the predicate returns False (falls through to the
+    terminal pseudo-skill) once every uncovered row is covered / host-deferred /
+    exempt, so it can never loop /mcp-test forever.
+
+    CALLER PRECONDITION: invoked at Step 10 with ``VALIDATED.md`` present (the
+    Step-10 entry gate). "No VALIDATED.md" is NOT this helper's concern — it
+    reasons purely over PHASES + the recorded MCP evidence.
+
+    CONSERVATIVE by construction (operator-accepted tradeoff): "still uncovered
+    after evidence reasoning" ⇒ re-route; one redundant /mcp-test pass on a
+    genuinely-complete-but-unticked matrix is tolerable.
+    """
+    feature_dir = Path(feature_dir)
+    repo_root = Path(repo_root)
+
+    # Clause (a): a sanctioned observation-gap partial (result: partial whose
+    # every exemption carries a spec_class provenance) is a WHOLE-FILE exempt
+    # disposition — its scope is spec_class-cited untestable-here, so NEVER
+    # re-route (rerouting would loop /mcp-test on rows with no MCP driver). This
+    # routes through the SAME observation_gap_promotable helper the apply +
+    # completion gates use, so all three cannot diverge.
+    results_meta = parse_sentinel(feature_dir / "MCP_TEST_RESULTS.md")
+    if isinstance(results_meta, dict) and observation_gap_promotable(results_meta):
+        return {
+            "reroute": False,
+            "uncovered": [],
+            "reason": "sanctioned observation-gap partial — no re-route (clause a)",
+        }
+
+    # Clause (c) numerator: the evidence pass_count autotick ticks against. Read
+    # it from the SAME evidence gate __mark_complete__ uses; a refuse verdict
+    # (forged / stale / missing results) yields 0 so every candidate row is
+    # treated as uncovered (finish / re-run the matrix).
+    verdict = evaluate_completion_evidence(feature_dir, repo_root)
+    pass_count = verdict.get("pass_count")
+    if not isinstance(pass_count, int) or pass_count < 0:
+        pass_count = 0
+
+    rows = _collect_uncovered_verification_rows(phases_text)
+
+    # Clause (c) mirrors autotick_verification_rows' cardinality lock: autotick
+    # ticks the verification rows ONLY when their total count <= pass_count
+    # (else it ABORTS, ticking nothing). So the rows are "covered" iff
+    # autotick would tick them all.
+    if len(rows) <= pass_count:
+        return {
+            "reroute": False,
+            "uncovered": [],
+            "reason": (
+                f"all {len(rows)} verification row(s) covered by recorded "
+                f"evidence (pass_count={pass_count}) — autotick would tick them"
+            ),
+        }
+
+    # autotick would abort → nothing ticked → rows remain uncovered. Re-route
+    # ONLY over rows a /mcp-test cycle can actually cover here: exclude
+    # host-deferred rows (clause b — they can never pass on a host lacking the
+    # capability, so re-routing loops). If the only uncovered rows are
+    # host-deferred, fall through to the terminal pseudo-skill (decision-5 owns
+    # their completion-time exemption).
+    reroutable = [text for (text, host_deferred) in rows if not host_deferred]
+    if reroutable:
+        return {
+            "reroute": True,
+            "uncovered": reroutable,
+            "reason": (
+                f"{len(reroutable)} uncovered verification row(s) exceed "
+                f"pass_count={pass_count} and are not host-deferred/exempt — "
+                "re-route to /mcp-test to finish the matrix"
+            ),
+        }
+    return {
+        "reroute": False,
+        "uncovered": [],
+        "reason": (
+            "remaining uncovered verification row(s) are all host-deferred — "
+            "no re-route (clause b termination; decision-5 owns their disposition)"
+        ),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Completion ledger verification
 # ---------------------------------------------------------------------------
 
@@ -1318,10 +1613,23 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
           ``deliverables_source: "phases-fallback (legacy plan — no per-WU
           checkboxes)"`` so the operator knows the legacy path fired. Legacy plans
           are NOT hard-failed.
-      ``plan_path=None`` → byte-for-byte the original feature-level behavior
-      (the whole feature's PHASES.md via ``count_deliverables`` +
-      ``remaining_unchecked_are_verification_only``). If PHASES.md does not exist
-      at feature level, returns False (no evidence phases were completed).
+      ``plan_path=None`` → the feature-level behavior (the whole feature's
+      PHASES.md via ``count_deliverables`` +
+      ``remaining_unchecked_are_verification_only``).
+      ABSENT-BY-DESIGN (bug
+      ``verify-ledger-deliverables-done-fails-pre-decomposition-feature``,
+      2026-07-20 — mirrors the check-3 carve-out above): a MISSING PHASES.md is
+      split by whether the feature was ever decomposed.
+        - No PHASES.md AND no implementation plan on disk
+          (``_implementation_plans_exist`` is False) → NOT-APPLICABLE, so
+          deliverables_done is True (a diagnostic notes it fired and
+          ``deliverables_source`` becomes ``"not-applicable (pre-decomposition
+          …)"``). A /realign-spec, /spec or research-ingest cycle runs BEFORE
+          decomposition, so PHASES.md cannot exist yet; failing there was
+          unreconcilable without fabricating a PHASES.md. This is the exact
+          feature state for which check 3 already returns plan_complete=True.
+        - No PHASES.md but an implementation plan DOES exist → still False (no
+          evidence phases were completed — the regression guard).
 
     Return shape:
     ```
@@ -1338,6 +1646,10 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
                                      #   "plan-wu-checkboxes"       — new machine record
                                      #   "phases-fallback (…)"      — legacy plan path fired
                                      #   "phases-feature-level"     — no plan_path (whole feature)
+                                     #   "not-applicable (pre-decomposition …)"
+                                     #                              — no PHASES.md and no
+                                     #                                implementation plan; the
+                                     #                                check does not apply yet
         "failing_detail": dict,      # diagnostic (additive, never gates) — the
                                      # offending items for EVERY False check,
                                      # keyed by check name; {} when ok is True
@@ -1355,6 +1667,20 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
     ``checks`` values are always populated and accurate regardless of which check
     fails first — no short-circuit pruning is applied to the ``checks`` dict.
     """
+    # --- arg normalization: accept a SPEC.md file OR the spec directory ---
+    # `spec_path` is contractually the feature/bug DIRECTORY (checks below compute
+    # `spec_path / 'PHASES.md'` and scan the dir for plans). But the cycle-prompt
+    # metavar reads as the SPEC.md FILE (`--verify-ledger <spec_path>`), so callers
+    # legitimately pass `.../SPEC.md`. Passing the file used to yield a MISLEADING
+    # verdict (phantom `.../SPEC.md/PHASES.md`) instead of an error. Normalize a
+    # `.md` file arg to its parent directory at the SOURCE so the function and every
+    # caller agree by construction — including direct callers and any future one
+    # (bug `verify-ledger-planning-scope-and-file-arg`). `lazy-state.py` already
+    # performs the same normalization at its wrapper; this is idempotent for a dir
+    # arg (no `.md` suffix → unchanged) and harmless downstream of that wrapper.
+    if spec_path.suffix == ".md":
+        spec_path = spec_path.parent
+
     # --- check 1: clean working tree ---
     # Mirror the subprocess style used in _current_head in lazy-state.py:
     # capture_output + text + timeout guard, catch OSError/SubprocessError.
@@ -1523,8 +1849,50 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
     else:
         # Feature-level (no plan_path): the whole feature's PHASES.md.
         if not phases_file.exists():
-            # No PHASES.md means we have no evidence of phases being completed.
-            deliverables_done = False
+            # --- absent-by-design (pre-decomposition), mirroring check 3 ---
+            # A missing PHASES.md has TWO very different meanings, and collapsing
+            # them into False hard-failed every pre-decomposition cycle
+            # (bug `verify-ledger-deliverables-done-fails-pre-decomposition-feature`,
+            # observed live 2026-07-20 on `inspector-track-dashboard`):
+            #   (a) NOT-APPLICABLE — the feature has never been decomposed, so
+            #       PHASES.md *cannot* exist yet. A /realign-spec, /spec or
+            #       research-ingest cycle runs BEFORE decomposition; there are no
+            #       phases to have evidence about. The `failing_detail` for this
+            #       case was self-indicting: `rows: []`, `total: 0` — zero
+            #       offending deliverables, failing purely on the surface's
+            #       absence. Worse, it was UNRECONCILABLE: the turn-end TERMINAL
+            #       VERIFY GATE demands "re-run until ok:true", but the only way
+            #       to satisfy it is to author a PHASES.md — decomposition work
+            #       the cycle was not dispatched to do and must not fabricate.
+            #   (b) INCOMPLETE / anomalous — the feature WAS planned (an
+            #       implementation plan is on disk) but its PHASES.md is missing.
+            #       That is genuinely "no evidence phases were completed" and
+            #       must keep failing.
+            # `_implementation_plans_exist` is exactly the discriminator (it
+            # excludes realign-*/retro-* plans), and check 3 twenty lines above
+            # ALREADY uses it to pass `plan_complete` as absent-by-design for the
+            # identical feature state (harness-hardening-retro-fixes Phase 3).
+            # That Phase-3 lesson was simply never applied to this sibling check,
+            # so the two checks disagreed about the SAME feature. This narrows
+            # the carve-out to the (a) case only — every other state, including
+            # the plan-scoped branch above, is byte-identical to before — and
+            # announces itself via both a `_diag` breadcrumb and a distinct
+            # `deliverables_source` value, so it is never a silent pass.
+            if not _implementation_plans_exist(spec_path):
+                deliverables_done = True
+                deliverables_source = (
+                    "not-applicable (pre-decomposition — no PHASES.md, "
+                    "no implementation plan)"
+                )
+                _diag(
+                    "deliverables_done: no PHASES.md and no implementation plan "
+                    "— feature not yet decomposed (absent-by-design)"
+                )
+            else:
+                # An implementation plan exists but PHASES.md does not: no
+                # evidence of phases being completed. Regression guard — this is
+                # the pre-existing behavior and stays False.
+                deliverables_done = False
         else:
             phases_text = phases_file.read_text(encoding="utf-8")
             unchecked, _checked = count_deliverables(phases_text)
@@ -1757,6 +2125,85 @@ def validation_escalation(meta: dict[str, Any] | None) -> bool:
     return False
 
 
+def spike_escalation(meta: dict[str, Any] | None) -> bool:
+    """Return True when a BLOCKED.md sentinel shows repeated spike-verdict failure.
+
+    spike-pipeline-role Phase 2 (WU-2) mirror of ``validation_escalation`` above,
+    for the tooling-round escalation signal consumed by Part 3's tooling-round
+    cap. This predicate is NOT itself a gate on the blocked→spike routing (that
+    routing fires unconditionally on the blocker_kind, see the Step-3 BLOCKED
+    block in ``compute_state``) — it is a separate signal a caller consults to
+    decide whether repeated spike-tooling-round failures warrant escalation.
+
+    Gated on ``blocker_kind == "runtime-spike-verdict-pending"`` AND
+    ``retry_count >= 2`` — same threshold as ``validation_escalation``, for the
+    same reason: each retry round is expected to make exactly one more round of
+    progress before escalation is warranted.
+
+    Tolerances (mirrors ``validation_escalation`` exactly):
+      - ``retry_count`` as an int is used directly.
+      - ``retry_count`` as a string of digits (quoted YAML) is coerced.
+      - Missing/malformed ``retry_count``, missing ``blocker_kind``, a non-
+        runtime-spike-verdict-pending ``blocker_kind``, or a None/empty meta →
+        False.
+      - YAML booleans are ints in Python (``True == 1``); they are NOT counts,
+        so bool values are explicitly rejected rather than coerced.
+    """
+    meta = meta or {}
+    if meta.get("blocker_kind") != "runtime-spike-verdict-pending":
+        return False
+    raw = meta.get("retry_count")
+    # bool is an int subclass — `retry_count: true` must not coerce to 1.
+    if isinstance(raw, bool):
+        return False
+    if isinstance(raw, int):
+        return raw >= 2
+    if isinstance(raw, str) and raw.strip().isdigit():
+        return int(raw.strip()) >= 2
+    # Missing or malformed → no escalation (never crash the blocked terminal).
+    return False
+
+
+# spike-pipeline-role Phase 4 (WU-2): the machine-enforced bound on the Spike
+# tooling-existence loop. Operator-tunable default cap — SPEC Open Question 2.
+_SPIKE_TOOLING_ROUNDS_CAP = 3
+
+
+def spike_tooling_cap_exceeded(meta: dict[str, Any] | None, cap: int | None = None) -> bool:
+    """Return True when ``spike_tooling_rounds`` has reached/exceeded the cap.
+
+    spike-pipeline-role Phase 4 (WU-2) — the machine-enforced BOUND on the
+    Spike tooling-existence loop (SPEC "The tooling-existence loop (bounded)" /
+    "Loop guard (bound)"). Mirrors ``spike_escalation``'s tolerance shape
+    exactly, but is a PURE count check reused across two routing seams that
+    read different sentinels (BLOCKED.md's Step-3 blocked-resolver and
+    SPIKE_VERDICT.md's Step-9.5 header gate) — so, unlike ``spike_escalation``,
+    it does NOT gate on ``blocker_kind``.
+
+    Tolerances (identical to ``spike_escalation``):
+      - ``spike_tooling_rounds`` as an int is used directly.
+      - ``spike_tooling_rounds`` as a string of digits (quoted YAML) is coerced.
+      - Missing/malformed ``spike_tooling_rounds``, or a None/empty meta → False.
+      - YAML booleans are ints in Python (``True == 1``); they are NOT counts,
+        so bool values are explicitly rejected (checked BEFORE the int check,
+        since bool is an int subclass) rather than coerced.
+    """
+    meta = meta or {}
+    cap = _SPIKE_TOOLING_ROUNDS_CAP if cap is None else cap
+    raw = meta.get("spike_tooling_rounds")
+    # bool is an int subclass — `spike_tooling_rounds: true` must not coerce to 1.
+    if isinstance(raw, bool):
+        return False
+    if isinstance(raw, int):
+        rounds = raw
+    elif isinstance(raw, str) and raw.strip().isdigit():
+        rounds = int(raw.strip())
+    else:
+        # Missing or malformed → never exceeds the cap (never crash a caller).
+        return False
+    return rounds >= cap
+
+
 # ---------------------------------------------------------------------------
 # SPEC parsing helpers
 # ---------------------------------------------------------------------------
@@ -1837,6 +2284,116 @@ def has_completion_receipt(spec_path: Path | None, filename: str = "COMPLETED.md
         return False
 
     return True
+
+
+# ---------------------------------------------------------------------------
+# Already-implemented-out-of-pipeline detection
+# (adhoc-plan-bug-no-guard-for-fixed-annotated-specs Phase 1). Both fix sites —
+# bug-state.py Step 4 (route diversion) and /plan-bug Step 0.4 (belt-and-
+# suspenders) — consume these shared helpers so the pipeline never burns a
+# plan-bug dispatch re-planning a fix that already landed on disk.
+# ---------------------------------------------------------------------------
+
+# Statuses that mean the bug is PAST fix-planning already — the predicate is
+# ONLY about a pre-fix status carrying an unreconciled fix annotation.
+_FIXED_TERMINAL_STATUSES = frozenset({"Fixed", "Won't-fix"})
+
+
+def is_fixed_unreconciled(spec_dir: Path | None, repo_root: Path | None = None) -> bool:
+    """True iff a bug SPEC is already-implemented-out-of-pipeline but unreconciled.
+
+    The partially-reconciled debt state (docs/bugs/CLAUDE.md → "Fixing a bug
+    OUT-OF-PIPELINE"): the fix landed and a ``**Fixed:**`` evidence annotation was
+    added, but ``**Status:**`` was left at a pre-fix status (typically ``Concluded``)
+    and ``--archive-fixed`` never ran — so no ``FIXED.md`` receipt exists and the
+    dir is not archived. Routing/planning key ONLY on ``**Status:**``
+    (``spec_status``), so such an item routes to ``/plan-bug`` and burns a full
+    spec-phases + write-plan dispatch re-planning work already on disk.
+
+    Reuses the existing receipt/archive vocabulary rather than inventing a new
+    is-fixed heuristic: predicate = status is a PRE-FIX status (not
+    ``Fixed``/``Won't-fix``) AND a ``**Fixed:**`` annotation is present AND no valid
+    ``FIXED.md`` receipt (``has_completion_receipt(..., filename="FIXED.md")``) AND
+    the dir is not under ``docs/bugs/_archive/`` (defensively-redundant on the
+    bug-state Step-4 path, where ``load_bug_queue`` never returns ``_archive/``
+    dirs; retained for direct callers such as ``/plan-bug`` invoked by hand).
+
+    ``repo_root`` is accepted for signature stability across both fix sites; the
+    archive check is path-structural and does not require it.
+    """
+    if spec_dir is None:
+        return False
+    status = spec_status(spec_dir)
+    if status in _FIXED_TERMINAL_STATUSES:
+        return False
+    # The already-fixed-out-of-pipeline signal is EITHER convention: the inline
+    # `**Fixed:**` evidence line OR a `## Fix (implemented <date>)` section heading
+    # (adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps GAP 2). A SPEC
+    # recording its fix under only the heading form was previously invisible here
+    # and burned a full plan-bug round.
+    if not (
+        docmodel.spec_fixed_annotation(spec_dir)
+        or docmodel.spec_fix_implemented_heading(spec_dir)
+    ):
+        return False
+    if has_completion_receipt(spec_dir, filename="FIXED.md"):
+        return False
+    try:
+        parts = Path(spec_dir).parts
+    except (TypeError, ValueError):
+        return False
+    if "_archive" in parts:
+        return False
+    return True
+
+
+def format_fixed_unreconciled_blocker(
+    bug_id: str, fixed_annotation: str | None
+) -> str:
+    """Build the FULL canonical ``BLOCKED.md`` (frontmatter + body) for the
+    ``fixed-unreconciled`` divert.
+
+    Modeled on ``depdag.format_unknown_dependency_blocker``'s shape, but returns
+    the ENTIRE file (frontmatter included) — the Step-4 caller writes it directly
+    via ``_atomic_write`` rather than through a ``_write_yaml_blocked_sentinel``
+    helper. Frontmatter conforms to sentinel-frontmatter.md (``kind: blocked`` +
+    the ``blocker_kind: fixed-unreconciled`` classifier); the body keeps the
+    ``## Details`` / ``## What was tried`` / ``## Recovery Suggestion`` sections a
+    human reads directly. The remedy names BOTH reconciliation paths: finish the
+    receipt+archive contract, OR clear the stray annotation to re-plan.
+    """
+    from .hostcaps import utc_now_iso  # deferred: avoid a top-level import edge
+
+    annotation = (fixed_annotation or "(no annotation value captured)").strip()
+    return (
+        "---\n"
+        "kind: blocked\n"
+        f"feature_id: {bug_id}\n"
+        "phase: routing — already-implemented-out-of-pipeline (fixed-unreconciled) detection\n"
+        f"blocked_at: {utc_now_iso()}\n"
+        "retry_count: 0\n"
+        "blocker_kind: fixed-unreconciled\n"
+        "---\n\n"
+        "# Blocked — fix already implemented out-of-pipeline (unreconciled)\n\n"
+        "## Details\n\n"
+        f"Bug `{bug_id}` carries a `**Fixed:** {annotation}` evidence annotation "
+        "(the fix already landed out-of-pipeline — a `/harden-harness` round or a "
+        "manual in-session fix), but its `**Status:**` is still a pre-fix status "
+        "and there is no valid `FIXED.md` completion receipt. The fix is on disk; "
+        "re-planning it would burn a full `/plan-bug` spec-phases + write-plan "
+        "dispatch on work that is already done (blocker_kind: fixed-unreconciled).\n\n"
+        "## What was tried\n\n"
+        "During routing (bug-state.py Step 4 / `/plan-bug` Step 0.4) the pipeline "
+        "detected the `**Fixed:**` annotation with no `FIXED.md` receipt and "
+        "diverted here instead of dispatching the planning round.\n\n"
+        "## Recovery Suggestion\n\n"
+        "Reconcile via the `docs/bugs/CLAUDE.md` receipt + `--archive-fixed` "
+        "contract: write the `FIXED.md` receipt, then run "
+        f"`python3 user/scripts/bug-state.py --repo-root . --archive-fixed docs/bugs/{bug_id}` "
+        "(the one script-owned mover). OR — if the `**Fixed:**` annotation is "
+        "stray and the bug genuinely still needs planning — clear the annotation "
+        "from SPEC.md to re-plan. Then rename/neutralize this BLOCKED.md.\n"
+    )
 
 
 def write_completed_receipt(
@@ -1960,6 +2517,29 @@ def archive_fixed(
     if date is None:
         date = datetime.date.today().isoformat()
     repo_root = repo_root.resolve()
+    # Normalize spec_path to an ABSOLUTE path anchored at repo_root BEFORE any
+    # `spec_path.relative_to(repo_root)` below (the per-file git-mv fallback at
+    # ~L2104 that computes `rel_spec` for the repo-relative suffix strip). repo_root
+    # is resolved to absolute just above, so a RELATIVE spec_path — e.g. the
+    # repo-relative `docs/bugs/<id>` the CLI passes straight through as
+    # `Path(args.archive_fixed)` — would make relative_to() raise an UNCAUGHT
+    # ValueError (the try/except at the end of this fn catches only OSError /
+    # SubprocessError), killing --archive-fixed with a raw traceback instead of a
+    # structured refusal. Sibling gates (apply_pseudo/verify_ledger) never mix a
+    # relative spec_path with an absolute repo_root in a relative_to() call, so they
+    # were unaffected; this puts archive_fixed on the same footing. Anchoring a
+    # relative spec_path at repo_root (not CWD) is the correct interpretation:
+    # git ls-files output downstream is likewise repo-relative.
+    # GAP 3 (spec-path polymorphism): accept a SPEC.md FILE as well as the item
+    # DIRECTORY — resolve a SPEC.md positional to its parent so `bug_id` and the
+    # git-mv target never bind to the literal "SPEC.md".
+    spec_path = docmodel.normalize_item_dir(spec_path)
+    spec_path = Path(spec_path)
+    spec_path = (
+        spec_path.resolve()
+        if spec_path.is_absolute()
+        else (repo_root / spec_path).resolve()
+    )
     bug_id = spec_path.name
     result: dict[str, Any] = {
         "name": "archive_fixed",
@@ -2197,6 +2777,26 @@ def archive_fixed(
         result["committed"] = (
             sha_proc.stdout.strip() if sha_proc.returncode == 0 else "unknown"
         )
+        # adhoc-process-friction-detector-counts-concurrent-session-commits Phase 2:
+        # record the produced sha in the concurrent-activity ledger stamped with
+        # this run's identity, so a CONCURRENT session's archive commit is
+        # subtractable at the --cycle-end friction detector. Best-effort — a
+        # ledger-write error NEVER changes the archive verdict (the archive is
+        # already committed). Function-local import: ledgers imports gates, so a
+        # module-level import here would be circular.
+        try:
+            from .ledgers import (
+                _raw_marker_started_at,
+                append_concurrent_commit_sha,
+            )
+            full_sha = _git(repo_root, "rev-parse", "HEAD")
+            if full_sha.returncode == 0:
+                append_concurrent_commit_sha(
+                    full_sha.stdout.strip(),
+                    run_started_at=_raw_marker_started_at(),
+                )
+        except Exception:  # noqa: BLE001
+            pass  # best-effort concurrent-activity ledger; never fail the archive
         result["ok"] = True
         return result
     except (OSError, subprocess.SubprocessError) as exc:
@@ -2436,7 +3036,12 @@ def gate_coverage(spec_path: Path) -> dict:
 
     A SPEC with no Locked-Decision surface passes vacuously (empty lists). An
     empty/absent mcp-tests dir → every decision uncovered.
+
+    GAP 3 (spec-path polymorphism): accepts EITHER the item directory OR a
+    ``SPEC.md`` file positional — a ``SPEC.md`` path is resolved to its parent so
+    ``spec_path / "SPEC.md"`` never becomes ``<dir>/SPEC.md/SPEC.md``.
     """
+    spec_path = docmodel.normalize_item_dir(spec_path)
     spec_md_path = spec_path / "SPEC.md"
     spec_md = ""
     if spec_md_path.exists():

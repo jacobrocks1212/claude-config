@@ -1682,6 +1682,60 @@ def test_spec_status_superseded():
 
 
 # ---------------------------------------------------------------------------
+# Tests: spec_fixed_annotation (adhoc-plan-bug-no-guard-for-fixed-annotated-specs
+# Phase 1) — sibling of spec_status reading the **Fixed:** evidence annotation.
+# ---------------------------------------------------------------------------
+
+
+def test_spec_fixed_annotation_none_path():
+    """spec_fixed_annotation(None) → None."""
+    _guard()
+    assert lazy_core.spec_fixed_annotation(None) is None
+
+
+def test_spec_fixed_annotation_absent():
+    """A SPEC with no **Fixed:** line → None."""
+    _guard()
+    spec_text = "**Status:** Concluded\n\n## Proven Findings\n\nCause.\n"
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(spec_text, encoding="utf-8")
+        assert lazy_core.spec_fixed_annotation(spec_dir) is None
+
+
+def test_spec_fixed_annotation_present():
+    """The **Fixed:** line's value is returned (stripped)."""
+    _guard()
+    spec_text = (
+        "**Status:** Concluded\n"
+        "**Fixed:** 2026-07-18 - implemented out-of-pipeline\n\n"
+        "## Findings\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(spec_text, encoding="utf-8")
+        result = lazy_core.spec_fixed_annotation(spec_dir)
+    assert result == "2026-07-18 - implemented out-of-pipeline", f"got {result!r}"
+
+
+def test_spec_fixed_annotation_first_occurrence_wins():
+    """Only the FIRST **Fixed:** line is used (mirrors spec_status first-wins)."""
+    _guard()
+    spec_text = (
+        "**Fixed:** 2026-07-18 - first\n\n"
+        "## Implementation Notes\n\n"
+        "Later note **Fixed:** 2026-07-19 - second\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(spec_text, encoding="utf-8")
+        result = lazy_core.spec_fixed_annotation(spec_dir)
+    assert result == "2026-07-18 - first", f"got {result!r}"
+
+
+
+
+# ---------------------------------------------------------------------------
 # Tests: _parse_plan_frontmatter / _plan_status / _plan_lowest_phase / _plan_phase_set
 # ---------------------------------------------------------------------------
 
@@ -1974,6 +2028,65 @@ def test_find_implementation_plans_non_series_phase_order_preserved():
         names = [p.name for p in result]
         assert names == ["phase-1-bar.md", "phase-3-foo.md"], (
             f"non-series plans must keep lowest-phase order, got {names}"
+        )
+
+
+
+
+def test_rescheduled_high_series_index_part_not_prerequisite_of_lower():
+    """harden Round 110 (observed-friction, hydra-overlay) — a part RESCHEDULED to
+    a HIGH ``series_index`` (to run LAST) is NOT a strict-order prerequisite of a
+    LOWER-``series_index`` but HIGHER-part-NUMBERED part.
+
+    The live incident: hydra-overlay part-10 carried
+    ``series_index: 15  # RESCHEDULED: projector re-spike runs LAST …`` (operator
+    reschedule 2026-07-19), deliberately moving Phase 10 to execute after parts
+    11-14. The /execute-plan rule 1a.6a strict-order prerequisite audit is
+    prose-driven and (before the round's prose fix) ordered parts by RAW
+    part-number, so it treated part-10 (part-number 10 < 12) as an unmet
+    prerequisite of part-12 and false-blocked part-12 (BLOCKED.md
+    ``blocker_kind: prerequisite-part-incomplete``).
+
+    Prerequisite-ness for a strict-order series is DEFINED by the same execution
+    order the router uses (``_plan_sort_key`` → ``series_index`` first,
+    frontmatter-honored): P is a prerequisite of D iff ``series_index(P) <
+    series_index(D)``. This test pins the ordering primitive the fixed audit prose
+    points to: the rescheduled part-10 (series 15) must sort AFTER part-12
+    (series 12) — i.e. part-10 is NOT a prerequisite of part-12 — even though its
+    filename ``-part-K`` number is LOWER. It also asserts the frontmatter reads
+    correctly through the inline ``# RESCHEDULED`` YAML comment (yaml.safe_load
+    strips it), the exact shape that would otherwise silently fall back to the
+    filename part-number 10 and re-introduce the false-block.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        # part-10 RESCHEDULED to run last (series_index 15, inline comment) …
+        part10 = d / "all-phases-hydra-overlay-part-10.md"
+        # … part-12 un-rescheduled (series index derived from the filename = 12).
+        part12 = d / "all-phases-hydra-overlay-part-12.md"
+        part10.write_text(
+            "---\nkind: implementation-plan\nstatus: Ready\nphases: [10]\n"
+            "series_index: 15  # RESCHEDULED: projector re-spike runs LAST "
+            "(after parts 11-14) — operator decision 2026-07-19\n---\n",
+            encoding="utf-8",
+        )
+        part12.write_text(
+            "---\nkind: implementation-plan\nstatus: Ready\nphases: [12]\n---\n",
+            encoding="utf-8",
+        )
+        # Frontmatter reschedule survives the inline YAML comment (else it would
+        # fall back to the filename part-number 10 and re-introduce the bug).
+        assert lazy_core._plan_series_index(part10) == 15
+        assert lazy_core._plan_series_index(part12) == 12
+        k10 = lazy_core._plan_sort_key(part10)
+        k12 = lazy_core._plan_sort_key(part12)
+        # part-12 sorts BEFORE the rescheduled part-10 ⇒ part-10 is scheduled
+        # AFTER part-12 ⇒ part-10 is NOT a strict-order prerequisite of part-12.
+        assert k12 < k10, (
+            f"rescheduled part-10 (series_index 15) must sort AFTER part-12 "
+            f"(series_index 12) — it is not a prerequisite of part-12: "
+            f"k10={k10} k12={k12}"
         )
 
 
@@ -3215,6 +3328,338 @@ def test_phases_mcp_runtime_not_required_false_when_required_or_absent():
 
 
 
+# --- harden Round 80 — Spike header parse + Spike-FAIL provisional carve-out ---
+
+
+def _write_spike_phases(spec: Path, line: str) -> None:
+    spec.mkdir(exist_ok=True)
+    (spec / "PHASES.md").write_text(
+        f"# Phases\n\n{line}\n\n### Phase 1\n- [ ] x\n", encoding="utf-8"
+    )
+
+
+def test_phases_spike_required_true():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec = Path(td) / "spec"
+        _write_spike_phases(spec, "**Spike:** required — measure sustained projector fps")
+        assert lazy_core.phases_spike_required(spec) is True
+
+
+def test_phases_spike_required_false_when_absent_or_prose_only():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # Absent line → False.
+        spec = Path(td) / "spec"
+        _write_spike_phases(spec, "### Notes")
+        assert lazy_core.phases_spike_required(spec) is False
+        # ANCHOR discipline: "required" only in REASON PROSE, not the value token → False.
+        spec2 = Path(td) / "spec2"
+        _write_spike_phases(spec2, "**Spike:** optional — no runtime proof required here")
+        assert lazy_core.phases_spike_required(spec2) is False
+        # Missing dir → False (never raises).
+        assert lazy_core.phases_spike_required(Path(td) / "nope") is False
+
+
+def test_read_spike_decision_required_value_token_and_goal():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec = Path(td) / "spec"
+        _write_spike_phases(spec, "**Spike:** required — prove 60fps at the representative pattern")
+        variant, goal = lazy_core._read_spike_decision(spec)
+        assert variant == "spike-required"
+        assert goal == "prove 60fps at the representative pattern"
+        # Non-required value / absent → ("no-spike", None).
+        spec2 = Path(td) / "spec2"
+        _write_spike_phases(spec2, "**Spike:** none")
+        assert lazy_core._read_spike_decision(spec2) == ("no-spike", None)
+        assert lazy_core._read_spike_decision(None) == ("no-spike", None)
+
+
+def _write_needs_input(path: Path, *, written_by: str, extra: str = "") -> None:
+    """Minimal NEEDS_INPUT.md whose frontmatter reaches the written_by/spike_verdict
+    exclusion checks in provisional_eligibility (kind + non-empty decisions present)."""
+    path.write_text(
+        "---\n"
+        "kind: needs-input\n"
+        "feature_id: feat-spike-test\n"
+        f"written_by: {written_by}\n"
+        "decisions:\n"
+        "  - pick an architecture on NO-GO\n"
+        f"{extra}"
+        "date: 2026-07-17\n"
+        "---\n\n"
+        "## Decision Context\n\n"
+        "### 1. pick an architecture on NO-GO\n\n"
+        "**Problem:** the proof failed.\n\n"
+        "**Options:**\n- **a** — x\n- **b** — y\n\n"
+        "**Recommendation:** a\n",
+        encoding="utf-8",
+    )
+
+
+def test_provisional_eligibility_excludes_spike_written_by():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "NEEDS_INPUT.md"
+        _write_needs_input(p, written_by="spike")
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is False
+        assert "spike" in reason.lower()
+
+
+def test_provisional_eligibility_excludes_spike_verdict_fail():
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "NEEDS_INPUT.md"
+        # written_by not spike, but spike_verdict: fail → still excluded.
+        _write_needs_input(p, written_by="mcp-test", extra="spike_verdict: fail\n")
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is False
+        assert "spike" in reason.lower()
+
+
+def test_classify_conflict_auto_merge_is_write():
+    """concurrent-worktree-agent-coordination Phase 4: a clean git auto-merge
+    (no conflict markers) classifies as a "write" conflict — the cheap
+    mechanical-merge path, no semantic review needed."""
+    _guard()
+    result = lazy_core.classify_conflict({"auto_merges": True, "conflicts": []})
+    assert result[0] == "write"
+    assert isinstance(result[1], str) and result[1]
+
+
+def test_classify_conflict_shared_function_is_semantic():
+    """Both sides of a conflict touch the SAME symbol (def compute_state) —
+    a shared logical surface — so the discriminator must escalate to
+    "semantic" (a mechanical merge cannot safely reconcile two edits to the
+    same function body)."""
+    _guard()
+    merge_result = {
+        "auto_merges": False,
+        "conflicts": [
+            {
+                "file": "lazy_core/docmodel.py",
+                "ours": "def compute_state(feature_id):\n    return ours_impl()\n",
+                "theirs": "def compute_state(feature_id):\n    return theirs_impl()\n",
+            }
+        ],
+    }
+    result = lazy_core.classify_conflict(merge_result)
+    assert result[0] == "semantic"
+    assert isinstance(result[1], str) and result[1]
+
+
+def test_classify_conflict_disjoint_surfaces_is_write():
+    """Ours touches def alpha(, theirs touches def beta( — distinct,
+    extractable symbols with no overlap — so the conflict is a mechanical
+    "write" (safe to reconcile without semantic review)."""
+    _guard()
+    merge_result = {
+        "auto_merges": False,
+        "conflicts": [
+            {
+                "file": "lazy_core/docmodel.py",
+                "ours": "def alpha():\n    return 1\n",
+                "theirs": "def beta():\n    return 2\n",
+            }
+        ],
+    }
+    result = lazy_core.classify_conflict(merge_result)
+    assert result[0] == "write"
+    assert isinstance(result[1], str) and result[1]
+
+
+def test_classify_conflict_ambiguous_is_semantic():
+    """Fail-safe direction: no extractable symbol on either side (a bare
+    assignment) classifies "semantic", not "write" — and an auto_merges:
+    False conflict report with an EMPTY conflicts list (un-extractable /
+    ambiguous input) fails safe the same way."""
+    _guard()
+    merge_result = {
+        "auto_merges": False,
+        "conflicts": [
+            {
+                "file": "some_module.py",
+                "ours": "x = 1\n",
+                "theirs": "x = 2\n",
+            }
+        ],
+    }
+    result = lazy_core.classify_conflict(merge_result)
+    assert result[0] == "semantic"
+
+    empty_result = lazy_core.classify_conflict({"auto_merges": False, "conflicts": []})
+    assert empty_result[0] == "semantic"
+
+
+def _write_eligible_needs_input(path: Path, *, conflict_kind: str | None = None) -> None:
+    """A NEEDS_INPUT.md that satisfies EVERY existing provisional_eligibility
+    check (kind, non-empty <=4 decisions, no completion-integrity-gate /
+    spike written_by or spike_verdict fail, no stub_origin, not two-key
+    mechanical, divergence + audit_divergence both "isolated", 1:1
+    Decision-Context H3 carrying a Recommendation block, no ## Resolution) —
+    otherwise fully eligible=True — with an OPTIONAL conflict_kind: semantic
+    frontmatter line layered on top (concurrent-worktree-agent-coordination
+    Phase 4 carve-out under test)."""
+    conflict_line = f"conflict_kind: {conflict_kind}\n" if conflict_kind else ""
+    path.write_text(
+        "---\n"
+        "kind: needs-input\n"
+        "feature_id: feat-conflict-test\n"
+        "written_by: mcp-test\n"
+        "decisions:\n"
+        "  - pick a merge resolution strategy\n"
+        f"{conflict_line}"
+        "divergence: isolated\n"
+        "audit_divergence: isolated\n"
+        "date: 2026-07-18\n"
+        "---\n\n"
+        "## Decision Context\n\n"
+        "### 1. pick a merge resolution strategy\n\n"
+        "**Problem:** two lanes edited overlapping surfaces.\n\n"
+        "**Options:**\n- **a (Recommended)** — take ours\n- **b** — take theirs\n\n"
+        "**Recommendation:** a\n",
+        encoding="utf-8",
+    )
+
+
+def test_provisional_eligibility_excludes_semantic_conflict():
+    """concurrent-worktree-agent-coordination Phase 4 carve-out: a
+    NEEDS_INPUT.md carrying conflict_kind: semantic in frontmatter is
+    INELIGIBLE for provisional acceptance, even though every other
+    eligibility check (divergence grades, decision schema, etc.) passes —
+    a semantic conflict is never a mechanical "pick the recommended option"
+    fork."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "NEEDS_INPUT.md"
+        _write_eligible_needs_input(p, conflict_kind="semantic")
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is False
+        assert "semantic conflict" in reason.lower()
+
+
+def test_provisional_eligibility_eligible_without_conflict_kind():
+    """Regression pin: the SAME fixture as
+    test_provisional_eligibility_excludes_semantic_conflict but WITHOUT the
+    conflict_kind field is fully eligible=True — proving the new carve-out
+    (and only the new carve-out) is what excludes the semantic-conflict
+    sentinel above."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "NEEDS_INPUT.md"
+        _write_eligible_needs_input(p, conflict_kind=None)
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is True
+        assert reason == "eligible"
+
+
+def _write_stub_origin_needs_input(path: Path, *, auto_generated: str | None = None,
+                                   origin: str | None = None) -> None:
+    """A NEEDS_INPUT.md that satisfies every OTHER provisional_eligibility check
+    (kind, decisions, divergence grades, Decision-Context H3 + Recommendation)
+    but carries `stub_origin: true` — normally INELIGIBLE. Optional
+    `auto_generated`/`auto_generated_origin` lines layer the claude-config
+    carve-out under test (park-provisional-parks-claude-config-auto-generated-
+    stubs)."""
+    ag_line = f"auto_generated: {auto_generated}\n" if auto_generated is not None else ""
+    origin_line = f"auto_generated_origin: {origin}\n" if origin is not None else ""
+    path.write_text(
+        "---\n"
+        "kind: needs-input\n"
+        "feature_id: adhoc-incident-test\n"
+        "written_by: spec-bug\n"
+        "decisions:\n"
+        "  - revert, redesign, or close-as-noise\n"
+        "stub_origin: true\n"
+        f"{ag_line}"
+        f"{origin_line}"
+        "divergence: isolated\n"
+        "audit_divergence: isolated\n"
+        "date: 2026-07-19\n"
+        "---\n\n"
+        "## Decision Context\n\n"
+        "### 1. revert, redesign, or close-as-noise\n\n"
+        "**Problem:** the canary tripped on an aggregate band swing.\n\n"
+        "**Options:**\n- **close-as-noise (Recommended)** — x\n- **revert** — y\n\n"
+        "**Recommendation:** close-as-noise\n",
+        encoding="utf-8",
+    )
+
+
+def _seed_claude_config_repo(root: Path) -> Path:
+    """Seed the claude-config discriminator (manifest.psd1 + user/settings.json)
+    at `root` and return a bug-dir path for a NEEDS_INPUT.md under it."""
+    (root / "manifest.psd1").write_text("@{}\n", encoding="utf-8")
+    (root / "user").mkdir(parents=True, exist_ok=True)
+    (root / "user" / "settings.json").write_text("{}\n", encoding="utf-8")
+    bug_dir = root / "docs" / "bugs" / "canary-revert-harden-x"
+    bug_dir.mkdir(parents=True, exist_ok=True)
+    return bug_dir
+
+
+def test_provisional_eligibility_auto_generated_stub_in_claude_config_eligible():
+    """park-provisional-parks-claude-config-auto-generated-stubs: a stub_origin
+    sentinel that ALSO carries auto_generated: true + a recognized origin, under
+    a claude-config checkout, is provisional-ELIGIBLE (the carve-out bypasses the
+    stub_origin exclusion)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        bug_dir = _seed_claude_config_repo(Path(td))
+        p = bug_dir / "NEEDS_INPUT.md"
+        _write_stub_origin_needs_input(
+            p, auto_generated="true", origin="canary-revert")
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is True, reason
+        assert reason == "eligible"
+
+
+def test_provisional_eligibility_genuine_operator_stub_origin_still_parks():
+    """Regression pin: the SAME claude-config fixture WITHOUT the auto_generated
+    marker (a genuine operator-requested stub) still parks — the carve-out is
+    what (and only what) rescues the auto-generated sentinel above."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        bug_dir = _seed_claude_config_repo(Path(td))
+        p = bug_dir / "NEEDS_INPUT.md"
+        _write_stub_origin_needs_input(p)  # no auto_generated fields
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is False
+        assert "stub_origin" in reason.lower()
+
+
+def test_provisional_eligibility_auto_generated_stub_outside_claude_config_parks():
+    """The carve-out is claude-config-scoped: an auto_generated stub_origin
+    sentinel with NO manifest.psd1/user/settings.json discriminator on any parent
+    still parks (the operator directive names claude-config specifically)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # Plain temp dir — no claude-config discriminator seeded.
+        bug_dir = Path(td) / "docs" / "bugs" / "canary-revert-harden-x"
+        bug_dir.mkdir(parents=True, exist_ok=True)
+        p = bug_dir / "NEEDS_INPUT.md"
+        _write_stub_origin_needs_input(
+            p, auto_generated="true", origin="canary-revert")
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is False
+        assert "stub_origin" in reason.lower()
+
+
+def test_provisional_eligibility_auto_generated_unrecognized_origin_parks():
+    """Fail-closed: auto_generated: true with an origin OUTSIDE the closed
+    harness-origin set does NOT rescue — the stub_origin exclusion stands."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        bug_dir = _seed_claude_config_repo(Path(td))
+        p = bug_dir / "NEEDS_INPUT.md"
+        _write_stub_origin_needs_input(
+            p, auto_generated="true", origin="operator-typed-thing")
+        eligible, reason = lazy_core.provisional_eligibility(p)
+        assert eligible is False
+        assert "stub_origin" in reason.lower()
+
+
 def test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo():
     _guard()
     with tempfile.TemporaryDirectory() as td:
@@ -3459,6 +3904,60 @@ def test_descoped_marker_lockstep_producer_matches_ssot():
 
 
 
+# ---------------------------------------------------------------------------
+# row_requires_host — per-row host-defer recognizer
+# (decision-2-6-uncovered-row-reroute-to-mcp-test WU-1)
+# ---------------------------------------------------------------------------
+
+def test_row_requires_host_bare_row_returns_none():
+    """A plain checkbox row with no requires-host marker → None."""
+    _guard()
+    assert lazy_core.row_requires_host("- [ ] plain verification row") is None
+
+
+def test_row_requires_host_valid_marker_returns_capability():
+    """A row carrying `<!-- requires-host: <cap> -->` (alongside the
+    verification-only marker) → the capability id."""
+    _guard()
+    row = ("- [ ] <!-- verification-only --> "
+           "<!-- requires-host: real-audio-device --> sustained-timing check")
+    assert lazy_core.row_requires_host(row) == "real-audio-device"
+
+
+def test_row_requires_host_invalid_capability_id_returns_none():
+    """A marker whose captured id is not shape-valid (`^[a-z0-9][a-z0-9-]*$`)
+    is IGNORED — a mis-shaped token is not a capability."""
+    _guard()
+    assert lazy_core.row_requires_host("- [ ] <!-- requires-host: BadId! -->") is None
+    # An empty value is likewise not a capability.
+    assert lazy_core.row_requires_host("- [ ] <!-- requires-host: -->") is None
+
+
+def test_row_requires_host_honors_header_line_text():
+    """The recognizer is position-agnostic: it returns the capability from a
+    subsection HEADER line's text too — this is what lets the WU-2 row-walk
+    honor requires-host header-scope exactly as the verification-only marker's
+    header-scope works. (mirrors remaining_unchecked_are_verification_only)."""
+    _guard()
+    header = "### Runtime Verification <!-- requires-host: gpu -->"
+    assert lazy_core.row_requires_host(header) == "gpu"
+
+
+def test_row_requires_host_is_context_free_fence_is_walk_concern():
+    """The pure recognizer has NO notion of code fences — a bare fence
+    delimiter is not a marker (→ None), and a marker line returns its cap
+    regardless of surrounding fence context. Excluding an ILLUSTRATIVE marker
+    that sits inside a ``` fence is the WU-2 row-walk's responsibility (it
+    tracks fence state), asserted in test_gates.py — not this primitive's."""
+    _guard()
+    assert lazy_core.row_requires_host("```") is None
+    # Context-free: the primitive extracts the cap even from a line a walk
+    # would treat as fenced.
+    assert lazy_core.row_requires_host("<!-- requires-host: gpu -->") == "gpu"
+
+
+
+
 def test_ctx_rebindable_globals_via_accessors():
     """The two rebindable globals _active_repo_root / _legacy_state_migrated
     must be reachable through lazy_core._ctx's accessor functions, AND a
@@ -3503,6 +4002,11 @@ def test_ctx_rebindable_globals_via_accessors():
 
 _TESTS = [
     ("test_symbols_present", test_symbols_present),
+    ("test_row_requires_host_bare_row_returns_none", test_row_requires_host_bare_row_returns_none),
+    ("test_row_requires_host_valid_marker_returns_capability", test_row_requires_host_valid_marker_returns_capability),
+    ("test_row_requires_host_invalid_capability_id_returns_none", test_row_requires_host_invalid_capability_id_returns_none),
+    ("test_row_requires_host_honors_header_line_text", test_row_requires_host_honors_header_line_text),
+    ("test_row_requires_host_is_context_free_fence_is_walk_concern", test_row_requires_host_is_context_free_fence_is_walk_concern),
     ("test_count_deliverables_empty", test_count_deliverables_empty),
     ("test_count_deliverables_mixed", test_count_deliverables_mixed),
     ("test_count_deliverables_only_unchecked", test_count_deliverables_only_unchecked),
@@ -3575,6 +4079,10 @@ _TESTS = [
     ("test_spec_status_in_progress", test_spec_status_in_progress),
     ("test_spec_status_first_occurrence_wins", test_spec_status_first_occurrence_wins),
     ("test_spec_status_superseded", test_spec_status_superseded),
+    ("test_spec_fixed_annotation_none_path", test_spec_fixed_annotation_none_path),
+    ("test_spec_fixed_annotation_absent", test_spec_fixed_annotation_absent),
+    ("test_spec_fixed_annotation_present", test_spec_fixed_annotation_present),
+    ("test_spec_fixed_annotation_first_occurrence_wins", test_spec_fixed_annotation_first_occurrence_wins),
     ("test_parse_plan_frontmatter_absent", test_parse_plan_frontmatter_absent),
     ("test_parse_plan_frontmatter_no_fence", test_parse_plan_frontmatter_no_fence),
     ("test_parse_plan_frontmatter_with_data", test_parse_plan_frontmatter_with_data),
@@ -3592,6 +4100,7 @@ _TESTS = [
     ("test_plan_sort_key_series_beats_phase", test_plan_sort_key_series_beats_phase),
     ("test_find_implementation_plans_part_series_order", test_find_implementation_plans_part_series_order),
     ("test_find_implementation_plans_non_series_phase_order_preserved", test_find_implementation_plans_non_series_phase_order_preserved),
+    ("test_rescheduled_high_series_index_part_not_prerequisite_of_lower", test_rescheduled_high_series_index_part_not_prerequisite_of_lower),
     ("test_plan_complexity_mechanical", test_plan_complexity_mechanical),
     ("test_plan_complexity_complex_explicit", test_plan_complexity_complex_explicit),
     ("test_plan_complexity_absent_defaults_complex", test_plan_complexity_absent_defaults_complex),
@@ -3651,6 +4160,21 @@ _TESTS = [
     ("test_repo_has_no_app_surface_false_with_src_tauri", test_repo_has_no_app_surface_false_with_src_tauri),
     ("test_phases_mcp_runtime_not_required_true", test_phases_mcp_runtime_not_required_true),
     ("test_phases_mcp_runtime_not_required_false_when_required_or_absent", test_phases_mcp_runtime_not_required_false_when_required_or_absent),
+    ("test_phases_spike_required_true", test_phases_spike_required_true),
+    ("test_phases_spike_required_false_when_absent_or_prose_only", test_phases_spike_required_false_when_absent_or_prose_only),
+    ("test_read_spike_decision_required_value_token_and_goal", test_read_spike_decision_required_value_token_and_goal),
+    ("test_provisional_eligibility_excludes_spike_written_by", test_provisional_eligibility_excludes_spike_written_by),
+    ("test_provisional_eligibility_excludes_spike_verdict_fail", test_provisional_eligibility_excludes_spike_verdict_fail),
+    ("test_classify_conflict_auto_merge_is_write", test_classify_conflict_auto_merge_is_write),
+    ("test_classify_conflict_shared_function_is_semantic", test_classify_conflict_shared_function_is_semantic),
+    ("test_classify_conflict_disjoint_surfaces_is_write", test_classify_conflict_disjoint_surfaces_is_write),
+    ("test_classify_conflict_ambiguous_is_semantic", test_classify_conflict_ambiguous_is_semantic),
+    ("test_provisional_eligibility_excludes_semantic_conflict", test_provisional_eligibility_excludes_semantic_conflict),
+    ("test_provisional_eligibility_eligible_without_conflict_kind", test_provisional_eligibility_eligible_without_conflict_kind),
+    ("test_provisional_eligibility_auto_generated_stub_in_claude_config_eligible", test_provisional_eligibility_auto_generated_stub_in_claude_config_eligible),
+    ("test_provisional_eligibility_genuine_operator_stub_origin_still_parks", test_provisional_eligibility_genuine_operator_stub_origin_still_parks),
+    ("test_provisional_eligibility_auto_generated_stub_outside_claude_config_parks", test_provisional_eligibility_auto_generated_stub_outside_claude_config_parks),
+    ("test_provisional_eligibility_auto_generated_unrecognized_origin_parks", test_provisional_eligibility_auto_generated_unrecognized_origin_parks),
     ("test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo", test_skip_waiver_refusal_pipeline_structural_accepts_no_surface_repo),
     ("test_skip_waiver_refusal_pipeline_structural_refuses_app_repo", test_skip_waiver_refusal_pipeline_structural_refuses_app_repo),
     ("test_skip_waiver_refusal_pipeline_structural_refuses_without_repo_root", test_skip_waiver_refusal_pipeline_structural_refuses_without_repo_root),

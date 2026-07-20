@@ -97,6 +97,43 @@ def _read_and_clear_breadcrumb() -> str | None:
 # Probe runner
 # ---------------------------------------------------------------------------
 
+def _merged_head_type(repo_root: str) -> str | None:
+    """Return the MERGED work-list head's type (``"bug"`` / ``"feature"``) or
+    ``None`` when it cannot be resolved.
+
+    dispatch-probe-and-inject-bypass-merged-head: the injected banner must
+    reflect the MERGED head (what the unified driver's ``--next-merged``
+    type-dispatch would produce), NOT the marker's sticky ``pipeline`` field.
+    Shell the canonical ``lazy-state.py --next-merged`` surface (read-only
+    ordering; it never re-infers per-item state or advances any counter) and
+    return its ``type``. Best-effort: any failure returns ``None`` so the caller
+    FAILS OPEN to the marker pipeline (a broken merged probe must never disable
+    injection or crash the hook).
+    """
+    if not repo_root:
+        return None
+    script_path = _SCRIPTS_DIR / "lazy-state.py"
+    if not script_path.exists():
+        return None
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script_path),
+             "--next-merged", "--repo-root", repo_root],
+            capture_output=True, text=True, env=dict(os.environ), timeout=30,
+        )
+        stdout = (result.stdout or "").strip()
+        if not stdout:
+            return None
+        head = json.loads(stdout)
+        if isinstance(head, dict):
+            htype = head.get("type")
+            if htype in ("bug", "feature"):
+                return htype
+        return None
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, OSError, ValueError):
+        return None
+
+
 def _run_probe(marker: dict) -> dict | None:
     """Run the full probe form of the appropriate state script.
 
@@ -112,8 +149,20 @@ def _run_probe(marker: dict) -> dict | None:
     repo_root = marker.get("repo_root", "")
     cloud = marker.get("cloud", False)
 
-    # Select the correct state script based on the pipeline type.
-    if pipeline == "bug":
+    # dispatch-probe-and-inject-bypass-merged-head: select the state script by
+    # the MERGED work-list head's TYPE, not the marker's STICKY pipeline field.
+    # The unified driver (lazy-batch/SKILL.md Step 1a) type-dispatches on the
+    # --next-merged head each cycle; the marker's pipeline is a per-run constant
+    # written once at --run-start, so a P0 bug that jumps the bug-queue head
+    # mid-feature-run would otherwise keep injecting a stale `feature` banner
+    # that the orchestrator consumes DIRECTLY (Step 1a "consume the banner, do
+    # NOT re-probe") — silently skipping the bug. Route by the merged head's
+    # type; FAIL OPEN to the marker pipeline when the merged probe can't resolve.
+    _head_type = _merged_head_type(repo_root)
+    effective_pipeline = _head_type if _head_type in ("bug", "feature") else pipeline
+
+    # Select the correct state script based on the effective (merged-head) type.
+    if effective_pipeline == "bug":
         script_name = "bug-state.py"
     else:
         script_name = "lazy-state.py"
@@ -225,7 +274,12 @@ def _live_settings_advisory(repo_root, live_path=None):
     fires every prompt-submit in a marked run."""
     try:
         ddl = _load_doc_drift_module()
-        ok, detail = ddl.live_settings_status(Path(repo_root), live_path=live_path)
+        # live-settings-probe-false-positive-in-consumer-repo (Gap 2): resolve
+        # the tracked settings SSOT against the claude-config checkout when the
+        # marked run targets a consumer repo (no user/settings.json), so the
+        # banner never false-fires 'settings drift' in AlgoBooth.
+        ssot_root = ddl.settings_ssot_root(repo_root)
+        ok, detail = ddl.live_settings_status(ssot_root, live_path=live_path)
         if ok:
             return None
         return f"⚠ live settings drift: {detail}"

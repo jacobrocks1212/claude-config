@@ -135,6 +135,48 @@ def _write_all_checked_phases(spec_dir: Path) -> Path:
 
 
 
+def test_verify_ledger_spec_md_file_arg_normalizes_to_parent_dir():
+    """A SPEC.md FILE arg yields the SAME verdict as passing the spec DIRECTORY.
+
+    Regression for bug `verify-ledger-planning-scope-and-file-arg`: verify_ledger
+    contractually takes the spec DIRECTORY (it computes `spec_path / 'PHASES.md'`),
+    but the cycle-prompt metavar reads as the SPEC.md FILE, so callers pass the
+    file. Passing the file used to yield a MISLEADING verdict against a phantom
+    `.../SPEC.md/PHASES.md`. The function now normalizes a `.md` arg to its parent
+    directory at the source, so a file arg and its parent dir agree exactly.
+
+    Fixture: the same all-green tree as test_verify_ledger_all_green_passes, plus a
+    SPEC.md file in the spec dir. Both `verify_ledger(root, dir)` and
+    `verify_ledger(root, dir / "SPEC.md")` must return ok=True with identical checks.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        _write_complete_plan(spec_dir / "plans")
+        _write_all_checked_phases(spec_dir)
+        (spec_dir / "SPEC.md").write_text("# my-feat\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo_root), "add", "-A"], check=True,
+                       capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "commit", "-q", "-m",
+                        "add feature files"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(repo_root), "push"], check=True,
+                       capture_output=True)
+
+        dir_result = lazy_core.verify_ledger(repo_root, spec_dir)
+        file_result = lazy_core.verify_ledger(repo_root, spec_dir / "SPEC.md")
+
+    assert dir_result["ok"] is True, f"dir arg should be ok=True, got {dir_result}"
+    assert file_result["ok"] is True, (
+        f"SPEC.md file arg should normalize to the dir and be ok=True, got {file_result}"
+    )
+    assert file_result["checks"] == dir_result["checks"], (
+        "file-arg and dir-arg checks must be identical after normalization: "
+        f"file={file_result['checks']} dir={dir_result['checks']}"
+    )
+
+
 def test_verify_ledger_all_green_passes():
     """All four checks true → ok=True, failing_check=None, all checks True.
 
@@ -1096,6 +1138,125 @@ def test_verify_ledger_incomplete_plan_still_fails_regression_guard():
 
 
 # ---------------------------------------------------------------------------
+# Tests: verify_ledger — deliverables_done absent-by-design (PRE-DECOMPOSITION)
+# bug `verify-ledger-deliverables-done-fails-pre-decomposition-feature`
+# ---------------------------------------------------------------------------
+#
+# The Phase-3 carve-out above taught plan_complete to distinguish
+# absent-by-design from incomplete, but the SIBLING deliverables_done check kept
+# failing unconditionally on a missing PHASES.md. A pre-decomposition feature
+# (a /realign-spec or /spec cycle on a scope stub) cannot HAVE a PHASES.md, so
+# the check failed with `rows: []` / `total: 0` — zero offending deliverables —
+# and was unreconcilable without fabricating a PHASES.md (a scope violation).
+#
+# Test (a) is the pre-decomposition pass, (b) pins the diagnostic so the
+# carve-out is never silent, and (c) is the regression guard proving the
+# carve-out is NOT a blanket "absent → pass".
+
+
+def test_verify_ledger_pre_decomposition_deliverables_not_applicable():
+    """(a) Pre-decomposition feature: NO PHASES.md and only a realign plan (no
+    implementation plan) → deliverables_done True (not-applicable) and ok True.
+
+    This is the exact live shape observed on `inspector-track-dashboard`
+    (2026-07-20): SPEC.md + plans/realign-*.md, no PHASES.md. plan_complete
+    already passed via the Phase-3 carve-out; deliverables_done must agree
+    rather than hard-fail an otherwise-clean cycle."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "SPEC.md").write_text("# Scope stub\n", encoding="utf-8")
+        plans = spec_dir / "plans"
+        plans.mkdir(parents=True)
+        # Realign plan only — find_implementation_plans / _implementation_plans_exist
+        # both skip realign-*.md, so there is NO implementation plan.
+        (plans / "realign-2026-07-20.md").write_text(
+            "---\nkind: realign-plan\nstatus: Complete\n---\n\n# Realign\n",
+            encoding="utf-8",
+        )
+        # Deliberately NO PHASES.md — the feature has not been decomposed.
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir)  # feature-level
+    assert result["checks"]["deliverables_done"] is True, (
+        f"pre-decomposition feature must be deliverables_done=True "
+        f"(not-applicable), not a hard fail: {result['checks']}"
+    )
+    assert result["ok"] is True, (
+        f"a genuinely clean pre-decomposition cycle must verify ok=True: {result}"
+    )
+    assert result["failing_detail"] == {}, result["failing_detail"]
+
+
+def test_verify_ledger_pre_decomposition_reports_not_applicable_source():
+    """(b) The pre-decomposition carve-out is never SILENT: deliverables_source
+    names the not-applicable path so operators, retro grading and incident
+    mining can see it fired."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "SPEC.md").write_text("# Scope stub\n", encoding="utf-8")
+        # No plans/ dir at all and no PHASES.md — the purest pre-decomposition
+        # shape (a feature that has only just been spec'd).
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir)  # feature-level
+    assert result["deliverables_source"].startswith("not-applicable"), (
+        f"the carve-out must announce itself via deliverables_source: {result}"
+    )
+    assert result["checks"]["deliverables_done"] is True, result["checks"]
+
+
+def test_verify_ledger_missing_phases_with_impl_plan_still_fails():
+    """(c) Regression guard: PHASES.md absent but an IMPLEMENTATION plan exists
+    → deliverables_done stays False.
+
+    Proves the carve-out is narrowly gated on `_implementation_plans_exist` and
+    is not a blanket "no PHASES.md → pass". A planned feature whose PHASES.md is
+    missing is genuinely 'no evidence phases were completed' and must keep
+    failing — otherwise this would be a gate weakening."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        plans.mkdir(parents=True)
+        # A REAL implementation plan (Complete, so plan_complete passes and
+        # deliverables_done is unambiguously the check under test).
+        (plans / "plan-phase-1.md").write_text(
+            "---\n"
+            "kind: implementation-plan\n"
+            "status: Complete\n"
+            "phases:\n"
+            "  - 1\n"
+            "---\n\n"
+            "# Implementation Plan\n",
+            encoding="utf-8",
+        )
+        # Deliberately NO PHASES.md despite the feature having been planned.
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir)  # feature-level
+    assert result["checks"]["plan_complete"] is True, (
+        f"fixture sanity — the Complete plan should pass plan_complete: "
+        f"{result['checks']}"
+    )
+    assert result["checks"]["deliverables_done"] is False, (
+        f"a PLANNED feature with a missing PHASES.md must still fail "
+        f"deliverables_done: {result['checks']}"
+    )
+    assert result["failing_check"] == "deliverables_done", result["failing_check"]
+    assert result["failing_detail"]["deliverables_done"]["note"] == "PHASES.md absent", (
+        f"the regression path keeps its original diagnostic: "
+        f"{result['failing_detail']}"
+    )
+
+
+
+
+# ---------------------------------------------------------------------------
 # Tests: verify_ledger `failing_detail` (completion-gate-refusal-opacity) —
 # every False check names the offending items, not just the boolean.
 # ---------------------------------------------------------------------------
@@ -1948,6 +2109,53 @@ def test_observation_gap_promotable_shared_predicate():
     ) is True
 
 
+def test_observation_gap_promotable_admits_build_artifact_deferred_class():
+    """Decision #13 (turn-routing-enforcement NEEDS_INPUT, harden Round 61):
+    ``build-artifact-deferred`` is an ADMISSIBLE observation-gap ``spec_class``.
+
+    The promotion predicate keys on a NON-EMPTY ``spec_class`` provenance STRING,
+    not on a closed class vocabulary — so admitting ``build-artifact-deferred``
+    (an assertion MCP-driveable only against a packaged production build, absent
+    from a dev session, already covered by the Rust/unit tier and pre-classified
+    in PHASES) needs NO gate code change; the mcp-test SKILL prose is what makes
+    it reachable. This test LOCKS that contract: if a future change closes the
+    ``spec_class`` vocabulary, it must keep ``build-artifact-deferred`` (and the
+    "Cannot Prove" no-MCP-tool class) admissible or this regression fails.
+    See docs/bugs/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/.
+    """
+    _guard()
+    ogp = lazy_core.observation_gap_promotable
+
+    # The sidecar-integrity-gate-blocks-user-modified-sidecar shape: a partial
+    # whose two uncovered rows are (row 1) a Tauri command with no registered
+    # MCP-tool mirror ("Cannot Prove") and (row 2) build-artifact-deferred.
+    assert ogp(
+        {
+            "result": "partial",
+            "pass_count": 4,
+            "total_count": 4,
+            "observation_gap_exemptions": [
+                {"surface": "sidecar-integrity-command",
+                 "spec_class": "cannot-prove — no registered MCP-tool mirror per "
+                               "docs/features/mcp-testing/SPEC.md"},
+                {"surface": "sidecar-mismatch-branch",
+                 "spec_class": "build-artifact-deferred — reachable only against a "
+                               "packaged production build; Rust-covered, PHASES-classified"},
+            ],
+        }
+    ) is True
+
+    # An all-build-artifact-deferred partial promotes identically (the class is
+    # admissible on its own, not only when paired with cannot-prove).
+    assert ogp(
+        {
+            "result": "partial",
+            "observation_gap_exemptions": [
+                {"surface": "packaged-only-branch",
+                 "spec_class": "build-artifact-deferred"},
+            ],
+        }
+    ) is True
 
 
 def test_eval_evidence_head_drift_docs_only_warn_exempt():
@@ -2746,6 +2954,77 @@ def test_gate_verdict_ok_malformed_verdict_refuses_not_crashes():
 
 
 
+def test_item_scoped_gate_report_agrees_with_ship_seam_for_merged_item():
+    """Regression pin (gate-verdict-dispatch-derives-scope-from-empty-range-for-
+    merged-item): for an item whose control-surface fix is ALREADY MERGED to
+    origin/main (origin/main..HEAD EMPTY — the range the OLD dispatch template
+    derived scope from), the completion-time authoring seam
+    (item_scoped_gate_report) MUST agree with the ship seam (gate_verdict_ok) on
+    in_scope + scope, because both derive scope from the item's OWN commit set —
+    NOT a git range that empties out once merged. Before the fix the template's
+    `harness-gate.py --range origin/main..HEAD` reported in_scope: false and the
+    subagent authored nothing, while gate_verdict_ok still demanded a verdict →
+    permanent completion deadlock."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        _gate_write_manifest(repo_root, ["scoped/**"])
+        spec_dir = _prov_spec_dir(repo_root, "feat-merged-item")
+        _prov_git_commit_file(
+            repo_root, "scoped/thing.py", "fix(feat-merged-item): work")
+        # Simulate the item's fix being fully merged + pushed: origin/main == HEAD
+        # so `origin/main..HEAD` (the OLD scope basis) is genuinely EMPTY.
+        subprocess.run(
+            ["git", "-C", str(repo_root), "update-ref",
+             "refs/remotes/origin/main", "HEAD"],
+            check=True, capture_output=True, text=True)
+        empty = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-list", "--count",
+             "origin/main..HEAD"],
+            check=True, capture_output=True, text=True).stdout.strip()
+        # The merged precondition: the OLD range basis is empty.
+        assert empty == "0", f"expected empty origin/main..HEAD, got {empty}"
+
+        gv = lazy_core.gate_verdict_ok(spec_dir, repo_root)
+        report = lazy_core.item_scoped_gate_report(spec_dir, repo_root)
+
+        # (1) The ship seam holds the item in scope even for a merged item.
+        assert gv["ok"] is False and gv["in_scope"] is True, gv
+        # (2) The authoring seam AGREES: in_scope True and a verdict is required
+        # (no GATE_VERDICT.md written), so it does NOT spuriously stop.
+        assert report["in_scope"] is True, report
+        assert report["verdict_required"] is True, report
+        # (3) The authoring seam's scope == the ship seam's own scope derivation,
+        # by construction (the SAME item-commit file list, filtered by the SAME
+        # manifest globs). This is the anti-drift pin.
+        changed = lazy_core._item_commit_touched_files(spec_dir, repo_root)
+        globs = lazy_core._load_control_surface_globs(repo_root)
+        expected_hits = sorted(
+            f for f in changed
+            if any(lazy_core._manifest_glob_match(f, g) for g in globs))
+        assert sorted(report["scope_hit"]) == expected_hits, (
+            report["scope_hit"], expected_hits)
+        assert "scoped/thing.py" in report["scope_hit"], report
+        # (4) The report carries the item's own commits it diffed over.
+        assert report.get("item_commits"), report
+
+
+def test_item_scoped_gate_report_out_of_scope_when_no_manifest():
+    """No control-surface manifest -> item_scoped_gate_report is a pure no-op
+    (in_scope False, byte-identical to a repo this gate never touched), mirroring
+    gate_verdict_ok's own no-manifest disarm."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root = Path(td)
+        _prov_git_fixture_repo(repo_root)
+        spec_dir = _prov_spec_dir(repo_root, "feat-nomanifest")
+        _prov_git_commit_file(
+            repo_root, "scoped/thing.py", "fix(feat-nomanifest): work")
+        report = lazy_core.item_scoped_gate_report(spec_dir, repo_root)
+    assert report["in_scope"] is False and report["verdict_required"] is False, report
+
+
 def test_no_duplicate_top_level_defs_in_state_scripts():
     """Self-checking meta-test: every lazy_core/ package module, lazy-state.py,
     and bug-state.py each carry ZERO duplicate top-level def/class names (the
@@ -2772,7 +3051,328 @@ def test_no_duplicate_top_level_defs_in_state_scripts():
         assert dups == [], f"{path.name}: duplicate top-level definitions: {dups}"
 
 
+# ---------------------------------------------------------------------------
+# uncovered_verification_rows_remain — the shared Step-10 re-route predicate
+# (decision-2-6-uncovered-row-reroute-to-mcp-test WU-2)
+# ---------------------------------------------------------------------------
+
+_TWO_RV_ROWS_PHASES = (
+    "# Phases\n\n"
+    "### Phase 1\n\n"
+    "**Status:** In-progress\n\n"
+    "**Deliverables:**\n\n"
+    "- [x] implement the thing\n\n"
+    "**Runtime Verification** <!-- verification-only -->\n\n"
+    "- [ ] <!-- verification-only --> scenario A passes\n"
+    "- [ ] <!-- verification-only --> scenario B passes\n"
+)
+
+
+def test_uncovered_rows_partial_evidence_reroutes_true():
+    """≥2 verification rows, evidence covers only 1 (subset all-passing) →
+    autotick's cardinality lock would abort, leaving both uncovered →
+    reroute is True and both rows are listed."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _cc_write_validated(spec_dir)
+        _write_mcp_test_results(
+            spec_dir, ["scenario-a"], result="all-passing",
+            pass_count=1, total_count=1,
+        )
+        res = lazy_core.uncovered_verification_rows_remain(
+            spec_dir, _TWO_RV_ROWS_PHASES, spec_dir,
+        )
+        assert res["reroute"] is True, res
+        assert len(res["uncovered"]) == 2, res
+
+
+def test_uncovered_rows_full_evidence_terminates():
+    """All verification rows covered (pass_count >= row count) → autotick
+    would tick them all → reroute is False (TERMINATION)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _cc_write_validated(spec_dir)
+        _write_mcp_test_results(
+            spec_dir, ["a", "b"], result="all-passing",
+            pass_count=2, total_count=2,
+        )
+        res = lazy_core.uncovered_verification_rows_remain(
+            spec_dir, _TWO_RV_ROWS_PHASES, spec_dir,
+        )
+        assert res["reroute"] is False, res
+        assert res["uncovered"] == [], res
+
+
+def test_uncovered_host_deferred_row_excluded_terminates():
+    """The only uncovered verification row carries `<!-- requires-host: <cap> -->`
+    → excluded from the re-route (clause b — a host-deferred row can never pass
+    here) → reroute is False (would otherwise loop /mcp-test forever)."""
+    _guard()
+    phases = (
+        "# Phases\n\n### Phase 1\n\n**Status:** In-progress\n\n"
+        "- [x] implement\n\n"
+        "**Runtime Verification** <!-- verification-only -->\n\n"
+        "- [ ] <!-- verification-only --> <!-- requires-host: real-audio-device --> "
+        "sustained-timing on a real device\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _cc_write_validated(spec_dir)
+        # No MCP_TEST_RESULTS.md → evaluate_completion_evidence refuses →
+        # pass_count coerced to 0 → the single row is uncovered but host-deferred.
+        res = lazy_core.uncovered_verification_rows_remain(
+            spec_dir, phases, spec_dir,
+        )
+        assert res["reroute"] is False, res
+        assert res["uncovered"] == [], res
+
+
+def test_uncovered_observation_gap_partial_excluded_terminates():
+    """A sanctioned observation-gap partial (result: partial + every exemption
+    carries a spec_class) exempts its scope wholesale → reroute is False even
+    with an uncovered verification row present (clause a)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _cc_write_validated(spec_dir)
+        _write_mcp_test_results_with_exemptions(
+            spec_dir, ["a"],
+            exemptions=[{"surface": "ui-only", "spec_class": "unit-tier-locked"}],
+            result="partial", pass_count=1, total_count=1,
+        )
+        res = lazy_core.uncovered_verification_rows_remain(
+            spec_dir, _TWO_RV_ROWS_PHASES, spec_dir,
+        )
+        assert res["reroute"] is False, res
+
+
+def test_uncovered_superseded_and_descoped_rows_terminate():
+    """Unchecked verification rows that live only inside a Superseded phase or
+    under a `<!-- descoped -->` header are not-to-be-done → collected as zero
+    candidates → reroute is False."""
+    _guard()
+    phases = (
+        "# Phases\n\n"
+        "### Phase 1\n\n**Status:** Superseded\n\n"
+        "**Runtime Verification** <!-- verification-only -->\n\n"
+        "- [ ] <!-- verification-only --> superseded RV row\n\n"
+        "### Phase 2\n\n**Status:** In-progress\n\n"
+        "**Dropped work** <!-- descoped -->\n\n"
+        "- [ ] <!-- verification-only --> descoped RV row\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _cc_write_validated(spec_dir)
+        res = lazy_core.uncovered_verification_rows_remain(
+            spec_dir, phases, spec_dir,
+        )
+        assert res["reroute"] is False, res
+        assert res["uncovered"] == [], res
+
+
+def test_uncovered_predicate_is_evidence_driven_not_validated_gated():
+    """CALLER PRECONDITION (documentation test): "no VALIDATED.md" is the
+    Step-10 ENTRY gate's concern, NOT this predicate's. The predicate reasons
+    purely over PHASES + recorded MCP evidence — with no VALIDATED.md AND no
+    passing results, an uncovered matrix still yields reroute True (evidence,
+    not VALIDATED presence, drives it). It always returns the three keys and
+    never raises."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)  # deliberately NO VALIDATED.md, NO results
+        res = lazy_core.uncovered_verification_rows_remain(
+            spec_dir, _TWO_RV_ROWS_PHASES, spec_dir,
+        )
+        assert set(res.keys()) >= {"reroute", "uncovered", "reason"}, res
+        assert res["reroute"] is True, res
+
+
+# ---------------------------------------------------------------------------
+# Tests: is_fixed_unreconciled / format_fixed_unreconciled_blocker
+# (adhoc-plan-bug-no-guard-for-fixed-annotated-specs Phase 1) — the
+# already-implemented-but-unreconciled predicate + its canonical BLOCKED.md.
+# ---------------------------------------------------------------------------
+
+
+def _write_valid_fixed_receipt(spec_dir: Path) -> None:
+    """Write a content-valid FIXED.md receipt (kind: fixed + non-empty provenance)."""
+    (spec_dir / "FIXED.md").write_text(
+        "---\n"
+        "kind: fixed\n"
+        "feature_id: some-bug\n"
+        "provenance: pipeline-gated\n"
+        "---\n\n"
+        "# Fixed\n",
+        encoding="utf-8",
+    )
+
+
+def _write_concluded_fixed_annotated_spec(spec_dir: Path) -> None:
+    (spec_dir / "SPEC.md").write_text(
+        "**Status:** Concluded\n"
+        "**Fixed:** 2026-07-18 - implemented out-of-pipeline\n\n"
+        "## Proven Findings\n\nTraced.\n",
+        encoding="utf-8",
+    )
+
+
+def test_is_fixed_unreconciled_true_concluded_annotated_no_receipt():
+    """Concluded + **Fixed:** annotation + no FIXED.md → True."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _write_concluded_fixed_annotated_spec(spec_dir)
+        assert lazy_core.is_fixed_unreconciled(spec_dir, spec_dir) is True
+
+
+def test_is_fixed_unreconciled_false_status_already_fixed():
+    """A status already flipped to Fixed → False (past planning)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(
+            "**Status:** Fixed\n"
+            "**Fixed:** 2026-07-18 - implemented out-of-pipeline\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.is_fixed_unreconciled(spec_dir, spec_dir) is False
+
+
+def test_is_fixed_unreconciled_false_no_annotation():
+    """Concluded but NO **Fixed:** annotation → False (ordinary plannable bug)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(
+            "**Status:** Concluded\n\n## Proven Findings\n\nTraced.\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.is_fixed_unreconciled(spec_dir, spec_dir) is False
+
+
+def test_is_fixed_unreconciled_false_valid_receipt_present():
+    """A valid FIXED.md receipt present → False (already reconciled)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _write_concluded_fixed_annotated_spec(spec_dir)
+        _write_valid_fixed_receipt(spec_dir)
+        assert lazy_core.is_fixed_unreconciled(spec_dir, spec_dir) is False
+
+
+def test_is_fixed_unreconciled_false_archived_dir():
+    """A dir under docs/bugs/_archive/ → False (defensively excluded)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td) / "docs" / "bugs" / "_archive" / "some-bug"
+        spec_dir.mkdir(parents=True)
+        _write_concluded_fixed_annotated_spec(spec_dir)
+        assert lazy_core.is_fixed_unreconciled(spec_dir, Path(td)) is False
+
+
+def test_format_fixed_unreconciled_blocker_shape():
+    """The formatter returns valid sentinel frontmatter (kind: blocked +
+    blocker_kind: fixed-unreconciled) and a body naming the reconciliation remedy."""
+    _guard()
+    body = lazy_core.format_fixed_unreconciled_blocker(
+        "some-bug", "2026-07-18 - implemented out-of-pipeline",
+    )
+    assert body.startswith("---\n"), body[:20]
+    assert "kind: blocked\n" in body, body
+    assert "blocker_kind: fixed-unreconciled\n" in body, body
+    assert "feature_id: some-bug\n" in body, body
+    # Body carries the remedy vocabulary (reconcile-or-clear).
+    assert "--archive-fixed" in body, body
+    assert "FIXED.md" in body, body
+
+
+# ---------------------------------------------------------------------------
+# Tests: GAP 2 — is_fixed_unreconciled ALSO keys on a `## Fix (implemented …)`
+# heading (adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps).
+# ---------------------------------------------------------------------------
+
+
+def test_spec_fix_implemented_heading_reader():
+    """spec_fix_implemented_heading returns the heading text, else None."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(
+            "**Status:** Concluded\n\n## Fix (implemented 2026-07-10)\n\nLanded.\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.spec_fix_implemented_heading(spec_dir) == "## Fix (implemented 2026-07-10)"
+    with tempfile.TemporaryDirectory() as td2:
+        spec_dir2 = Path(td2)
+        (spec_dir2 / "SPEC.md").write_text("**Status:** Concluded\n", encoding="utf-8")
+        assert lazy_core.spec_fix_implemented_heading(spec_dir2) is None
+
+
+def test_is_fixed_unreconciled_true_fix_implemented_heading():
+    """Concluded + `## Fix (implemented …)` heading (NO inline **Fixed:**) + no
+    receipt → True — the GAP-2 second out-of-pipeline-fix signal."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(
+            "**Status:** Concluded\n\n## Fix (implemented 2026-07-10)\n\nPester 8/8.\n",
+            encoding="utf-8",
+        )
+        assert lazy_core.is_fixed_unreconciled(spec_dir, spec_dir) is True
+
+
+# ---------------------------------------------------------------------------
+# Tests: GAP 3 — spec_path polymorphism (normalize_item_dir + gate_coverage
+# accept EITHER a dir or a SPEC.md file positional).
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_item_dir_accepts_dir_or_spec_md_file():
+    _guard()
+    base = Path("/repo/docs/bugs/some-bug")
+    assert lazy_core.normalize_item_dir(base) == base
+    assert lazy_core.normalize_item_dir(base / "SPEC.md") == base
+    assert lazy_core.normalize_item_dir(None) is None
+    # A non-SPEC.md .md path is NOT re-rooted (conservative).
+    plan = base / "plans" / "part-1.md"
+    assert lazy_core.normalize_item_dir(plan) == plan
+
+
+def test_gate_coverage_accepts_spec_md_file_positional():
+    """gate_coverage(dir/SPEC.md) == gate_coverage(dir) — GAP 3 normalization."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        (spec_dir / "SPEC.md").write_text(
+            "**Status:** Concluded\n\n## Locked Decisions\n\nNone.\n",
+            encoding="utf-8",
+        )
+        as_dir = lazy_core.gate_coverage(spec_dir)
+        as_file = lazy_core.gate_coverage(spec_dir / "SPEC.md")
+        assert as_dir == as_file, (as_dir, as_file)
+        assert as_dir["ok"] is True
+
+
 _TESTS = [
+    ("test_spec_fix_implemented_heading_reader", test_spec_fix_implemented_heading_reader),
+    ("test_is_fixed_unreconciled_true_fix_implemented_heading", test_is_fixed_unreconciled_true_fix_implemented_heading),
+    ("test_normalize_item_dir_accepts_dir_or_spec_md_file", test_normalize_item_dir_accepts_dir_or_spec_md_file),
+    ("test_gate_coverage_accepts_spec_md_file_positional", test_gate_coverage_accepts_spec_md_file_positional),
+    ("test_uncovered_rows_partial_evidence_reroutes_true", test_uncovered_rows_partial_evidence_reroutes_true),
+    ("test_uncovered_rows_full_evidence_terminates", test_uncovered_rows_full_evidence_terminates),
+    ("test_uncovered_host_deferred_row_excluded_terminates", test_uncovered_host_deferred_row_excluded_terminates),
+    ("test_uncovered_observation_gap_partial_excluded_terminates", test_uncovered_observation_gap_partial_excluded_terminates),
+    ("test_uncovered_superseded_and_descoped_rows_terminate", test_uncovered_superseded_and_descoped_rows_terminate),
+    ("test_uncovered_predicate_is_evidence_driven_not_validated_gated", test_uncovered_predicate_is_evidence_driven_not_validated_gated),
+    ("test_is_fixed_unreconciled_true_concluded_annotated_no_receipt", test_is_fixed_unreconciled_true_concluded_annotated_no_receipt),
+    ("test_is_fixed_unreconciled_false_status_already_fixed", test_is_fixed_unreconciled_false_status_already_fixed),
+    ("test_is_fixed_unreconciled_false_no_annotation", test_is_fixed_unreconciled_false_no_annotation),
+    ("test_is_fixed_unreconciled_false_valid_receipt_present", test_is_fixed_unreconciled_false_valid_receipt_present),
+    ("test_is_fixed_unreconciled_false_archived_dir", test_is_fixed_unreconciled_false_archived_dir),
+    ("test_format_fixed_unreconciled_blocker_shape", test_format_fixed_unreconciled_blocker_shape),
+    ("test_verify_ledger_spec_md_file_arg_normalizes_to_parent_dir", test_verify_ledger_spec_md_file_arg_normalizes_to_parent_dir),
     ("test_verify_ledger_all_green_passes", test_verify_ledger_all_green_passes),
     ("test_verify_ledger_dirty_tree_fails", test_verify_ledger_dirty_tree_fails),
     ("test_verify_ledger_behind_origin_fails", test_verify_ledger_behind_origin_fails),
@@ -2797,6 +3397,9 @@ _TESTS = [
     ("test_verify_ledger_plan_less_feature_absent_by_design_passes", test_verify_ledger_plan_less_feature_absent_by_design_passes),
     ("test_verify_ledger_realign_only_feature_absent_by_design_passes", test_verify_ledger_realign_only_feature_absent_by_design_passes),
     ("test_verify_ledger_incomplete_plan_still_fails_regression_guard", test_verify_ledger_incomplete_plan_still_fails_regression_guard),
+    ("test_verify_ledger_pre_decomposition_deliverables_not_applicable", test_verify_ledger_pre_decomposition_deliverables_not_applicable),
+    ("test_verify_ledger_pre_decomposition_reports_not_applicable_source", test_verify_ledger_pre_decomposition_reports_not_applicable_source),
+    ("test_verify_ledger_missing_phases_with_impl_plan_still_fails", test_verify_ledger_missing_phases_with_impl_plan_still_fails),
     ("test_verify_ledger_failing_detail_empty_when_ok", test_verify_ledger_failing_detail_empty_when_ok),
     ("test_verify_ledger_failing_detail_clean_tree_names_dirty_files", test_verify_ledger_failing_detail_clean_tree_names_dirty_files),
     ("test_verify_ledger_failing_detail_head_matches_origin_ahead_behind", test_verify_ledger_failing_detail_head_matches_origin_ahead_behind),
@@ -2832,6 +3435,7 @@ _TESTS = [
     ("test_eval_evidence_observation_gap_partial_with_failure_refuses", test_eval_evidence_observation_gap_partial_with_failure_refuses),
     ("test_eval_evidence_observation_gap_partial_no_provenance_refuses", test_eval_evidence_observation_gap_partial_no_provenance_refuses),
     ("test_observation_gap_promotable_shared_predicate", test_observation_gap_promotable_shared_predicate),
+    ("test_observation_gap_promotable_admits_build_artifact_deferred_class", test_observation_gap_promotable_admits_build_artifact_deferred_class),
     ("test_eval_evidence_head_drift_docs_only_warn_exempt", test_eval_evidence_head_drift_docs_only_warn_exempt),
     ("test_eval_evidence_head_drift_source_refuses", test_eval_evidence_head_drift_source_refuses),
     ("test_eval_evidence_neither_present_refuses", test_eval_evidence_neither_present_refuses),
@@ -2869,6 +3473,8 @@ _TESTS = [
     ("test_gate_verdict_ok_unsigned_gate_weakening_refuses", test_gate_verdict_ok_unsigned_gate_weakening_refuses),
     ("test_gate_verdict_ok_signed_gate_weakening_ok", test_gate_verdict_ok_signed_gate_weakening_ok),
     ("test_gate_verdict_ok_malformed_verdict_refuses_not_crashes", test_gate_verdict_ok_malformed_verdict_refuses_not_crashes),
+    ("test_item_scoped_gate_report_agrees_with_ship_seam_for_merged_item", test_item_scoped_gate_report_agrees_with_ship_seam_for_merged_item),
+    ("test_item_scoped_gate_report_out_of_scope_when_no_manifest", test_item_scoped_gate_report_out_of_scope_when_no_manifest),
     ("test_no_duplicate_top_level_defs_in_state_scripts", test_no_duplicate_top_level_defs_in_state_scripts),
 ]
 

@@ -1,5 +1,6 @@
   [fresh-queue] cloud=False skip_nr=False real_device=True: Step 4: no SPEC, no research
   [blocker] cloud=False skip_nr=False real_device=True: Step 3: blocked
+  [spike-blocker-resolver] cloud=False skip_nr=False real_device=True: Step 3: spike verdict pending (blocked resolver)
   [misnamed-blocker-stray] cloud=False skip_nr=False real_device=True: Step 3: mis-named blocker
   [misnamed-blocker-resolved-only] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
   [misnamed-blocker-canonical-precedence] cloud=False skip_nr=False real_device=True: Step 3: blocked
@@ -12,6 +13,10 @@
   [workstation-verification-only-bold-marker] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
   [workstation-all-plans-complete-real-unchecked] cloud=False skip_nr=False real_device=True: Step 7a: write plan
   [superseded-phase-unchecked] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
+  [step10-uncovered-reroute] cloud=False skip_nr=False real_device=True: Step 10: re-route to mcp-test (uncovered verification rows)
+  [step10-covered-terminates] cloud=False skip_nr=False real_device=True: Step 10: mark complete
+  [step10-host-deferred-terminates] cloud=False skip_nr=False real_device=True: Step 10: mark complete
+  [step10-no-mcp-surface-no-reroute] cloud=False skip_nr=False real_device=True: Step 10: mark complete
   [adhoc-brief] cloud=False skip_nr=False real_device=True: Step 4: ad-hoc brief → spec
   [all-complete] cloud=False skip_nr=False real_device=True: all-features-complete
   [needs-research] cloud=False skip_nr=False real_device=True: Step 5: prompt exists, awaiting research
@@ -44,6 +49,8 @@
   [phases-complete-retro-done] cloud=False skip_nr=False real_device=True: Step 9: run MCP tests
   [phases-complete-no-retro-done-cloud] cloud=True skip_nr=False real_device=True: Step 9: cloud defers MCP test
   [phases-complete-retro-done-cloud] cloud=True skip_nr=False real_device=True: Step 9: cloud defers MCP test
+  [spike-required-no-verdict] cloud=False skip_nr=False real_device=True: Step 9.5: spike verdict pending
+  [spike-required-pass-verdict] cloud=False skip_nr=False real_device=True: Step 10: mark complete
   [cloud-saturated-in-progress-plan] cloud=True skip_nr=False real_device=True: Step 7a: flip plan Complete (cloud-saturated)
   [cloud-in-progress-plan-not-saturated] cloud=True skip_nr=False real_device=True: Step 7a: execute plan
   [workstation-in-progress-plan-with-deferred] cloud=False skip_nr=False real_device=True: Step 7a: execute plan
@@ -77,6 +84,9 @@
   [stale-empty-scope-all-plan-wus-checked-flips] cloud=False skip_nr=False real_device=True: Step 7a: flip plan Complete (stale — all referenced implementation deliverables already checked)
   [realign-hash-gate-detects-changed-upstream] cloud=False skip_nr=False real_device=True: Step 4.6: upstream realign needed
   [stale-upstream-auto-wired-at-probe] cloud=False skip_nr=False real_device=True: Step 2.9: stale-upstream
+  [operator-deferred-skip] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
+  [all-operator-deferred] cloud=False skip_nr=False real_device=True: All remaining features are operator-deferred
+  [operator-deferred-control] cloud=False skip_nr=False real_device=True: Step 5: generate research prompt
   PASS [step10-unexpected-writes-needs-input] _write_step10_needs_input writes well-formed NEEDS_INPUT.md
   PASS [realign-fresh-hashless-upstream-not-stale] hashless upstream skipped; real drift still stale
   [per-feature-counter] per_feature_forward_cycles rides both advance triggers, meta-exempt, per-feature keyed: ok
@@ -95,6 +105,7 @@
 }
   [enqueue-deps] --deps stored on the ad-hoc entry + reserved prefix refused: ok
   [sync-deps] cycle-subagent exit-3 refusal + hard-only projection + idempotent noop: ok
+  PASS [resolve-ref-cli]
 {
   "error": "feature_id already queued: adhoc-test",
   "path": "<TMP>/lazy-state-fixtures-XXXXXXXX/enqueue-test/docs/features/queue.json"
@@ -129,6 +140,8 @@
   PASS [scoped-cloud-saturated-identity] scoped cloud query returns feat-sc + scoped terminal
   PASS [scoped-device-saturated-identity] scoped device query returns feat-sd + scoped terminal
   PASS [scoped-host-capability-identity] scoped host-capability query returns feat-sh + scoped terminal
+  PASS [scoped-operator-deferred-identity] scoped operator-deferred query returns feat-sod + scoped terminal
+  PASS [unscoped-operator-deferred-regression] unscoped returns global all-remaining-deferred
   PASS [park-needs-input-default-halt] default: terminal_reason='needs-input', parked key absent=True
   PASS [park-needs-input-mode-skip] park mode: dispatched='feat-after', parked count=1
   PASS [park-needs-input-resolved-reenter] resolved: dispatched='feat-parked', parked=[]
@@ -167,5 +180,6 @@
   PASS [record-intervention-hardening-undeclared-explicit-ok] (non-regression guard for the explicit escape hatch)
   PASS [record-intervention-unknown-event-rejected]
   PASS [did-you-mean-cli-suggestion]
+  PASS [concurrent-writer-commits-carve-out] concurrent-writer commits suppressed via committer-email carve-out
 
 All smoke tests passed.

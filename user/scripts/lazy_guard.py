@@ -280,6 +280,44 @@ def _hardening_cap_deny_reason() -> str:
     return _HARDENING_DEPTH_CAP_REASON
 
 
+def _subagent_model_improvisation_deny_reason(cycle: dict) -> str:
+    """Return the SELF-ANNOUNCING deny reason for the improvisation-caught case:
+    an unregistered Agent prompt dispatched under an ACTIVE ``subagent_model: true``
+    cycle whose OWN emitted ``cycle_prompt`` has NOT been consumed yet (the 2b
+    consumed-fence FALSE branch — dispatch-guard-improvisation-deny-not-self-announcing).
+
+    Structural meaning (why this reason is safe to name a SPECIFIC mistake):
+    session tool calls are serial and the cycle worker only exists AFTER its
+    emission is consumed, so an unregistered prompt arriving while (marker active
+    AND subagent_model AND emission NOT consumed) can ONLY be the orchestrator
+    composing the dispatched skill's INTERNAL sub-subagent worker prompt itself
+    (``/execute-plan``'s test-agent/impl-agent split, an Explore fan-out, …)
+    instead of dispatching the single emitted ``cycle_prompt`` to ONE subagent.
+
+    The generic ``_CORRECTIVE_RECIPE`` is still appended verbatim (the corrective
+    path — re-probe / hardening routing — is identical). This helper only PREPENDS
+    the specific diagnosis so the deny self-announces the exact orchestrator error.
+    The deny VERDICT and debt semantics are unchanged at the call site (routed via
+    the same ``_deny_default`` as the generic path) — this is a message upgrade,
+    NOT a gate change.
+    """
+    sub_skill = cycle.get("sub_skill") or "the dispatched skill"
+    feature_id = cycle.get("feature_id") or "?"
+    return (
+        f"orchestrator-improvised sub-subagent dispatch — an active '{sub_skill}' "
+        f"cycle (feature '{feature_id}') declares a sub-subagent model but its OWN "
+        "emitted cycle_prompt has NOT been dispatched/consumed yet, so NO cycle "
+        "worker is in flight and this unregistered Agent prompt can only be the "
+        f"orchestrator composing '{sub_skill}''s INTERNAL worker prompt itself "
+        "(e.g. the test-agent/impl-agent split, an Explore fan-out). The orchestrator "
+        "dispatches EXACTLY ONE Agent per cycle: dispatch the SINGLE emitted "
+        f"cycle_prompt VERBATIM to ONE subagent — the '{sub_skill}' SUBAGENT performs "
+        "its own test-agent/impl-agent (or Explore) split INTERNALLY once running; do "
+        "NOT compose or dispatch the subagent's worker prompts yourself. Standard "
+        "recovery: "
+    ) + _CORRECTIVE_RECIPE
+
+
 def _transcription_slip_deny_reason() -> str:
     """F2c (lazy-validation-readiness Phase 2): return the cheap-deny reason for a
     shape-(a) transcription-slip denial.
@@ -533,6 +571,78 @@ def _try_auto_readmit(
     except Exception:  # noqa: BLE001
         # FAIL-OPEN to DENY: any error here must fall through to the normal deny,
         # never to a spurious allow.
+        return None
+
+
+def _try_claude_code_guide_consult(
+    tool_input: dict,
+    marker: dict,
+    tool_use_id: str,
+    sha: str,
+    session_id: str | None,
+) -> str | None:
+    """harden-hard-parks-on-unconfirmed-platform-assumptions (operator-authorized
+    2026-07-19): ALLOW an unregistered Agent dispatch whose ``subagent_type`` is
+    ``claude-code-guide``, so the ``/harden-harness`` self-resolve protocol can
+    CONSULT the read-only claude-code-guide agent to confirm a platform /
+    Claude-Code capability before provisionally accepting a design fork.
+
+    Why this is a SANCTIONED path, NOT a gate-weakening (Prohibition #2): the
+    validate-deny gate exists to stop a runaway subagent from improvising
+    pipeline-ADVANCING dispatches / routing ops.  ``claude-code-guide`` is a
+    read-only agent (Glob / Grep / Read / WebFetch / WebSearch) that cannot commit,
+    route the pipeline, or mutate state — admitting it advances nothing.  It is the
+    direct analog of the 2026-07-09 decision allowing read-only Explore fan-outs and
+    the branch-2b workstation sub-subagent exemption below.
+
+    Fenced like branch 2b so it can never fire pre-bind or from a bystander:
+      1. WORKSTATION run — the marker's ``cloud`` flag is falsy (cloud keeps the
+         inline-override ban).
+      2. The run marker is BOUND (``session_id`` non-None — an orchestrator allow
+         already stamped it; pre-bind, no worker can be in flight).
+      3. ``tool_input.subagent_type == "claude-code-guide"`` (exact match).  A bare
+         ``@@lazy-ref`` prompt was already hard-denied above, so this branch only
+         ever admits a real consultation dispatch.
+
+    Every allow is audited to the deny ledger (``claude_code_guide_consult: true``,
+    pre-acked — no hardening debt).
+
+    FAIL-CLOSED: any error falls through to the caller's deny paths (never a
+    spurious allow; the guard's outer fail-OPEN contract is unchanged).
+
+    Returns the allow JSON string on a sanctioned match, else None.
+    """
+    try:
+        if tool_input.get("subagent_type") != "claude-code-guide":
+            return None
+        if marker.get("cloud") or marker.get("session_id") is None:
+            return None
+        # Best-effort context for the audit event (never blocks the allow).
+        try:
+            cycle = lazy_core.read_cycle_marker()
+        except Exception:  # noqa: BLE001
+            cycle = None
+        item_id = cycle.get("feature_id") if isinstance(cycle, dict) else None
+        sub_skill = cycle.get("sub_skill") if isinstance(cycle, dict) else None
+        try:
+            lazy_core.append_claude_code_guide_consult_event(
+                tool_use_id=tool_use_id, sha12=sha[:12],
+                item_id=item_id, sub_skill=sub_skill,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        # Phase 9 parity: an allow binds an unbound marker (best-effort/fail-open).
+        _bind_marker_on_allow(session_id)
+        reason = (
+            "claude-code-guide consultation allowed — a read-only platform / "
+            "Claude-Code capability check (subagent_type=claude-code-guide) under a "
+            "bound workstation marker; sanctioned for the /harden-harness "
+            "self-resolve protocol, audited as claude_code_guide_consult "
+            f"(prompt sha12 {sha[:12]})"
+        )
+        return _allow_json(reason)
+    except Exception:  # noqa: BLE001
+        # Fail-closed for the exemption: fall through to the deny paths.
         return None
 
 
@@ -874,6 +984,20 @@ def guard(stdin_text: str) -> str | None:
                 tool_use_id=tool_use_id, sha=sha, prompt=prompt,
             )
 
+    # --- 2a. Sanctioned claude-code-guide consultation exemption. -------------
+    # harden-hard-parks-on-unconfirmed-platform-assumptions (operator-authorized
+    # 2026-07-19): a read-only platform-capability check the /harden-harness
+    # self-resolve protocol requires — ALLOW an unregistered dispatch whose
+    # subagent_type is claude-code-guide under a bound workstation marker.  Placed
+    # before branch 2b so the consultation is admitted regardless of whether the
+    # active cycle declares subagent_model (a harden-harness cycle does not, and an
+    # observed-friction background harden may run under no cycle of its own).
+    guide = _try_claude_code_guide_consult(
+        tool_input, marker, tool_use_id, sha, session_id,
+    )
+    if guide is not None:
+        return guide
+
     # --- 2b. Workstation sub-subagent exemption. ------------------------------
     # dispatch-guard-denies-workstation-subsubagent-split (decision 4 resolution,
     # 2026-07-10): the workstation-recursive-subagent-dispatch feature (5ff570b)
@@ -920,25 +1044,39 @@ def guard(stdin_text: str) -> str | None:
             and marker.get("session_id") is not None
         ):
             cycle = lazy_core.read_cycle_marker()
-            if (
-                cycle is not None
-                and cycle.get("subagent_model") is True
-                and lazy_core.emission_consumed_by_nonce(cycle.get("nonce"))
-            ):
-                lazy_core.append_worker_subdispatch_event(
-                    tool_use_id=tool_use_id,
-                    sha12=sha[:12],
-                    item_id=cycle.get("feature_id"),
-                    sub_skill=cycle.get("sub_skill"),
+            if cycle is not None and cycle.get("subagent_model") is True:
+                if lazy_core.emission_consumed_by_nonce(cycle.get("nonce")):
+                    lazy_core.append_worker_subdispatch_event(
+                        tool_use_id=tool_use_id,
+                        sha12=sha[:12],
+                        item_id=cycle.get("feature_id"),
+                        sub_skill=cycle.get("sub_skill"),
+                    )
+                    reason = (
+                        "workstation sub-subagent dispatch allowed — active cycle "
+                        f"marker ({cycle.get('feature_id')}, sub_skill "
+                        f"{cycle.get('sub_skill')}) declares a sub-subagent model "
+                        "and its cycle dispatch is consumed (worker in flight); "
+                        f"prompt sha12 {sha[:12]} audited as worker_subdispatch"
+                    )
+                    return _allow_json(reason)
+                # --- 2b(improv). Consumed fence FALSE → improvisation-caught. -----
+                # dispatch-guard-improvisation-deny-not-self-announcing: the cycle
+                # is armed (subagent_model) but its OWN emitted cycle_prompt has NOT
+                # been consumed, so NO worker is in flight (session calls are serial;
+                # the worker only exists after its emission is consumed).  This
+                # unregistered Agent prompt can ONLY be the orchestrator improvising
+                # the dispatched skill's INTERNAL sub-subagent split at the
+                # orchestrator level.  DENY exactly as the generic site below (verdict
+                # + debt semantics UNCHANGED — routed via _deny_default; a bound
+                # marker still accrues hardening debt), but with a SELF-ANNOUNCING
+                # reason that names the specific mistake + the single-cycle_prompt
+                # corrective.  This is a message upgrade, NOT a gate change.
+                return _deny_default(
+                    marker,
+                    _subagent_model_improvisation_deny_reason(cycle),
+                    tool_use_id=tool_use_id, sha=sha, prompt=prompt,
                 )
-                reason = (
-                    "workstation sub-subagent dispatch allowed — active cycle "
-                    f"marker ({cycle.get('feature_id')}, sub_skill "
-                    f"{cycle.get('sub_skill')}) declares a sub-subagent model "
-                    "and its cycle dispatch is consumed (worker in flight); "
-                    f"prompt sha12 {sha[:12]} audited as worker_subdispatch"
-                )
-                return _allow_json(reason)
     except Exception:  # noqa: BLE001
         # Fail-closed for the exemption: fall through to the deny paths below.
         pass

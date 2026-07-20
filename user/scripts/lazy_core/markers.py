@@ -57,6 +57,7 @@ from .statedir import (
 )
 from .docmodel import (
     _plan_phase_set,
+    _plan_status,
     remaining_unchecked_are_verification_only,
 )
 from .gates import _plan_wu_checkbox_counts
@@ -71,6 +72,76 @@ from .dispatch import (
     skill_declares_multi_commit,
     skill_declares_subagent_model,
 )
+
+
+# ---------------------------------------------------------------------------
+# execute-plan pause-vs-terminal liveness discriminator
+# (docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke,
+#  Phase 1 / Gap 2 — the load-bearing half).
+# ---------------------------------------------------------------------------
+
+# The execute-plan run marker is written by /execute-plan Step 1d at
+# `~/.claude/state/execute-plan/<md5(repo_root)[:12]>.json` (present iff a run
+# is IN FLIGHT, removed only at genuine completion / on a BLOCKED.md /
+# NEEDS_INPUT.md halt — see execute-plan/SKILL.md L103-111,190). It is DISTINCT
+# from the lazy run marker: a FIXED `execute-plan/` subdir, keyed by md5 of the
+# repo-root STRING (NOT the sha1 repo_key), and NOT under the per-repo keyed
+# state dir. Base honors LAZY_STATE_DIR (hermetic tests / hook pipe-tests) and
+# defaults to ~/.claude/state in production — matching the SKILL's bash recipe
+# `printf '%s' "$root" | md5sum | cut -c1-12`.
+def _execute_plan_marker_path(repo_root: str) -> Path:
+    base = os.environ.get("LAZY_STATE_DIR") or os.path.join(
+        os.path.expanduser("~"), ".claude", "state"
+    )
+    key = hashlib.md5(str(repo_root).encode("utf-8")).hexdigest()[:12]
+    return Path(base) / "execute-plan" / f"{key}.json"
+
+
+def execute_plan_liveness(repo_root: str, plan_path: str) -> dict:
+    """Return a pause-vs-terminal verdict for a just-returned /execute-plan
+    cycle, encoding the ``dispatched-agent-liveness.md`` authoritative-completion
+    signal recipe (marker present ⇒ NOT done; plan ``status: Complete`` ⇒ done):
+
+        {"marker_present": bool,
+         "plan_status": str | None,
+         "verdict": "paused" | "terminal" | "wedge-candidate"}
+
+    Decision rule:
+      * execute-plan marker ABSENT (no in-flight run for this repo)  → ``terminal``
+      * marker present AND plan ``status: Complete``                 → ``terminal``
+      * marker present AND plan status not Complete                  → ``paused``
+
+    FAIL-SAFE — bias to the SAFE / legacy behavior: ANY read error (an
+    unreadable / missing plan file, a bad marker, an unexpected exception)
+    resolves to ``terminal`` so a legitimate recovery is NEVER suppressed on an
+    unreadable signal (an over-suppressed recovery would strand a genuinely
+    resultless cycle; an over-eager recovery is merely the pre-fix behavior).
+
+    The marker read is NON-DESTRUCTIVE (a plain ``os.path.isfile`` presence
+    check + no delete) — this is a probe, never a mutation.
+
+    ``"wedge-candidate"`` is RESERVED for the orchestrator's bounded-wait
+    genuine-wedge escalation (marker persisting with NO live descendant after a
+    bounded wait — ``dispatched-agent-liveness.md`` §57-62); the pure function
+    CANNOT observe live descendants, so it never returns that value in v1.
+    """
+    result: dict = {"marker_present": False, "plan_status": None,
+                    "verdict": "terminal"}
+    try:
+        marker_path = _execute_plan_marker_path(repo_root)
+        if not marker_path.is_file():
+            return result  # no in-flight run → terminal (legacy recovery path)
+        result["marker_present"] = True
+        plan_p = Path(plan_path)
+        if not plan_p.is_file():
+            return result  # fail-safe: unreadable/missing plan → terminal
+        status = _plan_status(plan_p)
+        result["plan_status"] = status
+        result["verdict"] = "terminal" if status == "Complete" else "paused"
+        return result
+    except Exception:  # noqa: BLE001 — fail-safe to terminal on ANY error
+        return {"marker_present": False, "plan_status": None,
+                "verdict": "terminal"}
 
 
 def update_repeat_counts(
@@ -602,6 +673,15 @@ RUN_FRESH_FIELDS: frozenset = frozenset({
     # --run-start re-supplies it (or correctly resets a serial resume to None),
     # so it belongs on the FRESH side, never carried.
     "parent_run",
+    # lazy-batch-no-mid-run-budget-or-park-controls: park mode is RUN-SCOPED
+    # config re-supplied at run-start from the invocation --park flags (exactly
+    # like max_cycles), so a checkpoint resume re-derives it from the resume's
+    # own --park args — FRESH, never carried. A mid-run --set-park toggle is a
+    # deliberate in-run mutation (like --set-max-cycles on the FRESH max_cycles);
+    # a resume re-passes --park if the operator still wants it.
+    "park_needs_input",
+    "park_blocked",
+    "park_provisional",
 })
 
 
@@ -666,6 +746,34 @@ SANCTIONED_STOP_TERMINAL: frozenset[str] = frozenset({
 })
 
 
+# ---------------------------------------------------------------------------
+# SANCTIONED_LANE_PARK_TERMINAL — the park-class terminal reasons a
+# /lazy-batch-parallel LANE marker (one whose `parent_run` is non-null) may
+# retire on WITHOUT --operator-authorized (lazy-batch-parallel-run-harness-gaps
+# gap 4).
+#
+# A lane is a coordinator-authorized CHILD: SKILL P6 makes park-on-sentinel the
+# parallel mode's DEFINING failure isolation ("not an opt-in"), and a lane that
+# exhausts its budget slice parks as budget-deferred. A `--feature-id`-scoped
+# lane probe emits the SCOPED park terminals (`needs-input-scoped` /
+# `blocked-scoped` / `needs-ratification-scoped`), so both the bare and scoped
+# forms are sanctioned. This set is consulted ONLY when the run marker carries a
+# non-null `parent_run`; a SERIAL run (parent_run: null) parking is a real halt
+# that still needs authorization, so these reasons stay OUT of
+# SANCTIONED_STOP_TERMINAL. Both state scripts read it (coupled-pair surface —
+# a lane marker is pipeline-agnostic).
+# ---------------------------------------------------------------------------
+SANCTIONED_LANE_PARK_TERMINAL: frozenset[str] = frozenset({
+    "needs-input",            # P6 park on NEEDS_INPUT.md (bare)
+    "needs-input-scoped",     # …as emitted by a --feature-id lane probe
+    "blocked",                # P6 park on BLOCKED.md (bare)
+    "blocked-scoped",         # …as emitted by a --feature-id lane probe
+    "needs-ratification",     # unratified NEEDS_INPUT_PROVISIONAL.md park (bare)
+    "needs-ratification-scoped",  # …scoped lane form
+    "budget-deferred",        # lane slice exhausted → parked (P4/Step 3)
+})
+
+
 def write_run_marker(
     pipeline: str,
     cloud: bool,
@@ -676,6 +784,9 @@ def write_run_marker(
     nonce_seed: str | None = None,
     attended: bool = True,
     parent_run: dict | None = None,
+    park_needs_input: bool = False,
+    park_blocked: bool = False,
+    park_provisional: bool = False,
     now: float | None = None,
 ) -> dict:
     """Write (or overwrite) the run marker to the state dir.
@@ -787,6 +898,21 @@ def write_run_marker(
         # this marker at a worktree root; None on every serial run. ALWAYS
         # minted (stable marker shape); classified RUN_FRESH_FIELDS.
         "parent_run": parent_run,
+        # lazy-batch-no-mid-run-budget-or-park-controls: park mode is now
+        # RUN-SCOPED state, persisted in the marker, so an operator can toggle it
+        # mid-run (--set-park / --set-park-provisional) and the probe reads it each
+        # cycle — instead of park being a pure invocation arg threaded per probe.
+        # SEEDED here from the --run-start invocation flags (default False → the
+        # marker is byte-identical to a non-park run when no --park was passed).
+        # Classified RUN_FRESH_FIELDS: re-supplied at run-start (like max_cycles);
+        # a checkpoint resume re-passes --park if the operator wants it. The
+        # standing invariant park_provisional ⇒ park_needs_input is enforced by
+        # the CLI (--park-provisional requires --park-needs-input) and by
+        # set_marker_park; write_run_marker itself trusts its caller (--run-start
+        # already validates the pairing before calling here).
+        "park_needs_input": bool(park_needs_input),
+        "park_blocked": bool(park_blocked),
+        "park_provisional": bool(park_provisional),
     }
     marker_path = claude_state_dir() / _MARKER_FILENAME
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
@@ -1089,6 +1215,116 @@ def reassert_marker_owner(
         # Fail-safe: a re-arm failure is non-fatal; the owner can retry. Never
         # raise into the CLI handler.
         return False
+
+
+# ---------------------------------------------------------------------------
+# lazy-batch-no-mid-run-budget-or-park-controls: operator-authorized in-place
+# mid-run mutators of the ACTIVE run marker. Both follow the bind_marker_session
+# / reassert_marker_owner discipline: read the live marker, mutate ONE facet,
+# _atomic_write it back — NO clobber, NO restart, NO run-end flush. The CLI
+# wrappers gate them behind refuse_if_cycle_active (orchestrator-only) AND
+# --operator-authorized (the operator explicitly approved the change), parallel
+# to the --run-end --reason checkpoint authorization gate.
+# ---------------------------------------------------------------------------
+
+def set_marker_max_cycles(new_max: int) -> "dict | None":
+    """Update the ACTIVE run marker's ``max_cycles`` in place (mid-run budget change).
+
+    The atomic, marker-consistent enactment of an operator "extend/reduce budget
+    to N" — the first-class replacement for the two broken workarounds
+    (``--run-start --max-cycles N`` REFUSES on an active marker via the
+    clobber guard; ``--run-end`` + ``--run-start`` runs the heavy flush and ENDS
+    the run; passing ``--max-cycles N`` per probe leaves the marker stale). After
+    this call the marker IS the authoritative live budget: the cycle header
+    (fold_max_cycles) and the per-feature budget guard (which reads the marker's
+    max_cycles) both agree with it, with no restart.
+
+    Contract:
+      - No active marker → no-op, returns None (the CLI wrapper _dies with a
+        clear "no active run marker" message).
+      - Otherwise: set ``max_cycles = new_max`` atomically and return a summary
+        ``{"max_cycles": new_max, "prior_max_cycles": <old>}``.
+
+    Args:
+        new_max: the new whole-run cycle budget (a positive int; the CLI
+            validates ``>= 1`` before calling).
+
+    Returns:
+        Summary dict on success, or None when no active marker exists.
+    """
+    marker = read_run_marker()
+    if marker is None:
+        return None
+    prior = marker.get("max_cycles")
+    marker["max_cycles"] = int(new_max)
+    marker_path = claude_state_dir() / _MARKER_FILENAME
+    _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+    return {"max_cycles": int(new_max), "prior_max_cycles": prior}
+
+
+def set_marker_park(
+    *,
+    park_needs_input: "bool | None" = None,
+    park_blocked: "bool | None" = None,
+    park_provisional: "bool | None" = None,
+) -> "dict | None":
+    """Toggle the ACTIVE run marker's park fields in place (mid-run park toggle).
+
+    Each argument is tri-state: ``None`` leaves that field untouched; a bool sets
+    it. The resulting park state MUST satisfy the standing invariant
+    ``park_provisional ⇒ park_needs_input`` (a provisional-accept run is a strict
+    modifier of needs-input park mode, SPEC D1). An update that would violate it
+    is REFUSED via ``_die`` with ZERO writes — the same fail-closed discipline as
+    the CLI's ``--park-provisional requires --park-needs-input`` guard.
+
+    Contract:
+      - No active marker → no-op, returns None (the CLI wrapper _dies "no active
+        run marker").
+      - Otherwise: apply the supplied field changes, enforce the invariant
+        (refuse on violation), _atomic_write, and return the resulting park state
+        ``{"park_needs_input": ..., "park_blocked": ..., "park_provisional": ...,
+        "prior": {<the three prior values>}}``.
+
+    Args:
+        park_needs_input: set the needs-input park facet, or None to leave it.
+        park_blocked: set the blocked park facet, or None to leave it.
+        park_provisional: set the provisional-accept modifier, or None to leave it.
+
+    Returns:
+        Resulting park-state summary dict on success, or None when no active
+        marker exists.
+    """
+    from ._ctx import _die  # deferred kernel import (function-local — parity with parse_parent_run_arg)
+    marker = read_run_marker()
+    if marker is None:
+        return None
+    prior = {
+        "park_needs_input": bool(marker.get("park_needs_input")),
+        "park_blocked": bool(marker.get("park_blocked")),
+        "park_provisional": bool(marker.get("park_provisional")),
+    }
+    ni = prior["park_needs_input"] if park_needs_input is None else bool(park_needs_input)
+    bl = prior["park_blocked"] if park_blocked is None else bool(park_blocked)
+    pv = prior["park_provisional"] if park_provisional is None else bool(park_provisional)
+    # Standing invariant: park_provisional is a strict modifier of park_needs_input.
+    # Refuse the inconsistent result with ZERO writes (fail-closed).
+    if pv and not ni:
+        _die(
+            "--set-park-provisional on requires park mode (park_needs_input) to be "
+            "on. Enable park first (--set-park on), or turn provisional off."
+        )
+        return None  # pragma: no cover — _die exits
+    marker["park_needs_input"] = ni
+    marker["park_blocked"] = bl
+    marker["park_provisional"] = pv
+    marker_path = claude_state_dir() / _MARKER_FILENAME
+    _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+    return {
+        "park_needs_input": ni,
+        "park_blocked": bl,
+        "park_provisional": pv,
+        "prior": prior,
+    }
 
 
 def delete_run_marker(clear_registry: bool = False) -> bool:
@@ -1539,6 +1775,7 @@ def detect_cycle_bracket_friction(
     expected_work_branch: str | None = None,
     repo_root: "str | Path | None" = None,
     now: float | None = None,
+    concurrent_writer_commits: int | None = None,
 ) -> dict | None:
     """Detect process-friction at --cycle-end: a torn cycle bracket or unexpected
     commits (hardening-blind-to-process-friction Phase 2, Locked Decision D1).
@@ -1593,6 +1830,22 @@ def detect_cycle_bracket_friction(
             NOT false-positive against the fixed table budget of 3. None → fall back
             to the per-sub_skill table (legacy behavior, never a crash).
         now: unused placeholder for caller symmetry / future timing fields.
+        concurrent_writer_commits: (WU-2, SPEC Requirement 2 — the 2026-07-18
+            false-friction incident) the number of commits within
+            ``commits_since`` attributable to a SANCTIONED CONCURRENT WRITER —
+            a separate session/lane legitimately committing to the same shared
+            worktree/branch mid-cycle (a parallel `/lazy-batch-parallel` lane, a
+            second interactive/scheduled session, a background harden dispatch;
+            see the root CLAUDE.md `<orchestration>` "sanctioned concurrent
+            writers" carve-out). When this is a non-negative int, signal (b)'s
+            budget comparison uses ``max(0, commits_since -
+            concurrent_writer_commits)`` in place of the raw ``commits_since`` —
+            a HEAD advance the concurrent writer caused does not count toward
+            THIS cycle's own runaway budget. When it is ``None``/absent (the
+            default) the branch is BYTE-IDENTICAL to the pre-WU-2 behavior —
+            this is the fail-safe/ambiguous path: an unknown concurrent-writer
+            count must never suppress a genuine runaway, so ambiguity always
+            falls back to comparing the raw ``commits_since`` against budget.
 
     Returns:
         A friction descriptor ``{"reason": <str>, "detail": <str>, ...}`` on the
@@ -1737,13 +1990,33 @@ def detect_cycle_bracket_friction(
                 else _CYCLE_COMMIT_BUDGET_DEFAULT
             )
             budget = base_budget + _CYCLE_COMMIT_NOISE_ALLOWANCE
-        if commits_since > budget:
+        # WU-2 (SPEC Requirement 2): a non-negative int concurrent_writer_commits
+        # attributes part of commits_since to a sanctioned concurrent writer, so
+        # only the REMAINDER counts against this cycle's own runaway budget.
+        # None/absent (ambiguous/unknown) → byte-identical to the raw comparison
+        # — the fail-safe default is to NEVER suppress on an unknown signal.
+        if (
+            isinstance(concurrent_writer_commits, int)
+            and not isinstance(concurrent_writer_commits, bool)
+            and concurrent_writer_commits >= 0
+        ):
+            chargeable_commits = max(0, commits_since - concurrent_writer_commits)
+        else:
+            chargeable_commits = commits_since
+        if chargeable_commits > budget:
             return {
                 "reason": "unexpected-commits",
                 "detail": (
                     f"HEAD advanced {commits_since} commits since --cycle-begin "
                     f"(begin_head_sha={(begin_head_sha or '')[:12]}, "
-                    f"sub_skill={sub_skill!r}, budget={budget})"
+                    f"sub_skill={sub_skill!r}, budget={budget}"
+                    + (
+                        f", concurrent_writer_commits={concurrent_writer_commits}, "
+                        f"chargeable={chargeable_commits}"
+                        if chargeable_commits != commits_since
+                        else ""
+                    )
+                    + ")"
                 ),
                 "sub_skill": sub_skill,
                 "commits_since": commits_since,
@@ -1764,6 +2037,29 @@ def head_sha_snapshot(repo_root: Path | None = None) -> str | None:
     root = repo_root or Path.cwd()
     try:
         proc = _git(root, "rev-parse", "HEAD")
+        if proc.returncode == 0:
+            return (proc.stdout or "").strip() or None
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def head_commit_subject(repo_root: Path | None = None) -> str | None:
+    """Best-effort ``git log -1 --format=%s`` (HEAD commit subject) against
+    repo_root (cwd default).
+
+    Returns the subject line of the current HEAD commit, or None when not a git
+    tree / git fails / the subject is empty. Used by --cycle-end to record the
+    arming cycle's end-commit subject on the audit obligation
+    (adhoc-audit-obligation-fires-on-zero-commit-failed-cycle) so the downstream
+    input-audit emit command binds ``cycle_summary`` to the bracket's ACTUAL end
+    commit, never a positional proxy. Callers treat None as a degraded snapshot
+    (the obligation records an empty summary, never fabricated prose).
+    """
+    from .runtimeplane import _git  # deferred (runtime/git plane; function-local avoids import cycle)
+    root = repo_root or Path.cwd()
+    try:
+        proc = _git(root, "log", "-1", "--format=%s")
         if proc.returncode == 0:
             return (proc.stdout or "").strip() or None
     except Exception:  # noqa: BLE001
@@ -1846,6 +2142,108 @@ def _count_authored_commits_since(
             return None
         return int((count_proc.stdout or "").strip() or "0")
     except Exception:  # noqa: BLE001  (incl. ValueError from int())
+        return None
+
+
+def _count_concurrent_writer_commits(
+    repo_root: Path,
+    begin_head_sha: str | None,
+    current_run_started_at: str | None = None,
+) -> int | None:
+    """Best-effort count of commits in ``begin_head_sha..HEAD`` attributable to
+    a SANCTIONED CONCURRENT WRITER (concurrent-worktree-agent-coordination WU-2,
+    SPEC Requirement 2 — the 2026-07-18 false-friction incident; EXTENDED by
+    adhoc-process-friction-detector-counts-concurrent-session-commits with a
+    ledger-read arm that closes the SAME-git-identity blind spot).
+
+    TWO POSITIVE signals are UNIONED (a commit attributed by EITHER counts once):
+
+    1. **Committer-email** — a commit's COMMITTER EMAIL differs from THIS repo's
+       own configured committer (``git config user.email``). Any commit this
+       cycle's own dispatch made was authored under the repo's configured git
+       identity (the harness never overrides it per-cycle), so a DIFFERENT
+       committer email is affirmative evidence the commit did NOT come from this
+       cycle. Catches a genuinely-distinct identity (a teammate, a bot, a
+       differently-configured clone).
+
+    2. **Concurrent-activity ledger** (the new arm) — a window sha recorded in
+       ``lazy-concurrent-activity.jsonl`` (by a script-owned commit site, Phase 2)
+       under a ``run_started_at`` that is PRESENT and DIFFERS from this run's
+       ``current_run_started_at``. This closes the committer-email blind spot:
+       the operator's own second interactive/scheduled session shares THIS repo's
+       git identity (so signal 1 misses it) but stamps its automated commits with
+       a DISTINCT run identity in the shared per-repo-keyed ledger — exactly the
+       2026-07-18 motivating incident's shape.
+
+    Fail-SAFE invariant (SPEC Proven Findings): the ledger arm only ADDS positive
+    same-identity attribution — it NEVER over-subtracts. A ledger sha is counted
+    ONLY when its recorded ``run_started_at`` is a non-empty string that DIFFERS
+    from ``current_run_started_at``; an absent/null/malformed identity, or one
+    equal to this run's own (``== current``, i.e. THIS run's own automated
+    commits), is NOT counted. A ledger-read failure degrades to the email-only
+    count (never a crash, never over-subtraction). Merges are excluded from the
+    window (mirrors ``_count_authored_commits_since``).
+
+    Args:
+        repo_root: the repo to attribute commits against.
+        begin_head_sha: the ``--cycle-begin`` HEAD snapshot; None ⇒ degraded.
+        current_run_started_at: this run's identity (``read_run_marker().started_at``,
+            None interactive) — the discriminator for the ledger arm.
+
+    Returns:
+        The count of distinct concurrent-writer, non-merge window commits, or
+        ``None`` on ANY degraded git read (no begin sha, unreadable git config,
+        a git failure) — mirrors ``_count_authored_commits_since``'s contract:
+        never raises, degrades to None (disables suppression at the caller),
+        never crashes ``--cycle-end``.
+    """
+    from .runtimeplane import _git  # deferred (runtime/git plane; function-local avoids import cycle)
+    if not begin_head_sha:
+        return None
+    try:
+        cfg_proc = _git(repo_root, "config", "user.email")
+        if cfg_proc.returncode != 0:
+            return None
+        own_email = (cfg_proc.stdout or "").strip()
+        if not own_email:
+            return None
+        # %H<US>%ae per commit (unit-separator \x1f never appears in either
+        # field), so we recover both the sha (for the ledger arm + de-dup) and
+        # the committer email in one pass.
+        log_proc = _git(
+            repo_root, "log", "--no-merges", "--format=%H%x1f%ae",
+            f"{begin_head_sha}..HEAD",
+        )
+        if log_proc.returncode != 0:
+            return None
+        window_shas: list[str] = []
+        attributed: set[str] = set()  # shas charged to a concurrent writer
+        for line in (log_proc.stdout or "").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split("\x1f", 1)
+            if len(parts) != 2:
+                continue
+            sha, email = parts[0].strip(), parts[1].strip()
+            if not sha:
+                continue
+            window_shas.append(sha)
+            if email and email != own_email:
+                attributed.add(sha)  # signal 1: distinct committer email
+        # Signal 2 (ledger arm) — best-effort; ANY failure degrades to the
+        # email-only attribution set (NEVER over-subtracts).
+        try:
+            from .ledgers import read_concurrent_commit_entries  # deferred (ledger plane; avoids import cycle)
+            ledger = read_concurrent_commit_entries()  # {sha: run_started_at}
+            for sha in window_shas:
+                rsa = ledger.get(sha)
+                if isinstance(rsa, str) and rsa and rsa != current_run_started_at:
+                    attributed.add(sha)  # de-duped by the set (counted once)
+        except Exception:  # noqa: BLE001
+            pass  # ledger unavailable → email-only count (fail-safe)
+        return len(attributed)
+    except Exception:  # noqa: BLE001
         return None
 
 
@@ -1934,6 +2332,14 @@ def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
     current_branch = current_branch_snapshot(root)
     expected_work_branch = (live_run or {}).get("work_branch")
 
+    # WU-2 (SPEC Requirement 2): best-effort concurrent-writer attribution —
+    # see _count_concurrent_writer_commits for the signal + its documented
+    # limitation. Degrades to None on ANY read failure, which is the required
+    # fail-safe default at the detector (no suppression on an unknown signal).
+    concurrent_writer_commits = _count_concurrent_writer_commits(
+        root, begin_head_sha, current_run_started_at
+    )
+
     descriptor = detect_cycle_bracket_friction(
         marker,
         current_run_started_at=current_run_started_at,
@@ -1944,6 +2350,7 @@ def cycle_end_friction_check(repo_root: Path | None = None) -> dict | None:
         current_branch=current_branch,
         expected_work_branch=expected_work_branch,
         repo_root=root,
+        concurrent_writer_commits=concurrent_writer_commits,
     )
 
     # (5) log the friction as hardening debt (fail-open).
@@ -2018,6 +2425,33 @@ CYCLE_REFUSED_OPS: frozenset[str] = frozenset({
     "--emit-dispatch",
 })
 
+# dispatched-harden-record-intervention-refused-by-containment: cycle-marker
+# ``sub_skill`` values that identify a dispatched harness-hardening subagent. A
+# hardening dispatch (``dispatch.DISPATCH_CLASSES`` tag "hardening", emitted via
+# ``--emit-dispatch hardening``) is bracketed ``--cycle-begin --kind meta
+# --sub-skill hardening`` (coupled-trio §1d.1), so the cycle marker records
+# ``sub_skill == "hardening"`` for a live /harden-harness cycle. The narrow
+# ``--record-intervention`` containment exemption below keys on this set: a
+# dispatched harden's SKILL contract MANDATES recording its round as a
+# hypothesis-ledger intervention with a measurable target_signal, and
+# ``--record-intervention`` is capture-only telemetry (it writes
+# ``docs/interventions/<id>.md`` — no run-marker/registry/queue mutation), NOT a
+# run-lifecycle op, so permitting it for a hardening subagent does not open any
+# loop-formation surface (the genuinely-dangerous ops stay refused).
+_HARDENING_CYCLE_SUBSKILLS: frozenset[str] = frozenset({"hardening"})
+
+
+def _cycle_marker_is_hardening(marker: "dict | None") -> bool:
+    """True iff *marker* is a live cycle marker for a dispatched hardening cycle.
+
+    Keyed on the marker's own ``sub_skill`` (stamped at ``--cycle-begin``), so it
+    cannot be spoofed by a runaway's environment — only the orchestrator writes the
+    cycle marker. A missing/None marker or a non-hardening ``sub_skill`` → False.
+    """
+    if not isinstance(marker, dict):
+        return False
+    return str(marker.get("sub_skill") or "").strip() in _HARDENING_CYCLE_SUBSKILLS
+
 
 def _env_truthy(name: str) -> bool:
     """Return True when env var *name* is set to a non-empty, non-falsey value.
@@ -2031,7 +2465,9 @@ def _env_truthy(name: str) -> bool:
     return val.strip().lower() not in ("", "0", "false", "no", "off")
 
 
-def refuse_if_cycle_active(op_name: str) -> None:
+def refuse_if_cycle_active(
+    op_name: str, *, allow_hardening_subagent: bool = False
+) -> None:
     """Refuse an orchestrator-only op when the caller is a cycle subagent (D4).
 
     Invoked at the ENTRY of each guarded CLI handler (`--run-end`, `--run-start`,
@@ -2052,6 +2488,19 @@ def refuse_if_cycle_active(op_name: str) -> None:
     Args:
         op_name: the CLI flag being guarded (e.g. "--run-end"). Echoed in the
                  corrective message so the subagent sees exactly what it tried.
+        allow_hardening_subagent: when True, a dispatched HARDENING cycle subagent
+                 (the cycle marker's ``sub_skill`` is a hardening class) is PERMITTED
+                 this op instead of refused. Passed ONLY by the ``--record-intervention``
+                 handler (dispatched-harden-record-intervention-refused-by-containment):
+                 the /harden-harness SKILL MANDATES a dispatched harden record its
+                 round as a hypothesis-ledger intervention with a measurable
+                 target_signal, and ``--record-intervention`` is capture-only
+                 telemetry (writes ``docs/interventions/<id>.md`` — no
+                 run-marker/registry/queue mutation), so it opens no loop-formation
+                 surface. The genuinely-dangerous lifecycle ops
+                 (``--run-end`` / ``--run-start`` / ``--emit-dispatch`` /
+                 ``--apply-pseudo`` / ``--enqueue-adhoc``) DEFAULT this to False and
+                 stay refused for ANY cycle subagent, hardening or not.
     """
     # 1. The main-thread orchestrator asserts its identity → never self-refuse,
     #    even if a stale marker lingers from a crashed prior dispatch.
@@ -2069,6 +2518,18 @@ def refuse_if_cycle_active(op_name: str) -> None:
     explicit_subagent = _env_truthy("LAZY_CYCLE_SUBAGENT")
     marker = read_cycle_marker()
     if not explicit_subagent and marker is None:
+        return
+
+    # dispatched-harden-record-intervention-refused-by-containment: a dispatched
+    # HARDENING cycle subagent may record its own intervention (capture-only
+    # telemetry — the one op its SKILL contract requires). Keyed on the marker's
+    # own ``sub_skill`` (orchestrator-written; unspoofable by a runaway's env), so
+    # ONLY a real /harden-harness cycle is exempted, and ONLY for the op that
+    # passes allow_hardening_subagent (``--record-intervention``). Every other op
+    # keeps its default (allow_hardening_subagent=False) → still refused. This is
+    # checked AFTER the subagent-identity gate above so a non-subagent path is
+    # never reached here.
+    if allow_hardening_subagent and _cycle_marker_is_hardening(marker):
         return
 
     feature_id = (marker or {}).get("feature_id", "<unknown>")
@@ -2351,6 +2812,82 @@ def fold_run_counters(
         forward = forward_flag
         meta = meta_flag
     return (forward, meta)
+
+
+def fold_max_cycles(
+    max_cycles_flag: "int | None",
+    marker: dict | None,
+) -> "int | None":
+    """Resolve the effective ``max_cycles`` for the cycle header / budget cap.
+
+    lazy-batch-no-mid-run-budget-or-park-controls: the MARKER is the authoritative
+    live budget. When a marker is present, its persisted ``max_cycles`` wins — so a
+    mid-run ``--set-max-cycles N`` update is reflected in the header immediately,
+    WITHOUT the orchestrator re-passing ``--max-cycles`` (the old cosmetic
+    workaround left the marker stale while the header diverged). Note the ASYMMETRY
+    with ``fold_run_counters`` (where the explicit flag wins): the counters are the
+    live truth an orchestrator supplies each probe, whereas the budget is
+    run-scoped state OWNED by the marker and mutated only via ``--set-max-cycles``.
+    At ``--run-start`` the marker's ``max_cycles`` is seeded from ``--max-cycles``,
+    so the two agree until an explicit mid-run change — exactly the intent.
+
+    Priority:
+      - marker present → the marker's ``max_cycles`` (may be None for an unbounded
+        run — respected as-is), else
+      - no marker → the explicit ``--max-cycles`` flag (may be None).
+
+    Args:
+        max_cycles_flag: the explicit ``--max-cycles`` CLI value (or None).
+        marker: the active run marker (or None).
+
+    Returns:
+        The effective max_cycles (int or None).
+    """
+    if marker is not None:
+        # ``max_cycles`` is an original marker field (never legacy-absent), so a
+        # plain .get is safe; None means an unbounded run and is respected.
+        return marker.get("max_cycles")
+    return max_cycles_flag
+
+
+def fold_park_flags(
+    needs_input_flag: bool,
+    blocked_flag: bool,
+    provisional_flag: bool,
+    marker: dict | None,
+) -> "tuple[bool, bool, bool]":
+    """Resolve the effective park state for the probe (marker-authoritative).
+
+    lazy-batch-no-mid-run-budget-or-park-controls: park mode is RUN-SCOPED state
+    persisted in the marker, so a live run's probe reads the MARKER each cycle —
+    letting an operator toggle park mid-run via ``--set-park`` /
+    ``--set-park-provisional``. Priority (mirrors the byte-identity discipline):
+
+      - NEW-SCHEMA marker present (carries the ``park_needs_input`` key, seeded at
+        run-start from the invocation flags) → the marker is AUTHORITATIVE. A
+        mid-run ``--set-park off`` then disables park even though the orchestrator
+        may still pass the invocation ``--park-*`` flags (marker wins).
+      - No marker, OR a LEGACY marker lacking the fields (an in-flight run started
+        before this change) → fall back to the CLI flags (back-compat: an
+        in-flight ``--park`` run keeps parking; a no-marker probe is byte-identical
+        to the pre-feature baseline).
+
+    Args:
+        needs_input_flag: the ``--park-needs-input`` CLI value.
+        blocked_flag: the ``--park-blocked`` CLI value.
+        provisional_flag: the ``--park-provisional`` CLI value.
+        marker: the active run marker (or None).
+
+    Returns:
+        ``(park_needs_input, park_blocked, park_provisional)`` bools.
+    """
+    if marker is not None and "park_needs_input" in marker:
+        return (
+            bool(marker.get("park_needs_input")),
+            bool(marker.get("park_blocked")),
+            bool(marker.get("park_provisional")),
+        )
+    return (bool(needs_input_flag), bool(blocked_flag), bool(provisional_flag))
 
 
 def _bump_per_feature_forward(marker: dict, feature_id) -> None:
@@ -2751,6 +3288,69 @@ def advance_meta_cycle() -> dict | None:
     return marker
 
 
+def advance_cycle_bracket_counter(cycle_marker: dict | None) -> dict | None:
+    """Advance the run-marker cycle-budget counter for ONE completed dispatch
+    bracket, keyed on the CYCLE marker's ``kind`` (cycle-budget-counters-double-
+    count-on-probes-and-inject-hook).
+
+    THE budget authority for real/meta Agent dispatches. Called from BOTH
+    ``--cycle-end`` handlers (lazy-state.py / bug-state.py) AFTER reading the cycle
+    marker and BEFORE ``clear_cycle_marker()``. The ``--cycle-begin`` /
+    ``--cycle-end`` bracket wraps EXACTLY ONE Agent dispatch, so a completed bracket
+    is a real dispatch event the script observes directly. Moving the budget
+    increment here DECOUPLES it from the ``--repeat-count`` probe path — which fired
+    on inspection probes AND the per-turn inject hook (lazy_inject.py), inflating
+    ``forward_cycles`` with no dispatch (the root cause). The probe path now advances
+    only the loop-detection streaks (``update_repeat_counts``), never the budget.
+
+    Classification (from the cycle marker's ``kind``, written by ``--cycle-begin``):
+      - ``kind == "real"`` → ``forward_cycles += 1`` PLUS the sibling
+        ``per_feature_forward_cycles[feature_id]`` bump, via the SAME
+        ``_bump_per_feature_forward`` helper ``advance_run_counters`` /
+        ``advance_forward_cycle`` use (no second oracle — "what counts as a forward
+        cycle" and "which feature it bumps" stay defined in exactly one place).
+      - ``kind == "meta"`` → ``meta_cycles += 1`` (uncapped).
+      - any other / absent kind → no-op, no write (defensive; the bracket contract
+        only ever writes "real" | "meta").
+
+    Idempotent per bracket BY CONSTRUCTION: one cycle marker == one dispatch, and
+    the marker is cleared immediately after this call at ``--cycle-end`` — so a
+    bracket can advance the budget at most once.
+
+    Marker-gated: no RUN marker → returns None and writes nothing (byte-identical to
+    the no-run path, so a --cycle-end outside a live run is inert). A None / non-dict
+    / kind-less CYCLE marker is likewise a no-op. On a real advance the updated run
+    marker is atomic-written and returned.
+
+    Args:
+        cycle_marker: the cycle marker dict just read at --cycle-end (or None).
+
+    Returns:
+        The updated run marker dict; None when there is no run marker (or nothing
+        to count for this bracket).
+    """
+    marker = read_run_marker()
+    if marker is None:
+        return None
+    if not isinstance(cycle_marker, dict):
+        return None
+    kind = cycle_marker.get("kind")
+    if kind == "real":
+        marker["forward_cycles"] = marker.get("forward_cycles", 0) + 1
+        # Sibling per-feature bump, gated by the SAME real classification (no
+        # second oracle) — reuses the helper the probe-path advances also use.
+        _bump_per_feature_forward(marker, cycle_marker.get("feature_id"))
+    elif kind == "meta":
+        marker["meta_cycles"] = marker.get("meta_cycles", 0) + 1
+    else:
+        # Neither "real" nor "meta" (legacy / malformed cycle marker) — count
+        # nothing and do not write.
+        return None
+    marker_path = claude_state_dir() / _MARKER_FILENAME
+    _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
+    return marker
+
+
 # Forward-advancing pseudo-skills: inline (--apply-pseudo) terminals that ADVANCE
 # the pipeline a step (write a receipt / flip status / archive), as opposed to
 # cleanup/meta pseudo-skills. A forward-advancing pseudo-skill counts toward the
@@ -2770,6 +3370,16 @@ _FORWARD_ADVANCING_PSEUDO_SKILLS = frozenset({
 def advance_forward_cycle(state: dict) -> dict | None:
     """Fix-A (item 1): a CONSUME-INDEPENDENT forward/meta advance keyed on a change
     in the marker-recorded ``(feature_id, current_step, sub_skill)`` tuple.
+
+    This is the state-change trigger that serves the inline ``--apply-pseudo``
+    forward-advancing pseudo-skills — whose distinct ``(slug, pseudo_name,
+    pseudo_name)`` tuple per apply already discriminates each advance, and which
+    dispatch no Agent and emit no consume. The dispatch-time forward budget for real
+    Agent dispatches is owned by ``advance_cycle_bracket_counter`` at ``--cycle-end``
+    (one ``--cycle-begin``/``--cycle-end`` bracket == one dispatch), NOT by this
+    helper — see decision-11-dispatch-time-forward-advance, which RETIRED the former
+    consume-census-rise second trigger (the ``--repeat-count`` real-skill probe path
+    is now a PEEK that advances nothing).
 
     ROOT CAUSE (lazy-batch-unified-driver-parity-and-accounting, 2026-06-17):
     forward-advancing inline pseudo-skills (``__mark_complete__``/``__mark_fixed__``/
@@ -2819,8 +3429,10 @@ def advance_forward_cycle(state: dict) -> dict | None:
         sub_skill,
     ]
     prior_key = marker.get("last_advance_state_key")
-    if prior_key == current_key:
-        # Same state — a bare re-fire. Do NOT advance, do NOT write.
+    state_changed = prior_key != current_key
+
+    if not state_changed:
+        # Same state tuple — a bare re-fire. Do NOT advance.
         return marker
 
     # Classify: forward iff a real skill OR a forward-advancing pseudo-skill.
@@ -2837,7 +3449,6 @@ def advance_forward_cycle(state: dict) -> dict | None:
         marker["meta_cycles"] = marker.get("meta_cycles", 0) + 1
 
     marker["last_advance_state_key"] = current_key
-
     marker_path = claude_state_dir() / _MARKER_FILENAME
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
     return marker
@@ -2969,7 +3580,14 @@ AUDITED_CYCLE_KINDS: frozenset = frozenset({
 })
 
 
-def record_audit_obligation(item_id: str | None, cycle_kind: str | None) -> dict | None:
+def record_audit_obligation(
+    item_id: str | None,
+    cycle_kind: str | None,
+    *,
+    begin_head_sha: str | None = None,
+    end_sha: str | None = None,
+    cycle_summary: str | None = None,
+) -> dict | None:
     """Record the post-cycle input-audit obligation on the run marker (D2-A).
 
     Called from --cycle-end immediately after a /spec or plan-feature (or the
@@ -2979,13 +3597,30 @@ def record_audit_obligation(item_id: str | None, cycle_kind: str | None) -> dict
     no-op (returns the marker UNCHANGED, no write) — only the four audited
     kinds ever arm the obligation.
 
-    Overwrites any PRIOR obligation (there is at most one outstanding
-    obligation at a time — cycles are serial, and the withhold this powers
-    forces discharge before the next cycle can begin).
+    Commit-delta gate (adhoc-audit-obligation-fires-on-zero-commit-failed-cycle):
+    a zero-commit close of an audited cycle — a FAILED/no-op /spec or plan cycle
+    that committed nothing — arms NOTHING (and clears nothing: a pre-existing
+    obligation is preserved). The oracle reuses ``record_cycle_commit_bracket``'s
+    exact zero-commit semantics — a missing ``end_sha`` OR ``end_sha ==
+    begin_head_sha`` is an empty bracket, so the obligation is NOT armed. Only a
+    NON-EMPTY delta (a real commit landed) arms, recording the bracket's ACTUAL
+    end commit (``cycle_commit_sha``) + its subject (``cycle_summary``) on the
+    obligation dict so the downstream input-audit emit command binds to the real
+    end commit instead of a positional ``HEAD~1`` guess.
+
+    When it does arm, overwrites any PRIOR obligation (there is at most one
+    outstanding obligation at a time — cycles are serial, and the withhold this
+    powers forces discharge before the next cycle can begin).
 
     Args:
         item_id: the feature/bug id the obligation is owed for.
         cycle_kind: the sub_skill of the cycle that just ended.
+        begin_head_sha: the cycle bracket's begin HEAD (from the cycle marker's
+            ``begin_head_sha`` snapshot); None on a degraded/legacy snapshot.
+        end_sha: the resolved end commit (current HEAD at --cycle-end); None on a
+            non-git / degraded snapshot — treated as a zero-commit close.
+        cycle_summary: the end commit's ``%s`` subject, recorded on the armed
+            obligation (empty string when unresolvable).
 
     Returns:
         The updated marker dict; None when no marker is present.
@@ -2995,7 +3630,17 @@ def record_audit_obligation(item_id: str | None, cycle_kind: str | None) -> dict
         return None
     if cycle_kind not in AUDITED_CYCLE_KINDS:
         return marker
-    marker["audit_obligation"] = {"item_id": item_id, "cycle_kind": cycle_kind}
+    # Commit-delta gate: an empty bracket (no end sha, or begin == end) is a
+    # zero-commit close — arm nothing, clear nothing (preserve any prior
+    # obligation). Mirrors record_cycle_commit_bracket's skip oracle exactly.
+    if not end_sha or end_sha == begin_head_sha:
+        return marker
+    marker["audit_obligation"] = {
+        "item_id": item_id,
+        "cycle_kind": cycle_kind,
+        "cycle_commit_sha": end_sha,
+        "cycle_summary": cycle_summary or "",
+    }
     marker_path = claude_state_dir() / _MARKER_FILENAME
     _atomic_write(marker_path, json.dumps(marker, indent=2) + "\n")
     return marker

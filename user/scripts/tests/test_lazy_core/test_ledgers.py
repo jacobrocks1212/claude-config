@@ -1495,10 +1495,15 @@ def test_probe_withholds_forward_route_on_audit_obligation():
         assert "route_overridden_by" not in out0, out0.get("route_overridden_by")
 
         # --- (2) arm the obligation directly on the marker (simulating a
-        # --cycle-end after a /spec cycle), then re-probe -> withheld ---
+        # --cycle-end after a /spec cycle that COMMITTED — a non-empty delta),
+        # then re-probe -> withheld ---
         _set_state_dir(state_dir)
         try:
-            lazy_core.record_audit_obligation(item_id="feat-c", cycle_kind="spec")
+            lazy_core.record_audit_obligation(
+                item_id="feat-c", cycle_kind="spec",
+                begin_head_sha="begin000", end_sha="end111feat",
+                cycle_summary="spec: feat-c baseline",
+            )
         finally:
             _clear_state_dir()
 
@@ -1516,6 +1521,13 @@ def test_probe_withholds_forward_route_on_audit_obligation():
         assert "--emit-dispatch input-audit" in cmd, cmd
         assert "item_id=feat-c" in cmd, cmd
         assert "cycle_kind=spec" in cmd, cmd
+        # adhoc-audit-obligation-fires-on-zero-commit-failed-cycle P2: the emit
+        # command binds the bracket's ACTUAL recorded end commit, never the
+        # positional HEAD~1 proxy.
+        assert "cycle_commit_sha=end111feat" in cmd, cmd
+        assert "HEAD~1" not in cmd, (
+            "a recorded end sha must replace the HEAD~1 proxy: " + cmd
+        )
 
         # --- (3) discharge via a REGISTERED --emit-dispatch input-audit ---
         r_discharge = subprocess.run(
@@ -1553,6 +1565,77 @@ def test_probe_withholds_forward_route_on_audit_obligation():
         )
 
 
+def test_input_audit_emit_names_pending_audit_item_not_next_queued():
+    """GAP 4 (adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps): when the
+    audit obligation is owed for a PRIOR item while the current probe emits for a
+    DIFFERENT (next-queued) item, the input_audit_emit_command must carry the
+    PENDING-AUDIT item's own identity — not the next-queued item's name. The
+    spec_path/item_id already branched on this; item_name used to be the wrong
+    (current-probe) item's name."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        features = td_path / "fixture-repo" / "docs" / "features"
+        features.mkdir(parents=True)
+        # Two features: feat-c already COMPLETE (receipt) so the probe head is
+        # feat-d; the obligation is armed for feat-c (the prior item).
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-d", "name": "Feature D", "spec_dir": "feat-d", "tier": 1},
+                {"id": "feat-c", "name": "Feature C", "spec_dir": "feat-c", "tier": 2},
+            ]
+        }), encoding="utf-8")
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        # feat-d: fresh Draft head (yields a forward route).
+        dd = features / "feat-d"
+        dd.mkdir()
+        (dd / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (dd / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        (dd / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+        # feat-c: the obligated (prior) item — just needs a dir for spec_path.
+        cd = features / "feat-c"
+        cd.mkdir()
+        (cd / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n", encoding="utf-8")
+        fixture_repo = td_path / "fixture-repo"
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(fixture_repo),
+                max_cycles=10, now=_time.time(),
+            )
+            lazy_core.record_audit_obligation(
+                item_id="feat-c", cycle_kind="spec",
+                begin_head_sha="begin000", end_sha="end111feat",
+                cycle_summary="spec: feat-c baseline",
+            )
+        finally:
+            _clear_state_dir()
+
+        r = subprocess.run(
+            [sys.executable, str(lazy_state),
+             "--repeat-count", "--probe", "--emit-prompt",
+             "--repo-root", str(fixture_repo)],
+            capture_output=True, text=True, env=env,
+        )
+        assert r.returncode == 0, f"probe failed: {r.stderr[:400]!r}"
+        out = json.loads(r.stdout)
+        assert out.get("route_overridden_by") == "audit-obligation", out
+        cmd = out.get("input_audit_emit_command", "")
+        # The obligated item's OWN identity — never the next-queued item's name.
+        assert "item_id=feat-c" in cmd, cmd
+        assert "item_name=feat-c" in cmd, cmd
+        assert "Feature D" not in cmd, (
+            "item_name must NOT be the next-queued (current-probe) item's name: " + cmd
+        )
 
 
 def test_audit_obligation_helpers_no_marker_and_non_audited_kind():
@@ -1583,19 +1666,33 @@ def test_audit_obligation_helpers_no_marker_and_non_audited_kind():
             # 1d.5 skip-condition prose: "plan-bug is a planning step, not a
             # SPEC/PHASES-authoring cycle — skip audit for plan-bug") — only
             # spec-bug/spec-phases are audited on the bug pipeline.
-            lazy_core.record_audit_obligation("bug-1", "plan-bug")
+            # adhoc-audit-obligation-fires-on-zero-commit-failed-cycle: arming now
+            # ALSO requires a non-empty commit delta (begin != end) — a real commit
+            # landed. The armed obligation carries the end sha + subject.
+            lazy_core.record_audit_obligation(
+                "bug-1", "plan-bug", begin_head_sha="b0", end_sha="b1",
+            )
             assert lazy_core.pending_audit_obligation() is None
-            lazy_core.record_audit_obligation("bug-1", "spec-bug")
+            lazy_core.record_audit_obligation(
+                "bug-1", "spec-bug",
+                begin_head_sha="b0", end_sha="b1", cycle_summary="fix the thing",
+            )
             assert lazy_core.pending_audit_obligation() == {
                 "item_id": "bug-1", "cycle_kind": "spec-bug",
+                "cycle_commit_sha": "b1", "cycle_summary": "fix the thing",
             }
             assert lazy_core.discharge_audit_obligation() is True
 
-            # An audited kind arms it; discharge clears it; a second
-            # discharge is a no-op (False, not an error).
-            lazy_core.record_audit_obligation("f1", "plan-feature")
+            # An audited kind on a real delta arms it; discharge clears it; a
+            # second discharge is a no-op (False, not an error).
+            lazy_core.record_audit_obligation(
+                "f1", "plan-feature", begin_head_sha="c0", end_sha="c1",
+            )
             obligation = lazy_core.pending_audit_obligation()
-            assert obligation == {"item_id": "f1", "cycle_kind": "plan-feature"}
+            assert obligation == {
+                "item_id": "f1", "cycle_kind": "plan-feature",
+                "cycle_commit_sha": "c1", "cycle_summary": "",
+            }
             assert lazy_core.discharge_audit_obligation() is True
             assert lazy_core.pending_audit_obligation() is None
             assert lazy_core.discharge_audit_obligation() is False
@@ -1603,6 +1700,46 @@ def test_audit_obligation_helpers_no_marker_and_non_audited_kind():
             _clear_state_dir()
 
 
+
+
+def test_build_input_audit_emit_command_binds_supplied_cycle_commit_sha():
+    """adhoc-audit-obligation-fires-on-zero-commit-failed-cycle P2: when the
+    obligation supplies cycle_commit_sha (+ cycle_summary), the emit command
+    binds them and does NOT emit the positional HEAD~1 proxy — closing the
+    mis-targeted-diff half of the defect."""
+    _guard()
+    cmd = lazy_core.build_input_audit_emit_command(
+        "lazy-state.py",
+        item_id="feat-a", item_name="Feature A",
+        spec_path="/repo/docs/features/feat-a", cycle_kind="spec",
+        cwd="/repo",
+        cycle_commit_sha="deadbeefcafe",
+        cycle_summary="spec: feat-a baseline",
+    )
+    assert "cycle_commit_sha=deadbeefcafe" in cmd, cmd
+    assert "HEAD~1" not in cmd, (
+        "a supplied end sha must REPLACE the positional HEAD~1 proxy: " + cmd
+    )
+    assert "cycle_summary=" in cmd and "feat-a baseline" in cmd, cmd
+
+
+def test_build_input_audit_emit_command_falls_back_to_head1_without_sha():
+    """adhoc-audit-obligation-fires-on-zero-commit-failed-cycle P2: with no
+    cycle_commit_sha supplied (a legacy/partial obligation), the command retains
+    the ready-to-run HEAD~1 default + the git-log latest-subject fallback so it
+    stays runnable."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # A non-git cwd → the latest-subject git call fails gracefully (empty
+        # summary), but the HEAD~1 default is still emitted so the command runs.
+        cmd = lazy_core.build_input_audit_emit_command(
+            "lazy-state.py",
+            item_id="feat-a", item_name="Feature A",
+            spec_path="/repo/docs/features/feat-a", cycle_kind="spec",
+            cwd=td,
+        )
+    assert "HEAD~1" in cmd, ("absent-sha fallback must keep HEAD~1: " + cmd)
+    assert "cycle_summary=" in cmd, cmd
 
 
 def test_record_decision_and_read_round_trip():
@@ -1651,6 +1788,44 @@ def test_record_decision_and_read_round_trip():
             _clear_state_dir()
 
 
+def test_record_decision_key_reconciles_relative_and_absolute():
+    """adhoc-decision-key-relative-absolute-mismatch: a decision recorded with a
+    REPRESENTATIVE relative sentinel path must be found by a lookup that passes the
+    ABSOLUTE form of the same file, and vice versa — the exact record/emit
+    disagreement that produced 'no recorded decision for sentinel'. Red on the
+    prior pure-string normpath key (relative != absolute), green on the abspath
+    key. No filesystem I/O beyond the state dir (record_decision never touches the
+    sentinel file); abspath is resolved against the test process cwd on BOTH sides,
+    so relative and absolute reconcile deterministically."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            rel_sentinel = os.path.join("feat-rel", "NEEDS_INPUT.md")  # relative
+            abs_sentinel = os.path.abspath(rel_sentinel)               # its absolute form
+            assert rel_sentinel != abs_sentinel  # the two spellings genuinely differ
+
+            # Record RELATIVE → look up ABSOLUTE reconciles.
+            lazy_core.record_decision(rel_sentinel, "Option R", now=1000.0)
+            got_abs = lazy_core.read_decision_record(abs_sentinel)
+            assert got_abs is not None, (
+                "an absolute lookup must find a relatively-recorded decision"
+            )
+            assert got_abs["chosen_path"] == "Option R"
+
+            # Record ABSOLUTE (overwrites the SAME key) → look up RELATIVE reconciles.
+            lazy_core.record_decision(abs_sentinel, "Option A2", now=2000.0)
+            got_rel = lazy_core.read_decision_record(rel_sentinel)
+            assert got_rel is not None, (
+                "a relative lookup must find an absolutely-recorded decision"
+            )
+            assert got_rel["chosen_path"] == "Option A2", (
+                "the two spellings must map to ONE key (overwrite, not a 2nd entry)"
+            )
+        finally:
+            _clear_state_dir()
 
 
 def test_bind_decision_record_context_refuses_without_record_and_binds_when_present():
@@ -3878,6 +4053,312 @@ def test_intervention_event_vocabulary_matches_live_emit_set():
     )
 
 
+# ---------------------------------------------------------------------------
+# flush_commit_artifacts (end-of-run-flush-commit-absorbs-concurrent-writer-
+# staged-files): the end-of-run efficacy flush must stage + commit ONLY its own
+# explicit artifacts, never absorb a concurrent writer's staged files.
+# ---------------------------------------------------------------------------
+
+def _fca_git_head_files(root: "Path") -> "list[str]":
+    r = subprocess.run(
+        ["git", "-C", str(root), "show", "--name-only", "--pretty=format:", "HEAD"],
+        check=True, capture_output=True, text=True,
+    )
+    return [l.strip() for l in r.stdout.splitlines() if l.strip()]
+
+
+def _fca_git_staged(root: "Path") -> "list[str]":
+    r = subprocess.run(
+        ["git", "-C", str(root), "diff", "--cached", "--name-only"],
+        check=True, capture_output=True, text=True,
+    )
+    return [l.strip() for l in r.stdout.splitlines() if l.strip()]
+
+
+def test_flush_commit_artifacts_does_not_absorb_foreign_staged_file():
+    """The MEASURABLE gap-3 regression: a foreign staged file (a concurrent harden
+    agent's spec) is NOT absorbed into the flush commit — the pathspec commit
+    captures ONLY the explicit flush artifacts; the foreign file stays staged."""
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        _prov_git_fixture_repo(root)
+        # The flush's own artifacts.
+        (root / "docs" / "interventions").mkdir(parents=True)
+        (root / "docs" / "interventions" / "harden-x.md").write_text(
+            "---\nkind: intervention\n---\n", encoding="utf-8")
+        (root / "docs" / "kpi").mkdir(parents=True)
+        (root / "docs" / "kpi" / "SCORECARD.md").write_text("# scorecard\n", encoding="utf-8")
+        # A CONCURRENT writer's file, ALREADY STAGED (a harden agent mid-write).
+        (root / "docs" / "bugs" / "some-harden-bug").mkdir(parents=True)
+        foreign = root / "docs" / "bugs" / "some-harden-bug" / "SPEC.md"
+        foreign.write_text("# concurrent harden spec\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(root), "add", "docs/bugs/some-harden-bug/SPEC.md"],
+            check=True, capture_output=True, text=True,
+        )
+        assert "docs/bugs/some-harden-bug/SPEC.md" in _fca_git_staged(root)
+
+        result = lazy_core.flush_commit_artifacts(
+            root,
+            ["docs/interventions/harden-x.md", "docs/kpi/SCORECARD.md"],
+            "docs(interventions): efficacy verdicts — test",
+        )
+
+        assert result["ok"] is True, result
+        committed = _fca_git_head_files(root)
+        # The flush artifacts ARE committed …
+        assert "docs/interventions/harden-x.md" in committed
+        assert "docs/kpi/SCORECARD.md" in committed
+        # … and the foreign staged file is NOT absorbed into the flush commit …
+        assert "docs/bugs/some-harden-bug/SPEC.md" not in committed
+        # … and remains staged for its owner (uncommitted, not lost).
+        assert "docs/bugs/some-harden-bug/SPEC.md" in _fca_git_staged(root)
+
+
+def test_flush_commit_artifacts_skips_missing_and_noops_when_empty():
+    """A no-op flush (no artifacts present) commits nothing and reports skips."""
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        head0 = _prov_git_fixture_repo(root)
+        result = lazy_core.flush_commit_artifacts(
+            root, ["docs/interventions/absent.md"], "docs(interventions): none",
+        )
+        assert result["ok"] is True
+        assert result["committed"] == []
+        assert "docs/interventions/absent.md" in result["skipped_missing"]
+        head1 = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "HEAD"],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+        assert head1 == head0, "no-op flush must not create a commit"
+
+
+# ---------------------------------------------------------------------------
+# WU-1 — concurrent-activity commit-sha ledger substrate
+# (adhoc-process-friction-detector-counts-concurrent-session-commits Phase 1):
+# append_concurrent_commit_sha / read_concurrent_commit_entries mirror the
+# deny-ledger fail-open plain-append pattern. Script-owned commit sites (Phase 2)
+# record their produced sha here so a concurrent same-identity session's commits
+# are subtractable at the friction detector.
+# ---------------------------------------------------------------------------
+
+def _cca_raw_lines(state_dir: "Path") -> "list[dict]":
+    p = state_dir / "lazy-concurrent-activity.jsonl"
+    if not p.exists():
+        return []
+    out = []
+    for line in p.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line:
+            out.append(json.loads(line))
+    return out
+
+
+def test_append_concurrent_commit_sha_writes_entry():
+    """A single append writes one compact JSON line {sha, run_started_at, ts} to
+    lazy-concurrent-activity.jsonl and returns True."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td)
+        _set_state_dir(state_dir)
+        try:
+            ok = lazy_core.append_concurrent_commit_sha(
+                "abc123", run_started_at="R1", now=7.0,
+            )
+            assert ok is True
+            lines = _cca_raw_lines(state_dir)
+        finally:
+            _clear_state_dir()
+    assert len(lines) == 1, lines
+    entry = lines[0]
+    assert entry["sha"] == "abc123"
+    assert entry["run_started_at"] == "R1"
+    assert entry["ts"] == 7.0
+
+
+def test_read_concurrent_commit_entries_roundtrip():
+    """read_concurrent_commit_entries returns the appended entries as a
+    {sha: run_started_at} map."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.append_concurrent_commit_sha("s1", run_started_at="A", now=1.0)
+            lazy_core.append_concurrent_commit_sha("s2", run_started_at="B", now=2.0)
+            got = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert got == {"s1": "A", "s2": "B"}, got
+
+
+def test_read_concurrent_commit_entries_missing_file_empty():
+    """A missing ledger file returns an empty map, never raises."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            got = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert got == {}, got
+
+
+def test_read_concurrent_commit_entries_tolerates_torn_line():
+    """A torn/partial final line is skipped; the valid lines still parse."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td)
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.append_concurrent_commit_sha("good", run_started_at="A", now=1.0)
+            # Simulate a torn final append (a crash mid-write).
+            with (state_dir / "lazy-concurrent-activity.jsonl").open(
+                "a", encoding="utf-8"
+            ) as fh:
+                fh.write('{"sha": "torn", "run_started')  # no newline, invalid JSON
+            got = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert got == {"good": "A"}, got
+
+
+def test_append_concurrent_commit_sha_run_started_at_none_roundtrips():
+    """run_started_at=None (interactive, no live marker) records null and
+    round-trips as None (the conservative, never-subtracted identity)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            ok = lazy_core.append_concurrent_commit_sha(
+                "nullid", run_started_at=None, now=3.0,
+            )
+            assert ok is True
+            got = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert got == {"nullid": None}, got
+
+
+def test_append_concurrent_commit_sha_fail_open_unwritable():
+    """An unwritable state dir makes append return False WITHOUT raising
+    (fail-open — identical contract to append_deny_ledger_entry)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        # Point LAZY_STATE_DIR at a FILE, not a dir — claude_state_dir's mkdir
+        # then raises, and the fail-open append swallows it.
+        blocker = Path(td) / "not-a-dir"
+        blocker.write_text("x", encoding="utf-8")
+        _set_state_dir(blocker)
+        try:
+            ok = lazy_core.append_concurrent_commit_sha("x", run_started_at="A", now=1.0)
+        finally:
+            _clear_state_dir()
+    assert ok is False
+
+
+# ---------------------------------------------------------------------------
+# WU-4 — flush_commit_artifacts producer instrumentation + the end-to-end seam
+# (adhoc-process-friction-detector-counts-concurrent-session-commits Phase 2):
+# the shared script-owned flush commit records its sha too, and the motivating
+# incident (a concurrent same-identity session's commits) is exercised hermetic
+# through the real producer + the WU-2 detector.
+# ---------------------------------------------------------------------------
+
+def test_flush_commit_artifacts_appends_commit_sha():
+    """A real flush commit appends its resolved commit_sha to the concurrent-
+    activity ledger stamped with the live-run identity."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as td_state:
+        root = Path(td)
+        _prov_git_fixture_repo(root)
+        _set_state_dir(Path(td_state))
+        try:
+            marker = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(root),
+                now=_time.time(),
+            )
+            (root / "docs" / "kpi").mkdir(parents=True)
+            (root / "docs" / "kpi" / "SCORECARD.md").write_text("# s\n", encoding="utf-8")
+            result = lazy_core.flush_commit_artifacts(
+                root, ["docs/kpi/SCORECARD.md"], "docs(kpi): scorecard — test",
+            )
+            assert result["ok"] is True and result["commit_sha"], result
+            ledger = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert result["commit_sha"] in ledger, (result["commit_sha"], ledger)
+    assert ledger[result["commit_sha"]] == marker["started_at"], ledger
+
+
+def test_flush_commit_artifacts_noop_appends_nothing():
+    """The 'no flush artifacts present' path commits nothing and appends nothing
+    to the concurrent-activity ledger."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as td_state:
+        root = Path(td)
+        _prov_git_fixture_repo(root)
+        _set_state_dir(Path(td_state))
+        try:
+            result = lazy_core.flush_commit_artifacts(
+                root, ["docs/interventions/absent.md"], "docs: none",
+            )
+            assert result["ok"] is True and result["commit_sha"] is None
+            ledger = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert ledger == {}, ledger
+
+
+def test_concurrent_session_commits_seam_no_false_friction():
+    """END-TO-END SEAM (the 2026-07-18 motivating incident, hermetic): a
+    concurrent session's automated commits — recorded through the REAL producer
+    under a DISTINCT run identity — are subtracted at cycle_end_friction_check,
+    so no `unexpected-commits` process-friction entry lands when the REMAINDER
+    is within budget; a genuine same-run runaway (commits NOT in the ledger)
+    still trips."""
+    _guard()
+    budget = (
+        lazy_core.markers._CYCLE_COMMIT_MULTI
+        + lazy_core.markers._CYCLE_COMMIT_NOISE_ALLOWANCE
+    )  # execute-plan derived budget (no sub_skill_args) == 4
+    m = 3  # concurrent-session commits recorded in the ledger
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as td_state:
+        root = Path(td)
+        _set_state_dir(Path(td_state))
+        try:
+            begin = _prov_git_fixture_repo(root)
+            # run_started_at=None (no live run marker) → bracket-break signal off,
+            # isolating the unexpected-commits signal; a ledger identity of "OTHER"
+            # (present, != None) is a DISTINCT concurrent identity, so it subtracts.
+            lazy_core.write_cycle_marker(
+                feature_id="f", nonce="n", run_started_at=None,
+                begin_head_sha=begin, sub_skill="execute-plan",
+            )
+            # budget + m commits in the window; record m of them (the concurrent
+            # session's) through the REAL producer under a distinct identity.
+            shas = [
+                _prov_git_commit_file(root, f"c{i}.txt", f"c{i}")
+                for i in range(budget + m)
+            ]
+            for s in shas[:m]:
+                lazy_core.append_concurrent_commit_sha(s, run_started_at="OTHER")
+
+            desc = lazy_core.cycle_end_friction_check(repo_root=root)
+            assert desc is None, (
+                f"chargeable={budget} must be within budget; got {desc}")
+            assert lazy_core.pending_hardening() == 0, "no friction entry expected"
+
+            # Genuine runaway: one MORE own commit (NOT in the ledger) pushes the
+            # remainder to budget+1 → still trips.
+            _prov_git_commit_file(root, "runaway.txt", "runaway")
+            desc2 = lazy_core.cycle_end_friction_check(repo_root=root)
+            assert desc2 is not None and desc2["reason"] == "unexpected-commits", desc2
+            assert lazy_core.pending_hardening() == 1
+        finally:
+            _clear_state_dir()
+
+
 _TESTS = [
     ("test_stale_and_materialized_symbols_present", test_stale_and_materialized_symbols_present),
     ("test_read_stale_upstream_absent", test_read_stale_upstream_absent),
@@ -3933,8 +4414,13 @@ _TESTS = [
     ("test_f2b_find_transcription_slip_entry_no_match_without_marker", test_f2b_find_transcription_slip_entry_no_match_without_marker),
     ("test_probe_withholds_forward_route_on_pending_debt", test_probe_withholds_forward_route_on_pending_debt),
     ("test_probe_withholds_forward_route_on_audit_obligation", test_probe_withholds_forward_route_on_audit_obligation),
+    ("test_input_audit_emit_names_pending_audit_item_not_next_queued", test_input_audit_emit_names_pending_audit_item_not_next_queued),
     ("test_audit_obligation_helpers_no_marker_and_non_audited_kind", test_audit_obligation_helpers_no_marker_and_non_audited_kind),
+    ("test_build_input_audit_emit_command_binds_supplied_cycle_commit_sha", test_build_input_audit_emit_command_binds_supplied_cycle_commit_sha),
+    ("test_build_input_audit_emit_command_falls_back_to_head1_without_sha", test_build_input_audit_emit_command_falls_back_to_head1_without_sha),
     ("test_record_decision_and_read_round_trip", test_record_decision_and_read_round_trip),
+    ("test_record_decision_key_reconciles_relative_and_absolute",
+     test_record_decision_key_reconciles_relative_and_absolute),
     ("test_bind_decision_record_context_refuses_without_record_and_binds_when_present", test_bind_decision_record_context_refuses_without_record_and_binds_when_present),
     ("test_emit_dispatch_hardening_no_longer_acks", test_emit_dispatch_hardening_no_longer_acks),
     ("test_detect_cycle_bracket_friction_symbols_present", test_detect_cycle_bracket_friction_symbols_present),
@@ -4002,6 +4488,17 @@ _TESTS = [
     ("test_read_hook_events_empty_missing_and_corrupt_tolerant", test_read_hook_events_empty_missing_and_corrupt_tolerant),
     ("test_guard_plane_heartbeat_none_without_marker", test_guard_plane_heartbeat_none_without_marker),
     ("test_intervention_event_vocabulary_matches_live_emit_set", test_intervention_event_vocabulary_matches_live_emit_set),
+    ("test_flush_commit_artifacts_does_not_absorb_foreign_staged_file", test_flush_commit_artifacts_does_not_absorb_foreign_staged_file),
+    ("test_flush_commit_artifacts_skips_missing_and_noops_when_empty", test_flush_commit_artifacts_skips_missing_and_noops_when_empty),
+    ("test_append_concurrent_commit_sha_writes_entry", test_append_concurrent_commit_sha_writes_entry),
+    ("test_read_concurrent_commit_entries_roundtrip", test_read_concurrent_commit_entries_roundtrip),
+    ("test_read_concurrent_commit_entries_missing_file_empty", test_read_concurrent_commit_entries_missing_file_empty),
+    ("test_read_concurrent_commit_entries_tolerates_torn_line", test_read_concurrent_commit_entries_tolerates_torn_line),
+    ("test_append_concurrent_commit_sha_run_started_at_none_roundtrips", test_append_concurrent_commit_sha_run_started_at_none_roundtrips),
+    ("test_append_concurrent_commit_sha_fail_open_unwritable", test_append_concurrent_commit_sha_fail_open_unwritable),
+    ("test_flush_commit_artifacts_appends_commit_sha", test_flush_commit_artifacts_appends_commit_sha),
+    ("test_flush_commit_artifacts_noop_appends_nothing", test_flush_commit_artifacts_noop_appends_nothing),
+    ("test_concurrent_session_commits_seam_no_false_friction", test_concurrent_session_commits_seam_no_false_friction),
 ]
 
 

@@ -134,6 +134,26 @@ This replaces the old **zero-context halt** (a bare `PushNotification` + STOP th
        surface changed), so the re-validation cycle runs without a wasteful retro
        round in front of it. Only tag `design` if the resolution genuinely
        expands the design surface (rare for a blocker resolution).
+       RECONCILE THE ORIGINATING PLAN (HARD — when the new corrective phase
+       SUPERSEDES deliverables belonging to an originating In-progress plan): if
+       the new phase makes prior deliverables architecturally impossible /
+       obsolete and those deliverables were struck in PHASES.md, you MUST also
+       reconcile any originating implementation plan under {spec_path}/plans/
+       whose per-WU checkboxes track those SAME superseded deliverables. The
+       router (Step 7a) prioritizes finishing any plan whose frontmatter
+       `status:` is `In-progress` with unchecked `- [ ] WU-N` rows; an
+       unreconciled originating plan re-routes /execute-plan back to the
+       superseded, now-impossible WUs and re-blocks (an infinite loop). For EACH
+       such originating plan (`plans/*.md`, `status: In-progress`):
+         (a) strike each superseded WU row in its `## Work Units` checklist with
+             the canonical descoped marker — turn `- [ ] WU-N — <title>` into
+             `- [ ] ~~WU-N — <title>~~ **SUPERSEDED** <!-- descoped -->` (SSOT
+             `lazy_core:_DESCOPED_MARKER`; the strikethrough + marker is what drops
+             the row from the router's unchecked-WU count), citing the new phase;
+         (b) if EVERY remaining WU row is then either `[x]` landed or struck
+             `~~...~~ **SUPERSEDED**`, flip the plan's frontmatter `status:` to
+             `Complete` so the router filters it out; else leave it In-progress.
+       Do NOT touch plans whose deliverables the new phase does NOT supersede.
        Then NEUTRALIZE BLOCKED.md
        (see below). The next loop cycle's {STATE_SCRIPT} routes the {ITEM} to
        plan/implement the new phase.

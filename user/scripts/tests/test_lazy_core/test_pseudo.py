@@ -2659,6 +2659,94 @@ def test_archive_fixed_rerun_is_noop():
 
 
 
+# ---------------------------------------------------------------------------
+# WU-3 — archive_fixed records its produced sha in the concurrent-activity
+# ledger (adhoc-process-friction-detector-counts-concurrent-session-commits
+# Phase 2): a concurrent session's archive commit becomes subtractable at the
+# --cycle-end friction detector. Best-effort — a ledger failure NEVER changes
+# the archive verdict.
+# ---------------------------------------------------------------------------
+
+def test_archive_fixed_appends_concurrent_commit_sha():
+    """A real archive commit appends exactly one concurrent-activity entry whose
+    sha == the new HEAD and whose run_started_at == the live-run identity."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as td_state:
+        _set_state_dir(Path(td_state))
+        try:
+            repo_root, bug_dir = _make_fixed_bug_repo(td)
+            marker = lazy_core.write_run_marker(
+                pipeline="bug", cloud=False, repo_root=str(repo_root),
+                now=_time.time(),
+            )
+            result = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+            assert result["ok"] is True, result
+            head = subprocess.run(
+                ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
+                capture_output=True, text=True,
+            ).stdout.strip()
+            ledger = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert head in ledger, (head, ledger)
+    assert ledger[head] == marker["started_at"], ledger
+
+
+def test_archive_fixed_noop_rerun_appends_nothing():
+    """The no-op re-run path (nothing staged → noop) appends NOTHING — the
+    ledger holds exactly the one entry from the first real archive."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as td_state:
+        _set_state_dir(Path(td_state))
+        try:
+            repo_root, bug_dir = _make_fixed_bug_repo(td)
+            lazy_core.write_run_marker(
+                pipeline="bug", cloud=False, repo_root=str(repo_root),
+                now=_time.time(),
+            )
+            first = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+            assert first["ok"] is True and not first.get("noop")
+            after_first = dict(lazy_core.read_concurrent_commit_entries())
+            second = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+            assert second["ok"] is True and second["noop"] is True
+            after_second = lazy_core.read_concurrent_commit_entries()
+        finally:
+            _clear_state_dir()
+    assert len(after_first) == 1, after_first
+    assert after_second == after_first, "noop re-run must not append a ledger entry"
+
+
+def test_archive_fixed_ledger_failure_does_not_change_verdict():
+    """A forced ledger-write failure leaves the archive committed and ok:True —
+    the sha append is strictly best-effort."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as td_state:
+        _set_state_dir(Path(td_state))
+        original = lazy_core.ledgers.append_concurrent_commit_sha
+
+        def _boom(*a, **k):
+            raise RuntimeError("simulated ledger failure")
+
+        lazy_core.ledgers.append_concurrent_commit_sha = _boom  # type: ignore[assignment]
+        try:
+            repo_root, bug_dir = _make_fixed_bug_repo(td)
+            lazy_core.write_run_marker(
+                pipeline="bug", cloud=False, repo_root=str(repo_root),
+                now=_time.time(),
+            )
+            result = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+        finally:
+            lazy_core.ledgers.append_concurrent_commit_sha = original  # type: ignore[assignment]
+            _clear_state_dir()
+    assert result["ok"] is True, result
+    assert result["committed"], result
+
+
+
+
 def test_archive_fixed_resume_after_partial_move():
     """If a prior run moved the directory but died before repoint/commit,
     re-running resumes: repoints, trims the queue, and commits."""
@@ -2688,6 +2776,46 @@ def test_archive_fixed_resume_after_partial_move():
             capture_output=True, text=True,
         )
         assert status.stdout.strip() == ""
+
+
+
+
+def test_archive_fixed_accepts_relative_spec_path():
+    """Regression (archive-fixed-relative-spec-path-valueerror): archive_fixed
+    must accept a REPO-RELATIVE spec_path (the `docs/bugs/<id>` form the CLI
+    passes straight through as `Path(args.archive_fixed)`) against an absolute
+    repo_root, anchoring it at repo_root — NOT crash with an uncaught ValueError
+    from `spec_path.relative_to(repo_root)` (gates.py:2104) nor refuse "nothing to
+    archive" because a CWD-anchored relative path does not exist.
+
+    Red before the fix: `spec_path` was used un-normalized while repo_root was
+    resolved to absolute, so a relative `spec_path` either (a) raised ValueError in
+    the per-file git-mv fallback, or (b) — as here, with CWD != repo_root — resolved
+    to a non-existent directory and refused. Green after: spec_path is anchored at
+    repo_root and the archive completes exactly as the absolute-path invocation."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _bug_dir = _make_fixed_bug_repo(td)
+        # The CLI passes the repo-relative dir through un-resolved; repo_root is
+        # absolute. Deliberately do NOT chdir into repo_root, so a CWD-anchored
+        # relative path would miss — proving the anchor is repo_root, not CWD.
+        rel_spec = Path("docs/bugs/my-bug")
+
+        result = lazy_core.archive_fixed(repo_root, rel_spec, date="2026-06-10")
+
+        assert result["ok"] is True, f"expected ok, got {result}"
+        assert result["archived_to"] == "docs/bugs/_archive/my-bug"
+        dest = repo_root / "docs" / "bugs" / "_archive" / "my-bug"
+        assert dest.exists() and not (repo_root / "docs" / "bugs" / "my-bug").exists()
+        assert result["queue_removed"] is True
+        assert result["committed"]
+        status = subprocess.run(
+            ["git", "-C", str(repo_root), "status", "--short"],
+            capture_output=True, text=True,
+        )
+        assert status.stdout.strip() == "", (
+            f"expected clean tree, got: {status.stdout}"
+        )
 
 
 
@@ -2765,6 +2893,105 @@ def test_validation_escalation_string_digit_retry_count():
     ) is True
     assert lazy_core.validation_escalation(
         {"blocker_kind": "mcp-validation", "retry_count": "1"}
+    ) is False
+
+
+
+
+# ---- spike_escalation() unit tests (spike-pipeline-role WU-2) ----
+#
+# Faithful shape-mirror of validation_escalation() above — same threshold
+# (retry_count >= 2) and the same int / string-digit / bool-reject / missing
+# tolerances, but keyed on blocker_kind == "runtime-spike-verdict-pending"
+# instead of "mcp-validation". A completely independent predicate (its own
+# blocker_kind never fires the mcp-validation one and vice versa).
+
+def test_spike_escalation_retry_1_not_escalated():
+    """blocker_kind runtime-spike-verdict-pending + retry_count 1 → below
+    the threshold, no escalation."""
+    _guard()
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": 1}
+    ) is False
+
+
+def test_spike_escalation_retry_0_not_escalated():
+    """retry_count 0 (or missing) is also below the threshold."""
+    _guard()
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": 0}
+    ) is False
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending"}
+    ) is False
+
+
+def test_spike_escalation_retry_2_escalated():
+    """blocker_kind runtime-spike-verdict-pending + retry_count 2 →
+    escalation fires (>= 2)."""
+    _guard()
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": 2}
+    ) is True
+    # And anything above the threshold also escalates.
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": 3}
+    ) is True
+
+
+def test_spike_escalation_other_blocker_kind_not_escalated():
+    """retry_count 5 but a NON-spike blocker_kind (e.g. the mcp-validation
+    escalation's own kind) → never escalates. spike_escalation fires ONLY
+    on its own blocker_kind."""
+    _guard()
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "mcp-validation", "retry_count": 5}
+    ) is False
+
+
+def test_spike_escalation_missing_fields_not_escalated():
+    """Missing blocker_kind / missing retry_count / malformed retry_count /
+    None / empty meta → no escalation (mirrors validation_escalation's
+    backward-compatibility tolerances)."""
+    _guard()
+    # Missing blocker_kind entirely.
+    assert lazy_core.spike_escalation({"retry_count": 5}) is False
+    # Missing retry_count entirely.
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending"}
+    ) is False
+    # Malformed retry_count (non-numeric string).
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": "many"}
+    ) is False
+    # None meta (defensive caller convenience).
+    assert lazy_core.spike_escalation(None) is False
+    # Empty meta.
+    assert lazy_core.spike_escalation({}) is False
+
+
+def test_spike_escalation_string_digit_retry_count():
+    """retry_count as a string of digits is tolerated ("2" escalates, "1"
+    not)."""
+    _guard()
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": "2"}
+    ) is True
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": "1"}
+    ) is False
+
+
+def test_spike_escalation_bool_retry_count_rejected():
+    """YAML booleans are ints in Python (True == 1) — retry_count: true must
+    NOT coerce to 1 and must not escalate, even though bool is an int
+    subclass."""
+    _guard()
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": True}
+    ) is False
+    assert lazy_core.spike_escalation(
+        {"blocker_kind": "runtime-spike-verdict-pending", "retry_count": False}
     ) is False
 
 
@@ -4304,12 +4531,23 @@ _TESTS = [
     ("test_archive_fixed_wont_fix_archives_without_receipt", test_archive_fixed_wont_fix_archives_without_receipt),
     ("test_archive_fixed_collision_appends_suffix", test_archive_fixed_collision_appends_suffix),
     ("test_archive_fixed_rerun_is_noop", test_archive_fixed_rerun_is_noop),
+    ("test_archive_fixed_appends_concurrent_commit_sha", test_archive_fixed_appends_concurrent_commit_sha),
+    ("test_archive_fixed_noop_rerun_appends_nothing", test_archive_fixed_noop_rerun_appends_nothing),
+    ("test_archive_fixed_ledger_failure_does_not_change_verdict", test_archive_fixed_ledger_failure_does_not_change_verdict),
     ("test_archive_fixed_resume_after_partial_move", test_archive_fixed_resume_after_partial_move),
+    ("test_archive_fixed_accepts_relative_spec_path", test_archive_fixed_accepts_relative_spec_path),
     ("test_validation_escalation_retry_1_not_escalated", test_validation_escalation_retry_1_not_escalated),
     ("test_validation_escalation_retry_2_escalated", test_validation_escalation_retry_2_escalated),
     ("test_validation_escalation_other_blocker_kind_not_escalated", test_validation_escalation_other_blocker_kind_not_escalated),
     ("test_validation_escalation_missing_fields_not_escalated", test_validation_escalation_missing_fields_not_escalated),
     ("test_validation_escalation_string_digit_retry_count", test_validation_escalation_string_digit_retry_count),
+    ("test_spike_escalation_retry_1_not_escalated", test_spike_escalation_retry_1_not_escalated),
+    ("test_spike_escalation_retry_0_not_escalated", test_spike_escalation_retry_0_not_escalated),
+    ("test_spike_escalation_retry_2_escalated", test_spike_escalation_retry_2_escalated),
+    ("test_spike_escalation_other_blocker_kind_not_escalated", test_spike_escalation_other_blocker_kind_not_escalated),
+    ("test_spike_escalation_missing_fields_not_escalated", test_spike_escalation_missing_fields_not_escalated),
+    ("test_spike_escalation_string_digit_retry_count", test_spike_escalation_string_digit_retry_count),
+    ("test_spike_escalation_bool_retry_count_rejected", test_spike_escalation_bool_retry_count_rejected),
     ("test_apply_pseudo_mark_complete_refuses_stale_retro_zero_writes", test_apply_pseudo_mark_complete_refuses_stale_retro_zero_writes),
     ("test_apply_pseudo_mark_complete_grandfathered_retro_completes", test_apply_pseudo_mark_complete_grandfathered_retro_completes),
     ("test_apply_pseudo_mark_complete_receipted_noop_beats_stale_retro", test_apply_pseudo_mark_complete_receipted_noop_beats_stale_retro),

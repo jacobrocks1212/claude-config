@@ -44,6 +44,16 @@ def load_manifest(repo_root: str | Path) -> dict:
     return json.loads(manifest_path.read_text(encoding="utf-8"))
 
 
+def load_compute_state_routing_allowlist(repo_root: str | Path) -> dict:
+    """Read the compute-state-routing-parity.json allowlist under repo_root.
+
+    Raises on missing/unreadable/malformed — the caller converts that into a
+    loud ERROR finding (never a silent empty pass).
+    """
+    path = Path(repo_root) / "user" / "scripts" / "compute-state-routing-parity.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 # ---------------------------------------------------------------------------
 # Token substitution
 # ---------------------------------------------------------------------------
@@ -361,6 +371,24 @@ _SYNC_DEPS_RE = re.compile(r'"--sync-deps"')
 # script would silently un-page that pipeline's halts (the exact
 # time-to-notice gap the feature closes).  Match the call literal.
 _NOTIFY_HALT_RE = re.compile(r"lazy_core\.notify_halt\(")
+# byref-updatedinput-unapplied-on-background-agent-dispatch WU-2: the sanctioned
+# consumed-nonce read --resolve-ref <nonce> (returns the registered prompt bytes
+# for a nonce the guard ALREADY ALLOW+consumed this run; the subagent's designed
+# path after the platform drops the by-reference updatedInput rewrite, upstream
+# #39814) is a coupled-pair CLI surface — the nonce is the key, so the
+# --feature-id/--bug-id divergence does not apply; a drop from one script would
+# leave that pipeline's by-reference subagents with no resolve path. Match the
+# argparse flag literal.
+_RESOLVE_REF_RE = re.compile(r'"--resolve-ref"')
+# adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke Phase 1
+# (Gap 2): the read-only --execute-plan-liveness pause-vs-terminal discriminator
+# is a coupled-pair CLI surface — the execute-plan run marker is PIPELINE-
+# AGNOSTIC (same ~/.claude/state/execute-plan/<md5>.json for a bug or feature
+# cycle, shared lazy_core.execute_plan_liveness), so both state scripts MUST
+# expose the identical flag. A drop from one would leave that pipeline's
+# lazy-batch orchestrator unable to suppress redundant recovery against a paused
+# cycle. Match the argparse flag literal.
+_EXECUTE_PLAN_LIVENESS_RE = re.compile(r'"--execute-plan-liveness"')
 
 
 def audit_state_script_parity(repo_root: str | Path) -> list[str]:
@@ -459,6 +487,25 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
                 f"write) so halts on both pipelines page the operator "
                 f"(operator-halt-notifications coupled-pair parity)"
             )
+        if _RESOLVE_REF_RE.search(text) is None:
+            findings.append(
+                f"lazy-parity [state-scripts] STATE: {script} must carry the "
+                f"--resolve-ref <nonce> read surface (calls "
+                f"lazy_core.resolve_consumed_emission_by_nonce; NOT gated by "
+                f"refuse_if_cycle_active — a read a by-reference subagent must "
+                f"run) so both state scripts expose the same consumed-nonce "
+                f"resolve path (byref-updatedinput coupled-pair parity)"
+            )
+        if _EXECUTE_PLAN_LIVENESS_RE.search(text) is None:
+            findings.append(
+                f"lazy-parity [state-scripts] STATE: {script} must carry the "
+                f"read-only --execute-plan-liveness subcommand (calls "
+                f"lazy_core.execute_plan_liveness; the execute-plan run marker is "
+                f"pipeline-agnostic) so both state scripts expose the same "
+                f"pause-vs-terminal discriminator the lazy-batch orchestrators "
+                f"consult before dispatching recovery "
+                f"(adhoc-orchestrator-redundant-recovery coupled-pair parity)"
+            )
     return findings
 
 
@@ -474,7 +521,8 @@ def audit_state_script_parity(repo_root: str | Path) -> list[str]:
 # document type-correct terminals, and it must preserve single-type behavior
 # (the no-regression guarantee).  This is a docs-consistency check over the
 # SKILL.md prose — it never re-implements ordering (lazy_core.merged_priority is
-# the single source of "bugs break ties") and never runs a pipeline.
+# the single source of the equal-rank tie-break — features break ties, so only a
+# genuine P0 bug precedes a P1 feature) and never runs a pipeline.
 
 # The unified-driver pair: (name, repo-relative SKILL.md path).  Both the
 # workstation canonical driver and its cloud mirror carry the merged-view branch.
@@ -546,6 +594,133 @@ def audit_merged_view_dispatch_parity(repo_root: str | Path) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# compute_state routing-branch parity (adhoc-parity-audit-blind-to-compute-
+# state-routing-branches)
+# ---------------------------------------------------------------------------
+
+# The two state scripts' compute_state() functions carry the highest-churn
+# coupled routing surface in the pipeline — the audit above covers only NAMED
+# CLI/call-site literals, never compute_state's own routing branches. This
+# section extracts each script's compute_state() region and checks the
+# declared branches in compute-state-routing-parity.json against both regions
+# (mirrored -> present in both, token-substituted for bug-state.py;
+# tabulated-divergence -> present only in its declared owner).
+
+_COMPUTE_STATE_DEF_RE = re.compile(r"(?m)^def compute_state\(")
+
+
+def _compute_state_region(text: str) -> str:
+    """Extract a script's compute_state() function region: from the line
+    matching ``^def compute_state(`` up to the next top-level ``^def `` (col 0)
+    or EOF. Returns "" if no compute_state def is found."""
+    m = _COMPUTE_STATE_DEF_RE.search(text)
+    if m is None:
+        return ""
+    nxt = re.search(r"(?m)^def ", text[m.end():])
+    end = m.end() + nxt.start() if nxt else len(text)
+    return text[m.start():end]
+
+
+def audit_compute_state_routing_parity(repo_root: str | Path) -> list[str]:
+    """Assert the compute_state() routing branches declared in
+    compute-state-routing-parity.json stay mirrored (or tabulated as a
+    justified divergence) between lazy-state.py (canonical) and bug-state.py
+    (derived).
+
+    Returns one finding per drift/schema-hygiene issue; empty means parity
+    holds. A missing/malformed allowlist is a loud ERROR finding, never a
+    silent empty pass. Additive — runs alongside the manifest pair audit +
+    state-script parity + merged-view dispatch parity in the default
+    (no ``--pair``) invocation.
+    """
+    repo_root = Path(repo_root)
+    findings: list[str] = []
+
+    try:
+        allowlist = load_compute_state_routing_allowlist(repo_root)
+    except (OSError, json.JSONDecodeError) as exc:
+        findings.append(
+            f"lazy-parity [compute-state-routing] ERROR: cannot read/parse "
+            f"compute-state-routing-parity.json: {exc}"
+        )
+        return findings
+
+    canonical_script, derived_script = _STATE_SCRIPTS
+    regions: dict[str, str] = {}
+    for script in _STATE_SCRIPTS:
+        path = repo_root / "user" / "scripts" / script
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            findings.append(
+                f"lazy-parity [compute-state-routing] ERROR: cannot read {script}: {exc}"
+            )
+            continue
+        region = _compute_state_region(text)
+        if not region:
+            findings.append(
+                f"lazy-parity [compute-state-routing] ERROR: {script} has no "
+                f"compute_state region"
+            )
+            continue
+        regions[script] = region
+
+    for branch in allowlist.get("branches", []):
+        branch_id = branch.get("id")
+        signature = branch.get("signature", "")
+        classification = branch.get("classification")
+        token_substitutions = branch.get("token_substitutions", [])
+
+        if classification == "mirrored":
+            for script in _STATE_SCRIPTS:
+                region = regions.get(script)
+                if region is None:
+                    # Script unreadable / no compute_state region — already
+                    # surfaced its own ERROR finding above.
+                    continue
+                expected = (
+                    signature
+                    if script == canonical_script
+                    else apply_tokens(signature, token_substitutions)
+                )
+                if expected not in region:
+                    findings.append(
+                        f"lazy-parity [compute-state-routing] {script}: mirrored "
+                        f"routing branch {branch_id!r} signature {expected!r} not "
+                        f"found in compute_state (both state scripts must carry "
+                        f"it — a coupled routing surface diverged)"
+                    )
+        elif classification == "tabulated-divergence":
+            owner = branch.get("owner")
+            reason = branch.get("reason")
+            expected = (
+                signature
+                if owner == canonical_script
+                else apply_tokens(signature, token_substitutions)
+            )
+            owner_region = regions.get(owner)
+            if owner_region is not None and expected not in owner_region:
+                findings.append(
+                    f"lazy-parity [compute-state-routing] {owner}: tabulated-"
+                    f"divergence routing branch {branch_id!r} signature "
+                    f"{expected!r} not found in its declared owner's "
+                    f"compute_state"
+                )
+            if not reason:
+                findings.append(
+                    f"lazy-parity [compute-state-routing] {branch_id!r}: "
+                    f"tabulated-divergence entry missing required 'reason'"
+                )
+        else:
+            findings.append(
+                f"lazy-parity [compute-state-routing] ERROR: routing branch "
+                f"{branch_id!r} has unknown classification {classification!r}"
+            )
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # Audit all pairs
 # ---------------------------------------------------------------------------
 
@@ -577,6 +752,11 @@ def audit_all_pairs(
     # dispatch branch with type-correct terminals + the single-type no-regression
     # guarantee.  Also additive to the default whole-repo audit.
     all_findings.extend(audit_merged_view_dispatch_parity(repo_root))
+
+    # Compute_state routing-branch parity (adhoc-parity-audit-blind-to-compute-state-routing-branches):
+    # the two state scripts' compute_state routing branches must stay mirrored (or be tabulated as a
+    # justified divergence in compute-state-routing-parity.json).  Additive to the default whole-repo audit.
+    all_findings.extend(audit_compute_state_routing_parity(repo_root))
 
     return all_findings
 

@@ -57,6 +57,7 @@ import json
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 MANIFEST_REL = "docs/gate/control-surfaces.json"
@@ -82,6 +83,12 @@ _EXEMPTION_SET_NAMES = (
 _QUOTED_RE = re.compile(r"""(['"])(?P<body>(?:\\.|(?!\1).)*)\1""")
 # A regex-alternation append: an added fragment introducing a new `|...` alternative.
 _ALTERNATION_ADD_RE = re.compile(r"\|\s*[\w\\\s.\-+*?()\[\]'\"]")
+# Shell-operator shapes that use `|` as an OPERATOR, not a regex alternation: shell
+# logical-OR `||`, command substitution `$( … )`, an fd redirection `2>`, or a ` | `
+# command pipe (spaces both sides). A line carrying any of these is a shell breadcrumb,
+# not a matcher-alternation append — case (a) must not fire on it
+# (adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose, S4).
+_SHELL_PIPE_SHAPE_RE = re.compile(r"\|\||\$\(|\d>|\s\|\s")
 # A bare list/set string element line: `+    'foo',` / `+  "bar"` (optional trailing comma).
 _LIST_ELEMENT_RE = re.compile(r"""^\+\s*(['"]).*\1\s*,?\s*$""")
 # docs/{features,bugs}/<slug> id, dated path, or session-shaped path — overfit-to-incident tells.
@@ -96,6 +103,22 @@ _DENY_BRANCH_RE = re.compile(r"permissionDecision['\"\s:]+.*deny|\bexit\s+3\b|\b
 _TEST_DEF_RE = re.compile(r"^\s*def\s+test_[A-Za-z0-9_]+\s*\(")
 # A numeric literal (int or float).
 _NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+# A triple-quoted (docstring) delimiter anywhere on the line. A docstring line is
+# never a membership-set element — excluded from the list-element check so an added
+# docstring is not misread as an allowlist/enum growth (gap 2 FP: the recurring
+# `membership added: """` false positive, e.g. hardening-log Round 67).
+_TRIPLE_QUOTE_RE = re.compile(r'"""|' + r"'''")
+# The exemption set name appears in a COLLECTION-OPENING / EXTENSION position on a
+# context line — an assignment whose RHS opens a collection literal (`NAME = {`,
+# `NAME = (`, `NAME = [`, `NAME: T = [`, `NAME = frozenset({`, `NAME = set([`). This
+# distinguishes a set genuinely being defined/grown from a bare REFERENCE to the name
+# (`assert x in NAME`, an import, a call arg) that a test fixture may sit beside (gap 2
+# FP: a list-literal fixture near an exemption-name mention misread as membership growth).
+def _exemption_opens_collection(nearby_line: str, name: str) -> bool:
+    return re.search(
+        r"\b" + re.escape(name) + r"\b[^\n=]*=\s*[\w.]*[\[{(]",
+        nearby_line,
+    ) is not None
 
 
 def _die(msg: str) -> "int":
@@ -218,8 +241,20 @@ def detect_overfit(hunks: list) -> dict:
     for h in hunks:
         for body, ctx in h.added_ctx:
             plus = "+" + body
-            # (a) regex-alternation append: the added fragment introduces a new `|...`
-            if "|" in body and _ALTERNATION_ADD_RE.search(body) and _QUOTED_RE.search(body):
+            # (a) regex-alternation append: a new `|...` alternative added INSIDE a
+            # matcher/regex literal. Key on the genuine tell — a `|` between quoted
+            # alternatives (the alternation lives in a QUOTED string body) — and exclude
+            # shell logical-OR / pipe / command-substitution breadcrumb lines, where `|`
+            # is a shell OPERATOR, not a regex alternation (S4:
+            # adhoc-harness-gate-false-positives-on-generated-docs-and-phases-prose).
+            if (
+                "|" in body
+                and not _SHELL_PIPE_SHAPE_RE.search(body)
+                and any(
+                    "|" in m.group("body") and _ALTERNATION_ADD_RE.search(m.group("body"))
+                    for m in _QUOTED_RE.finditer(body)
+                )
+            ):
                 evidence.append(f"{h.file}: alternation literal appended: {body.strip()[:80]}")
                 continue
             # (b) bare quoted list/set element added into a membership construct
@@ -238,21 +273,126 @@ def detect_overfit(hunks: list) -> dict:
     return {"result": "flag" if evidence else "pass", "evidence": evidence}
 
 
+def _cross_file_reconciled_net(removed_texts: dict, added_texts: dict) -> dict:
+    """Compute each file's GENUINE net removal count of a gate construct after two stages
+    of reconciliation, returning ``{file: net}`` only for files with a positive residual.
+
+    `removed_texts`/`added_texts` map a file path to the list of that file's removed/added
+    construct texts (the `_DENY_BRANCH_RE`-matched substrings, or the `_TEST_DEF_RE`-matched
+    def lines). Two stages, in order:
+
+    1. **Same-file COUNT-net (UNCHANGED reformat handling).** A file is reconciled by COUNT
+       (`len(removed) - len(added)`), so a single->multi-line REFORMAT that removes and
+       re-adds an equivalent construct — where the removed and added TEXT differ but the
+       match COUNTS are equal — nets to zero and is not a removal. This is the pre-existing
+       behavior; do NOT replace it with pure text-identity (that would re-break the reformat
+       FP fixtures, whose removed/added line texts differ).
+    2. **Cross-file CONTENT-IDENTITY move detection (Locked Decision option b).** A construct
+       removed from file A whose EXACT text is added in a DIFFERENT file within the same
+       change is a MOVE, not a removal — it is subtracted from A's residual net. Only an add
+       that EXCEEDS its own file's removals is available to absorb a cross-file removal (an
+       add already consumed cancelling a same-file removal cannot double-count), and the
+       cross-file add pool is CONSUMED as removals claim it (no double-crediting one add
+       against two files' removals). A removal with no equivalent re-add anywhere still HITs.
+    """
+    # Cross-file pool: each file's added texts that exceed its own removed texts.
+    pool: "Counter" = Counter()
+    for f, adds in added_texts.items():
+        pool += Counter(adds) - Counter(removed_texts.get(f, []))
+
+    result: "dict[str, int]" = {}
+    for f, rems in removed_texts.items():
+        same_file_added = added_texts.get(f, [])
+        net = len(rems) - len(same_file_added)
+        if net <= 0:
+            continue  # same-file count-net fully reconciles (reformat / rename / split)
+        residual_removed = Counter(rems) - Counter(same_file_added)
+        moved = 0
+        for text, cnt in residual_removed.items():
+            take = min(cnt, pool.get(text, 0))
+            if take:
+                pool[text] -= take
+                moved += take
+        genuine = net - moved
+        if genuine > 0:
+            result[f] = genuine
+    return result
+
+
 def detect_gate_weakening(hunks: list) -> dict:
     evidence = []
+    # Per-file test-def rename/strengthen guard (gap 2 FP: a renamed test def).
+    # A `def test_old` -> `def test_new` rename removes AND adds one test def; a
+    # split (1 removed, N>=1 added) preserves-or-strengthens coverage. Aggregate
+    # per file and flag ONLY the NET removal (removed - added > 0) — a rename (1/1)
+    # or split (1/2) is coverage-neutral-or-strengthening and never a weakening,
+    # while a genuine removal with no replacement (1/0) still HITs unchanged.
+    # Per-file NET-count guard, applied to BOTH the `def test_*` removal check AND the
+    # gate-refusal construct (`_DENY_BRANCH_RE`) removal check: a coverage-neutral edit
+    # that removes AND re-adds an equivalent construct (a test-def RENAME, or a
+    # `refuse_*()` / `exit 3` / `deny`-branch REFORMAT single-line->multi-line) nets to
+    # zero and must NOT be misread as a removal (gap 2 + its deny-construct near-neighbor,
+    # surfaced by the harden commit that reformatted `refuse_if_cycle_active(...)`). Only a
+    # NET removal (removed > added — a construct deleted with no equivalent replacement)
+    # still HITs. `_DENY_BRANCH_RE` can match a line MORE than once (e.g. `refuse_x(` and
+    # `exit 3` on one line is rare, but a line with two `refuse_*(` calls counts each), so
+    # count matches, not lines, symmetrically on both sides.
+    #
+    # CROSS-FILE MOVE (adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move):
+    # the per-file count-net above was BLIND to a construct removed from file A and re-added
+    # VERBATIM in file B within the same change (a MOVE, net-zero across the change). We now
+    # track the actual removed/added construct TEXTS per file and reconcile a file's residual
+    # net removal against the same construct text added ELSEWHERE (content-identity, Locked
+    # Decision option b) via `_cross_file_reconciled_net` — which PRESERVES the same-file
+    # count-net reformat handling and subtracts only genuine cross-file moves. Only a residual
+    # removal with no equivalent re-add anywhere in the change still HITs.
+    removed_test_def_texts: "dict[str, list]" = {}
+    added_test_def_texts: "dict[str, list]" = {}
+    removed_deny_texts: "dict[str, list]" = {}
+    added_deny_texts: "dict[str, list]" = {}
     for h in hunks:
+        removed_test_def_texts.setdefault(h.file, []).extend(
+            body for body in h.removed if _TEST_DEF_RE.match(body)
+        )
+        added_test_def_texts.setdefault(h.file, []).extend(
+            body for body in h.added if _TEST_DEF_RE.match(body)
+        )
         for body in h.removed:
-            if _TEST_DEF_RE.match(body):
-                evidence.append(f"{h.file}: gate-test definition removed: {body.strip()[:80]}")
-            if _DENY_BRANCH_RE.search(body):
-                evidence.append(f"{h.file}: gate-refusal construct removed: {body.strip()[:80]}")
+            removed_deny_texts.setdefault(h.file, []).extend(_DENY_BRANCH_RE.findall(body))
+        for body in h.added:
+            added_deny_texts.setdefault(h.file, []).extend(_DENY_BRANCH_RE.findall(body))
+    for f, net in _cross_file_reconciled_net(removed_test_def_texts, added_test_def_texts).items():
+        evidence.append(
+            f"{f}: gate-test definition removed without replacement "
+            f"(net {net}; {len(removed_test_def_texts.get(f, []))} removed, "
+            f"{len(added_test_def_texts.get(f, []))} added)"
+        )
+    for f, net in _cross_file_reconciled_net(removed_deny_texts, added_deny_texts).items():
+        evidence.append(
+            f"{f}: gate-refusal construct removed without replacement "
+            f"(net {net}; {len(removed_deny_texts.get(f, []))} removed, "
+            f"{len(added_deny_texts.get(f, []))} added)"
+        )
+
+    for h in hunks:
         for body, ctx in h.added_ctx:
             if _BYPASS_ENV_RE.search(body):
                 evidence.append(f"{h.file}: new bypass env-var introduced: {body.strip()[:80]}")
             plus = "+" + body
+            # A triple-quoted (docstring) line is never a membership element (gap 2 FP).
+            if _TRIPLE_QUOTE_RE.search(body):
+                continue
             if _LIST_ELEMENT_RE.match(plus):
-                nearby = " ".join(ctx[-6:] + [body])
-                if any(name in nearby for name in _EXEMPTION_SET_NAMES):
+                # A membership-set GROWTH weakens a gate only when the exemption set
+                # is genuinely being defined/extended nearby (a collection-opening
+                # assignment), NOT when its name merely appears as a bare reference a
+                # fixture may sit beside (gap 2 FP: a list-literal test fixture).
+                nearby_lines = ctx[-6:] + [body]
+                if any(
+                    _exemption_opens_collection(line, name)
+                    for line in nearby_lines
+                    for name in _EXEMPTION_SET_NAMES
+                ):
                     evidence.append(f"{h.file}: exemption/sanction-set membership added: {body.strip()[:80]}")
         # numeric-literal-only change: a removed line and an added line identical but for a number
         _numeric_literal_change(h, evidence)
@@ -312,6 +452,16 @@ def run_checker(repo_root: Path, diff_text: str, changed: list,
             "verdict_required": False,
         }
     hunks = parse_diff(diff_text)
+    # Scope the structural detectors to manifest control-surface hunks ONLY. A diff is
+    # in scope once ANY changed file is on the manifest, but off-manifest files swept
+    # into the same range — regenerated docs (LAZY_QUEUE.md), per-item PHASES.md prose,
+    # unrelated docs/{features,bugs}/<slug>/SPEC.md — are NOT code/gate surfaces and must
+    # never be inspected (adhoc-harness-gate-false-positives-on-generated-docs-and-phases-
+    # prose). `hits` is the manifest-membership SSOT (scope_hits ∩ globs); reuse it, adding
+    # no new "is this code" heuristic. `detect_tautology` reads the SPEC dir, not hunks, so
+    # it is unaffected; the in_scope/scope_hit verdict shape (below) is unchanged.
+    hits_set = {h.replace("\\", "/") for h in hits}
+    hunks = [h for h in hunks if h.file.replace("\\", "/") in hits_set]
     overfit = detect_overfit(hunks)
     gate_weak = detect_gate_weakening(hunks)
     taut = detect_tautology(feature_dir)

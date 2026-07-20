@@ -265,7 +265,19 @@ def _badge(item: dict, *, is_bug: bool) -> str:
         sev = meta.get("severity")
         return str(sev) if sev else "—"
     tier = meta.get("tier")
-    return f"T{tier}" if tier is not None else "—"
+    if tier is None:
+        return "—"
+    # Bare int tier keeps the historic "T<n>" form (byte-stable for existing
+    # queues). Named-enum / list tiers (feature-tier-strings-fall-to-merged-
+    # priority-default) render the raw tier plus its effective merged priority so
+    # a reader sees BOTH the intent label and where it sorts.
+    if isinstance(tier, bool):  # bool is an int subclass — treat as unknown
+        return "—"
+    if isinstance(tier, int):
+        return f"T{tier}"
+    label = "+".join(str(t) for t in tier) if isinstance(tier, list) else str(tier)
+    eff = lazy_core.merged_priority("feature", meta)
+    return f"{label} (→{eff})" if eff != lazy_core.MERGED_PRIORITY_DEFAULT else label
 
 
 def _inline_summary(item: dict, queue_dir: str, repo_root: Path) -> str:

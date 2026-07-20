@@ -95,6 +95,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import cli_surface
 from _console_encoding import enable_utf8_stdio
+
+# adhoc-unify-merged-head-coordinator-exemptions (coupled-pair mirror of
+# lazy-state.py): the --emit-prompt merged-head lane/serial-tail-lease exemptions
+# moved into ONE shared predicate, lazy_core.dispatch.coordinator_arbitrated_emission,
+# which owns the (local, fail-safe) lazy_coord.has_live_lease call. This script no
+# longer references lazy_coord directly, so its top-level import was retired here
+# (the dependency now lives with the predicate in lazy_core/dispatch.py).
 import lazy_core
 from lazy_core import (
     _atomic_write,
@@ -121,9 +128,12 @@ from lazy_core import (
     skip_waiver_refusal,
     repo_has_no_app_surface,
     phases_mcp_runtime_not_required,
+    phases_spike_required,
+    spike_verdict_is_pass,
     spec_status,
     commit_drift_verdict,
     observation_gap_promotable,
+    uncovered_verification_rows_remain,
     _coerce_evidence_count,
 )
 
@@ -263,6 +273,12 @@ BUG_STATUS_INVESTIGATING = "Investigating"
 BUG_STATUS_IN_PROGRESS = "In-progress"
 BUG_STATUS_FIXED = "Fixed"
 BUG_STATUS_WONT_FIX = "Won't-fix"
+# Operator-directed retirement without a fix — the bug-side analog of a
+# Superseded feature (successor work shipped elsewhere). Receipt-exempt and
+# NON-actionable, exactly like Won't-fix: the on-disk pickup must skip it so a
+# resolved-but-unarchived Superseded dir never re-enters the work list / merged
+# head (adhoc-bug-pickup-routes-superseded-specs — feature-loader parity).
+BUG_STATUS_SUPERSEDED = "Superseded"
 
 # Terminal statuses — a bug with one of these (plus valid receipt/exemption)
 # is genuinely done and should be skipped.
@@ -445,6 +461,76 @@ def _current_head(repo_root: Path) -> str | None:
     except (OSError, subprocess.SubprocessError):
         pass
     return None
+
+
+def _load_feature_queue_for_merged(repo_root: Path) -> list[dict[str, Any]]:
+    """Load docs/features/queue.json items for the merged work-list via the
+    EXISTING ``lazy-state.py:load_queue`` loader (not a hand-reparse).
+
+    Coupled-pair mirror of lazy-state.py's ``_load_bug_queue_for_merged``:
+    lazy-state.py is a hyphenated module so a plain ``import`` won't resolve;
+    load it from its sibling path with importlib. The returned entries each
+    carry at least ``id`` and ``tier`` — exactly what ``merged_priority`` needs.
+    Best-effort: if lazy-state.py is missing/unloadable, return [] so the merged
+    view degrades to bugs-only rather than crashing (a bugs-only repo's merged
+    head is unaffected).
+    """
+    import importlib.util
+
+    lazy_state_path = Path(__file__).parent / "lazy-state.py"
+    if not lazy_state_path.exists():
+        return []
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_lazy_state_for_merged", str(lazy_state_path)
+        )
+        if spec is None or spec.loader is None:
+            return []
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.load_queue(repo_root)
+    except Exception as exc:  # noqa: BLE001 — degrade to bugs-only on load error
+        # Mirror of the merged-view bug-side degradation diagnostic: a
+        # feature-side load failure must be observable, not silent, but STILL
+        # fail open (return []) so a bugs-only repo's merged head is unaffected.
+        _diag(
+            f"merged-view feature-side load failed ({exc}) — degrading to bugs-only"
+        )
+        return []
+
+
+_FEATURE_STATE_MODULE_CACHE: dict = {}
+
+
+def _load_feature_state_module():
+    """Load ``lazy-state.py`` as a module (cached), or ``None`` when unavailable.
+
+    Coupled-pair mirror of ``lazy-state.py``'s ``_load_bug_state_module`` — the
+    importlib precedent from :func:`_load_feature_queue_for_merged`, reused by the
+    merged-head actionability oracle (merged-head-actionability-oracle) so the
+    ``--emit-prompt`` merged-override site can run the REAL cross-pipeline scoped
+    ``lazy-state.compute_state`` per feature candidate. Cached module-level (exec
+    the large body at most once). Best-effort: a missing/unloadable
+    ``lazy-state.py`` returns ``None`` — the oracle then treats every cross
+    candidate as non-dispatchable (fail toward EMITTING the workable item)."""
+    if "mod" in _FEATURE_STATE_MODULE_CACHE:
+        return _FEATURE_STATE_MODULE_CACHE["mod"]
+    import importlib.util
+
+    mod = None
+    lazy_state_path = Path(__file__).parent / "lazy-state.py"
+    if lazy_state_path.exists():
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "_lazy_state_for_oracle", str(lazy_state_path)
+            )
+            if spec is not None and spec.loader is not None:
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+        except Exception:  # noqa: BLE001 — degrade to None (bugs-only) on load error
+            mod = None
+    _FEATURE_STATE_MODULE_CACHE["mod"] = mod
+    return mod
 
 
 def load_bug_queue(
@@ -650,6 +736,15 @@ def _find_open_bug_dirs(
         status = spec_status(child)
         if status == BUG_STATUS_WONT_FIX:
             # Receipt-exempt: retired without fix — always skip.
+            continue
+        if status == BUG_STATUS_SUPERSEDED:
+            # Receipt-exempt: retired without fix (successor work shipped
+            # elsewhere) — always skip, exactly as the feature-side loader
+            # _find_open_feature_dirs skips a Superseded feature. Without this a
+            # resolved-but-unarchived Superseded bug dir is auto-discovered as
+            # open work, enters merged_worklist, becomes the merged head, and
+            # triggers a universal merged-head-diverged withhold that wedges the
+            # run (adhoc-bug-pickup-routes-superseded-specs).
             continue
         if status == BUG_STATUS_FIXED:
             if has_completion_receipt(child, filename="FIXED.md"):
@@ -1474,6 +1569,51 @@ def compute_state(
     blocked_file = spec_dir / "BLOCKED.md"
     if blocked_file.exists():
         meta = parse_sentinel(blocked_file) or {}
+        # spike-pipeline-role Phase 2 (WU-3 — coupled mirror of lazy-state.py's
+        # WU-2 blocked-resolver): a BLOCKED.md naming Spike as its resolver routes
+        # to a `spike` cycle instead of the generic manual-block terminal. Fires
+        # unconditionally on the blocker_kind (the `spike_escalation` predicate is
+        # a separate Part-3-consumed signal). Placed before the generic `blocked`
+        # terminal, identical routing to the feature axis.
+        if meta.get("blocker_kind") == "runtime-spike-verdict-pending":
+            # spike-pipeline-role Phase 4 (WU-2, coupled mirror): the bounded
+            # tooling-existence loop guard — a persisted spike_tooling_rounds
+            # count at/above the cap means the tooling gap keeps recurring,
+            # so route to an operator NEEDS_INPUT halt instead of dispatching
+            # another spike round (checked BEFORE the route-to-spike below).
+            if lazy_core.spike_tooling_cap_exceeded(meta):
+                lazy_core.write_spike_tooling_cap_needs_input(
+                    spec_dir, bug_name, meta.get("spike_tooling_rounds")
+                )
+                lazy_core._diag(
+                    "Step 3: spike_tooling_rounds cap exceeded → needs-input "
+                    "(loop bounded, no further spike route)"
+                )
+                return _bug_state(
+                    **common,
+                    current_step="Step 3: spike tooling-round cap exceeded",
+                    terminal_reason="needs-input",
+                    notify_message=(
+                        f"NEEDS INPUT: {bug_name} — spike tooling gap "
+                        "persists after the corrective-round cap; operator "
+                        "decision needed."
+                    ),
+                )
+            lazy_core._diag(
+                "Step 3: BLOCKED.md blocker_kind=runtime-spike-verdict-pending "
+                "→ routing to spike (blocked resolver)"
+            )
+            return _bug_state(
+                **common,
+                current_step="Step 3: spike verdict pending (blocked resolver)",
+                sub_skill="spike",
+                sub_skill_args=(
+                    f"resolve the spike blocker for {bug_name}: run the runtime "
+                    f"proof and write SPIKE_VERDICT.md (verdict: PASS|FAIL, with "
+                    f"observed evidence) in {spec_dir_str}, then neutralize "
+                    f"BLOCKED.md. See {spec_dir_str}/SPEC.md."
+                ),
+            )
         phase = meta.get("phase", "unknown")
         notify_message = f"BLOCKED: {bug_name} — {phase}. Awaiting input."
         # Validation-escalation payload (Phase 11 WU-1a) — exact mirror of
@@ -1564,6 +1704,47 @@ def compute_state(
     if not phases_file.exists():
         _status = spec_status(spec_dir)
         if _status == "Concluded":
+            # PRE-GATE (adhoc-plan-bug-no-guard-for-fixed-annotated-specs Phase 2):
+            # a Concluded SPEC whose fix already landed OUT-OF-PIPELINE (carries a
+            # `**Fixed:**` evidence annotation) but was never reconciled (no valid
+            # FIXED.md receipt, dir not archived) must NOT route to plan-bug — that
+            # burns a full spec-phases + write-plan dispatch re-planning work already
+            # on disk. Divert it to a canonical fixed-unreconciled BLOCKED.md so the
+            # next probe halts at the Step-3 BLOCKED.md check and the human runs the
+            # docs/bugs/CLAUDE.md receipt + --archive-fixed reconciliation contract.
+            # This HALTS for reconciliation; it never auto-writes FIXED.md (the
+            # Status-honesty PIPELINE-GATE owns FIXED.md exclusively).
+            if lazy_core.is_fixed_unreconciled(spec_dir, repo_root):
+                blocked_file = spec_dir / "BLOCKED.md"
+                if not blocked_file.exists():
+                    _atomic_write(
+                        blocked_file,
+                        lazy_core.format_fixed_unreconciled_blocker(
+                            bug_id,
+                            # GAP 2: either the inline `**Fixed:**` line or the
+                            # `## Fix (implemented …)` heading is the evidence.
+                            lazy_core.spec_fixed_annotation(spec_dir)
+                            or lazy_core.spec_fix_implemented_heading(spec_dir),
+                        ),
+                    )
+                _diag(
+                    f"fixed-unreconciled: {bug_name} is Concluded but carries a "
+                    f"`**Fixed:**` annotation with no FIXED.md receipt — diverted to "
+                    f"reconciliation (BLOCKED.md, blocker_kind: fixed-unreconciled), "
+                    f"not plan-bug. Reconcile via the docs/bugs/CLAUDE.md receipt + "
+                    f"--archive-fixed contract, or clear the stray annotation to re-plan."
+                )
+                return _bug_state(
+                    **common,
+                    current_step=STEP_BLOCKED,
+                    terminal_reason=TR_BLOCKED,
+                    notify_message=(
+                        f"BLOCKED: {bug_name} — fix already implemented "
+                        "out-of-pipeline (fixed-unreconciled); reconcile "
+                        "(FIXED.md + --archive-fixed) or clear the stray "
+                        "`**Fixed:**` annotation to re-plan."
+                    ),
+                )
             # Investigation concluded; hand off to plan-bug to author PHASES.md.
             # DISTINCT step label (STEP_PLAN_BUG, not the reused STEP_INVESTIGATE) so
             # the spec-bug -> plan-bug forward transition visibly advances current_step
@@ -1590,16 +1771,38 @@ def compute_state(
     # already dispatched spec-bug above.  If PHASES.md exists but no plan → write-plan.)
     if unchecked > 0:
         plans = find_implementation_plans(spec_dir)
-        if not plans and _has_any_complete_plan(spec_dir) and \
-                remaining_unchecked_are_verification_only(phases_text):
-            # All implementation plans are Complete; remaining PHASES.md
-            # unchecked rows are verification-only (e.g. per-phase Runtime
-            # Verification / MCP-assertion subsections ticked at MCP test
-            # time).  Fall through to Step 8 (retro) → Step 9 (/mcp-test),
-            # which is the dispatch that actually ticks them.  Without this
-            # carve-out the script loops: find_implementation_plans filters
-            # out Complete plans → plans is empty → write-plan dispatched
-            # forever.  Mirrors the identical bypass in lazy-state.py.
+        verification_only = remaining_unchecked_are_verification_only(phases_text)
+        # Step 7 bypass — fall through to the Step 9 MCP gate instead of
+        # write-plan/execute-plan. Byte-faithful mirror of lazy-state.py's
+        # two-discriminator gate (the mcp-testing deadlock fix, 2026-06-15):
+        #
+        # Cloud: bypass when implementation is provably done (>=1 Complete plan
+        # on disk) — cloud can't tick ANY workstation row regardless of whether
+        # it's a verification or implementation row, so the verification-only
+        # predicate can't serve as the "impl done" proxy; we need the explicit
+        # Complete-plan receipt.
+        #
+        # Workstation: bypass when the unchecked remainder is ENTIRELY
+        # verification-only rows — and crucially WITHOUT requiring a Complete
+        # plan on disk. A verification-only remainder is itself proof that no
+        # implementation work remains (write-plan is banned, Step 1c.5, from
+        # emitting a verification-only re-run-/mcp-test WU), so there is nothing
+        # for write-plan to plan. Requiring _has_any_complete_plan here was the
+        # write-plan routing loop (harden Round 93): a bug whose fix landed
+        # OUT-OF-PIPELINE (PHASES impl rows [x], NO plans/ dir) with a sole
+        # verification-only unchecked row has _has_any_complete_plan False, so
+        # control fell to `elif not plans` -> write-plan, which /write-plan
+        # Step 1c.5 refuses (verification-only rows are not plannable WUs) ->
+        # identical state -> infinite write-plan loop. Any bug implemented
+        # without a plans/ receipt whose only remaining unchecked rows are
+        # verification-only could never reach the Step-9 MCP gate. This
+        # parity-completes the feature-side fix that bug-state.py's prior
+        # comment CLAIMED to mirror but did not (it mirrored the pre-fix
+        # combined form). The legacy Complete-plan-exists case is preserved —
+        # it is a subset of verification_only True.
+        cloud_bypass = cloud and not plans and _has_any_complete_plan(spec_dir)
+        workstation_bypass = not cloud and not plans and verification_only
+        if cloud_bypass or workstation_bypass:
             pass
         elif not plans:
             return _bug_state(
@@ -1904,6 +2107,52 @@ def compute_state(
                 sub_skill_args=f"validate {bug_name} — see {spec_dir_str}/SPEC.md",
             )
 
+    # Step 9.5: spike verdict gate (spike-pipeline-role Phase 2, WU-3 — coupled
+    # mirror of lazy-state.py's Step 9.5). Control reaches here only when the
+    # Step-9 MCP gate fell through (VALIDATED.md present). If the active PHASES.md
+    # declares `**Spike:** required` and no PASS spike verdict is on disk yet, the
+    # bug's completion rests on an un-run runtime proof: route to a `spike` cycle
+    # BEFORE Step 10 mark-fixed. A PASS verdict / no `**Spike:**` line falls
+    # through byte-identically. Routing is IDENTICAL to the feature axis; only the
+    # builder (_bug_state) + Step-10 terminal (__mark_fixed__) differ.
+    if phases_spike_required(spec_dir) and not spike_verdict_is_pass(spec_dir):
+        # spike-pipeline-role Phase 4 (WU-2, coupled mirror): the bounded
+        # tooling-existence loop guard on this seam too — a SPIKE_VERDICT.md
+        # carrying a spike_tooling_rounds count at/above the cap means the
+        # tooling gap keeps recurring across corrective rounds; route to an
+        # operator NEEDS_INPUT halt instead of dispatching another spike round.
+        _sv_meta = parse_sentinel(spec_dir / "SPIKE_VERDICT.md") or {}
+        if lazy_core.spike_tooling_cap_exceeded(_sv_meta):
+            lazy_core.write_spike_tooling_cap_needs_input(
+                spec_dir, bug_name, _sv_meta.get("spike_tooling_rounds")
+            )
+            lazy_core._diag(
+                "Step 9.5: spike_tooling_rounds cap exceeded → needs-input "
+                "(loop bounded)"
+            )
+            return _bug_state(
+                **common,
+                current_step="Step 9.5: spike tooling-round cap exceeded",
+                terminal_reason="needs-input",
+                notify_message=(
+                    f"NEEDS INPUT: {bug_name} — spike tooling gap "
+                    "persists after the corrective-round cap; operator "
+                    "decision needed."
+                ),
+            )
+        _variant, _goal = lazy_core._read_spike_decision(spec_dir)
+        lazy_core._diag("Step 9.5: **Spike:** required with no PASS verdict → routing to spike")
+        return _bug_state(
+            **common,
+            current_step="Step 9.5: spike verdict pending",
+            sub_skill="spike",
+            sub_skill_args=(
+                f"run the runtime proof for {bug_name} — goal: {_goal}. "
+                f"Write SPIKE_VERDICT.md (verdict: PASS|FAIL, with observed "
+                f"evidence) in {spec_dir_str}; see {spec_dir_str}/SPEC.md."
+            ),
+        )
+
     # Step 10: Mark fixed.
     # Entry: VALIDATED.md (+ Status not yet Fixed). (Retro unwired — no
     # RETRO_DONE.md precondition.)
@@ -1940,6 +2189,45 @@ def compute_state(
                 "redirect the provisional decision(s) first."
             ),
         )
+    # decision-2-6-uncovered-row-reroute-to-mcp-test (coupled-pair mirror of
+    # lazy-state.py's Step-10 branch): before dispatching the terminal
+    # __mark_fixed__, re-route back to /mcp-test when a matrix-incomplete
+    # VALIDATED.md leaves uncovered, non-exempt, non-host-deferred runtime-
+    # verification rows. SHARED predicate (uncovered_verification_rows_remain);
+    # structurally identical to the feature branch modulo the terminal
+    # pseudo-skill name. TERMINATION is load-bearing (falls through to
+    # __mark_fixed__ once every row is covered/host-deferred/exempt).
+    #
+    # NO-MCP-SURFACE GUARD (load-bearing, mirrors lazy-state.py): suppress the
+    # re-route on a structurally-MCP-skipped bug — `**MCP runtime:** not-required`
+    # AND a repo with no app surface (the SAME Step-9 structural-skip condition).
+    # Such a bug has NO /mcp-test surface to re-route to (VALIDATED.md granted by
+    # the structural skip, not a real run), so firing here would loop forever.
+    # This is exactly claude-config's own bugs (this very bug included).
+    _structurally_skipped = phases_mcp_runtime_not_required(spec_dir) and \
+        repo_has_no_app_surface(repo_root)
+    _reroute = (
+        {} if _structurally_skipped
+        else uncovered_verification_rows_remain(spec_dir, phases_text, repo_root)
+    )
+    if _reroute.get("reroute"):
+        _uncov = _reroute.get("uncovered") or []
+        lazy_core._diag(
+            "Step 10: uncovered verification rows over a partial VALIDATED.md → "
+            f"re-route to mcp-test ({_reroute.get('reason')})"
+        )
+        return _bug_state(
+            **common,
+            current_step="Step 10: re-route to mcp-test (uncovered verification rows)",
+            sub_skill="mcp-test",
+            sub_skill_args=(
+                f"finish the runtime-verification matrix for {bug_name} — "
+                f"{len(_uncov)} uncovered row(s) remain after a partial "
+                f"VALIDATED.md; author/run the missing scenario(s) then "
+                f"re-validate. See {spec_dir_str}/SPEC.md and PHASES.md."
+            ),
+        )
+
     return _bug_state(
         **common,
         current_step=STEP_MARK_FIXED,
@@ -2278,6 +2566,82 @@ def pin_bug_severity(
         "pinned_at": pinned_at,
         "pinned_until": until,
         "pin_reason": reason,
+    }
+
+
+def unpin_bug_severity(
+    repo_root: Path, bug_id: str, *, today: "date | None" = None
+) -> dict[str, Any]:
+    """Un-pin a bug — the INVERSE of ``pin_bug_severity``
+    (no-sanctioned-cli-for-queue-state-mutations).
+
+    Clears ``pinned_at``/``pinned_until``/``pin_reason`` and restores the
+    entry's ``severity`` from the SPEC's own ``**Severity:**`` line (so the bug
+    re-enters effective ordering at its declared severity rather than the
+    suppressed ``severity: null``), then ATOMICALLY re-positions it in listed
+    order to match its restored merged priority (via
+    ``lazy_core.reposition_by_priority``) in the SAME ``_atomic_write``.
+
+    A bug that is not queued ``_die``s (exit 2, zero mutation). A queued bug
+    that carries NO active pin (``pinned_at`` absent) is a byte-stable no-op
+    (``unpinned: False`` — ZERO write), mirroring ``sync_deps``' no-op contract.
+
+    Returns ``{"id", "unpinned": bool, "noop": bool, "restored_severity",
+    "new_position", "queue_length"}``.
+    """
+    repo_root = repo_root.resolve()
+    bugs_dir = repo_root / "docs" / "bugs"
+    queue_path = bugs_dir / "queue.json"
+    if not queue_path.exists():
+        _die("bugs/queue.json not found", queue_path)
+        return {}  # pragma: no cover
+    try:
+        data = json.loads(queue_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        _die(f"invalid bugs/queue.json: {exc}", queue_path)
+        return {}  # pragma: no cover
+    items = data.get("queue", [])
+    if not isinstance(items, list):
+        _die("bugs/queue.json 'queue' field must be an array", queue_path)
+        return {}  # pragma: no cover
+
+    entry = next(
+        (e for e in items if isinstance(e, dict) and e.get("id") == bug_id), None
+    )
+    if entry is None:
+        _die(f"--unpin: bug not queued: {bug_id!r}", queue_path)
+        return {}  # pragma: no cover
+
+    # Byte-stable no-op when the bug carries no active pin fields at all.
+    if not any(
+        entry.get(k) is not None
+        for k in ("pinned_at", "pinned_until", "pin_reason")
+    ) and entry.get("severity") is not None:
+        return {
+            "id": bug_id, "unpinned": False, "noop": True,
+            "restored_severity": entry.get("severity"),
+            "new_position": items.index(entry), "queue_length": len(items),
+        }
+
+    # Restore severity from the SPEC's **Severity:** line (fallback: leave the
+    # existing severity as-is if the SPEC has none — never fabricate a rank).
+    spec_subdir = entry.get("spec_dir", bug_id)
+    spec_md = (bugs_dir / spec_subdir / "SPEC.md") if spec_subdir else None
+    restored = bug_severity(spec_md) if (spec_md and spec_md.exists()) else None
+    if restored is not None:
+        entry["severity"] = restored
+    for _pk in ("pinned_at", "pinned_until", "pin_reason"):
+        entry.pop(_pk, None)
+
+    new_position = lazy_core.reposition_by_priority(
+        items, bug_id, "bug", today=today
+    )
+    data["queue"] = items
+    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+    return {
+        "id": bug_id, "unpinned": True, "noop": False,
+        "restored_severity": entry.get("severity"),
+        "new_position": new_position, "queue_length": len(items),
     }
 
 
@@ -2622,6 +2986,42 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             encoding="utf-8",
         )
 
+    elif name == "verification-only-remainder-no-plan":
+        # Regression (bug-state-verification-only-remainder-loops-write-plan,
+        # harden Round 93): all IMPLEMENTATION deliverables [x] (fix landed
+        # OUT-OF-PIPELINE, so there is NO plans/ dir), and the SOLE unchecked
+        # row is verification-only (owned by the Step-9 validation tail). The
+        # Step-7 predicate must NOT route write-plan here — /write-plan Step 1c.5
+        # excludes verification-only rows so it can author zero WUs and the probe
+        # loops forever. Expected: the workstation verification-only bypass fires
+        # (no _has_any_complete_plan required) -> fall through to Step 9 mcp-test.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-vonp", "name": "Verification-Only Remainder No Plan",
+                 "spec_dir": "bug-vonp"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-vonp"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Verification-Only Remainder No Plan\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-07-18\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n"
+            "\n"
+            "**Runtime Verification** *(checked by the validation tail):*\n"
+            "- [ ] <!-- verification-only --> Serving-path regression test passes.\n",
+            encoding="utf-8",
+        )
+        # Deliberately NO plans/ dir — the fix landed out-of-pipeline.
+
     elif name == "phases-complete-no-mcp-surface":
         # All PHASES checked; PHASES declares `**MCP runtime:** not-required` and
         # the temp repo has NO app surface (no src-tauri/, no package.json) →
@@ -2714,6 +3114,84 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             bdir / "VALIDATED.md", "validated",
             bug_id="bug-rtmf", date="2026-05-26", result="all-passing",
         )
+
+    elif name in (
+        "step10-uncovered-reroute-bug",
+        "step10-covered-terminates-bug",
+        "step10-host-deferred-terminates-bug",
+        "step10-no-mcp-surface-no-reroute-bug",
+    ):
+        # decision-2-6-uncovered-row-reroute-to-mcp-test WU-3 (bug-pipeline
+        # mirror): a bug that reaches Step 10 with VALIDATED.md present but a
+        # matrix-incomplete PHASES (impl rows [x], verification rows unchecked,
+        # no plans/ dir so the verification-only bypass falls through to Step 9
+        # → Step 10 entry gate). Mirrors lazy-state.py's Step-10 twin.
+        _bid = {
+            "step10-uncovered-reroute-bug": "bug-d26re",
+            "step10-covered-terminates-bug": "bug-d26term",
+            "step10-host-deferred-terminates-bug": "bug-d26host",
+            "step10-no-mcp-surface-no-reroute-bug": "bug-d26nomcp",
+        }[name]
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [{"id": _bid, "name": _bid, "spec_dir": _bid}]
+        }), encoding="utf-8")
+        bdir = bugs_dir / _bid
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            f"# {_bid}\n\n**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n**Discovered:** 2026-07-18\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "VALIDATED.md", "validated",
+            bug_id=_bid, date="2026-07-19", result="all-passing",
+        )
+        if name == "step10-uncovered-reroute-bug":
+            (bdir / "PHASES.md").write_text(
+                "# Phases\n\n### Phase 1\n- [x] Implement fix\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> scenario A passes\n"
+                "- [ ] <!-- verification-only --> scenario B passes\n",
+                encoding="utf-8",
+            )
+            _write_yaml_sentinel(
+                bdir / "MCP_TEST_RESULTS.md", "mcp-test-results",
+                bug_id=_bid, result="all-passing", pass_count=1, total_count=1,
+            )
+        elif name == "step10-covered-terminates-bug":
+            (bdir / "PHASES.md").write_text(
+                "# Phases\n\n### Phase 1\n- [x] Implement fix\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> scenario A passes\n"
+                "- [ ] <!-- verification-only --> scenario B passes\n",
+                encoding="utf-8",
+            )
+            _write_yaml_sentinel(
+                bdir / "MCP_TEST_RESULTS.md", "mcp-test-results",
+                bug_id=_bid, result="all-passing", pass_count=2, total_count=2,
+            )
+        elif name == "step10-host-deferred-terminates-bug":
+            (bdir / "PHASES.md").write_text(
+                "# Phases\n\n### Phase 1\n- [x] Implement fix\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> "
+                "<!-- requires-host: real-audio-device --> real-device timing\n",
+                encoding="utf-8",
+            )
+        else:  # step10-no-mcp-surface-no-reroute-bug
+            # NO-MCP-SURFACE GUARD regression (mirrors lazy-state.py): MCP-not-
+            # required + no-app-surface fixture repo = the structural-skip
+            # condition. WITHOUT the guard the predicate fires (2 uncovered rows,
+            # pass_count 0) and loops /mcp-test forever — the guard suppresses it
+            # → __mark_fixed__. This is exactly claude-config's own bugs.
+            (bdir / "PHASES.md").write_text(
+                "# Phases\n\n**MCP runtime:** not-required\n\n"
+                "### Phase 1\n- [x] Implement fix\n\n"
+                "**Runtime Verification** <!-- verification-only -->\n"
+                "- [ ] <!-- verification-only --> scenario A passes\n"
+                "- [ ] <!-- verification-only --> scenario B passes\n",
+                encoding="utf-8",
+            )
 
     elif name == "device-deferred":
         # RETRO_DONE.md + DEFERRED_REQUIRES_DEVICE.md present, no VALIDATED.md.
@@ -3448,6 +3926,44 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
         )
         # Intentionally NO PHASES.md — triggers the discriminating guard being pinned.
 
+    elif name == "concluded-fixed-unreconciled-diverts":
+        # adhoc-plan-bug-no-guard-for-fixed-annotated-specs Phase 2:
+        # SPEC.md has **Status:** Concluded AND a **Fixed:** evidence annotation,
+        # but NO PHASES.md, NO FIXED.md receipt (already-implemented out-of-pipeline,
+        # unreconciled). The Step-4 pre-gate MUST divert this to a fixed-unreconciled
+        # BLOCKED.md outcome INSTEAD of routing to plan-bug (which would burn a full
+        # planning dispatch re-planning a fix already on disk).
+        #
+        # Expected behavior:
+        #   terminal_reason == TR_BLOCKED
+        #   current_step == STEP_BLOCKED
+        #   sub_skill != "plan-bug"
+        #   a BLOCKED.md is written carrying blocker_kind: fixed-unreconciled
+        #
+        # The companion no-regression case (a plain Concluded-no-annotation SPEC still
+        # routes to plan-bug) is fixture #24 concluded-investigation-plan-bug — it would
+        # break if this pre-gate false-fired on a SPEC with no **Fixed:** annotation.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-fixed-unreconciled", "name": "Fixed-Annotated Unreconciled Bug",
+                 "spec_dir": "bug-fixed-unreconciled"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-fixed-unreconciled"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Fixed-Annotated Unreconciled Bug\n\n"
+            "**Status:** Concluded\n\n"
+            "**Fixed:** 2026-07-18 - implemented out-of-pipeline\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-06-01\n\n"
+            "## Proven Findings\n\n"
+            "Root cause traced; fix already landed out-of-pipeline but never "
+            "reconciled (no FIXED.md receipt, dir not archived).\n",
+            encoding="utf-8",
+        )
+        # Intentionally NO PHASES.md and NO FIXED.md — triggers the pre-gate divert.
+
     elif name == "concluded-investigation-guard-still-spec-bug":
         # SPEC.md has **Status:** Investigating; no PHASES.md.
         # Guard fixture: the discriminating marker must NOT change behavior when the
@@ -3992,6 +4508,70 @@ def _build_bug_fixture(tmpdir: Path, name: str) -> Path:
             "a co-present stray\n", encoding="utf-8"
         )
 
+    elif name == "spike-required-no-verdict":
+        # spike-pipeline-role Phase 2 (WU-3, bug-axis mirror of lazy-state.py's
+        # Step 9.5 gate). Phases complete + VALIDATED.md present (RETRO_DONE.md
+        # not required — retro is unwired, see "phases-complete-no-retro"
+        # above) + PHASES.md declares `**Spike:** required` + NO
+        # SPIKE_VERDICT.md on disk. Expected: sub_skill == "spike" at the
+        # Step-9.5 seam, NOT __mark_fixed__.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-spike-nv", "name": "Spike Required No Verdict Bug",
+                 "spec_dir": "bug-spike-nv"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-spike-nv"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Spike Required No Verdict Bug\n\n"
+            "**Status:** In-progress\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-07-17\n",
+            encoding="utf-8",
+        )
+        (bdir / "PHASES.md").write_text(
+            "# Phases\n\n"
+            "**Spike:** required — prove the fix holds under load\n\n"
+            "### Phase 1\n"
+            "- [x] Root cause identified\n"
+            "- [x] Implement fix\n",
+            encoding="utf-8",
+        )
+        _write_yaml_sentinel(
+            bdir / "VALIDATED.md", "validated",
+            bug_id="bug-spike-nv", date="2026-07-17", result="all-passing",
+        )
+        # Intentionally NO SPIKE_VERDICT.md.
+
+    elif name == "spike-blocker-resolver":
+        # spike-pipeline-role Phase 2 (WU-3, bug-axis mirror of lazy-state.py's
+        # Step-3 BLOCKED.md blocker_kind resolver). A BLOCKED.md carrying
+        # blocker_kind: runtime-spike-verdict-pending must route to sub_skill
+        # "spike" (non-terminal — no terminal_reason) at the dedicated
+        # blocked-resolver current_step, NOT the generic terminal `blocked`.
+        (bugs_dir / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-spike-br", "name": "Spike Blocker Resolver Bug",
+                 "spec_dir": "bug-spike-br"}
+            ]
+        }), encoding="utf-8")
+        bdir = bugs_dir / "bug-spike-br"
+        bdir.mkdir()
+        (bdir / "SPEC.md").write_text(
+            "# Spike Blocker Resolver Bug\n\n"
+            "**Status:** Investigating\n\n"
+            "**Severity:** P2\n\n"
+            "**Discovered:** 2026-07-17\n",
+            encoding="utf-8",
+        )
+        _write_yaml_blocked_sentinel(
+            bdir / "BLOCKED.md",
+            feature_id="bug-spike-br", phase="Investigation",
+            blocker_kind="runtime-spike-verdict-pending",
+            blocked_at="2026-07-17T12:00:00Z", retry_count=0,
+        )
+
     else:
         raise ValueError(f"Unknown fixture name: {name!r}")
 
@@ -4034,6 +4614,33 @@ def run_smoke_tests() -> int:
             failures.append(
                 f"[{name}] expected queued bug ('bug-queued') to be selected first "
                 f"(queue overrides severity); got feature_id={fid!r}"
+            )
+
+    def _assert_fixed_unreconciled_blocked(
+        got: dict[str, Any], failures: list[str], name: str
+    ) -> None:
+        """Phase 2: the Step-4 divert must write a canonical BLOCKED.md carrying
+        blocker_kind: fixed-unreconciled, and must NOT route to plan-bug."""
+        if got.get("sub_skill") == "plan-bug":
+            failures.append(
+                f"[{name}] sub_skill must NOT be 'plan-bug' (fixed-unreconciled divert); "
+                f"got sub_skill={got.get('sub_skill')!r}"
+            )
+        spec_path = got.get("spec_path")
+        if not spec_path:
+            failures.append(f"[{name}] no spec_path in state to locate BLOCKED.md")
+            return
+        blocked = Path(spec_path) / "BLOCKED.md"
+        if not blocked.exists():
+            failures.append(
+                f"[{name}] expected a fixed-unreconciled BLOCKED.md at {blocked}"
+            )
+            return
+        meta = parse_sentinel(blocked) or {}
+        if meta.get("blocker_kind") != "fixed-unreconciled":
+            failures.append(
+                f"[{name}] expected blocker_kind 'fixed-unreconciled'; "
+                f"got {meta.get('blocker_kind')!r}"
             )
 
     def _assert_unknown_host_capability_blocked(
@@ -4165,6 +4772,20 @@ def run_smoke_tests() -> int:
                 "current_step": STEP_MCP,
             },
         ),
+        # 4a. Verification-only remainder + NO plan (harden Round 93 regression,
+        # bug-state-verification-only-remainder-loops-write-plan): all impl rows
+        # [x], sole unchecked row is <!-- verification-only -->, no plans/ dir.
+        # Must route PAST write-plan to Step 9 mcp-test (the workstation
+        # verification-only bypass, no _has_any_complete_plan required) — NOT
+        # loop write-plan forever.
+        (
+            "verification-only-remainder-no-plan", False, True,
+            {
+                "feature_id": "bug-vonp",
+                "sub_skill": SKILL_MCP_TEST,
+                "current_step": STEP_MCP,
+            },
+        ),
         # 4b. PHASES not-required + no app surface → Step 9 short-circuits to
         # the inline structural skip grant (no /mcp-test dispatch).
         (
@@ -4189,6 +4810,46 @@ def run_smoke_tests() -> int:
             "ready-to-mark-fixed", False, True,
             {
                 "feature_id": "bug-rtmf",
+                "sub_skill": SKILL_MARK_FIXED,
+                "current_step": STEP_MARK_FIXED,
+            },
+        ),
+        # decision-2-6-uncovered-row-reroute-to-mcp-test WU-3 (bug mirror): at
+        # Step 10 with VALIDATED.md over a matrix-incomplete PHASES (partial
+        # evidence covers 1 of 2 verification rows) → re-route to /mcp-test.
+        (
+            "step10-uncovered-reroute-bug", False, True,
+            {
+                "feature_id": "bug-d26re",
+                "sub_skill": "mcp-test",
+                "current_step": "Step 10: re-route to mcp-test (uncovered verification rows)",
+            },
+        ),
+        # TERMINATION: evidence covers both rows → __mark_fixed__ (no re-route).
+        (
+            "step10-covered-terminates-bug", False, True,
+            {
+                "feature_id": "bug-d26term",
+                "sub_skill": SKILL_MARK_FIXED,
+                "current_step": STEP_MARK_FIXED,
+            },
+        ),
+        # TERMINATION: sole uncovered row is host-deferred → excluded → __mark_fixed__.
+        (
+            "step10-host-deferred-terminates-bug", False, True,
+            {
+                "feature_id": "bug-d26host",
+                "sub_skill": SKILL_MARK_FIXED,
+                "current_step": STEP_MARK_FIXED,
+            },
+        ),
+        # NO-MCP-SURFACE GUARD: MCP-not-required + no-app-surface repo (e.g.
+        # claude-config itself) has no /mcp-test surface → re-route suppressed →
+        # __mark_fixed__ (else it would loop /mcp-test forever).
+        (
+            "step10-no-mcp-surface-no-reroute-bug", False, True,
+            {
+                "feature_id": "bug-d26nomcp",
                 "sub_skill": SKILL_MARK_FIXED,
                 "current_step": STEP_MARK_FIXED,
             },
@@ -4393,6 +5054,21 @@ def run_smoke_tests() -> int:
                 "current_step": STEP_INVESTIGATE,
             },
         ),
+        # 25b. concluded-fixed-unreconciled-diverts
+        #      (adhoc-plan-bug-no-guard-for-fixed-annotated-specs Phase 2).
+        #      A Concluded SPEC carrying a **Fixed:** annotation with no FIXED.md
+        #      receipt must be DIVERTED to a fixed-unreconciled BLOCKED.md at Step 4,
+        #      never routed to plan-bug (which would burn a planning dispatch on an
+        #      already-implemented fix). Companion no-regression case is fixture #24.
+        (
+            "concluded-fixed-unreconciled-diverts", False, True,
+            {
+                "feature_id": "bug-fixed-unreconciled",
+                "terminal_reason": TR_BLOCKED,
+                "current_step": STEP_BLOCKED,
+            },
+            _assert_fixed_unreconciled_blocked,
+        ),
         # 26. D-3(a) provenance gate: pipeline-self-granted SKIP_MCP_TEST.md must
         #     NOT vacuously validate — halt with needs-input for operator review.
         #     RED against pre-fix code (which emitted __write_validated_from_skip__).
@@ -4564,6 +5240,44 @@ def run_smoke_tests() -> int:
                 "sub_skill": SKILL_INVESTIGATE,
                 "current_step": STEP_INVESTIGATE,
             },
+        ),
+        # 33. spike-pipeline-role Phase 2 (WU-3, bug-axis mirror of
+        #     lazy-state.py's Step 9.5 gate): a bug whose PHASES.md declares
+        #     `**Spike:** required` with no PASS SPIKE_VERDICT.md on disk must
+        #     route to sub_skill "spike" at the Step-9.5 seam instead of
+        #     falling through to __mark_fixed__. RED against pre-WU-3 code
+        #     (falls straight through to Step 10).
+        (
+            "spike-required-no-verdict", False, True,
+            {
+                "feature_id": "bug-spike-nv",
+                "sub_skill": "spike",
+                "current_step": "Step 9.5: spike verdict pending",
+            },
+        ),
+        # 34. spike-pipeline-role Phase 2 (WU-3, bug-axis mirror of
+        #     lazy-state.py's Step-3 BLOCKED.md blocker_kind resolver): a
+        #     BLOCKED.md carrying blocker_kind: runtime-spike-verdict-pending
+        #     must route to sub_skill "spike" (non-terminal — no
+        #     terminal_reason) at the dedicated Step-3 blocked-resolver
+        #     current_step, instead of the generic terminal_reason="blocked"
+        #     halt. RED against pre-WU-3 code.
+        (
+            "spike-blocker-resolver", False, True,
+            {
+                "feature_id": "bug-spike-br",
+                "sub_skill": "spike",
+                "current_step": "Step 3: spike verdict pending (blocked resolver)",
+            },
+            lambda got, failures, name: (
+                failures.append(
+                    f"[{name}] the spike blocked-resolver route must be "
+                    f"NON-terminal; got terminal_reason="
+                    f"{got.get('terminal_reason')!r}"
+                )
+                if got.get("terminal_reason") is not None
+                else None
+            ),
         ),
     ]
 
@@ -6848,6 +7562,72 @@ def run_smoke_tests() -> int:
         )
 
         # -------------------------------------------------------------------
+        # byref-updatedinput-unapplied-on-background-agent-dispatch WU-2
+        # (coupled-pair mirror of lazy-state.py): --resolve-ref <nonce> — the
+        # sanctioned consumed-nonce read a subagent runs to recover its full
+        # instructions after the platform drops the by-reference updatedInput
+        # rewrite (upstream #39814). Exercises the REAL bug-state.py CLI: hit →
+        # exact registered bytes + exit 0 (NOT cycle-refused under a subagent
+        # context); miss → empty stdout + exit 1. The nonce is the key, so the
+        # --feature-id/--bug-id divergence does not apply.
+        # -------------------------------------------------------------------
+        rref_name = "resolve-ref-cli"
+        rref_ok = True
+        rref_state = td_path / "rref-state"
+        rref_state.mkdir(parents=True, exist_ok=True)
+        rref_root = td_path / "rref-repo"
+        rref_root.mkdir(parents=True, exist_ok=True)
+        rref_prompt = "Fix bug part 2 for bug-rref — full resolved bytes."
+        _rref_prev = os.environ.get("LAZY_STATE_DIR")
+        os.environ["LAZY_STATE_DIR"] = str(rref_state)
+        try:
+            lazy_core.write_run_marker(pipeline="bug", cloud=False,
+                                       repo_root=str(rref_root))
+            _rref_entry = lazy_core.register_emission(rref_prompt, cls="cycle",
+                                                      item_id="bug-rref")
+            rref_nonce = _rref_entry["nonce"]
+            lazy_core.dispatch.consume_nonce(rref_nonce, consumer="toolu_rref")
+        finally:
+            if _rref_prev is None:
+                os.environ.pop("LAZY_STATE_DIR", None)
+            else:
+                os.environ["LAZY_STATE_DIR"] = _rref_prev
+
+        def _rref_env(**extra: str) -> dict:
+            e = {k: v for k, v in os.environ.items()
+                 if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+            e["LAZY_STATE_DIR"] = str(rref_state)
+            e.update(extra)
+            return e
+
+        _rref_script = str(Path(__file__).resolve())
+        r_rref_hit = subprocess.run(
+            [sys.executable, _rref_script, "--resolve-ref", rref_nonce,
+             "--repo-root", str(rref_root)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=_rref_env(LAZY_CYCLE_SUBAGENT="1"),
+        )
+        if r_rref_hit.returncode != 0 \
+                or r_rref_hit.stdout.rstrip("\n") != rref_prompt:
+            failures.append(
+                f"[{rref_name}] hit: expected exit 0 + exact bytes (subagent NOT "
+                f"cycle-refused), got rc={r_rref_hit.returncode} "
+                f"stdout={r_rref_hit.stdout!r} stderr={r_rref_hit.stderr[:200]!r}"
+            )
+            rref_ok = False
+        r_rref_miss = subprocess.run(
+            [sys.executable, _rref_script, "--resolve-ref", "deadbeef" * 4,
+             "--repo-root", str(rref_root)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=_rref_env(),
+        )
+        if r_rref_miss.returncode != 1 or r_rref_miss.stdout.strip() != "":
+            failures.append(
+                f"[{rref_name}] miss: expected exit 1 + empty stdout, got "
+                f"rc={r_rref_miss.returncode} stdout={r_rref_miss.stdout!r}"
+            )
+            rref_ok = False
+        print(f"  {'PASS' if rref_ok else 'FAIL'} [{rref_name}]")
+
+        # -------------------------------------------------------------------
         # Fixture: --cycle-end commit-bracket append is FAIL-OPEN
         # (code-doc-provenance-linkage Phase 1 / D4-A) — coupled-pair mirror of
         # lazy-state.py's fixture. A directory squatting on the ledger filename
@@ -7329,6 +8109,63 @@ def run_smoke_tests() -> int:
             dym_ok = False
     print(f"  {'PASS' if dym_ok else 'FAIL'} [{dym_name}]")
 
+    # -------------------------------------------------------------------
+    # superseded-dir-excluded-from-pickup
+    # (adhoc-bug-pickup-routes-superseded-specs): a resolved-but-unarchived
+    # Superseded bug dir MUST NOT be returned by _find_open_bug_dirs (mirrors
+    # the feature-side _find_open_feature_dirs Superseded skip). If it were, it
+    # would enter merged_worklist, become the merged head, and trigger a
+    # universal merged-head-diverged withhold that wedges the run.
+    # -------------------------------------------------------------------
+    sup_name = "superseded-dir-excluded-from-pickup"
+    with tempfile.TemporaryDirectory() as sup_td:
+        sup_bugs = Path(sup_td) / "docs" / "bugs"
+        sup_bugs.mkdir(parents=True, exist_ok=True)
+        # A Superseded dir (resolved-but-unarchived; carries a DEFERRED.md as the
+        # live incident did) — MUST be excluded.
+        sup_dir = sup_bugs / "bug-superseded"
+        sup_dir.mkdir()
+        (sup_dir / "SPEC.md").write_text(
+            "# Superseded Bug\n\n"
+            "**Status:** Superseded\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-07-01\n",
+            encoding="utf-8",
+        )
+        (sup_dir / "DEFERRED.md").write_text(
+            "---\nkind: deferred\nbug_id: bug-superseded\n---\nRetired.\n",
+            encoding="utf-8",
+        )
+        # A genuinely-open control dir — MUST still be returned (proves the filter
+        # is not over-broad).
+        open_dir = sup_bugs / "bug-open"
+        open_dir.mkdir()
+        (open_dir / "SPEC.md").write_text(
+            "# Open Bug\n\n"
+            "**Status:** Open\n\n"
+            "**Severity:** P1\n\n"
+            "**Discovered:** 2026-07-01\n",
+            encoding="utf-8",
+        )
+        found_names = {p.name for p in _find_open_bug_dirs(sup_bugs, set())}
+        sup_ok = True
+        if "bug-superseded" in found_names:
+            failures.append(
+                f"[{sup_name}] Superseded dir 'bug-superseded' must be EXCLUDED "
+                f"from _find_open_bug_dirs; got {sorted(found_names)!r}"
+            )
+            sup_ok = False
+        if "bug-open" not in found_names:
+            failures.append(
+                f"[{sup_name}] open control dir 'bug-open' must be RETURNED "
+                f"(filter not over-broad); got {sorted(found_names)!r}"
+            )
+            sup_ok = False
+    print(
+        f"  {'PASS' if sup_ok else 'FAIL'} [{sup_name}] "
+        f"found={sorted(found_names)!r}"
+    )
+
     # Summary
     if failures:
         print("\nFAILURES:")
@@ -7551,6 +8388,74 @@ def build_parser() -> argparse.ArgumentParser:
               "Coupled-pair mirror of lazy-state.py --reassert-owner "
               "(single-slot-marker-ownership-race; the marker is shared)."),
     )
+    # lazy-batch-no-mid-run-budget-or-park-controls: operator-authorized mid-run
+    # controls (coupled-pair mirror of lazy-state.py; the marker is shared).
+    # Each is orchestrator-only (refuse_if_cycle_active), requires an ACTIVE
+    # marker, and REFUSES without --operator-authorized (parallel to the
+    # --run-end --reason checkpoint gate). They mutate the active marker in place.
+    parser.add_argument(
+        "--set-max-cycles", dest="set_max_cycles", type=int, default=None,
+        metavar="N",
+        help=("Orchestrator-only, --operator-authorized: update the ACTIVE run "
+              "marker's max_cycles to N in place (mid-run budget change). Atomic — "
+              "no clobber/restart/run-end flush. After this the marker is the "
+              "authoritative live budget (header + budget guard agree with N). "
+              "Refused without --operator-authorized."),
+    )
+    parser.add_argument(
+        "--set-park", dest="set_park", choices=["on", "off"], default=None,
+        help=("Orchestrator-only, --operator-authorized: toggle park mode on the "
+              "ACTIVE run marker mid-run. 'on' arms BOTH park_needs_input and "
+              "park_blocked (the --park umbrella); 'off' clears both AND "
+              "park_provisional. The probe reads the marker each cycle. Refused "
+              "without --operator-authorized."),
+    )
+    parser.add_argument(
+        "--set-park-provisional", dest="set_park_provisional",
+        choices=["on", "off"], default=None,
+        help=("Orchestrator-only, --operator-authorized: toggle "
+              "park-provisional-acceptance on the ACTIVE run marker mid-run. 'on' "
+              "requires park mode already on (park_provisional requires "
+              "park_needs_input, SPEC D1) — else refused. Refused without "
+              "--operator-authorized."),
+    )
+    # no-sanctioned-cli-for-queue-state-mutations (coupled-pair mirror of
+    # lazy-state.py): operator-directed in-place bug-queue mutators — the
+    # sanctioned replacement for hand-editing bugs/queue.json. Each is
+    # refuse_if_cycle_active FIRST + requires --operator-authorized. --set-severity
+    # atomically RE-SORTS listed order to match the new merged priority (the
+    # load-bearing side effect); --unpin is the inverse of --pin.
+    parser.add_argument(
+        "--set-severity", dest="set_severity", nargs=2,
+        metavar=("ID", "SEVERITY"), default=None,
+        help=("Orchestrator-only, --operator-authorized: set bug ID's queue "
+              "severity to SEVERITY (P0/P1/P2/Low) and ATOMICALLY re-position it "
+              "in listed order to match its new merged priority — one write, never "
+              "a stale reorder. Clears any active pin (an explicit severity is the "
+              "inverse of a null-pin). refuse_if_cycle_active (exit 3 for a cycle "
+              "subagent). The promote/demote sibling of --pin."),
+    )
+    parser.add_argument(
+        "--unpin", dest="unpin", metavar="ID", default=None,
+        help=("Orchestrator-only, --operator-authorized: un-pin bug ID (the inverse "
+              "of --pin) — clear pinned_at/pinned_until/pin_reason, restore severity "
+              "from the SPEC's **Severity:** line, and re-position in listed order. "
+              "A not-pinned bug is a byte-stable no-op. refuse_if_cycle_active FIRST."),
+    )
+    parser.add_argument(
+        "--add-deps", dest="add_deps", metavar="ID", default=None,
+        help=("Orchestrator-only, --operator-authorized: add the --deps id list as "
+              "hard queue dependencies on bug ID (post-hoc, arbitrary — the non-SPEC "
+              "sibling of --sync-deps). Deduped; post-mutation cycle-guarded. "
+              "refuse_if_cycle_active FIRST. Coupled-pair mirror of lazy-state.py."),
+    )
+    parser.add_argument(
+        "--remove-deps", dest="remove_deps", metavar="ID", default=None,
+        help=("Orchestrator-only, --operator-authorized: remove the --deps id list "
+              "from bug ID's hard queue dependencies (empty result drops the deps "
+              "key). refuse_if_cycle_active FIRST. Coupled-pair mirror of "
+              "lazy-state.py."),
+    )
     parser.add_argument(
         "--record-intervention", dest="record_intervention",
         action="store_true",
@@ -7643,6 +8548,20 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--park", dest="park_umbrella", action="store_true",
+        help=(
+            "Umbrella park flag — the /lazy-bug-batch `--park` invocation flag. "
+            "Arms BOTH --park-needs-input AND --park-blocked in one token "
+            "(mirroring `--set-park on`), so `--run-start --park` persists park "
+            "mode into the run marker and the probe reads it from cycle 1. "
+            "Equivalent to passing the two granular flags; combine with "
+            "--park-provisional for provisional-acceptance. Default off → "
+            "byte-identical to a non-park run. Coupled-pair mirror of "
+            "lazy-state.py. (Fixes lazy-run-marker-park-arm: Step 0.55 forwards "
+            "the operator's `--park` verbatim.)"
+        ),
+    )
+    parser.add_argument(
         "--provisionalize-sentinel", default=None, metavar="PATH",
         help=(
             "Provisionally accept the NEEDS_INPUT.md at PATH on its "
@@ -7691,6 +8610,21 @@ def build_parser() -> argparse.ArgumentParser:
             "whole feature's PHASES.md. "
             "Emits a JSON verdict (incl. diagnostic deliverables_source) and exits "
             "0 on pass, 1 on first failing check."
+        ),
+    )
+    parser.add_argument(
+        "--gate-verdict-check", default=None, metavar="SPEC_PATH",
+        help=(
+            "Completion-time item-scoped anti-overfit design-gate report "
+            "(lazy_core.item_scoped_gate_report): run the harness-gate checker "
+            "over the item's OWN shipped commits (the SAME derivation "
+            "gate_verdict_ok uses), so in_scope/scope_hit AGREE with the ship "
+            "seam even when the fix is ALREADY MERGED to origin/main (an empty "
+            "origin/main..HEAD range would falsely report out-of-scope). Prints "
+            "the harness-gate JSON (in_scope/scope_hit/checks/verdict_required/"
+            "gate_weakening_hit) + item_commits. Read-only; the authoring seam of "
+            "the gate-verdict dispatch class. Exit 1 iff verdict_required. "
+            "Coupled-pair mirror of lazy-state.py --gate-verdict-check."
         ),
     )
     parser.add_argument(
@@ -7969,6 +8903,40 @@ def build_parser() -> argparse.ArgumentParser:
             "Never creates state. Used by the stray-branch write-time hook."
         ),
     )
+    # adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke Phase 1
+    # (Gap 2; coupled-pair mirror of lazy-state.py): read-only pause-vs-terminal
+    # discriminator for a just-returned /execute-plan cycle. The execute-plan run
+    # marker is PIPELINE-AGNOSTIC (same ~/.claude/state/execute-plan/<md5>.json
+    # for a bug or feature cycle), so this flag is identical on both scripts and
+    # parity-audited. Consumed by lazy-bug-batch Step 1e/4a guardrail-D BEFORE
+    # emitting --emit-dispatch recovery.
+    parser.add_argument(
+        "--execute-plan-liveness", action="store_true",
+        help=(
+            "Read-only: print the execute-plan pause-vs-terminal verdict JSON "
+            "{marker_present, plan_status, verdict} for --plan PLAN in --repo-root "
+            "REPO. marker present + plan not Complete => paused (recovery should "
+            "be suppressed); marker absent or plan Complete or any read error => "
+            "terminal (fail-safe). Always exits 0."
+        ),
+    )
+    # byref-updatedinput-unapplied-on-background-agent-dispatch WU-2 (coupled-pair
+    # mirror of lazy-state.py): the sanctioned consumed-nonce read. The platform
+    # silently drops the by-reference `hookSpecificOutput.updatedInput` rewrite for
+    # the Agent tool as a CLASS (upstream anthropics/claude-code#39814), so a
+    # `@@lazy-ref nonce=<hex>` dispatch lands the BARE token at the subagent. The
+    # nonce is the key, so the --feature-id/--bug-id divergence does NOT apply.
+    # Read-only, run-scoped, never un-consumes; NOT gated by refuse_if_cycle_active.
+    parser.add_argument(
+        "--resolve-ref", metavar="NONCE", default=None,
+        help=(
+            "Read-only: print the registered prompt bytes for a nonce the guard "
+            "already ALLOW+consumed this run (consumed + TTL-fresh + run-start-"
+            "gated), exit 0; print nothing + exit 1 on a miss (unknown / expired / "
+            "cross-run / still-unconsumed). The subagent-side resolve path for a "
+            "bare @@lazy-ref token."
+        ),
+    )
     parser.add_argument(
         "--session-id", default=None,
         help=(
@@ -8004,6 +8972,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     cli_surface.add_dump_cli_surface_flag(parser)
+    cli_surface.add_ops_query_flags(parser)
     return parser
 
 
@@ -8020,6 +8989,12 @@ def main() -> int:
     if _dump is not None:
         return _dump
 
+    # no-sanctioned-cli-for-queue-state-mutations (parity with lazy-state.py):
+    # op-discoverability search — read-only, handled before any side effect.
+    _ops = cli_surface.maybe_handle_ops_query(args, parser, "bug-state.py")
+    if _ops is not None:
+        return _ops
+
     # multi-repo-concurrent-runs: bind the active repo ONCE so claude_state_dir()
     # scopes all run-scoped state to this repo's subdir (parity with lazy-state.py).
     lazy_core.set_active_repo_root(args.repo_root)
@@ -8029,6 +9004,16 @@ def main() -> int:
     # advance and peek the persisted streak.
     if args.repeat_count and args.repeat_count_peek:
         _die("--repeat-count and --repeat-count-peek are mutually exclusive")
+
+    # --park is the umbrella arming BOTH park facets (needs-input + blocked),
+    # matching the /lazy-bug-batch `--park` invocation flag and `--set-park on`.
+    # Fold it into the granular flags EARLY — before the pairing guard below and
+    # the run-start marker threading — so every downstream read sees the same
+    # shape whether the umbrella or the two granular flags were passed (coupled-
+    # pair mirror of lazy-state.py; harden lazy-run-marker-park-arm...).
+    if getattr(args, "park_umbrella", False):
+        args.park_needs_input = True
+        args.park_blocked = True
 
     # park-provisional-acceptance (SPEC D1, parity with lazy-state.py):
     # --park-provisional is a strict modifier of --park-needs-input.
@@ -8047,6 +9032,31 @@ def main() -> int:
         branch = lazy_core.marker_work_branch(session_id=args.session_id)
         if branch:
             sys.stdout.write(branch + "\n")
+            return 0
+        return 1
+
+    # adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke Phase 1
+    # (Gap 2; coupled-pair mirror of lazy-state.py): --execute-plan-liveness —
+    # read-only pause-vs-terminal verdict for a just-returned /execute-plan
+    # cycle. Shells the SHARED discriminator (the execute-plan marker is
+    # pipeline-agnostic — same helper, same output). ALWAYS exits 0.
+    if args.execute_plan_liveness:
+        verdict = lazy_core.execute_plan_liveness(args.repo_root, args.plan or "")
+        sys.stdout.write(json.dumps(verdict) + "\n")
+        return 0
+
+    # byref-updatedinput-unapplied-on-background-agent-dispatch WU-2 (coupled-pair
+    # mirror of lazy-state.py): --resolve-ref <nonce> — the subagent-side resolve
+    # of a consumed nonce's registered prompt bytes (the platform drops the
+    # by-reference updatedInput rewrite for the Agent tool, upstream #39814).
+    # set_active_repo_root ran above, so resolve_consumed_emission_by_nonce
+    # resolves THIS repo's keyed registry. Read-only, run-scoped, never
+    # un-consumes; deliberately NOT gated by refuse_if_cycle_active (a dispatched
+    # subagent MUST be able to run it). Hit → exact bytes + exit 0; miss → exit 1.
+    if args.resolve_ref is not None:
+        resolved = lazy_core.resolve_consumed_emission_by_nonce(args.resolve_ref)
+        if resolved:
+            sys.stdout.write(resolved + "\n")
             return 0
         return 1
 
@@ -8161,10 +9171,24 @@ def main() -> int:
         # mechanize-prose-only-orchestrator-contracts (b) / D2-A — coupled-pair
         # mirror of lazy-state.py: arm the post-cycle input-audit obligation
         # when the ending cycle was spec-bug or plan-bug.
+        # adhoc-audit-obligation-fires-on-zero-commit-failed-cycle — coupled-pair
+        # mirror: pass the commit-delta signal so a ZERO-COMMIT (failed / no-op)
+        # close arms NO obligation, and a real-commit close records the bracket's
+        # ACTUAL end sha + subject. Summary git call skipped on the zero-commit path.
         if _tl_cycle is not None:
+            _aud_begin = _tl_cycle.get("begin_head_sha")
+            _aud_end = lazy_core.head_sha_snapshot(Path(args.repo_root))
+            _aud_summary = (
+                lazy_core.head_commit_subject(Path(args.repo_root))
+                if _aud_end and _aud_end != _aud_begin
+                else None
+            )
             lazy_core.record_audit_obligation(
                 item_id=_tl_cycle.get("feature_id"),
                 cycle_kind=_tl_cycle.get("sub_skill"),
+                begin_head_sha=_aud_begin,
+                end_sha=_aud_end,
+                cycle_summary=_aud_summary,
             )
         friction = lazy_core.cycle_end_friction_check(repo_root=Path(args.repo_root))
         # code-doc-provenance-linkage Phase 1 (D4-A) — coupled-pair mirror:
@@ -8175,6 +9199,14 @@ def main() -> int:
         bracket = lazy_core.record_cycle_commit_bracket(
             repo_root=Path(args.repo_root)
         )
+        # cycle-budget-counters-double-count-on-probes-and-inject-hook (coupled-pair
+        # mirror of lazy-state.py): THE budget authority for bracketed Agent
+        # dispatches. A completed bracket wraps exactly one dispatch — count it here
+        # keyed on the cycle marker's --kind: real → forward_cycles (+ per-feature
+        # sibling), meta → meta_cycles. Read BEFORE clear_cycle_marker() so the
+        # marker's kind is still available. Marker-gated + idempotent per bracket.
+        # This replaces the removed probe-path forward advance.
+        lazy_core.advance_cycle_bracket_counter(_tl_cycle)
         cleared = lazy_core.clear_cycle_marker()
         # harness-telemetry-ledger Phase 2 (D4-B) — coupled-pair mirror of
         # lazy-state.py (marker-gated + fail-open; adds NO output keys).
@@ -8224,6 +9256,12 @@ def main() -> int:
             session_id=args.session_id,
             attended=not args.unattended,
             parent_run=parent_run,
+            # lazy-batch-no-mid-run-budget-or-park-controls (coupled-pair mirror):
+            # SEED park mode into the marker from the invocation --park flags so
+            # the probe reads it each cycle and --set-park can toggle it in place.
+            park_needs_input=args.park_needs_input,
+            park_blocked=args.park_blocked,
+            park_provisional=args.park_provisional,
         )
         out: dict = dict(marker)
         # Phase 7 WU-7.4: consume any checkpoint left by a prior checkpoint
@@ -8271,6 +9309,20 @@ def main() -> int:
         reason = args.reason or "terminal"
         if reason not in ("terminal", "checkpoint"):
             _die("--run-end --reason must be 'terminal' or 'checkpoint'")
+
+        # lazy-batch-parallel-run-harness-gaps gaps 4+5 (coupled-pair mirror of
+        # lazy-state.py): a LANE marker carries a non-null `parent_run` — a
+        # coordinator-authorized child retirement, not a top-level run boundary. It
+        # does NOT owe the efficacy/canary/incident trio (gap 5; the parent owes it
+        # once at flush) and may retire on a park-class terminal without
+        # --operator-authorized (gap 4). Parallel mode is feature-only v1, so a bug
+        # lane marker does not occur in practice today; the mirror keeps the coupled
+        # pair from drifting and is correct for any future bug-parallel. Read the
+        # marker RAW (non-deleting) once here.
+        _re_marker = lazy_core.read_run_marker()
+        _is_lane_marker = bool(
+            isinstance(_re_marker, dict) and _re_marker.get("parent_run")
+        )
 
         # WU-7.1: refuse to retire the marker while unacked guard denials remain,
         # unless --ack-unhardened was passed (the override is recorded for retros).
@@ -8325,7 +9377,11 @@ def main() -> int:
         # checkpoint run-ends too. The check reads the marker RAW (non-deleting).
         # -----------------------------------------------------------------------
         efficacy_skip_note = None
-        if not lazy_core.efficacy_breadcrumb_present():
+        if _is_lane_marker:
+            # gap 5 (coupled-pair mirror): a lane child never owes the trio — the
+            # parent coordinator flushes it once. Skip keeps lane retirement clean.
+            pass
+        elif not lazy_core.efficacy_breadcrumb_present():
             if not args.efficacy_skip_authorized:
                 sys.stdout.write(json.dumps({
                     "run_marker_deleted": False,
@@ -8412,7 +9468,14 @@ def main() -> int:
         elif reason == "terminal":
             terminal_reason = getattr(args, "terminal_reason", None)
             if terminal_reason is not None:
+                # gap 4 (coupled-pair mirror): a lane marker (parent_run set) may
+                # retire on a park-class terminal without --operator-authorized.
+                _lane_sanctioned = (
+                    _is_lane_marker
+                    and terminal_reason in lazy_core.SANCTIONED_LANE_PARK_TERMINAL
+                )
                 if (terminal_reason not in lazy_core.SANCTIONED_STOP_TERMINAL
+                        and not _lane_sanctioned
                         and not args.operator_authorized):
                     sys.stdout.write(json.dumps({
                         "run_marker_deleted": False,
@@ -8758,6 +9821,60 @@ def main() -> int:
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0
 
+    if args.set_severity is not None:
+        # no-sanctioned-cli-for-queue-state-mutations (coupled-pair mirror of
+        # lazy-state.py --set-tier): operator-directed in-place severity change.
+        # Refuse FIRST (exit 3 for a cycle subagent), then require
+        # --operator-authorized. set_queue_priority ATOMICALLY re-sorts listed
+        # order to match the new merged priority in the SAME write.
+        lazy_core.refuse_if_cycle_active("--set-severity")
+        if not args.operator_authorized:
+            _die("--set-severity requires --operator-authorized (the operator must "
+                 "have approved the priority change).")
+        _id, _sev = args.set_severity
+        result = lazy_core.set_queue_priority(
+            Path(args.repo_root) / "docs" / "bugs" / "queue.json",
+            _id, "bug", _sev, queue_label="bugs/queue.json",
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.unpin is not None:
+        # no-sanctioned-cli-for-queue-state-mutations: the inverse of --pin.
+        # Same gate contract as --pin + operator-authorization.
+        lazy_core.refuse_if_cycle_active("--unpin")
+        if not args.operator_authorized:
+            _die("--unpin requires --operator-authorized.")
+        result = unpin_bug_severity(Path(args.repo_root), args.unpin)
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
+    if args.add_deps or args.remove_deps:
+        # no-sanctioned-cli-for-queue-state-mutations (coupled-pair mirror of
+        # lazy-state.py): post-hoc arbitrary deps edit. Refuse FIRST + require
+        # --operator-authorized. --add-deps / --remove-deps are mutually exclusive.
+        lazy_core.refuse_if_cycle_active("--add-deps/--remove-deps")
+        if args.add_deps and args.remove_deps:
+            _die("--add-deps and --remove-deps are mutually exclusive (one op per call).")
+        if not args.operator_authorized:
+            _die("--add-deps/--remove-deps requires --operator-authorized.")
+        _target = args.add_deps or args.remove_deps
+        _dep_ids = (
+            [s.strip() for s in args.deps.split(",") if s.strip()]
+            if args.deps else None
+        )
+        if not _dep_ids:
+            _die("--add-deps/--remove-deps requires a non-empty --deps id list.")
+        result = lazy_core.mutate_queue_deps(
+            Path(args.repo_root) / "docs" / "bugs" / "queue.json",
+            _target,
+            add=(_dep_ids if args.add_deps else None),
+            remove=(_dep_ids if args.remove_deps else None),
+            queue_label="bugs/queue.json",
+        )
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 0
+
     if args.reassert_owner:
         # single-slot-marker-ownership-race-disarms-owning-run Phase 2 (coupled-pair
         # mirror of lazy-state.py --reassert-owner). The owner RE-ARM path. The run
@@ -8774,14 +9891,75 @@ def main() -> int:
         ) + "\n")
         return 0
 
+    if args.set_max_cycles is not None:
+        # lazy-batch-no-mid-run-budget-or-park-controls (coupled-pair mirror of
+        # lazy-state.py; the marker is shared): operator-authorized mid-run budget
+        # change. Orchestrator-only — refuse FIRST (exit 3, zero side effects).
+        lazy_core.refuse_if_cycle_active("--set-max-cycles")
+        if not args.operator_authorized:
+            _die("--set-max-cycles requires --operator-authorized (the operator must "
+                 "have approved the mid-run budget change).")
+        if args.set_max_cycles < 1:
+            _die("--set-max-cycles requires a positive integer N (>= 1).")
+        result = lazy_core.set_marker_max_cycles(args.set_max_cycles)
+        if result is None:
+            _die("--set-max-cycles: no active run marker to update.")
+        out = {"max_cycles_updated": True, **result}
+        sys.stdout.write(json.dumps(out, indent=2) + "\n")
+        return 0
+
+    if args.set_park is not None:
+        # lazy-batch-no-mid-run-budget-or-park-controls (coupled-pair mirror):
+        # operator-authorized mid-run park toggle. 'on' arms BOTH park facets (the
+        # --park umbrella); 'off' clears both AND park_provisional.
+        lazy_core.refuse_if_cycle_active("--set-park")
+        if not args.operator_authorized:
+            _die("--set-park requires --operator-authorized (the operator must have "
+                 "approved the mid-run park toggle).")
+        _on = args.set_park == "on"
+        result = lazy_core.set_marker_park(
+            park_needs_input=_on,
+            park_blocked=_on,
+            park_provisional=(None if _on else False),
+        )
+        if result is None:
+            _die("--set-park: no active run marker to update.")
+        out = {"park_updated": True, **result}
+        sys.stdout.write(json.dumps(out, indent=2) + "\n")
+        return 0
+
+    if args.set_park_provisional is not None:
+        # lazy-batch-no-mid-run-budget-or-park-controls (coupled-pair mirror):
+        # operator-authorized mid-run park-provisional toggle. set_marker_park
+        # enforces the standing invariant (provisional requires needs-input).
+        lazy_core.refuse_if_cycle_active("--set-park-provisional")
+        if not args.operator_authorized:
+            _die("--set-park-provisional requires --operator-authorized (the operator "
+                 "must have approved the mid-run park-provisional toggle).")
+        result = lazy_core.set_marker_park(
+            park_provisional=(args.set_park_provisional == "on"),
+        )
+        if result is None:
+            _die("--set-park-provisional: no active run marker to update.")
+        out = {"park_updated": True, **result}
+        sys.stdout.write(json.dumps(out, indent=2) + "\n")
+        return 0
+
     if args.record_intervention:
         # intervention-efficacy-tracking Phase 1 (coupled-pair mirror of
         # lazy-state.py --record-intervention; the capture helper is shared
         # lazy_core.record_intervention). Manual / hardening-round / D9-backfill
         # capture path — the completion-gate capture lives inside
         # lazy_core.apply_pseudo. Orchestrator-only: refuse a cycle subagent
-        # FIRST (exit 3, zero side effects).
-        lazy_core.refuse_if_cycle_active("--record-intervention")
+        # FIRST (exit 3, zero side effects) — EXCEPT a dispatched HARDENING cycle
+        # subagent, which its SKILL contract REQUIRES to record its own round's
+        # intervention (capture-only telemetry). allow_hardening_subagent permits
+        # it ONLY when the cycle marker's sub_skill is a hardening class; every
+        # other cycle subagent is still refused
+        # (dispatched-harden-record-intervention-refused-by-containment).
+        lazy_core.refuse_if_cycle_active(
+            "--record-intervention", allow_hardening_subagent=True
+        )
         if not args.id:
             _die("--record-intervention requires --id")
         provenance = (
@@ -8903,14 +10081,34 @@ def main() -> int:
         sys.stdout.write(json.dumps(result, indent=2) + "\n")
         return 0 if result.get("ok") else 1
 
+    if args.gate_verdict_check is not None:
+        # Authoring seam of the gate-verdict dispatch class: the item-scoped
+        # design-gate report, merge-independent (agrees with gate_verdict_ok even
+        # when origin/main..HEAD is empty). Read-only — callable by a cycle
+        # subagent, like --verify-ledger (NOT cycle-refused). Coupled-pair mirror
+        # of lazy-state.py --gate-verdict-check.
+        result = lazy_core.item_scoped_gate_report(
+            Path(args.gate_verdict_check), Path(args.repo_root))
+        sys.stdout.write(json.dumps(result, indent=2) + "\n")
+        return 1 if result.get("verdict_required") else 0
+
     if args.verify_ledger is not None:
         # Scripted completion-ledger guard: verify the four preconditions for
         # marking a bug fixed. The orchestrator's && chains short-circuit on
         # non-zero exit when any check fails. When --plan is also passed, checks
         # 3+4 narrow to that plan part's scope (Phase 9 WU-3) — reuses the
         # existing --plan flag (shared with --apply-pseudo, no dest collision).
+        # verify_ledger expects a spec directory (not the SPEC.md file path).
+        # Normalize: if the caller passed a .md file, use its parent directory —
+        # coupled-pair mirror of lazy-state.py (bug `verify-ledger-planning-scope-
+        # and-file-arg`). Computing `_spec_dir` here (not passing args.verify_ledger
+        # raw) also stamps the correct `gate-refusal` item_id (the bug-dir name, not
+        # "SPEC.md"). verify_ledger itself also normalizes at the source; this keeps
+        # the telemetry item_id correct regardless.
+        _vl_path = Path(args.verify_ledger)
+        _spec_dir = _vl_path.parent if _vl_path.suffix == ".md" else _vl_path
         result = lazy_core.verify_ledger(
-            Path(args.repo_root), Path(args.verify_ledger),
+            Path(args.repo_root), _spec_dir,
             plan_path=Path(args.plan) if args.plan else None,
         )
         # harness-telemetry-ledger Phase 2 (D4-B) — coupled-pair mirror of
@@ -8918,7 +10116,7 @@ def main() -> int:
         if not result["ok"]:
             lazy_core.append_telemetry_event(
                 "gate-refusal",
-                item_id=Path(args.verify_ledger).resolve().name,
+                item_id=_spec_dir.resolve().name,
                 data={"gate": "verify-ledger",
                       "failing_check": result.get("failing_check"),
                       # completion-gate-refusal-opacity Fix Scope §3
@@ -8929,17 +10127,35 @@ def main() -> int:
         return 0 if result["ok"] else 1
 
     real_device = resolve_real_device(args.real_device)
+    # lazy-batch-no-mid-run-budget-or-park-controls (coupled-pair mirror of
+    # lazy-state.py): resolve the EFFECTIVE park state — the marker is
+    # authoritative for a live run (mid-run --set-park takes effect), CLI flags
+    # are the no-marker / legacy-marker fallback (byte-identical back-compat).
+    _park_marker = lazy_core.read_run_marker()
+    _eff_park_ni, _eff_park_bl, _eff_park_pv = lazy_core.fold_park_flags(
+        args.park_needs_input, args.park_blocked, args.park_provisional,
+        _park_marker,
+    )
     state = compute_state(
         Path(args.repo_root),
         cloud=args.cloud,
         real_device=real_device,
         scope_bug_id=args.bug_id,
-        park_needs_input=args.park_needs_input,
-        park_blocked=args.park_blocked,
-        park_provisional=args.park_provisional,
+        park_needs_input=_eff_park_ni,
+        park_blocked=_eff_park_bl,
+        park_provisional=_eff_park_pv,
         per_feature_cycle_cap=args.per_feature_cycle_cap,
         strict_research_halt=args.strict_research_halt,
     )
+    # Surface the effective park state when a marker is present (byte-identical
+    # no-marker output preserved) so the orchestrator can confirm a --set-park
+    # toggle took effect mid-run.
+    if _park_marker is not None and "park_needs_input" in _park_marker:
+        state["park_active"] = {
+            "park_needs_input": _eff_park_ni,
+            "park_blocked": _eff_park_bl,
+            "park_provisional": _eff_park_pv,
+        }
     # --repeat-count / --repeat-count-peek are strictly additive and flag-gated
     # so that default output remains byte-identical when neither is passed.
     # --repeat-count ADVANCES the persisted streak; --repeat-count-peek computes
@@ -8956,25 +10172,15 @@ def main() -> int:
         )
         state["repeat_count"] = _counts["repeat_count"]
         state["step_repeat_count"] = _counts["step_repeat_count"]
-    # Counter advance: at dispatch-bound probe time (--repeat-count, NOT
-    # --repeat-count-peek) advance the marker-persisted forward/meta counters.
-    # Mirror of the peek discipline for update_repeat_counts: only the one
-    # dispatch-bound probe per cycle advances any persisted state.
-    #
-    # FORWARD-CYCLE AUTHORITY (byref-dispatch-undercounts-forward-cycles, Phase 1,
-    # WU-2 — verbatim mirror of lazy-state.py's WU-1 form-1 reconciliation):
-    # advance_forward_cycle is the AUTHORITATIVE forward-advance trigger on this
-    # real-skill (by-reference) probe path. It keys on the consume-INDEPENDENT
-    # [feature_id, current_step, sub_skill] state change, so a by-ref dispatch that
-    # does NOT bump the consume census (the frozen-census / Theory-1b case) still
-    # advances forward_cycles. advance_run_counters (the consume-gated oracle) is NO
-    # LONGER the forward authority on this path — it undercounted, letting the
-    # max-cycles cap never fire. The two state scripts' advance wiring stays in
-    # lockstep (lazy_parity_audit.py). Meta accounting via --emit-dispatch /
-    # advance_meta_cycle is untouched, so nothing on this path double-counts.
-    # No marker present → no-op (advance_forward_cycle returns None).
-    if args.repeat_count:
-        lazy_core.advance_forward_cycle(state)
+    # cycle-budget-counters-double-count-on-probes-and-inject-hook (coupled-pair
+    # mirror of lazy-state.py): the forward budget advance formerly fired HERE on the
+    # --repeat-count probe path. REMOVED — probes (inspection probes AND the per-turn
+    # inject hook, lazy_inject.py) fire this path with NO dispatch, so coupling the
+    # budget to it inflated forward_cycles. The budget now advances ONLY on a
+    # completed dispatch bracket (advance_cycle_bracket_counter at --cycle-end, keyed
+    # on the cycle marker's --kind) and on --apply-pseudo. update_repeat_counts (the
+    # loop-detection STREAKS) stays probe-driven above — only the BUDGET decoupled.
+    # The two state scripts' budget wiring stays in lockstep (lazy_parity_audit.py).
     # --emit-prompt is strictly additive and flag-gated so that default output
     # remains byte-identical when the flag is absent. Placed AFTER the repeat
     # flags so the same-invocation count (from EITHER --repeat-count or
@@ -8990,6 +10196,169 @@ def main() -> int:
         # dispatch first.  Mirror of lazy-state.py (coupled-pair).
         _emit_marker = lazy_core.read_run_marker()
         _emit_debt = lazy_core.pending_hardening() if _emit_marker is not None else 0
+        # dispatch-probe-and-inject-bypass-merged-head (coupled-pair mirror of
+        # lazy-state.py): withhold when the MERGED work-list head diverges from
+        # the bug this probe would emit for (a higher-priority item — bug or
+        # feature — jumped the merged head mid-bug-run). Marker-gated +
+        # fail-safe. Reuses the SAME next_merged ordering.
+        #
+        # adhoc-unify-merged-head-coordinator-exemptions (coupled-pair mirror of
+        # lazy-state.py): the two coordinator-arbitration exemptions the serial
+        # merged-head divergence premise does NOT apply to now live behind ONE
+        # shared predicate in lazy_core.dispatch (single home; the anti-accretion
+        # contract). It returns "lane" | "lease" | None (lane precedence over
+        # lease), fail-safe (never raises into the base probe):
+        #   * "lane" — round-1 gap 1: a lane marker carries a non-null `parent_run`;
+        #     claim_shardable already arbitrated the queue when it assigned the lane
+        #     its item, so the serial merged-head premise is void and the lane must
+        #     not withhold.
+        #   * "lease" — round-2 gap 8: a non-lane main-root SERIAL-TAIL probe whose
+        #     OWN feature_id holds a LIVE coordinator lease is discharging the
+        #     coordinator's in-flight, lane-merged obligation before any new head
+        #     work (heartbeat-fresh actively-owned work, never the stale route the
+        #     guard exists to catch), delegating the liveness I/O to
+        #     lazy_coord.has_live_lease(leases_path, feature_id).
+        # Parallel mode is feature-only v1 (no bug lanes today); the mirror keeps
+        # the coupled pair from drifting and is correct for any future
+        # bug-parallel. A future third exemption (demoted-serial-rerun) is a
+        # one-line addition THERE. The reason drives BOTH the skip decision here
+        # and the observability diagnostic below (via coordinator_exemption_diag).
+        _emit_exempt_reason = lazy_core.dispatch.coordinator_arbitrated_emission(
+            _emit_marker,
+            state.get("feature_id"),
+            lazy_core.claude_state_dir() / "leases.json",
+        )
+        _merged_override = None
+        if _emit_marker is not None and _emit_exempt_reason is None:
+            try:
+                _mo_repo = Path(args.repo_root)
+                _mo_feats = _load_feature_queue_for_merged(_mo_repo)
+                _mo_bugs = load_bug_queue(_mo_repo)
+                # merged-head-includes-parked-items-deadlocks-park-run +
+                # merged-head-excludes-parked-not-operator-deferred-deadlocks
+                # (coupled-pair mirror of lazy-state.py): exclude the NON-DISPATCHABLE
+                # items the pipeline skips — PARKED items (unresolved NEEDS_INPUT.md /
+                # BLOCKED.md) a park-mode run skips PLUS unconditional operator-deferred
+                # items (DEFERRED.md, this pipeline's own skip) — so the merged head is
+                # the highest-priority DISPATCHABLE item and the withhold fires ONLY for
+                # genuine merged-view divergence, never behind an undriveable head
+                # (which deadlocks the run). Effective park facets are in scope from the
+                # emit path above; no facet AND no DEFERRED.md → empty set → byte-identical.
+                # merged-head-actionability-oracle (SPEC L1/L2/L3/L5; coupled-pair
+                # mirror of lazy-state.py): build the merged-head exclude set via the
+                # AUTHORITATIVE actionability oracle — the single replacement for the
+                # file-predicate `nondispatchable_item_ids` ∪ `probe_skipped_ids` union.
+                #   (1) same-pipeline (bugs) → `probe_skipped_ids(state, bugs)` UNCHANGED.
+                #   (2) cross-pipeline (features) → the REAL scoped `lazy-state.compute_state`
+                #       per at-or-above candidate, EXCLUDED iff non-dispatchable, honoring
+                #       the SAME run flags the bug emit probe used (cloud/real_device/park
+                #       facets/strict_research_halt). A needs-research feature (WITHOUT
+                #       --skip-needs-research, which the bug pipeline lacks) classifies
+                #       non-dispatchable and is excluded — exactly the old bug-side
+                #       unconditional research-pending exclusion. A candidate the probe
+                #       can't classify → treated non-dispatchable (fail toward EMITTING).
+                #   (3) `.discard(current)` (invariant preserved, inside the oracle).
+                # In-process safety (Phase-1 OQ1/L4): the scoped feature probe calls
+                # `clear_diagnostics()` on the SHARED lazy_core._DIAGNOSTICS, so
+                # snapshot/restore it around the oracle (the primary `state` is a snapshot).
+                _mo_feat_state_mod = _load_feature_state_module()
+                _mo_real_device = resolve_real_device(args.real_device)
+                # TYPE-AWARE scoped probe (merged-head-oracle-deadlocks-on-
+                # unreached-parked-same-pipeline-head): the oracle now scope-probes
+                # a same-pipeline (bug) head the emit walk never reached, not only
+                # cross-pipeline (feature) candidates — so the probe dispatches each
+                # candidate to the correct pipeline's compute_state via an id->type
+                # map (mirrors the stateless --next-merged _nm_scoped_probe).
+                _mo_types = {}
+                for _mo_it in _mo_feats:
+                    if isinstance(_mo_it, dict) and _mo_it.get("id"):
+                        _mo_types[_mo_it["id"]] = "feature"
+                for _mo_it in _mo_bugs:
+                    if isinstance(_mo_it, dict) and _mo_it.get("id"):
+                        _mo_types.setdefault(_mo_it["id"], "bug")
+
+                def _mo_scoped_probe(_iid):
+                    try:
+                        if _mo_types.get(_iid) == "feature":
+                            if _mo_feat_state_mod is None:
+                                return {}
+                            return _mo_feat_state_mod.compute_state(
+                                _mo_repo, cloud=args.cloud, real_device=_mo_real_device,
+                                scope_feature_id=_iid,
+                                park_needs_input=_eff_park_ni, park_blocked=_eff_park_bl,
+                                park_provisional=_eff_park_pv,
+                                strict_research_halt=args.strict_research_halt,
+                            )
+                        # same-pipeline bug → this module's own scoped compute_state
+                        return compute_state(
+                            _mo_repo, cloud=args.cloud, real_device=_mo_real_device,
+                            scope_bug_id=_iid,
+                            park_needs_input=_eff_park_ni, park_blocked=_eff_park_bl,
+                            park_provisional=_eff_park_pv,
+                            strict_research_halt=args.strict_research_halt,
+                        )
+                    except Exception:  # noqa: BLE001 — a per-candidate probe error must not break the base probe
+                        return {}
+
+                _mo_diag_snapshot = list(lazy_core._DIAGNOSTICS)
+                try:
+                    _mo_excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+                        _mo_feats, _mo_bugs, str(lazy_core.active_repo_root()),
+                        state.get("feature_id"),
+                        same_pipeline="bug", same_pipeline_state=state,
+                        scoped_probe=_mo_scoped_probe,
+                    )
+                finally:
+                    lazy_core._DIAGNOSTICS[:] = _mo_diag_snapshot
+                # Retained for the observability diagnostic below (the same-pipeline
+                # skip set the withhold folded in) — the oracle already includes it.
+                _mo_skipped = lazy_core.dispatch.probe_skipped_ids(state, _mo_bugs)
+                # research-gated-head-buried-by-skip-ahead-and-merged-fallthrough:
+                # the research-halt surfacing (lazy_core.dispatch.research_halt_head)
+                # is a FEATURE-pipeline mechanic — the bug pipeline has no research
+                # gate (parity with the strict_research_halt PARITY-ONLY asymmetry
+                # above), so there is nothing to surface here. After the
+                # non-p0-bug-outranks-p1-feature-on-aged-tie tie-break, a bug reaches
+                # the merged head over a P1 research feature ONLY when it is a genuine
+                # P0 — which legitimately precedes a P1 research gap — so the bug side
+                # correctly needs no research-halt surfacing (documented parity).
+                _merged_override = lazy_core.dispatch.merged_head_override(
+                    _mo_feats,
+                    _mo_bugs,
+                    str(lazy_core.active_repo_root()),
+                    state.get("feature_id"),
+                    exclude_ids=_mo_excluded,
+                )
+                # Observability (skip is NON-withholding): coupled-pair mirror of
+                # lazy-state.py — a deferred head the probe skipped is surfaced in
+                # the existing device_deferred_features / operator_deferred keys;
+                # add a diagnostic naming the skip so retro/telemetry can see the
+                # divergence was SKIPPED (not withheld) when a workable item
+                # existed downstream.
+                if _mo_skipped and _merged_override is None:
+                    _diag_line = (
+                        "merged-head: skipped deferred head(s) "
+                        f"{sorted(_mo_skipped)!r} — dispatching the workable merged "
+                        f"item '{state.get('feature_id')}' (merged-head-diverged "
+                        "NOT withheld; skip observable via device_deferred_features "
+                        "/ operator_deferred)."
+                    )
+                    if isinstance(state.get("diagnostics"), list):
+                        state["diagnostics"].append(_diag_line)
+            except Exception:  # noqa: BLE001 — divergence probe must never break the base probe
+                _merged_override = None
+        elif _emit_exempt_reason is not None:
+            # Observability (coupled-pair mirror): the merged-head divergence guard
+            # was SKIPPED because this is a coordinator-arbitrated emission (lane
+            # probe / serial-tail lease probe — round-1 gap 1 / round-2 gap 8;
+            # never withheld). The per-reason diag text is selected by
+            # coordinator_exemption_diag, preserving both historical messages
+            # verbatim; an unrecognized future reason still skips + emits a generic
+            # coordinator-arbitrated diag.
+            if isinstance(state.get("diagnostics"), list):
+                state["diagnostics"].append(
+                    lazy_core.dispatch.coordinator_exemption_diag(_emit_exempt_reason)
+                )
         if _emit_marker is not None and _emit_debt > 0:
             # Withhold: no cycle_prompt, no cycle_model, no registration.
             _oldest = lazy_core.oldest_unacked_deny()
@@ -9020,14 +10389,36 @@ def main() -> int:
                 if state.get("feature_id") == _obligation.get("item_id")
                 else None
             ) or str(Path(args.repo_root) / "docs" / "bugs" / _aud_item_id)
+            # GAP 4 (adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps):
+            # coupled-pair mirror — use feature_name only when this probe IS the
+            # pending-audit item; otherwise it is the NEXT queued bug's name, so
+            # fall back to the pending-audit item's own slug.
+            _aud_item_name = (
+                state.get("feature_name")
+                if state.get("feature_id") == _obligation.get("item_id")
+                else None
+            ) or _aud_item_id
             state["input_audit_emit_command"] = lazy_core.build_input_audit_emit_command(
                 "bug-state.py",
                 item_id=_aud_item_id,
-                item_name=state.get("feature_name") or _aud_item_id,
+                item_name=_aud_item_name,
                 spec_path=_aud_spec_path,
                 cycle_kind=_obligation.get("cycle_kind") or "",
                 cwd=str(args.repo_root),
+                # adhoc-audit-obligation-fires-on-zero-commit-failed-cycle P2 —
+                # coupled-pair mirror: bind to the bracket's ACTUAL end commit
+                # (recorded on the obligation in P1), never positional HEAD~1.
+                cycle_commit_sha=_obligation.get("cycle_commit_sha"),
+                cycle_summary=_obligation.get("cycle_summary"),
             )
+        elif _merged_override is not None:
+            # dispatch-probe-and-inject-bypass-merged-head (coupled-pair mirror):
+            # the MERGED head is a DIFFERENT, higher-priority item than this bug
+            # probe would emit for. WITHHOLD the wrong-item forward route — same
+            # shape as the two withholds above. The orchestrator must re-probe
+            # --next-merged and type-dispatch to the merged head's script.
+            state["route_overridden_by"] = "merged-head-diverged"
+            state["merged_head"] = _merged_override["merged_head"]
         else:
             rc = state.get("repeat_count") if (args.repeat_count or args.repeat_count_peek) else None
             # Phase 9 (lazy-validation-readiness) — per-part model tiering.
@@ -9042,7 +10433,9 @@ def main() -> int:
                 pipeline="bug", cloud=args.cloud, repeat_count=rc,
                 # park-provisional-acceptance (SPEC D13, coupled-pair mirror):
                 # park-mode probes select the park=park template sections.
-                park_mode=args.park_needs_input,
+                # lazy-batch-no-mid-run-budget-or-park-controls: EFFECTIVE
+                # (marker-authoritative) park state, so --set-park drives it.
+                park_mode=_eff_park_ni,
             )
             if emitted is None:
                 state["cycle_prompt"] = None
@@ -9113,9 +10506,13 @@ def main() -> int:
             args.forward_cycles, args.meta_cycles,
             _marker,
         )
+        # lazy-batch-no-mid-run-budget-or-park-controls (coupled-pair mirror): the
+        # marker is the authoritative live budget — fold max_cycles from it when
+        # present so a mid-run --set-max-cycles shows in the header immediately.
+        _max_cycles = lazy_core.fold_max_cycles(args.max_cycles, _marker)
         state["cycle_header"] = lazy_core.format_cycle_header(
             state, forward_cycles=_fwd,
-            max_cycles=args.max_cycles, meta_cycles=_meta,
+            max_cycles=_max_cycles, meta_cycles=_meta,
         )
         # Phase 7 WU-7.1: deny-ledger enrichment — MARKER-GATED so default
         # (no-marker) probe output stays byte-identical to the committed

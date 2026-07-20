@@ -550,6 +550,332 @@ def test_sync_deps_refuses_self_dep_and_written_cycle(tmp_path):
     assert qp2.read_bytes() == before2
 
 
+# ---------------------------------------------------------------------------
+# no-sanctioned-cli-for-queue-state-mutations — operator-directed in-place
+# priority/dep mutators + the load-bearing atomic listed-order reposition.
+# ---------------------------------------------------------------------------
+
+def _prio_bug_queue(root: Path, entries: list[dict]) -> Path:
+    """Seed docs/bugs/{<id>/SPEC.md, queue.json} for a list of {id, severity}
+    entries and return the queue.json path."""
+    bugs = root / "docs" / "bugs"
+    for e in entries:
+        d = bugs / e["id"]
+        d.mkdir(parents=True, exist_ok=True)
+        sev = e.get("spec_severity", e.get("severity") or "P2")
+        (d / "SPEC.md").write_text(
+            f"# {e['id']}\n\n**Severity:** {sev}\n**Status:** Concluded\n",
+            encoding="utf-8",
+        )
+    qp = bugs / "queue.json"
+    qp.write_text(json.dumps({"queue": [
+        {"id": e["id"], "name": e["id"], "spec_dir": e["id"],
+         **({"severity": e["severity"]} if "severity" in e else {})}
+        for e in entries
+    ]}, indent=2) + "\n", encoding="utf-8")
+    return qp
+
+
+def test_set_queue_priority_bug_promote_reorders_listed_order(tmp_path):
+    """THE load-bearing invariant: promoting a bug's severity ALSO re-positions
+    it in listed order to match its new merged priority, in the same write. A
+    P2 at the tail promoted to P0 jumps ahead of the other P2s (behind any P0)."""
+    _guard()
+    qp = _prio_bug_queue(tmp_path, [
+        {"id": "bug-a", "severity": "P2"},
+        {"id": "bug-b", "severity": "P2"},
+        {"id": "bug-c", "severity": "P2"},
+    ])
+    res = lazy_core.set_queue_priority(qp, "bug-c", "bug", "P0",
+                                       queue_label="bugs/queue.json")
+    assert res["reordered"] is True
+    assert res["old_position"] == 2 and res["new_position"] == 0
+    order = [e["id"] for e in json.loads(qp.read_text())["queue"]]
+    assert order == ["bug-c", "bug-a", "bug-b"], order
+    # And the severity actually changed on disk.
+    entry = next(e for e in json.loads(qp.read_text())["queue"] if e["id"] == "bug-c")
+    assert entry["severity"] == "P0"
+
+
+def test_set_queue_priority_bug_clears_pin_fields(tmp_path):
+    """Setting an EXPLICIT severity supersedes a null-pin: the pin fields are
+    dropped so merged_priority reads the new severity directly."""
+    _guard()
+    bugs = tmp_path / "docs" / "bugs"
+    (bugs / "bug-p").mkdir(parents=True)
+    (bugs / "bug-p" / "SPEC.md").write_text("# bug-p\n**Severity:** P1\n", encoding="utf-8")
+    qp = bugs / "queue.json"
+    qp.write_text(json.dumps({"queue": [
+        {"id": "bug-p", "name": "bug-p", "spec_dir": "bug-p", "severity": None,
+         "pinned_at": "2026-07-01", "pinned_until": None, "pin_reason": "x"},
+    ]}, indent=2) + "\n", encoding="utf-8")
+    lazy_core.set_queue_priority(qp, "bug-p", "bug", "P1", queue_label="bugs/queue.json")
+    entry = json.loads(qp.read_text())["queue"][0]
+    assert entry["severity"] == "P1"
+    assert "pinned_at" not in entry and "pin_reason" not in entry
+
+
+def test_set_queue_priority_feature_tier_reorders(tmp_path):
+    """Feature analog: lowering a feature's tier number (raising priority)
+    re-sorts listed order. tier 5 -> tier 0 jumps to the head."""
+    _guard()
+    feats = tmp_path / "docs" / "features"
+    feats.mkdir(parents=True)
+    qp = feats / "queue.json"
+    qp.write_text(json.dumps({"queue": [
+        {"id": "f-a", "name": "f-a", "spec_dir": "f-a", "tier": 1},
+        {"id": "f-b", "name": "f-b", "spec_dir": "f-b", "tier": 2},
+        {"id": "f-c", "name": "f-c", "spec_dir": "f-c", "tier": 5},
+    ]}, indent=2) + "\n", encoding="utf-8")
+    res = lazy_core.set_queue_priority(qp, "f-c", "feature", "0", queue_label="queue.json")
+    assert res["reordered"] is True and res["new_position"] == 0
+    order = [e["id"] for e in json.loads(qp.read_text())["queue"]]
+    assert order == ["f-c", "f-a", "f-b"], order
+    assert json.loads(qp.read_text())["queue"][0]["tier"] == 0
+
+
+def test_set_queue_priority_feature_accepts_tier_enum(tmp_path):
+    """feature-tier-strings-fall-to-merged-priority-default: --set-tier accepts a
+    named tier enum (stored as the enum name) and a comma-separated multi-enum
+    list, re-sorting by the resulting MERGED priority (MIN of the enums)."""
+    _guard()
+    feats = tmp_path / "docs" / "features"
+    feats.mkdir(parents=True)
+    qp = feats / "queue.json"
+    qp.write_text(json.dumps({"queue": [
+        {"id": "f-a", "name": "f-a", "spec_dir": "f-a", "tier": 1},
+        {"id": "f-b", "name": "f-b", "spec_dir": "f-b", "tier": 3},
+        {"id": "f-c", "name": "f-c", "spec_dir": "f-c", "tier": 5},
+    ]}, indent=2) + "\n", encoding="utf-8")
+    # Single enum name → stored verbatim; pre-release(1) ties f-a → sorts by FIFO
+    # after f-a (equal priority, stable), before f-b(3).
+    res = lazy_core.set_queue_priority(qp, "f-c", "feature", "pre-release", queue_label="queue.json")
+    entry = next(e for e in json.loads(qp.read_text())["queue"] if e["id"] == "f-c")
+    assert entry["tier"] == "pre-release", entry
+    assert res["new_position"] == 1, res  # after f-a (tier 1), ahead of f-b (tier 3)
+    # Comma-separated multi-enum → stored as a list; MIN(pre-release=1, milestone=3)=1.
+    lazy_core.set_queue_priority(qp, "f-b", "feature", "milestone,pre-release", queue_label="queue.json")
+    entry_b = next(e for e in json.loads(qp.read_text())["queue"] if e["id"] == "f-b")
+    assert entry_b["tier"] == ["milestone", "pre-release"], entry_b
+    assert lazy_core.merged_priority("feature", entry_b) == 1
+
+
+def test_set_queue_priority_invalid_value_dies_zero_mutation(tmp_path):
+    """A bad severity / unknown-enum tier _die()s (exit 2) with ZERO mutation."""
+    _guard()
+    import pytest as _pytest
+    qp = _prio_bug_queue(tmp_path, [{"id": "bug-a", "severity": "P2"}])
+    before = qp.read_bytes()
+    with _pytest.raises(SystemExit):
+        lazy_core.set_queue_priority(qp, "bug-a", "bug", "P9", queue_label="bugs/queue.json")
+    assert qp.read_bytes() == before
+    with _pytest.raises(SystemExit):
+        lazy_core.set_queue_priority(qp, "ghost", "bug", "P0", queue_label="bugs/queue.json")
+    assert qp.read_bytes() == before
+    # An unknown feature-tier enum name is refused with zero mutation.
+    feats = tmp_path / "docs" / "features"
+    feats.mkdir(parents=True)
+    fqp = feats / "queue.json"
+    fqp.write_text(json.dumps({"queue": [
+        {"id": "f-a", "name": "f-a", "spec_dir": "f-a", "tier": 1},
+    ]}, indent=2) + "\n", encoding="utf-8")
+    fbefore = fqp.read_bytes()
+    with _pytest.raises(SystemExit):
+        lazy_core.set_queue_priority(fqp, "f-a", "feature", "not-a-real-tier", queue_label="queue.json")
+    assert fqp.read_bytes() == fbefore
+
+
+def test_mutate_queue_deps_add_remove_and_empty_drops_key(tmp_path):
+    """--add-deps unions + dedups; --remove-deps differences; an empty result
+    removes the deps key (byte-identical no-deps shape); an unchanged set is a
+    ZERO-write noop."""
+    _guard()
+    feats = tmp_path / "docs" / "features"
+    feats.mkdir(parents=True)
+    qp = feats / "queue.json"
+    qp.write_text(json.dumps({"queue": [
+        {"id": "f-a", "name": "f-a", "spec_dir": "f-a", "tier": 0},
+        {"id": "f-b", "name": "f-b", "spec_dir": "f-b", "tier": 0},
+    ]}, indent=2) + "\n", encoding="utf-8")
+    r1 = lazy_core.mutate_queue_deps(qp, "f-b", add=["f-a", "f-a"], queue_label="queue.json")
+    assert r1["deps"] == ["f-a"] and r1["added"] == ["f-a"] and r1["noop"] is False
+    # Unchanged add → byte-stable noop, no write.
+    before = qp.read_bytes()
+    r2 = lazy_core.mutate_queue_deps(qp, "f-b", add=["f-a"], queue_label="queue.json")
+    assert r2["noop"] is True and qp.read_bytes() == before
+    # Remove the only dep → key dropped entirely.
+    r3 = lazy_core.mutate_queue_deps(qp, "f-b", remove=["f-a"], queue_label="queue.json")
+    assert r3["deps"] == [] and r3["removed"] == ["f-a"]
+    entry = next(e for e in json.loads(qp.read_text())["queue"] if e["id"] == "f-b")
+    assert "deps" not in entry
+
+
+def test_set_independent_marker_set_clear_and_noop(tmp_path):
+    """lazy-batch-parallel-run-harness-gaps gap 3: set writes independent: true;
+    clear REMOVES the key (byte-clean not-independent shape); an unchanged set is a
+    ZERO-write noop; no repositioning (independent is not a priority field)."""
+    _guard()
+    feats = tmp_path / "docs" / "features"
+    feats.mkdir(parents=True)
+    qp = feats / "queue.json"
+    qp.write_text(json.dumps({"queue": [
+        {"id": "f-a", "name": "f-a", "spec_dir": "f-a", "tier": 0},
+        {"id": "f-b", "name": "f-b", "spec_dir": "f-b", "tier": 1},
+    ]}, indent=2) + "\n", encoding="utf-8")
+
+    # Set true.
+    r1 = lazy_core.set_independent_marker(qp, "f-a", True, queue_label="queue.json")
+    assert r1["noop"] is False and r1["independent"] is True
+    entry = next(e for e in json.loads(qp.read_text())["queue"] if e["id"] == "f-a")
+    assert entry.get("independent") is True
+    # No repositioning: f-a stays at listed index 0.
+    assert [e["id"] for e in json.loads(qp.read_text())["queue"]] == ["f-a", "f-b"]
+
+    # Set true again → byte-stable noop, no write.
+    before = qp.read_bytes()
+    r2 = lazy_core.set_independent_marker(qp, "f-a", True, queue_label="queue.json")
+    assert r2["noop"] is True and qp.read_bytes() == before
+
+    # Clear → key removed entirely.
+    r3 = lazy_core.set_independent_marker(qp, "f-a", False, queue_label="queue.json")
+    assert r3["noop"] is False and r3["independent"] is False
+    entry = next(e for e in json.loads(qp.read_text())["queue"] if e["id"] == "f-a")
+    assert "independent" not in entry
+
+    # Clear an already-absent marker → byte-stable noop.
+    before = qp.read_bytes()
+    r4 = lazy_core.set_independent_marker(qp, "f-b", False, queue_label="queue.json")
+    assert r4["noop"] is True and qp.read_bytes() == before
+
+
+def test_set_independent_marker_missing_item_dies(tmp_path):
+    """lazy-batch-parallel-run-harness-gaps gap 3: an unknown item_id _die()s
+    (exit 2) with ZERO mutation — parity with the other queue mutators."""
+    _guard()
+    import pytest as _pytest
+    feats = tmp_path / "docs" / "features"
+    feats.mkdir(parents=True)
+    qp = feats / "queue.json"
+    qp.write_text(json.dumps({"queue": [
+        {"id": "f-a", "name": "f-a", "spec_dir": "f-a", "tier": 0},
+    ]}, indent=2) + "\n", encoding="utf-8")
+    before = qp.read_bytes()
+    with _pytest.raises(SystemExit):
+        lazy_core.set_independent_marker(qp, "nope", True, queue_label="queue.json")
+    assert qp.read_bytes() == before
+
+
+def test_mutate_queue_deps_cycle_and_self_dep_refused(tmp_path):
+    """A post-mutation cycle, or a self-dep, _die()s (exit 2) with ZERO
+    mutation — the queue graph is never left in a bricked state."""
+    _guard()
+    import pytest as _pytest
+    feats = tmp_path / "docs" / "features"
+    feats.mkdir(parents=True)
+    qp = feats / "queue.json"
+    qp.write_text(json.dumps({"queue": [
+        {"id": "f-a", "name": "f-a", "spec_dir": "f-a", "tier": 0, "deps": ["f-b"]},
+        {"id": "f-b", "name": "f-b", "spec_dir": "f-b", "tier": 0},
+    ]}, indent=2) + "\n", encoding="utf-8")
+    before = qp.read_bytes()
+    # Self-dep refused.
+    with _pytest.raises(SystemExit):
+        lazy_core.mutate_queue_deps(qp, "f-a", add=["f-a"], queue_label="queue.json")
+    assert qp.read_bytes() == before
+    # f-b -> f-a would close the f-a -> f-b cycle.
+    with _pytest.raises(SystemExit):
+        lazy_core.mutate_queue_deps(qp, "f-b", add=["f-a"], queue_label="queue.json")
+    assert qp.read_bytes() == before
+
+
+def test_reposition_by_priority_not_found_returns_none(tmp_path):
+    """reposition_by_priority on an absent id returns None (caller handles)."""
+    _guard()
+    items = [{"id": "x", "severity": "P0"}]
+    assert lazy_core.reposition_by_priority(items, "ghost", "bug") is None
+    assert [e["id"] for e in items] == ["x"]  # untouched
+
+
+def test_set_severity_cli_operator_authorized_gate_and_reorder(tmp_path):
+    """End-to-end CLI: `bug-state.py --set-severity` REFUSES without
+    --operator-authorized (exit 2, zero mutation) and, with it, reorders the
+    on-disk queue.json listed order."""
+    _guard()
+    bug_state = _SCRIPTS_DIR / "bug-state.py"
+    qp = _prio_bug_queue(tmp_path, [
+        {"id": "bug-a", "severity": "P2"}, {"id": "bug-b", "severity": "P2"},
+    ])
+    before = qp.read_bytes()
+    # No --operator-authorized → refused (exit 2), queue untouched.
+    cp = subprocess.run(
+        [sys.executable, str(bug_state), "--set-severity", "bug-b", "P0",
+         "--repo-root", str(tmp_path)],
+        capture_output=True, text=True,
+    )
+    assert cp.returncode == 2, (cp.returncode, cp.stdout, cp.stderr)
+    assert qp.read_bytes() == before
+    # With authorization → reorders on disk.
+    cp2 = subprocess.run(
+        [sys.executable, str(bug_state), "--set-severity", "bug-b", "P0",
+         "--operator-authorized", "--repo-root", str(tmp_path)],
+        capture_output=True, text=True,
+    )
+    assert cp2.returncode == 0, (cp2.returncode, cp2.stdout, cp2.stderr)
+    order = [e["id"] for e in json.loads(qp.read_text())["queue"]]
+    assert order == ["bug-b", "bug-a"], order
+
+
+def test_unpin_cli_restores_severity_and_repositions(tmp_path):
+    """`bug-state.py --unpin` restores the SPEC severity, drops pin fields, and
+    repositions; a not-pinned bug is a byte-stable no-op."""
+    _guard()
+    bug_state = _SCRIPTS_DIR / "bug-state.py"
+    bugs = tmp_path / "docs" / "bugs"
+    for bid, sev in (("bug-hi", "P0"), ("bug-pinned", "P0")):
+        (bugs / bid).mkdir(parents=True)
+        (bugs / bid / "SPEC.md").write_text(f"# {bid}\n**Severity:** {sev}\n", encoding="utf-8")
+    qp = bugs / "queue.json"
+    qp.write_text(json.dumps({"queue": [
+        {"id": "bug-hi", "name": "bug-hi", "spec_dir": "bug-hi", "severity": "P0"},
+        {"id": "bug-pinned", "name": "bug-pinned", "spec_dir": "bug-pinned",
+         "severity": None, "pinned_at": "2026-07-01", "pinned_until": None, "pin_reason": "x"},
+    ]}, indent=2) + "\n", encoding="utf-8")
+    cp = subprocess.run(
+        [sys.executable, str(bug_state), "--unpin", "bug-pinned",
+         "--operator-authorized", "--repo-root", str(tmp_path)],
+        capture_output=True, text=True,
+    )
+    assert cp.returncode == 0, (cp.returncode, cp.stdout, cp.stderr)
+    entry = next(e for e in json.loads(qp.read_text())["queue"] if e["id"] == "bug-pinned")
+    assert entry["severity"] == "P0" and "pinned_at" not in entry
+    # Second unpin → no-op (already unpinned).
+    cp2 = subprocess.run(
+        [sys.executable, str(bug_state), "--unpin", "bug-pinned",
+         "--operator-authorized", "--repo-root", str(tmp_path)],
+        capture_output=True, text=True,
+    )
+    assert cp2.returncode == 0 and '"noop": true' in cp2.stdout.lower()
+
+
+def test_search_ops_finds_the_mutation_commands(tmp_path):
+    """--search-ops ranks the right command first for natural-language queries,
+    on BOTH scripts (the discoverability contract)."""
+    _guard()
+    for script, query, expected in (
+        ("bug-state.py", "set bug severity", "--set-severity"),
+        ("lazy-state.py", "change feature tier", "--set-tier"),
+        ("bug-state.py", "add dependency", "--add-deps"),
+    ):
+        cp = subprocess.run(
+            [sys.executable, str(_SCRIPTS_DIR / script), "--search-ops", query],
+            capture_output=True, text=True,
+        )
+        assert cp.returncode == 0, (cp.returncode, cp.stderr)
+        matches = [m["name"] for m in json.loads(cp.stdout)["matches"]]
+        assert expected in matches, (script, query, matches)
+        assert matches[0] == expected, (script, query, matches)
+
+
 _TESTS = [
     ("test_parse_dep_block_relocated_to_lazy_core", test_parse_dep_block_relocated_to_lazy_core),
     ("test_dep_ids_shape_tolerant_queue_read", test_dep_ids_shape_tolerant_queue_read),

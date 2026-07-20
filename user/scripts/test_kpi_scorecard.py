@@ -138,9 +138,23 @@ class TestLintGreen:
         # runner-turn-end-stall-recurrence — appended VERBATIM from that
         # feature's SPEC `## KPI Declaration`; honest NO-DATA / PENDING-
         # BASELINE, null baselines by design until denies/friction are
-        # ledgered).
-        assert len(registry["kpis"]) == 21
+        # ledgered)
+        # + subagent-wedge-strand-recurrence (the count was silently drifted to
+        # 22 by a prior promotion that did not update this assertion; corrected
+        # here)
+        # + hook-plane-duplicated-lines (shared-hook-lib Phase 4: promoted from
+        # the SPEC's non-claiming fence once the repo-static-scan source +
+        # hook-duplicated-line-count selector were registered).
+        # + cycle-prompt-assembled-bytes (cycle-prompt-deflation Phase 1: a new
+        # repo-static-scan selector — max assembled cycle-prompt bytes over all
+        # dispatchable profiles; pending baseline until Phase-4 --capture-baseline).
+        # + blind-tool-gap-dispatch-rate (orchestrator-tool-search Phase 4: a new
+        # telemetry-ledger selector — share of tool-gap harden dispatches not
+        # preceded by a --tool-search this cycle; pending baseline by design,
+        # deferred until ≥30d real telemetry accrues).
+        assert len(registry["kpis"]) == 25
         ids = {r["id"] for r in registry["kpis"]}
+        assert "cycle-prompt-assembled-bytes" in ids
         assert "canary-trip-precision" in ids
         assert {"efficacy-verdicts-produced", "confounded-verdict-ratio",
                 "canary-closure-latency-p50"} <= ids
@@ -152,6 +166,8 @@ class TestLintGreen:
         assert "lazy-core-monolith-intervention-drag" in ids
         assert {"generalized-runner-raw-invocation-deny-recurrence",
                 "runner-turn-end-stall-recurrence"} <= ids
+        assert "hook-plane-duplicated-lines" in ids
+        assert "blind-tool-gap-dispatch-rate" in ids
 
     def test_up_is_good_band_ordering_valid(self):
         row = _row(direction="up-is-good", band={"warn": 90, "breach": 80})
@@ -538,6 +554,101 @@ class TestBugBacklogSelectors:
         value_count, _ = ksc.compute_reading(row_count, repo_root=tmp_path, now=_NOW)
         assert value_age is not None
         assert value_count == 1.0
+
+
+class TestHookDuplicatedLineCountSelector:
+    """shared-hook-lib Phase 4: the repo-static-scan / hook-duplicated-line-count
+    selector — a deterministic count of duplicated scaffolding lines across
+    user/hooks/*.sh (down-is-good; honesty ladder: absent/unreadable → NO-DATA,
+    never a fabricated zero)."""
+
+    def _hooks(self, tmp_path, files: dict):
+        hooks = tmp_path / "user" / "hooks"
+        hooks.mkdir(parents=True)
+        for name, body in files.items():
+            (hooks / name).write_text(body, encoding="utf-8")
+        return hooks
+
+    # Two substantive (>= threshold, non-comment) scaffolding lines.
+    _L1 = 'HOOK_PYTHON=$(command -v python3 || command -v python)'
+    _L2 = 'SCRIPT_DIR="$(cd "$(dirname "$0")/../scripts" && pwd)"'
+
+    def test_deterministic_count_on_fixture_tree(self, tmp_path):
+        # _L1 in a,b (2 files) -> +1 redundant copy; _L2 in a,b,c (3 files)
+        # -> +2 redundant copies. Trivial/short lines (fi, exit 0), comments,
+        # and unique lines never count. Known total = 3.
+        self._hooks(tmp_path, {
+            "hook_a.sh": (
+                "#!/usr/bin/env bash\n"
+                "# a fail-open comment that happens to repeat\n"
+                f"{self._L1}\n"
+                f"{self._L2}\n"
+                'a_unique_line_only_in_a="alpha"\n'
+                "exit 0\n"
+            ),
+            "hook_b.sh": (
+                "#!/usr/bin/env bash\n"
+                "# a fail-open comment that happens to repeat\n"
+                f"{self._L1}\n"
+                f"{self._L2}\n"
+                'b_unique_line_only_in_b="beta"\n'
+                "fi\n"
+            ),
+            "hook_c.sh": (
+                "#!/usr/bin/env bash\n"
+                f"{self._L2}\n"
+                'c_unique_line_only_in_c="gamma"\n'
+            ),
+        })
+        value, note = ksc._sel_hook_duplicated_line_count(tmp_path)
+        assert value == 3.0, note
+
+    def test_no_duplication_is_zero_not_no_data(self, tmp_path):
+        # A present, readable, fully-deduplicated tree is a real zero — NOT
+        # NO-DATA (the honesty ladder's zero is for measured absence of
+        # duplication, distinct from an unrecordable scan target).
+        self._hooks(tmp_path, {
+            "hook_a.sh": f"#!/usr/bin/env bash\n{self._L1}\nexit 0\n",
+            "hook_b.sh": f"#!/usr/bin/env bash\n{self._L2}\nexit 0\n",
+        })
+        value, note = ksc._sel_hook_duplicated_line_count(tmp_path)
+        assert value == 0.0, note
+
+    def test_missing_hooks_tree_is_no_data(self, tmp_path):
+        value, note = ksc._sel_hook_duplicated_line_count(tmp_path)
+        assert value is None
+        assert note
+
+    def test_no_sh_files_is_no_data(self, tmp_path):
+        hooks = tmp_path / "user" / "hooks"
+        hooks.mkdir(parents=True)
+        (hooks / "README.md").write_text("not a hook", encoding="utf-8")
+        value, note = ksc._sel_hook_duplicated_line_count(tmp_path)
+        assert value is None
+        assert note
+
+    def test_compute_reading_dispatches_selector(self, tmp_path):
+        self._hooks(tmp_path, {
+            "hook_a.sh": f"#!/usr/bin/env bash\n{self._L1}\n",
+            "hook_b.sh": f"#!/usr/bin/env bash\n{self._L1}\n",
+        })
+        row = _row(id="hook-dup", system="hook-plane",
+                   signal={"source": "repo-static-scan",
+                           "selector": "hook-duplicated-line-count"},
+                   unit="lines")
+        value, _ = ksc.compute_reading(row, repo_root=tmp_path, now=_NOW)
+        assert value == 1.0
+
+    def test_lint_accepts_registered_source_and_selector(self):
+        row = _row(id="hook-plane-duplicated-lines", system="hook-plane",
+                   signal={"source": "repo-static-scan",
+                           "selector": "hook-duplicated-line-count"},
+                   unit="lines",
+                   baseline={"value": 467, "captured_at": "2026-07-11",
+                             "window": "1d", "provenance": "retro-derived"},
+                   band=None)
+        errors, _ = _lint(_registry(row))
+        assert errors == []
 
 
 class TestStatusEngine:
@@ -1378,6 +1489,34 @@ class TestCaptureBaseline:
         proc = self._capture(tmp_path, "no-such-kpi", env)
         assert proc.returncode == 1
 
+    def test_captures_cycle_prompt_assembled_bytes_measured(self, tmp_path):
+        # cycle-prompt-deflation Phase 1: this `repo-static-scan` selector
+        # reuses skill-size-ratchet.py's assembled-profile measurement, which
+        # binds the emitter to a canonical repo root internally (repo-path-
+        # independent by construction) — so it measures the REAL installed
+        # cycle-prompt template even though `--repo-root` here is a hermetic
+        # tmp_path fixture with no docs/features tree of its own.
+        row = _row(id="cycle-prompt-assembled-bytes", system="harness",
+                   unit="bytes", direction="down-is-good",
+                   signal={"source": "repo-static-scan",
+                           "selector": "cycle-prompt-assembled-bytes"},
+                   baseline={"value": None, "captured_at": None,
+                             "window": "30d", "provenance": "pending"},
+                   band=None)
+        _write_registry(tmp_path, _registry(row))
+        env = dict(os.environ, LAZY_STATE_DIR=str(tmp_path / "state"))
+        proc = self._capture(tmp_path, "cycle-prompt-assembled-bytes", env)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        reg = ksc.load_registry(
+            tmp_path / "docs" / "kpi" / "registry.json")
+        b = reg["kpis"][0]["baseline"]
+        assert b["provenance"] == "measured"
+        assert isinstance(b["value"], (int, float))
+        assert b["value"] > 0  # a real byte count, never fabricated / never 0
+        assert b["captured_at"] == datetime.date.today().isoformat()
+        errors, _ = ksc.lint_registry(reg, today=datetime.date.today())
+        assert errors == []
+
 
 # ---------------------------------------------------------------------------
 # kpi-drafted-row-never-promoted-to-registry — `--promote-drafted-rows`
@@ -1525,3 +1664,123 @@ class TestPromoteDraftedRowsCli:
     def test_missing_declaration_section_exits_one(self, tmp_path):
         proc = self._run(tmp_path, _spec(classification="no"))
         assert proc.returncode == 1
+
+
+# ---------------------------------------------------------------------------
+# cycle-prompt-deflation Phase 1 — the cycle-prompt-assembled-bytes selector
+# ---------------------------------------------------------------------------
+
+class TestCyclePromptAssembledBytesSelector:
+    def test_selector_registered_in_repo_static_scan(self):
+        assert "cycle-prompt-assembled-bytes" in ksc._SOURCES["repo-static-scan"]
+
+    def test_registry_row_lints_green(self):
+        """A row using the new selector must pass --lint (selector in _SOURCES)."""
+        row = ksc.lint_row  # sanity: the linter is importable
+        assert callable(row)
+        reg_row = {
+            "id": "cycle-prompt-assembled-bytes",
+            "system": "cycle-prompt-deflation",
+            "title": "Max assembled cycle-prompt bytes across dispatchable profiles",
+            "friction": "Boilerplate carried every cycle.",
+            "signal": {"source": "repo-static-scan",
+                       "selector": "cycle-prompt-assembled-bytes"},
+            "unit": "bytes",
+            "direction": "down-is-good",
+            "baseline": {"value": None, "captured_at": None,
+                         "window": "30d", "provenance": "pending"},
+            "band": None,
+            "review_by": "2026-10-19",
+        }
+        errors, warnings = ksc.lint_registry(_registry(reg_row), today=_TODAY)
+        assert errors == [], errors
+
+    def test_selector_computes_positive_max(self):
+        """Driven against the real template, the census returns a positive max."""
+        value, note = ksc._sel_cycle_prompt_assembled_bytes(_REPO_ROOT)
+        assert note is None
+        assert value is not None and value > 0
+
+    def test_selector_is_repo_root_independent(self):
+        """The measurement is path-independent (canonical measure root)."""
+        a, _ = ksc._sel_cycle_prompt_assembled_bytes(Path("/short"))
+        b, _ = ksc._sel_cycle_prompt_assembled_bytes(
+            Path("/a/much/longer/checkout/path/root"))
+        assert a == b
+
+    def test_unknown_repo_static_scan_selector_is_no_data(self):
+        value, note = ksc.compute_reading(
+            {"signal": {"source": "repo-static-scan", "selector": "bogus"}},
+            repo_root=_REPO_ROOT, now=_NOW)
+        assert value is None
+        assert "no computation registered" in note
+
+
+# ---------------------------------------------------------------------------
+# orchestrator-tool-search Phase 4 (WU-8) — blind-tool-gap-dispatch-rate selector
+# ---------------------------------------------------------------------------
+
+def _blind_tool_gap_row(**overrides):
+    return _row(
+        id="blind-tool-gap-dispatch-rate",
+        system="orchestrator-tool-search",
+        title="Share of tool-gap harden dispatches NOT preceded by a "
+              "--tool-search in the same cycle",
+        signal={"source": "telemetry-ledger",
+                "selector": "blind-tool-gap-dispatch-rate"},
+        unit="ratio", direction="down-is-good",
+        baseline={"value": None, "captured_at": None, "window": "30d",
+                  "provenance": "pending"},
+        band=None, **overrides)
+
+
+class TestBlindToolGapDispatchRate:
+    def test_ratio_counts_blind_dispatches(self, tmp_path, monkeypatch):
+        state = tmp_path / "state"
+        _write_telemetry(state, [
+            # cycle f1: a tool-search preceded the harden dispatch -> NOT blind
+            _tel_event("tool-search-invocation", ts=_NOW - 500, item_id="f1",
+                       run_id="R1", data={"query": "x", "verdict": "miss"}),
+            _tel_event("dispatch", ts=_NOW - 400, item_id="f1", run_id="R1",
+                       data={"route_overridden_by": "pending-hardening-debt"}),
+            # cycle f2: harden dispatch with NO preceding tool-search -> BLIND
+            _tel_event("dispatch", ts=_NOW - 300, item_id="f2", run_id="R1",
+                       data={"trigger_kind": "observed-friction"}),
+        ])
+        monkeypatch.setenv("LAZY_STATE_DIR", str(state))
+        value, note = ksc.compute_reading(
+            _blind_tool_gap_row(), repo_root=tmp_path, now=_NOW)
+        assert value == 0.5  # 1 blind of 2 tool-gap dispatches
+
+    def test_all_preceded_is_zero(self, tmp_path, monkeypatch):
+        state = tmp_path / "state"
+        _write_telemetry(state, [
+            _tel_event("tool-search-invocation", ts=_NOW - 500, item_id="f1",
+                       run_id="R1", data={"verdict": "miss"}),
+            _tel_event("dispatch", ts=_NOW - 400, item_id="f1", run_id="R1",
+                       data={"dispatch_class": "hardening"}),
+        ])
+        monkeypatch.setenv("LAZY_STATE_DIR", str(state))
+        value, _ = ksc.compute_reading(
+            _blind_tool_gap_row(), repo_root=tmp_path, now=_NOW)
+        assert value == 0.0  # a real, honest zero (dispatch present, none blind)
+
+    def test_no_tool_gap_dispatches_is_no_data(self, tmp_path, monkeypatch):
+        state = tmp_path / "state"
+        _write_telemetry(state, [
+            # a tool-search but zero harden dispatches -> ratio undefined -> NO-DATA
+            _tel_event("tool-search-invocation", ts=_NOW - 500, item_id="f1",
+                       run_id="R1", data={"verdict": "hit"}),
+        ])
+        monkeypatch.setenv("LAZY_STATE_DIR", str(state))
+        value, note = ksc.compute_reading(
+            _blind_tool_gap_row(), repo_root=tmp_path, now=_NOW)
+        assert value is None
+        assert note
+
+    def test_empty_telemetry_is_no_data_not_zero(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("LAZY_STATE_DIR", str(tmp_path / "state"))
+        value, note = ksc.compute_reading(
+            _blind_tool_gap_row(), repo_root=tmp_path, now=_NOW)
+        assert value is None
+        assert note  # honest NO-DATA, never a fabricated zero

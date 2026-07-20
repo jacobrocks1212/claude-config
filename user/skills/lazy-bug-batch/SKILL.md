@@ -46,6 +46,7 @@ bug-state.py).
 | Input-audit trigger | `/spec` or `plan-feature` cycles | `spec-bug` or `spec-phases` cycles (bug-state.py emits no `plan-feature`) |
 | `needs-spec-input` terminal | emitted by lazy-state.py → Step 1i | NOT emitted by bug-state.py — Step 1i routes only `completion-unverified` and `stale_upstream` |
 | Research / Gemini steps | Step 0.5 pre-loop ingest, `needs-research`, `queue-blocked-on-research`, Step 4, Step 5 | N/A — bugs do not undergo Gemini deep research |
+| Research-gated head surfacing (`research-gated-head-buried-by-skip-ahead-and-merged-fallthrough`) | feature `--emit-prompt` re-emits a skipped research head that outranks the fallthrough as `needs-research` (`route_overridden_by: research-gated-head`) | N/A — feature-only mechanic; a bug reaches the merged head over a P1 research feature only when it is a genuine P0, which legitimately precedes the research gap |
 | `--allow-research-skip` flag | parsed, enables batched research | N/A — no research in bug pipeline |
 | `skip_needs_research` var | used under `--allow-research-skip` | N/A |
 | `research_pending` var | accumulates research-pending feature_ids | N/A |
@@ -86,8 +87,13 @@ See `~/.claude/skills/lazy-batch/SKILL.md` HARD CONSTRAINTS for the full text of
 sub-subagent orchestration model is authoritative, under the emitted prompt's "WORKSTATION
 DISPATCH — LOAD-BEARING" guardrails (terminal-stop ban restated in every sub-subagent prompt,
 single-writer / sole-integrator discipline, scope containment). Inline execution of small
-mechanical batches remains sanctioned. See `/lazy-batch`'s "Cycle-subagent execution model"
-paragraph for the full contract + history.
+mechanical batches remains sanctioned. **ORCHESTRATOR SCOPE (same as `/lazy-batch`): you dispatch
+EXACTLY ONE `Agent` per cycle — the single emitted `cycle_prompt`, verbatim, to ONE subagent — and
+NEVER compose the cycle skill's internal worker prompts (test-agent / impl-agent / per-work-unit /
+Explore fan-out) yourself; that split happens INSIDE the subagent.** Improvising a worker prompt at
+the orchestrator level is caught by the dispatch guard's self-announcing deny (hardening
+Rounds 112/114). See `/lazy-batch`'s "Cycle-subagent execution model" paragraph for the full
+contract + history.
 
 **Meta-dispatch by-reference — PREFER `dispatch_prompt_ref` at ALL `--emit-dispatch` sites (mirrors `/lazy-batch` Phase 7 / lazy-validation-readiness).** Every `bug-state.py --emit-dispatch <class>` call emits BOTH `dispatch_prompt` AND `dispatch_prompt_ref` (`@@lazy-ref nonce=<hex>`). When dispatching any meta-dispatch prompt (hardening, recovery, apply-resolution, coherence-recovery, input-audit, investigation, etc.), PREFER `dispatch_prompt_ref` over the verbatim `dispatch_prompt`. Fall back to `dispatch_prompt` verbatim ONLY when `dispatch_prompt_ref` is absent or null. See `/lazy-batch`'s "Meta-dispatch by-reference" paragraph (§1d) for the full rationale.
 
@@ -190,8 +196,10 @@ export LAZY_ORCHESTRATOR=1
 
 python3 ~/.claude/scripts/bug-state.py \
   --run-start --max-cycles {max_cycles} \
-  --repo-root {cwd}
+  --repo-root {cwd} {park_flags}
 ```
+
+**Park-mode arm (`{park_flags}`) — load-bearing.** Substitute `{park_flags}` with `--park` when `park_mode == true` (the operator passed `/lazy-bug-batch --park`), and ALSO `--park-provisional` when `park_provisional_mode == true`; otherwise `{park_flags}` is empty (byte-identical to a non-park run's run-start). `--park` is the umbrella flag that arms BOTH `park_needs_input` AND `park_blocked` in the marker (the same expansion as `--set-park on`), so park mode is live from cycle 1's probe. **Do not omit this:** park is a RUN_FRESH_FIELD re-supplied at run-start from the invocation flags — a run-start that drops `{park_flags}` writes a park-OFF marker EVEN under a `--park` invocation, so an overnight `--park` run would halt on the first blocker / needs-input until a mid-run `--set-park` toggle (the `lazy-run-marker-park-arm-and-forward-cycle-inflation` friction, 2026-07-17). The mid-run `--set-park` toggle remains the way to CHANGE park mode after run-start; this line ARMS it at birth.
 
 **Attendedness:** interactive `/lazy-bug-batch` invocations call `--run-start` WITHOUT `--unattended` — the marker records `attended: true` (the default). Only a scheduled/cron driver passes `--unattended`, recording `attended: false`. The `attended` field governs whether `--run-end --reason checkpoint` requires `--operator-authorized` (see HARD CONSTRAINT 10 and the budget-and-queue guard above). Legacy markers lacking the field are treated as attended — the stricter gate is the safe default.
 
@@ -223,7 +231,7 @@ Repeat:
 LAZY-ROUTE (hook-injected, turn N): {"feature_id": "...", "sub_skill": "...", "cycle_prompt": "...", "cycle_model": "opus", ...} nonce=<hex-value>
 ```
 
-On post-compaction re-entry, a `POST-COMPACTION RE-ENTRY:` paragraph follows the nonce. If the inject hook errored, a `HOOK_ERROR: <error text>` suffix appears at the end. **If the current turn carries this banner**, consume it directly — extract `feature_id`/`bug_id`, `sub_skill`, `cycle_prompt`, `cycle_model`, and all other probe fields from the injected JSON. **Do NOT run another `bug-state.py` probe on this turn.** Re-probing advances the persisted counters TWICE for one logical cycle — a protocol violation. If no LAZY-ROUTE banner is present, run the probe as below.
+On post-compaction re-entry, a `POST-COMPACTION RE-ENTRY:` paragraph follows the nonce. If the inject hook errored, a `HOOK_ERROR: <error text>` suffix appears at the end. **If the current turn carries this banner**, consume it directly — extract `feature_id`/`bug_id`, `sub_skill`, `cycle_prompt`, `cycle_model`, and all other probe fields from the injected JSON. **Do NOT run another `bug-state.py` probe on this turn.** Re-probing advances the loop-detection STREAKS twice for one logical cycle — a protocol violation. (The BUDGET counters `forward_cycles`/`meta_cycles` are no longer probe-driven: as in `/lazy-batch`, the SCRIPT advances them at the `--cycle-end` bracket (keyed on the cycle marker's `--kind`) and at `--apply-pseudo` — the probe and inject hook are budget-neutral, so a double-probe cannot inflate the budget. The orchestrator no longer hand-counts; the "increment `forward_cycles`/`meta_cycles`" instructions below are descriptive of the script's action at that step.) If no LAZY-ROUTE banner is present, run the probe as below.
 
 ```bash
 python3 ~/.claude/scripts/bug-state.py
@@ -348,7 +356,7 @@ Identical to `~/.claude/skills/lazy-batch/SKILL.md` Step 1c.6 with bug-pipeline 
    **`--run-end` is MANDATORY before EVERY terminal/halt PushNotification.** On every path listed above, call `python3 ~/.claude/scripts/bug-state.py --run-end` BEFORE the PushNotification fires. `--run-end` deletes the run marker AND the prompt registry (all run-scoped enforcement state). A missed deletion is self-healing (24h staleness + session-id mismatch cleanup) but is a protocol violation the retro grades. The call is idempotent — if the marker is already absent, `--run-end` exits cleanly.
 
    **End-of-run efficacy/canary/incident flush + `--run-end` gate (efficacy-future-check-unenforced-orchestrator-prose D1; identical to `/lazy-batch` §1c.6 — the trio + the gate are pipeline-agnostic).** Run the same three scripts at the first-terminal end-of-run flush: `incident-scan.py --repo-root .`, `efficacy-eval.py --repo-root . --json`, `efficacy-eval.py --canary --repo-root . --json`.
-   Do this before the run-end call below — see `/lazy-batch` §1c.6 for the full behavior. Each drops a run-scoped breadcrumb even on a clean no-op, and `bug-state.py --run-end` REFUSES (exit 1, marker kept) unless the breadcrumb is present (MIRRORS the unacked-hardening gate; applies to `--reason checkpoint` too). For a deliberate "nothing due, skip" run-end pass `--efficacy-skip-authorized` (operator-authorization ONLY, parallel to `--ack-unhardened`; printed into the run-end message under `efficacy_skip`) — never passed autonomously. **TWO-SCOPE flush (interventions-telemetry-repo-scope-split-brain, D2 — pipeline-agnostic, identical to `/lazy-batch` §1c.6):** intervention records live ONLY in the **claude-config** checkout (they follow the FIX) while the telemetry that grades them accrues in the TARGET repo's keyed state dir (it follows the RUN), so after the `--repo-root .` efficacy + canary pair run BOTH a SECOND time rooted at the claude-config checkout (`--repo-root ~/source/repos/claude-config`) — the claude-config-rooted evaluation sees the originating target-repo telemetry via the Phase-1 merged read, both scopes are attested in the Phase-2 `interventions_covered` breadcrumb (which discharges the tightened `--run-end` gate; a target-only flush no longer satisfies it), and the second scope's `docs/interventions/` updates are committed in the claude-config checkout tree. When this run's own repo IS claude-config the second invocation is an idempotent no-op. Doc-write/commit ownership + the NON-BLOCKING `⚠ efficacy-eval failed` posture are unchanged.
+   Do this before the run-end call below — see `/lazy-batch` §1c.6 for the full behavior. Each drops a run-scoped breadcrumb even on a clean no-op, and `bug-state.py --run-end` REFUSES (exit 1, marker kept) unless the breadcrumb is present (MIRRORS the unacked-hardening gate; applies to `--reason checkpoint` too). For a deliberate "nothing due, skip" run-end pass `--efficacy-skip-authorized` (operator-authorization ONLY, parallel to `--ack-unhardened`; printed into the run-end message under `efficacy_skip`) — never passed autonomously. **TWO-SCOPE flush (interventions-telemetry-repo-scope-split-brain, D2 — pipeline-agnostic, identical to `/lazy-batch` §1c.6):** intervention records live ONLY in the **claude-config** checkout (they follow the FIX) while the telemetry that grades them accrues in the TARGET repo's keyed state dir (it follows the RUN), so after the `--repo-root .` efficacy + canary pair run BOTH a SECOND time rooted at the claude-config checkout (`--repo-root ~/source/repos/claude-config`) — the claude-config-rooted evaluation sees the originating target-repo telemetry via the Phase-1 merged read, both scopes are attested in the Phase-2 `interventions_covered` breadcrumb (which discharges the tightened `--run-end` gate; a target-only flush no longer satisfies it), and the second scope's `docs/interventions/` updates are committed in the claude-config checkout tree. When this run's own repo IS claude-config the second invocation is an idempotent no-op. Doc-write/commit ownership + the NON-BLOCKING `⚠ efficacy-eval failed` posture are unchanged. **Flush-commit staging contract (one-writer coordination — `end-of-run-flush-commit-absorbs-concurrent-writer-staged-files`; identical to `/lazy-batch` §1c.6):** the claude-config-scope commit stages + commits ONLY the specific artifacts THIS flush generated, **by explicit path** via a **pathspec-scoped commit** (`git -C <claude-config checkout> commit -m "docs(interventions): efficacy verdicts — <terminal>" -- docs/interventions/<id>.md docs/kpi/SCORECARD.md docs/bugs/reconsider-<id>/`) — NEVER a broad `git add -A docs/*` / directory add, which absorbs a concurrently-writing `/harden-harness` agent's staged `docs/bugs/*/SPEC.md` (observed live: `115a991a`). The sanctioned mechanism is `lazy_core.flush_commit_artifacts(repo_root, artifact_paths, message)`; a concurrent writer's staged file is left untouched, never absorbed.
 
    **Intervention-coverage lint (hardening-intervention-records-unmeasurable-or-missing, D2 / Fix-Scope #3 — pipeline-agnostic, identical to `/lazy-batch` §1c.6).** Alongside the trio at the first-terminal end-of-run flush, run `python3 ~/.claude/scripts/doc-drift-lint.py --repo-root ~/source/repos/claude-config` (rooted at the claude-config checkout — the hardening-log + intervention records live ONLY there; `--repo-root .` equivalent when this run's own repo IS claude-config) BEFORE `bug-state.py --run-end`. Its `check_intervention_coverage` asserts every post-contract `Mechanical fix applied:` round in the current month's hardening-log has a matching `docs/interventions/harden-<YYYY-MM>-rN.md` or the round's explicit `**Intervention record:** none` exemption marker. FAIL-OPEN and NON-BLOCKING: a non-zero exit prints one `⚠ intervention-coverage lint failed` warning and NEVER blocks `--run-end` (house posture; OFF the state-script compute path) — see `/lazy-batch` §1c.6 for the full behavior.
 
@@ -435,7 +443,19 @@ If `sub_skill` starts with `__`, perform the action inline. Bug-pipeline pseudo-
     --context item_id="{bug_id}" \
     --context cwd="{cwd}"
   ```
-  Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The subagent reconciles PHASES.md honestly (tick-with-evidence or re-scope, never blind-tick) then returns to Step 1a. Exactly as a Gate-1 halt routes.
+  Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The subagent reconciles PHASES.md honestly (tick-with-evidence or re-scope, never blind-tick) then returns to Step 1a. Exactly as a Gate-1 halt routes. **Honest-stuck terminal (no oscillation):** if the coherence-recovery subagent reports `ESCALATED` — it could reconcile nothing because the only remaining blockers are verification rows that genuinely never ran on this host (0 genuine implementation deliverables) — it will have written `NEEDS_INPUT.md` (`written_by: completion-integrity-gate`, surfacing `turn-routing-enforcement` decisions #2/#5/#6). Do NOT re-dispatch coherence-recovery; return to Step 1a and the next probe returns `terminal_reason: needs-input` (Step 1g handles it). This is the deterministic replacement for the prior manual-NEEDS_INPUT improvisation the oscillation tripwire used to force (see `dispatch-coherence-recovery.md` step 3a).
+
+  **Harness-change design-gate refusal (`gate-verdict`, distinct from coherence — GAP 1).** When the `--apply-pseudo __mark_fixed__` refusal reason NAMES the **harness-change design gate** (`lazy_core.gate_verdict_ok`: `harness-change design gate: … GATE_VERDICT.md`) — an in-scope harness change whose shipped commits touch a `docs/gate/control-surfaces.json` control surface, with a MISSING / failing / unsigned-gate-weakening `GATE_VERDICT.md` — do NOT route coherence-recovery (PHASES.md is coherent; the block is a missing/incomplete VERDICT). Authoring the verdict is JUDGMENT work (the adversarial questions in `_components/harness-change-gate.md`) the orchestrator must NOT improvise (HARD CONSTRAINT 1) — dispatch the completion-time authoring seam instead:
+  ```bash
+  python3 ~/.claude/scripts/bug-state.py \
+    --emit-dispatch gate-verdict \
+    --context item_name="{bug_name}" \
+    --context spec_path="{spec_path}" \
+    --context gate_output="<the --apply-pseudo refusal reason string>" \
+    --context item_id="{bug_id}" \
+    --context cwd="{cwd}"
+  ```
+  Dispatch `dispatch_prompt` VERBATIM using `dispatch_model` (opus). The `@requires` keys are `item_name`, `spec_path`, `gate_output`, `item_id`, `cwd`. The subagent runs `harness-gate.py` over the shipped diff, works the adversarial questions, and writes `GATE_VERDICT.md` into the item dir — then returns to Step 1a to re-attempt `__mark_fixed__`. **A gate-weakening `hit` is NEVER self-approved:** the subagent reports `ESCALATED` and writes `NEEDS_INPUT.md` (`written_by: harness-change-gate`) for operator sign-off instead; do NOT re-dispatch gate-verdict — the next probe returns `terminal_reason: needs-input` (Step 1g handles it).
   The orchestrator NEVER hand-writes the receipt, the status flip, or the sentinel deletions.
   After the script returns, the orchestrator runs ONE more script call — the **archive
   mechanics** are also script-owned per `~/.claude/skills/_components/mark-fixed-archive.md`:
@@ -461,12 +481,52 @@ If `sub_skill` starts with `__`, perform the action inline. Bug-pipeline pseudo-
   (`Ready` or `In-progress` → `Complete`). Derive the plan part number from `phases:`; fall back
   to the plan filename. Commit with message
   `chore(<bug_id>): mark plan part N Complete (stale — already applied)`. Do NOT touch SPEC.md
-  or any sentinel. **Meta cycle** — increment `meta_cycles`.
+  or any sentinel. **Meta-class cleanup action** — applied INLINE (no Agent dispatch, no
+  `--cycle-begin`/`--cycle-end` bracket, and NOT via `--apply-pseudo`), so the script advances no
+  budget counter for it; that under-count is budget-neutral (`meta_cycles` is uncapped).
 
 After each inline action, follow the uniform post-cycle procedure from
 `~/.claude/skills/lazy-batch/SKILL.md` Step 1c.5 (cycle_log append, push backstop, emit Step 3
 block, update `prev_cycle_signature`, increment the correct counter). Return to Step 1a — DO NOT
 fall through to Step 1d.
+
+### 1c.7. Spike cycle handling (dispatch-class `sub_skill == "spike"` — runtime-proof cycle, NO cycle_prompt)
+
+If the probe returns `sub_skill == "spike"`, handle it HERE and return to Step 1a — do **NOT** fall through to the §1d real-skill dispatch. `spike` is a registered dispatch CLASS (`--emit-dispatch spike`, always Opus — `DISPATCH_CLASSES`/`DISPATCH_MODELS`/`DISPATCH_STEP_NAMES` in `lazy_core/dispatch.py`), not a cycle skill with a `cycle_prompt`; `emit_cycle_prompt` authors no `spike` prompt block, so the ONLY sanctioned way to run it is the registry-emitted `--emit-dispatch spike` path (exactly as `/investigate` is dispatched). The runtime-proof role — its triggers, honesty rule, tooling-loop, and PASS/FAIL contract — is single-sourced in `~/.claude/skills/_components/spike-dispatch.md` (re-read it before composing this dispatch); this step is the orchestrator-loop wiring, it does not re-derive the protocol.
+
+`compute_state` routes `sub_skill == "spike"` from two on-disk signals (Phase 2): **(a)** a `**Spike:** required` PHASES.md phase-declaration line with no PASS `SPIKE_VERDICT.md` on disk (Step 9.5, BEFORE the mark-fixed gate), and **(b)** a `BLOCKED.md` carrying `blocker_kind: runtime-spike-verdict-pending` (Step 3, the ad-hoc/blocked resolver). Both hand you a `spike` cycle; the handling below is identical for either.
+
+**Step A — Runtime pre-boot (WORKSTATION ONLY — reuse Step 1d.0's `--ensure-runtime`).** Runtime is **ORCHESTRATOR-OWNED**, exactly like `/mcp-test`: the spike subagent DRIVES the live runtime but never boots a background runtime of its own (it would not survive the subagent's turn boundary — the failure 1d.0's orchestrator-owned runtime fixed). A spike cycle is runtime-owning identically to mcp-test. Before dispatching, boot/own the dev runtime via the SAME `lazy-state.py --ensure-runtime` readiness subcommand 1d.0 uses (the runtime is shared; `--ensure-runtime` is hosted on `lazy-state.py`):
+
+```bash
+python3 ~/.claude/scripts/lazy-state.py --ensure-runtime --repo-root "{cwd}"
+```
+
+Route on the FULL M4 verdict JSON exactly as 1d.0 does (read the whole object, never `state` alone), and **proceed to dispatch ONLY when `state == READY AND health_code == 200 AND mcp_tools_present`** — the existing conjunction, do NOT invent a new one. A `state: READY` with `ownership_verified: false` (the soft owned-unverified READY) still proceeds; `STALE`/`DEAD` that recovered to READY proceed. `state ∈ {HIJACKED, BLOCKED}` (or a residual `mcp_tools_present: false`) surfaces the same `BLOCKED.md` (`blocker_kind: mcp-runtime-unready`) with the verdict's `terminal_blocker` text VERBATIM and does NOT dispatch — a subagent cannot recover a runtime the orchestrator failed to boot. This sub-step is `Bash` only (owns a background `dev:restart` + health poll) and performs ZERO file edits — **HARD CONSTRAINT 1 holds** (same rationale as 1d.0).
+
+**Step B — Emit + dispatch (registry-validated — the guard allows it).** Emit the spike dispatch via the script and dispatch the returned prompt VERBATIM; hand-composing it is denied by the validate-deny guard on a marked run:
+
+```bash
+python3 ~/.claude/scripts/bug-state.py \
+  --emit-dispatch spike \
+  --context item_name="{bug_name}" \
+  --context spec_path="{spec_path}" \
+  --context spike_goal="{proof goal — from the probe's sub_skill_args (it embeds the goal), or grep -m1 '^\*\*Spike:\*\*' {spec_path}/PHASES.md}" \
+  --context next_on_pass="{what the SPEC/plan prescribes on PASS — read the SPEC's Spike/PASS prescription; a blocked-resolver spike with none prescribed → 'proceed to the mark-fixed gate'}" \
+  --context item_id="{bug_id}" \
+  --context cwd="{cwd}"
+```
+
+The `@requires` tokens for `--emit-dispatch spike` are exactly `item_name, spec_path, spike_goal, next_on_pass, item_id, cwd`. Bracket the dispatch with the cycle marker exactly as §1d — `--cycle-begin --bug-id {bug_id} --nonce {dispatch_nonce} --kind real --sub-skill spike --sub-skill-args {sub_skill_args}` immediately before, `--cycle-end` on EVERY return path (success / halt / error). PREFER `dispatch_prompt_ref` over the verbatim `dispatch_prompt` (§1d meta-dispatch by-reference rule), dispatch with `model: dispatch_model` (opus), `subagent_type: "general-purpose"`. Emit the T2 cycle-dispatch block immediately before the Agent call.
+
+**Step C — Branch on the structured verdict.** The subagent returns `verdict / method / evidence / tooling_ok / results_doc / on_fail / next`:
+
+- **PASS** → the spike recorded the verdict + real observed evidence in its results doc (`SPIKE_VERDICT.md` or the prescribed per-spike doc) and ticked the gated phase's spike deliverable via a gate-boundary-safe reconcile — it did NOT flip top status or write a receipt (those stay gate-owned). Return to Step 1a: the pipeline continues to the prescribed next cycle (Step 9.5 now sees a PASS `SPIKE_VERDICT.md` and falls through to the mark-fixed gate; a blocked-resolver spike neutralized its `BLOCKED.md`).
+- **FAIL** → the spike updated the results doc + the gated phase and wrote `NEEDS_INPUT.md` (`written_by: spike`, `spike_verdict: fail`). Return to Step 1a: the next probe returns `terminal_reason: needs-input` and §1g handles it. **NO provisional auto-accept — even under `--park --park-provisional` a Spike FAIL is PARKED (surfaced at the flush), NEVER accepted on recommendation.** This deliberate carve-out is enforced MECHANICALLY in `lazy_core.provisional_eligibility` (a `written_by: spike` / `spike_verdict: fail` sentinel is fail-closed rejected, so both the park-mode routing peek AND `--provisionalize-sentinel` refuse it); the rule is restated here so the orchestrator step and the predicate agree — the two layers must never diverge.
+- **`tooling_ok: false` (TOOLING-GAP)** → the spike named the missing tooling. It must route to the bounded `/add-phase` corrective tooling loop (`spike_tooling_rounds` cap; see `spike-dispatch.md`). That loop wiring is **Phase 4** (Tooling-existence loop + bound) — until it lands, surface the spike's tooling-gap report (the subagent wrote it) and treat it as an operator halt; do NOT fabricate the proof or silently drop the gap.
+- **PENDING / `NEEDS_RUNTIME`** → an env transient (the runtime died mid-cycle, or the proof could not honestly obtain real evidence). Re-ready via Step A and re-dispatch; do NOT charge a retry budget (mirrors 1d.0's `NEEDS_RUNTIME` recovery — an env transient is never charged to validation).
+
+A spike is pipeline-advancing: increment `forward_cycles`, append the `cycle_log` row, update `prev_cycle_signature = (bug_id, sub_skill, sub_skill_args, current_step)`, and return to Step 1a — **DO NOT fall through to §1d.**
 
 ### 1d. Compose and dispatch the cycle subagent (REAL SKILLS ONLY)
 
@@ -593,6 +653,17 @@ Agent({
 python3 ~/.claude/scripts/bug-state.py --cycle-end
 ```
 
+#### 1d-await. Await the DIRECT cycle child — grandchild notifications are NOT your cycle (`grandchild-notification-misroute`)
+
+Mirrors `/lazy-batch` §1d-await (with `bug-state.py` / `bug_id`/`bug_name`). The `Agent` cycle dispatch runs in the BACKGROUND: the tool call returns immediately with the child's `agentId`, and the orchestrator's turn ends. The cycle's result arrives LATER as a `<task-notification>` you are re-invoked on — NOT a synchronous return of the `Agent` call. **Act on ONLY the notification for the child THIS cycle dispatched** — the one whose `<task-id>` equals the `agentId` the `Agent` tool returned (empirically the task-id IS that agentId — a POSITIVE "this is my cycle" signal; on any non-matching / ambiguous notification the default is to WAIT). That matching notification is your cycle returning: run `--cycle-end` (§C1) and proceed to §1e.
+
+**Grandchild (sub-sub-agent) notifications bubble up to your session — IGNORE them.** A cycle subagent MAY dispatch its own sub-subagents (`/execute-plan` test/impl agents, read-only Explore fan-outs). Their `<task-notification>` surfaces to the TOP orchestrator session (you), NOT only to the cycle subagent that dispatched them. A grandchild notification carries a `<task-id>` you never dispatched and a `<summary>` naming the grandchild's sub-task, NOT your cycle's `description` ("lazy-bug-batch cycle N: {sub_skill} …"). They are the CYCLE subagent's to handle — NORMAL, and **NOT signals for the orchestrator**:
+- Do NOT run `--cycle-end`, do NOT probe, do NOT route, do NOT print a cycle block on a grandchild notification.
+- **NEVER `TaskStop` your cycle child (or any descendant) on a grandchild's BLOCKED / failure / error notification.** A grandchild failing is EXPECTED — the cycle subagent commonly fans out redundant Explore agents and proceeds on whichever succeed. Killing the cycle on a grandchild failure destroys a productive cycle mid-work (the 2026-07-18 incident — `grandchild-notification-misroute`).
+- The ONLY sanctioned reason to `TaskStop` the cycle child is an operator-directed pause/redirect (Step 0 standing-directive) — never an inference from a descendant's notification.
+
+**Design note (undocumented platform behavior — do not over-depend).** Grandchild-notification bubbling and the task-id↔agentId correlation are UNDOCUMENTED Claude Code behavior (confirmed via `claude-code-guide`, 2026-07-18). The rule uses the task-id match as a POSITIVE signal with a WAIT default on any non-match — the safe direction (the incident was caused by OVER-reacting). Never route off a grandchild notification's content; a wedged grandchild is at most an observed-friction *signal* (§1d.1 Trigger 5, tool-wedge carve-out), never a mid-cycle intervention trigger.
+
 #### 1d.1. Denial recovery (validate-deny guard + hardening dispatch)
 
 Mirrors `/lazy-batch` Step 1d.1 exactly, with `bug-state.py` in place of `lazy-state.py` and `bug_id`/`bug_name` in place of `feature_id`/`feature_name`:
@@ -638,6 +709,9 @@ python3 ~/.claude/scripts/bug-state.py \
 **Trigger 4 — process-friction (a `kind: process-friction` deny-ledger entry):**  
 If the probe returns `route_overridden_by: "pending-hardening-debt"` and the oldest unacked ledger entry carries `kind: process-friction` (written by `bug-state.py --cycle-end` on a torn cycle bracket or unexpected commits), emit a hardening dispatch with `trigger_kind=process-friction`. Use the `hardening_emit_command` from the probe JSON verbatim — it already binds `friction_reason` and `friction_detail` in the `--context` keys instead of `denied_prompt_summary`/`denial_reason` (the `build_hardening_emit_command` function in `lazy_core.py` handles this automatically based on the entry's `kind`). This trigger fires **even when the runaway's work was salvaged** (D2: signal, not noise).
 
+**Tool-search before an abnormal operation (search-before-acting).** Before performing an abnormal operation that needs a specific tool/CLI you are unsure exists — and before blind-dispatching a harden (Trigger 5) or improvising — run `python3 user/scripts/tool-search.py --tool-search "<need>"` first; on a ranked hit, use the named tool.
+On `MISS`, follow the printed suggestion: a dedup pointer (already-proposed — do not double-propose), a host-capability defer pointer, or the copy-pasteable observed-friction harden command (routes into Trigger 5 below; add `--correctness-load-bearing` when the operation is gate/validation-load-bearing so the run holds until the tool ships).
+
 **Trigger 5 — observed-friction (REQUIRED, orchestrator-observed mid-run harness gap):**
 Mirrors `/lazy-batch` Step 1d.1 Trigger 5. When the orchestrator OBSERVES harness friction mid-run through its own reasoning (a gate/state-script/routing defect, a missing dispatch class, an inconsistency, or a stranded corrective it can NAME) that did NOT arrive via triggers 1–4, it MUST emit + dispatch an observed-friction harden (required, not optional — mirrors the `auto-invoke /harden-harness` standing rule; the gap `no-mid-run-observed-friction-harden-dispatch` closes):
 
@@ -652,9 +726,13 @@ python3 ~/.claude/scripts/bug-state.py \
   --context cwd="{cwd}"
 ```
 
-`friction_summary`/`friction_detail` are rebound into the shared evidence keys and observed-friction `probe_json`/`registry_state` placeholders are injected automatically (`normalize_hardening_dispatch_context`). **Block/background policy (D1):** run-blocking (stalls THIS cycle) → `blocking=true`, dispatch foreground, await, re-probe, continue; non-blocking (latent) → `blocking=false`, dispatch backgrounded (`Agent` `run_in_background: true`), checked at cycle boundaries. **Concurrency:** a backgrounded harden edits claude-config only (cycle subagents edit the target repo — different trees); EXCEPTION `self_edit_mode` → force foreground/await. The dispatched harden authors a claude-config bug spec first (Step 2.5) and MUST record its intervention with a MEASURABLE `target_signal` where the fix targets a countable ledger signal (the efficacy-loop feed).
+`friction_summary`/`friction_detail` are rebound into the shared evidence keys and observed-friction `probe_json`/`registry_state` placeholders are injected automatically (`normalize_hardening_dispatch_context`). **Block/background policy (D1):** run-blocking (stalls THIS cycle) → `blocking=true`, dispatch foreground, await, re-probe, continue; non-blocking (latent) → `blocking=false`, dispatch backgrounded (`Agent` `run_in_background: true`), checked at cycle boundaries. **Concurrency:** a backgrounded harden edits claude-config while cycle subagents edit the target repo (usually different trees); on `self_edit_mode` overlap the harden STILL runs concurrently on the shared tree — no foreground/await pre-serialization — trusting the coordination layer (FIFO file-lock + conflict-routing; `concurrent-worktree-agent-coordination` Phases 2–5) to serialize contention and halt only on a true semantic conflict. The separate governing-file RELOAD discipline (self-edit C8) is unaffected. The dispatched harden authors a claude-config bug spec first (Step 2.5) and MUST record its intervention with a MEASURABLE `target_signal` where the fix targets a countable ledger signal (the efficacy-loop feed).
 
-Dispatch `dispatch_prompt` VERBATIM using `dispatch_model` (`"opus"`). Reference: `~/.claude/skills/_components/hardening-dispatch.md`.
+**Sub-sub-agent tool-wedge (observed-friction species — transient carve-out; `grandchild-notification-misroute`).** A dispatched agent (usually a cycle subagent's grandchild — §1d-await) reporting a TOTAL tool-execution WEDGE (every tool call erroring BEFORE executing — e.g. the Claude Code `No tools needed for summary` gating message) is observed friction handled **POST-HOC only** (never a mid-cycle intervention — §1d-await forbids acting on a grandchild notification), and ONLY when NOT transient: a SINGLE wedge whose siblings/re-dispatch succeed, or one attributable to a platform/API blip (5xx/429, a one-off session-init failure like `No tools needed for summary`), is TRANSIENT → do NOT harden (note it, continue); a REPRODUCIBLE or ≥2×-recurring, non-platform-attributable wedge IS harden-worthy → emit an observed-friction harden with `friction_summary="sub-sub-agent tool-wedge"` after the current cycle resolves. When uncertain, treat a single occurrence as transient.
+
+Dispatch `dispatch_prompt` VERBATIM using `dispatch_model` (`"opus"`). Reference: `~/.claude/skills/_components/hardening-dispatch.md`. **Bracket the hardening dispatch `bug-state.py --cycle-begin --bug-id {bug_id} --nonce {nonce} --kind meta --sub-skill hardening`** (`--sub-skill hardening` verbatim — the `dispatch_class`), `--cycle-end` after on every return path. The `--sub-skill hardening` value is load-bearing: it is the cycle marker's identity signal that lets the dispatched harden's own `bug-state.py --record-intervention` pass containment (the `--record-intervention` capture is exempted for a hardening-class cycle subagent ONLY — `dispatched-harden-record-intervention-refused-by-containment`; every genuinely-dangerous lifecycle op stays refused). Omitting or mis-naming `--sub-skill` on the harden bracket re-breaks the dispatched harden's mandated intervention capture.
+
+**Honor the harden return's `reconcile:` handback (docs/bugs OUT-OF-PIPELINE contract; mirrors `/lazy-batch` §1d.1).** After the hardening subagent returns (and after its `--cycle-end`), if its structured summary carries a `reconcile:` **orchestrator handback** — a `docs/bugs/<slug>/` spec whose fix the round shipped out-of-pipeline but could not archive itself (a dispatched harden is a cycle subagent; `--archive-fixed`/`--link-provenance` are `refuse_if_cycle_active`-refused for it) — run the two named script-owned ops now, from the claude-config checkout: `python3 ~/.claude/scripts/bug-state.py --repo-root <claude-config> --archive-fixed docs/bugs/<slug>` then `python3 ~/.claude/scripts/lazy-state.py --repo-root <claude-config> --link-provenance --id <slug> --commits <fix-sha>`, then commit + push. You are AUTHORIZED for these — they are the same script-owned archive-on-fix ops as the normal bug-completion path (§1e). This closes the `docs/bugs/CLAUDE.md` reconciliation contract so the harden-authored spec leaves the open bug queue instead of re-entering via `/plan-bug` (the three-burned-cycles class, `docs/bugs/harden-rounds-skip-docs-bugs-reconciliation-contract`). A `reconcile:` value of `done` / `deferred (...)` / `none` needs no orchestrator action.
 
 **Depth cap (two deny shapes — the guard's reason text discriminates):** **(a)** an ordinary corrective recipe on the hardening dispatch (hash mismatch — a transcription slip on YOUR copy of the emitted `dispatch_prompt`, NOT recursion) → re-run `python3 ~/.claude/scripts/bug-state.py --emit-dispatch hardening …` (fresh nonce, same `--context` keys) and make exactly ONE verbatim re-dispatch attempt, copying `dispatch_prompt` mechanically. **(b)** the guard's HALT REASON (text contains "halt" and "PushNotification" — the denied prompt matched a registered hardening-class entry, i.e. genuine depth-1 recursion) OR a SECOND recipe denial → run `python3 ~/.claude/scripts/bug-state.py --run-end`; surface `⚠ hardening dispatch denied — depth cap reached; halting run` (T6); PushNotification `"lazy-bug-batch halted — hardening dispatch denied at depth cap; operator review required."`; print final batch report, STOP. Never a hardening dispatch beyond the single (a) re-attempt.
 
@@ -713,6 +791,23 @@ bindings:
   # /mcp-test cycle (feature-level):
   python3 ~/.claude/scripts/bug-state.py --repo-root <repo_root> --verify-ledger {spec_path}
   ```
+  **Pause-vs-terminal discriminator gate (Gap 2 —
+  `docs/bugs/adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke`; mirrors
+  `/lazy-batch` Step 1e/4a).** On a `clean_tree`/`head_matches_origin` failure FOLLOWING an
+  `/execute-plan` cycle, BEFORE emitting recovery run the discriminator (the execute-plan run
+  marker is pipeline-agnostic — same helper, same `~/.claude/state/execute-plan/<md5>.json`):
+  ```bash
+  python3 ~/.claude/scripts/bug-state.py --repo-root <repo_root> --execute-plan-liveness --plan {plan_file}
+  ```
+  `verdict == "paused"` (marker present + plan not `Complete`) → the returned `/execute-plan`
+  cycle is a live PAUSE (a backgrounded suite about to be harness-re-invoked), NOT resultless →
+  do **NOT** dispatch recovery (it would collide one-writer with the re-invoked agent); emit
+  `⚠ execute-plan cycle paused (backgrounded suite) — recovery suppressed, awaiting harness
+  re-invocation` and fall through to the next state probe (Step 1a). `verdict == "terminal"`
+  (marker absent / plan `Complete` / any read error — fail-safe) → proceed to the recovery emit
+  below, unchanged. `/mcp-test` cycles (no `--plan`) skip the discriminator. Genuine-wedge
+  fallback per `dispatched-agent-liveness.md` §57–62 (marker persists + NO live descendant after
+  a bounded wait ⇒ recovery IS appropriate) — see `/lazy-batch` Step 1e/4a for the full algorithm.
   Recovery dispatch — **NEVER hand-composed.** The reconcile+commit job the recovery agent
   performs is the emitted dispatch's *contract* (owned by `dispatch-recovery.md`), NOT a prompt
   for the orchestrator to author; the ONLY sanctioned dispatch is the `--emit-dispatch recovery`
@@ -729,7 +824,7 @@ bindings:
     --context cwd="{cwd}"
   ```
   Dispatch `dispatch_prompt` VERBATIM using `dispatch_model`. The `@requires` keys for `--emit-dispatch recovery` are: `item_name`, `spec_path`, `failure_summary`, `cwd`, `item_id`.
-- Increment `forward_cycles`. Return to Step 1a.
+- The SCRIPT has already advanced `forward_cycles` for this real-skill cycle at its `--cycle-end` bracket (the orchestrator no longer hand-counts). Return to Step 1a.
 
 ### 1f. Research-wait mode
 

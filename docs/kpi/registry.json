@@ -21,7 +21,7 @@
       "band": null,
       "review_by": "2026-10-01",
       "repo_scope": "cognito-forms",
-      "notes": "Computable today from ~/.claude/state/build-queue/results/<seq>.json (hygiene.build_fidelity in {log-failure-override, no-output} over non-n/a build records). Baseline capture is workstation-only (--capture-baseline; retro-derivable from results history where retained) â€” this registry ships provenance-honest pending, never a fabricated zero. Renders NO-DATA on machines without build-queue state."
+      "notes": "Computable today from ~/.claude/state/build-queue/results/<seq>.json (hygiene.build_fidelity in {log-failure-override, no-output} over non-n/a build records). Baseline capture is workstation-only (--capture-baseline; retro-derivable from results history where retained) — this registry ships provenance-honest pending, never a fabricated zero. Renders NO-DATA on machines without build-queue state."
     },
     {
       "id": "build-queue-wait-time-p50",
@@ -86,7 +86,7 @@
       },
       "band": null,
       "review_by": "2026-10-01",
-      "notes": "Bound to the harness-telemetry-ledger D4-B 'containment-refusal' event (exit-3 refusal sites). The ledger landed 2026-07-04 with no accumulated history yet â€” provenance pending until a real run window exists (--capture-baseline on the workstation)."
+      "notes": "Bound to the harness-telemetry-ledger D4-B 'containment-refusal' event (exit-3 refusal sites). The ledger landed 2026-07-04 with no accumulated history yet — provenance pending until a real run window exists (--capture-baseline on the workstation)."
     },
     {
       "id": "halt-dwell-p50",
@@ -113,7 +113,7 @@
       "id": "cycles-per-completion",
       "system": "pipeline-efficiency",
       "title": "Cycles per completion",
-      "friction": "Forward cycles spent per __mark_complete__/__mark_fixed__ terminal measure orchestration overhead â€” corrective cycles, gate refusals, and loop churn all inflate it.",
+      "friction": "Forward cycles spent per __mark_complete__/__mark_fixed__ terminal measure orchestration overhead — corrective cycles, gate refusals, and loop churn all inflate it.",
       "signal": {
         "source": "telemetry-ledger",
         "selector": "cycles-per-completion"
@@ -128,7 +128,7 @@
       },
       "band": null,
       "review_by": "2026-10-01",
-      "notes": "Bound to D4-B 'cycle-begin' vs 'pseudo-applied' events whose data.pseudo is a terminal (__mark_complete__/__mark_fixed__); computed by pipeline_visualizer.trends.cycles_per_completion (None when the window has zero completions â€” never a fabricated ratio). Marker counters alone could not supply this (deleted at --run-end), which is why the row waited for the ledger."
+      "notes": "Bound to D4-B 'cycle-begin' vs 'pseudo-applied' events whose data.pseudo is a terminal (__mark_complete__/__mark_fixed__); computed by pipeline_visualizer.trends.cycles_per_completion (None when the window has zero completions — never a fabricated ratio). Marker counters alone could not supply this (deleted at --run-end), which is why the row waited for the ledger."
     },
     {
       "id": "canary-trip-precision",
@@ -149,13 +149,13 @@
       },
       "band": null,
       "review_by": "2026-12-01",
-      "notes": "Precision = trips whose canary-revert-<id> item was NOT closed-as-noise, over all trips in the window. Signal selector registered in kpi-scorecard.py _SOURCES at spec-finalization (renders NO-DATA until compute wired); computation + this registry row land in the feature's Phase 4. Baseline is unmeasurable until the canary has tripped >=5 times â€” provenance stays 'pending' (honest, never a fabricated zero) and the band is set with --capture-baseline once real trip data exists."
+      "notes": "Precision = trips whose canary-revert-<id> item was NOT closed-as-noise, over all trips in the window. Signal selector registered in kpi-scorecard.py _SOURCES at spec-finalization (renders NO-DATA until compute wired); computation + this registry row land in the feature's Phase 4. Baseline is unmeasurable until the canary has tripped >=5 times — provenance stays 'pending' (honest, never a fabricated zero) and the band is set with --capture-baseline once real trip data exists."
     },
     {
       "id": "skill-config-broken-reference-reads",
       "system": "skill-config",
       "title": "Failed Reads / dangling references on .claude/skill-config/ paths",
-      "friction": "The #1 tool-error cluster in the mined AlgoBooth corpus: 377 failed Reads of .claude/skill-config/commit-policy.md across ~100 sessions (>10% of all tool errors) â€” referenced 29x across 17 skill files, present in cognito-forms but absent in algobooth, with no way to declare intended-absent; plus dead prose pointers (long-build-ownership.md) and schema-unvalidated load-bearing JSON (build-queue-ops.json) invisible to lint-skills.py.",
+      "friction": "The #1 tool-error cluster in the mined AlgoBooth corpus: 377 failed Reads of .claude/skill-config/commit-policy.md across ~100 sessions (>10% of all tool errors) — referenced 29x across 17 skill files, present in cognito-forms but absent in algobooth, with no way to declare intended-absent; plus dead prose pointers (long-build-ownership.md) and schema-unvalidated load-bearing JSON (build-queue-ops.json) invisible to lint-skills.py.",
       "signal": {
         "source": "deny-ledger",
         "selector": "process-friction-count"
@@ -171,7 +171,7 @@
       "band": null,
       "review_by": "2026-10-01",
       "repo_scope": "all",
-      "notes": "Manual evidence of record: 377 failed commit-policy.md Reads across ~100 mined AlgoBooth sessions (proposal session 2026-07-11, transcript mining) â€” a corpus total, not a windowed rate, hence provenance pending. The registered machine signal (deny-ledger process-friction-count) is the coarse channel: incident-scan clusters recurring tool-error friction into the ledger as process-friction entries. The Phase 0 quick win (repos/algobooth/.claude/skill-config/commit-policy.md, authored this feature) should drive the commit-policy component of this signal to ~0 immediately; the MANIFEST.json + lint-skill-config.py sweep (Phases 1-2, also this feature) prevent new clusters of the same class from forming. DEFERRED (documented, not blocking): a dedicated session-log-mining selector (e.g. skill-config-failed-read-count over the session-log corpus, mirroring skill-usage-miner.py's corpus walk) would give a precise windowed count instead of this coarse proxy â€” implementation SHOULD register that selector and re-point this row, then run --capture-baseline, following the same registry-follow-up pattern as build-queue-wait-time-p50 in this same registry."
+      "notes": "Manual evidence of record: 377 failed commit-policy.md Reads across ~100 mined AlgoBooth sessions (proposal session 2026-07-11, transcript mining) — a corpus total, not a windowed rate, hence provenance pending. The registered machine signal (deny-ledger process-friction-count) is the coarse channel: incident-scan clusters recurring tool-error friction into the ledger as process-friction entries. The Phase 0 quick win (repos/algobooth/.claude/skill-config/commit-policy.md, authored this feature) should drive the commit-policy component of this signal to ~0 immediately; the MANIFEST.json + lint-skill-config.py sweep (Phases 1-2, also this feature) prevent new clusters of the same class from forming. DEFERRED (documented, not blocking): a dedicated session-log-mining selector (e.g. skill-config-failed-read-count over the session-log corpus, mirroring skill-usage-miner.py's corpus walk) would give a precise windowed count instead of this coarse proxy — implementation SHOULD register that selector and re-point this row, then run --capture-baseline, following the same registry-follow-up pattern as build-queue-wait-time-p50 in this same registry."
     },
     {
       "id": "efficacy-verdicts-produced",
@@ -198,7 +198,7 @@
       "id": "confounded-verdict-ratio",
       "system": "efficacy-loop",
       "title": "Confounded-verdict ratio",
-      "friction": "When co-shipped interventions share one target signal, the D6 cap turns every due review into INCONCLUSIVE (confounded) â€” attribution is impossible by construction, not by data. Verified 2026-07-11: 6 of 8 measurable records share event:gate-refusal with overlapping windows.",
+      "friction": "When co-shipped interventions share one target signal, the D6 cap turns every due review into INCONCLUSIVE (confounded) — attribution is impossible by construction, not by data. Verified 2026-07-11: 6 of 8 measurable records share event:gate-refusal with overlapping windows.",
       "signal": {
         "source": "intervention-records",
         "selector": "confounded-verdict-ratio"
@@ -213,7 +213,7 @@
       },
       "band": null,
       "review_by": "2026-10-01",
-      "notes": "Share of due reviews capped INCONCLUSIVE (confounded) over all due reviews in the window. The sub-signal seam (efficacy-signal-integrity Phase 1 â€” event:<type>/<signature> targets) is the lever that moves it down."
+      "notes": "Share of due reviews capped INCONCLUSIVE (confounded) over all due reviews in the window. The sub-signal seam (efficacy-signal-integrity Phase 1 — event:<type>/<signature> targets) is the lever that moves it down."
     },
     {
       "id": "canary-closure-latency-p50",
@@ -234,7 +234,7 @@
       },
       "band": null,
       "review_by": "2026-10-01",
-      "notes": "Median opened-to-closed days over canaries closed in the window, EXCLUDING closed-clean (no-data) ceiling closes (those are counted separately by the canary-health alarm's projected_no_data_close_count â€” a no-data close must never improve this KPI)."
+      "notes": "Median opened-to-closed days over canaries closed in the window, EXCLUDING closed-clean (no-data) ceiling closes (those are counted separately by the canary-health alarm's projected_no_data_close_count — a no-data close must never improve this KPI)."
     },
     {
       "id": "mcp-validation-round-trips-per-feature",
@@ -437,7 +437,7 @@
       "id": "runner-turn-end-stall-recurrence",
       "system": "generalized-runner",
       "title": "Premature turn-end on in-flight gate batteries (non-Cognito)",
-      "friction": "Execution subagents hand-roll the claude-config 7-command battery, background it, and end their turn before the result â€” the exact class the Cognito banner/await/turn-end contract closed; each recurrence costs a manual resume plus a redone verification pass (4 recurrences observed in one orchestrated run, 2026-07-13).",
+      "friction": "Execution subagents hand-roll the claude-config 7-command battery, background it, and end their turn before the result — the exact class the Cognito banner/await/turn-end contract closed; each recurrence costs a manual resume plus a redone verification pass (4 recurrences observed in one orchestrated run, 2026-07-13).",
       "signal": {
         "source": "deny-ledger",
         "selector": "process-friction-count"
@@ -453,7 +453,94 @@
       "band": null,
       "review_by": "2026-11-01",
       "repo_scope": "claude-config",
-      "notes": "Counted from friction-class ledger entries whose signature matches premature-turn-end / hand-rolled-battery incidents (incident-scan clusters these). Honest NO-DATA where no such entries exist. The implementation MAY register a dedicated gate-battery signal source+selector (ordinary selector addition â€” canary-trip-precision precedent) and re-point this row then."
+      "notes": "Counted from friction-class ledger entries whose signature matches premature-turn-end / hand-rolled-battery incidents (incident-scan clusters these). Honest NO-DATA where no such entries exist. The implementation MAY register a dedicated gate-battery signal source+selector (ordinary selector addition — canary-trip-precision precedent) and re-point this row then."
+    },
+    {
+      "id": "subagent-wedge-strand-recurrence",
+      "system": "subagent-wedge-backstop",
+      "title": "Wedged-subagent pipeline-strand recurrence",
+      "friction": "A dispatched subagent whose tool calls start erroring stops/returns with uncommitted changes and unchecked work-unit checkboxes, stranding the pipeline until a human notices and does a manual TaskStop plus inline recovery.",
+      "signal": {
+        "source": "deny-ledger",
+        "selector": "process-friction-count"
+      },
+      "unit": "count/30d",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-11-01",
+      "repo_scope": "claude-config",
+      "notes": "v1 rides the registered deny-ledger process-friction-count selector — the coarse channel incident-scan clusters recurring tool-error / premature-stall friction into (same channel as runner-turn-end-stall-recurrence). Honest NO-DATA until such entries accrue; the field-evidence blind window (2026-06-11 to 2026-07-12, guards unregistered) undercounts, treat a low count there as partially-blind not zero. The implementation MAY register a dedicated selector (e.g. wedge-backstop block-count over the subagent-stops breadcrumb dir) and re-point this row then — the canary-trip-precision precedent (enum registered ahead of computation, NO-DATA until wired), following the same registry-follow-up pattern as build-queue-wait-time-p50."
+    },
+    {
+      "id": "hook-plane-duplicated-lines",
+      "system": "hook-plane",
+      "title": "Hook-plane duplicated scaffolding lines",
+      "friction": "Copy-pasted hook scaffolding drifts per copy; each drifted copy is a latent guard bug (breadcrumb-path defect, never-migrated payload pattern) and every cross-cutting matcher change costs one coordinated edit per copy.",
+      "signal": {
+        "source": "repo-static-scan",
+        "selector": "hook-duplicated-line-count"
+      },
+      "unit": "lines",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": 467,
+        "captured_at": "2026-07-11",
+        "window": "1d",
+        "provenance": "retro-derived"
+      },
+      "band": null,
+      "review_by": "2026-12-01",
+      "notes": "Baseline hand-counted 2026-07-11 (grep inventory in the SPEC's Executive Summary). Source 'repo-static-scan' + selector 'hook-duplicated-line-count' registered in kpi-scorecard.py Phase 4 (a deterministic cross-file duplicated-line scan of user/hooks/*.sh; honesty ladder: absent/unreadable target -> NO-DATA, a deduplicated tree -> a real 0). Promoted from the SPEC's non-claiming fence per the canary-trip-precision precedent; window normalized from the draft's 'n/a-static' to the '1d' point-in-time-scan precedent so it lints. band null until a regression band is declared."
+    },
+    {
+      "id": "cycle-prompt-assembled-bytes",
+      "system": "cycle-prompt-deflation",
+      "title": "Max assembled cycle-prompt bytes across dispatchable profiles",
+      "friction": "Tokens paid per cycle dispatch and re-paid per compaction; dominated by ~13-14KB fixed boilerplate carried every cycle.",
+      "signal": {
+        "source": "repo-static-scan",
+        "selector": "cycle-prompt-assembled-bytes"
+      },
+      "unit": "bytes",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": 20843.0,
+        "captured_at": "2026-07-19",
+        "window": "30d",
+        "provenance": "measured"
+      },
+      "band": null,
+      "review_by": "2026-10-19",
+      "repo_scope": "claude-config",
+      "notes": "cycle-prompt-deflation. Selector census: skill-size-ratchet.py assembled-profile census = max(assembled_bytes) over all dispatchable (pipeline,mode,skill,variant) profiles, driven through the real emit_cycle_prompt (never a template re-parse) with a canonical repo root so the measure is path-independent. Selector id kept byte-identical to the _SOURCES['repo-static-scan'] registration (the --lint check is `selector in _SOURCES[source]`) — the SPEC's drafted long prose selector is reconciled to this short id here (Phase-1 ANCHOR). Field pre-deflation max ~16.8KB (session-corpus measured); current whole-template census higher (mcp-test profiles). baseline pending until Phase-4 --capture-baseline stamps measured provenance from the post-Phase-3 census; band null until a regression band is declared."
+    },
+    {
+      "id": "blind-tool-gap-dispatch-rate",
+      "system": "orchestrator-tool-search",
+      "title": "Share of tool-gap harden dispatches NOT preceded by a --tool-search in the same cycle",
+      "friction": "Blind gap-dispatch and duplicate tool proposals waste cycles; improvisation past a missing tool risks incorrect work.",
+      "signal": {
+        "source": "telemetry-ledger",
+        "selector": "blind-tool-gap-dispatch-rate"
+      },
+      "unit": "ratio",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-19",
+      "repo_scope": "claude-config",
+      "notes": "count(observed-friction/tool-gap harden dispatches with no preceding --tool-search this cycle) / count(all such dispatches), keyed per (run_id, item_id) cycle. Correlates the Phase-1 tool-search-invocation telemetry breadcrumb against the per-cycle dispatch telemetry event. The source/selector were aligned at Phase 4 from the drafted 'session-log-mining' + freeform text to the registrable 'telemetry-ledger' + short id 'blind-tool-gap-dispatch-rate' (the compute reads the telemetry ledger append_telemetry_event writes to; same KPI meaning/direction/window). Pre-feature baseline is ~1.0 (no search exists today) — Phase-4 --capture-baseline stamps the measured post-wiring value. Real coverage today keys on the pending-hardening route (route_overridden_by) dispatch signal; Trigger-5 observed-friction --emit-dispatch hardens do not yet emit a distinct telemetry event (flagged follow-up)."
     },
     {
       "id": "claude-md-corpus-bytes",
@@ -478,7 +565,7 @@
       },
       "review_by": "2026-10-01",
       "repo_scope": "cognito-forms",
-      "notes": "Baseline = wc -c sum over the 12 Cognito Forms CLAUDE.local.md files (repos/cognito-forms/**/CLAUDE.local.md) on main @ a6ac8363f45, 2026-07-17. Point-in-time on-disk scan (sentinel-scan class); no standing collector â€” captured via --capture-baseline / manual wc -c, no model in the loop. Pre-trim 50,182 B; post-trim measured 40,830 B (rubric is the authority, not a byte target — Core/Services were already-clean exemplars). Band set above the achieved 40,830: warn absorbs ~3 KB of legit durable additions, breach ~48 KB flags regression back toward the pre-trim 50 KB. Runnable on any host."
+      "notes": "Baseline = wc -c sum over the 12 Cognito Forms CLAUDE.local.md files (repos/cognito-forms/**/CLAUDE.local.md) on main @ a6ac8363f45, 2026-07-17. Point-in-time on-disk scan (sentinel-scan class); no standing collector — captured via --capture-baseline / manual wc -c, no model in the loop. Pre-trim 50,182 B; post-trim measured 40,830 B (rubric is the authority, not a byte target — Core/Services were already-clean exemplars). Band set above the achieved 40,830: warn absorbs ~3 KB of legit durable additions, breach ~48 KB flags regression back toward the pre-trim 50 KB. Runnable on any host."
     }
   ]
 }

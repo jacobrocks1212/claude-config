@@ -25,6 +25,7 @@
   <testing>
     - xUnit, AAA pattern, test behavior not implementation
     - Descriptive names, mock external dependencies
+    - Production code carries no seams (hooks, settable overrides, visibility widening) whose sole consumer is a test — introduce a real injectable dependency instead
   </testing>
 
   <windows-platform>
@@ -47,7 +48,9 @@
   </estimates>
 
   <orchestration>
-    **One writer per file.** Never run a background or parallel agent that edits files while you (or another agent) also edit those same files — concurrent writers silently clobber each other. If a sweep is delegated to a background agent, treat its target files as owned by it: do not edit them in-session, and block on the agent's completion before touching or verifying them. If you take over a file the agent was editing, stop the agent first (`TaskStop`).
+    **One writer per file (within a run you control).** Never run a background or parallel agent that edits files while you (or another agent you dispatched) also edit those same files — uncoordinated concurrent writers inside your own dispatch tree silently clobber each other. If a sweep is delegated to a background agent, treat its target files as owned by it: do not edit them in-session, and block on the agent's completion before touching or verifying them. If you take over a file the agent was editing, stop the agent first (`TaskStop`).
+
+    **Sanctioned concurrent writers outside that tree are expected, not a defect.** This default does NOT extend to a separate session or lane you do not control — a parallel `/lazy-batch-parallel` lane, a second interactive/scheduled session, or a background harden dispatch may legitimately be committing to the same shared worktree/branch at the same time. **Concurrent-writer awareness:** other agents may be working this same worktree/branch concurrently — an unexpected commit / moved HEAD is expected, not a defect. Genuine write contention is resolved by the coordination layer (git safety + the FIFO file-lock + conflict-routing) — not by halting.
   </orchestration>
 
   <scripts>
@@ -95,6 +98,16 @@
       via the skill's own NEEDS_INPUT path). Batch multiple gaps found in one session
       into ONE dispatch, and relay the result (fixes + any NEEDS_INPUT) back. When the
       user TYPES `/harden-harness` themselves it runs inline — their explicit choice.
+    - A dispatched sub-sub-agent (a grandchild — an Explore/test/impl fan-out a cycle
+      subagent spawned) that WEDGES — total tool-execution failure, every tool call
+      erroring before executing (e.g. the Claude Code `No tools needed for summary`
+      message) — is a species of the harden trigger, handled POST-HOC only, NEVER as a
+      mid-cycle intervention (never `TaskStop` a live cycle over a grandchild's
+      notification — see `/lazy-batch` §1d-await). TRANSIENT wedges do NOT harden: a
+      single wedge whose siblings/re-dispatch succeed, or one attributable to a
+      platform/API blip (5xx/429, a one-off session-init failure like the undocumented
+      `No tools needed for summary`). A REPRODUCIBLE or ≥2×-recurring, non-platform
+      wedge IS harden-worthy. When uncertain, treat a single occurrence as transient.
   </auto-invoke>
 </skill-preferences>
 

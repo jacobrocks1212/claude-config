@@ -61,6 +61,11 @@ This skill does NOT invoke `/execute-plan`. Execution is a separate `/lazy-bug` 
 `/plan-bug` plans a fix off a **concluded investigation**, not a stub. Read `<spec-md>` and confirm BOTH:
 
 - **Status gate:** the SPEC's `**Status:**` line is `Investigating`, `Open`, or `Concluded` (the pre-fix statuses). `Concluded` is the canonical status when `bug-state.py` routes here — it means the investigation is done and fix-planning can begin. If it is already `In-progress`, `Fixed`, or `Won't-fix`, this bug is past planning — return success with a "nothing to plan; SPEC status is `{status}`" note and STOP. (`bug-state.py` would not have dispatched `/plan-bug` for a fixed bug; this guard makes the skill safe to invoke directly.)
+- **Already-implemented-out-of-pipeline gate (`fixed-unreconciled` — belt-and-suspenders):** even with a pre-fix `**Status:**`, the fix may already have landed OUT-OF-PIPELINE (a `/harden-harness` round or a manual in-session fix) but was never reconciled. The mechanical contract is `lazy_core.is_fixed_unreconciled(spec_dir, repo_root)` — `True` iff the SPEC carries a `**Fixed:**` evidence annotation (status not yet `Fixed`) AND there is **no** valid `FIXED.md` completion receipt AND the dir is not archived. When it holds, **REFUSE the planning round** — do NOT author `PHASES.md` / a plan (that would burn a `/spec-phases` + `/write-plan` dispatch re-planning a fix already on disk). Return success with this distinct `fixed-unreconciled` note and STOP before Step 1:
+
+  > This bug appears already-implemented out-of-pipeline (`**Fixed:**` annotation present, no `FIXED.md` receipt) — `fixed-unreconciled`. Reconcile via the `docs/bugs/CLAUDE.md` receipt + `--archive-fixed` contract (write `FIXED.md`, then `python3 user/scripts/bug-state.py --repo-root . --archive-fixed docs/bugs/<slug>`), OR clear the stray `**Fixed:**` annotation from SPEC.md to re-plan. Do NOT author `PHASES.md` / a plan.
+
+  (This is the direct-invocation safety net for the same signal `bug-state.py` Step 4 diverts autonomously; the two surfaces speak with one voice. A plain `Concluded` SPEC with no `**Fixed:**` annotation is unaffected — it proceeds normally.)
 - **Findings gate:** the SPEC contains enough root-cause / scope content to plan a fix — e.g. a populated `## Affected Area`, `## Proven Findings`, or a theory marked `Likely`/`Confirmed`. A SPEC that is only `## Verified Symptoms` with no affected-area / findings is **still investigating**.
 - **Root-cause trace gate (SEAM A — HARD BLOCK, load-bearing here):** the causal finding this plan would turn into fix scope must be **`traced`** — the symptom's serving path cited surface→source (`file:line`), with the fix site shown to lie **on** that path — not merely **`asserted`**. This is the load-bearing placement: `/plan-bug` is where the cause becomes committed scope. A `Likely`/`Confirmed` theory or populated Affected Area is **not** enough on its own if the symptom→cause link was never traced. Apply the full gate below.
 
@@ -130,6 +135,20 @@ Print a structured summary so the orchestrator's per-cycle log captures what adv
 **Total work units across parts:** {sum}
 **Skipped steps:** {"spec-phases (PHASES.md existed)" | "write-plan (plan existed)" | "none"}
 ```
+
+**Decision-Classification Ledger (MANDATORY return — same contract as `/spec --batch`).** The cycle MUST also emit, as a structured section of this return summary, the `### Decision-Classification Ledger` that `/spec --batch` mandates — a row for EVERY decision the planning cycle considered (phase boundaries, partition cuts, helper/anchor choices, deferred-to-research items), classified `product-behavior` vs `mechanical-internal`. This closes the bug-axis parity gap with `/plan-feature` (which already carries this mandate): a fix-scope decision that quietly collapses during phase/plan authoring is caught by the orchestrator's audit against this ledger rather than slipping past prose self-classification. Use the EXACT shape `/spec --batch` defines (see `~/.claude/skills/spec/SKILL.md` "Decision-Classification Ledger"):
+
+```
+### Decision-Classification Ledger
+
+| # | Decision (one line) | Classification | Chosen option | Surfaced via | Rationale |
+|---|---------------------|----------------|---------------|--------------|-----------|
+| 1 | <decision title>    | product-behavior \| mechanical-internal | <option taken or "deferred to user"> | NEEDS_INPUT.md \| auto-accept \| Open Questions | <one-line why> |
+```
+
+- Any `product-behavior` row MUST have `Surfaced via: NEEDS_INPUT.md` (or `Open Questions`) — a `product-behavior` + `auto-accept` row is a self-declared contract violation; surface it instead.
+- If the cycle made zero decisions, emit the heading + `_(no decisions surfaced this cycle — auto-finalized)_`. The empty ledger is still required.
+- The ledger lives in this return summary, NOT in any committed doc — the orchestrator reads it from the response.
 
 If `<bug-dir>/NEEDS_INPUT.md` was written by either sub-skill, surface that path in the summary and STOP.
 

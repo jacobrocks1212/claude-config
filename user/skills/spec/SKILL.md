@@ -435,14 +435,18 @@ The trigger is your own recognition — no new detection machinery: if an option
    The strip **stops at the first non-blockquote, non-blank line** — i.e. everything from the first substantive section onward (e.g. `## What AlgoBooth is …`) is preserved **verbatim**. This strip is **BOUNDED to the leading preamble**: do NOT scan deeper into the doc, so a legitimate blockquote that appears *inside* later substantive content is never collateral-stripped. Because the strip is applied at this convergence line, it covers all three resolution branches uniformly — the verbatim summary (case 1), the verbatim full doc (case 2), and the case-2 self-heal condensation that writes `PRODUCT_IDENTITY_SUMMARY.md` (which could otherwise re-introduce a self-labelling title on a later run).
 
    *Worked example.* A doc that opens with `# AlgoBooth — Identity Summary (Gemini Prepend)`, then three provenance blockquotes (`> Pre-sized, ready-to-go …`, `> This is the budget-friendly condensation …`, `> When the full identity doc changes materially …`), then `## What AlgoBooth is …` yields a prepend that begins at `## What AlgoBooth is …` — the H1 and all three blockquotes removed, everything from `## What AlgoBooth is` onward kept verbatim.
-3. **Compose the prompt body** per the structure below. Aim to keep the final file (identity prepend + your prompt body) **under `GEMINI_PROMPT_CHAR_CAP = 24,000` characters**.
+3. **Compose the prompt body** per the structure below. Aim to keep the final file (identity prepend + your prompt body) **under `GEMINI_PROMPT_CHAR_CAP = 18,000` characters**.
 
-   <!-- Cap source: Gemini Apps' web UI textarea has a practical per-message limit of ~30,000 characters per Google support docs and community reports
-        (https://support.google.com/gemini/answer/16275805, https://support.google.com/gemini/thread/312836444). The Gemini model context window is in the
-        millions of tokens, but Deep Research's prompt-input *field* uses the same bounded textarea. 24,000 leaves ~6,000 chars of headroom for paste-buffer
-        quirks, mobile browser variability, and prompts that get edited up at copy time. Revisit when Google publishes an authoritative number. -->
+   <!-- Cap source: Gemini's Deep Research prompt-input textarea SILENTLY HARD-TRUNCATES at exactly 20,000 characters — everything past char 20,000 is dropped
+        with NO warning and the paste simply ends mid-content. Empirically measured 2026-07-17: a 21,275-char RESEARCH_PROMPT.md pasted into the field was cut
+        at char 20,000, severing mid-word inside Question 10 and dropping the ENTIRE "Output Format Request" section (the most load-bearing part — it tells
+        Gemini how to structure its answer). The operator only noticed because the paste ended mid-sentence. GEMINI_PROMPT_CHAR_CAP = 18,000 sits ~2,000 chars
+        BELOW that confirmed 20,000 hard limit as headroom for paste-buffer quirks, mobile browser variability, and prompts edited up at copy time. NEVER
+        generate or pass a prompt at/above 20,000 chars. (The prior value 24,000 was WRONG — it was set ABOVE the true limit on a mistaken ~30,000-char
+        assumption, so 20,000–24,000-char prompts truncated silently while the {within|over} indicator still reported "within".) Revisit only if Google changes
+        the field's behavior. -->
 
-   Budget realistically: the resolved identity prepend (step 2) is capped at `IDENTITY_PREPEND_CHAR_BUDGET = 6,000` chars, leaving 18K+ for the prompt body. If you can't keep the *body* under cap, write the file anyway and surface a warning in the Phase 2 summary (see step 6) — the operator can decide whether to truncate manually. Never silently truncate.
+   Budget realistically: the resolved identity prepend (step 2) is capped at `IDENTITY_PREPEND_CHAR_BUDGET = 6,000` chars, leaving 12K+ for the prompt body. If you can't keep the *body* under cap, write the file anyway and surface a warning in the Phase 2 summary (see step 6) — the operator can decide whether to truncate manually. Never silently truncate.
 
    **EVERY `RESEARCH_PROMPT.md` MUST be self-contained and copy-paste-complete on its own (HARD REQUIREMENT — no exceptions).** The operator copies a single `RESEARCH_PROMPT.md` verbatim into Gemini. A reader who opens ANY one feature's `RESEARCH_PROMPT.md` must get a complete, runnable Gemini prompt from that file alone — never a stub that says "see the sibling's prompt."
 
@@ -488,14 +492,14 @@ The trigger is your own recognition — no new detection machinery: if an option
 - **Specific Questions** — 5-10 targeted questions that would benefit from deep research
 - **Output Format Request** — Ask for structured findings with sections, examples, and actionable recommendations
 
-5. **Length check.** After writing, read the file back and measure its character count. Compare against `GEMINI_PROMPT_CHAR_CAP = 24,000`.
+5. **Length check.** After writing, read the file back and measure its character count. Compare against `GEMINI_PROMPT_CHAR_CAP = 18,000` (the safe target below Gemini's confirmed 20,000-char hard truncation).
 
 6. **Echo the full research prompt to chat in a fenced code block (HARD REQUIREMENT — interactive mode).** After writing `RESEARCH_PROMPT.md` and doing the length check, output the **FULL final research prompt** — the exact file contents, including any identity prepend — to chat inside a fenced code block so the user can copy it directly into Gemini Deep Research without opening the file. Use a **quadruple-backtick fence** (````` ```` `````) to open and close this block, so that any triple-backtick fenced sub-blocks inside the prompt render correctly. Echo the contents verbatim — do not summarize, paraphrase, or abbreviate. (Under `--batch`, skip this echo — batch mode just writes the file and returns; there is no chat audience.)
 
 7. **Phase 2 summary to chat.** Report:
    - The file path written.
    - Which identity prepend was applied and its source path — `PRODUCT_IDENTITY_SUMMARY.md` (fast path), the full `PRODUCT_IDENTITY.md` (under budget), or skipped (neither file present). If the full doc was over budget and you self-healed, state explicitly that you generated `{identity-dir}/PRODUCT_IDENTITY_SUMMARY.md` so future runs are ready-to-go.
-   - The actual character count and whether it's under / over the 24,000 cap. If over, state explicitly that the operator may need to trim before pasting into Gemini Deep Research, and suggest which sections (Context / Research Areas / Specific Questions) are most condensable.
+   - The actual character count and whether it's under / over the 18,000 cap (a prompt at/above Gemini's 20,000-char hard truncation WILL be silently cut on paste). If over, state explicitly that the operator may need to trim before pasting into Gemini Deep Research, and suggest which sections (Context / Research Areas / Specific Questions) are most condensable.
    - Confirmation that the full prompt was echoed to chat in a quadruple-backtick fenced code block (per step 6) for direct copy-paste.
 
 8. Tell the user: "Research prompt saved. Run deep research, then give me the file path to the results."

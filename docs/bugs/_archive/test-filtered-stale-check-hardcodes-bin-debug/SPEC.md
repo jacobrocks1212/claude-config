@@ -6,7 +6,7 @@
 **Severity:** P1
 **Discovered:** 2026-07-01
 **Placement:** docs/bugs/test-filtered-stale-check-hardcodes-bin-debug
-**Related:** `docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/` (parent — this is a defect in that spec's shipped Phase 3 "test honesty"); `docs/bugs/build-queue-no-artifact-or-process-hygiene-on-crash/`
+**Related:** `docs/bugs/_archive/build-queue-copy-lock-stale-dll-false-success/` (parent — this is a defect in that spec's shipped Phase 3 "test honesty"); `docs/bugs/_archive/build-queue-no-artifact-or-process-hygiene-on-crash/`
 
 ---
 

@@ -135,6 +135,33 @@ def _dedup_residue(tokens: list[str]) -> list[str]:
     return seen
 
 
+def _template_residue(template_text: str, bindings: dict[str, str]) -> list[str]:
+    """Return unbound TEMPLATE placeholder tokens surviving in *template_text*.
+
+    Strips every KNOWN token placeholder (``{token}`` for each key in *bindings*)
+    from the template text, THEN scans the remainder for
+    ``_PROMPT_RESIDUE_RE`` residue. The strip uses empty-string replacement so a
+    genuine unbound placeholder (a ``{lower_snake}`` NOT in *bindings*) is left
+    intact for the scan to catch.
+
+    Why this runs on the placeholder-stripped TEMPLATE — BEFORE any value
+    substitution — instead of on the fully-bound prompt: the residue guard must
+    distinguish a genuine unbound template placeholder from a literal
+    ``{lower_snake}`` brace that merely appears INSIDE an injected context VALUE
+    (a code snippet, a JSON object, or a curly-brace wire-type in a free-text
+    ``resolution_summary`` / ``failure_summary``). Scanning the fully-bound prompt
+    conflates the two and fail-closes a correct dispatch on DATA it should treat
+    as opaque (docs/bugs/emit-dispatch-residue-guard-flags-content-braces —
+    observed live on an apply-resolution emit). Detecting residue on the
+    pre-injection template makes value-content braces structurally invisible to
+    the guard while still catching every genuine unbound placeholder.
+    """
+    stripped = template_text
+    for token in bindings:
+        stripped = stripped.replace("{" + token + "}", "")
+    return _PROMPT_RESIDUE_RE.findall(stripped)
+
+
 def _emit_work_branch(repo_root: Path) -> str:
     """Resolve repo_root's current branch name for the {work_branch} token.
 
@@ -326,6 +353,534 @@ def _mcp_test_cycle_model(spec_path: str | None) -> str:
     except Exception:
         # Any unexpected failure fails safe toward the capable tier.
         return "sonnet"
+
+
+def merged_head_override(
+    feature_items: list[dict],
+    bug_items: list[dict],
+    repo_root: str,
+    current_item_id: str | None,
+    *,
+    today: "datetime.date | None" = None,
+    exclude_ids: "set[str] | frozenset[str] | None" = None,
+) -> dict | None:
+    """Return a route-override payload when the MERGED work-list head is a
+    DIFFERENT item than the one a dispatch-bound probe is about to emit for —
+    else ``None`` (the common, no-divergence case: byte-identical output).
+
+    The unified driver contract (unified-pipeline-orchestrator Phase 2,
+    ``lazy-batch/SKILL.md`` Step 1a) is: each cycle probe the merged head with
+    ``--next-merged`` FIRST, then type-dispatch to the matching state script.
+    But the DISPATCH-BOUND enriched probe (``--emit-prompt``) and the inject
+    hook (``lazy_inject.py``) historically routed straight through the marker's
+    STICKY ``pipeline`` / their own single-queue state, IGNORING the merged head
+    — so a P0 bug that jumped the bug-queue head mid-feature-run was SILENTLY
+    skipped and the lower-priority feature was worked first
+    (docs/bugs/dispatch-probe-and-inject-bypass-merged-head, 2026-07-16).
+
+    This is the mechanical guard that makes that misroute self-announcing: it
+    reuses the SAME ``next_merged`` ordering (never a second ordering rule), and
+    when the merged head's ``item_id`` differs from ``current_item_id`` it
+    returns ``{"route_overridden_by": "merged-head-diverged", "merged_head":
+    {item_id, type}}`` so the caller WITHHOLDS the (wrong-item) forward route —
+    exactly mirroring the existing ``pending-hardening-debt`` /
+    ``audit-obligation`` withholds in each state script's ``--emit-prompt`` path.
+
+    Pure + fail-safe: empty queues, a missing ``current_item_id``, or a head
+    that MATCHES ``current_item_id`` (the normal case — the probe is already
+    emitting for the merged head) → ``None``, so the caller emits normally.
+    Callers wrap the call in try/except so a divergence-probe error NEVER breaks
+    the base probe (fail toward emitting, never toward a spurious withhold).
+
+    Args:
+        feature_items: feature ``queue.json`` items (from ``load_queue``).
+        bug_items: bug ``queue.json`` items (from ``load_bug_queue``).
+        repo_root: echoed into the returned ``merged_head`` via ``next_merged``;
+            does not affect ordering.
+        current_item_id: the id the dispatch-bound probe would emit for
+            (``state["feature_id"]`` in both scripts — the generic item id).
+        today: caller-supplied date for deterministic bug-aging ordering.
+        exclude_ids: PARKED item ids to drop from the merged head
+            (merged-head-includes-parked-items-deadlocks-park-run). Without this,
+            a parked, undriveable item at the merged head makes this override fire
+            forever in park mode (the probe withholds behind a head it can never
+            drive → run deadlock). Excluding parked items means the head is the
+            highest-priority UN-PARKED item, so the override fires ONLY for genuine
+            feature-vs-bug pipeline divergence (its intended purpose). Default
+            ``None`` → nothing excluded (byte-identical non-park behavior).
+
+    Returns:
+        The override dict when the merged head diverges from ``current_item_id``;
+        ``None`` otherwise.
+    """
+    from .depdag import next_merged
+
+    head = next_merged(
+        feature_items, bug_items, repo_root, today=today, exclude_ids=exclude_ids
+    )
+    if not head:
+        return None
+    if not current_item_id or head.get("item_id") == current_item_id:
+        return None
+    return {
+        "route_overridden_by": "merged-head-diverged",
+        "merged_head": {
+            "item_id": head.get("item_id"),
+            "type": head.get("type"),
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Coordinator-arbitration exemptions — the SINGLE home for the reasons the
+# serial merged-head divergence premise does not apply to (a coordinator has
+# already arbitrated the emission).  Both state-script --emit-prompt callers
+# consult this ONE predicate; adding a future exemption (e.g. a demoted-serial
+# rerun) is a one-line addition HERE returning a new reason string — never a
+# fourth ad-hoc boolean re-accreted at each caller.
+# ---------------------------------------------------------------------------
+
+# reason -> observability diagnostic (byte-identical to the two messages the
+# callers historically emitted inline).  A reason NOT in this map resolves to a
+# generic coordinator-arbitrated exemption diag via coordinator_exemption_diag,
+# so a reason rename / a new exemption can never silently drop a diagnostic.
+_COORDINATOR_EXEMPTION_DIAGS = {
+    "lane": (
+        "merged-head: skipped divergence guard — lane probe "
+        "(parent_run set); lane arbitration is coordinator-owned "
+        "(claim_shardable)."
+    ),
+    "lease": (
+        "merged-head: skipped divergence guard — serial-tail probe "
+        "for a lease-held item (feature_id holds a live coordinator "
+        "lease); completing the merged, lease-held item is the "
+        "coordinator's in-flight obligation (round-2 gap 8)."
+    ),
+}
+
+
+def coordinator_arbitrated_emission(marker, feature_id, leases_path) -> "str | None":
+    """Return the exemption reason (``"lane"`` | ``"lease"``) when THIS
+    ``--emit-prompt`` probe is a coordinator-arbitrated emission the serial
+    merged-head divergence guard must NOT withhold — else ``None`` (the common
+    serial case: run the guard exactly as before).
+
+    This is the SINGLE, unified home for the two coordinator-arbitration
+    exemptions that had accreted as ad-hoc booleans at BOTH state-script
+    callers (``lazy-state.py`` / ``bug-state.py``):
+
+      * ``"lane"`` — the marker carries a non-null ``parent_run``: a
+        ``/lazy-batch-parallel`` LANE probe whose queue arbitration the
+        coordinator's ``claim_shardable`` already applied when it assigned the
+        lane its ``--feature-id`` (round-1 gap 1). Lane arbitration is
+        coordinator-owned, not a per-lane-probe concern.
+      * ``"lease"`` — a non-lane marker whose ``feature_id`` holds a LIVE
+        coordinator lease: the post-merge SERIAL-TAIL probe at the main root
+        (``parent_run`` null) discharging the coordinator's in-flight,
+        lane-merged, lease-held obligation before any new head work
+        (round-2 gap 8).
+
+    **Lane precedence over lease** — lane is evaluated FIRST (matching the
+    legacy ``not _emit_is_lane`` guard on the lease compute), so the lease I/O
+    is not even consulted for a lane probe.
+
+    **Fail-safe by construction — NEVER raises into the base probe.** A
+    ``marker`` that is not a dict / has no ``parent_run`` is not a lane; a
+    missing/empty ``feature_id``, an unavailable ``lazy_coord``, a missing
+    ``leases.json``, or ANY lease-read error means "not a lease" → the reason
+    stays ``None`` (fail toward running the guard, never toward a spurious
+    exemption). A future third exemption (demoted-serial-rerun) is a one-line
+    addition here returning a new reason string.
+
+    Args:
+        marker: the run marker dict (``read_run_marker()`` result), or ``None``.
+        feature_id: the id this probe would emit for (``state["feature_id"]``).
+        leases_path: path to the coordinator ``leases.json``
+            (``claude_state_dir() / "leases.json"`` in production).
+
+    Returns:
+        ``"lane"`` / ``"lease"`` when exempt; ``None`` otherwise.
+    """
+    # Lane exemption (highest precedence) — coordinator-arbitrated claim.
+    if isinstance(marker, dict) and marker.get("parent_run"):
+        return "lane"
+    # Lease exemption — only for a non-lane marker whose feature_id is set.
+    if marker is not None and feature_id:
+        try:
+            import lazy_coord  # local: lazy_coord is a top-level module, not under lazy_core/
+
+            if lazy_coord.has_live_lease(leases_path, feature_id):
+                return "lease"
+        except Exception:  # noqa: BLE001 — lease probe must never break the base probe
+            return None
+    return None
+
+
+def coordinator_exemption_diag(reason: str) -> str:
+    """Resolve a coordinator-arbitration exemption ``reason`` to its
+    observability diagnostic. Recognized reasons (``"lane"``/``"lease"``) map to
+    their historical byte-identical text; an UNRECOGNIZED reason maps to a
+    generic coordinator-arbitrated exemption diagnostic naming the reason
+    (forward-compat for a future exemption — a rename can never silently drop a
+    diagnostic)."""
+    diag = _COORDINATOR_EXEMPTION_DIAGS.get(reason)
+    if diag is not None:
+        return diag
+    return (
+        "merged-head: skipped divergence guard — coordinator-arbitrated "
+        f"emission (exemption reason: {reason})."
+    )
+
+
+def probe_skipped_ids(state: dict, items: list[dict] | None) -> "set[str]":
+    """Return the set of queue IDS the CURRENT per-pipeline probe already
+    SKIPPED this cycle (advanced past without dispatching) — reusing the probe's
+    OWN skip decisions so the merged-head computation stays in exact parity with
+    the per-pipeline skip-ahead, instead of re-inferring per-item state.
+
+    This is the durable fix for the ``merged-head-diverged`` STALL
+    (``docs/bugs/merged-head-diverged-stalls-on-gated-head``): the per-pipeline
+    ``--emit-prompt`` probe applies default-on skip-ahead — it advances past a
+    research-pending / BLOCKED gated head (``gated_heads``), a host-deferred head
+    (``host_deferred_features``), a device-deferred head
+    (``device_deferred_features``), a dependency-gated head (``dep_gated``), and
+    (bug pipeline) an operator-deferred head (``operator_deferred``) — but the
+    merged-head divergence check only excluded the NARROWER file-predicate park /
+    operator-defer set. When a gated head sat at the merged head, the two
+    disagreed and the probe WITHHELD the route (``route_overridden_by:
+    merged-head-diverged``, null ``cycle_prompt``) even though the probe had
+    already computed the correct next workable item — stalling forward progress
+    (observed live 2026-07-17 on ``cross-platform-distribution``, a BLOCKED
+    external-gate pre-release feature pinned at priority 1). Folding these ids
+    into the merged-head exclude set makes the merged head the SAME workable item
+    the probe chose, so the withhold fires ONLY for a genuine
+    dispatchable-item divergence (a P0 bug jumping the queue), never behind a
+    gated head the probe already skipped.
+
+    Why the probe's own signal (not a second scoped re-probe): the lists below
+    are populated by ``compute_state`` as it walks, so they encode EXACTLY the
+    skip-ahead two-key predicate AND ``--strict-research-halt`` (which disables
+    skip-ahead — under it ``gated_heads`` is empty, so a gated head is NOT
+    excluded and the run halts on it, preserving the opt-in). They also make the
+    fully-gated queue terminate correctly: when NO skip-ahead-ready alternative
+    exists the probe clears ``gated_heads`` and dispatches the gated head as its
+    own terminal (blocked / needs-research), so this set is empty and the merged
+    head equals that terminal head — the existing exhausted/blocked terminal, NOT
+    an infinite skip. And because a skipped item is by definition never the
+    dispatched (``feature_id``) item, this set never contains the current item,
+    so the "never exclude the current dispatch target" invariant holds for free.
+
+    Args:
+        state: the ``compute_state`` output dict for THIS probe (same-pipeline).
+        items: the same-pipeline queue items (from ``load_queue`` /
+            ``load_bug_queue``) — used ONLY to resolve the NAME-keyed skip lists
+            (``device_deferred_features`` / ``operator_deferred`` store the human
+            ``name``, not the queue ``id``) back to queue ids. ID-keyed lists
+            (``gated_heads`` / ``host_deferred_features`` / ``dep_gated``) need no
+            resolution.
+
+    Returns:
+        The set of queue ids the probe skipped this cycle (empty when the probe
+        skipped nothing — the byte-identical common path).
+    """
+    if not isinstance(state, dict):
+        return set()
+    ids: set[str] = set()
+    # ID-keyed skip lists — used directly.
+    for _v in (state.get("gated_heads") or []):
+        if _v:
+            ids.add(_v)
+    # merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone: the
+    # candidates the skip-ahead readiness predicate BLOCKED this probe (a hard dep
+    # on a skipped gated id, or not `independent: true` — e.g. a dependency-unready
+    # milestone). Formerly a write-only local that never reached the merged-head
+    # exclude set, so the merged-head-diverged guard could WITHHOLD the route
+    # pointing at a non-dispatchable dep-unready item (no-route). Now surfaced by
+    # lazy-state.py under "skip_ahead_blocked" (feature pipeline; bug state lacks
+    # the key → .get None → no-op, byte-identical). ID-keyed → used directly.
+    for _v in (state.get("skip_ahead_blocked") or []):
+        if _v:
+            ids.add(_v)
+    for _v in (state.get("host_deferred_features") or []):
+        if _v:
+            ids.add(_v)
+    for _row in (state.get("dep_gated") or []):
+        _rid = _row.get("id") if isinstance(_row, dict) else None
+        if _rid:
+            ids.add(_rid)
+    # NAME-keyed skip lists — resolve name → queue id via the loaded items (each
+    # carries both id and name). A value that resolves to no item is added as-is
+    # (fail toward exclusion of a genuinely-skipped item; a stray non-matching
+    # value merely never appears in the worklist and is harmless).
+    _name_to_id: dict[str, str] = {}
+    for _raw in (items or []):
+        _iid = _raw.get("id") if isinstance(_raw, dict) else None
+        if not _iid:
+            continue
+        _name_to_id[_iid] = _iid
+        _nm = _raw.get("name")
+        if _nm:
+            _name_to_id[_nm] = _iid
+    for _key in ("device_deferred_features", "operator_deferred"):
+        for _v in (state.get(_key) or []):
+            if not _v:
+                continue
+            ids.add(_name_to_id.get(_v, _v))
+    return ids
+
+
+def research_halt_head(
+    state: dict,
+    feature_items: list[dict],
+    bug_items: list[dict],
+    repo_root: str,
+    *,
+    today: "datetime.date | None" = None,
+    exclude_ids: "set[str] | frozenset[str] | None" = None,
+) -> "str | None":
+    """Return the id of a RESEARCH-pending gated head the current per-pipeline
+    probe SKIPPED this cycle that OUTRANKS the item the driver would otherwise
+    dispatch — else ``None``. The signal the ``--emit-prompt`` path uses to
+    SURFACE a needs-research halt instead of burying the research gap.
+
+    This is the research-gating-vs-BLOCKED-gating distinction
+    (``docs/bugs/research-gated-head-buried-by-skip-ahead-and-merged-fallthrough``).
+    Round 64's :func:`probe_skipped_ids` folded research-pending gated heads into
+    the merged-head exclude set IDENTICALLY to BLOCKED heads, so a high-priority
+    research-gated feature at the queue head was silently buried behind the
+    lower-priority item the merged view fell through to (a bug, or a lower
+    feature) — the operator never saw the needs-research halt that a Gemini
+    upload resolves in seconds. A BLOCKED head (external gate / host) legitimately
+    skips-ahead to independent ready work; a research gap is operator-resolvable,
+    so a research head that is the merged head must SURFACE its halt.
+
+    Mechanism: ``exclude_ids`` is the caller's FULL merged-head exclude set
+    (built by :func:`merged_head_nondispatchable_ids`, the actionability oracle —
+    current dispatch target discarded) — the set that excludes the research heads
+    too. This helper RE-INCLUDES only the research-gated ids
+    (``state["research_gated_heads"]``) and recomputes the merged head. If that
+    head IS one of the research-gated ids, the research head is strictly ahead in
+    the FULL merged ordering (priority AND the type tie-break) of every OTHER
+    dispatchable item — including the fallthrough the driver would pick — so it
+    must surface. If some higher-or-equal-priority READY item is the head instead
+    (the research head is genuinely lower-priority), this returns ``None`` and
+    skip-ahead proceeds unchanged — no over-halt (the task's explicit
+    "don't blanket-halt when independent lower-priority ready work exists" bound).
+
+    Keyed on RELATIVE merged priority via the merged ordering itself (never a
+    second ordering rule): ``next_merged`` decides "is the research head the
+    top?", so the age-escalation + type tie-break in ``merged_priority`` /
+    ``merged_worklist`` are honored for free.
+
+    Pure + fail-safe: no ``research_gated_heads`` in ``state`` → ``None``; the
+    caller wraps in try/except so a detection error never breaks the base probe.
+    Research gating is a FEATURE-pipeline mechanic — on the bug pipeline
+    ``research_gated_heads`` is absent, so this returns ``None`` (documented
+    parity with the ``strict_research_halt`` bug-side asymmetry).
+    """
+    if not isinstance(state, dict):
+        return None
+    research = {r for r in (state.get("research_gated_heads") or []) if r}
+    if not research:
+        return None
+    from .depdag import next_merged
+
+    exclude = set(exclude_ids or set())
+    # Re-include ONLY the research-gated skips; the merely-BLOCKED / host / device
+    # / dep skips (and parked/deferred items) stay excluded so the driver's real
+    # fallthrough target is what the research head is compared against.
+    exclude_no_research = exclude - research
+    head = next_merged(
+        feature_items, bug_items, repo_root,
+        today=today, exclude_ids=exclude_no_research,
+    )
+    if head and head.get("type") == "feature" and head.get("item_id") in research:
+        return head.get("item_id")
+    return None
+
+
+def is_dispatchable(scoped_state: "dict | None") -> bool:
+    """Return True iff an item's SCOPED ``compute_state`` output would yield a
+    real forward dispatch RIGHT NOW — the authoritative "would this item be
+    worked?" oracle (merged-head-actionability-oracle, SPEC L3).
+
+    Dispatchable IFF ``sub_skill`` is a non-empty, non-``__``-prefixed real skill
+    AND ``terminal_reason`` is falsy. This is deliberately NOT a hand-listed
+    enumeration of non-dispatch reasons (Open Question 3 — such an enumeration is
+    exactly the drift-prone thing this feature retires). It keys off the CLOSED
+    ``compute_state`` output contract instead:
+
+      * A real forward dispatch sets a real ``sub_skill`` and leaves
+        ``terminal_reason`` ``None`` (see the ``lazy-state.py`` output schema).
+      * EVERY skip / defer / park / gate / halt / exhaustion outcome — the whole
+        sanctioned-stop + halt vocabulary (``SANCTIONED_STOP_TERMINAL``,
+        ``TELEMETRY_HALT_TERMINAL_REASONS``, the notify attention set) PLUS the
+        scoped per-item terminals a ``--feature-id`` / ``--bug-id`` probe emits
+        (``*-deferred-scoped`` / ``*-scoped`` / ``completion-unverified`` / …) —
+        sets a truthy ``terminal_reason`` and a ``None`` / ``__pseudo__``
+        ``sub_skill``.
+
+    So "any truthy ``terminal_reason`` ⇒ non-dispatchable" auto-covers every
+    future non-dispatchable category the enumeration never listed — which is the
+    entire point (the next ``merged-head-diverged-withholds-on-<X>`` category
+    cannot recur). A ``__``-prefixed pseudo-skill is never a real forward
+    dispatch. Fail-safe: a non-dict / missing keys → non-dispatchable (never
+    fabricate a dispatch from a malformed state).
+    """
+    if not isinstance(scoped_state, dict):
+        return False
+    sub_skill = scoped_state.get("sub_skill")
+    if not isinstance(sub_skill, str) or not sub_skill or sub_skill.startswith("__"):
+        return False
+    if scoped_state.get("terminal_reason"):
+        return False
+    return True
+
+
+def merged_head_nondispatchable_ids(
+    feature_items: list[dict],
+    bug_items: list[dict],
+    repo_root: str,
+    current_item_id: str | None,
+    *,
+    scoped_probe: "callable",
+    same_pipeline: "str | None" = None,
+    same_pipeline_state: "dict | None" = None,
+    today: "datetime.date | None" = None,
+) -> "set[str]":
+    """Build the merged-head exclude set as the AUTHORITATIVE actionability
+    oracle (merged-head-actionability-oracle, SPEC L1/L2/L5) — the single
+    replacement for ``nondispatchable_item_ids`` ∪ ``probe_skipped_ids``.
+
+    The exclude set is the union of two sources, current dispatch target
+    discarded:
+
+      1. **Same-pipeline → :func:`probe_skipped_ids` UNCHANGED (L2).** The
+         current probe's own skip decisions are the authoritative, context-rich
+         source for its OWN queue (they carry the cross-item skip-ahead ordering,
+         ``--strict-research-halt``, the two-key readiness predicate, the
+         fully-gated terminal). NOT replaced by the oracle for items the probe
+         REACHED — a per-item oracle would lose that ordering context. BUT a
+         same-pipeline head the probe NEVER reached (absent from its skip/park
+         surface — e.g. an ``/execute-plan`` walk that returned a lower-priority
+         workable item in queue order before reaching a higher-SEVERITY parked
+         head) IS classified by ``scoped_probe`` re-inference (source 2), so it is
+         excluded when non-dispatchable instead of re-arming the park-mode
+         merged-head deadlock
+         (merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head).
+      2. **Cross-pipeline → the injected ``scoped_probe`` oracle.** For each
+         cross-pipeline candidate ranked AT-OR-ABOVE the emitted item in the
+         merged ordering (L5 bound), run its scoped ``compute_state`` (via the
+         INJECTED ``scoped_probe`` callable — the seam that keeps ``--test``
+         hermetic; production binds it to the real cross-pipeline scoped probe
+         carrying the SAME run flags the emit probe used) and EXCLUDE it iff
+         :func:`is_dispatchable` is false. Short-circuit at the FIRST dispatchable
+         head — a lower-priority item can never be the diverging merged head, so
+         it is never scoped-probed (the bound + short-circuit are what make the
+         oracle cheap: one scoped probe per non-dispatchable head above current,
+         then stop).
+
+    Byte-identical for dispatchable heads BY CONSTRUCTION: the oracle IS the
+    dispatch decision the ``merged-head-diverged`` withhold already trusts, so a
+    genuinely dispatchable higher-priority item (a P0 bug jumping the queue) is
+    never excluded and the withhold fires on it exactly as before. Currently
+    non-dispatchable categories the file predicate never covered
+    (cloud/completion-unverified/…) are now correctly excluded.
+
+    Args:
+        feature_items: feature ``queue.json`` items (from ``load_queue``).
+        bug_items: bug ``queue.json`` items (from ``load_bug_queue``).
+        repo_root: echoed into the merged ordering; does not affect the result.
+        current_item_id: the id the dispatch-bound probe would emit for
+            (``state["feature_id"]`` in both scripts — always a same-pipeline id).
+        same_pipeline: ``"feature"`` or ``"bug"`` — which queue the emit probe
+            walked (its own skips come from ``probe_skipped_ids``; the OTHER queue
+            is the cross-pipeline queue the oracle scoped-probes).
+        same_pipeline_state: the emit probe's ``compute_state`` dict — passed to
+            ``probe_skipped_ids`` UNCHANGED.
+        scoped_probe: ``Callable[[str], dict]`` returning a candidate's scoped
+            ``compute_state`` output. Called for each candidate the walk must
+            classify (cross-pipeline candidates AND unreached same-pipeline
+            candidates on the ``--emit-prompt`` path; EVERY candidate on a
+            stateless read-only ordering path — see ``same_pipeline_state``
+            below), at-or-above the emitted item and never below the first
+            dispatchable head. It must be TYPE-AWARE on every path that can reach
+            a same-pipeline candidate — i.e. always (probe features via the
+            feature ``compute_state`` and bugs via the bug ``compute_state``).
+        same_pipeline: ``"feature"`` or ``"bug"`` — which queue the emit probe
+            walked. Consulted ONLY when ``same_pipeline_state`` is provided (to
+            select the same-pipeline queue for ``probe_skipped_ids``).
+        same_pipeline_state: the emit probe's ``compute_state`` dict — passed to
+            ``probe_skipped_ids`` UNCHANGED (L2, the cross-item skip-ahead
+            ordering context). **When ``None`` (a stateless read-only path such
+            as ``--next-merged``, which never ran a probe) there is no
+            same-pipeline skip context to reuse — EVERY candidate is scoped-probed
+            via ``scoped_probe`` instead. This does NOT violate L2: L2 forbids
+            LOSING a live probe's ordering context, and a stateless caller has
+            none to lose.**
+        today: caller-supplied date for deterministic bug-aging in the ordering
+            (mirrors ``merged_head_override``); ``None`` → ``date.today()``.
+
+    Returns:
+        The exclude set (never contains ``current_item_id``); empty on the
+        byte-identical common path (nothing skipped, no non-dispatchable head).
+    """
+    from .depdag import merged_worklist
+
+    # (1) Same-pipeline skips — the current probe's own decisions, UNCHANGED (L2).
+    # With no probe state (stateless read-only path) there are no same-pipeline
+    # skips to fold and no same-pipeline "already-chosen dispatchable head" to
+    # short-circuit on — so every candidate falls through to the scoped oracle.
+    if same_pipeline_state is not None:
+        same_items = feature_items if same_pipeline == "feature" else bug_items
+        exclude: set[str] = set(probe_skipped_ids(same_pipeline_state, same_items))
+        # Fold the probe's OWN parked ids too (park mode): a parked item is the
+        # probe's skip decision, but it lives in ``state["parked"]`` — NOT in the
+        # gated/deferred lists ``probe_skipped_ids`` reads. These probe-DECIDED
+        # ids are dropped from the worklist below (``exclude_ids=exclude``), so the
+        # loop never re-probes them — L2's "the live probe's ordering context is
+        # authoritative for the items it REACHED" invariant. A parked head the
+        # probe never REACHED is absent here and is handled by the scoped
+        # re-inference in the walk below (the byte-identity is the fold covers the
+        # reached items; the walk covers the unreached ones).
+        for _pe in (same_pipeline_state.get("parked") or []):
+            _pid = _pe.get("id") if isinstance(_pe, dict) else _pe
+            if _pid:
+                exclude.add(_pid)
+    else:
+        exclude = set()
+
+    # (2) Walk the merged ordering (probe-decided skips/parks already dropped so
+    # the walk sees the driver's view of its own queue) from the head; classify
+    # each remaining candidate until we reach the emitted item or the first
+    # dispatchable head (L5 short-circuit). Every candidate — cross-pipeline AND
+    # a same-pipeline item the probe NEVER reached — is classified by scoped
+    # ``is_dispatchable`` re-inference, so a parked head absent from the emit
+    # probe's own ``parked``/skip surface (an ``/execute-plan`` walk that
+    # returned a lower-priority workable item in queue order before reaching the
+    # higher-SEVERITY parked head —
+    # merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head) is
+    # excluded instead of re-arming the park-mode merged-head deadlock. This makes
+    # the emit-path walk IDENTICAL to the stateless ``--next-merged`` walk;
+    # probe-decided items were dropped from the worklist above so they are never
+    # re-probed (L2 ordering-context preserved for the items the probe reached).
+    worklist = merged_worklist(
+        feature_items, bug_items, repo_root, today=today, exclude_ids=exclude
+    )
+    for entry in worklist:
+        iid = entry.get("item_id")
+        if iid == current_item_id:
+            # Reached the emitted item — nothing below it can be the diverging
+            # merged head, so no lower candidate needs an oracle evaluation.
+            break
+        if is_dispatchable(scoped_probe(iid)):
+            # First dispatchable head above the emitted item — a GENUINE
+            # divergence the withhold must fire on. Stop (never exclude it).
+            break
+        exclude.add(iid)
+
+    exclude.discard(current_item_id)
+    return exclude
 
 
 def emit_cycle_prompt(
@@ -604,30 +1159,35 @@ def emit_cycle_prompt(
             if not complexity_pinned_opus:
                 model = "sonnet"
 
-    # --- Bind all tokens (all occurrences, all sections + loop block) ---------
-    for token, value in bindings.items():
-        prompt = prompt.replace("{" + token + "}", value)
-
-    # --- Residue guard: any surviving {token} → refuse (never half-bound) -----
-    residue = _PROMPT_RESIDUE_RE.findall(prompt)
+    # --- Residue guard: unbound TEMPLATE placeholders → refuse (never half-bound)
+    # Runs on the TEMPLATE (base sections + addenda + loop block, all known
+    # placeholders stripped) BEFORE value injection, so a literal `{lower_snake}`
+    # brace inside an injected state VALUE (e.g. feature_name / sub_skill_args /
+    # untestability_reason carrying a code snippet or curly-brace wire-type) is
+    # opaque DATA, not a false unbound token
+    # (docs/bugs/emit-dispatch-residue-guard-flags-content-braces). Genuine
+    # unbound placeholders (not in `bindings`) survive the strip and are caught.
+    residue = _template_residue(prompt, bindings)
     if residue:
         seen = _dedup_residue(residue)
         # Attribute the residue to the addenda file when an unbound token traces
         # back to a (mis-authored) addenda section — so the operator knows which
-        # file to fix. We bind the addenda blob in isolation and check whether
-        # any of the surviving tokens originated there.
+        # file to fix. Scan the addenda blob's OWN template residue (same
+        # pre-injection strip) and check whether any surviving token originated there.
         suffix = ""
         if addenda_selected:
             addenda_blob = "\n\n".join(addenda_selected)
-            for token, value in bindings.items():
-                addenda_blob = addenda_blob.replace("{" + token + "}", value)
-            addenda_residue = set(_PROMPT_RESIDUE_RE.findall(addenda_blob))
+            addenda_residue = set(_template_residue(addenda_blob, bindings))
             if addenda_residue & set(seen):
                 suffix = (
                     " (from .claude/skill-config/cycle-prompt-addenda.md — fix or "
                     "remove the offending addenda section)"
                 )
         return {"ok": False, "refused": "unbound tokens: " + ", ".join(seen) + suffix}
+
+    # --- Bind all tokens (template verified fully-bound above) -----------------
+    for token, value in bindings.items():
+        prompt = prompt.replace("{" + token + "}", value)
 
     return {"ok": True, "prompt": prompt, "model": model}
 
@@ -679,6 +1239,13 @@ DISPATCH_CLASSES: tuple[str, ...] = (
     "needs-runtime-redispatch",
     "corrective-coverage",  # harden Round 44 — Gate-1 MCP-coverage authoring cycle
     "ingest-research",      # harden Round 44 — pre-loop / in-session staged-research ingest
+    "gate-verdict",       # adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps GAP 1 —
+                          # completion-time authoring seam for the harness-change design
+                          # gate (author GATE_VERDICT.md from the shipped diff when
+                          # gate_verdict_ok refuses); inserted BEFORE spike/hardening so
+                          # the last-entry invariant is preserved
+    "spike",              # harden Round 80 — runtime-proof stage (always Opus); inserted
+                          # BEFORE 'hardening' so the last-entry invariant is preserved
     "hardening",          # Phase 4 — harness-hardening stage (always Opus)
 )
 
@@ -694,6 +1261,8 @@ DISPATCH_MODELS: dict[str, str] = {
     "needs-runtime-redispatch": "opus",
     "corrective-coverage":     "opus",   # harden Round 44 — classify + author + run coverage = Opus
     "ingest-research":         "sonnet", # harden Round 44 — bounded mechanical ingest = Sonnet
+    "gate-verdict":            "opus",   # GAP 1 — adversarial design-gate judgment = Opus
+    "spike":                   "opus",   # harden Round 80 — runtime proof = honest GO/NO-GO judgment = Opus
     "hardening":               "opus",   # Phase 4 — root-cause + mechanical fixes = Opus
 }
 
@@ -749,6 +1318,8 @@ DISPATCH_STEP_NAMES: dict[str, str] = {
     "hardening":                "Harden",
     "input-audit":              "Audit",
     "needs-runtime-redispatch": "Validate",
+    "gate-verdict":             "Verdict",  # GAP 1 — author GATE_VERDICT.md
+    "spike":                    "Spike",   # harden Round 80 — runtime-proof stage
 }
 
 
@@ -878,15 +1449,24 @@ def emit_dispatch_prompt(
     # are overlaid on top (context wins on collision — the caller provides the
     # class-specific tokens; standard tokens above are the fallback defaults).
     bindings: dict[str, str] = _standard_dispatch_bindings(pipeline)
+    # {state_script} — the pipeline's own state-script basename, so a shared
+    # feature+bug dispatch template names the right script DETERMINISTICALLY
+    # (e.g. the gate-verdict template's --gate-verdict-check call) instead of a
+    # `<lazy-state.py|bug-state.py>` prose choice the subagent must resolve
+    # (gate-verdict-dispatch-derives-scope-from-empty-range-for-merged-item). A
+    # local binding (not in _standard_dispatch_bindings) keeps the cycle emitter
+    # byte-identical; context still wins on collision.
+    bindings["state_script"] = "bug-state.py" if pipeline == "bug" else "lazy-state.py"
     for key, value in context.items():
         bindings[key] = str(value) if value is not None else ""
 
-    # --- Bind all tokens -------------------------------------------------------
-    for token, value in bindings.items():
-        prompt = prompt.replace("{" + token + "}", value)
-
-    # --- Residue guard: any surviving {lower_snake_or_digit} → refuse ----------
-    residue = _PROMPT_RESIDUE_RE.findall(prompt)
+    # --- Residue guard: unbound TEMPLATE placeholders → refuse -----------------
+    # Detect residue on the TEMPLATE (all known placeholders stripped) BEFORE
+    # value injection, so a literal `{lower_snake}` brace living INSIDE a
+    # free-text context VALUE (a code snippet / JSON / curly-brace wire-type in a
+    # recorded resolution_summary) is treated as opaque DATA — never mis-flagged
+    # as an unbound token (docs/bugs/emit-dispatch-residue-guard-flags-content-braces).
+    residue = _template_residue(prompt, bindings)
     if residue:
         seen = _dedup_residue(residue)
         return {
@@ -897,6 +1477,10 @@ def emit_dispatch_prompt(
                 + " — either add to @requires or remove from the template"
             ),
         }
+
+    # --- Bind all tokens (template verified fully-bound above) -----------------
+    for token, value in bindings.items():
+        prompt = prompt.replace("{" + token + "}", value)
 
     # --- Return assembled prompt + model assignment ----------------------------
     model = DISPATCH_MODELS.get(cls, "opus")
@@ -1633,6 +2217,90 @@ def resolve_emission_by_nonce(
         return None
 
 
+def resolve_consumed_emission_by_nonce(
+    nonce: str,
+    *,
+    now: float | None = None,
+) -> str | None:
+    """Return the registered prompt bytes for a nonce the guard ALREADY consumed.
+
+    byref-updatedinput-unapplied-on-background-agent-dispatch (WU-1): the SANCTIONED
+    consumed-nonce read.  ``hookSpecificOutput.updatedInput`` is silently dropped
+    for the Agent tool as a CLASS in current Claude Code (upstream
+    anthropics/claude-code#39814, closed not-planned), so a by-reference
+    ``@@lazy-ref nonce=<hex>`` dispatch lands the BARE token at the subagent instead
+    of the resolved bytes.  This is the read a subagent runs (via the state scripts'
+    ``--resolve-ref`` CLI) to recover its full instructions from the prompt registry
+    AFTER the guard has already ALLOW+consumed the nonce this run.
+
+    This is a DISTINCT read surface from ``resolve_emission_by_nonce``: that one
+    filters CONSUMED entries (Gate-1 requires ``consumed`` falsy) because it feeds
+    the guard's single-use dispatch path.  This reader INVERTS only Gate-1 (require
+    ``consumed`` truthy) while reusing the identical TTL + run-start gates, so it
+    serves ONLY a nonce that was legitimately dispatched this run — never an
+    un-dispatched or cross-run entry.
+
+    READ-ONLY and run-scoped: it NEVER mutates the registry (never un-consumes) and
+    is fail-safe (any error → None).  ``resolve_emission_by_nonce`` is left
+    UNCHANGED — its consumed-filter is load-bearing for the guard.
+
+    Args:
+        nonce: the nonce hex string from the ``@@lazy-ref`` token.
+        now: epoch float for TTL comparison (injectable for hermetic tests;
+             defaults to time.time()).
+
+    Returns:
+        The entry's ``prompt_raw`` (fallback ``prompt_norm``) as a str when the
+        nonce resolves to a CONSUMED, TTL-fresh, run-start-gated entry; None when:
+          - the nonce does not exist in the registry, OR
+          - the entry is NOT consumed, OR
+          - the entry is beyond TTL, OR
+          - the entry predates the current run's started_at.
+    """
+    from .markers import read_run_marker  # deferred (marker plane; function-local avoids import cycle)
+    if now is None:
+        now = time.time()
+
+    try:
+        # Compute the run-start epoch gate (mirrors resolve_emission_by_nonce).
+        marker = read_run_marker(now=now)
+        run_started_epoch: float | None = None
+        if marker is not None:
+            started_at_str = marker.get("started_at", "")
+            try:
+                started_dt = datetime.datetime.strptime(
+                    started_at_str, "%Y-%m-%dT%H:%M:%SZ"
+                )
+                run_started_epoch = (
+                    started_dt - datetime.datetime(1970, 1, 1)
+                ).total_seconds()
+            except (ValueError, TypeError):
+                run_started_epoch = None
+
+        data = _load_registry()
+        for entry in data["entries"]:
+            if entry.get("nonce") != nonce:
+                continue
+            # Gate 1 (INVERTED vs resolve_emission_by_nonce): must be CONSUMED.
+            if not entry.get("consumed", False):
+                return None
+            # Gate 2: must be within TTL.
+            emitted_at = entry.get("emitted_at", 0.0)
+            if now - emitted_at > REGISTRY_ENTRY_TTL_SECONDS:
+                return None
+            # Gate 3: must not predate the current run (when a marker is present).
+            if run_started_epoch is not None and emitted_at < run_started_epoch:
+                return None
+            # All gates passed — return the exact registered bytes (raw, then norm).
+            return entry.get("prompt_raw") or entry.get("prompt_norm")
+        # Nonce not found in registry.
+        return None
+    except Exception:  # noqa: BLE001
+        # Fail-safe: any error → None (a subagent that gets None falls back to the
+        # documented verbatim path; never a spurious wrong-prompt return).
+        return None
+
+
 def append_dispatch_by_reference_event(
     *,
     tool_use_id: str,
@@ -1798,6 +2466,74 @@ def append_worker_subdispatch_event(
             "item_id": item_id,
             "sub_skill": sub_skill,
             # Pre-acked: a sanctioned dispatch path owes no hardening debt.
+            "acked": True,
+        }
+        ledger_path = claude_state_dir() / _DENY_LEDGER_FILENAME
+        with ledger_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(event) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def append_claude_code_guide_consult_event(
+    *,
+    tool_use_id: str,
+    sha12: str,
+    item_id: str | None = None,
+    sub_skill: str | None = None,
+    now: float | None = None,
+) -> bool:
+    """Append one ``claude_code_guide_consult: true`` audit event to the deny ledger.
+
+    harden-hard-parks-on-unconfirmed-platform-assumptions (operator-authorized
+    2026-07-19): the harden-harness self-resolve protocol requires a marked-run
+    harden agent to CONSULT the read-only ``claude-code-guide`` agent to confirm a
+    platform/Claude-Code capability before provisionally accepting a design fork.
+    That consultation is an UNREGISTERED Agent dispatch, so ``lazy_guard.py`` admits
+    it through a narrow, sanctioned exemption (``subagent_type == "claude-code-guide"``
+    under a bound, non-cloud marker). Every such allow writes this auditable record
+    to the SAME deny ledger used by denies, auto-readmits, by-reference dispatches,
+    and the workstation sub-subagent exemption, so the consultation path is
+    retro-gradable and distinguishable from a registered-prompt allow.
+
+    Event shape (mirrors ``append_worker_subdispatch_event`` for reader
+    uniformity)::
+
+        {"ts": <epoch float>, "tool_use_id": <str>,
+         "claude_code_guide_consult": true, "sha12": <12 hex chars>,
+         "item_id": <str|None>, "sub_skill": <str|None>, "acked": true}
+
+    ``acked`` is True because a read-only claude-code-guide consultation is a
+    sanctioned dispatch path, NOT a harness gap — it owes no hardening debt and
+    must never inflate ``pending_hardening()`` or block ``--run-end``.
+
+    Best-effort / fail-open: swallows its own write errors and returns False
+    rather than raising (a ledger failure must never affect the allow).
+
+    Args:
+        tool_use_id: the dispatched Agent tool_use_id.
+        sha12: first 12 hex chars of the dispatched prompt's sha256.
+        item_id: the active cycle marker's feature/bug id (optional).
+        sub_skill: the active cycle marker's sub_skill (optional).
+        now: epoch float for ts (injectable for hermetic tests).
+
+    Returns:
+        True if the line was appended; False on any write failure (fail-open).
+    """
+    if now is None:
+        now = time.time()
+    try:
+        event = {
+            "ts": now,
+            "tool_use_id": tool_use_id,
+            # Discriminator field: retro readers filter on this to see sanctioned
+            # claude-code-guide consultations separately from other allow paths.
+            "claude_code_guide_consult": True,
+            "sha12": sha12,
+            "item_id": item_id,
+            "sub_skill": sub_skill,
+            # Pre-acked: a sanctioned read-only consultation owes no hardening debt.
             "acked": True,
         }
         ledger_path = claude_state_dir() / _DENY_LEDGER_FILENAME

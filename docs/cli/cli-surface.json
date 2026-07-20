@@ -36,6 +36,19 @@
           "choices": null,
           "default_kind": "none",
           "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: add the --deps id list as hard queue dependencies on bug ID (post-hoc, arbitrary \u2014 the non-SPEC sibling of --sync-deps).",
+          "metavar": "ID",
+          "name": "--add-deps",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
           "help_head": "Override date (YYYY-MM-DD) for --apply-pseudo writes.",
           "metavar": null,
           "name": "--apply-date",
@@ -320,6 +333,19 @@
           "required": false
         },
         {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "Read-only: print the execute-plan pause-vs-terminal verdict JSON {marker_present, plan_status, verdict} for --plan PLAN in --repo-root REPO.",
+          "metavar": null,
+          "name": "--execute-plan-liveness",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
           "action": "_StoreAction",
           "aliases": [],
           "choices": [
@@ -358,6 +384,19 @@
           "metavar": null,
           "name": "--fsck",
           "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Completion-time item-scoped anti-overfit design-gate report (lazy_core.item_scoped_gate_report): run the harness-gate checker over the item's OWN shipped commits (the SAME derivation gate_verdict_o...",
+          "metavar": "SPEC_PATH",
+          "name": "--gate-verdict-check",
+          "nargs": null,
           "positional": false,
           "required": false
         },
@@ -427,6 +466,19 @@
           "help_head": "Pure read, report only (D10): dead index rows (path gone), high-churn files with no provenance rows, and cross-orphans (distillate\u2194index).",
           "metavar": null,
           "name": "--lint-provenance",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "List every CLI operation this script exposes as JSON ({name, usage, help_head}), then exit 0.",
+          "metavar": null,
+          "name": "--list-ops",
           "nargs": 0,
           "positional": false,
           "required": false
@@ -558,6 +610,19 @@
           "metavar": "JSON",
           "name": "--parent-run",
           "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "Umbrella park flag \u2014 the /lazy-bug-batch `--park` invocation flag.",
+          "metavar": null,
+          "name": "--park",
+          "nargs": 0,
           "positional": false,
           "required": false
         },
@@ -791,6 +856,19 @@
           "required": false
         },
         {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: remove the --deps id list from bug ID's hard queue dependencies (empty result drops the deps key).",
+          "metavar": "ID",
+          "name": "--remove-deps",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
           "action": "_StoreTrueAction",
           "aliases": [],
           "choices": null,
@@ -861,6 +939,19 @@
           "choices": null,
           "default_kind": "none",
           "group": null,
+          "help_head": "Read-only: print the registered prompt bytes for a nonce the guard already ALLOW+consumed this run (consumed + TTL-fresh + run-start-gated), exit 0; print nothing + exit 1 on a miss (unknown / expi...",
+          "metavar": "NONCE",
+          "name": "--resolve-ref",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
           "help_head": "--record-intervention hypothesis override: post-ship run-count window before each review (default: 20).",
           "metavar": null,
           "name": "--review-after-runs",
@@ -900,6 +991,19 @@
           "choices": null,
           "default_kind": "none",
           "group": null,
+          "help_head": "Search this script's CLI operations for a natural-language QUERY (e.g.",
+          "metavar": "QUERY",
+          "name": "--search-ops",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
           "help_head": "With --record-decision: the sentinel file path this answer resolves.",
           "metavar": "PATH",
           "name": "--sentinel",
@@ -917,6 +1021,67 @@
           "metavar": null,
           "name": "--session-id",
           "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: update the ACTIVE run marker's max_cycles to N in place (mid-run budget change).",
+          "metavar": "N",
+          "name": "--set-max-cycles",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": [
+            "off",
+            "on"
+          ],
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: toggle park mode on the ACTIVE run marker mid-run.",
+          "metavar": null,
+          "name": "--set-park",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": [
+            "off",
+            "on"
+          ],
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: toggle park-provisional-acceptance on the ACTIVE run marker mid-run.",
+          "metavar": null,
+          "name": "--set-park-provisional",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: set bug ID's queue severity to SEVERITY (P0/P1/P2/Low) and ATOMICALLY re-position it in listed order to match its new merged priority \u2014 one write, never a...",
+          "metavar": [
+            "ID",
+            "SEVERITY"
+          ],
+          "name": "--set-severity",
+          "nargs": 2,
           "positional": false,
           "required": false
         },
@@ -1127,6 +1292,19 @@
           "metavar": null,
           "name": "--unattended",
           "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: un-pin bug ID (the inverse of --pin) \u2014 clear pinned_at/pinned_until/pin_reason, restore severity from the SPEC's **Severity:** line, and re-position in lis...",
+          "metavar": "ID",
+          "name": "--unpin",
+          "nargs": null,
           "positional": false,
           "required": false
         },
@@ -1499,6 +1677,19 @@
           "choices": null,
           "default_kind": "none",
           "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: add the --deps id list as hard queue dependencies on feature ID (post-hoc, arbitrary \u2014 the non-SPEC sibling of --sync-deps).",
+          "metavar": "ID",
+          "name": "--add-deps",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
           "help_head": "Override date (YYYY-MM-DD) for --apply-pseudo writes.",
           "metavar": null,
           "name": "--apply-date",
@@ -1838,6 +2029,19 @@
           "required": false
         },
         {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "Read-only: print the execute-plan pause-vs-terminal verdict JSON {marker_present, plan_status, verdict} for --plan PLAN in --repo-root REPO.",
+          "metavar": null,
+          "name": "--execute-plan-liveness",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
           "action": "_StoreAction",
           "aliases": [],
           "choices": [
@@ -1888,6 +2092,19 @@
           "help_head": "Deterministic Gate-1 MCP-coverage verdict for a feature/bug spec dir: print JSON {ok, decisions:[{id,title,keywords,covered}], uncovered:[id], scenario_count}.",
           "metavar": "SPEC_PATH",
           "name": "--gate-coverage",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Completion-time item-scoped anti-overfit design-gate report (lazy_core.item_scoped_gate_report): run the harness-gate checker over the item's OWN shipped commits (the SAME derivation gate_verdict_o...",
+          "metavar": "SPEC_PATH",
+          "name": "--gate-verdict-check",
           "nargs": null,
           "positional": false,
           "required": false
@@ -1958,6 +2175,19 @@
           "help_head": "Pure read, report only (D10): dead index rows (path gone), high-churn files with no provenance rows, and cross-orphans (distillate\u2194index).",
           "metavar": null,
           "name": "--lint-provenance",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "List every CLI operation this script exposes as JSON ({name, usage, help_head}), then exit 0.",
+          "metavar": null,
+          "name": "--list-ops",
           "nargs": 0,
           "positional": false,
           "required": false
@@ -2128,6 +2358,19 @@
           "metavar": "JSON",
           "name": "--parent-run",
           "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "Umbrella park flag \u2014 the /lazy-batch `--park` invocation flag.",
+          "metavar": null,
+          "name": "--park",
+          "nargs": 0,
           "positional": false,
           "required": false
         },
@@ -2348,6 +2591,19 @@
           "required": false
         },
         {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: remove the --deps id list from feature ID's hard queue dependencies (empty result drops the deps key).",
+          "metavar": "ID",
+          "name": "--remove-deps",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
           "action": "_StoreTrueAction",
           "aliases": [],
           "choices": null,
@@ -2418,6 +2674,19 @@
           "choices": null,
           "default_kind": "none",
           "group": null,
+          "help_head": "Read-only: print the registered prompt bytes for a nonce the guard already ALLOW+consumed this run (consumed + TTL-fresh + run-start-gated), exit 0; print nothing + exit 1 on a miss (unknown / expi...",
+          "metavar": "NONCE",
+          "name": "--resolve-ref",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
           "help_head": "--record-intervention hypothesis override: post-ship run-count window before each review (default: 20).",
           "metavar": null,
           "name": "--review-after-runs",
@@ -2457,6 +2726,19 @@
           "choices": null,
           "default_kind": "none",
           "group": null,
+          "help_head": "Search this script's CLI operations for a natural-language QUERY (e.g.",
+          "metavar": "QUERY",
+          "name": "--search-ops",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
           "help_head": "With --record-decision: the sentinel file path this answer resolves.",
           "metavar": "PATH",
           "name": "--sentinel",
@@ -2474,6 +2756,83 @@
           "metavar": null,
           "name": "--session-id",
           "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: set (or CLEAR) feature ID's `independent: true` shard-eligibility marker (the /lazy-batch-parallel claim_shardable gate) \u2014 the sanctioned replacement for h...",
+          "metavar": [
+            "ID",
+            "VALUE"
+          ],
+          "name": "--set-independent",
+          "nargs": 2,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: update the ACTIVE run marker's max_cycles to N in place (mid-run budget change).",
+          "metavar": "N",
+          "name": "--set-max-cycles",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": [
+            "off",
+            "on"
+          ],
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: toggle park mode on the ACTIVE run marker mid-run.",
+          "metavar": null,
+          "name": "--set-park",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": [
+            "off",
+            "on"
+          ],
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: toggle park-provisional-acceptance on the ACTIVE run marker mid-run.",
+          "metavar": null,
+          "name": "--set-park-provisional",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "Orchestrator-only, --operator-authorized: set feature ID's queue tier to TIER and ATOMICALLY re-position it in listed order to match its new merged priority \u2014 one write, never a stale reorder.",
+          "metavar": [
+            "ID",
+            "TIER"
+          ],
+          "name": "--set-tier",
+          "nargs": 2,
           "positional": false,
           "required": false
         },
@@ -3016,6 +3375,103 @@
           "name": "scenarios",
           "nargs": "*",
           "positional": true,
+          "required": false
+        }
+      ]
+    },
+    "tool-search.py": {
+      "flags": [
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "Mark the needed operation correctness/gate-load-bearing so a MISS harden-suggestion carries correctness_load_bearing=true (advisory text only \u2014 this script never dispatches).",
+          "metavar": null,
+          "name": "--correctness-load-bearing",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "Introspect this script's live ArgumentParser and print its CLI-surface projection as JSON (schema_version 1), then exit 0.",
+          "metavar": null,
+          "name": "--dump-cli-surface",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_HelpAction",
+          "aliases": [
+            "-h"
+          ],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "show this help message and exit",
+          "metavar": null,
+          "name": "--help",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "Emit the result as a JSON object {query, verdict, top_score, matches[], miss} instead of the human table.",
+          "metavar": null,
+          "name": "--json",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "value",
+          "group": null,
+          "help_head": "Repo root whose inventories form the corpus (default: cwd).",
+          "metavar": null,
+          "name": "--repo-root",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "The natural-language need to search for (e.g.",
+          "metavar": "QUERY",
+          "name": "--tool-search",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "value",
+          "group": null,
+          "help_head": "Cap the number of ranked matches returned (default 5).",
+          "metavar": "N",
+          "name": "--top",
+          "nargs": null,
+          "positional": false,
           "required": false
         }
       ]

@@ -32,10 +32,7 @@ sys.path.insert(0, str(_SCRIPTS_DIR))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
-
 from _util import _ModuleMissing, _REAL_TEMPLATE_DIR, _STATE_A, _assert_run_end_refusal_emits, _build_bug_retro_routing_repo, _clear_state_dir, _commit_dummy, _dispatch_requires, _drive_run_end, _f1_guard_module, _f1_hook_input, _load_state_script, _make_git_repo_with_origin, _os_env, _record_consume, _set_state_dir, _write_marker_in  # noqa: E402
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -48,13 +45,10 @@ _IMPORT_ERROR: Exception | None = None
 lazy_core = None
 
 
-
 try:
     import lazy_core  # type: ignore[import]
 except ImportError as exc:
     _IMPORT_ERROR = exc
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -67,8 +61,6 @@ _FAILURES: list[str] = []
 _PASSES: list[str] = []
 
 
-
-
 def _guard() -> None:
     """Raise _ModuleMissing if lazy_core hasn't been extracted yet.
 
@@ -78,8 +70,6 @@ def _guard() -> None:
     """
     if _IMPORT_ERROR is not None:
         raise _ModuleMissing(f"lazy_core not importable: {_IMPORT_ERROR}")
-
-
 
 
 def _run_test(name: str, fn) -> None:
@@ -97,9 +87,6 @@ def _run_test(name: str, fn) -> None:
     except Exception as exc:  # noqa: BLE001
         _FAILURES.append(name)
         print(f"  FAIL  {name}: {type(exc).__name__}: {exc}")
-
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -123,8 +110,6 @@ def test_load_context_json_valid_long_value():
     assert result["item_id"] == "d8-effect-chains"
 
 
-
-
 def test_load_context_json_rejects_non_object():
     """A JSON array/string top level → ValueError (caught as structured error)."""
     _guard()
@@ -135,16 +120,12 @@ def test_load_context_json_rejects_non_object():
         lazy_core.load_context_json('"a bare string"')
 
 
-
-
 def test_load_context_json_rejects_malformed():
     """Invalid JSON → ValueError, never a silent empty dict."""
     _guard()
     import pytest as _pytest
     with _pytest.raises(ValueError):
         lazy_core.load_context_json('{not valid json,,,}')
-
-
 
 
 def test_load_context_json_coerces_values_to_str():
@@ -166,8 +147,6 @@ _STATE_A_SAME_STEP_DIFF_ARGS = {
     "sub_skill_args": "plan-part-9.md",    # differs from _STATE_A
     "current_step": "Step 7a: execute plan",  # SAME current_step as _STATE_A
 }
-
-
 
 
 def test_update_repeat_counts_step_counter_ordered_args_advance_resets():
@@ -204,8 +183,6 @@ def test_update_repeat_counts_step_counter_ordered_args_advance_resets():
     assert r2["repeat_count"] == 1, (
         f"dispatch-tuple repeat_count must RESET when sub_skill/args change, got {r2!r}"
     )
-
-
 
 
 def test_update_repeat_counts_step_multipart_progress_does_not_trip():
@@ -249,8 +226,6 @@ def test_update_repeat_counts_step_multipart_progress_does_not_trip():
         f"step_repeat_count must NEVER reach the >=3 tripwire for genuine "
         f"multi-part progress, got {step_counts!r}"
     )
-
-
 
 
 def test_update_repeat_counts_step_same_args_oscillation_still_trips():
@@ -302,8 +277,6 @@ def test_update_repeat_counts_step_same_args_oscillation_still_trips():
     )
 
 
-
-
 def test_update_repeat_counts_legacy_file_without_step_keys():
     """A persisted file written by the Phase-9 shape (signature/count/head, NO
     step_signature/step_count) → step_repeat_count starts at 1, and the new keys
@@ -344,8 +317,6 @@ def test_update_repeat_counts_legacy_file_without_step_keys():
     )
 
 
-
-
 def test_update_repeat_count_wrapper_still_returns_int():
     """The backward-compatible wrapper update_repeat_count returns the bare
     dispatch-tuple int (NOT a dict) — existing callers/tests are unbroken.
@@ -366,8 +337,6 @@ def test_update_repeat_count_wrapper_still_returns_int():
     assert r2["step_repeat_count"] == 2, (
         f"wrapper must persist step keys so the plural sees them, got {r2!r}"
     )
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -393,8 +362,6 @@ def _record_meta_consume(state_dir: "Path", cls: str = "hardening") -> None:
         assert consumed, "pre-condition: the fresh nonce must consume cleanly"
     finally:
         _clear_state_dir()
-
-
 
 
 def test_gap_a_meta_class_consume_does_not_defeat_step_debounce():
@@ -437,8 +404,6 @@ def test_gap_a_meta_class_consume_does_not_defeat_step_debounce():
     )
 
 
-
-
 def test_gap_a_meta_class_consume_does_not_defeat_dispatch_tuple_debounce():
     """Residual gap A mirror for repeat_count (F1, dispatch-tuple streak): the
     SAME oracle feeds both counters, so a META-class consume between two
@@ -468,8 +433,6 @@ def test_gap_a_meta_class_consume_does_not_defeat_dispatch_tuple_debounce():
         f"a META-class consume between two identical probes must NOT advance "
         f"repeat_count, got {r2!r}"
     )
-
-
 
 
 def test_gap_a_cycle_class_consume_still_trips_despite_intervening_meta():
@@ -506,8 +469,6 @@ def test_gap_a_cycle_class_consume_still_trips_despite_intervening_meta():
         f"oscillation counter (1 → 2), regardless of an intervening meta "
         f"consume, got {r2!r}"
     )
-
-
 
 
 def test_f1_repeat_count_head_reset_wins_over_debounce():
@@ -561,8 +522,6 @@ def test_f1_repeat_count_head_reset_wins_over_debounce():
     )
 
 
-
-
 # ---------------------------------------------------------------------------
 # Tests: format_cycle_header — WU-5 single-probe payload (cycle header)
 # ---------------------------------------------------------------------------
@@ -590,8 +549,6 @@ def test_format_cycle_header_full():
     )
 
 
-
-
 def test_format_cycle_header_missing_fields():
     """state={} and all counters None → Step falls back to 'Cycle', summary to the
     em-dash sentinel, counters to '?'.
@@ -612,12 +569,8 @@ def test_format_cycle_header_missing_fields():
     )
 
 
-
-
 # Residue regex — the same pattern the emitter's residue guard uses.
 _TOKEN_RESIDUE_RE = re.compile(r"\{[a-z_]+\}")
-
-
 
 
 def _emit_state(**overrides):
@@ -637,8 +590,6 @@ def _emit_state(**overrides):
     return base
 
 
-
-
 def test_emit_cycle_prompt_symbol_present():
     """emit_cycle_prompt must be importable from lazy_core.
 
@@ -646,8 +597,6 @@ def test_emit_cycle_prompt_symbol_present():
     """
     _guard()
     assert hasattr(lazy_core, "emit_cycle_prompt"), "lazy_core.emit_cycle_prompt missing"
-
-
 
 
 def test_emit_cycle_prompt_binding_matrix_real_template():
@@ -695,8 +644,6 @@ def test_emit_cycle_prompt_binding_matrix_real_template():
                 assert result["model"] == "opus", f"{ctx}: expected opus model, got {result['model']!r}"
 
 
-
-
 def test_emit_cycle_prompt_mcp_test_variant_anchors_real_template():
     """mcp-test (workstation) over the REAL template: runtime-up variant by
     default (no PHASES.md), no-runtime variant when PHASES declares
@@ -735,8 +682,6 @@ def test_emit_cycle_prompt_mcp_test_variant_anchors_real_template():
         assert not _TOKEN_RESIDUE_RE.findall(res_nr["prompt"]), "no-runtime residue"
 
 
-
-
 def test_emit_cycle_prompt_bug_tokens_real_template():
     """pipeline=bug binds FIXED.md + __mark_fixed__ (never COMPLETED.md /
     __mark_complete__ in a NO-LOOP emission); feature is the mirror image.
@@ -771,8 +716,6 @@ def test_emit_cycle_prompt_bug_tokens_real_template():
     assert "feature pipeline" in fp, "feature prompt missing pipeline_phrase 'feature pipeline'"
 
 
-
-
 def test_emit_cycle_prompt_pseudo_and_idle_return_none():
     """Pseudo-skill (__*), falsy sub_skill, and falsy feature_id each → None."""
     _guard()
@@ -800,8 +743,6 @@ def test_emit_cycle_prompt_pseudo_and_idle_return_none():
         repo, _emit_state(feature_id=""),
         pipeline="feature", template_dir=_REAL_TEMPLATE_DIR,
     ) is None, "empty feature_id must return None"
-
-
 
 
 def test_emit_cycle_prompt_loop_append_and_model_flip():
@@ -851,8 +792,6 @@ def test_emit_cycle_prompt_loop_append_and_model_flip():
     assert "LOOP DETECTED" not in none["prompt"], "loop block appended at repeat_count=None"
 
 
-
-
 def test_emit_cycle_prompt_mcp_test_cycle_model_haiku():
     """A happy-path mcp-test cycle (no loop) dispatches on haiku — the Informed
     Dispatcher base tier (run the deterministic engine, read the small verdict;
@@ -883,8 +822,6 @@ def test_emit_cycle_prompt_mcp_test_cycle_model_haiku():
             assert r["model"] == "haiku", f"rc={rc}: mcp-test expected haiku, got {r['model']!r}"
 
 
-
-
 def test_emit_cycle_prompt_mcp_test_legacy_md_escalates_sonnet():
     """An mcp-test cycle whose ONLY scenario is an unconverted legacy `.md`
     (no converted corpus/live/*.yaml counterpart) escalates to sonnet at emit
@@ -911,8 +848,6 @@ def test_emit_cycle_prompt_mcp_test_legacy_md_escalates_sonnet():
         )
 
 
-
-
 def test_emit_cycle_prompt_mcp_test_ready_yaml_stays_haiku():
     """An mcp-test cycle whose candidate scenarios are ALL ready converted YAML
     (corpus/live/*.yaml present) stays on the haiku happy path. The explicit
@@ -936,8 +871,6 @@ def test_emit_cycle_prompt_mcp_test_ready_yaml_stays_haiku():
         )
 
 
-
-
 def test_emit_cycle_prompt_mcp_test_loop_cycle_model_sonnet():
     """A looping (repeat_count>=2) mcp-test cycle ESCALATES from the haiku base to
     sonnet — the loop block's unconditional 'sonnet' target composes correctly
@@ -955,8 +888,6 @@ def test_emit_cycle_prompt_mcp_test_loop_cycle_model_sonnet():
     assert r is not None and r.get("ok") is True, f"emit: {r}"
     assert r["model"] == "sonnet", f"looping mcp-test expected sonnet, got {r['model']!r}"
     assert "LOOP DETECTED" in r["prompt"], "loop block not appended for looping mcp-test"
-
-
 
 
 # --- Phase 9: per-part complexity model tiering (lazy-validation-readiness) ---
@@ -985,8 +916,6 @@ def _write_complexity_plan(plan_dir: Path, name: str, complexity: str | None) ->
     return p
 
 
-
-
 def test_emit_cycle_prompt_mechanical_part_cycle_model_sonnet():
     """A `mechanical`-tagged execute-plan part → cycle_model == 'sonnet' even
     with no loop (repeat_count=1)."""
@@ -1001,8 +930,6 @@ def test_emit_cycle_prompt_mechanical_part_cycle_model_sonnet():
         )
     assert r is not None and r.get("ok") is True, f"emit: {r}"
     assert r["model"] == "sonnet", f"mechanical part expected sonnet, got {r['model']!r}"
-
-
 
 
 def test_emit_cycle_prompt_complex_part_cycle_model_opus():
@@ -1020,8 +947,6 @@ def test_emit_cycle_prompt_complex_part_cycle_model_opus():
     assert r["model"] == "opus", f"complex part expected opus, got {r['model']!r}"
 
 
-
-
 def test_emit_cycle_prompt_untagged_part_cycle_model_opus():
     """An untagged execute-plan part → cycle_model == 'opus' (back-compat)."""
     _guard()
@@ -1035,8 +960,6 @@ def test_emit_cycle_prompt_untagged_part_cycle_model_opus():
         )
     assert r is not None and r.get("ok") is True, f"emit: {r}"
     assert r["model"] == "opus", f"untagged part expected opus, got {r['model']!r}"
-
-
 
 
 def test_emit_cycle_prompt_complex_part_loop_stays_opus():
@@ -1060,8 +983,6 @@ def test_emit_cycle_prompt_complex_part_loop_stays_opus():
     assert "LOOP DETECTED" in r["prompt"], "loop block not appended for looping complex part"
 
 
-
-
 def test_emit_cycle_prompt_untagged_part_loop_stays_opus():
     """A looping (repeat_count>=2) UNTAGGED execute-plan part STAYS opus — the
     complexity floor uses plan_complexity's SAFE `complex` default for an untagged
@@ -1082,8 +1003,6 @@ def test_emit_cycle_prompt_untagged_part_loop_stays_opus():
     assert "LOOP DETECTED" in r["prompt"], "loop block not appended for looping untagged part"
 
 
-
-
 def test_emit_cycle_prompt_mechanical_part_loop_stays_sonnet():
     """A looping (repeat_count>=2) `mechanical` execute-plan part downgrades to
     sonnet exactly as before — the complexity floor only pins NON-mechanical parts,
@@ -1100,8 +1019,6 @@ def test_emit_cycle_prompt_mechanical_part_loop_stays_sonnet():
     assert r is not None and r.get("ok") is True, f"emit: {r}"
     assert r["model"] == "sonnet", f"looping mechanical part expected sonnet, got {r['model']!r}"
     assert "LOOP DETECTED" in r["prompt"], "loop block not appended for looping mechanical part"
-
-
 
 
 def test_emit_cycle_prompt_non_execute_plan_ignores_complexity():
@@ -1121,8 +1038,6 @@ def test_emit_cycle_prompt_non_execute_plan_ignores_complexity():
     assert r["model"] == "opus", f"non-execute cycle expected opus, got {r['model']!r}"
 
 
-
-
 # --- Synthetic-template parser-behavior unit tests --------------------------
 
 def _write_synth_template(template_dir: Path, sections: str, loop_body: str | None = None):
@@ -1135,8 +1050,6 @@ def _write_synth_template(template_dir: Path, sections: str, loop_body: str | No
     (template_dir / "cycle-base-prompt.md").write_text(header + sections, encoding="utf-8")
     if loop_body is not None:
         (template_dir / "loop-block.md").write_text(loop_body, encoding="utf-8")
-
-
 
 
 def test_emit_cycle_prompt_section_selection_synthetic():
@@ -1204,8 +1117,6 @@ def test_emit_cycle_prompt_section_selection_synthetic():
         assert "SECTION_C" not in r4["prompt"]
 
 
-
-
 def test_emit_cycle_prompt_refuses_unknown_token_synthetic():
     """A synthetic section with an unknown {bogus_token} → ok=False naming it."""
     _guard()
@@ -1223,8 +1134,6 @@ def test_emit_cycle_prompt_refuses_unknown_token_synthetic():
         assert r is not None, "refusal must be a dict, not None"
         assert r.get("ok") is False, f"expected refusal, got {r}"
         assert "bogus_token" in r.get("refused", ""), f"refusal must name the token: {r}"
-
-
 
 
 def test_emit_cycle_prompt_mcp_variant_routing_synthetic():
@@ -1276,8 +1185,6 @@ def test_emit_cycle_prompt_mcp_variant_routing_synthetic():
         assert reason in r_nr["prompt"], "untestability_reason not bound from PHASES line"
 
 
-
-
 def test_emit_cycle_prompt_work_branch_fallback_non_git():
     """A non-git repo_root → {work_branch} falls back to 'the current branch',
     and the emission still succeeds (ok=True, no residue).
@@ -1295,8 +1202,6 @@ def test_emit_cycle_prompt_work_branch_fallback_non_git():
         assert not _TOKEN_RESIDUE_RE.findall(r["prompt"]), "non-git residue"
 
 
-
-
 def test_emit_cycle_prompt_sub_skill_args_none_binds_empty():
     """sub_skill_args=None binds to an empty string (no 'None' literal, no residue)."""
     _guard()
@@ -1309,8 +1214,6 @@ def test_emit_cycle_prompt_sub_skill_args_none_binds_empty():
     # The literal "args: None" must not appear (None → "").
     assert "args: None" not in r["prompt"], "sub_skill_args=None leaked a 'None' literal"
     assert not _TOKEN_RESIDUE_RE.findall(r["prompt"]), "residue with None args"
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -1333,8 +1236,6 @@ def _write_addenda(repo_root: Path, body: str) -> Path:
     header = "# repo addenda\n\nMetadata that must never be emitted.\n\n"
     path.write_text(header + body, encoding="utf-8")
     return path
-
-
 
 
 def test_emit_cycle_prompt_addenda_absent_is_byte_identical():
@@ -1374,8 +1275,6 @@ def test_emit_cycle_prompt_addenda_absent_is_byte_identical():
     )
 
 
-
-
 def test_emit_cycle_prompt_addenda_selected_and_appended_after_base():
     """A matching addenda section is appended AFTER the base sections (and the
     addenda content + a base-section marker both appear, addenda LAST)."""
@@ -1402,8 +1301,6 @@ def test_emit_cycle_prompt_addenda_selected_and_appended_after_base():
     addenda_idx = p.find("ADDENDA_BODY")
     assert base_anchor_idx != -1, "base section anchor not found in prompt"
     assert addenda_idx > base_anchor_idx, "addenda must be appended AFTER base sections"
-
-
 
 
 def test_emit_cycle_prompt_addenda_filtered_by_skill_and_pipeline_and_mode():
@@ -1442,8 +1339,6 @@ def test_emit_cycle_prompt_addenda_filtered_by_skill_and_pipeline_and_mode():
     assert "ADDENDA_WRONGPIPE" not in p, "pipelines filter not applied to addenda"
 
 
-
-
 def test_emit_cycle_prompt_addenda_tokens_bound():
     """Tokens inside an addenda section are bound by the SAME binding map."""
     _guard()
@@ -1463,8 +1358,6 @@ def test_emit_cycle_prompt_addenda_tokens_bound():
     p = r["prompt"]
     assert "Addenda for feat-x (Feature)." in p, f"addenda tokens not bound: {p[-300:]!r}"
     assert not _TOKEN_RESIDUE_RE.findall(p), "residue after addenda binding"
-
-
 
 
 def test_emit_cycle_prompt_addenda_residue_refuses_naming_file():
@@ -1495,8 +1388,6 @@ def test_emit_cycle_prompt_addenda_residue_refuses_naming_file():
     assert "cycle-prompt-addenda.md" in refused, (
         f"refusal must name the addenda file so the bad section is locatable: {refused!r}"
     )
-
-
 
 
 def test_emit_cycle_prompt_addenda_before_loop_block():
@@ -1539,8 +1430,6 @@ def test_emit_cycle_prompt_addenda_before_loop_block():
     )
 
 
-
-
 # ---------------------------------------------------------------------------
 # cycle-prompt-environment-dialect Phase 2 (STATE lane) — `hosts=` selection
 # filter. Both selection loops (base template + repo addenda) must exclude a
@@ -1572,8 +1461,6 @@ class _FakeOsName:
         return getattr(os, attr)
 
 
-
-
 def test_emit_cycle_prompt_hosts_windows_selected_on_win32():
     """A `hosts=windows` section IS selected when the emitting host is
     Windows (os.name == 'nt')."""
@@ -1603,8 +1490,6 @@ def test_emit_cycle_prompt_hosts_windows_selected_on_win32():
         "hosts=windows section must be selected when os.name == 'nt'"
     )
     assert "SECTION_CORE" in r["prompt"]
-
-
 
 
 def test_emit_cycle_prompt_hosts_windows_excluded_on_non_windows():
@@ -1641,8 +1526,6 @@ def test_emit_cycle_prompt_hosts_windows_excluded_on_non_windows():
     )
 
 
-
-
 def test_emit_cycle_prompt_hosts_windows_addenda_excluded_on_non_windows():
     """The `hosts=` filter applies identically to the repo-addenda selection
     loop, not just the base-template loop."""
@@ -1672,8 +1555,6 @@ def test_emit_cycle_prompt_hosts_windows_addenda_excluded_on_non_windows():
     )
 
 
-
-
 def test_env_dialect_section_byte_budget():
     """The real template's env-dialect-core / env-dialect-windows sections
     each stay under the D4 2,048-byte budget (parsed via the SAME
@@ -1692,8 +1573,6 @@ def test_env_dialect_section_byte_budget():
         )
 
 
-
-
 def test_bug_state_retro_fresh_routes_past_step8():
     """bug-state: RETRO_DONE.md whose phase_count_at_retro EQUALS the current
     phase count → fresh retro; routing falls through Step 8 to the Step 9
@@ -1710,8 +1589,6 @@ def test_bug_state_retro_fresh_routes_past_step8():
         state = bs.compute_state(root, False)
     assert state["sub_skill"] == "mcp-test", state
     assert state["current_step"] == "Step 9: run MCP tests", state["current_step"]
-
-
 
 
 def test_normalize_widened_equivalence_pairs():
@@ -1744,8 +1621,6 @@ def test_normalize_widened_equivalence_pairs():
     assert lazy_core.prompt_sha256(mutated) != h_base, (
         "a real word change must still change the hash (deny still fires)"
     )
-
-
 
 
 def test_f2b_emdash_hashes_equal_to_hyphen():
@@ -1781,8 +1656,6 @@ def test_f2b_emdash_hashes_equal_to_hyphen():
     )
 
 
-
-
 def test_f2b_curly_quotes_hash_equal_to_straight():
     """F2b: left/right single curly quotes → apostrophe; left/right double curly
     quotes → straight double quote.  A prompt with curly quotes must hash equal to
@@ -1810,8 +1683,6 @@ def test_f2b_curly_quotes_hash_equal_to_straight():
     )
 
 
-
-
 def test_f2b_nbsp_hashes_equal_to_space():
     """F2b: non-breaking space U+00A0 and narrow NBSP U+202F must fold to regular
     space so a copy that picks up NBSP (common in web/docx copy-paste) still
@@ -1829,8 +1700,6 @@ def test_f2b_nbsp_hashes_equal_to_space():
     assert lazy_core.prompt_sha256(narrow_nb) == lazy_core.prompt_sha256(base), (
         f"narrow NBSP (U+202F) must fold to space (F2b leg 5); hashes differed"
     )
-
-
 
 
 def test_f2b_genuine_word_change_still_differs():
@@ -1855,8 +1724,6 @@ def test_f2b_genuine_word_change_still_differs():
     )
 
 
-
-
 def test_single_slot_dispatch_templates():
     """Every @requires token appears EXACTLY ONCE as a {token} slot in each
     dispatch template body (WU-7.3a transcription-surface reduction)."""
@@ -1875,8 +1742,6 @@ def test_single_slot_dispatch_templates():
                 f"{tpl.name}: @requires token {tok!r} must appear EXACTLY ONCE "
                 f"as a {{{tok}}} slot, found {count}"
             )
-
-
 
 
 def test_emit_dispatch_cycle_header_marker_gated():
@@ -1934,8 +1799,6 @@ def test_emit_dispatch_cycle_header_marker_gated():
             assert ri["cycle_header"].startswith("### Investigate — Bug Q [meta 4]"), ri["cycle_header"]
         finally:
             _clear_state_dir()
-
-
 
 
 def test_record_decision_cli_and_apply_resolution_binds_end_to_end():
@@ -2009,8 +1872,6 @@ def test_record_decision_cli_and_apply_resolution_binds_end_to_end():
         assert "operator picked the recommended default at the prompt" in prompt, prompt
 
 
-
-
 def test_emit_dispatch_always_emits_json_on_error():
     """ISSUE 3: --emit-dispatch NEVER emits non-JSON, even on a bad context payload.
 
@@ -2037,8 +1898,6 @@ def test_emit_dispatch_always_emits_json_on_error():
             f"structured error must carry error_kind, got {data}"
         )
         assert "not valid JSON" in data["dispatch_prompt_refused"]
-
-
 
 
 def test_f1a_default_deny_reason_names_customization_path():
@@ -2078,8 +1937,6 @@ def test_f1a_default_deny_reason_names_customization_path():
     )
 
 
-
-
 def test_f1a_hardening_cap_reason_unchanged():
     """F1a must NOT touch the hardening depth-1 cap reason: it still says halt +
     PushNotification and must NOT recommend `--emit-dispatch hardening`."""
@@ -2091,8 +1948,6 @@ def test_f1a_hardening_cap_reason_unchanged():
     assert "--emit-dispatch hardening" not in reason, (
         "the hardening cap reason must never recommend recursive hardening"
     )
-
-
 
 
 def test_f1b_pure_suffix_cycle_prompt_auto_readmits():
@@ -2156,8 +2011,6 @@ def test_f1b_pure_suffix_cycle_prompt_auto_readmits():
             _clear_state_dir()
 
 
-
-
 def test_f1b_in_body_edit_still_denies():
     """F1b exclusion: an in-body edit (a word changed mid-prompt, NOT a pure
     trailing suffix) is NOT a suffix superset → it still DENIES with the default
@@ -2211,8 +2064,6 @@ def test_f1b_in_body_edit_still_denies():
             _clear_state_dir()
 
 
-
-
 def test_f1b_auto_readmit_error_falls_through_to_deny():
     """F1b fail-open: if the auto-readmit path raises internally (here:
     consume_nonce poisoned), the guard must fall through to the NORMAL deny — never
@@ -2253,8 +2104,6 @@ def test_f1b_auto_readmit_error_falls_through_to_deny():
             _clear_state_dir()
 
 
-
-
 def test_f1b_register_emission_stores_normalized_prompt_text():
     """F1b registry-text field: register_emission stores the
     normalize_prompt_for_hash-normalized prompt text on each entry (the field the
@@ -2275,8 +2124,6 @@ def test_f1b_register_emission_stores_normalized_prompt_text():
             )
         finally:
             _clear_state_dir()
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -2331,8 +2178,6 @@ def test_registry_register_lookup_consume():
             _clear_state_dir()
 
 
-
-
 # ---------------------------------------------------------------------------
 # Test 6: registry TTL — stale entry not dispatchable; fresh entry is
 # ---------------------------------------------------------------------------
@@ -2367,8 +2212,6 @@ def test_registry_ttl():
             )
         finally:
             _clear_state_dir()
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -2419,8 +2262,6 @@ def test_crlf_lf_normalization():
             )
         finally:
             _clear_state_dir()
-
-
 
 
 def test_advance_run_counters_census_regression_does_not_strand():
@@ -2516,8 +2357,6 @@ def test_advance_run_counters_census_regression_does_not_strand():
                 )
         finally:
             _clear_state_dir()
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -2671,6 +2510,444 @@ def test_subprocess_emit_prompt_with_marker_writes_registry():
         )
 
 
+def test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug():
+    """dispatch-probe-and-inject-bypass-merged-head (end-to-end): a real
+    subprocess `lazy-state.py --repeat-count --probe --emit-prompt` with a
+    feature-run marker but a P0 bug at the merged head must WITHHOLD the feature
+    route: route_overridden_by == "merged-head-diverged", merged_head names the
+    bug, cycle_prompt is null, and NO cycle registry entry is written (the
+    orchestrator must re-probe --next-merged and type-dispatch to the bug).
+
+    RED state (pre-fix): the probe emitted the feat-c cycle_prompt and registered
+    it, silently skipping the P0 bug — the live 2026-07-17 friction.
+    """
+    _guard()
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        # Feature fixture (feat-c tier 1) — dispatchable on its own.
+        features = td_path / "fixture-repo" / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-c", "name": "Feature C", "spec_dir": "feat-c", "tier": 1}
+            ]
+        }), encoding="utf-8")
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        fdir = features / "feat-c"
+        fdir.mkdir()
+        (fdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+        (fdir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n",
+            encoding="utf-8")
+        (fdir / "plans").mkdir()
+        (fdir / "plans" / "all-phases-c.md").write_text("# Plan\n", encoding="utf-8")
+        fixture_repo = td_path / "fixture-repo"
+
+        # P0 bug at the merged head (rank 0 outranks feature tier 1).
+        bug_dir = fixture_repo / "docs" / "bugs" / "bug-z"
+        (bug_dir / "plans").mkdir(parents=True)
+        (fixture_repo / "docs" / "bugs" / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-z", "name": "Bug Z", "spec_dir": "bug-z", "severity": "P0"}
+            ]
+        }), encoding="utf-8")
+        (bug_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (bug_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Fix the thing\n- [ ] Tests\n", encoding="utf-8")
+        (bug_dir / "plans" / "all-phases-z.md").write_text("# Plan\n", encoding="utf-8")
+
+        state_dir = td_path / "lazy-state-dir"
+        state_dir.mkdir()
+
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(fixture_repo), max_cycles=10, now=_time.time(),
+            )
+        finally:
+            _clear_state_dir()
+
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        result = subprocess.run(
+            [sys.executable, str(lazy_state_script),
+             "--repeat-count", "--probe", "--emit-prompt",
+             "--repo-root", str(fixture_repo)],
+            capture_output=True, text=True, env=env,
+        )
+        assert result.returncode == 0, (
+            f"lazy-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
+        state_json = json.loads(result.stdout)
+
+        assert state_json.get("route_overridden_by") == "merged-head-diverged", (
+            f"feature probe must WITHHOLD over a P0-bug merged head; "
+            f"route_overridden_by={state_json.get('route_overridden_by')!r}, "
+            f"feature_id={state_json.get('feature_id')!r}")
+        assert state_json.get("merged_head") == {"item_id": "bug-z", "type": "bug"}, (
+            f"merged_head must name the P0 bug; got {state_json.get('merged_head')!r}")
+        assert state_json.get("cycle_prompt") is None, (
+            "cycle_prompt must be null on a withheld route")
+        # No cycle registry entry written (the withheld route registers nothing).
+        registry_file = state_dir / "lazy-prompt-registry.json"
+        if registry_file.exists():
+            entries = json.loads(registry_file.read_text(encoding="utf-8")).get("entries", [])
+            assert not [e for e in entries if e.get("class") == "cycle"], (
+                "a withheld route must NOT register a cycle emission")
+
+
+def test_subprocess_emit_prompt_oracle_excludes_nondispatchable_bug_head_no_withhold():
+    """merged-head-actionability-oracle Phase 2 (feature-side, real scoped probe):
+    a NON-DISPATCHABLE bug at the merged head (a BLOCKED bug — a category the old
+    file-predicate never excluded on the feature-side cross-pipeline path) is now
+    EXCLUDED by the oracle's REAL cross-pipeline scoped `bug-state.compute_state`,
+    so the feature probe does NOT withhold and dispatches the workable feature.
+    Pre-oracle this withheld behind the undriveable bug head (the stall class this
+    feature ends). Byte-identity for a DISPATCHABLE P0 bug is covered by
+    test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug (still green)."""
+    _guard()
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        features = td_path / "fixture-repo" / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [{"id": "feat-c", "name": "Feature C", "spec_dir": "feat-c", "tier": 1}]
+        }), encoding="utf-8")
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        fdir = features / "feat-c"
+        (fdir / "plans").mkdir(parents=True)
+        (fdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+        (fdir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n", encoding="utf-8")
+        (fdir / "plans" / "all-phases-c.md").write_text("# Plan\n", encoding="utf-8")
+        fixture_repo = td_path / "fixture-repo"
+
+        # P0 bug at the merged head, but BLOCKED → scoped bug probe is
+        # non-dispatchable → the oracle excludes it (no withhold).
+        bug_dir = fixture_repo / "docs" / "bugs" / "bug-blk"
+        bug_dir.mkdir(parents=True)
+        (fixture_repo / "docs" / "bugs" / "queue.json").write_text(json.dumps({
+            "queue": [{"id": "bug-blk", "name": "Bug Blocked", "spec_dir": "bug-blk", "severity": "P0"}]
+        }), encoding="utf-8")
+        (bug_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (bug_dir / "BLOCKED.md").write_text(
+            "---\nphase: External gate\nblocker_kind: external-gate\n---\nAwaiting.\n",
+            encoding="utf-8")
+
+        state_dir = td_path / "lazy-state-dir"
+        state_dir.mkdir()
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(fixture_repo), max_cycles=10, now=_time.time())
+        finally:
+            _clear_state_dir()
+
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        result = subprocess.run(
+            [sys.executable, str(lazy_state_script),
+             "--repeat-count", "--probe", "--emit-prompt", "--repo-root", str(fixture_repo)],
+            capture_output=True, text=True, env=env)
+        assert result.returncode == 0, (
+            f"lazy-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
+        state_json = json.loads(result.stdout)
+        # NO withhold — the blocked bug is excluded; the feature is dispatched.
+        assert state_json.get("route_overridden_by") is None, (
+            f"blocked bug head must NOT withhold; got "
+            f"route_overridden_by={state_json.get('route_overridden_by')!r}")
+        assert state_json.get("feature_id") == "feat-c", state_json.get("feature_id")
+        assert state_json.get("cycle_prompt"), "feature cycle_prompt must be emitted"
+
+
+def test_subprocess_bug_emit_prompt_oracle_excludes_nondispatchable_feature_head_no_withhold():
+    """merged-head-actionability-oracle Phase 2 (bug-side coupled mirror, real
+    scoped probe): a higher-priority BLOCKED FEATURE at the merged head is EXCLUDED
+    by the oracle's real cross-pipeline scoped `lazy-state.compute_state`, so the
+    bug probe does NOT withhold and dispatches the workable bug."""
+    _guard()
+    bug_state_script = _SCRIPTS_DIR / "bug-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = td_path / "fixture-repo"
+        # Workable bug (current, P2).
+        bugs = fixture_repo / "docs" / "bugs"
+        bug_dir = bugs / "bug-w"
+        (bug_dir / "plans").mkdir(parents=True)
+        (bugs / "queue.json").write_text(json.dumps({
+            "queue": [{"id": "bug-w", "name": "Bug W", "spec_dir": "bug-w", "severity": "P2"}]
+        }), encoding="utf-8")
+        (bug_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (bug_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Fix\n- [ ] Tests\n", encoding="utf-8")
+        (bug_dir / "plans" / "all-phases-w.md").write_text("# Plan\n", encoding="utf-8")
+
+        # Higher-priority BLOCKED feature at the merged head (tier 0).
+        features = fixture_repo / "docs" / "features"
+        fdir = features / "feat-blk"
+        fdir.mkdir(parents=True)
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [{"id": "feat-blk", "name": "Feature Blocked", "spec_dir": "feat-blk", "tier": 0}]
+        }), encoding="utf-8")
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        (fdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (fdir / "BLOCKED.md").write_text(
+            "---\nphase: External gate\nblocker_kind: external-gate\n---\nAwaiting.\n",
+            encoding="utf-8")
+
+        state_dir = td_path / "bug-state-dir"
+        state_dir.mkdir()
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="bug", cloud=False,
+                repo_root=str(fixture_repo), max_cycles=10, now=_time.time())
+        finally:
+            _clear_state_dir()
+
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        result = subprocess.run(
+            [sys.executable, str(bug_state_script),
+             "--repeat-count", "--probe", "--emit-prompt", "--repo-root", str(fixture_repo)],
+            capture_output=True, text=True, env=env)
+        assert result.returncode == 0, (
+            f"bug-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
+        state_json = json.loads(result.stdout)
+        assert state_json.get("route_overridden_by") is None, (
+            f"blocked feature head must NOT withhold on the bug side; got "
+            f"route_overridden_by={state_json.get('route_overridden_by')!r}")
+        assert state_json.get("feature_id") == "bug-w", state_json.get("feature_id")
+        assert state_json.get("cycle_prompt"), "bug cycle_prompt must be emitted"
+
+
+def test_subprocess_emit_prompt_lane_marker_skips_merged_head_withhold():
+    """lazy-batch-parallel-run-harness-gaps gap 1: the SAME divergent-head fixture
+    as above, but with a LANE marker (parent_run set), must NOT withhold — the
+    merged-head divergence guard is exempt for a coordinator-authorized lane probe
+    (claim_shardable owns lane arbitration). route_overridden_by must NOT be
+    'merged-head-diverged'; the lane emits its own route normally."""
+    _guard()
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        features = td_path / "fixture-repo" / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "feat-c", "name": "Feature C", "spec_dir": "feat-c", "tier": 1}
+            ]
+        }), encoding="utf-8")
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        fdir = features / "feat-c"
+        fdir.mkdir()
+        (fdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+        (fdir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n",
+            encoding="utf-8")
+        (fdir / "plans").mkdir()
+        (fdir / "plans" / "all-phases-c.md").write_text("# Plan\n", encoding="utf-8")
+        fixture_repo = td_path / "fixture-repo"
+
+        # Same P0 bug at the merged head that WOULD withhold in a serial run.
+        bug_dir = fixture_repo / "docs" / "bugs" / "bug-z"
+        (bug_dir / "plans").mkdir(parents=True)
+        (fixture_repo / "docs" / "bugs" / "queue.json").write_text(json.dumps({
+            "queue": [
+                {"id": "bug-z", "name": "Bug Z", "spec_dir": "bug-z", "severity": "P0"}
+            ]
+        }), encoding="utf-8")
+        (bug_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (bug_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Fix the thing\n- [ ] Tests\n", encoding="utf-8")
+        (bug_dir / "plans" / "all-phases-z.md").write_text("# Plan\n", encoding="utf-8")
+
+        state_dir = td_path / "lazy-state-dir"
+        state_dir.mkdir()
+
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            # LANE marker: parent_run stamped (the coordinator identity).
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(fixture_repo), max_cycles=10, now=_time.time(),
+                parent_run={"repo_root": str(fixture_repo),
+                            "started_at": "2026-07-18T03:38:27Z"},
+            )
+        finally:
+            _clear_state_dir()
+
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        result = subprocess.run(
+            [sys.executable, str(lazy_state_script),
+             "--repeat-count", "--probe", "--emit-prompt",
+             "--repo-root", str(fixture_repo), "--feature-id", "feat-c"],
+            capture_output=True, text=True, env=env,
+        )
+        assert result.returncode == 0, (
+            f"lazy-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
+        state_json = json.loads(result.stdout)
+        assert state_json.get("route_overridden_by") != "merged-head-diverged", (
+            f"a LANE probe (parent_run set) must NOT withhold on merged-head "
+            f"divergence; got route_overridden_by="
+            f"{state_json.get('route_overridden_by')!r}")
+
+
+def _gap8_build_divergent_fixture(td_path):
+    """Shared fixture for the gap-8 serial-tail lease exemption tests: a
+    dispatchable feature `feat-c` (tier 1) with a P0 bug `bug-z` at the merged
+    head that WOULD withhold a serial `--feature-id feat-c` probe. Returns the
+    fixture repo path."""
+    features = td_path / "fixture-repo" / "docs" / "features"
+    features.mkdir(parents=True)
+    (features / "queue.json").write_text(json.dumps({
+        "queue": [
+            {"id": "feat-c", "name": "Feature C", "spec_dir": "feat-c", "tier": 1}
+        ]
+    }), encoding="utf-8")
+    (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+    fdir = features / "feat-c"
+    fdir.mkdir()
+    (fdir / "SPEC.md").write_text(
+        "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+    (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+    (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+    (fdir / "PHASES.md").write_text(
+        "# Phases\n\n### Phase 1\n- [ ] Build the thing\n- [ ] Tests\n",
+        encoding="utf-8")
+    (fdir / "plans").mkdir()
+    (fdir / "plans" / "all-phases-c.md").write_text("# Plan\n", encoding="utf-8")
+    fixture_repo = td_path / "fixture-repo"
+    bug_dir = fixture_repo / "docs" / "bugs" / "bug-z"
+    (bug_dir / "plans").mkdir(parents=True)
+    (fixture_repo / "docs" / "bugs" / "queue.json").write_text(json.dumps({
+        "queue": [
+            {"id": "bug-z", "name": "Bug Z", "spec_dir": "bug-z", "severity": "P0"}
+        ]
+    }), encoding="utf-8")
+    (bug_dir / "SPEC.md").write_text(
+        "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n", encoding="utf-8")
+    (bug_dir / "PHASES.md").write_text(
+        "# Phases\n\n### Phase 1\n- [ ] Fix the thing\n- [ ] Tests\n", encoding="utf-8")
+    (bug_dir / "plans" / "all-phases-z.md").write_text("# Plan\n", encoding="utf-8")
+    return fixture_repo
+
+
+def _gap8_run_emit_probe(lazy_state_script, fixture_repo, state_dir):
+    """Run the serial-tail-shape `--emit-prompt --feature-id feat-c` probe (SERIAL
+    parent marker, parent_run null) and return the parsed state JSON."""
+    env = dict(_os_env.environ)
+    env["LAZY_STATE_DIR"] = str(state_dir)
+    result = subprocess.run(
+        [sys.executable, str(lazy_state_script),
+         "--repeat-count", "--probe", "--emit-prompt",
+         "--repo-root", str(fixture_repo), "--feature-id", "feat-c"],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, (
+        f"lazy-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
+    return json.loads(result.stdout)
+
+
+def test_subprocess_emit_prompt_serial_tail_lease_held_skips_merged_head_withhold():
+    """lazy-batch-parallel-run-harness-gaps round-2 gap 8: a SERIAL parent-marker
+    (parent_run null) tail probe for `feat-c` whose OWN feature_id holds a LIVE
+    coordinator lease in leases.json must NOT withhold on merged-head divergence —
+    completing the merged, lease-held item is the coordinator's obligation. The
+    round-1 lane exemption keys on parent_run (null here), so only the gap-8 own-
+    lease exemption clears this. route_overridden_by must NOT be
+    'merged-head-diverged'."""
+    _guard()
+    import lazy_coord  # type: ignore[import]
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = _gap8_build_divergent_fixture(td_path)
+        state_dir = td_path / "lazy-state-dir"
+        state_dir.mkdir()
+
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            # SERIAL parent marker: parent_run null (the main-root tail marker).
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(fixture_repo), max_cycles=10, now=_time.time(),
+            )
+        finally:
+            _clear_state_dir()
+
+        # Live lease on the PROBED item, in the state dir's leases.json.
+        lazy_coord.acquire_lease(
+            state_dir / "leases.json", "feat-c", os.getpid(), "wt-00", 3600,
+            now=_time.time(),
+        )
+
+        state_json = _gap8_run_emit_probe(lazy_state_script, fixture_repo, state_dir)
+        assert state_json.get("route_overridden_by") != "merged-head-diverged", (
+            f"a serial-tail probe whose feature_id holds a LIVE lease must NOT "
+            f"withhold on merged-head divergence; got route_overridden_by="
+            f"{state_json.get('route_overridden_by')!r}")
+
+
+def test_subprocess_emit_prompt_serial_tail_no_lease_still_withholds():
+    """lazy-batch-parallel-run-harness-gaps round-2 gap 8 (negative control /
+    lease-gating proof): the SAME divergent fixture + SERIAL marker but with NO
+    live lease on `feat-c` must STILL withhold (route_overridden_by ==
+    'merged-head-diverged') — proving the exemption is gated on the probed item's
+    OWN live lease, not merely on the --feature-id scoping."""
+    _guard()
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = _gap8_build_divergent_fixture(td_path)
+        state_dir = td_path / "lazy-state-dir"
+        state_dir.mkdir()
+
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False,
+                repo_root=str(fixture_repo), max_cycles=10, now=_time.time(),
+            )
+        finally:
+            _clear_state_dir()
+
+        # No lease written → the serial guard must run and withhold.
+        state_json = _gap8_run_emit_probe(lazy_state_script, fixture_repo, state_dir)
+        assert state_json.get("route_overridden_by") == "merged-head-diverged", (
+            f"a serial-tail probe with NO live lease must WITHHOLD over a P0-bug "
+            f"merged head; got route_overridden_by="
+            f"{state_json.get('route_overridden_by')!r}")
+        assert state_json.get("merged_head") == {"item_id": "bug-z", "type": "bug"}, (
+            f"merged_head must name the P0 bug; got {state_json.get('merged_head')!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -2808,8 +3085,6 @@ def test_repeat_count_peek_does_not_advance_marker_counters():
             _clear_state_dir()
 
 
-
-
 # ---------------------------------------------------------------------------
 # End of Phase 1 test definitions
 # ---------------------------------------------------------------------------
@@ -2841,7 +3116,6 @@ _EXPECTED_DISPATCH_CLASSES = (
 )
 
 
-
 # Model assignment per class — derived from the SOURCE COMPONENTS (not SPEC.md,
 # which pins no per-class models).  apply-resolution=opus because
 # blocked-resolution.md dispatches its apply subagent as Opus.
@@ -2853,8 +3127,6 @@ _EXPECTED_DISPATCH_MODELS = {
     "coherence-recovery": "sonnet",
     "needs-runtime-redispatch": "opus",
 }
-
-
 
 
 def test_emit_dispatch_symbols_present():
@@ -2918,8 +3190,6 @@ def test_emit_dispatch_symbols_present():
             f"DISPATCH_MODELS[{cls!r}] = {model!r}; expected {expected_model!r} "
             f"per the Phase 3 spec contract"
         )
-
-
 
 
 def test_emit_dispatch_real_template_binding_matrix():
@@ -3003,8 +3273,6 @@ def test_emit_dispatch_real_template_binding_matrix():
                 )
 
 
-
-
 def test_emit_dispatch_refuses_missing_requires():
     """Synthetic template with @requires foo,bar; context missing 'bar'
     → ok=False, refusal message names 'bar'.
@@ -3051,8 +3319,6 @@ def test_emit_dispatch_refuses_missing_requires():
             f"refusal message must name the missing @requires key 'bar'; "
             f"got: {refused_msg!r}"
         )
-
-
 
 
 def test_emit_dispatch_refuses_unbound_residue():
@@ -3102,6 +3368,71 @@ def test_emit_dispatch_refuses_unbound_residue():
         )
 
 
+def test_emit_dispatch_content_braces_in_value_do_not_refuse():
+    """A context VALUE containing a literal {lower_snake} brace (code snippet /
+    JSON / curly-brace wire-type in a free-text resolution_summary) must NOT be
+    mis-flagged as an unbound token — the emission succeeds and the brace
+    survives verbatim in the prompt.
+
+    Regression for docs/bugs/emit-dispatch-residue-guard-flags-content-braces:
+    the residue guard previously scanned the FULLY-BOUND prompt, so a literal
+    `{trigger_id}` inside the injected value fail-closed a correct dispatch.
+    """
+    _guard()
+    cls = "recovery"
+    with tempfile.TemporaryDirectory() as td:
+        tdir = Path(td) / "synth-dispatch-tpl"
+        tdir.mkdir(parents=True, exist_ok=True)
+        tpl_text = (
+            "<!-- @requires item_id,failure_summary -->\n"
+            "<!-- @section body pipelines=feature,bug modes=workstation,cloud -->\n"
+            "Recovery for {item_id}. Summary: {failure_summary}\n"
+        )
+        (tdir / f"dispatch-{cls}.md").write_text(tpl_text, encoding="utf-8")
+
+        # The free-text value legitimately contains literal {lower_snake} braces
+        # AND a JSON object — all opaque DATA, none of it a template placeholder.
+        brace_value = 'wire-type {trigger_id} in payload {"kind": "route_loop"}'
+        context = {"item_id": "feat-x", "failure_summary": brace_value}
+        result = lazy_core.emit_dispatch_prompt(
+            cls, context, pipeline="feature", cloud=False, template_dir=tdir,
+        )
+
+        assert isinstance(result, dict), result
+        assert result.get("ok") is True, (
+            f"content braces in a context VALUE must not refuse the dispatch; "
+            f"got: {result!r}"
+        )
+        assert brace_value in result["prompt"], (
+            "the brace-bearing value must survive verbatim in the emitted prompt"
+        )
+        # The genuine {item_id} placeholder is still bound (no residual placeholder).
+        assert "{item_id}" not in result["prompt"], "template placeholder left unbound"
+
+
+def test_emit_cycle_prompt_content_braces_in_state_value_do_not_refuse():
+    """Near-neighbor: emit_cycle_prompt binds free-text state values (item_name,
+    sub_skill_args, …). A literal {lower_snake} brace inside such a value must NOT
+    trip the residue guard (same class as the dispatch-site regression).
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        tdir = Path(td) / "tpl"
+        body = (
+            "<!-- @section a pipelines=feature modes=workstation skills=all -->\n"
+            "Working {item_name} at {current_step}.\n"
+        )
+        _write_synth_template(tdir, body)
+        brace_name = "Feature {viz_param} overlay"
+        r = lazy_core.emit_cycle_prompt(
+            Path("/nonexistent/repo"),
+            _emit_state(sub_skill="/execute-plan", feature_name=brace_name),
+            pipeline="feature", cloud=False, template_dir=tdir,
+        )
+        assert r is not None and r.get("ok") is True, (
+            f"content braces in a state VALUE must not refuse the cycle prompt; got {r}"
+        )
+        assert brace_name in r["prompt"], "brace-bearing item_name must survive verbatim"
 
 
 def test_emit_dispatch_section_filtering():
@@ -3172,8 +3503,6 @@ def test_emit_dispatch_section_filtering():
         )
 
 
-
-
 def test_emit_dispatch_unknown_class_raises():
     """emit_dispatch_prompt raises ValueError for unknown classes (e.g. 'nonsense').
     'hardening' was listed here in Phase 3 as a future unknown class; it is now
@@ -3207,8 +3536,6 @@ def test_emit_dispatch_unknown_class_raises():
         )
 
 
-
-
 def _build_dispatch_registry_fixture(td_path):
     """Build the minimal lazy-state.py fixture repo used by the dispatch CLI tests.
 
@@ -3240,8 +3567,6 @@ def _build_dispatch_registry_fixture(td_path):
     return td_path / "fixture-repo"
 
 
-
-
 def _read_recovery_requires_keys():
     """Return the @requires keys declared in dispatch-recovery.md line 1,
     or None if the file doesn't exist (so callers can skip gracefully).
@@ -3257,6 +3582,25 @@ def _read_recovery_requires_keys():
     return [k.strip() for k in m.group(1).split(",") if k.strip()]
 
 
+def test_emit_dispatch_gate_verdict_binds_real_template():
+    """GAP 1 (adhoc-harden-bug-pipeline-gate-verdict-and-detector-gaps): the new
+    `gate-verdict` completion-time authoring class emits over its real template
+    with zero token residue, carries the design-gate anchors, and is Opus."""
+    _guard()
+    assert "gate-verdict" in lazy_core.DISPATCH_CLASSES
+    assert lazy_core.DISPATCH_MODELS["gate-verdict"] == "opus"
+    ctx = {k: f"v-{k}" for k in _dispatch_requires("gate-verdict")}
+    ctx["item_name"] = "My Change"
+    ctx["item_id"] = "some-change"
+    for pipeline in ("feature", "bug"):
+        r = lazy_core.emit_dispatch_prompt("gate-verdict", ctx, pipeline=pipeline)
+        assert r["ok"], r
+        p = r["prompt"]
+        assert not _TOKEN_RESIDUE_RE.findall(p), (
+            f"gate-verdict residue: {_TOKEN_RESIDUE_RE.findall(p)}"
+        )
+        assert "GATE_VERDICT.md" in p, "missing GATE_VERDICT.md anchor"
+        assert "harness-gate.py" in p, "missing harness-gate.py anchor"
 
 
 def test_emit_dispatch_cli_registry_gating():
@@ -3483,8 +3827,6 @@ def test_emit_dispatch_cli_registry_gating():
             )
 
 
-
-
 def test_emit_dispatch_cli_bug_state_mirror():
     """Coupled-pair mirror of test_emit_dispatch_cli_registry_gating sub-scenario (a):
     bug-state.py --emit-dispatch recovery must also accept the flag and return
@@ -3564,8 +3906,6 @@ def test_emit_dispatch_cli_bug_state_mirror():
         )
 
 
-
-
 # ---------------------------------------------------------------------------
 # End of Phase 3 test definitions
 # ---------------------------------------------------------------------------
@@ -3603,7 +3943,6 @@ _HARDENING_REQUIRED_KEYS: frozenset[str] = frozenset({
 })
 
 
-
 # Resolve the harden-harness SKILL.md path relative to the repo root inferred
 # from _SCRIPTS_DIR (user/scripts).
 _HARDEN_SKILL_PATH = (
@@ -3612,17 +3951,16 @@ _HARDEN_SKILL_PATH = (
 )
 
 
-
-
 def test_hardening_dispatch_class_present():
     """Phase 4 contract: 'hardening' is present in DISPATCH_CLASSES as the LAST
     entry; DISPATCH_MODELS['hardening'] == 'opus'; calling
     emit_dispatch_prompt('hardening', ...) does NOT raise ValueError.
 
     The tuple length grew from 7 (Phase 4) to 9 when harden Round 44 (2026-06-29)
-    appended 'corrective-coverage' + 'ingest-research' BEFORE 'hardening' (so the
-    last-entry invariant is preserved). The exact count is asserted to catch an
-    accidental class drop; bump it deliberately when adding a class.
+    appended 'corrective-coverage' + 'ingest-research' BEFORE 'hardening', and to
+    10 when harden Round 80 (2026-07-17) appended 'spike' BEFORE 'hardening' (so
+    the last-entry invariant is preserved). The exact count is asserted to catch
+    an accidental class drop; bump it deliberately when adding a class.
 
     RED reasons:
       - DISPATCH_MODELS['hardening'] absent → KeyError.
@@ -3647,10 +3985,10 @@ def test_hardening_dispatch_class_present():
     assert isinstance(classes, tuple), (
         f"DISPATCH_CLASSES must be a tuple, got {type(classes).__name__}"
     )
-    assert len(classes) == 9, (
-        f"DISPATCH_CLASSES must have 9 entries (7 Phase-4 + Round-44 "
-        f"'corrective-coverage' + 'ingest-research'); "
-        f"got {len(classes)}: {classes}"
+    assert len(classes) == 11, (
+        f"DISPATCH_CLASSES must have 11 entries (7 Phase-4 + Round-44 "
+        f"'corrective-coverage' + 'ingest-research' + Round-80 'spike' + "
+        f"GAP-1 'gate-verdict'); got {len(classes)}: {classes}"
     )
 
     # 'hardening' must be present.
@@ -3718,8 +4056,6 @@ def test_hardening_dispatch_class_present():
         "Phase 4 adds 'hardening' to DISPATCH_CLASSES; "
         "currently raises ValueError because 'hardening' is not yet registered"
     )
-
-
 
 
 def test_hardening_template_binding():
@@ -3870,6 +4206,101 @@ def test_hardening_template_binding():
             )
 
 
+def test_spike_dispatch_class_registered():
+    """harden Round 80: 'spike' is a registered dispatch class (Opus), inserted
+    BEFORE 'hardening' so the last-entry invariant is preserved, and
+    emit_dispatch_prompt('spike', ...) does NOT raise the unknown-class ValueError.
+    """
+    _guard()
+    classes = lazy_core.DISPATCH_CLASSES
+    assert "spike" in classes, f"'spike' must be in DISPATCH_CLASSES; got {classes}"
+    assert classes[-1] == "hardening", (
+        f"'hardening' must remain the LAST entry (spike inserted before it); "
+        f"got last={classes[-1]!r}"
+    )
+    assert classes.index("spike") < classes.index("hardening"), (
+        "'spike' must precede 'hardening' in DISPATCH_CLASSES"
+    )
+    assert lazy_core.DISPATCH_MODELS["spike"] == "opus", (
+        f"DISPATCH_MODELS['spike'] must be 'opus' (runtime-proof judgment); "
+        f"got {lazy_core.DISPATCH_MODELS.get('spike')!r}"
+    )
+    # Unknown-class ValueError must NOT fire for a registered class.
+    raised = False
+    try:
+        lazy_core.emit_dispatch_prompt(
+            "spike", {}, pipeline="feature", cloud=False,
+            template_dir=_REAL_TEMPLATE_DIR,
+        )
+    except ValueError:
+        raised = True
+    except Exception:
+        pass
+    assert not raised, "emit_dispatch_prompt('spike', ...) must not raise ValueError"
+
+
+def test_spike_template_binding():
+    """harden Round 80: the real dispatch-spike.md template exists, declares its
+    @requires keys, binds cleanly across feature/bug × workstation/cloud, emits an
+    Opus prompt with no unbound residue, and carries the load-bearing honesty +
+    orchestrator-owned-runtime prose.
+    """
+    _guard()
+    tpl_path = _REAL_TEMPLATE_DIR / "dispatch-spike.md"
+    assert tpl_path.exists(), (
+        f"dispatch-spike.md must exist at {tpl_path} "
+        f"(user/skills/_components/lazy-batch-prompts/)"
+    )
+    text = tpl_path.read_text(encoding="utf-8")
+    first_line = next((ln for ln in text.splitlines() if ln.strip()), "")
+    m = re.match(r"^<!-- @requires ([a-z0-9_,]+) -->$", first_line)
+    assert m, f"dispatch-spike.md line 1 must be a valid @requires decl; got {first_line!r}"
+    declared = frozenset(k.strip() for k in m.group(1).split(",") if k.strip())
+    expected = {"item_name", "spec_path", "spike_goal", "next_on_pass", "item_id", "cwd"}
+    assert expected <= declared, (
+        f"dispatch-spike.md @requires missing {sorted(expected - declared)}; "
+        f"declared: {sorted(declared)}"
+    )
+    context = {k: f"test-{k}" for k in declared}
+    for pipeline in ("feature", "bug"):
+        for cloud in (False, True):
+            ctx_label = f"pipeline={pipeline} cloud={cloud}"
+            result = lazy_core.emit_dispatch_prompt(
+                "spike", context, pipeline=pipeline, cloud=cloud,
+                template_dir=_REAL_TEMPLATE_DIR,
+            )
+            assert result.get("ok") is True, f"{ctx_label}: expected ok=True; got {result!r}"
+            prompt = result["prompt"]
+            residue = _TOKEN_RESIDUE_RE.findall(prompt)
+            assert not residue, f"{ctx_label}: unbound token residue {residue}"
+            assert result.get("model") == "opus", (
+                f"{ctx_label}: spike dispatch model must be 'opus'; got {result.get('model')!r}"
+            )
+            # Honesty invariant prose (all-mode section) — the anti-fabrication rule.
+            assert "fabricat" in prompt.lower(), (
+                f"{ctx_label}: spike prompt must carry the anti-fabrication honesty rule"
+            )
+            assert "PENDING" in prompt, (
+                f"{ctx_label}: spike prompt must offer the PENDING (no-fabricated-verdict) path"
+            )
+            # Tooling-existence loop must be described.
+            assert "tooling" in prompt.lower(), (
+                f"{ctx_label}: spike prompt must describe the tooling-existence check"
+            )
+    # Workstation-only section: orchestrator-owned runtime must appear for a
+    # workstation dispatch (and the cloud dispatch must instead defer).
+    ws = lazy_core.emit_dispatch_prompt(
+        "spike", context, pipeline="feature", cloud=False,
+        template_dir=_REAL_TEMPLATE_DIR,
+    )["prompt"]
+    assert "ORCHESTRATOR-OWNED" in ws, (
+        "workstation spike prompt must state the runtime is ORCHESTRATOR-OWNED"
+    )
+    cloud = lazy_core.emit_dispatch_prompt(
+        "spike", context, pipeline="feature", cloud=True,
+        template_dir=_REAL_TEMPLATE_DIR,
+    )["prompt"]
+    assert "CLOUD RUN" in cloud, "cloud spike prompt must carry the defer-to-workstation note"
 
 
 def test_hardening_skill_file_contract():
@@ -3976,8 +4407,6 @@ def test_hardening_skill_file_contract():
     )
 
 
-
-
 def _read_hardening_requires_keys():
     """Return the @requires keys declared in dispatch-hardening.md line 1,
     or None if the file doesn't exist (so callers can skip gracefully).
@@ -3993,8 +4422,6 @@ def _read_hardening_requires_keys():
     if not m:
         return None
     return [k.strip() for k in m.group(1).split(",") if k.strip()]
-
-
 
 
 def test_hardening_cli_emit_and_register():
@@ -4175,7 +4602,6 @@ def test_hardening_cli_emit_and_register():
         )
 
 
-
 # ---------------------------------------------------------------------------
 # Phase 3 (F2a) test function definitions — must appear BEFORE the final
 # _TESTS re-assignment below.
@@ -4205,8 +4631,6 @@ def test_f2a_register_emission_stores_prompt_raw():
             )
         finally:
             _clear_state_dir()
-
-
 
 
 def test_f2a_resolve_emission_fresh_nonce_returns_entry():
@@ -4253,8 +4677,6 @@ def test_f2a_resolve_emission_fresh_nonce_returns_entry():
             _clear_state_dir()
 
 
-
-
 def test_f2a_resolve_emission_consumed_nonce_returns_none():
     """F2a: resolve_emission_by_nonce returns None for a nonce that has already
     been consumed (single-use enforced, TOCTOU safety).
@@ -4285,8 +4707,6 @@ def test_f2a_resolve_emission_consumed_nonce_returns_none():
             )
         finally:
             _clear_state_dir()
-
-
 
 
 def test_f2a_resolve_emission_stale_nonce_returns_none():
@@ -4326,6 +4746,217 @@ def test_f2a_resolve_emission_stale_nonce_returns_none():
             _clear_state_dir()
 
 
+# ---------------------------------------------------------------------------
+# Tests: byref-updatedinput-unapplied-on-background-agent-dispatch — WU-1
+# The sanctioned CONSUMED-nonce reader. The platform drops the by-reference
+# updatedInput rewrite for the Agent tool (upstream #39814), so a subagent that
+# booted with a bare @@lazy-ref token needs a run-scoped, read-only way to
+# recover the registered prompt bytes for a nonce the guard ALREADY consumed
+# this run. resolve_consumed_emission_by_nonce is that read: it INVERTS Gate-1
+# of resolve_emission_by_nonce (require consumed truthy) while reusing the same
+# TTL + run-start gates, returns the entry's prompt_raw (fallback prompt_norm)
+# as a STRING, and NEVER un-consumes.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_consumed_emission_returns_prompt_raw_for_consumed_nonce():
+    """WU-1: resolve_consumed_emission_by_nonce returns the exact stored
+    prompt_raw for a consumed, TTL-fresh, run-gated entry.
+
+    RED until resolve_consumed_emission_by_nonce is implemented.
+    """
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            raw = "Execute the planned step — consumed-reader happy path."
+            entry = lazy_core.register_emission(raw, cls="cycle", item_id="feat-ref")
+            nonce = entry["nonce"]
+            lazy_core.dispatch.consume_nonce(nonce, consumer="toolu_abc123")
+
+            assert hasattr(lazy_core, "resolve_consumed_emission_by_nonce"), (
+                "lazy_core must export resolve_consumed_emission_by_nonce "
+                "(byref-updatedinput WU-1)"
+            )
+
+            resolved = lazy_core.resolve_consumed_emission_by_nonce(nonce)
+            assert resolved == raw, (
+                f"resolve_consumed_emission_by_nonce must return the exact stored "
+                f"prompt_raw string for a consumed fresh nonce; got {resolved!r}, "
+                f"expected {raw!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_resolve_consumed_emission_unknown_nonce_returns_none():
+    """WU-1: a nonce that does not exist in the registry → None."""
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            resolved = lazy_core.resolve_consumed_emission_by_nonce("deadbeef" * 4)
+            assert resolved is None, (
+                f"resolve_consumed_emission_by_nonce must return None for an "
+                f"unknown nonce; got {resolved!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_resolve_consumed_emission_unconsumed_returns_none():
+    """WU-1: Gate-1 inversion — an UNCONSUMED fresh entry returns None (this
+    reader serves ONLY nonces the guard already ALLOW+consumed this run)."""
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            raw = "Execute the planned step — still-unconsumed nonce."
+            entry = lazy_core.register_emission(raw, cls="cycle")
+            # Deliberately do NOT consume.
+            resolved = lazy_core.resolve_consumed_emission_by_nonce(entry["nonce"])
+            assert resolved is None, (
+                "resolve_consumed_emission_by_nonce must return None for an "
+                "UNCONSUMED entry (inverted Gate-1); "
+                f"got {resolved!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_resolve_consumed_emission_ttl_expired_returns_none():
+    """WU-1: a consumed entry beyond REGISTRY_ENTRY_TTL_SECONDS → None."""
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            base = _time.time()
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=base,
+            )
+            raw = "Execute the planned step — TTL-expired nonce."
+            entry = lazy_core.register_emission(raw, cls="cycle", now=base)
+            lazy_core.dispatch.consume_nonce(entry["nonce"])
+
+            # Resolve well beyond the 1800s TTL.
+            future = base + lazy_core.dispatch.REGISTRY_ENTRY_TTL_SECONDS + 100
+            resolved = lazy_core.resolve_consumed_emission_by_nonce(
+                entry["nonce"], now=future
+            )
+            assert resolved is None, (
+                "resolve_consumed_emission_by_nonce must return None for a "
+                "consumed entry beyond TTL; "
+                f"got {resolved!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_resolve_consumed_emission_predates_run_returns_none():
+    """WU-1: a consumed, TTL-fresh entry whose emitted_at predates the run
+    marker's started_at → None (run-start gate)."""
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            old_time = _time.time() - 7200  # 2 hours ago
+            raw = "Execute the planned step — predates-run nonce."
+            entry = lazy_core.register_emission(raw, cls="cycle", now=old_time)
+            lazy_core.dispatch.consume_nonce(entry["nonce"])
+
+            # Marker written NOW — started_at > emitted_at makes the entry stale.
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+
+            # Resolve within TTL of emitted_at so ONLY the run-start gate can fail.
+            resolved = lazy_core.resolve_consumed_emission_by_nonce(
+                entry["nonce"], now=old_time + 10
+            )
+            assert resolved is None, (
+                "resolve_consumed_emission_by_nonce must return None for a "
+                "consumed entry predating the run's started_at (run-start gate); "
+                f"got {resolved!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_resolve_consumed_emission_never_mutates_consumed():
+    """WU-1: the reader is READ-ONLY — it never un-consumes. After resolving,
+    the registry entry's consumed flag / consumed_by must be unchanged."""
+    _guard()
+    import time as _time
+
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=5, now=_time.time(),
+            )
+            raw = "Execute the planned step — read-only invariant."
+            entry = lazy_core.register_emission(raw, cls="cycle")
+            nonce = entry["nonce"]
+            lazy_core.dispatch.consume_nonce(nonce, consumer="toolu_readonly")
+
+            before = lazy_core.dispatch._load_registry()
+            before_entry = next(e for e in before["entries"] if e["nonce"] == nonce)
+            before_consumed = before_entry.get("consumed")
+            before_consumer = before_entry.get("consumed_by")
+
+            resolved = lazy_core.resolve_consumed_emission_by_nonce(nonce)
+            assert resolved == raw, "pre-condition: the consumed reader must hit"
+
+            after = lazy_core.dispatch._load_registry()
+            after_entry = next(e for e in after["entries"] if e["nonce"] == nonce)
+            assert after_entry.get("consumed") == before_consumed == True, (  # noqa: E712
+                "resolve_consumed_emission_by_nonce must NEVER un-consume; "
+                f"consumed flag changed: before={before_consumed!r} "
+                f"after={after_entry.get('consumed')!r}"
+            )
+            assert after_entry.get("consumed_by") == before_consumer, (
+                "resolve_consumed_emission_by_nonce must not alter consumed_by; "
+                f"before={before_consumer!r} after={after_entry.get('consumed_by')!r}"
+            )
+        finally:
+            _clear_state_dir()
 
 
 def test_f2a_append_dispatch_by_reference_event_writes_ledger():
@@ -4390,8 +5021,6 @@ def test_f2a_append_dispatch_by_reference_event_writes_ledger():
             _clear_state_dir()
 
 
-
-
 def test_governing_file_set_includes_orchestrator_and_components():
     """The governing set INCLUDES lazy-batch SKILL + bug/cloud twins + the 3 components."""
     _guard()
@@ -4406,8 +5035,6 @@ def test_governing_file_set_includes_orchestrator_and_components():
     ]
     for rel in includes:
         assert rel in gset, f"governing set must include {rel}"
-
-
 
 
 def test_merged_priority_normalizes_tier_and_severity():
@@ -4433,6 +5060,70 @@ def test_merged_priority_normalizes_tier_and_severity():
     assert lazy_core.merged_priority("feature", {"tier": True}) == lazy_core.MERGED_PRIORITY_DEFAULT
 
 
+def test_merged_priority_feature_tier_enum_to_int():
+    """feature-tier-strings-fall-to-merged-priority-default: NAMED feature-tier
+    enums normalize to their integer priority (parallel to bug severity), while
+    every backward-compat shape (bare int, numeric string, bool, null/missing)
+    keeps its prior behavior."""
+    _guard()
+    # Every named enum resolves to its declared integer (SSOT: _FEATURE_TIER_ENUM).
+    for name, expected in lazy_core._FEATURE_TIER_ENUM.items():
+        assert lazy_core.merged_priority("feature", {"tier": name}) == expected, name
+    # The previously-`99` legacy strings now carry real priority (the whole point).
+    assert lazy_core.merged_priority("feature", {"tier": "milestone"}) != lazy_core.MERGED_PRIORITY_DEFAULT
+    assert lazy_core.merged_priority("feature", {"tier": "non-audio"}) != lazy_core.MERGED_PRIORITY_DEFAULT
+    # Backward compat — unchanged behavior for the pre-existing shapes.
+    assert lazy_core.merged_priority("feature", {"tier": 5}) == 5          # bare int
+    assert lazy_core.merged_priority("feature", {"tier": "6"}) == 6        # numeric string
+    assert lazy_core.merged_priority("feature", {"tier": True}) == lazy_core.MERGED_PRIORITY_DEFAULT
+    assert lazy_core.merged_priority("feature", {}) == lazy_core.MERGED_PRIORITY_DEFAULT
+    assert lazy_core.merged_priority("feature", {"tier": None}) == lazy_core.MERGED_PRIORITY_DEFAULT
+    # An UNKNOWN enum name still sorts last (no silent mis-priority).
+    assert lazy_core.merged_priority("feature", {"tier": "not-a-tier"}) == lazy_core.MERGED_PRIORITY_DEFAULT
+
+
+def test_merged_priority_feature_multi_enum_takes_min():
+    """feature-tier-strings-fall-to-merged-priority-default: a feature whose `tier`
+    is a LIST of enum names takes the MIN (highest-priority) of the enums' integer
+    values. Mixed int/enum lists and unresolvable elements are handled too."""
+    _guard()
+    # MIN of the enums' values: pre-release(1) vs milestone(3) → 1.
+    assert lazy_core.merged_priority(
+        "feature", {"tier": ["milestone", "pre-release"]}
+    ) == 1
+    # Order-independent — MIN, not first.
+    assert lazy_core.merged_priority(
+        "feature", {"tier": ["pre-release", "non-audio"]}
+    ) == 1
+    # Mixed bare-int + enum: min(0, 3) → 0.
+    assert lazy_core.merged_priority("feature", {"tier": [0, "milestone"]}) == 0
+    # Unresolvable elements are skipped; the resolvable one wins.
+    assert lazy_core.merged_priority(
+        "feature", {"tier": ["not-a-tier", "commercialization"]}
+    ) == lazy_core._FEATURE_TIER_ENUM["commercialization"]
+    # An all-unresolvable / empty list sorts last (never crashes).
+    assert lazy_core.merged_priority("feature", {"tier": ["nope", True]}) == lazy_core.MERGED_PRIORITY_DEFAULT
+    assert lazy_core.merged_priority("feature", {"tier": []}) == lazy_core.MERGED_PRIORITY_DEFAULT
+
+
+def test_merged_priority_prerelease_ordering_p0_before_prerelease_before_p2():
+    """feature-tier-strings-fall-to-merged-priority-default LOAD-BEARING ordering
+    (operator-specified): merged_priority(P0 bug)=0 < merged_priority(pre-release
+    feature)=1 < merged_priority(P2 bug)=2 — a P0 bug is still addressed BEFORE a
+    pre-release feature, which is addressed before a P2 bug."""
+    _guard()
+    p0 = lazy_core.merged_priority("bug", {"severity": "P0"})
+    prerelease = lazy_core.merged_priority("feature", {"tier": "pre-release"})
+    p2 = lazy_core.merged_priority("bug", {"severity": "P2"})
+    assert p0 == 0, p0
+    assert prerelease == 1, prerelease
+    assert p2 == 2, p2
+    assert p0 < prerelease < p2, (p0, prerelease, p2)
+    # And it holds through the merged worklist sort, not just the scalar function.
+    feats = [{"id": "pre-rel-feat", "tier": "pre-release"}]
+    bugs = [{"id": "p0-bug", "severity": "P0"}, {"id": "p2-bug", "severity": "P2"}]
+    ids = [e["item_id"] for e in lazy_core.merged_worklist(feats, bugs, "/r")]
+    assert ids == ["p0-bug", "pre-rel-feat", "p2-bug"], ids
 
 
 def test_merged_worklist_both_populated_ordered_by_priority():
@@ -4449,18 +5140,1213 @@ def test_merged_worklist_both_populated_ordered_by_priority():
     assert wl[1]["type"] == "bug"
 
 
-
-
 def test_merged_worklist_bug_breaks_tie_at_equal_priority():
-    """WU-1: equal effective priority → bug sorts before feature."""
+    """Tie-break gate (name retained across the 2026-07-17 flip so the gate-test
+    identity is preserved). FORMERLY asserted bug-before-feature; the operator
+    directive "I only want P0 bugs to sort ahead of P1 features"
+    (non-p0-bug-outranks-p1-feature-on-aged-tie) INVERTED the tie-break, so this
+    now asserts FEATURE-before-bug at an equal effective rank. Combined with the
+    rank-1 age floor, only a genuine P0 bug (strictly rank 0) precedes a P1
+    feature — coverage strengthened, not weakened (the P0-still-ahead leg is
+    asserted alongside)."""
     _guard()
-    # feature tier 1 (priority 1) vs bug P1 (rank 1) — equal → bug first.
+    # feature tier 1 (priority 1) vs bug P1 (rank 1) — equal → FEATURE first now.
     feats = [{"id": "feat-a", "tier": 1}]
     bugs = [{"id": "bug-a", "severity": "P1"}]
     head = lazy_core.next_merged(feats, bugs, "/r")
-    assert head == {"item_id": "bug-a", "type": "bug", "repo_root": "/r"}, head
+    assert head == {"item_id": "feat-a", "type": "feature", "repo_root": "/r"}, head
+    # A genuine P0 bug STILL precedes the P1 feature (strictly lower rank).
+    p0 = lazy_core.next_merged(feats, [{"id": "bug-p0", "severity": "P0"}], "/r")
+    assert p0 == {"item_id": "bug-p0", "type": "bug", "repo_root": "/r"}, p0
 
 
+def test_merged_worklist_aged_p2_bug_sorts_behind_p1_feature():
+    """non-p0-bug-outranks-p1-feature-on-aged-tie regression (the exact live
+    2026-07-17 friction): a P2 bug age-escalated to rank-1 P1-equivalent MUST
+    sort BEHIND a P1 (pre-release) feature; a genuine P0 bug still precedes it."""
+    import datetime
+    _guard()
+    today = datetime.date(2026, 7, 17)
+    # P2 bug discovered 8 days ago → age_escalated_rank(2, ...) == 1 (rank-1).
+    assert lazy_core.age_escalated_rank(2, "2026-07-09", today=today) == 1
+    feats = [{"id": "hydra-overlay", "tier": ["non-audio", "pre-release"]}]  # P1
+    aged_p2 = [{"id": "protocol-generic-claims-drift", "severity": "P2",
+                "discovered": "2026-07-09"}]
+    head = lazy_core.next_merged(feats, aged_p2, "/r", today=today)
+    assert head == {"item_id": "hydra-overlay", "type": "feature",
+                    "repo_root": "/r"}, head
+    # But a genuine P0 bug outranks the same P1 feature.
+    p0 = [{"id": "p0-bug", "severity": "P0"}]
+    assert lazy_core.next_merged(feats, p0, "/r", today=today)["type"] == "bug"
+
+
+def test_merged_head_override_diverges_when_p0_bug_outranks_current_feature():
+    """dispatch-probe-and-inject-bypass-merged-head: a dispatch-bound FEATURE
+    probe emitting for hydra-overlay while a P0 bug sits at the merged head must
+    get a withhold payload (route_overridden_by=merged-head-diverged) NAMING the
+    bug — the exact live 2026-07-17 friction (the enriched --emit-prompt probe
+    returned the feature over two P0 bugs). Regression fixture: P0 bug at
+    bug-queue head + actionable feature → the override redirects to the bug."""
+    _guard()
+    feats = [{"id": "hydra-overlay", "tier": 3}]
+    bugs = [{"id": "adhoc-hydra-sidecar-dist-esm-no-frames", "severity": "P0"}]
+    override = lazy_core.dispatch.merged_head_override(
+        feats, bugs, "/r", "hydra-overlay"
+    )
+    assert override is not None, "P0 bug at merged head must override the feature route"
+    assert override["route_overridden_by"] == "merged-head-diverged"
+    assert override["merged_head"] == {
+        "item_id": "adhoc-hydra-sidecar-dist-esm-no-frames", "type": "bug",
+    }, override
+
+
+def test_merged_head_override_diverges_when_higher_sev_bug_jumps_head():
+    """Coupled-pair (bug-state) case: a bug probe emitting for a lower-severity
+    bug while a P0 bug jumped the merged head → withhold naming the P0 bug."""
+    _guard()
+    bugs = [{"id": "bug-p0", "severity": "P0"}, {"id": "bug-p2", "severity": "P2"}]
+    override = lazy_core.dispatch.merged_head_override([], bugs, "/r", "bug-p2")
+    assert override is not None
+    assert override["merged_head"] == {"item_id": "bug-p0", "type": "bug"}, override
+
+
+def test_merged_head_override_none_when_head_is_current_item():
+    """No divergence: the probe is already emitting for the merged head (feature
+    run whose head IS the feature; bug run whose head IS the bug) → None, so the
+    caller emits normally (byte-identical common path)."""
+    _guard()
+    assert lazy_core.dispatch.merged_head_override(
+        [{"id": "feat-a", "tier": 1}], [], "/r", "feat-a"
+    ) is None
+    assert lazy_core.dispatch.merged_head_override(
+        [], [{"id": "bug-a", "severity": "P0"}], "/r", "bug-a"
+    ) is None
+
+
+def test_merged_head_override_none_on_empty_queues_or_missing_id():
+    """Fail-safe: empty queues or a missing current_item_id → None (never a
+    spurious withhold that would stall a legitimate probe)."""
+    _guard()
+    assert lazy_core.dispatch.merged_head_override([], [], "/r", "feat-a") is None
+    assert lazy_core.dispatch.merged_head_override(
+        [{"id": "feat-a", "tier": 1}], [], "/r", None
+    ) is None
+
+
+# ---------------------------------------------------------------------------
+# Tests: coordinator_arbitrated_emission — the unified merged-head coordinator
+# exemption predicate (adhoc-unify-merged-head-coordinator-exemptions Phase 1).
+# One predicate answers "is this a coordinator-arbitrated emission the serial
+# merged-head divergence premise does not apply to?" returning None | "lane" |
+# "lease". Lane (parent_run) has precedence over lease. Fully fail-safe — it
+# must NEVER raise into the base probe.
+# ---------------------------------------------------------------------------
+
+
+def test_coordinator_arbitrated_emission_lane():
+    """A lane marker (non-null parent_run) → "lane", regardless of feature_id or
+    leases_path (lane arbitration is coordinator-owned; the lease I/O is not even
+    consulted)."""
+    _guard()
+    marker = {"parent_run": {"repo_root": "/main", "started_at": "2026-07-19T00:00:00Z"}}
+    assert lazy_core.dispatch.coordinator_arbitrated_emission(
+        marker, "any-id", "/nonexistent/leases.json"
+    ) == "lane"
+
+
+def test_coordinator_arbitrated_emission_lease():
+    """A non-lane marker whose feature_id holds a LIVE coordinator lease → "lease"
+    (the serial-tail exemption). Seed a live lease via lazy_coord.acquire_lease."""
+    _guard()
+    import lazy_coord  # type: ignore[import]
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        leases_path = Path(td) / "leases.json"
+        lazy_coord.acquire_lease(
+            leases_path, "feat-c", os.getpid(), "wt-00", 3600, now=_time.time(),
+        )
+        marker = {}  # non-lane marker (no parent_run)
+        assert lazy_core.dispatch.coordinator_arbitrated_emission(
+            marker, "feat-c", leases_path
+        ) == "lease"
+
+
+def test_coordinator_arbitrated_emission_none():
+    """A non-lane marker with no live lease (absent/expired leases.json) → None,
+    so the caller runs the merged-head guard exactly as before."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        leases_path = Path(td) / "leases.json"  # never created → no lease
+        assert lazy_core.dispatch.coordinator_arbitrated_emission(
+            {}, "feat-c", leases_path
+        ) is None
+
+
+def test_coordinator_arbitrated_emission_lane_precedes_lease():
+    """When BOTH a parent_run (lane) AND a live lease would qualify, lane wins —
+    it is evaluated first and the lease read is never required."""
+    _guard()
+    import lazy_coord  # type: ignore[import]
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        leases_path = Path(td) / "leases.json"
+        lazy_coord.acquire_lease(
+            leases_path, "feat-c", os.getpid(), "wt-00", 3600, now=_time.time(),
+        )
+        marker = {"parent_run": {"repo_root": "/main", "started_at": "t"}}
+        assert lazy_core.dispatch.coordinator_arbitrated_emission(
+            marker, "feat-c", leases_path
+        ) == "lane"
+
+
+def test_coordinator_arbitrated_emission_failsafe():
+    """The predicate NEVER raises into the base probe: a None marker, a
+    missing/empty feature_id, and a leases_path that raises on read each return
+    None (no lane, no lease)."""
+    _guard()
+
+    class _Boom:
+        # A leases_path whose str()/read explodes — has_live_lease must be
+        # shielded so the predicate returns None rather than propagating.
+        def __fspath__(self):
+            raise OSError("boom")
+
+    # None marker → not a lane, no lease branch → None.
+    assert lazy_core.dispatch.coordinator_arbitrated_emission(
+        None, "feat-c", "/nonexistent/leases.json"
+    ) is None
+    # Missing / empty feature_id → no lease compute → None (marker non-None).
+    assert lazy_core.dispatch.coordinator_arbitrated_emission(
+        {}, "", "/nonexistent/leases.json"
+    ) is None
+    assert lazy_core.dispatch.coordinator_arbitrated_emission(
+        {}, None, "/nonexistent/leases.json"
+    ) is None
+    # A leases_path that raises on read → shielded → None (never raises).
+    assert lazy_core.dispatch.coordinator_arbitrated_emission(
+        {}, "feat-c", _Boom()
+    ) is None
+
+
+def test_coordinator_exemption_diag_maps_reason_to_text():
+    """The caller-facing reason→diagnostic map resolves "lane"/"lease" to their
+    existing diag substances and an UNRECOGNIZED reason to a generic
+    coordinator-arbitrated exemption diag (forward-compat for a future third
+    exemption) — so a reason rename can never silently drop a diagnostic."""
+    _guard()
+    lane_diag = lazy_core.dispatch.coordinator_exemption_diag("lane")
+    lease_diag = lazy_core.dispatch.coordinator_exemption_diag("lease")
+    assert "lane probe" in lane_diag and "claim_shardable" in lane_diag
+    assert "lease-held" in lease_diag and "round-2 gap 8" in lease_diag
+    other = lazy_core.dispatch.coordinator_exemption_diag("demoted-serial-rerun")
+    assert "coordinator-arbitrated" in other
+    assert "demoted-serial-rerun" in other
+
+
+def test_probe_skipped_ids_collects_all_skip_lists_and_resolves_names():
+    """merged-head-diverged-stalls-on-gated-head: probe_skipped_ids folds the
+    per-pipeline probe's OWN same-cycle skip lists into one id set — gated_heads /
+    host_deferred_features / dep_gated are id-keyed (used directly);
+    device_deferred_features / operator_deferred are NAME-keyed and resolved to
+    queue ids via the loaded items. Empty state → empty set (common path)."""
+    _guard()
+    state = {
+        "feature_id": "workable",
+        "gated_heads": ["blocked-feat"],
+        "host_deferred_features": ["host-feat"],
+        "device_deferred_features": ["Device Feature Name"],
+        "dep_gated": [{"id": "dep-feat", "missing": ["upstream"]}],
+        # merged-head-diverged-withholds-on-not-skip-ahead-ready-milestone: the
+        # not-skip-ahead-ready skip list (id-keyed) must fold in too, else the
+        # merged-head-diverged guard withholds the route pointing at a
+        # non-dispatchable dep-unready milestone → no-route.
+        "skip_ahead_blocked": ["milestone-feat"],
+    }
+    items = [
+        {"id": "workable", "name": "Workable"},
+        {"id": "blocked-feat", "name": "Blocked"},
+        {"id": "host-feat", "name": "Host"},
+        {"id": "device-feat", "name": "Device Feature Name"},
+        {"id": "dep-feat", "name": "Dep"},
+        {"id": "milestone-feat", "name": "Milestone"},
+    ]
+    got = lazy_core.dispatch.probe_skipped_ids(state, items)
+    assert got == {
+        "blocked-feat", "host-feat", "device-feat", "dep-feat", "milestone-feat",
+    }, got
+    # Byte-identical common path: a probe that skipped nothing → empty set.
+    assert lazy_core.dispatch.probe_skipped_ids({"feature_id": "x"}, items) == set()
+    assert lazy_core.dispatch.probe_skipped_ids(None, items) == set()
+
+
+def test_merged_head_override_gated_head_excluded_no_false_withhold():
+    """merged-head-diverged-stalls-on-gated-head: when the highest-priority merged
+    item is a GATED head the probe already skipped (fed via exclude_ids, exactly
+    as the emit handler now does), the override returns None — the merged head is
+    the workable item the probe chose (== current), so NO withhold/stall. But a
+    genuinely-DISPATCHABLE higher-priority item (a P0 bug) still diverges even with
+    the gated head excluded (the withhold retains its precise meaning)."""
+    _guard()
+    feats = [
+        {"id": "blocked-feat", "tier": 0},   # gated head (BLOCKED) the probe skipped
+        {"id": "workable", "tier": 2},       # the item the probe dispatched
+    ]
+    # Gated head folded into exclude_ids → merged head is `workable` (== current)
+    # → None (no false withhold, the stall is gone).
+    assert lazy_core.dispatch.merged_head_override(
+        feats, [], "/r", "workable", exclude_ids={"blocked-feat"}
+    ) is None
+    # A dispatchable P0 bug outranks the workable feature → still withholds even
+    # with the gated feature excluded (genuine dispatchable-item divergence).
+    override = lazy_core.dispatch.merged_head_override(
+        feats, [{"id": "bug-z", "severity": "P0"}], "/r", "workable",
+        exclude_ids={"blocked-feat"},
+    )
+    assert override is not None and override["merged_head"] == {
+        "item_id": "bug-z", "type": "bug"}, override
+
+
+# ---------------------------------------------------------------------------
+# Tests: merged-head-actionability-oracle (is_dispatchable +
+# merged_head_nondispatchable_ids) — the authoritative per-item "would
+# compute_state dispatch this?" oracle that REPLACES the 5-facet file-predicate
+# enumeration (nondispatchable_item_ids). Phase 1: pure + hermetic (injected
+# scoped_probe callable). SPEC L1/L2/L3/L5; Open Questions 1 & 3.
+# ---------------------------------------------------------------------------
+
+def _dispatchable_state(sub_skill="execute-plan"):
+    """A scoped compute_state shape that WOULD dispatch (real forward skill,
+    no terminal_reason)."""
+    return {"feature_id": "x", "sub_skill": sub_skill, "sub_skill_args": "Step 7a",
+            "terminal_reason": None}
+
+
+def _nondispatch_state(terminal_reason, sub_skill=None):
+    """A scoped compute_state shape that would NOT dispatch (a terminal /
+    skip / defer / park / gate / halt reason)."""
+    return {"feature_id": "x", "sub_skill": sub_skill, "sub_skill_args": None,
+            "terminal_reason": terminal_reason}
+
+
+def test_is_dispatchable_predicate_table():
+    """is_dispatchable (L3) — dispatchable IFF sub_skill is a non-empty,
+    non-`__`-prefixed real skill AND terminal_reason is falsy. The non-dispatch
+    reason set is DERIVED from compute_state's closed terminal vocabulary (the
+    sanctioned-stop + halt + notify sets already in lazy_core, PLUS the scoped
+    per-item terminals a --feature-id/--bug-id probe emits) — Open Question 3,
+    never a hand-listed enumeration."""
+    _guard()
+    d = lazy_core.dispatch.is_dispatchable
+    # Real forward dispatch → dispatchable.
+    assert d(_dispatchable_state("execute-plan")) is True
+    assert d(_dispatchable_state("spec")) is True
+    # Every terminal_reason drawn from compute_state's CLOSED vocabulary →
+    # non-dispatchable. Derived from the lazy_core sets (never hand-listed) so a
+    # NEW terminal reason is auto-covered — the whole point of the oracle.
+    vocabulary = (
+        set(lazy_core.SANCTIONED_STOP_TERMINAL)
+        | set(lazy_core.TELEMETRY_HALT_TERMINAL_REASONS)
+        | set(lazy_core.notifyplane._NOTIFY_ATTENTION_TERMINALS)
+        # The scoped per-item terminals a --feature-id/--bug-id probe emits
+        # (exactly what the oracle's cross-pipeline scoped_probe returns for a
+        # non-dispatchable candidate) — the categories the file-predicate never
+        # covered (cloud/device/host-deferred-scoped, completion-unverified, …).
+        | {"cloud-deferred-scoped", "device-deferred-scoped",
+           "host-deferred-scoped", "needs-input-scoped", "blocked-scoped",
+           "needs-ratification-scoped", "scoped-id-not-found",
+           "queue-exhausted-budget-deferred", "stale_upstream"}
+    )
+    for reason in sorted(vocabulary):
+        assert d(_nondispatch_state(reason)) is False, (
+            f"terminal_reason={reason!r} must be non-dispatchable")
+    # A pseudo-skill (`__`-prefixed) is never a real forward dispatch.
+    assert d({"sub_skill": "__mark_complete__", "terminal_reason": None}) is False
+    assert d({"sub_skill": "__write_validated_from_skip__", "terminal_reason": None}) is False
+    # Empty / missing / non-str sub_skill → non-dispatchable.
+    assert d({"sub_skill": None, "terminal_reason": None}) is False
+    assert d({"sub_skill": "", "terminal_reason": None}) is False
+    assert d({"terminal_reason": None}) is False
+    assert d({"sub_skill": 123, "terminal_reason": None}) is False
+    # Defensive: a real sub_skill BUT a truthy terminal_reason is still
+    # non-dispatchable (the two are mutually exclusive on a real forward state;
+    # if both appear, terminal_reason wins — never fabricate a dispatch).
+    assert d({"sub_skill": "execute-plan", "terminal_reason": "blocked"}) is False
+    # Non-dict / fail-safe.
+    assert d(None) is False
+    assert d("not-a-dict") is False
+
+
+def test_merged_head_nondispatchable_ids_same_pipeline_uses_probe_skipped_unchanged():
+    """L2: the same-pipeline contribution is probe_skipped_ids(state, same_items)
+    UNCHANGED (the cross-item skip-ahead ordering context). A same-pipeline item
+    the probe REACHED and skipped (here `blocked-feat`, in gated_heads) is folded
+    into exclude and DROPPED from the worklist, so the injected scoped_probe is
+    never called for it (the `_never` guard) — the current dispatch target is
+    discarded. (A same-pipeline head the probe NEVER reached IS scope-probed; see
+    test_..._excludes_parked_UNREACHED_same_pipeline_head — no such item here.)"""
+    _guard()
+    feats = [{"id": "blocked-feat", "tier": 0}, {"id": "workable", "tier": 2}]
+    state = {"feature_id": "workable", "gated_heads": ["blocked-feat"]}
+
+    def _never(_id):
+        raise AssertionError(f"scoped_probe must not run for same-pipeline id {_id!r}")
+
+    got = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        feats, [], "/r", "workable",
+        same_pipeline="feature", same_pipeline_state=state, scoped_probe=_never,
+    )
+    # Same-pipeline skip folded in; current target discarded; no cross items. The
+    # skipped head is DROPPED from the worklist (exclude_ids), so `_never` (which
+    # forbids probing) is never reached — the fold, not a fast-path, excludes it.
+    assert got == {"blocked-feat"}, got
+    # Byte-identical common path: only the current item in its own queue and no
+    # cross items → the walk breaks on the current head, nothing is probed → empty.
+    # (A higher-priority same-pipeline sibling the probe did NOT skip is no longer
+    # a no-op — it is scope-probed; see
+    # test_..._excludes_parked_UNREACHED_same_pipeline_head.)
+    assert lazy_core.dispatch.merged_head_nondispatchable_ids(
+        [{"id": "workable", "tier": 2}], [], "/r", "workable",
+        same_pipeline="feature", same_pipeline_state={"feature_id": "workable"},
+        scoped_probe=_never,
+    ) == set()
+
+
+def test_merged_head_nondispatchable_ids_facet_regressions_excluded_via_oracle():
+    """Every currently-enumerated facet (parked / operator-deferred /
+    device-deferred / dep-unready / research-skipped / research-exclusion) — the
+    file-predicate categories — is now EXCLUDED via the scoped oracle: a
+    cross-pipeline candidate whose scoped_probe returns that facet's non-dispatch
+    state is dropped from the merged head, exactly as the old enumeration did."""
+    _guard()
+    # Feature probe emitting for `workable` (tier 2); a bug sits ABOVE it (P0).
+    feats = [{"id": "workable", "tier": 2}]
+    facet_reasons = [
+        "blocked",              # parked / BLOCKED
+        "needs-input",          # parked / operator-deferred surface
+        "device-deferred-scoped",   # device-deferred
+        "queue-exhausted-dependency-gated",  # dep-unready
+        "needs-research",       # research-skipped / research-pending
+        "blocked-scoped",       # scoped park variant
+    ]
+    for reason in facet_reasons:
+        calls = []
+
+        def _probe(_id, _reason=reason):
+            calls.append(_id)
+            return _nondispatch_state(_reason)
+
+        bugs = [{"id": "bug-facet", "severity": "P0"}]
+        got = lazy_core.dispatch.merged_head_nondispatchable_ids(
+            feats, bugs, "/r", "workable",
+            same_pipeline="feature", same_pipeline_state={"feature_id": "workable"},
+            scoped_probe=_probe,
+        )
+        assert got == {"bug-facet"}, f"reason={reason}: {got}"
+        assert calls == ["bug-facet"], f"reason={reason}: probed {calls}"
+
+
+def test_merged_head_nondispatchable_ids_new_category_auto_excluded():
+    """The previously-UNCOVERED categories (cloud-deferred / completion-unverified)
+    — which the file-predicate's own 'Scope boundary' admitted it could not
+    classify — are now correctly excluded by the oracle, closing the recurring
+    merged-head-diverged-withholds-on-<X> class by construction."""
+    _guard()
+    feats = [{"id": "workable", "tier": 2}]
+    for reason in ("cloud-deferred-scoped", "completion-unverified"):
+        bugs = [{"id": "bug-new", "severity": "P0"}]
+        got = lazy_core.dispatch.merged_head_nondispatchable_ids(
+            feats, bugs, "/r", "workable",
+            same_pipeline="feature", same_pipeline_state={"feature_id": "workable"},
+            scoped_probe=lambda _id, _r=reason: _nondispatch_state(_r),
+        )
+        assert got == {"bug-new"}, f"reason={reason}: {got}"
+
+
+def test_merged_head_nondispatchable_ids_research_surface_excluded_here():
+    """L3 tail: a needs-research cross-pipeline head (WITHOUT --skip-needs-research)
+    classifies non-dispatchable and is EXCLUDED here (it halts). research_halt_head
+    RE-INCLUDES it in Phase 3 exactly as today — but at the oracle level it is
+    excluded. Uses a BUG probe (same_pipeline='bug') so features are cross."""
+    _guard()
+    bugs = [{"id": "bug-workable", "severity": "P2"}]
+    feats = [{"id": "feat-research", "tier": 0}]  # ranks above the P2 bug
+    got = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        feats, bugs, "/r", "bug-workable",
+        same_pipeline="bug", same_pipeline_state={"feature_id": "bug-workable"},
+        scoped_probe=lambda _id: _nondispatch_state("needs-research"),
+    )
+    assert got == {"feat-research"}, got
+
+
+def test_merged_head_nondispatchable_ids_dispatchable_head_not_excluded_byte_identity():
+    """Byte-identity for dispatchable heads (by construction): a genuinely
+    dispatchable higher-priority cross item (a P0 bug jumping the queue) is NOT
+    excluded, so merged_head_override still WITHHOLDS on it identically to
+    pre-oracle. The oracle IS the dispatch decision the withhold already trusts."""
+    _guard()
+    feats = [{"id": "workable", "tier": 2}]
+    bugs = [{"id": "bug-p0", "severity": "P0"}]
+    excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        feats, bugs, "/r", "workable",
+        same_pipeline="feature", same_pipeline_state={"feature_id": "workable"},
+        scoped_probe=lambda _id: _dispatchable_state(),
+    )
+    assert excluded == set(), excluded
+    # Feed the oracle's exclude set to merged_head_override → still withholds.
+    override = lazy_core.dispatch.merged_head_override(
+        feats, bugs, "/r", "workable", exclude_ids=excluded)
+    assert override is not None and override["merged_head"] == {
+        "item_id": "bug-p0", "type": "bug"}, override
+
+
+def test_merged_head_nondispatchable_ids_short_circuit_at_first_dispatchable_head():
+    """L5: the oracle is bounded at-or-above the emitted item and short-circuits
+    at the FIRST dispatchable head — a candidate ranked BELOW the emitted item is
+    never scoped-probed, and probing stops the moment a dispatchable head is seen
+    (a lower non-dispatchable item above it is never reached)."""
+    _guard()
+    # workable (feature P2) is the emitted item. Above it: bug-hi (P0, dispatchable)
+    # then bug-mid (P1, would be non-dispatchable). Below it: bug-lo (P3).
+    feats = [{"id": "workable", "tier": 2}]
+    bugs = [
+        {"id": "bug-hi", "severity": "P0"},
+        {"id": "bug-mid", "severity": "P1"},
+        {"id": "bug-lo", "severity": "P3"},
+    ]
+    calls = []
+
+    def _probe(_id):
+        calls.append(_id)
+        # bug-hi dispatchable; anything else non-dispatchable (should not be reached).
+        return _dispatchable_state() if _id == "bug-hi" else _nondispatch_state("blocked")
+
+    got = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        feats, bugs, "/r", "workable",
+        same_pipeline="feature", same_pipeline_state={"feature_id": "workable"},
+        scoped_probe=_probe,
+    )
+    # Short-circuited at bug-hi (dispatchable) → nothing excluded; bug-mid (above,
+    # non-dispatchable) never reached; bug-lo (below current) never probed.
+    assert got == set(), got
+    assert calls == ["bug-hi"], f"expected only bug-hi probed, got {calls}"
+
+
+def test_merged_head_nondispatchable_ids_below_current_never_probed():
+    """The bound never scoped-probes a candidate ranked strictly below the emitted
+    item (it can never be the diverging merged head)."""
+    _guard()
+    feats = [{"id": "workable", "tier": 1}]      # emitted item, P1
+    bugs = [{"id": "bug-lo", "severity": "P3"}]  # ranks below → never probed
+    calls = []
+    got = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        feats, bugs, "/r", "workable",
+        same_pipeline="feature", same_pipeline_state={"feature_id": "workable"},
+        scoped_probe=lambda _id: calls.append(_id) or _nondispatch_state("blocked"),
+    )
+    assert got == set(), got
+    assert calls == [], f"below-current candidate must not be probed, got {calls}"
+
+
+def test_oracle_leaves_reused_signatures_unchanged():
+    """L2: probe_skipped_ids, merged_head_override, research_halt_head signatures
+    are UNCHANGED (they still accept a pre-built exclude_ids) — the oracle is
+    additive, it does not re-shape the functions it composes."""
+    _guard()
+    sig = inspect.signature
+    assert list(sig(lazy_core.dispatch.probe_skipped_ids).parameters) == ["state", "items"]
+    mho = sig(lazy_core.dispatch.merged_head_override).parameters
+    assert list(mho) == ["feature_items", "bug_items", "repo_root",
+                         "current_item_id", "today", "exclude_ids"], list(mho)
+    rhh = sig(lazy_core.dispatch.research_halt_head).parameters
+    assert list(rhh) == ["state", "feature_items", "bug_items", "repo_root",
+                        "today", "exclude_ids"], list(rhh)
+
+
+def test_merged_head_nondispatchable_ids_in_process_isolation_characterization():
+    """Open Question 1 / L4 (the runtime-coupled deliverable): driving the REAL
+    compute_state scoped N times MUST NOT corrupt the primary emit probe's
+    already-captured `state` or the module accumulators. RESOLVES the isolation
+    strategy: because compute_state resets its module accumulators at entry and
+    _state() returns a FRESH dict with list()-copied accumulator snapshots,
+    reading the returned dict SUFFICES — no snapshot/restore of module globals is
+    required. (Recorded in Phase 1 Implementation Notes.)"""
+    _guard()
+    import copy as _copy
+    ls = _load_state_script("lazy-state.py")
+    with tempfile.TemporaryDirectory() as td:
+        repo, _origin = _make_git_repo_with_origin(td)
+        features = repo / "docs" / "features"
+        features.mkdir(parents=True, exist_ok=True)
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        e1 = _write_feature(features, "feat-a", tier=1, status="Draft")
+        e2 = _write_feature(features, "feat-b", tier=2, status="Draft")
+        (features / "queue.json").write_text(
+            json.dumps({"queue": [e1, e2]}), encoding="utf-8")
+
+        # Primary (unscoped) probe — capture its state + a deep copy to diff.
+        primary = ls.compute_state(repo, cloud=False)
+        primary_snapshot = _copy.deepcopy(primary)
+        diag_after_primary = list(lazy_core._DIAGNOSTICS)
+
+        # Now drive the REAL compute_state scoped N times (the oracle's pattern).
+        for _ in range(4):
+            scoped = ls.compute_state(repo, cloud=False, scope_feature_id="feat-b")
+            assert isinstance(scoped, dict)
+
+        # The primary state dict is UNCORRUPTED (it was a snapshot all along).
+        assert primary == primary_snapshot, (
+            "primary state corrupted by subsequent scoped compute_state calls")
+        # And a fresh re-probe still yields the same primary state (module
+        # accumulators were reset each entry, never leaked).
+        reprobe = ls.compute_state(repo, cloud=False)
+        assert reprobe["feature_id"] == primary["feature_id"]
+        assert reprobe["sub_skill"] == primary["sub_skill"]
+        # _DIAGNOSTICS is reset per compute_state (never accumulates across calls).
+        assert len(lazy_core._DIAGNOSTICS) == len(list(lazy_core._DIAGNOSTICS))
+        del diag_after_primary
+
+
+def _emit_prompt_subprocess(fixture_repo, state_dir, extra_args=None):
+    """Run `lazy-state.py --repeat-count --probe --emit-prompt` as a real
+    subprocess against a fixture repo with a live feature-run marker; return the
+    parsed probe JSON. Mirrors test_subprocess_emit_prompt_withholds_when_merged_
+    head_is_p0_bug's harness."""
+    import os as _os2
+    env = dict(_os_env.environ)
+    env["LAZY_STATE_DIR"] = str(state_dir)
+    result = subprocess.run(
+        [sys.executable, str(_SCRIPTS_DIR / "lazy-state.py"),
+         "--repeat-count", "--probe", "--emit-prompt",
+         "--repo-root", str(fixture_repo), *(extra_args or [])],
+        capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, (
+        f"lazy-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
+    return json.loads(result.stdout)
+
+
+def _write_feature(features_dir, fid, *, tier, status="Draft", independent=False,
+                   blocked=False, phases_body=None, research_gated=False):
+    """Seed a feature spec dir + queue entry fields; returns the queue entry.
+
+    ``research_gated=True`` seeds a RESEARCH_PROMPT.md with NO RESEARCH.md /
+    RESEARCH_SUMMARY.md (the needs-research-pending shape) instead of the
+    research-complete shape — used by the research-halt surfacing tests."""
+    fdir = features_dir / fid
+    fdir.mkdir(parents=True, exist_ok=True)
+    (fdir / "SPEC.md").write_text(
+        f"# Spec\n\n**Status:** {status}\n\n**Depends on:** (none)\n", encoding="utf-8")
+    if research_gated:
+        # Research-pending: a prompt exists but no results → Step-5 needs-research.
+        (fdir / "RESEARCH_PROMPT.md").write_text("# Research prompt\n", encoding="utf-8")
+    else:
+        (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+    (fdir / "PHASES.md").write_text(
+        phases_body or "# Phases\n\n### Phase 1\n- [ ] Build\n- [ ] Tests\n",
+        encoding="utf-8")
+    (fdir / "plans").mkdir(exist_ok=True)
+    (fdir / "plans" / f"all-phases-{fid}.md").write_text("# Plan\n", encoding="utf-8")
+    if blocked:
+        (fdir / "BLOCKED.md").write_text(
+            "---\nphase: External gate\nblocker_kind: external-gate\n---\n"
+            "Awaiting external CI.\n", encoding="utf-8")
+    entry = {"id": fid, "name": fid, "spec_dir": fid, "tier": tier}
+    if independent:
+        entry["independent"] = True
+    return entry
+
+
+def _seed_marker_for(fixture_repo, state_dir):
+    import time as _time
+    _set_state_dir(state_dir)
+    try:
+        lazy_core.write_run_marker(
+            pipeline="feature", cloud=False,
+            repo_root=str(fixture_repo), max_cycles=10, now=_time.time(),
+        )
+    finally:
+        _clear_state_dir()
+
+
+def test_subprocess_emit_prompt_skips_blocked_gated_head_no_withhold():
+    """merged-head-diverged-stalls-on-gated-head (end-to-end): a BLOCKED
+    external-gate feature pinned at the merged head (tier 0) with a lower-priority
+    WORKABLE independent feature downstream must SKIP the gated head — NOT withhold
+    the route. The probe skip-aheads to the workable feature, and the merged-head
+    check no longer diverges (route_overridden_by absent, a real cycle_prompt is
+    emitted for the workable feature). RED (pre-fix): route_overridden_by ==
+    merged-head-diverged with null cycle_prompt — the live 2026-07-17 stall."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = td_path / "fixture-repo"
+        features = fixture_repo / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        blocked = _write_feature(features, "cross-platform-distribution", tier=0, blocked=True)
+        workable = _write_feature(features, "hydra-overlay", tier=2, independent=True)
+        (features / "queue.json").write_text(
+            json.dumps({"queue": [blocked, workable]}), encoding="utf-8")
+        (fixture_repo / "docs" / "bugs").mkdir(parents=True)
+        (fixture_repo / "docs" / "bugs" / "queue.json").write_text(
+            json.dumps({"queue": []}), encoding="utf-8")
+
+        state_dir = td_path / "lazy-state-dir"; state_dir.mkdir()
+        _seed_marker_for(fixture_repo, state_dir)
+        sj = _emit_prompt_subprocess(fixture_repo, state_dir)
+
+        assert sj.get("route_overridden_by") is None, (
+            f"a gated (BLOCKED) merged head the probe skipped must NOT withhold; "
+            f"got route_overridden_by={sj.get('route_overridden_by')!r}")
+        assert sj.get("feature_id") == "hydra-overlay", (
+            f"probe must dispatch the workable feature; got {sj.get('feature_id')!r}")
+        assert sj.get("cycle_prompt"), "a skipped-gated-head route must emit a cycle_prompt"
+        # The skip stays observable via gated_heads (the blocked head is named).
+        assert "cross-platform-distribution" in (sj.get("gated_heads") or []), (
+            f"the skipped gated head must remain observable in gated_heads; "
+            f"got {sj.get('gated_heads')!r}")
+
+
+def test_subprocess_emit_prompt_fully_gated_surfaces_blocked_terminal():
+    """merged-head-diverged-stalls-on-gated-head (fully-gated terminal): when
+    EVERY feature is BLOCKED (no skip-ahead-ready alternative), the probe falls
+    back to the gated head and surfaces terminal_reason='blocked' — the existing
+    terminal, NOT an infinite skip and NOT a merged-head-diverged withhold."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = td_path / "fixture-repo"
+        features = fixture_repo / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        b1 = _write_feature(features, "cross-platform-distribution", tier=0, blocked=True)
+        b2 = _write_feature(features, "other-blocked", tier=2, blocked=True)
+        (features / "queue.json").write_text(
+            json.dumps({"queue": [b1, b2]}), encoding="utf-8")
+        (fixture_repo / "docs" / "bugs").mkdir(parents=True)
+        (fixture_repo / "docs" / "bugs" / "queue.json").write_text(
+            json.dumps({"queue": []}), encoding="utf-8")
+
+        state_dir = td_path / "lazy-state-dir"; state_dir.mkdir()
+        _seed_marker_for(fixture_repo, state_dir)
+        sj = _emit_prompt_subprocess(fixture_repo, state_dir)
+
+        assert sj.get("route_overridden_by") is None, (
+            f"fully-gated queue must NOT withhold on merged-head divergence; "
+            f"got {sj.get('route_overridden_by')!r}")
+        assert sj.get("terminal_reason") == "blocked", (
+            f"fully-gated queue must surface the blocked terminal, not skip forever; "
+            f"got terminal_reason={sj.get('terminal_reason')!r}, "
+            f"feature_id={sj.get('feature_id')!r}")
+
+
+def test_subprocess_emit_prompt_single_type_workable_head_unchanged():
+    """No-regression: a single-type feature queue whose head IS workable behaves
+    byte-identically — normal cycle_prompt, no route_overridden_by, no gated_heads
+    (the fix is additive; it only fires when the probe actually skipped a gated
+    head)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = td_path / "fixture-repo"
+        features = fixture_repo / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        w = _write_feature(features, "feat-w", tier=1)
+        (features / "queue.json").write_text(
+            json.dumps({"queue": [w]}), encoding="utf-8")
+        (fixture_repo / "docs" / "bugs").mkdir(parents=True)
+        (fixture_repo / "docs" / "bugs" / "queue.json").write_text(
+            json.dumps({"queue": []}), encoding="utf-8")
+
+        state_dir = td_path / "lazy-state-dir"; state_dir.mkdir()
+        _seed_marker_for(fixture_repo, state_dir)
+        sj = _emit_prompt_subprocess(fixture_repo, state_dir)
+
+        assert sj.get("route_overridden_by") is None
+        assert sj.get("feature_id") == "feat-w"
+        assert sj.get("cycle_prompt"), "a workable single-type head must emit a cycle_prompt"
+        assert "gated_heads" not in sj, (
+            f"no skip should have happened; got gated_heads={sj.get('gated_heads')!r}")
+
+
+def test_research_halt_head_surfaces_when_research_head_outranks_bug():
+    """research-gated-head-buried-by-skip-ahead-and-merged-fallthrough: a P1
+    research-gated head the probe skipped that OUTRANKS the fallthrough (a lower
+    P2 bug + a lower feature the probe dispatched) is returned → surface. The
+    exclude_ids fed in are exactly what the emit handler builds (nondispatchable ∪
+    probe_skipped_ids incl. the research head, current dispatch target removed)."""
+    _guard()
+    feats = [
+        {"id": "inspector", "tier": "pre-release"},  # P1 research-gated, skipped
+        {"id": "hydra", "tier": 3},                  # dispatched alternative
+    ]
+    bugs = [{"id": "drift", "severity": "P2"}]        # the merged fallthrough target
+    state = {"feature_id": "hydra", "research_gated_heads": ["inspector"]}
+    # exclude = probe_skipped_ids folds the research head in (Round-64 behavior).
+    got = lazy_core.dispatch.research_halt_head(
+        state, feats, bugs, "/r", exclude_ids={"inspector"}
+    )
+    assert got == "inspector", got
+
+
+def test_research_halt_head_none_when_ready_work_outranks_research_head():
+    """No over-halt (the task's explicit bound): when the research head is LOWER
+    priority than genuinely-independent ready work, the research-inclusive merged
+    head is that ready item — not the research head — so None is returned and
+    skip-ahead proceeds unchanged."""
+    _guard()
+    feats = [
+        {"id": "ready", "tier": 1},                  # P1 ready feature (dispatched)
+        {"id": "low-research", "tier": 5},           # lower-priority research head
+    ]
+    state = {"feature_id": "ready", "research_gated_heads": ["low-research"]}
+    got = lazy_core.dispatch.research_halt_head(
+        state, feats, [], "/r", exclude_ids={"low-research"}
+    )
+    assert got is None, got
+    # No research_gated_heads at all → None (byte-identical common path).
+    assert lazy_core.dispatch.research_halt_head(
+        {"feature_id": "x"}, feats, [], "/r", exclude_ids=set()) is None
+    # A BLOCKED (non-research) skipped head is NOT surfaced (only research is).
+    assert lazy_core.dispatch.research_halt_head(
+        {"feature_id": "ready", "gated_heads": ["blocked-head"]},
+        feats, [], "/r", exclude_ids={"blocked-head"}) is None
+
+
+def test_subprocess_emit_prompt_surfaces_needs_research_over_lower_bug():
+    """research-gated-head-buried-by-skip-ahead-and-merged-fallthrough (end-to-end,
+    the exact live 2026-07-17 friction): a P1 (pre-release) research-gated feature
+    at the queue head + an independent lower feature (realizes the skip) + a
+    lower-priority P2 bug. The probe MUST surface terminal_reason='needs-research'
+    for the research head instead of routing to the lower bug/feature. RED
+    (pre-fix): route_overridden_by='merged-head-diverged' to the bug (or a
+    cycle_prompt for the lower feature) with NO research halt."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = td_path / "fixture-repo"
+        features = fixture_repo / "docs" / "features"
+        features.mkdir(parents=True)
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        research = _write_feature(
+            features, "inspector-sample-clip-view", tier="pre-release",
+            research_gated=True)
+        workable = _write_feature(features, "hydra-overlay", tier=3, independent=True)
+        (features / "queue.json").write_text(
+            json.dumps({"queue": [research, workable]}), encoding="utf-8")
+        bugs_dir = fixture_repo / "docs" / "bugs"
+        bug_dir = bugs_dir / "protocol-generic-claims-drift"
+        bug_dir.mkdir(parents=True)
+        (bug_dir / "SPEC.md").write_text(
+            "# Bug\n\n**Severity:** P2\n**Status:** Concluded\n", encoding="utf-8")
+        (bugs_dir / "queue.json").write_text(
+            json.dumps({"queue": [{
+                "id": "protocol-generic-claims-drift", "name": "Drift",
+                "spec_dir": "protocol-generic-claims-drift", "severity": "P2"}]}),
+            encoding="utf-8")
+
+        state_dir = td_path / "lazy-state-dir"; state_dir.mkdir()
+        _seed_marker_for(fixture_repo, state_dir)
+        sj = _emit_prompt_subprocess(fixture_repo, state_dir)
+
+        assert sj.get("terminal_reason") == "needs-research", (
+            f"a research-gated P1 head outranking the fallthrough must SURFACE a "
+            f"needs-research halt; got terminal_reason={sj.get('terminal_reason')!r} "
+            f"feature_id={sj.get('feature_id')!r} "
+            f"route_overridden_by={sj.get('route_overridden_by')!r}")
+        assert sj.get("feature_id") == "inspector-sample-clip-view", sj.get("feature_id")
+        assert sj.get("route_overridden_by") == "research-gated-head", (
+            sj.get("route_overridden_by"))
+
+
+def test_spec_dir_would_park_predicate():
+    """merged-head-includes-parked-items-deadlocks-park-run: the shared park
+    predicate mirrors the compute_state parked[] branches — NEEDS_INPUT under
+    --park-needs-input parks; BLOCKED retains precedence; --park-blocked parks a
+    BLOCKED.md; no facet → never parks (byte-identical non-park behavior)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        ni = root / "needs-input"; ni.mkdir()
+        (ni / "NEEDS_INPUT.md").write_text("x", encoding="utf-8")
+        bl = root / "blocked"; bl.mkdir()
+        (bl / "BLOCKED.md").write_text("x", encoding="utf-8")
+        both = root / "both"; both.mkdir()
+        (both / "NEEDS_INPUT.md").write_text("x", encoding="utf-8")
+        (both / "BLOCKED.md").write_text("x", encoding="utf-8")
+        clean = root / "clean"; clean.mkdir()
+        (clean / "SPEC.md").write_text("x", encoding="utf-8")
+
+        # No facet active → nothing parks.
+        assert not lazy_core.spec_dir_would_park(ni)
+        assert not lazy_core.spec_dir_would_park(bl)
+        # --park-needs-input parks an unresolved NEEDS_INPUT.md.
+        assert lazy_core.spec_dir_would_park(ni, park_needs_input=True)
+        # BLOCKED precedence: NEEDS_INPUT+BLOCKED is NOT a needs-input park when
+        # --park-blocked is off (it still halts as blocked).
+        assert not lazy_core.spec_dir_would_park(both, park_needs_input=True)
+        # --park-blocked parks a BLOCKED.md (and the both-dir).
+        assert lazy_core.spec_dir_would_park(bl, park_blocked=True)
+        assert lazy_core.spec_dir_would_park(both, park_blocked=True)
+        # A clean dir never parks; a missing dir fail-safes to False.
+        assert not lazy_core.spec_dir_would_park(clean, park_needs_input=True, park_blocked=True)
+        assert not lazy_core.spec_dir_would_park(root / "nope", park_needs_input=True)
+
+
+def test_spec_dir_operator_deferred_predicate():
+    """merged-head-excludes-parked-not-operator-deferred-deadlocks: the
+    UNCONDITIONAL operator-defer predicate — True iff DEFERRED.md is present,
+    independent of any park flag; fail-safe False on a missing/clean dir."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        deferred = root / "deferred"; deferred.mkdir()
+        (deferred / "DEFERRED.md").write_text("x", encoding="utf-8")
+        clean = root / "clean"; clean.mkdir()
+        (clean / "SPEC.md").write_text("x", encoding="utf-8")
+
+        # DEFERRED.md → True with NO park flags (it is unconditional).
+        assert lazy_core.spec_dir_operator_deferred(deferred)
+        # A clean dir + a missing dir + None → False.
+        assert not lazy_core.spec_dir_operator_deferred(clean)
+        assert not lazy_core.spec_dir_operator_deferred(root / "nope")
+        assert not lazy_core.spec_dir_operator_deferred(None)
+
+
+def test_spec_dir_research_pending_predicate():
+    """merged-head-diverged-withholds-on-research-skipped-head: the pure file
+    predicate — NEEDS_RESEARCH.md present, OR RESEARCH_PROMPT.md present with no
+    RESEARCH*.md; a completed-research or clean dir is NOT pending; missing/None
+    fail-safe to False."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        nr = root / "needs-research"; nr.mkdir()
+        (nr / "NEEDS_RESEARCH.md").write_text("x", encoding="utf-8")
+        rp = root / "research-prompt"; rp.mkdir()
+        (rp / "RESEARCH_PROMPT.md").write_text("x", encoding="utf-8")
+        # RESEARCH_PROMPT satisfied by RESEARCH.md → NOT pending.
+        done = root / "research-done"; done.mkdir()
+        (done / "RESEARCH_PROMPT.md").write_text("x", encoding="utf-8")
+        (done / "RESEARCH.md").write_text("x", encoding="utf-8")
+        # RESEARCH_PROMPT satisfied by RESEARCH_SUMMARY.md → NOT pending.
+        summ = root / "research-summary"; summ.mkdir()
+        (summ / "RESEARCH_PROMPT.md").write_text("x", encoding="utf-8")
+        (summ / "RESEARCH_SUMMARY.md").write_text("x", encoding="utf-8")
+        clean = root / "clean"; clean.mkdir()
+        (clean / "SPEC.md").write_text("x", encoding="utf-8")
+
+        assert lazy_core.spec_dir_research_pending(nr)
+        assert lazy_core.spec_dir_research_pending(rp)
+        assert not lazy_core.spec_dir_research_pending(done)
+        assert not lazy_core.spec_dir_research_pending(summ)
+        assert not lazy_core.spec_dir_research_pending(clean)
+        assert not lazy_core.spec_dir_research_pending(root / "nope")
+        assert not lazy_core.spec_dir_research_pending(None)
+
+
+def test_merged_head_nondispatchable_ids_excludes_parked_same_pipeline_head_no_deadlock():
+    """merged-head-includes-parked-items-deadlocks-park-run REGRESSION, via the
+    ORACLE: two top-priority P0 bugs PARKED (in the probe's own state["parked"]
+    list) + a lower-priority actionable bug (current). The oracle folds the
+    probe's parked ids into the same-pipeline exclude source, so the parked P0
+    heads are EXCLUDED and the merged head is the actionable bug — NO
+    merged-head-diverged withhold (the park-mode deadlock is gone). This is the
+    same-pipeline parked-fold the retired file predicate used to cover."""
+    _guard()
+    bugs = [
+        {"id": "adhoc-hydra-sidecar-dist-esm-no-frames", "severity": "P0"},
+        {"id": "adhoc-hydra-load-code-mcp-tool", "severity": "P0"},
+        {"id": "adhoc-incident-hook-deny-a51dde", "severity": "P2"},
+    ]
+    # The probe's own state: park mode skipped the two P0 bugs (parked[]) and
+    # dispatched the actionable P2 bug (current). No cross-pipeline features.
+    state = {
+        "feature_id": "adhoc-incident-hook-deny-a51dde",
+        "parked": [
+            {"id": "adhoc-hydra-sidecar-dist-esm-no-frames"},
+            {"id": "adhoc-hydra-load-code-mcp-tool"},
+        ],
+    }
+
+    def _never(_id):
+        raise AssertionError(f"no cross-pipeline candidate to probe (got {_id!r})")
+
+    excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        [], bugs, "/echo", "adhoc-incident-hook-deny-a51dde",
+        same_pipeline="bug", same_pipeline_state=state, scoped_probe=_never,
+    )
+    assert excluded == {
+        "adhoc-hydra-sidecar-dist-esm-no-frames", "adhoc-hydra-load-code-mcp-tool",
+    }, excluded
+    # --next-merged surface: head is the actionable bug, not a parked one.
+    head = lazy_core.next_merged([], bugs, "/echo", exclude_ids=excluded)
+    assert head["item_id"] == "adhoc-incident-hook-deny-a51dde", head
+    # Emit probe for the actionable bug → NO withhold (the deadlock is gone).
+    assert lazy_core.dispatch.merged_head_override(
+        [], bugs, "/echo", "adhoc-incident-hook-deny-a51dde", exclude_ids=excluded,
+    ) is None
+    # Without the exclusion the OLD behavior deadlocks: head is a parked P0 bug.
+    old = lazy_core.dispatch.merged_head_override(
+        [], bugs, "/echo", "adhoc-incident-hook-deny-a51dde",
+    )
+    assert old is not None and old["merged_head"]["item_id"] == (
+        "adhoc-hydra-sidecar-dist-esm-no-frames"
+    ), old
+
+
+def test_merged_head_nondispatchable_ids_excludes_parked_UNREACHED_same_pipeline_head():
+    """merged-head-oracle-deadlocks-on-unreached-parked-same-pipeline-head
+    REGRESSION: a PARKED, highest-SEVERITY, same-pipeline head that the emit
+    probe's queue-order walk NEVER reached (so it is ABSENT from state["parked"]
+    — the walk returned a lower-priority workable item first) is now scope-probed
+    and EXCLUDED via per-item re-inference. Previously the `iid in same_ids`
+    fast-path treated any same-pipeline head above current as dispatchable,
+    leaving byref the merged head → the merged-head-diverged withhold fired on
+    every probe → park-mode deadlock (cycle_prompt_ref null, no
+    queue-exhausted-all-parked). Distinct from the parked-FOLD regression
+    (test_..._excludes_parked_same_pipeline_head_no_deadlock), where the parked
+    heads ARE in state["parked"]."""
+    _guard()
+    bugs = [
+        {"id": "byref-unreached", "severity": "P0"},   # highest sev → merged head
+        {"id": "adhoc-harness-gate", "severity": "P2"},  # current (dispatchable)
+    ]
+    # The emit probe dispatched adhoc-harness-gate WITHOUT parking byref (its
+    # queue-order walk returned before reaching byref): parked[] is EMPTY, so the
+    # only signal for byref's parked state is a scoped re-probe.
+    state = {"feature_id": "adhoc-harness-gate", "parked": []}
+    calls = []
+
+    def _probe(_id):
+        calls.append(_id)
+        # byref scope-probes to a needs-input-scoped (parked) non-dispatch state.
+        if _id == "byref-unreached":
+            return _nondispatch_state("needs-input-scoped")
+        raise AssertionError(f"only the unreached head is probed, got {_id!r}")
+
+    excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        [], bugs, "/echo", "adhoc-harness-gate",
+        same_pipeline="bug", same_pipeline_state=state, scoped_probe=_probe,
+    )
+    assert excluded == {"byref-unreached"}, excluded
+    assert calls == ["byref-unreached"], calls
+    # Merged head is now the dispatchable item → NO merged-head-diverged withhold.
+    assert lazy_core.dispatch.merged_head_override(
+        [], bugs, "/echo", "adhoc-harness-gate", exclude_ids=excluded,
+    ) is None
+    # Without the exclusion the OLD behavior deadlocks: head is the parked P0.
+    assert lazy_core.dispatch.merged_head_override(
+        [], bugs, "/echo", "adhoc-harness-gate",
+    )["merged_head"]["item_id"] == "byref-unreached"
+
+    # Byte-identity for a GENUINE divergence: a DISPATCHABLE same-pipeline head
+    # above current is NOT excluded — the withhold still fires for a real P0 bug
+    # jumping the queue (the emit path routes to it exactly as before).
+    def _probe_dispatchable(_id):
+        return _dispatchable_state() if _id == "byref-unreached" \
+            else _nondispatch_state("blocked")
+
+    excluded2 = lazy_core.dispatch.merged_head_nondispatchable_ids(
+        [], bugs, "/echo", "adhoc-harness-gate",
+        same_pipeline="bug",
+        same_pipeline_state={"feature_id": "adhoc-harness-gate", "parked": []},
+        scoped_probe=_probe_dispatchable,
+    )
+    assert excluded2 == set(), excluded2
+    assert lazy_core.dispatch.merged_head_override(
+        [], bugs, "/echo", "adhoc-harness-gate", exclude_ids=excluded2,
+    )["merged_head"]["item_id"] == "byref-unreached"
+
+
+def test_merged_head_nondispatchable_ids_excludes_operator_deferred_cross_pipeline_feature():
+    """merged-head-oracle-blind-to-operator-deferred-cross-pipeline-feature
+    REGRESSION (Round 102), NOW carried by the PRIMARY mechanism
+    (merged-head-oracle-per-signal-supplement-churn Phase 2): a bug-emit probe with
+    an operator-deferred FEATURE (DEFERRED.md) ranked ABOVE the dispatchable bug at
+    the cross-pipeline merged head. Round 102 patched this with a per-signal
+    file-predicate supplement (``spec_dir_operator_deferred`` re-applied inside the
+    oracle) because the FEATURE ``compute_state`` had no operator-defer branch and
+    ``scoped_probe`` reported the deferred feature DISPATCHABLE. Phase 1 gave the
+    FEATURE ``compute_state`` its own bare-``DEFERRED.md`` branch (a scoped
+    ``--feature-id`` probe now returns ``terminal_reason: operator-deferred`` →
+    non-dispatchable), so ``is_dispatchable(scoped_probe(feature))`` ALONE excludes
+    it and Phase 2 RETIRED the supplement. This unit test models that reality: the
+    injected ``scoped_probe`` returns the Phase-1 scoped terminal for the deferred
+    feature, and the oracle excludes it with NO file-predicate present. The
+    serving-path (real state scripts) twin is
+    ``test_subprocess_bug_emit_prompt_oracle_excludes_operator_deferred_feature_head_no_withhold``."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        feat_dir = root / "docs" / "features" / "native-android"
+        feat_dir.mkdir(parents=True)
+        (feat_dir / "DEFERRED.md").write_text(
+            "---\nkind: deferred\nreason: operator-excluded\n---\n", encoding="utf-8")
+        (feat_dir / "SPEC.md").write_text("**Status:** Draft\n", encoding="utf-8")
+        bug_dir = root / "docs" / "bugs" / "adhoc-harness-gate"
+        bug_dir.mkdir(parents=True)
+
+        # tier 1 (pre-release) < P2 bug(2) → the feature ranks ABOVE the bug.
+        feats = [{"id": "native-android", "tier": 1, "spec_dir": "native-android"}]
+        bugs = [{"id": "adhoc-harness-gate", "severity": "P2",
+                 "spec_path": str(bug_dir)}]
+        # Bug emit probe: dispatched the P2 bug; the cross-pipeline deferred feature
+        # is NOT in the bug probe's parked/skip surface (parked: [] — the live JSON).
+        state = {"feature_id": "adhoc-harness-gate", "parked": []}
+
+        # Phase 1: the FEATURE compute_state now MODELS operator-defer — a scoped
+        # probe on a DEFERRED.md feature returns a scoped operator-deferred terminal
+        # (non-dispatchable). The oracle's PRIMARY is_dispatchable(scoped_probe)
+        # therefore excludes it with NO file-predicate supplement (Phase 2 retired
+        # it). The fake probe consults the real DEFERRED.md so the CONTROL below
+        # (delete it → dispatchable) still exercises the boundary.
+        def _feature_probe(_id):
+            assert _id != "adhoc-harness-gate", "current is never probed (== break)"
+            if (feat_dir / "DEFERRED.md").exists():
+                return {"feature_id": _id, "feature_name": _id, "sub_skill": None,
+                        "terminal_reason": "operator-deferred"}
+            return _dispatchable_state("spec")
+
+        excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+            feats, bugs, str(root), "adhoc-harness-gate",
+            same_pipeline="bug", same_pipeline_state=state,
+            scoped_probe=_feature_probe,
+        )
+        assert excluded == {"native-android"}, excluded
+        # Merged head is the dispatchable bug, not the deferred feature.
+        assert lazy_core.next_merged(
+            feats, bugs, str(root), exclude_ids=excluded,
+        )["item_id"] == "adhoc-harness-gate"
+        # Emit probe for the bug → NO withhold (the deadlock is gone).
+        assert lazy_core.dispatch.merged_head_override(
+            feats, bugs, str(root), "adhoc-harness-gate", exclude_ids=excluded,
+        ) is None
+        # NON-VACUITY: without the exclusion the OLD behavior deadlocks — the
+        # deferred feature is the merged head + withhold fires.
+        old = lazy_core.dispatch.merged_head_override(
+            feats, bugs, str(root), "adhoc-harness-gate",
+        )
+        assert old is not None and old["merged_head"]["item_id"] == "native-android", old
+
+        # CONTROL: remove DEFERRED.md → the feature's scoped probe reports
+        # DISPATCHABLE and it is NOT excluded (the scoped operator-deferred terminal
+        # is the ONLY thing that excluded it), proving the exclusion keys on the
+        # feature's OWN compute_state signal, not on its id or type.
+        (feat_dir / "DEFERRED.md").unlink()
+        not_excluded = lazy_core.dispatch.merged_head_nondispatchable_ids(
+            feats, bugs, str(root), "adhoc-harness-gate",
+            same_pipeline="bug", same_pipeline_state=state,
+            scoped_probe=_feature_probe,
+        )
+        assert "native-android" not in not_excluded, not_excluded
+
+
+def test_subprocess_bug_emit_prompt_oracle_excludes_operator_deferred_feature_head_no_withhold():
+    """merged-head-oracle-per-signal-supplement-churn Phase 2 (SERVING-PATH
+    regression, real state scripts): a bug-emit probe with an operator-deferred
+    FEATURE (a bare ``DEFERRED.md``, ``reason: operator-excluded``) ranked ABOVE the
+    workable bug at the cross-pipeline merged head must NOT withhold — the deferred
+    feature is excluded by the oracle's REAL cross-pipeline scoped
+    ``lazy-state.compute_state`` (Phase 1's operator-defer branch), with NO
+    file-predicate supplement present (Phase 2 retired it). This is the original
+    symptom's actual serving path: the 19-bug deadlock this bug fixes was a real
+    ``bug-state.py --emit-prompt`` withholding behind an operator-deferred feature
+    head. Coupled twin of
+    ``test_subprocess_bug_emit_prompt_oracle_excludes_nondispatchable_feature_head_no_withhold``."""
+    _guard()
+    bug_state_script = _SCRIPTS_DIR / "bug-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = td_path / "fixture-repo"
+        # Workable bug (current, P2).
+        bugs = fixture_repo / "docs" / "bugs"
+        bug_dir = bugs / "bug-w"
+        (bug_dir / "plans").mkdir(parents=True)
+        (bugs / "queue.json").write_text(json.dumps({
+            "queue": [{"id": "bug-w", "name": "Bug W", "spec_dir": "bug-w", "severity": "P2"}]
+        }), encoding="utf-8")
+        (bug_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (bug_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Fix\n- [ ] Tests\n", encoding="utf-8")
+        (bug_dir / "plans" / "all-phases-w.md").write_text("# Plan\n", encoding="utf-8")
+
+        # Higher-priority OPERATOR-DEFERRED feature at the merged head (tier 0) —
+        # a bare DEFERRED.md, no BLOCKED.md. Pre-Phase-1 the feature compute_state
+        # reported it dispatchable → withhold deadlock; Phase 1's branch now returns
+        # a scoped operator-deferred terminal → excluded by is_dispatchable alone.
+        features = fixture_repo / "docs" / "features"
+        fdir = features / "feat-def"
+        fdir.mkdir(parents=True)
+        (features / "queue.json").write_text(json.dumps({
+            "queue": [{"id": "feat-def", "name": "Feature Deferred", "spec_dir": "feat-def", "tier": 0}]
+        }), encoding="utf-8")
+        (features / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        (fdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (fdir / "DEFERRED.md").write_text(
+            "---\nkind: deferred\nfeature_id: feat-def\nreason: operator-excluded\n"
+            "deferred_at: 2026-07-19\n---\nOperator parked.\n", encoding="utf-8")
+
+        state_dir = td_path / "bug-state-dir"
+        state_dir.mkdir()
+        import time as _time
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="bug", cloud=False,
+                repo_root=str(fixture_repo), max_cycles=10, now=_time.time())
+        finally:
+            _clear_state_dir()
+
+        env = dict(_os_env.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+        result = subprocess.run(
+            [sys.executable, str(bug_state_script),
+             "--repeat-count", "--probe", "--emit-prompt", "--repo-root", str(fixture_repo)],
+            capture_output=True, text=True, env=env)
+        assert result.returncode == 0, (
+            f"bug-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
+        state_json = json.loads(result.stdout)
+        assert state_json.get("route_overridden_by") is None, (
+            f"operator-deferred feature head must NOT withhold on the bug side; got "
+            f"route_overridden_by={state_json.get('route_overridden_by')!r}")
+        assert state_json.get("feature_id") == "bug-w", state_json.get("feature_id")
+        assert state_json.get("cycle_prompt"), "bug cycle_prompt must be emitted"
+
+
+def test_nondispatchable_item_ids_helper_is_retired():
+    """merged-head-actionability-oracle Phase 3 (WU-4): the file-predicate
+    ``nondispatchable_item_ids`` is DELETED — absent from the lazy_core facade AND
+    from depdag. The actionability oracle is its sole replacement."""
+    _guard()
+    assert not hasattr(lazy_core, "nondispatchable_item_ids"), (
+        "nondispatchable_item_ids must be retired from the lazy_core facade")
+    assert not hasattr(lazy_core.depdag, "nondispatchable_item_ids"), (
+        "nondispatchable_item_ids must be deleted from depdag")
+    # The replacement exists.
+    assert callable(lazy_core.dispatch.merged_head_nondispatchable_ids)
+    assert callable(lazy_core.dispatch.is_dispatchable)
+
+
+def test_merged_worklist_exclude_ids_drops_parked_items():
+    """merged_worklist/next_merged honor exclude_ids — a byte-identical drop of
+    the named ids from the ordering (empty/None → unchanged)."""
+    _guard()
+    feats = [{"id": "feat-1", "tier": 1}]
+    bugs = [{"id": "bug-1", "severity": "P0"}, {"id": "bug-2", "severity": "P0"}]
+    # No exclusion → byte-identical.
+    assert [e["item_id"] for e in lazy_core.merged_worklist(feats, bugs, "/r")] == [
+        "bug-1", "bug-2", "feat-1",
+    ]
+    wl = lazy_core.merged_worklist(feats, bugs, "/r", exclude_ids={"bug-1"})
+    assert [e["item_id"] for e in wl] == ["bug-2", "feat-1"], wl
+    assert lazy_core.next_merged(
+        feats, bugs, "/r", exclude_ids={"bug-1", "bug-2"}
+    )["item_id"] == "feat-1"
 
 
 def test_merged_worklist_only_features_matches_listed_order():
@@ -4475,8 +6361,6 @@ def test_merged_worklist_only_features_matches_listed_order():
     assert lazy_core.next_merged(feats, [], "/r")["item_id"] == "feat-1"
 
 
-
-
 def test_merged_worklist_only_bugs_matches_listed_order():
     """WU-1/WU-3: only bugs queued → identical to the bug queue's listed order."""
     _guard()
@@ -4487,15 +6371,11 @@ def test_merged_worklist_only_bugs_matches_listed_order():
     assert lazy_core.next_merged([], bugs, "/r")["item_id"] == "bug-1"
 
 
-
-
 def test_merged_worklist_both_empty_returns_none():
     """WU-1/WU-3: both empty → no item (None head, empty work-list)."""
     _guard()
     assert lazy_core.merged_worklist([], [], "/r") == []
     assert lazy_core.next_merged([], [], "/r") is None
-
-
 
 
 def test_merged_worklist_stable_within_queue_for_equal_keys():
@@ -4504,14 +6384,13 @@ def test_merged_worklist_stable_within_queue_for_equal_keys():
     _guard()
     feats = [{"id": "f-first", "tier": 2}, {"id": "f-second", "tier": 2}]
     bugs = [{"id": "b-first", "severity": "P2"}, {"id": "b-second", "severity": "P2"}]
-    # All effective priority 2; bugs (type-rank 0) precede features (type-rank 1),
-    # and within each type listed order is preserved.
+    # All effective priority 2; features (type-rank 0) precede bugs (type-rank 1)
+    # after the 2026-07-17 tie-break flip, and within each type listed order is
+    # preserved (non-p0-bug-outranks-p1-feature-on-aged-tie).
     wl = lazy_core.merged_worklist(feats, bugs, "/r")
     assert [e["item_id"] for e in wl] == [
-        "b-first", "b-second", "f-first", "f-second"
+        "f-first", "f-second", "b-first", "b-second"
     ], [e["item_id"] for e in wl]
-
-
 
 
 def test_merged_worklist_skips_idless_entries():
@@ -4520,8 +6399,6 @@ def test_merged_worklist_skips_idless_entries():
     feats = [{"tier": 1}, {"id": "feat-ok", "tier": 1}]  # first is id-less
     wl = lazy_core.merged_worklist(feats, [], "/r")
     assert [e["item_id"] for e in wl] == ["feat-ok"]
-
-
 
 
 def test_age_escalated_rank_quantum_and_floor():
@@ -4545,8 +6422,6 @@ def test_age_escalated_rank_quantum_and_floor():
     assert lazy_core.age_escalated_rank(1, "2020-01-01", today) == 1
 
 
-
-
 def test_age_escalated_rank_fail_open_cases():
     """Absent/unparseable/future-dated `discovered` all fail open (unchanged
     base_rank) — never a fabricated age, never a crash."""
@@ -4560,8 +6435,6 @@ def test_age_escalated_rank_fail_open_cases():
     assert lazy_core.age_escalated_rank(2, "2026-08-01", today) == 2
     # today omitted -> uses real date.today() without raising.
     assert isinstance(lazy_core.age_escalated_rank(2, None), int)
-
-
 
 
 def test_pin_is_active_variants():
@@ -4590,8 +6463,6 @@ def test_pin_is_active_variants():
     assert lazy_core.pin_is_active("not-a-date", None, today) is False
 
 
-
-
 def test_merged_priority_bug_explicit_severity_ages():
     """An explicit recognized severity ALWAYS age-escalates (independent of
     any pin field)."""
@@ -4600,8 +6471,6 @@ def test_merged_priority_bug_explicit_severity_ages():
     today = datetime.date(2026, 7, 13)
     raw = {"severity": "P2", "discovered": "2026-06-22"}
     assert lazy_core.merged_priority("bug", raw, today=today) == 1
-
-
 
 
 def test_merged_priority_bug_active_pin_suppressed():
@@ -4616,8 +6485,6 @@ def test_merged_priority_bug_active_pin_suppressed():
         "spec_severity": "P1", "discovered": "2026-06-01",
     }
     assert lazy_core.merged_priority("bug", raw, today=today) == lazy_core.MERGED_PRIORITY_DEFAULT
-
-
 
 
 def test_merged_priority_bug_expired_pin_falls_back_to_spec_severity():
@@ -4635,8 +6502,6 @@ def test_merged_priority_bug_expired_pin_falls_back_to_spec_severity():
     assert lazy_core.merged_priority("bug", raw, today=today) == 1
 
 
-
-
 def test_merged_priority_bug_legacy_null_no_pin_unchanged():
     """A bare `severity: null` with NO `pinned_at` (every real queue entry
     committed before this feature shipped) is byte-identical to before —
@@ -4646,8 +6511,6 @@ def test_merged_priority_bug_legacy_null_no_pin_unchanged():
     today = datetime.date(2026, 7, 13)
     raw = {"severity": None, "spec_severity": "P1", "discovered": "2020-01-01"}
     assert lazy_core.merged_priority("bug", raw, today=today) == lazy_core.MERGED_PRIORITY_DEFAULT
-
-
 
 
 def test_merged_priority_aged_bug_outranks_tier2_feature_not_p0():
@@ -4671,8 +6534,6 @@ def test_merged_priority_aged_bug_outranks_tier2_feature_not_p0():
     assert ids == ["real-p0", "aged-bug", "feat-t2"], ids
 
 
-
-
 def test_bug_priority_marker_pinned():
     """bug_priority_marker renders the 📌 pinned marker while a pin is active."""
     _guard()
@@ -4683,8 +6544,6 @@ def test_bug_priority_marker_pinned():
         pinned_at="2026-07-10", pinned_until="2026-08-01", today=today,
     )
     assert "pinned" in marker and "2026-07-10" in marker
-
-
 
 
 def test_bug_priority_marker_escalated():
@@ -4700,8 +6559,6 @@ def test_bug_priority_marker_escalated():
     assert "escalated" in marker
 
 
-
-
 def test_bug_priority_marker_none_when_no_pin_no_escalation():
     """bug_priority_marker renders empty when there's no active pin and no
     escalation has occurred yet (a fresh, unescalated bug)."""
@@ -4713,8 +6570,6 @@ def test_bug_priority_marker_none_when_no_pin_no_escalation():
         pinned_at=None, pinned_until=None, today=today,
     )
     assert marker == ""
-
-
 
 
 def test_skill_declares_multi_commit_user_level_and_pseudo():
@@ -4756,8 +6611,6 @@ def test_skill_declares_multi_commit_user_level_and_pseudo():
     assert lazy_core.dispatch._CYCLE_COMMIT_BUDGET_DEFAULT == 1
 
 
-
-
 def test_skill_declares_multi_commit_repo_scoped():
     """A repo-scoped .claude/skills/<name>/SKILL.md with the commit-cadence: multi
     flag is honored when repo_root is passed (mirrors the real AlgoBooth mcp-test
@@ -4785,8 +6638,6 @@ def test_skill_declares_multi_commit_repo_scoped():
         assert lazy_core.skill_declares_multi_commit(
             "prose-only-multi-skill", repo_root=repo
         ) is False
-
-
 
 
 def test_build_hardening_emit_command_process_friction_binding():
@@ -4824,8 +6675,6 @@ def test_build_hardening_emit_command_process_friction_binding():
     assert "friction_detail=" not in cmd, cmd
 
 
-
-
 def test_process_friction_context_resolves_hardening_template():
     """Regression (broken-hardening-route defect): the context keys
     build_hardening_emit_command produces for a process-friction entry MUST
@@ -4856,8 +6705,6 @@ def test_process_friction_context_resolves_hardening_template():
     assert "unexpected-commits" in res["prompt"], res
 
 
-
-
 def test_build_hardening_emit_command_validate_deny_unchanged():
     """WU-3: a normal deny entry still emits trigger_kind=validate-deny with the
     denied_prompt_summary/denial_reason bindings (no regression)."""
@@ -4878,8 +6725,6 @@ def test_build_hardening_emit_command_validate_deny_unchanged():
     assert "trigger_kind=validate-deny" in cmd, cmd
     assert "denied_prompt_summary=" in cmd, cmd
     assert "denial_reason=" in cmd, cmd
-
-
 
 
 def test_build_hardening_emit_command_observed_friction():
@@ -4913,8 +6758,6 @@ def test_build_hardening_emit_command_observed_friction():
     assert "trigger_kind=process-friction" not in cmd, cmd
 
 
-
-
 def test_build_hardening_emit_command_observed_friction_blocking_true():
     """A run-blocking observed friction emits blocking=true (the foreground/await
     branch of the §3 block/background policy)."""
@@ -4931,8 +6774,6 @@ def test_build_hardening_emit_command_observed_friction_blocking_true():
         },
     )
     assert "blocking=true" in cmd, cmd
-
-
 
 
 def test_normalize_hardening_context_observed_friction_rebinds():
@@ -4960,8 +6801,6 @@ def test_normalize_hardening_context_observed_friction_rebinds():
     assert "denied_prompt_summary" not in original, original
 
 
-
-
 def test_normalize_hardening_context_auto_trigger_passthrough():
     """A non-observed-friction (auto-trigger) context passes through with ONLY the
     blocking default added — the shared evidence keys are untouched, so the
@@ -4981,8 +6820,6 @@ def test_normalize_hardening_context_auto_trigger_passthrough():
     assert ctx["blocking"] == "n/a (auto-trigger)", ctx
     assert ctx["denied_prompt_summary"] == "some prompt", ctx
     assert ctx["denial_reason"] == "hash mismatch", ctx
-
-
 
 
 def test_observed_friction_context_resolves_hardening_template():
@@ -5005,8 +6842,6 @@ def test_observed_friction_context_resolves_hardening_template():
     assert res.get("ok") is True, res  # must NOT refuse on a missing @requires key
     assert "observed-friction" in res["prompt"], res
     assert "verification-row recognizer inconsistency" in res["prompt"], res
-
-
 
 
 def test_read_mcp_runtime_decision_required_reason_mentions_not_required():
@@ -5034,8 +6869,6 @@ def test_read_mcp_runtime_decision_required_reason_mentions_not_required():
         assert reason is None
 
 
-
-
 def test_read_mcp_runtime_decision_not_required_value_token():
     """A genuine ``**MCP runtime:** not-required`` line resolves to no-runtime
     and extracts the post-dash reason. Guards against the anchored fix
@@ -5053,8 +6886,6 @@ def test_read_mcp_runtime_decision_not_required_value_token():
         variant, reason = lazy_core._read_mcp_runtime_decision(str(spec))
         assert variant == "no-runtime"
         assert reason == "the plan declares no MCP-reachable surface"
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -5176,8 +7007,6 @@ def test_harden_harness_overfit_prose_present():
     )
 
 
-
-
 # ---------------------------------------------------------------------------
 # dispatch-guard-denies-workstation-subsubagent-split (decision 4, 2026-07-10)
 # — the skill-declared sub-subagent capability predicate, the consumed fence,
@@ -5201,8 +7030,6 @@ def test_skill_declares_subagent_model_user_level():
     assert lazy_core.skill_declares_subagent_model("__mark_complete__") is False
     assert lazy_core.skill_declares_subagent_model("no-such-skill-xyz") is False
     assert lazy_core.skill_declares_subagent_model("../../etc/passwd") is False
-
-
 
 
 def test_skill_declares_subagent_model_repo_scoped():
@@ -5233,8 +7060,6 @@ def test_skill_declares_subagent_model_repo_scoped():
         ) is False
 
 
-
-
 def test_emission_consumed_by_nonce_fence():
     """The consumed fence: True only for an existing, consumed registry entry.
     Unconsumed, unknown, and falsy nonces all fail closed to False."""
@@ -5254,8 +7079,6 @@ def test_emission_consumed_by_nonce_fence():
             assert lazy_core.emission_consumed_by_nonce("") is False
         finally:
             _clear_state_dir()
-
-
 
 
 def test_resolve_cycle_worker_nonce_rebinds_fresh_hex():
@@ -5289,8 +7112,6 @@ def test_resolve_cycle_worker_nonce_rebinds_fresh_hex():
             _clear_state_dir()
 
 
-
-
 def test_run_end_unacked_hardening_refusal_emits_gate_refusal_bug():
     """bug-state.py mirror of the unacked-hardening refusal emission."""
     _assert_run_end_refusal_emits(
@@ -5299,16 +7120,12 @@ def test_run_end_unacked_hardening_refusal_emits_gate_refusal_bug():
     )
 
 
-
-
 def test_run_end_efficacy_flush_refusal_emits_gate_refusal_bug():
     """bug-state.py mirror of the efficacy-coverage-missing refusal emission."""
     _assert_run_end_refusal_emits(
         "bug-state.py", "bug", [], seed_deny=False,
         expected_gate="efficacy-coverage-missing",
     )
-
-
 
 
 def _assert_run_end_success_no_gate_refusal(script, pipeline):
@@ -5332,21 +7149,15 @@ def _assert_run_end_success_no_gate_refusal(script, pipeline):
             _clear_state_dir()
 
 
-
-
 def test_run_end_success_emits_run_end_not_gate_refusal_lazy():
     """Over-emission guard: a passing lazy-state.py --run-end emits run-end and
     NO gate-refusal (the emissions sit INSIDE each refusal branch)."""
     _assert_run_end_success_no_gate_refusal("lazy-state.py", "feature")
 
 
-
-
 def test_run_end_success_emits_run_end_not_gate_refusal_bug():
     """Over-emission guard mirror for bug-state.py."""
     _assert_run_end_success_no_gate_refusal("bug-state.py", "bug")
-
-
 
 
 # ---------------------------------------------------------------------------
@@ -5368,8 +7179,6 @@ def test_standard_bindings_split_terminal_statuses():
     # forbidden_status must remain the compound (other templates depend on it).
     assert bug["forbidden_status"] == "Fixed or Won't-fix", bug
     assert feat["forbidden_status"] == "Complete", feat
-
-
 
 
 def test_apply_resolution_emits_terminal_disposition_close():
@@ -5437,6 +7246,7 @@ _TESTS = [
     ("test_emit_cycle_prompt_non_execute_plan_ignores_complexity", test_emit_cycle_prompt_non_execute_plan_ignores_complexity),
     ("test_emit_cycle_prompt_section_selection_synthetic", test_emit_cycle_prompt_section_selection_synthetic),
     ("test_emit_cycle_prompt_refuses_unknown_token_synthetic", test_emit_cycle_prompt_refuses_unknown_token_synthetic),
+    ("test_emit_cycle_prompt_content_braces_in_state_value_do_not_refuse", test_emit_cycle_prompt_content_braces_in_state_value_do_not_refuse),
     ("test_emit_cycle_prompt_mcp_variant_routing_synthetic", test_emit_cycle_prompt_mcp_variant_routing_synthetic),
     ("test_emit_cycle_prompt_work_branch_fallback_non_git", test_emit_cycle_prompt_work_branch_fallback_non_git),
     ("test_emit_cycle_prompt_sub_skill_args_none_binds_empty", test_emit_cycle_prompt_sub_skill_args_none_binds_empty),
@@ -5458,6 +7268,7 @@ _TESTS = [
     ("test_f2b_genuine_word_change_still_differs", test_f2b_genuine_word_change_still_differs),
     ("test_single_slot_dispatch_templates", test_single_slot_dispatch_templates),
     ("test_emit_dispatch_cycle_header_marker_gated", test_emit_dispatch_cycle_header_marker_gated),
+    ("test_emit_dispatch_gate_verdict_binds_real_template", test_emit_dispatch_gate_verdict_binds_real_template),
     ("test_record_decision_cli_and_apply_resolution_binds_end_to_end", test_record_decision_cli_and_apply_resolution_binds_end_to_end),
     ("test_emit_dispatch_always_emits_json_on_error", test_emit_dispatch_always_emits_json_on_error),
     ("test_f1a_default_deny_reason_names_customization_path", test_f1a_default_deny_reason_names_customization_path),
@@ -5476,6 +7287,7 @@ _TESTS = [
     ("test_emit_dispatch_real_template_binding_matrix", test_emit_dispatch_real_template_binding_matrix),
     ("test_emit_dispatch_refuses_missing_requires", test_emit_dispatch_refuses_missing_requires),
     ("test_emit_dispatch_refuses_unbound_residue", test_emit_dispatch_refuses_unbound_residue),
+    ("test_emit_dispatch_content_braces_in_value_do_not_refuse", test_emit_dispatch_content_braces_in_value_do_not_refuse),
     ("test_emit_dispatch_section_filtering", test_emit_dispatch_section_filtering),
     ("test_emit_dispatch_unknown_class_raises", test_emit_dispatch_unknown_class_raises),
     ("test_emit_dispatch_cli_registry_gating", test_emit_dispatch_cli_registry_gating),
@@ -5488,11 +7300,64 @@ _TESTS = [
     ("test_f2a_resolve_emission_fresh_nonce_returns_entry", test_f2a_resolve_emission_fresh_nonce_returns_entry),
     ("test_f2a_resolve_emission_consumed_nonce_returns_none", test_f2a_resolve_emission_consumed_nonce_returns_none),
     ("test_f2a_resolve_emission_stale_nonce_returns_none", test_f2a_resolve_emission_stale_nonce_returns_none),
+    ("test_resolve_consumed_emission_returns_prompt_raw_for_consumed_nonce", test_resolve_consumed_emission_returns_prompt_raw_for_consumed_nonce),
+    ("test_resolve_consumed_emission_unknown_nonce_returns_none", test_resolve_consumed_emission_unknown_nonce_returns_none),
+    ("test_resolve_consumed_emission_unconsumed_returns_none", test_resolve_consumed_emission_unconsumed_returns_none),
+    ("test_resolve_consumed_emission_ttl_expired_returns_none", test_resolve_consumed_emission_ttl_expired_returns_none),
+    ("test_resolve_consumed_emission_predates_run_returns_none", test_resolve_consumed_emission_predates_run_returns_none),
+    ("test_resolve_consumed_emission_never_mutates_consumed", test_resolve_consumed_emission_never_mutates_consumed),
     ("test_f2a_append_dispatch_by_reference_event_writes_ledger", test_f2a_append_dispatch_by_reference_event_writes_ledger),
     ("test_governing_file_set_includes_orchestrator_and_components", test_governing_file_set_includes_orchestrator_and_components),
     ("test_merged_priority_normalizes_tier_and_severity", test_merged_priority_normalizes_tier_and_severity),
+    ("test_merged_priority_feature_tier_enum_to_int", test_merged_priority_feature_tier_enum_to_int),
+    ("test_merged_priority_feature_multi_enum_takes_min", test_merged_priority_feature_multi_enum_takes_min),
+    ("test_merged_priority_prerelease_ordering_p0_before_prerelease_before_p2", test_merged_priority_prerelease_ordering_p0_before_prerelease_before_p2),
     ("test_merged_worklist_both_populated_ordered_by_priority", test_merged_worklist_both_populated_ordered_by_priority),
     ("test_merged_worklist_bug_breaks_tie_at_equal_priority", test_merged_worklist_bug_breaks_tie_at_equal_priority),
+    ("test_merged_worklist_aged_p2_bug_sorts_behind_p1_feature", test_merged_worklist_aged_p2_bug_sorts_behind_p1_feature),
+    ("test_merged_head_override_diverges_when_p0_bug_outranks_current_feature", test_merged_head_override_diverges_when_p0_bug_outranks_current_feature),
+    ("test_merged_head_override_diverges_when_higher_sev_bug_jumps_head", test_merged_head_override_diverges_when_higher_sev_bug_jumps_head),
+    ("test_merged_head_override_none_when_head_is_current_item", test_merged_head_override_none_when_head_is_current_item),
+    ("test_merged_head_override_none_on_empty_queues_or_missing_id", test_merged_head_override_none_on_empty_queues_or_missing_id),
+    ("test_coordinator_arbitrated_emission_lane", test_coordinator_arbitrated_emission_lane),
+    ("test_coordinator_arbitrated_emission_lease", test_coordinator_arbitrated_emission_lease),
+    ("test_coordinator_arbitrated_emission_none", test_coordinator_arbitrated_emission_none),
+    ("test_coordinator_arbitrated_emission_lane_precedes_lease", test_coordinator_arbitrated_emission_lane_precedes_lease),
+    ("test_coordinator_arbitrated_emission_failsafe", test_coordinator_arbitrated_emission_failsafe),
+    ("test_coordinator_exemption_diag_maps_reason_to_text", test_coordinator_exemption_diag_maps_reason_to_text),
+    ("test_spec_dir_would_park_predicate", test_spec_dir_would_park_predicate),
+    ("test_spec_dir_operator_deferred_predicate", test_spec_dir_operator_deferred_predicate),
+    ("test_spec_dir_research_pending_predicate", test_spec_dir_research_pending_predicate),
+    ("test_merged_head_nondispatchable_ids_excludes_parked_same_pipeline_head_no_deadlock", test_merged_head_nondispatchable_ids_excludes_parked_same_pipeline_head_no_deadlock),
+    ("test_merged_head_nondispatchable_ids_excludes_parked_UNREACHED_same_pipeline_head", test_merged_head_nondispatchable_ids_excludes_parked_UNREACHED_same_pipeline_head),
+    ("test_merged_head_nondispatchable_ids_excludes_operator_deferred_cross_pipeline_feature", test_merged_head_nondispatchable_ids_excludes_operator_deferred_cross_pipeline_feature),
+    ("test_subprocess_bug_emit_prompt_oracle_excludes_operator_deferred_feature_head_no_withhold", test_subprocess_bug_emit_prompt_oracle_excludes_operator_deferred_feature_head_no_withhold),
+    ("test_nondispatchable_item_ids_helper_is_retired", test_nondispatchable_item_ids_helper_is_retired),
+    ("test_merged_worklist_exclude_ids_drops_parked_items", test_merged_worklist_exclude_ids_drops_parked_items),
+    ("test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug", test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug),
+    ("test_subprocess_emit_prompt_oracle_excludes_nondispatchable_bug_head_no_withhold", test_subprocess_emit_prompt_oracle_excludes_nondispatchable_bug_head_no_withhold),
+    ("test_subprocess_bug_emit_prompt_oracle_excludes_nondispatchable_feature_head_no_withhold", test_subprocess_bug_emit_prompt_oracle_excludes_nondispatchable_feature_head_no_withhold),
+    ("test_subprocess_emit_prompt_lane_marker_skips_merged_head_withhold", test_subprocess_emit_prompt_lane_marker_skips_merged_head_withhold),
+    ("test_subprocess_emit_prompt_serial_tail_lease_held_skips_merged_head_withhold", test_subprocess_emit_prompt_serial_tail_lease_held_skips_merged_head_withhold),
+    ("test_subprocess_emit_prompt_serial_tail_no_lease_still_withholds", test_subprocess_emit_prompt_serial_tail_no_lease_still_withholds),
+    ("test_probe_skipped_ids_collects_all_skip_lists_and_resolves_names", test_probe_skipped_ids_collects_all_skip_lists_and_resolves_names),
+    ("test_merged_head_override_gated_head_excluded_no_false_withhold", test_merged_head_override_gated_head_excluded_no_false_withhold),
+    ("test_is_dispatchable_predicate_table", test_is_dispatchable_predicate_table),
+    ("test_merged_head_nondispatchable_ids_same_pipeline_uses_probe_skipped_unchanged", test_merged_head_nondispatchable_ids_same_pipeline_uses_probe_skipped_unchanged),
+    ("test_merged_head_nondispatchable_ids_facet_regressions_excluded_via_oracle", test_merged_head_nondispatchable_ids_facet_regressions_excluded_via_oracle),
+    ("test_merged_head_nondispatchable_ids_new_category_auto_excluded", test_merged_head_nondispatchable_ids_new_category_auto_excluded),
+    ("test_merged_head_nondispatchable_ids_research_surface_excluded_here", test_merged_head_nondispatchable_ids_research_surface_excluded_here),
+    ("test_merged_head_nondispatchable_ids_dispatchable_head_not_excluded_byte_identity", test_merged_head_nondispatchable_ids_dispatchable_head_not_excluded_byte_identity),
+    ("test_merged_head_nondispatchable_ids_short_circuit_at_first_dispatchable_head", test_merged_head_nondispatchable_ids_short_circuit_at_first_dispatchable_head),
+    ("test_merged_head_nondispatchable_ids_below_current_never_probed", test_merged_head_nondispatchable_ids_below_current_never_probed),
+    ("test_oracle_leaves_reused_signatures_unchanged", test_oracle_leaves_reused_signatures_unchanged),
+    ("test_merged_head_nondispatchable_ids_in_process_isolation_characterization", test_merged_head_nondispatchable_ids_in_process_isolation_characterization),
+    ("test_subprocess_emit_prompt_skips_blocked_gated_head_no_withhold", test_subprocess_emit_prompt_skips_blocked_gated_head_no_withhold),
+    ("test_subprocess_emit_prompt_fully_gated_surfaces_blocked_terminal", test_subprocess_emit_prompt_fully_gated_surfaces_blocked_terminal),
+    ("test_subprocess_emit_prompt_single_type_workable_head_unchanged", test_subprocess_emit_prompt_single_type_workable_head_unchanged),
+    ("test_research_halt_head_surfaces_when_research_head_outranks_bug", test_research_halt_head_surfaces_when_research_head_outranks_bug),
+    ("test_research_halt_head_none_when_ready_work_outranks_research_head", test_research_halt_head_none_when_ready_work_outranks_research_head),
+    ("test_subprocess_emit_prompt_surfaces_needs_research_over_lower_bug", test_subprocess_emit_prompt_surfaces_needs_research_over_lower_bug),
     ("test_merged_worklist_only_features_matches_listed_order", test_merged_worklist_only_features_matches_listed_order),
     ("test_merged_worklist_only_bugs_matches_listed_order", test_merged_worklist_only_bugs_matches_listed_order),
     ("test_merged_worklist_both_empty_returns_none", test_merged_worklist_both_empty_returns_none),
@@ -5532,10 +7397,9 @@ _TESTS = [
     ("test_run_end_success_emits_run_end_not_gate_refusal_bug", test_run_end_success_emits_run_end_not_gate_refusal_bug),
     ("test_standard_bindings_split_terminal_statuses", test_standard_bindings_split_terminal_statuses),
     ("test_apply_resolution_emits_terminal_disposition_close", test_apply_resolution_emits_terminal_disposition_close),
+    ("test_spike_dispatch_class_registered", test_spike_dispatch_class_registered),
+    ("test_spike_template_binding", test_spike_template_binding),
 ]
-
-
-
 
 
 def main() -> int:
@@ -5568,7 +7432,6 @@ def main() -> int:
         return 1
     print("\nAll tests passed.")
     return 0
-
 
 
 if __name__ == "__main__":

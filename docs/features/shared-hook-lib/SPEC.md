@@ -8,12 +8,21 @@
 > `test_hooks.py` suite after each. Copy-drift in this scaffolding has already produced real
 > bugs; a matcher-semantics change today must be hand-landed in three places.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
-**Last updated:** 2026-07-11
+**Last updated:** 2026-07-18
 **Source:** repo-exploration proposal session 2026-07-11
 
 **Friction-reduction feature:** yes
+
+**Depends on:** (none)
+
+<!-- Leaf harness refactor: the seven hooks + lazy_core + test_hooks.py it touches are all
+     in-repo infrastructure, not feature-pipeline items. The referenced bugs
+     (guard-fail-open-leaves-no-trace, legacy-tool-input-env-hooks-dead,
+     long-build-and-build-queue-matcher-bypasses) are bug-pipeline entries, not feature deps;
+     cross-pipeline deps are not expressible in v1. No downstream feature declares a dep on
+     shared-hook-lib. -->
 
 ## Executive Summary
 
@@ -53,7 +62,7 @@ risk) into a one-site change with N pipe-tested consumers, and gives contracts l
 
 ### D1. Library shape: sourced bash prelude + importable python module
 
-- **Classification:** `mechanical-internal (proposed)`
+- **Classification:** `mechanical-internal` (finalized — code-organization only; no observable surface)
 - `user/hooks/hook-prelude.sh` — **sourced** (never executed) by each hook, fail-open-guarded
   at the source site (`. "$…/hook-prelude.sh" 2>/dev/null || exit 0` — a missing/broken
   prelude allows, never wedges). Provides: python3→python resolution (`HOOK_PYTHON`),
@@ -71,7 +80,13 @@ risk) into a one-site change with N pipe-tested consumers, and gives contracts l
 
 ### D2. One inline fallback retained — the library must not become a single point of failure
 
-- **Classification:** `product-behavior (proposed)`
+- **Classification:** `mechanical-internal (constitution-forced)` — finalized. Drafted as
+  `product-behavior`, but its only alternative (full centralization with no per-hook fallback) fails
+  *closed* on a library-import error, which the fail-OPEN house constitution forbids ("a guard that
+  fails closed is a worse bug than the gap it was guarding"). With one option constitutionally barred
+  and the observable deny/allow output byte-identical either way (asserted by the 157-test suite,
+  D3), there is no live product choice to surface — the decision is a mechanical application of the
+  locked fail-OPEN invariant. Research (waived) surfaced nothing that reopens it.
 - Each migrated hook keeps a **minimal** inline fallback: if `import hook_lib` fails for any
   reason, the hook still fails open correctly (bare `sys.exit(0)` allow) and — per the
   guard-fail-open bug's contract — leaves a trace via the bash-side prelude writer. The rich
@@ -83,7 +98,7 @@ risk) into a one-site change with N pipe-tested consumers, and gives contracts l
 
 ### D3. Migration: hook-by-hook, full suite per step, no behavior change
 
-- **Classification:** `mechanical-internal (proposed)`
+- **Classification:** `mechanical-internal` (finalized — sequencing of a behavior-preserving migration)
 - Order: lowest-risk first (`block-noncanonical-blocker-write.sh`) → the sentinel sibling →
   `long-build-ownership-guard.sh` → `build-queue-enforce.sh` → `lazy-cycle-containment.sh` →
   the two thin wrappers (`lazy-dispatch-guard.sh`, `lazy-route-inject.sh`, prelude-only).
@@ -205,3 +220,14 @@ as the enabled consumer, with the headline metrics above carried by the Phase-4 
   the bug owns the behavior change, this feature owns the substrate.
 - Windows git-bash sourcing cost: the prelude adds one `source` per hook invocation — confirm
   it is negligible against the existing 5s hook timeout budget (expected: microseconds).
+
+## Research References
+
+- `RESEARCH.md` — deep (Gemini) research was **operator-waived** 2026-07-18 (overnight
+  `/lazy-batch-parallel` wind-down). This is an internal harness refactor with rich in-repo prior
+  art; no external-source question gates the baseline.
+- `RESEARCH_SUMMARY.md` — analysis of the baseline against in-repo prior art and the
+  `RESEARCH_PROMPT.md` question inventory (retained as an implementation-phase design checklist).
+- `RESEARCH_PROMPT.md` — the composed deep-research prompt (not run); its Specific Questions are a
+  useful pressure-test checklist for the Phase 1–3 implementation, especially the single-point-of-
+  failure and import-latency concerns already resolved by D2/D4.

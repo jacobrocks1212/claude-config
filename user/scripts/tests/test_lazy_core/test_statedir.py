@@ -430,15 +430,22 @@ def _build_repeat_count_real_skill_repo(root: "Path") -> None:
 def test_repeat_count_real_skill_frozen_census_advances_forward(
     _script_name: str = "lazy-state.py",
 ) -> None:
-    """WIRING regression (RED pre-WU-1): the `--repeat-count` CLI handler advances
-    forward_cycles on a real-skill dispatch even when the consume census is FROZEN
-    (no register_emission / consume — the exact by-reference Theory-1b gap).
+    """A real-skill frozen-census cycle advances forward_cycles to 1 — but the
+    increment now happens at the DISPATCH BRACKET, not the probe.
 
-    Drives the real `lazy-state.py --repeat-count` subprocess over a temp repo at the
-    execute-plan step, with a run marker present and ZERO consume. Pre-fix the handler
-    called only advance_run_counters, which is consume-gated → forward_cycles stays 0.
-    Post-fix advance_forward_cycle is wired in → forward_cycles advances to 1. A revert
-    of WU-1/WU-2 re-RED-s this.
+    BEHAVIOR MOVED (cycle-budget-counters-double-count-on-probes-and-inject-hook):
+    the budget advance used to fire on the `--repeat-count` probe path
+    (advance_forward_cycle keyed on the state tuple / consume census). That coupled
+    the budget to EVERY probe — inspection probes AND the per-turn inject hook —
+    inflating forward_cycles with no dispatch. The advance is now decoupled: the
+    probe is budget-NEUTRAL, and a completed `--cycle-begin --kind real / --cycle-end`
+    bracket (one bracket == one real Agent dispatch) is the sole authority.
+
+    This test retains its name + gate identity but asserts the NEW contract:
+      (2) a real-skill `--repeat-count` probe leaves forward_cycles at 0 (decoupled);
+      (3) closing the real bracket advances forward_cycles to 1 (+ per-feature bump);
+      (4) a further probe does NOT advance again (still bracket-gated).
+    A revert that re-couples the budget to the probe re-RED-s step (2).
     """
     _guard()
     script = _SCRIPTS_DIR / _script_name
@@ -449,8 +456,13 @@ def test_repeat_count_real_skill_frozen_census_advances_forward(
         state_dir.mkdir(parents=True)
         _build_repeat_count_real_skill_repo(root)
 
-        env = dict(_os_env.environ)
+        # LAZY_ORCHESTRATOR=1 immunizes the --cycle-begin/--cycle-end bracket
+        # against the cycle-containment guard; a stale inherited LAZY_CYCLE_SUBAGENT
+        # is stripped so the isolated bracket is not falsely refused.
+        env = {k: v for k, v in _os_env.environ.items()
+               if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
         env["LAZY_STATE_DIR"] = str(state_dir)
+        env["LAZY_ORCHESTRATOR"] = "1"
 
         def run(extra):
             return subprocess.run(
@@ -466,8 +478,9 @@ def test_repeat_count_real_skill_frozen_census_advances_forward(
         m0 = json.loads(marker_path.read_text(encoding="utf-8"))
         assert m0.get("forward_cycles", 0) == 0, f"marker should start at 0: {m0!r}"
 
-        # 2) --repeat-count over a REAL-skill state with a FROZEN census (we never
-        #    register/consume any emission). This is the by-reference dispatch path.
+        # 2) --repeat-count over a REAL-skill state — the probe is now BUDGET-NEUTRAL.
+        #    Pre-fix this advanced forward_cycles to 1 (the double-count bug); the
+        #    budget is decoupled from the probe path, so it must stay 0.
         rc = run(["--repeat-count"])
         assert rc.returncode == 0, f"--repeat-count failed: {rc.stderr[:400]!r}"
         probe = json.loads(rc.stdout)
@@ -477,47 +490,60 @@ def test_repeat_count_real_skill_frozen_census_advances_forward(
             f"fixture must route to the real execute-plan skill, got "
             f"{probe.get('sub_skill')!r} (state={probe!r})"
         )
-
-        # 3) The marker's forward_cycles MUST have advanced to 1 despite the frozen
-        #    census — proving advance_forward_cycle is wired into the handler. With
-        #    only the consume-gated advance_run_counters this stays 0 (RED).
-        m1 = json.loads(marker_path.read_text(encoding="utf-8"))
-        assert m1.get("forward_cycles") == 1, (
-            f"a real-skill --repeat-count cycle with a FROZEN consume census must "
-            f"advance forward_cycles to 1 via the wired-in advance_forward_cycle; "
-            f"got forward_cycles={m1.get('forward_cycles')!r} (marker={m1!r})"
+        feature_id = probe.get("feature_id")
+        assert feature_id, f"probe must carry a feature_id, got {probe!r}"
+        m_probe = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m_probe.get("forward_cycles", 0) == 0, (
+            f"a real-skill --repeat-count PROBE must NOT advance the forward budget "
+            f"(the advance moved to the dispatch bracket); got forward_cycles="
+            f"{m_probe.get('forward_cycles')!r} (marker={m_probe!r})"
         )
 
-        # 4) Idempotence: re-firing --repeat-count with the SAME computed state (no
-        #    intervening dispatch, census still frozen) does NOT advance again.
+        # 3) A real dispatch BRACKET advances forward_cycles to 1 (+ per-feature bump)
+        #    at --cycle-end — the new budget authority.
+        cb = run(["--cycle-begin", "--kind", "real", "--feature-id", str(feature_id),
+                  "--nonce", "nonce-real-frozen", "--sub-skill", "execute-plan"])
+        assert cb.returncode == 0, f"--cycle-begin failed: {cb.stderr[:400]!r}"
+        ce = run(["--cycle-end"])
+        assert ce.returncode == 0, f"--cycle-end failed: {ce.stderr[:400]!r}"
+        m1 = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m1.get("forward_cycles") == 1, (
+            f"a closed real bracket must advance forward_cycles to 1; got "
+            f"forward_cycles={m1.get('forward_cycles')!r} (marker={m1!r})"
+        )
+        assert m1.get("per_feature_forward_cycles", {}).get(str(feature_id)) == 1, (
+            f"the real bracket must bump per_feature_forward_cycles[{feature_id!r}] "
+            f"to 1; got {m1.get('per_feature_forward_cycles')!r}"
+        )
+
+        # 4) A further --repeat-count probe (no new bracket) does NOT advance again —
+        #    the budget stays bracket-gated, never probe-driven.
         rc2 = run(["--repeat-count"])
         assert rc2.returncode == 0, f"second --repeat-count failed: {rc2.stderr[:400]!r}"
         m2 = json.loads(marker_path.read_text(encoding="utf-8"))
         assert m2.get("forward_cycles") == 1, (
-            f"an identical-state --repeat-count re-fire must NOT advance again "
-            f"(idempotent), got forward_cycles={m2.get('forward_cycles')!r}"
+            f"a probe after the bracket must NOT advance the budget again "
+            f"(bracket-gated, not probe-driven), got forward_cycles="
+            f"{m2.get('forward_cycles')!r}"
         )
 
 
 
 
 def test_repeat_count_real_skill_frozen_census_advances_forward_bug_state() -> None:
-    """WU-2 parity: the same wiring holds for bug-state.py's `--repeat-count`
-    handler. A bug-pipeline real-skill cycle on a frozen census advances
-    forward_cycles via advance_forward_cycle, identically to the feature pipeline.
+    """WU-2 parity, RECONCILED to the bracket-coupled budget: bug-state.py's
+    `--repeat-count` probe is BUDGET-NEUTRAL (identical to the feature pipeline),
+    and a real dispatch BRACKET advances forward_cycles.
 
-    Reuses the feature-repo fixture builder: bug-state.py is invoked with
-    --repo-root and resolves its OWN queue (docs/bugs/), but the wiring under test
-    is the shared lazy_core advance call in the `if args.repeat_count:` block — which
-    fires regardless of which queue produced the marker. The marker is written by
-    bug-state.py's own --run-start, and the frozen-census advance is asserted the
-    same way. (bug-state.py's compute_state over this feature-only tree may route to a
-    terminal rather than a real skill, so this test asserts the SHARED wiring via the
-    marker counter, not the sub_skill label — the parity claim is that the bug script
-    carries the identical advance_forward_cycle call.)
+    BEHAVIOR MOVED (cycle-budget-counters-double-count-on-probes-and-inject-hook):
+    the coupled-pair advance that used to fire in bug-state.py's `if
+    args.repeat_count:` block was REMOVED; the parity claim is now that bug-state.py
+    carries the identical advance_cycle_bracket_counter call at `--cycle-end` (kept
+    in lockstep with lazy-state.py by lazy_parity_audit.py). This test retains its
+    name + gate identity but asserts the NEW contract: the probe leaves
+    forward_cycles at 0, and closing a `--kind real` bracket advances it to 1.
     """
     _guard()
-    # Reuse the feature-pipeline body but assert at the wiring level for bug-state.
     script = _SCRIPTS_DIR / "bug-state.py"
     assert script.exists(), "bug-state.py missing"
     with tempfile.TemporaryDirectory() as td:
@@ -544,8 +570,12 @@ def test_repeat_count_real_skill_frozen_census_advances_forward_bug_state() -> N
         (bdir / "plans").mkdir()
         (bdir / "plans" / "all-phases-bug-c.md").write_text("# Plan\n", encoding="utf-8")
 
-        env = dict(_os_env.environ)
+        # LAZY_ORCHESTRATOR=1 immunizes the bracket against the containment guard;
+        # a stale inherited LAZY_CYCLE_SUBAGENT is stripped.
+        env = {k: v for k, v in _os_env.environ.items()
+               if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
         env["LAZY_STATE_DIR"] = str(state_dir)
+        env["LAZY_ORCHESTRATOR"] = "1"
 
         def run(extra):
             return subprocess.run(
@@ -558,28 +588,32 @@ def test_repeat_count_real_skill_frozen_census_advances_forward_bug_state() -> N
         marker_path = state_dir / lazy_core._MARKER_FILENAME
         assert marker_path.exists(), "bug-state --run-start must write the run marker"
 
+        # The probe is budget-neutral regardless of the route it computes.
         rc = run(["--repeat-count"])
         assert rc.returncode == 0, f"bug-state --repeat-count failed: {rc.stderr[:400]!r}"
-        probe = json.loads(rc.stdout)
-        # Only assert the forward advance when the bug pipeline actually routed to a
-        # REAL skill (non-pseudo, truthy). If the minimal fixture lands on a terminal
-        # or a pseudo step, the wiring is still proven by the feature test; assert the
-        # marker did not regress (no spurious forward advance on a non-real route).
-        sub = probe.get("sub_skill")
+        m_probe = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m_probe.get("forward_cycles", 0) == 0, (
+            f"a bug-state --repeat-count PROBE must NOT advance the forward budget "
+            f"(decoupled from the probe path); got forward_cycles="
+            f"{m_probe.get('forward_cycles')!r}"
+        )
+
+        # A real dispatch bracket advances forward_cycles to 1 (+ per-feature bump)
+        # at --cycle-end — the coupled-pair mirror of the feature-pipeline authority.
+        cb = run(["--cycle-begin", "--kind", "real", "--bug-id", "bug-c",
+                  "--nonce", "nonce-bug-frozen", "--sub-skill", "execute-plan"])
+        assert cb.returncode == 0, f"bug-state --cycle-begin failed: {cb.stderr[:400]!r}"
+        ce = run(["--cycle-end"])
+        assert ce.returncode == 0, f"bug-state --cycle-end failed: {ce.stderr[:400]!r}"
         m1 = json.loads(marker_path.read_text(encoding="utf-8"))
-        if sub and not str(sub).startswith("__"):
-            assert m1.get("forward_cycles") == 1, (
-                f"a bug real-skill --repeat-count cycle on a frozen census must "
-                f"advance forward_cycles to 1 (parity with feature pipeline); got "
-                f"{m1.get('forward_cycles')!r} (sub_skill={sub!r})"
-            )
-        else:
-            # Non-real route → the consume-independent advance must NOT fire for a
-            # real-forward budget (meta/terminal). forward_cycles stays 0.
-            assert m1.get("forward_cycles", 0) == 0, (
-                f"a non-real bug route must not advance forward_cycles, got "
-                f"{m1.get('forward_cycles')!r} (sub_skill={sub!r})"
-            )
+        assert m1.get("forward_cycles") == 1, (
+            f"a closed bug real bracket must advance forward_cycles to 1 (parity "
+            f"with the feature pipeline); got forward_cycles={m1.get('forward_cycles')!r}"
+        )
+        assert m1.get("per_feature_forward_cycles", {}).get("bug-c") == 1, (
+            f"the bug real bracket must bump per_feature_forward_cycles[bug-c] to 1; "
+            f"got {m1.get('per_feature_forward_cycles')!r}"
+        )
 
 
 

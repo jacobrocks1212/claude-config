@@ -148,6 +148,21 @@ identically in cloud and workstation.
    PHASES.md. A blind tick that makes the script pass without real verification is
    the exact incoherence this gate exists to prevent.
 
+   **Honest-stuck terminal (no oscillation).** The coherence cycle has a deterministic
+   TERMINAL for the case where it can reconcile NOTHING: when it ticks/migrates/re-scopes
+   0 rows AND 0 genuine incomplete implementation deliverables remain AND ≥1 blocking row
+   is a verification row whose verification GENUINELY never ran on this host (no on-disk
+   evidence — infra-gated backend behaviour or a buildable-but-unbuilt scenario), the cycle
+   does NOT return a no-op that re-loops. It ESCALATES via this gate's own step-4
+   `NEEDS_INPUT.md` path (`written_by: completion-integrity-gate`), surfacing the per-row
+   host-deferral / partial-VALIDATED / corrective-coverage design forks
+   (`turn-routing-enforcement/NEEDS_INPUT.md` decisions #2/#5/#6) to the operator. The next
+   probe then returns `terminal_reason: needs-input` and the loop terminates deterministically
+   — replacing the prior manual "orchestrator hand-writes NEEDS_INPUT.md after the oscillation
+   tripwire fires" improvisation. See `dispatch-coherence-recovery.md` step 3a. This does NOT
+   weaken the gate or make completion reachable — it makes an already-stuck loop self-announce
+   instead of oscillating; the design resolution itself remains operator-owned.
+
    The script (`apply_pseudo` in `lazy_core.py`) is the **sole author** of the
    following writes — the gate and the consumer skill prose must NOT duplicate them:
 

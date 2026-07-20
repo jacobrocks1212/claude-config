@@ -751,10 +751,74 @@ def clear_queue_stub(queue_path: "Path", feature_id: str) -> dict:
 # rather than imported because bug-state.py is a hyphenated module that imports
 # lazy_core — a back-import would be circular). Lower = higher priority.
 _MERGED_SEVERITY_RANK: dict[str, int] = {"P0": 0, "P1": 1, "P2": 2, "Low": 3}
+
+# Feature `tier` → numeric priority, the FEATURE-axis analog of
+# `_MERGED_SEVERITY_RANK` (feature-tier-strings-fall-to-merged-priority-default).
+# Named tier enums map onto the SAME integer scale as bug severity (lower = higher
+# priority) so a feature and a bug are directly comparable in the merged worklist.
+#
+# LOAD-BEARING ORDERING (operator-specified): `pre-release` == 1 == P1, so the SCALAR
+# effective priorities are merged_priority(P0 bug)=0 < pre-release feature=1 < P2 bug=2.
+#
+# TIE-BREAK RULE (operator-directed 2026-07-17, "I only want P0 bugs to sort ahead of
+# P1 features" — docs/bugs/non-p0-bug-outranks-p1-feature-on-aged-tie): at an EQUAL
+# effective rank the FEATURE is worked first (see `_MERGED_TYPE_ORDER` below). Combined
+# with the age-escalation floor (`_AGE_ESCALATION_FLOOR_RANK = 1`, so no aged bug ever
+# reaches rank 0), this means ONLY a strictly-lower-rank bug — a genuine P0 (rank 0) —
+# precedes a P1 (pre-release, rank 1) feature; an aged non-P0 bug that reaches rank-1
+# P1-equivalent sorts BEHIND the P1 feature.
+#
+# `pre-release = 1` is operator-LOCKED. The remaining named-enum values are a
+# RECOMMENDED PROVISIONAL mapping surfaced for operator ratification (see
+# docs/specs/turn-routing-enforcement/NEEDS_INPUT_PROVISIONAL — legacy-feature-tier-
+# int-mapping). They previously ALL fell to MERGED_PRIORITY_DEFAULT (99); assigning
+# coherent values is the whole point of this unification. Bare integer tiers (0/1/5/6…)
+# keep their literal values and are chosen to slot into this same scale.
+_FEATURE_TIER_ENUM: dict[str, int] = {
+    "pre-release": 1,        # LOCKED — == P1 (load-bearing ordering)
+    "commercialization": 2,  # revenue-critical, just below pre-release
+    "milestone": 3,          # a delivery milestone
+    "major-initiative": 4,   # large strategic initiative
+    "4a": 4,                 # legacy phase-4 sub-tier a
+    "4b": 5,                 # legacy phase-4 sub-tier b (after 4a)
+    "follow-up": 6,          # deferred follow-up work
+    "non-audio": 7,          # non-audio work (lowest of the named set)
+}
+
 # Effective priority for an item with no comparable field — sorts last.
 MERGED_PRIORITY_DEFAULT = 99
-# Tie-break on equal effective priority: bugs sort before features.
-_MERGED_TYPE_ORDER: dict[str, int] = {"bug": 0, "feature": 1}
+
+
+def _resolve_feature_tier_element(value) -> "int | None":
+    """Resolve ONE feature-tier element to a numeric priority, or ``None`` if it
+    is unresolvable (feature-tier-strings-fall-to-merged-priority-default).
+
+    Accepts a named tier enum (``_FEATURE_TIER_ENUM``), a bare int, or a numeric
+    string — the three shapes a single tier value can take. ``bool`` is rejected
+    (it is an ``int`` subclass but never a valid priority). An unknown string /
+    unsupported type returns ``None`` so callers can decide the fallback (MIN over
+    a list skips ``None``s; a scalar ``None`` maps to ``MERGED_PRIORITY_DEFAULT``).
+    """
+    if isinstance(value, bool):  # bool is an int subclass — reject it
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        key = value.strip()
+        if key in _FEATURE_TIER_ENUM:
+            return _FEATURE_TIER_ENUM[key]
+        try:
+            return int(key)
+        except (ValueError, AttributeError):
+            return None
+    return None
+# Tie-break on equal effective priority: FEATURES sort before bugs (operator-directed
+# 2026-07-17 — docs/bugs/non-p0-bug-outranks-p1-feature-on-aged-tie). Because the bug
+# age-escalation floor is rank 1 (no aged bug reaches rank 0), a feature winning the
+# equal-rank tie means ONLY a genuine P0 bug (strictly rank 0) precedes a P1 feature —
+# exactly "I only want P0 bugs to sort ahead of P1 features". (Was {"bug": 0,
+# "feature": 1} — bugs-before-features — until this directive.)
+_MERGED_TYPE_ORDER: dict[str, int] = {"feature": 0, "bug": 1}
 
 # ---------------------------------------------------------------------------
 # bug-queue-aging-backpressure D1-A/D2-A/D3-A: age-escalation + severity-pin
@@ -906,16 +970,21 @@ def merged_priority(
     """
     if item_type == "feature":
         tier = raw_item.get("tier")
-        if isinstance(tier, bool):  # bool is an int subclass — reject it
-            return MERGED_PRIORITY_DEFAULT
-        if isinstance(tier, int):
-            return tier
-        if isinstance(tier, str):
-            try:
-                return int(tier.strip())
-            except (ValueError, AttributeError):
-                return MERGED_PRIORITY_DEFAULT
-        return MERGED_PRIORITY_DEFAULT
+        # Multi-enum feature (feature-tier-strings-fall-to-merged-priority-default):
+        # a `tier` LIST resolves each element and takes the MIN (highest-priority
+        # enum wins). Unresolvable elements are skipped; an all-unresolvable /
+        # empty list falls to the default (sorts last), never crashes.
+        if isinstance(tier, list):
+            resolved = [
+                r for r in (_resolve_feature_tier_element(e) for e in tier)
+                if r is not None
+            ]
+            return min(resolved) if resolved else MERGED_PRIORITY_DEFAULT
+        # Scalar tier: bare int (backward-compat), numeric string (backward-compat),
+        # or a named tier enum (new). None/unknown → default (byte-identical to the
+        # pre-unification behavior for null/missing/unrecognized).
+        resolved = _resolve_feature_tier_element(tier)
+        return resolved if resolved is not None else MERGED_PRIORITY_DEFAULT
     if item_type == "bug":
         sev = raw_item.get("severity")
         if isinstance(sev, str) and sev.strip() in _MERGED_SEVERITY_RANK:
@@ -933,12 +1002,412 @@ def merged_priority(
     return MERGED_PRIORITY_DEFAULT
 
 
+# ---------------------------------------------------------------------------
+# no-sanctioned-cli-for-queue-state-mutations: operator-directed in-place
+# priority / dependency mutators (the sanctioned replacement for hand-editing
+# queue.json to change a severity/tier, or to add/remove a dependency). These
+# are the queue-plane engines behind lazy-state.py --set-tier / --add-deps /
+# --remove-deps and bug-state.py --set-severity / --add-deps / --remove-deps /
+# --unpin. Each mirrors reorder_queue/sync_deps' load → validate-list → mutate
+# → _atomic_write shape and is domain-agnostic (the caller passes its own
+# queue_path + queue_label).
+#
+# THE LOAD-BEARING INVARIANT (SPEC "two-regime ordering model"): a priority
+# change (severity/tier) MUST atomically re-position the entry in the queue's
+# LISTED order to agree with its new merged_priority — otherwise the merged
+# view says "P0" while the single-queue pipeline (which works listed order
+# head-first) still works it last. reposition_by_priority does that inside the
+# SAME _atomic_write, never as a separate step.
+# ---------------------------------------------------------------------------
+
+def reposition_by_priority(
+    items: list, item_id: str, item_type: str, *,
+    today: "datetime.date | None" = None,
+) -> "int | None":
+    """Move ``item_id`` (in place, mutating ``items``) to the listed-order slot
+    dictated by its ``merged_priority`` — stable FIFO within equal priority.
+
+    Semantics: the entry lands AFTER every entry of strictly-higher priority
+    (lower ``merged_priority`` number) and BEFORE the first entry of
+    strictly-lower priority; entries of EQUAL priority keep their relative
+    order and the repositioned item sorts behind them (FIFO — a fresh
+    promotion does not jump its equals). Only the one entry moves; every other
+    entry's relative order is preserved (curated order for the rest of the
+    queue is respected — this is a surgical single-item move, NOT a full
+    re-sort).
+
+    Returns the entry's new index, or ``None`` if ``item_id`` is not present
+    (caller handles the not-found case). A no-op move (already in the right
+    slot) still returns the index — byte-stability is the caller's concern
+    (it compares old vs new position).
+    """
+    idx = next(
+        (i for i, e in enumerate(items)
+         if isinstance(e, dict) and e.get("id") == item_id),
+        None,
+    )
+    if idx is None:
+        return None
+    entry = items.pop(idx)
+    my_priority = merged_priority(item_type, entry, today=today)
+    dest = len(items)  # default: append (lowest priority / tie-behind-equals)
+    for i, other in enumerate(items):
+        if merged_priority(item_type, other, today=today) > my_priority:
+            dest = i
+            break
+    items.insert(dest, entry)
+    return dest
+
+
+def _coerce_set_tier_value(new_value, queue_path: "Path"):
+    """Normalize a ``--set-tier`` argument into the value to STORE in a feature
+    queue entry's ``tier`` field (feature-tier-strings-fall-to-merged-priority-
+    default). Accepts, in addition to the historic bare int / numeric string:
+
+      * a single named tier enum (``pre-release``, ``milestone``, …), stored as
+        the enum NAME (round-trips cleanly through ``merged_priority``);
+      * a comma-separated string (``"pre-release,milestone"``) or an actual list —
+        a MULTI-enum feature, stored as a list; ``merged_priority`` takes the MIN.
+
+    Every element must resolve to a known enum or an integer; the FIRST unknown
+    token ``_die``s (exit 2, zero mutation) naming the valid enum vocabulary.
+    Returns a scalar (int or enum-name str) for a single value, or a list for
+    multiple — the natural on-disk shape ``merged_priority`` already handles.
+    """
+    if isinstance(new_value, list):
+        tokens: list = new_value
+    elif isinstance(new_value, str) and "," in new_value:
+        tokens = [t.strip() for t in new_value.split(",") if t.strip()]
+    else:
+        tokens = [new_value]
+
+    normalized: list = []
+    for tok in tokens:
+        if isinstance(tok, bool):  # bool is an int subclass — reject it
+            _die(
+                f"--set-tier requires an integer tier or one of "
+                f"{'/'.join(_FEATURE_TIER_ENUM)}, got {tok!r}",
+                queue_path,
+            )
+            return  # pragma: no cover
+        if isinstance(tok, int):
+            normalized.append(tok)
+            continue
+        key = str(tok).strip()
+        if key in _FEATURE_TIER_ENUM:
+            normalized.append(key)  # store the enum NAME for readability
+            continue
+        try:
+            normalized.append(int(key))
+        except (TypeError, ValueError):
+            _die(
+                f"--set-tier requires an integer tier or one of "
+                f"{'/'.join(_FEATURE_TIER_ENUM)}, got {tok!r}",
+                queue_path,
+            )
+            return  # pragma: no cover
+    if not normalized:
+        _die("--set-tier requires at least one tier value", queue_path)
+        return  # pragma: no cover
+    return normalized[0] if len(normalized) == 1 else normalized
+
+
+def _load_queue_for_mutation(
+    queue_path: "Path", queue_label: str
+) -> "tuple[dict, list]":
+    """Shared load → validate-list prologue for the priority/dep mutators.
+
+    Mirrors reorder_queue/sync_deps: a missing file or malformed JSON, or a
+    non-list ``queue`` field, calls ``_die`` (exit 2, zero mutation). Returns
+    ``(data, items)`` where ``items is data["queue"]``.
+    """
+    if not queue_path.exists():
+        _die(f"{queue_label} not found", queue_path)
+        return {}, []  # pragma: no cover
+    try:
+        data = json.loads(queue_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        _die(f"invalid {queue_label}: {exc}", queue_path)
+        return {}, []  # pragma: no cover
+    items = data.get("queue", [])
+    if not isinstance(items, list):
+        _die(f"{queue_label} 'queue' field must be an array", queue_path)
+        return {}, []  # pragma: no cover
+    return data, items
+
+
+def set_queue_priority(
+    queue_path: "Path", item_id: str, item_type: str, new_value, *,
+    today: "datetime.date | None" = None, queue_label: str = "queue.json",
+) -> dict:
+    """Change a queue entry's effective-priority field IN PLACE and atomically
+    re-sort its listed position to match — the operator-facing promote/demote
+    primitive (lazy-state.py ``--set-tier``; bug-state.py ``--set-severity``).
+
+    ``item_type``:
+      * ``"feature"`` — ``new_value`` is the new ``tier``: a bare int, a numeric
+        string, a named tier enum (``_FEATURE_TIER_ENUM`` — ``pre-release``,
+        ``milestone``, …), or a comma-separated / list of those (a MULTI-enum
+        feature, stored as a list; ``merged_priority`` takes the MIN). An unknown
+        token ``_die``s naming the valid enum vocabulary (see
+        ``_coerce_set_tier_value``).
+      * ``"bug"`` — ``new_value`` is one of ``P0/P1/P2/Low`` (validated against
+        ``_MERGED_SEVERITY_RANK``). Setting an EXPLICIT severity ALSO clears any
+        active pin fields (``pinned_at``/``pinned_until``/``pin_reason``) — an
+        explicit severity is the inverse of a null-pin, and a stale pin would
+        confuse ``merged_priority``'s fallback branch.
+
+    A missing ``item_id`` or malformed queue JSON ``_die``s (exit 2, zero
+    mutation). After the field is set, ``reposition_by_priority`` moves the
+    entry to its correct listed slot and the whole thing is one
+    ``_atomic_write`` (the load-bearing atomic-reorder side effect). Setting a
+    value that changes neither the field nor the position is still a real write
+    (the field may be byte-identical but the operation is authoritative) — the
+    return ``reordered`` flag reports whether the LISTED POSITION moved.
+
+    Returns ``{"id", "item_type", "field", "old_value", "new_value",
+    "old_position", "new_position", "reordered": bool, "queue_length"}``.
+    """
+    data, items = _load_queue_for_mutation(queue_path, queue_label)
+    idx = next(
+        (i for i, e in enumerate(items)
+         if isinstance(e, dict) and e.get("id") == item_id),
+        None,
+    )
+    if idx is None:
+        _die(f"item not queued: {item_id}", queue_path)
+        return {}  # pragma: no cover
+    entry = items[idx]
+
+    if item_type == "feature":
+        field = "tier"
+        coerced = _coerce_set_tier_value(new_value, queue_path)
+        old_value = entry.get("tier")
+        entry["tier"] = coerced
+        new_norm = coerced
+    elif item_type == "bug":
+        field = "severity"
+        sev = str(new_value).strip()
+        if sev not in _MERGED_SEVERITY_RANK:
+            _die(
+                f"--set-severity requires one of "
+                f"{'/'.join(_MERGED_SEVERITY_RANK)}, got {new_value!r}",
+                queue_path,
+            )
+            return {}  # pragma: no cover
+        old_value = entry.get("severity")
+        entry["severity"] = sev
+        # An explicit severity supersedes a null-pin — drop the pin fields so
+        # merged_priority reads the new severity directly (not the fallback).
+        for _pk in ("pinned_at", "pinned_until", "pin_reason"):
+            entry.pop(_pk, None)
+        new_norm = sev
+    else:  # pragma: no cover — defensive; callers pass a literal
+        _die(f"set_queue_priority: unknown item_type {item_type!r}", queue_path)
+        return {}
+
+    old_position = idx
+    new_position = reposition_by_priority(items, item_id, item_type, today=today)
+    data["queue"] = items
+    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+    _diag(
+        f"set_queue_priority: {item_id} {field} {old_value!r} -> {new_norm!r} "
+        f"in {queue_label} (position {old_position} -> {new_position})"
+    )
+    return {
+        "id": item_id,
+        "item_type": item_type,
+        "field": field,
+        "old_value": old_value,
+        "new_value": new_norm,
+        "old_position": old_position,
+        "new_position": new_position,
+        "reordered": new_position != old_position,
+        "queue_length": len(items),
+    }
+
+
+def mutate_queue_deps(
+    queue_path: "Path", item_id: str, *,
+    add: "list[str] | None" = None, remove: "list[str] | None" = None,
+    queue_label: str = "queue.json",
+) -> dict:
+    """Add or remove hard-dependency ids on a queue entry's ``deps`` field
+    post-hoc — the arbitrary-edit sibling of ``sync_deps`` (which only projects
+    the SPEC's dep-block). Backs lazy-state.py / bug-state.py
+    ``--add-deps``/``--remove-deps``.
+
+    Exactly one of ``add`` / ``remove`` is non-empty per call (the CLI routes
+    each flag separately). Added ids are validated (regex + reserved
+    ``bug:``/``feature:`` prefixes → ``_die``) and a self-dep is refused. The
+    result is deduped, SPEC/insertion order preserved. An empty resulting set
+    REMOVES the ``deps`` key (restoring the byte-identical no-deps entry shape).
+    A change that leaves ``deps`` byte-identical is a ``noop: true`` ZERO write
+    (byte-stable, mirroring ``sync_deps``).
+
+    Deps affect the READINESS gate, not ``merged_priority`` — so this does NOT
+    reposition the entry (unlike ``set_queue_priority``).
+
+    Post-mutation ``detect_dep_cycle`` guard: a resulting queue graph with a
+    cycle ``_die``s (exit 2, file untouched) — a cycle would brick every
+    subsequent probe at load.
+
+    Returns ``{"mutated": bool, "noop": bool, "item_id", "deps": [...],
+    "added": [...], "removed": [...], "queue_length"}``.
+    """
+    data, items = _load_queue_for_mutation(queue_path, queue_label)
+    idx = next(
+        (i for i, e in enumerate(items)
+         if isinstance(e, dict) and e.get("id") == item_id),
+        None,
+    )
+    if idx is None:
+        _die(f"item not queued: {item_id}", queue_path)
+        return {}  # pragma: no cover
+    entry = items[idx]
+
+    current = list(entry.get("deps") or [])
+    added: list[str] = []
+    removed: list[str] = []
+
+    if add:
+        validate_dep_id_list(add, queue_path, context=f"'--add-deps' ({item_id!r})")
+        if item_id in add:
+            _die(
+                f"--add-deps: {item_id!r} cannot depend on itself — a "
+                f"self-dependency can never unblock.",
+                queue_path,
+            )
+            return {}  # pragma: no cover
+        for d in add:
+            if d not in current:
+                current.append(d)
+                added.append(d)
+    if remove:
+        for d in remove:
+            if d in current:
+                current.remove(d)
+                removed.append(d)
+
+    new_deps = current
+    prior = entry.get("deps")
+    # Compute the target entry shape: key removed when empty, else the list.
+    if new_deps:
+        would_change = prior != new_deps
+    else:
+        would_change = "deps" in entry
+    if not would_change:
+        return {
+            "mutated": True, "noop": True, "item_id": item_id,
+            "deps": list(new_deps), "added": added, "removed": removed,
+            "queue_length": len(items),
+        }
+
+    if new_deps:
+        entry["deps"] = new_deps
+    else:
+        entry.pop("deps", None)
+
+    # Write-side cycle guard on the POST-mutation in-memory items (D4 parity
+    # with sync_deps): never persist a projection that cycles the queued graph.
+    cycle = detect_dep_cycle(items)
+    if cycle is not None:
+        _die(
+            f"--add-deps: adding {added!r} to {item_id!r} would create a "
+            f"dependency cycle among queued entries: "
+            f"{', '.join(repr(c) for c in cycle)} — refusing to write.",
+            queue_path,
+        )
+        return {}  # pragma: no cover
+
+    data["queue"] = items
+    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+    _diag(
+        f"mutate_queue_deps: {item_id} deps -> {new_deps!r} in {queue_label} "
+        f"(added={added!r} removed={removed!r})"
+    )
+    return {
+        "mutated": True, "noop": False, "item_id": item_id,
+        "deps": list(new_deps), "added": added, "removed": removed,
+        "queue_length": len(items),
+    }
+
+
+def set_independent_marker(
+    queue_path: "Path", item_id: str, value: bool, *,
+    queue_label: str = "queue.json",
+) -> dict:
+    """Set or CLEAR a queue entry's ``independent: true`` shard-eligibility marker
+    IN PLACE — the operator-facing sibling of ``set_queue_priority`` /
+    ``mutate_queue_deps`` for the isolation marker
+    (``parse_independent_marker`` READS it from either the SPEC frontmatter or the
+    queue entry; this is the WRITE side, backing lazy-state.py
+    ``--set-independent``). ``value=True`` writes ``independent: true``;
+    ``value=False`` REMOVES the key (restoring the byte-clean no-marker shape —
+    ``parse_independent_marker`` treats absent and false identically, so removal is
+    the canonical "not independent" state, mirroring how ``mutate_queue_deps``
+    drops an emptied ``deps``).
+
+    The ``independent`` marker gates ``/lazy-batch-parallel`` shard eligibility
+    (``claim_shardable``'s ``no-independent-marker`` hold), NOT ``merged_priority``
+    — so this does NOT reposition the entry (unlike ``set_queue_priority``).
+
+    A missing ``item_id`` or malformed queue JSON ``_die``s (exit 2, zero
+    mutation). A change that leaves the entry byte-identical (e.g. clearing an
+    already-absent marker, or setting an already-true one) is a ``noop: true`` ZERO
+    write (byte-stable, mirroring ``mutate_queue_deps``).
+
+    Returns ``{"mutated": bool, "noop": bool, "item_id", "independent": bool,
+    "queue_length"}``.
+    """
+    data, items = _load_queue_for_mutation(queue_path, queue_label)
+    idx = next(
+        (i for i, e in enumerate(items)
+         if isinstance(e, dict) and e.get("id") == item_id),
+        None,
+    )
+    if idx is None:
+        _die(f"item not queued: {item_id}", queue_path)
+        return {}  # pragma: no cover
+    entry = items[idx]
+
+    had_marker = "independent" in entry
+    prior_value = entry.get("independent")
+    if value:
+        would_change = prior_value is not True
+    else:
+        # Clearing: a change iff the key is present at all (any truthiness).
+        would_change = had_marker
+    if not would_change:
+        return {
+            "mutated": True, "noop": True, "item_id": item_id,
+            "independent": bool(value), "queue_length": len(items),
+        }
+
+    if value:
+        entry["independent"] = True
+    else:
+        entry.pop("independent", None)
+
+    data["queue"] = items
+    _atomic_write(queue_path, json.dumps(data, indent=2) + "\n")
+    _diag(
+        f"set_independent_marker: {item_id} independent {prior_value!r} -> "
+        f"{value!r} in {queue_label}"
+    )
+    return {
+        "mutated": True, "noop": False, "item_id": item_id,
+        "independent": bool(value), "queue_length": len(items),
+    }
+
+
 def merged_worklist(
     feature_items: list[dict],
     bug_items: list[dict],
     repo_root: str,
     *,
     today: "datetime.date | None" = None,
+    exclude_ids: "set[str] | frozenset[str] | None" = None,
 ) -> list[dict]:
     """Order both queues into a single work-list and return it as a list of
     ``{"item_id", "type", "repo_root"}`` dicts (head first).
@@ -952,26 +1421,44 @@ def merged_worklist(
       1. Effective priority ascending (``merged_priority`` — lower = higher
          priority; feature ``tier`` and bug ``severity`` normalized to one
          scale).
-      2. Tie on equal priority → ``type == "bug"`` before ``type ==
-         "feature"``.
+      2. Tie on equal priority → ``type == "feature"`` before ``type ==
+         "bug"`` (operator-directed 2026-07-17; with the rank-1 age floor this
+         means only a genuine P0 bug precedes a P1 feature — see
+         ``_MERGED_TYPE_ORDER``).
       3. Stable for equal (priority, type): each queue's own listed order is
-         preserved (Python's sort is stable, and we seed the input in
-         bug-then-feature, queue-listed order before sorting on (priority,
-         type-rank) only).
+         preserved (Python's sort is stable, and the (priority, type-rank, seq)
+         key preserves each queue's listed order within a type).
 
     Each input item is expected to carry an id field. Feature loader items use
     ``id``; bug loader items use ``id`` as well. Items missing an id are
     skipped (a malformed entry must not produce a None-id head).
+
+    ``exclude_ids`` (merged-head-includes-parked-items-deadlocks-park-run +
+    merged-head-excludes-parked-not-operator-deferred-deadlocks): the set of ids to
+    EXCLUDE from the ordering — the NON-DISPATCHABLE items the pipeline skips (parked
+    items a park-mode run skips PLUS unconditional operator-deferred items; built by
+    ``dispatch.merged_head_nondispatchable_ids`` — the actionability oracle that
+    replaced the former ``nondispatchable_item_ids`` file-predicate with per-candidate
+    scoped ``is_dispatchable`` re-inference. The oracle's primary re-inference now
+    covers BOTH pipelines' operator-deferred items uniformly — the direct
+    ``spec_dir_operator_deferred`` file-predicate supplement was RETIRED
+    (``merged-head-oracle-per-signal-supplement-churn`` Phase 2) as no longer
+    necessary, since that same feature's Phase 1 gave the feature-side
+    ``compute_state`` its own operator-defer branch. Excluding them makes the merged head the
+    highest-priority DISPATCHABLE item, so the ``merged-head-diverged`` withhold never
+    withholds behind an undriveable head. Default ``None`` → nothing excluded
+    (byte-identical non-park behavior).
     """
+    exclude = exclude_ids or frozenset()
     annotated: list[tuple[int, int, int, dict]] = []
     seq = 0
-    # Seed bugs first then features so that, at equal (priority, type-rank),
-    # the stable sort preserves bug-before-feature AND each queue's listed
-    # order. The (priority, type_rank) sort key alone + stable sort + this seed
-    # order yields the full contract.
+    # Seed bugs then features; the cross-type equal-rank tie is decided by the
+    # (priority, type_rank) key — with _MERGED_TYPE_ORDER feature(0) < bug(1) a
+    # feature sorts before a bug at equal priority — and the stable sort + seq
+    # tie-breaker preserves each queue's listed order WITHIN a type.
     for raw in bug_items:
         item_id = raw.get("id")
-        if not item_id:
+        if not item_id or item_id in exclude:
             continue
         annotated.append(
             (merged_priority("bug", raw, today=today), _MERGED_TYPE_ORDER["bug"], seq,
@@ -980,7 +1467,7 @@ def merged_worklist(
         seq += 1
     for raw in feature_items:
         item_id = raw.get("id")
-        if not item_id:
+        if not item_id or item_id in exclude:
             continue
         annotated.append(
             (merged_priority("feature", raw, today=today), _MERGED_TYPE_ORDER["feature"], seq,
@@ -1000,12 +1487,18 @@ def next_merged(
     repo_root: str,
     *,
     today: "datetime.date | None" = None,
+    exclude_ids: "set[str] | frozenset[str] | None" = None,
 ) -> dict | None:
     """Return the head of the merged work-list (``{item_id, type, repo_root}``)
-    or ``None`` when both queues are empty. Thin head-of ``merged_worklist``.
-    ``today`` is caller-supplied for determinism (bug-queue-aging-backpressure)."""
-    worklist = merged_worklist(feature_items, bug_items, repo_root, today=today)
+    or ``None`` when both queues are empty (or every item is excluded). Thin
+    head-of ``merged_worklist``. ``today`` is caller-supplied for determinism
+    (bug-queue-aging-backpressure); ``exclude_ids`` drops PARKED items so the head
+    is the highest-priority UN-PARKED item (see ``merged_worklist``)."""
+    worklist = merged_worklist(
+        feature_items, bug_items, repo_root, today=today, exclude_ids=exclude_ids
+    )
     return worklist[0] if worklist else None
+
 
 def skip_ahead_ready(
     deps: list[dict] | None,

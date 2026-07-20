@@ -536,6 +536,13 @@ def _capsule_text(cluster: dict, key: str, recurrence_of: str | None) -> str:
     fm = [
         "---",
         "kind: incident-capture",
+        # park-provisional-parks-claude-config-auto-generated-stubs: durable
+        # provenance that this bug stub was machine-enqueued by the harness (NOT
+        # operator-authored). spec-bug propagates these two fields onto its
+        # pre-conclusion NEEDS_INPUT.md, where lazy_core.provisional_eligibility's
+        # claude-config carve-out reads them to auto-accept under --park-provisional.
+        "auto_generated: true",
+        "auto_generated_origin: incident-capture",
         f"incident_key: {key}",
         f"signal_class: {cluster['signal_class']}",
         f"occurrences: {cluster['occurrences']}",

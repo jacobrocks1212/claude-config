@@ -534,7 +534,11 @@ def main() -> None:
         ss_repo_root = Path(__file__).resolve().parents[2]
         ss_baseline = skill_size_ratchet.load_baseline(skill_size_ratchet.default_baseline_path())
         ss_findings = skill_size_ratchet.check(ss_repo_root, ss_baseline)
-        if ss_findings:
+        # cycle-prompt-deflation Phase 1 (WU-3): also run the assembled-cycle-prompt
+        # profile ratchet so `--check-skill-size` (and the gate battery that shells
+        # it) gates the assembled prompt, not just whole files.
+        ss_profile_findings = skill_size_ratchet.check_profiles(ss_repo_root, ss_baseline)
+        if ss_findings or ss_profile_findings:
             for finding in ss_findings:
                 if finding["metric"] == "missing":
                     print(f"MISSING  {finding['file']} — listed in baseline but not found on disk")
@@ -543,10 +547,28 @@ def main() -> None:
                         f"OVER-CEILING  {finding['file']}  {finding['metric']}="
                         f"{finding['current']} > ceiling={finding['ceiling']}"
                     )
-            print(f"\n{len(ss_findings)} skill-size ratchet finding(s) found.")
+            for finding in ss_profile_findings:
+                if finding["metric"] == "refused":
+                    print(
+                        f"REFUSED  profile {finding['profile']} — emitter could not "
+                        f"assemble: {finding.get('note')}"
+                    )
+                else:
+                    print(
+                        f"OVER-CEILING  profile {finding['profile']}  {finding['metric']}="
+                        f"{finding['current']} > ceiling={finding['ceiling']}"
+                    )
+            total = len(ss_findings) + len(ss_profile_findings)
+            print(f"\n{total} skill-size ratchet finding(s) found.")
             exit_code = 1
         else:
-            print(f"OK — skill-size ratchet: {len(ss_baseline['files'])} file(s) within ceiling.")
+            ss_profile_count = sum(
+                1 for k in (ss_baseline.get("profiles") or {}) if not k.startswith("_")
+            )
+            print(
+                f"OK — skill-size ratchet: {len(ss_baseline['files'])} file(s) and "
+                f"{ss_profile_count} assembled cycle-prompt profile(s) within ceiling."
+            )
 
     # CLI-surface prose/fence lint (optional; state-cli-contract-registry).
     if args.check_cli_surface:

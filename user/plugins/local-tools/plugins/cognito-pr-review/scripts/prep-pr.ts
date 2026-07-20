@@ -20,7 +20,7 @@ import { execSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { createTwoFilesPatch } from "diff";
 import yaml from "js-yaml";
 
@@ -278,6 +278,12 @@ interface ReReviewInfo {
   isReReview: boolean;
   previousIterationId: number | null;
   journeyFilePath: string | null;
+  // The durable head SHA that was actually reviewed last time, persisted in
+  // REVIEWED.md (`reviewed_sha:`). When present it is the correct incremental-diff
+  // anchor — a real commit id — instead of the journey review-round number, which
+  // was being (mis)used as an index into the commit-derived iterations[] array
+  // (RC-2a). Null for legacy REVIEWED.md with no persisted SHA, or none present.
+  reviewedSha: string | null;
 }
 
 // Local mode types
@@ -751,17 +757,44 @@ function getEnhancedThreadStatuses(timelineData: TimelineData): EnhancedThreadSt
   }));
 }
 
-async function computeIterationDiff(
+// One changed-file entry from a GitHub `/compare` response (the subset we consume).
+interface CompareFile {
+  filename: string;
+  status: string;
+  sha?: string;
+}
+
+// Injectable compare fetcher — returns the changed-file set between two refs (three-dot
+// `base...head` semantics). Default hits the GitHub API; tests inject a deterministic stub
+// so the base-relative computation is asserted without a live call.
+type FetchCompare = (base: string, head: string) => Promise<CompareFile[]>;
+
+interface IterationDiffOptions {
+  // The PR base ref (target-branch commit). When present, the diff is computed base-relative
+  // (RC-2b): the branch's changed-file set up to `current` MINUS what was already changed up
+  // to `previous`, so merged-in `main` churn — present relative to base at BOTH endpoints —
+  // cancels, and genuine branch-only changes remain. Absent → legacy three-dot fallback.
+  baseRef?: string;
+  fetchCompare?: FetchCompare;
+}
+
+export async function computeIterationDiff(
   prNumber: number,
   currentIterationId: number,
   previousIterationId: number,
   token: string,
   cacheDir: string,
-  iterations: Iteration[]
+  iterations: Iteration[],
+  previousShaOverride?: string,
+  opts: IterationDiffOptions = {}
 ): Promise<IterationDiffData> {
   console.error(`Computing iteration diff: iteration ${previousIterationId} → ${currentIterationId}...`);
 
-  const previousSha = iterations[previousIterationId - 1]?.sourceRefCommit.commitId;
+  // Prefer the durable persisted reviewed SHA (RC-2a) — a real commit id — over the
+  // journey review-round number used as an index into the commit-derived iterations[]
+  // array (the numbering-space mismatch this fix eliminates). Fall back to the index
+  // only for legacy re-reviews with no persisted SHA.
+  const previousSha = previousShaOverride ?? iterations[previousIterationId - 1]?.sourceRefCommit.commitId;
   const currentSha = iterations[currentIterationId - 1]?.sourceRefCommit.commitId;
 
   if (!previousSha || !currentSha) {
@@ -769,14 +802,15 @@ async function computeIterationDiff(
     return { previousIterationId, currentIterationId, filesAdded: [], filesRemoved: [], filesModified: [] };
   }
 
-  const comparison = await ghFetch<any>(`/compare/${previousSha}...${currentSha}`, token);
-  const files = comparison.files || [];
+  const fetchCompare: FetchCompare = opts.fetchCompare ?? (async (base, head) => {
+    const cmp = await ghFetch<any>(`/compare/${base}...${head}`, token);
+    return (cmp.files || []) as CompareFile[];
+  });
 
   const filesAdded: string[] = [];
   const filesRemoved: string[] = [];
   const filesModified: string[] = [];
-
-  for (const file of files) {
+  const classify = (file: CompareFile) => {
     if (file.status === "added" || file.status === "renamed") {
       filesAdded.push(file.filename);
     } else if (file.status === "removed") {
@@ -784,6 +818,30 @@ async function computeIterationDiff(
     } else {
       filesModified.push(file.filename);
     }
+  };
+
+  if (opts.baseRef) {
+    // Base-relative delta (RC-2b): compare each endpoint against the PR base, then take the
+    // set of files whose branch change differs between previous and current. A file changed
+    // identically at both endpoints (same blob sha) — e.g. merged-in main churn, which is
+    // excluded from a base-relative compare entirely — is dropped; a file re-modified since
+    // previous (different blob sha) or newly changed is retained.
+    const currentFiles = await fetchCompare(opts.baseRef, currentSha);
+    const previousFiles = await fetchCompare(opts.baseRef, previousSha);
+    const prevByName = new Map(previousFiles.map((f) => [f.filename, f]));
+    for (const file of currentFiles) {
+      const prev = prevByName.get(file.filename);
+      // Unchanged since previous when present with an identical blob sha. If sha is absent
+      // (older API shape), treat mere presence-at-both-endpoints as unchanged.
+      if (prev && (prev.sha === undefined || file.sha === undefined || prev.sha === file.sha)) {
+        continue;
+      }
+      classify(file);
+    }
+  } else {
+    // Legacy fallback: direct three-dot compare of the two branch endpoints.
+    const comparison = await fetchCompare(previousSha, currentSha);
+    for (const file of comparison) classify(file);
   }
 
   const diffData: IterationDiffData = {
@@ -801,15 +859,38 @@ async function computeIterationDiff(
   return diffData;
 }
 
-function detectReReview(prId: number, cogDocsItemDir: string): ReReviewInfo {
+// Read the durable reviewed head SHA persisted in REVIEWED.md (`reviewed_sha:` in the
+// YAML frontmatter). Returns null when REVIEWED.md is absent, unreadable, legacy (no
+// `reviewed_sha`), or the value is empty. Sibling of the journey in `cogDocsItemDir`.
+export function readReviewedSha(cogDocsItemDir: string): string | null {
+  const reviewedPath = path.join(cogDocsItemDir, "REVIEWED.md");
+  if (!fs.existsSync(reviewedPath)) return null;
+  try {
+    const content = fs.readFileSync(reviewedPath, "utf-8");
+    // Only look inside the leading YAML frontmatter block.
+    const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    const scope = fmMatch ? fmMatch[1] : content;
+    const shaMatch = scope.match(/^\s*reviewed_sha:\s*["']?([0-9a-fA-F]{7,40})["']?\s*$/m);
+    if (shaMatch && shaMatch[1]) return shaMatch[1];
+  } catch (err) {
+    console.error(`  Warning: Could not read REVIEWED.md for reviewed_sha: ${err}`);
+  }
+  return null;
+}
+
+export function detectReReview(prId: number, cogDocsItemDir: string): ReReviewInfo {
   const journeyPath = path.join(cogDocsItemDir, `PR-${prId}-journey.md`);
+  const reviewedSha = readReviewedSha(cogDocsItemDir);
 
   if (!fs.existsSync(journeyPath)) {
     console.error("  No previous journey file found — initial review");
-    return { isReReview: false, previousIterationId: null, journeyFilePath: null };
+    return { isReReview: false, previousIterationId: null, journeyFilePath: null, reviewedSha };
   }
 
   console.error(`  Found existing journey file: ${journeyPath}`);
+  if (reviewedSha) {
+    console.error(`  Persisted reviewed_sha anchor: ${reviewedSha.slice(0, 8)}`);
+  }
 
   // Try to extract previousIterationId from journey file metadata
   let previousIterationId: number | null = null;
@@ -835,6 +916,7 @@ function detectReReview(prId: number, cogDocsItemDir: string): ReReviewInfo {
     isReReview: true,
     previousIterationId,
     journeyFilePath: journeyPath,
+    reviewedSha,
   };
 }
 
@@ -1631,11 +1713,15 @@ async function prepPR(prId: number, force = false, contextLines = DEFAULT_CONTEX
   // Detect re-review
   const reReviewInfo = detectReReview(prId, cogDocsItemDir);
 
-  // Compute iteration diff if re-review and we have iteration info
+  // Compute iteration diff if re-review and we have iteration info. The persisted
+  // reviewed SHA (RC-2a) is a valid anchor on its own — even when the journey scrape
+  // yields no previousIterationId — so admit the diff on EITHER signal.
   let iterationDiffData: IterationDiffData | null = null;
-  if (reReviewInfo.isReReview && reReviewInfo.previousIterationId && iterationId) {
+  if (reReviewInfo.isReReview && iterationId && (reReviewInfo.reviewedSha || reReviewInfo.previousIterationId)) {
     iterationDiffData = await computeIterationDiff(
-      prId, iterationId, reReviewInfo.previousIterationId, token, cacheDir, iterations
+      prId, iterationId, reReviewInfo.previousIterationId ?? 0, token, cacheDir, iterations,
+      reReviewInfo.reviewedSha ?? undefined,
+      { baseRef: targetCommit }
     );
   }
 
@@ -2144,7 +2230,10 @@ function parseArgs(argv: string[]): CliArgs {
   return { prId, force, cacheRoot, contextLines, local, baseBranch, includeUntracked };
 }
 
-// CLI entry point
+// CLI entry point — guarded so the module can be imported by tests (which supply their
+// own entry file) without executing the CLI dispatch, process.chdir, or process.exit.
+const isMainModule = import.meta.url === pathToFileURL(process.argv[1] ?? "").href;
+if (isMainModule) {
 const { prId, force, cacheRoot, contextLines, local, baseBranch, includeUntracked } = parseArgs(process.argv);
 
 // Change to cache root before running
@@ -2182,3 +2271,4 @@ if (local) {
   console.error("  --context            Number of context lines in diffs (default: 3)");
   process.exit(1);
 }
+} // end isMainModule guard

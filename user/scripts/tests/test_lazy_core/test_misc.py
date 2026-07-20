@@ -2844,7 +2844,7 @@ def test_lazy_batch_skill_carries_reload_discipline_prose():
 #
 # WU-1: merged-view helper + ordering comparator.
 # WU-2: ordering-field source normalization (feature `tier` vs bug `severity`).
-# WU-3: fixtures covering both-populated / bug-breaks-tie / only-features /
+# WU-3: fixtures covering both-populated / feature-breaks-tie / only-features /
 #       only-bugs / both-empty, plus the live --next-merged CLI over a two-queue
 #       temp-dir fixture.
 #
@@ -2867,7 +2867,7 @@ def test_merged_symbols_present():
 def test_next_merged_cli_over_two_queue_fixture():
     """WU-3 live integration: `lazy-state.py --next-merged --repo-root <fixture>`
     over a temp dir with one tier-1 feature and one P0 bug prints the bug as the
-    head (bugs break ties / higher priority). Exercises the real loaders +
+    head (P0 bug is strictly higher priority than a tier-1 feature). Exercises the real loaders +
     importlib bug-queue load end-to-end."""
     _guard()
     lazy_state = _SCRIPTS_DIR / "lazy-state.py"
@@ -2915,7 +2915,14 @@ def test_next_merged_cli_over_two_queue_fixture():
 
 def test_next_merged_cli_only_features_matches_single_head():
     """WU-3: --next-merged with ONLY features queued returns the same feature
-    lazy-state's single-current head would — single-type behavior unchanged."""
+    lazy-state's single-current head would — single-type ordering unchanged.
+
+    merged-head-actionability-oracle Phase 3: --next-merged is now
+    dispatchability-aware (it scoped-probes candidates via the oracle and
+    excludes NON-dispatchable heads), so the single feature must be a REALISTIC
+    DISPATCHABLE item (a full SPEC/PHASES/plan → routes to /execute-plan) for it
+    to be the returned head — a bare no-SPEC dir is genuinely non-dispatchable
+    (terminal_reason=queue-missing) and is correctly excluded now."""
     _guard()
     lazy_state = _SCRIPTS_DIR / "lazy-state.py"
     with tempfile.TemporaryDirectory() as td:
@@ -2928,7 +2935,16 @@ def test_next_merged_cli_only_features_matches_single_head():
                 {"id": "feat-only", "name": "Only", "spec_dir": "feat-only", "tier": 1}
             ]}), encoding="utf-8"
         )
-        (feats_dir / "feat-only").mkdir()
+        (feats_dir / "ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        fdir = feats_dir / "feat-only"
+        (fdir / "plans").mkdir(parents=True)
+        (fdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+        (fdir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Build\n- [ ] Tests\n", encoding="utf-8")
+        (fdir / "plans" / "all-phases-only.md").write_text("# Plan\n", encoding="utf-8")
         cp = subprocess.run(
             [sys.executable, str(lazy_state), "--next-merged",
              "--repo-root", str(root)],
@@ -2939,6 +2955,50 @@ def test_next_merged_cli_only_features_matches_single_head():
         assert head["type"] == "feature" and head["item_id"] == "feat-only", head
 
 
+
+
+def test_next_merged_cli_oracle_excludes_nondispatchable_head():
+    """merged-head-actionability-oracle Phase 3 (WU-3): --next-merged now builds
+    its exclude set via the actionability oracle (type-aware scoped probe over
+    BOTH queues), so a NON-DISPATCHABLE higher-priority head (a BLOCKED P0 bug)
+    is excluded and the head is the highest-priority DISPATCHABLE item (the
+    feature). Pre-oracle the file predicate did not exclude a blocked bug → the
+    merged head was the undriveable bug (the stall class this feature ends)."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        feats_dir = root / "docs" / "features"
+        fdir = feats_dir / "feat-w"
+        (fdir / "plans").mkdir(parents=True)
+        feats_dir.joinpath("queue.json").write_text(json.dumps({"queue": [
+            {"id": "feat-w", "name": "Feat W", "spec_dir": "feat-w", "tier": 1}]}),
+            encoding="utf-8")
+        feats_dir.joinpath("ROADMAP.md").write_text("# Roadmap\n", encoding="utf-8")
+        (fdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Draft\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (fdir / "RESEARCH.md").write_text("# Research\n", encoding="utf-8")
+        (fdir / "RESEARCH_SUMMARY.md").write_text("# Summary\n", encoding="utf-8")
+        (fdir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Build\n- [ ] Tests\n", encoding="utf-8")
+        (fdir / "plans" / "all-phases-w.md").write_text("# Plan\n", encoding="utf-8")
+        # BLOCKED P0 bug outranks the feature but is non-dispatchable → excluded.
+        bdir = root / "docs" / "bugs" / "bug-blk"
+        bdir.mkdir(parents=True)
+        (root / "docs" / "bugs" / "queue.json").write_text(json.dumps({"queue": [
+            {"id": "bug-blk", "name": "Bug Blk", "spec_dir": "bug-blk", "severity": "P0"}]}),
+            encoding="utf-8")
+        (bdir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n", encoding="utf-8")
+        (bdir / "BLOCKED.md").write_text(
+            "---\nphase: External gate\nblocker_kind: external-gate\n---\nWait.\n",
+            encoding="utf-8")
+        cp = subprocess.run(
+            [sys.executable, str(lazy_state), "--next-merged", "--repo-root", str(root)],
+            capture_output=True, text=True)
+        assert cp.returncode == 0, (cp.returncode, cp.stdout, cp.stderr)
+        head = json.loads(cp.stdout.strip())
+        assert head and head["item_id"] == "feat-w" and head["type"] == "feature", head
 
 
 def test_next_merged_cli_both_empty_prints_null():
@@ -4845,6 +4905,7 @@ _TESTS = [
     ("test_merged_symbols_present", test_merged_symbols_present),
     ("test_next_merged_cli_over_two_queue_fixture", test_next_merged_cli_over_two_queue_fixture),
     ("test_next_merged_cli_only_features_matches_single_head", test_next_merged_cli_only_features_matches_single_head),
+    ("test_next_merged_cli_oracle_excludes_nondispatchable_head", test_next_merged_cli_oracle_excludes_nondispatchable_head),
     ("test_next_merged_cli_both_empty_prints_null", test_next_merged_cli_both_empty_prints_null),
     ("test_pin_bug_severity_updates_existing_entry", test_pin_bug_severity_updates_existing_entry),
     ("test_pin_bug_severity_malformed_until_refuses", test_pin_bug_severity_malformed_until_refuses),

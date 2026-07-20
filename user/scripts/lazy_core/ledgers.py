@@ -64,6 +64,18 @@ from .statedir import (
 _DENY_LEDGER_FILENAME = "lazy-deny-ledger.jsonl"
 
 
+# adhoc-process-friction-detector-counts-concurrent-session-commits Phase 1:
+# the concurrent-activity commit-sha ledger. Script-owned DIRECT-commit sites
+# (archive_fixed, flush_commit_artifacts) append their produced sha here stamped
+# with the LIVE run identity; the --cycle-end friction detector subtracts any
+# in-window sha recorded under a DISTINCT run identity, so a concurrent
+# SAME-git-identity session's automated commits (the operator's own second
+# interactive/scheduled session — invisible to the committer-email signal) no
+# longer false-trip `unexpected-commits`. Shared per-repo keyed state dir, so
+# the ledger is visible across concurrent same-repo sessions.
+_CONCURRENT_ACTIVITY_FILENAME = "lazy-concurrent-activity.jsonl"
+
+
 # ---------------------------------------------------------------------------
 # Phase 7 WU-7.1 — Deny ledger (routed hardening debt)
 # ---------------------------------------------------------------------------
@@ -199,6 +211,93 @@ def append_friction_ledger_entry(
     except Exception:  # noqa: BLE001
         # Fail-open: a ledger write must never propagate.
         return False
+
+
+def append_concurrent_commit_sha(
+    sha: str,
+    *,
+    run_started_at: str | None,
+    now: float | None = None,
+) -> bool:
+    """Append one concurrent-activity entry to ``lazy-concurrent-activity.jsonl``.
+
+    adhoc-process-friction-detector-counts-concurrent-session-commits Phase 1 —
+    the write-side substrate. Called (best-effort) by every script-owned
+    DIRECT-commit site AFTER a confirmed-successful commit, so the produced sha
+    is recorded with the run identity that made it. The ``--cycle-end`` detector
+    subtracts an in-window sha whose recorded ``run_started_at`` is PRESENT and
+    differs from the current run's identity (a concurrent session's commit).
+
+    Mirrors ``append_deny_ledger_entry``'s EXACT fail-open plain-append pattern
+    (``claude_state_dir() / <FILENAME>``, ``open("a")``, one compact JSON line,
+    ``except`` → return False). Never raises; a ledger-write failure must never
+    fail or partial-abort the commit the caller just made.
+
+    Entry shape (one JSON object per line):
+        {"sha": <full commit sha>, "run_started_at": <str|null>, "ts": <epoch>}
+
+    Args:
+        sha: the produced commit's full sha (the value the detector matches
+            against ``git log`` window shas).
+        run_started_at: the LIVE run marker's ``started_at`` identity as read by
+            ``_raw_marker_started_at()`` — the SAME source ``append_deny_ledger_entry``
+            stamps, so this run's OWN commits carry ``run_started_at == MINE`` and
+            are correctly EXCLUDED from subtraction. None (interactive / no live
+            marker) records ``null`` and is never subtracted (conservative).
+        now: epoch float for ts (injectable for hermetic tests).
+
+    Returns:
+        True if the line was appended; False on any write failure (fail-open).
+    """
+    if now is None:
+        now = time.time()
+    try:
+        entry = {"sha": sha, "run_started_at": run_started_at, "ts": now}
+        ledger_path = claude_state_dir() / _CONCURRENT_ACTIVITY_FILENAME
+        # Plain append (not _atomic_write) — mirrors append_deny_ledger_entry:
+        # append-only, torn-final-line-tolerant reader, no read-modify-write race.
+        with ledger_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry) + "\n")
+        return True
+    except Exception:  # noqa: BLE001
+        # Fail-open: a ledger write must never propagate.
+        return False
+
+
+def read_concurrent_commit_entries() -> dict[str, str | None]:
+    """Read ``lazy-concurrent-activity.jsonl`` as a ``{sha: run_started_at}`` map.
+
+    Mirrors ``read_deny_ledger``: a missing file → empty map (no concurrent
+    activity recorded), a corrupt/torn final line is skipped rather than
+    aborting the whole read, and a non-git/OS error degrades to an empty map.
+    Never raises. When the same sha appears more than once the LAST entry wins
+    (append order); the detector only cares whether a sha is present under a
+    distinct identity.
+
+    Returns:
+        ``{sha: run_started_at}`` for every well-formed entry (``run_started_at``
+        may be None for an interactive/no-marker record).
+    """
+    ledger_path = claude_state_dir(create=False) / _CONCURRENT_ACTIVITY_FILENAME
+    if not ledger_path.exists():
+        return {}
+    try:
+        raw = ledger_path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    out: dict[str, str | None] = {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(obj, dict) and isinstance(obj.get("sha"), str):
+            rsa = obj.get("run_started_at")
+            out[obj["sha"]] = rsa if isinstance(rsa, str) else None
+    return out
 
 
 def read_hook_events() -> list[dict]:
@@ -3727,18 +3826,27 @@ def build_input_audit_emit_command(
     spec_path: str,
     cycle_kind: str,
     cwd: str,
+    cycle_commit_sha: str | None = None,
+    cycle_summary: str | None = None,
 ) -> str:
     """Pre-compose the single-line shell command that discharges the D2-A
     audit obligation (mirrors ``build_hardening_emit_command``'s shape for
     the pending-hardening-debt withhold).
 
-    ``cycle_summary`` and ``cycle_commit_sha`` are NOT script-derivable
-    narrative fields per se, but a mechanical proxy is available and used so
-    the command is genuinely ready-to-run (never a hand-fill placeholder):
-    ``cycle_commit_sha`` defaults to the SKILL.md-sanctioned fallback
-    ``"HEAD~1"``; ``cycle_summary`` defaults to the subject line of the most
-    recent commit at ``cwd`` (``git log -1 --format=%s``) when resolvable,
-    else an empty string (never fabricated prose).
+    ``cycle_commit_sha`` / ``cycle_summary`` bind the audit's diff to the cycle
+    bracket's ACTUAL end commit — the values recorded on the obligation dict at
+    --cycle-end arming time (adhoc-audit-obligation-fires-on-zero-commit-failed-
+    cycle P1). When supplied, they are emitted verbatim: this is the correct
+    binding, replacing the positional ``HEAD~1`` guess that (after a zero-commit
+    or an intervening cycle) resolved to a previous, unrelated item's commit.
+
+    When a param is ABSENT (None/empty — a legacy/partial obligation that
+    predates the recorded sha), the command falls back so it stays genuinely
+    ready-to-run (never a hand-fill placeholder): ``cycle_commit_sha`` falls
+    back to the SKILL.md-sanctioned ``"HEAD~1"``; ``cycle_summary`` falls back to
+    the subject line of the most recent commit at ``cwd``
+    (``git log -1 --format=%s``) when resolvable, else an empty string (never
+    fabricated prose).
 
     Returns:
         A single shell command string, safe to paste into bash.
@@ -3746,17 +3854,23 @@ def build_input_audit_emit_command(
     def _ctx(key: str, value: str) -> str:
         return f"--context {key}={shlex.quote(value)}"
 
-    cycle_summary = ""
-    try:
-        proc = subprocess.run(
-            ["git", "-C", str(cwd), "log", "-1", "--format=%s"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=10,
-        )
-        if proc.returncode == 0:
-            cycle_summary = proc.stdout.strip()
-    except Exception:  # noqa: BLE001 — best-effort proxy, never fatal
-        pass
+    # The bracket's recorded end commit is the authoritative binding; HEAD~1 is
+    # only the absent-sha fallback (legacy/partial obligation).
+    resolved_commit_sha = cycle_commit_sha or "HEAD~1"
+
+    resolved_summary = cycle_summary or ""
+    if not resolved_summary:
+        # Absent recorded summary: fall back to the latest-commit subject proxy.
+        try:
+            proc = subprocess.run(
+                ["git", "-C", str(cwd), "log", "-1", "--format=%s"],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=10,
+            )
+            if proc.returncode == 0:
+                resolved_summary = proc.stdout.strip()
+        except Exception:  # noqa: BLE001 — best-effort proxy, never fatal
+            pass
 
     parts = [
         f"python3 ~/.claude/scripts/{state_script_name}",
@@ -3764,8 +3878,8 @@ def build_input_audit_emit_command(
         _ctx("item_name", item_name or ""),
         _ctx("spec_path", spec_path or ""),
         _ctx("cycle_kind", cycle_kind or ""),
-        _ctx("cycle_summary", cycle_summary),
-        _ctx("cycle_commit_sha", "HEAD~1"),
+        _ctx("cycle_summary", resolved_summary),
+        _ctx("cycle_commit_sha", resolved_commit_sha),
         _ctx("item_id", item_id or ""),
         _ctx("cwd", cwd or ""),
     ]
@@ -3800,14 +3914,26 @@ _DECISIONS_FILENAME = "lazy-decisions.json"
 def _normalize_sentinel_key(sentinel_path: str | Path) -> str:
     """Normalize a sentinel path into a stable dict key (D3-A).
 
-    Uses os.path.normpath + forward slashes so the SAME sentinel recorded
-    and looked up via slightly different path spellings (relative vs
-    absolute, backslash vs forward slash) still round-trips. Does NOT
-    require the file to exist (recording happens against a real, existing
-    sentinel in practice, but the key derivation itself is pure string
-    normalization — no filesystem I/O, no resolve()).
+    ABSOLUTIZES via os.path.abspath (which also applies normpath) then
+    forward-slashes, so the SAME sentinel recorded and looked up via
+    different path spellings — relative vs absolute, backslash vs forward
+    slash — produces the SAME key. A pure-string ``normpath`` (the prior
+    impl) could NOT reconcile a relative spelling with an absolute one
+    without joining a base, so a decision recorded with a repo-relative
+    ``docs/features/<f>/NEEDS_INPUT.md`` silently missed an
+    ``--emit-dispatch apply-resolution`` lookup that passed the absolute
+    Windows path — the ``no recorded decision for sentinel`` refusal
+    (``adhoc-decision-key-relative-absolute-mismatch``). Both
+    ``--record-decision`` and ``--emit-dispatch apply-resolution`` are
+    invoked by the orchestrator from the run's repo-root cwd, so
+    ``abspath`` reconciles them deterministically; same-spelling round-trip
+    is preserved (abspath is idempotent on an already-absolute path and
+    deterministic on a relative one from a fixed cwd). Uses ``abspath``,
+    NOT ``realpath`` — a sentinel lives in the repo working tree, never
+    behind a ``~/.claude/*`` skill symlink, so symlink resolution is
+    unneeded and abspath is the smaller, more predictable change.
     """
-    return os.path.normpath(str(sentinel_path)).replace("\\", "/")
+    return os.path.abspath(str(sentinel_path)).replace("\\", "/")
 
 
 def _load_decisions() -> dict:
@@ -3921,3 +4047,119 @@ def bind_decision_record_context(
     context["chosen_path"] = record.get("chosen_path", "")
     context["resolution_summary"] = record.get("resolution_summary", "")
     return context
+
+
+def flush_commit_artifacts(
+    repo_root: "Path | str",
+    artifact_paths: "list[str]",
+    message: str,
+) -> dict:
+    """Stage + commit ONLY the named flush artifacts, by explicit PATHSPEC.
+
+    end-of-run-flush-commit-absorbs-concurrent-writer-staged-files: the end-of-run
+    efficacy/canary/KPI flush commits in the **claude-config** checkout even when the
+    run TARGETS another repo, where a ``/harden-harness`` agent may be concurrently
+    writing claude-config. A broad ``git add -A docs/*`` (the improvised staging that
+    caused the live incident — commit ``115a991a`` swallowed a concurrent harden
+    agent's ``docs/bugs/*/SPEC.md``) absorbs that foreign writer's staged, unrelated
+    files into the flush commit. This helper is the tested embodiment of the sanctioned
+    mechanism: stage the explicit artifact paths, then commit them with a trailing
+    ``-- <pathspec>`` so ONLY those paths are captured from the working tree — a
+    concurrently-staged foreign file is left in the index, untouched, NEVER absorbed.
+
+    Args:
+        repo_root: the claude-config checkout root (the interventions-bearing scope).
+        artifact_paths: repo-root-relative paths the flush generated THIS run — the
+            exact ``docs/interventions/<id>.md`` records, ``docs/kpi/SCORECARD.md``,
+            and any ``docs/bugs/reconsider-<id>/`` / ``docs/bugs/canary-revert-<id>/``
+            seed. Nonexistent paths are dropped (a no-op flush leaves nothing to
+            commit); NEVER pass a broad directory like ``docs`` — pass only the
+            specific artifacts.
+        message: the commit message (e.g. ``"docs(interventions): efficacy verdicts — <terminal>"``).
+
+    Returns:
+        ``{"ok": bool, "committed": [<paths>], "commit_sha": <str|None>,
+           "skipped_missing": [<paths>], "note": <str|None>, "error": <str|None>}``.
+        Fail-open (mirrors the flush's NON-BLOCKING posture): a git failure returns
+        ``ok: False`` with ``error`` set rather than raising.
+    """
+    root = Path(repo_root)
+
+    def _git(*args: str) -> "subprocess.CompletedProcess":
+        return subprocess.run(
+            ["git", "-C", str(root), *args],
+            capture_output=True, text=True,
+        )
+
+    # Keep ONLY the artifacts that actually exist on disk (a no-op flush produced
+    # none of them). This is an explicit allow-list — never a directory glob.
+    present: list[str] = []
+    skipped_missing: list[str] = []
+    for p in artifact_paths:
+        rel = str(p).replace("\\", "/").strip()
+        if not rel:
+            continue
+        if (root / rel).exists():
+            present.append(rel)
+        else:
+            skipped_missing.append(rel)
+
+    if not present:
+        return {
+            "ok": True, "committed": [], "commit_sha": None,
+            "skipped_missing": skipped_missing,
+            "note": "no flush artifacts present — nothing to commit", "error": None,
+        }
+
+    # Stage ONLY the explicit paths (so untracked artifacts are tracked), then commit
+    # with the SAME paths as an explicit pathspec. The pathspec makes this a PARTIAL
+    # commit of only those paths from the working tree — any other staged file (a
+    # concurrent writer's) is left in the index, uncommitted, never absorbed.
+    add = _git("add", "--", *present)
+    if add.returncode != 0:
+        return {
+            "ok": False, "committed": [], "commit_sha": None,
+            "skipped_missing": skipped_missing, "note": None,
+            "error": f"git add failed: {add.stderr.strip()}",
+        }
+
+    commit = _git("commit", "-m", message, "--", *present)
+    if commit.returncode != 0:
+        # No changes in the pathspec (already committed / byte-identical regen) is a
+        # benign no-op, not a failure — git prints "nothing to commit" to stdout.
+        blob = (commit.stdout + commit.stderr).lower()
+        if "nothing to commit" in blob or "no changes added" in blob:
+            return {
+                "ok": True, "committed": [], "commit_sha": None,
+                "skipped_missing": skipped_missing,
+                "note": "flush artifacts already committed — no-op", "error": None,
+            }
+        return {
+            "ok": False, "committed": [], "commit_sha": None,
+            "skipped_missing": skipped_missing, "note": None,
+            "error": f"git commit failed: {commit.stderr.strip()}",
+        }
+
+    sha_proc = _git("rev-parse", "HEAD")
+    commit_sha = sha_proc.stdout.strip() if sha_proc.returncode == 0 else None
+    # adhoc-process-friction-detector-counts-concurrent-session-commits Phase 2:
+    # record the produced sha in the concurrent-activity ledger stamped with this
+    # run's identity, so a CONCURRENT session's flush commit is subtractable at the
+    # --cycle-end friction detector. Best-effort — a ledger-write error NEVER
+    # changes this flush's verdict (append_concurrent_commit_sha is itself
+    # fail-open; the guard is defense-in-depth). The no-op / nothing-to-commit
+    # branches returned earlier with commit_sha=None and append nothing.
+    if commit_sha:
+        try:
+            append_concurrent_commit_sha(
+                commit_sha, run_started_at=_raw_marker_started_at(),
+            )
+        except Exception:  # noqa: BLE001
+            pass  # best-effort concurrent-activity ledger; never fail the flush
+    # The files actually captured by the commit (authoritative — reflects the pathspec).
+    show = _git("show", "--name-only", "--pretty=format:", "HEAD")
+    committed = [l.strip() for l in show.stdout.splitlines() if l.strip()] if show.returncode == 0 else present
+    return {
+        "ok": True, "committed": committed, "commit_sha": commit_sha,
+        "skipped_missing": skipped_missing, "note": None, "error": None,
+    }

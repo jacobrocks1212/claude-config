@@ -39,6 +39,15 @@ def _diff(file: str, added=(), removed=(), context=()):
     return "\n".join(lines) + "\n"
 
 
+def _multi_diff(*parts):
+    """Concatenate several `_diff(...)` outputs into one multi-file diff.
+
+    `parse_diff` resets its per-file state on each `diff --git` header, so a
+    concatenation of single-file diffs parses into one `_Hunk` per file.
+    """
+    return "".join(parts)
+
+
 DEFAULT_GLOBS = [
     "user/hooks/**",
     "user/scripts/lazy_core.py",
@@ -71,6 +80,64 @@ def test_out_of_scope_result_shape_and_no_verdict():
     assert res["in_scope"] is False
     assert res["verdict_required"] is False
     assert res["checks"] == {}
+
+
+# --- detector-input scoping to manifest control-surface hunks (Phase 1: S1/S2/S3) -
+
+def test_run_checker_scopes_out_lazy_queue_renumber():
+    """S1: an ON-manifest hook change (in_scope) + an off-manifest LAZY_QUEUE.md
+    queue-count renumber. The renumber (a numeric-literal gate-line change) must NOT
+    reach detect_gate_weakening — the off-manifest hunk is filtered out first."""
+    diff = _multi_diff(
+        _diff("user/hooks/foo.sh", added=["echo hello"]),
+        _diff("LAZY_QUEUE.md", removed=["## Bugs (17)"], added=["## Bugs (16)"]),
+    )
+    changed = ["user/hooks/foo.sh", "LAZY_QUEUE.md"]
+    res = hg.run_checker(Path("."), diff, changed, None, DEFAULT_GLOBS)
+    assert res["in_scope"] is True
+    assert res["checks"]["gate_weakening"]["result"] == "pass", res["checks"]["gate_weakening"]["evidence"]
+
+
+def test_run_checker_scopes_out_phases_bypass_prose():
+    """S2: an ON-manifest hook change (in_scope) + an off-manifest PHASES.md prose
+    line mentioning a *_BYPASS env-var. The prose must NOT reach detect_gate_weakening."""
+    diff = _multi_diff(
+        _diff("user/hooks/foo.sh", added=["echo hello"]),
+        _diff(
+            "docs/bugs/x/PHASES.md",
+            added=["the deliberate one-off override is BUILD_QUEUE_BYPASS=1 leading the segment"],
+        ),
+    )
+    changed = ["user/hooks/foo.sh", "docs/bugs/x/PHASES.md"]
+    res = hg.run_checker(Path("."), diff, changed, None, DEFAULT_GLOBS)
+    assert res["in_scope"] is True
+    assert res["checks"]["gate_weakening"]["result"] == "pass", res["checks"]["gate_weakening"]["evidence"]
+
+
+def test_run_checker_scopes_out_unrelated_spec_incident_literal():
+    """S3: an ON-manifest hook change (in_scope) + an off-manifest, unrelated SPEC.md
+    citing another slug's docs/bugs/<slug> path. The literal must NOT reach detect_overfit."""
+    diff = _multi_diff(
+        _diff("user/hooks/foo.sh", added=["echo hello"]),
+        _diff(
+            "docs/bugs/unrelated/SPEC.md",
+            added=["  - see 'docs/bugs/some-other-incident-slug' for prior art"],
+        ),
+    )
+    changed = ["user/hooks/foo.sh", "docs/bugs/unrelated/SPEC.md"]
+    res = hg.run_checker(Path("."), diff, changed, None, DEFAULT_GLOBS)
+    assert res["in_scope"] is True
+    assert res["checks"]["overfit"]["result"] == "pass", res["checks"]["overfit"]["evidence"]
+
+
+def test_run_checker_on_manifest_bypass_still_hits_after_scoping():
+    """POSITIVE control: an ON-manifest hook carrying a *_BYPASS line STILL hits
+    through run_checker — the scoping filter narrows input, it does not disarm detectors."""
+    diff = _diff("user/hooks/foo.sh", added=['if [ "$HARNESS_GATE_BYPASS" = "1" ]; then exit 0; fi'])
+    changed = ["user/hooks/foo.sh"]
+    res = hg.run_checker(Path("."), diff, changed, None, DEFAULT_GLOBS)
+    assert res["in_scope"] is True
+    assert res["checks"]["gate_weakening"]["result"] == "hit", res["checks"]["gate_weakening"]["evidence"]
 
 
 # --- overfit detector (SPEC Validation row 2) ------------------------------------
@@ -106,6 +173,33 @@ def test_overfit_incident_slug_literal_flags():
     out = hg.detect_overfit(hg.parse_diff(diff))
     assert out["result"] == "flag"
     assert any("incident-shaped" in e for e in out["evidence"])
+
+
+def test_overfit_shell_breadcrumb_pipe_not_alternation():
+    """Phase 2 / S4: a fail-open shell breadcrumb line in an ON-manifest hook
+    (`_HOOK_*_TS="$(date +%s 2>/dev/null || echo 0)"`) uses `||` / `$( )` / `2>` as
+    SHELL operators, not a regex-alternation matcher append — must NOT flag."""
+    diff = _diff(
+        "user/hooks/foo.sh",
+        added=['  _HOOK_NOPY_TS="$(date +%s 2>/dev/null || echo 0)"'],
+    )
+    out = hg.detect_overfit(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+
+
+def test_overfit_genuine_regex_alternation_append_still_flags():
+    """Phase 2 positive control (over-narrowing guard): a quoted literal genuinely
+    added into a real `|`-alternation matcher STILL flags — the detector's real
+    coverage is preserved (SPEC Open Question FP3/S4). GREEN both before and after."""
+    diff = _diff(
+        "user/scripts/lazy_core.py",
+        context=["_STEP_RE = re.compile("],
+        removed=[r'    r"spec|plan|execute"'],
+        added=[r'    r"spec|plan|execute|new_slug"'],
+    )
+    out = hg.detect_overfit(hg.parse_diff(diff))
+    assert out["result"] == "flag", out["evidence"]
+    assert any("alternation" in e for e in out["evidence"])
 
 
 def test_overfit_structural_change_passes():
@@ -174,6 +268,201 @@ def test_gate_weakening_clean_change_passes():
     )
     out = hg.detect_gate_weakening(hg.parse_diff(diff))
     assert out["result"] == "pass"
+
+
+# --- gate-weakening FALSE-POSITIVE regressions (gap 2 — rename + docstring/fixture) ---
+
+def test_gate_weakening_renamed_test_def_not_flagged():
+    """FP FIXTURE: a pure test-def rename (test_old removed + test_new added, body
+    unchanged) preserves coverage — must NOT hit (net removed-added == 0)."""
+    diff = _diff(
+        "user/scripts/tests/test_lazy_core/test_markers.py",
+        context=["    assert refuse_run_start_clobber(marker) is True"],
+        removed=["def test_weakening_is_refused_old():"],
+        added=["def test_weakening_is_refused_new():"],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+    assert out.get("evidence") == []
+
+
+def test_gate_weakening_split_test_def_strengthening_not_flagged():
+    """FP FIXTURE: one test def removed, TWO added (coverage strengthened) — no hit."""
+    diff = _diff(
+        "user/scripts/tests/test_lazy_core/test_markers.py",
+        removed=["def test_broad_case():"],
+        added=["def test_case_a():", "def test_case_b():"],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+
+
+def test_gate_weakening_added_docstring_not_membership():
+    """FP FIXTURE: an added docstring line sitting next to an exemption-set opening
+    must NOT be misread as a membership-set addition (the recurring `membership
+    added: \"\"\"` false positive, hardening-log Round 67)."""
+    diff = _diff(
+        "user/scripts/lazy_core.py",
+        context=["SANCTIONED_STOP_TERMINAL = {", "    'all-features-complete',"],
+        added=['    """A docstring that happens to sit near the set."""'],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+
+
+def test_gate_weakening_bare_triple_quote_line_not_membership():
+    """FP FIXTURE: a bare `\"\"\"` docstring-delimiter line is not a membership element."""
+    diff = _diff(
+        "user/scripts/lazy_core.py",
+        context=["_FAIL_CLOSED_EVIDENCE_SENTINELS = frozenset({"],
+        added=['    """'],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+
+
+def test_gate_weakening_fixture_list_near_bare_reference_not_membership():
+    """FP FIXTURE: a test-fixture list element added beside a BARE reference to an
+    exemption name (not a collection-opening of that set) must NOT hit."""
+    diff = _diff(
+        "user/scripts/tests/test_lazy_core/test_markers.py",
+        context=["    # exercises SANCTIONED_STOP_TERMINAL membership", "    fixture = ["],
+        added=["    'some-fixture-value',"],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+
+
+# --- gate-weakening TRUE-POSITIVE regressions (must STILL hit after the fix) --------
+
+def test_gate_weakening_exemption_add_to_real_set_still_hits():
+    """TP FIXTURE: an element genuinely appended to an exemption set being defined."""
+    diff = _diff(
+        "user/scripts/lazy_core.py",
+        context=["SANCTIONED_STOP_TERMINAL = {", "    'all-features-complete',"],
+        added=["    'newly-exempted-terminal',"],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "hit"
+    assert any("exemption/sanction-set membership added" in e for e in out["evidence"])
+
+
+def test_gate_weakening_genuine_test_removal_still_hits():
+    """TP FIXTURE: a gate test removed with NO replacement (net removal) still HITs."""
+    diff = _diff(
+        "user/scripts/tests/test_lazy_core/test_markers.py",
+        removed=["def test_important_gate():", "    assert something"],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "hit"
+    assert any("gate-test definition removed" in e for e in out["evidence"])
+
+
+def test_gate_weakening_removed_refuse_construct_still_hits():
+    """TP FIXTURE: a removed `refuse_*(...)` / `exit 3` gate-refusal construct still HITs."""
+    diff = _diff(
+        "user/scripts/lazy_core.py",
+        removed=["    refuse_run_start_clobber(marker)", "    exit 3"],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "hit"
+
+
+def test_gate_weakening_reformatted_refuse_call_not_flagged():
+    """FP FIXTURE (gap-2 near-neighbor): a `refuse_*()` call REFORMATTED single-line
+    -> multi-line removes AND re-adds the construct (coverage-neutral). Net removed
+    == added, so it must NOT hit — the exact FP the harden commit that reformatted
+    `refuse_if_cycle_active(...)` produced."""
+    diff = _diff(
+        "user/scripts/lazy-state.py",
+        removed=['        lazy_core.refuse_if_cycle_active("--record-intervention")'],
+        added=[
+            "        lazy_core.refuse_if_cycle_active(",
+            '            "--record-intervention", allow_hardening_subagent=True',
+            "        )",
+        ],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+
+
+def test_gate_weakening_renamed_def_signature_not_flagged():
+    """FP FIXTURE (gap-2 near-neighbor): extending a `refuse_*` def signature (removed
+    old signature line + added new one) is a reformat, not a removal — no hit."""
+    diff = _diff(
+        "user/scripts/lazy_core.py",
+        removed=["def refuse_if_cycle_active(op_name: str) -> None:"],
+        added=[
+            "def refuse_if_cycle_active(",
+            "    op_name: str, *, allow_hardening_subagent: bool = False",
+            ") -> None:",
+        ],
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+
+
+# --- gate-weakening CROSS-FILE-MOVE regressions -----------------------------------
+# (adhoc-harness-gate-gate-weakening-blind-to-cross-file-construct-move)
+# A construct/test-def removed from file A and re-added VERBATIM in file B within one
+# change is a MOVE, not a removal (Locked Decision option b — content-identity). The
+# per-file net loops were blind to the sibling add and false-flagged the moved-from file.
+
+def test_gate_weakening_cross_file_deny_move_not_flagged():
+    """FP FIXTURE (SPEC reproduction): a `permissionDecision: deny` gate-refusal construct
+    REMOVED from one hook and ADDED verbatim to a sibling hook in the same change is a MOVE
+    — net-zero across the change, must NOT hit."""
+    diff = _multi_diff(
+        _diff(
+            "user/hooks/block-sentinel-write-on-stray-branch.sh",
+            removed=['  echo \'{"permissionDecision": "deny",'],
+        ),
+        _diff(
+            "user/hooks/hook-prelude.sh",
+            added=['  echo \'{"permissionDecision": "deny",'],
+        ),
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+    assert out.get("evidence") == []
+
+
+def test_gate_weakening_cross_file_test_def_move_not_flagged():
+    """FP FIXTURE: a `def test_*` removed from one test file and added verbatim to another
+    test file is a MOVE (coverage preserved) — must NOT hit (the `def test_*` loop was blind
+    the same way as the deny loop)."""
+    diff = _multi_diff(
+        _diff(
+            "user/scripts/tests/test_lazy_core/test_markers.py",
+            removed=["def test_important_gate():", "    assert something"],
+        ),
+        _diff(
+            "user/scripts/tests/test_lazy_core/test_dispatch.py",
+            added=["def test_important_gate():", "    assert something"],
+        ),
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "pass", out["evidence"]
+    assert out.get("evidence") == []
+
+
+def test_gate_weakening_cross_file_nonmove_still_hits():
+    """TP FIXTURE (option-(b) false-negative bound): a GENUINE removal of a deny construct
+    from file A plus an add of a DIFFERENT deny construct text in file B is NOT a move — the
+    unrelated add must not mask the genuine removal, so it still HITs."""
+    diff = _multi_diff(
+        _diff(
+            "user/scripts/lazy_core.py",
+            removed=["    refuse_run_start_clobber(marker)"],
+        ),
+        _diff(
+            "user/hooks/lazy-cycle-containment.sh",
+            added=["  exit 3"],
+        ),
+    )
+    out = hg.detect_gate_weakening(hg.parse_diff(diff))
+    assert out["result"] == "hit"
+    assert any("gate-refusal construct removed" in e for e in out["evidence"])
 
 
 # --- tautology detector (SPEC D2 / D6) -------------------------------------------

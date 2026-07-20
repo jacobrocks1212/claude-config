@@ -40,6 +40,14 @@ _GUARD_SH    = _HOOKS_DIR / "lazy-dispatch-guard.sh"
 _INJECT_SH   = _HOOKS_DIR / "lazy-route-inject.sh"
 _GUARD_PY    = _SCRIPTS_DIR / "lazy_guard.py"
 
+# Conservative ceiling on an embedded `-c "$_..._PY"` python body size. Windows
+# CreateProcess caps a command line at 32,767 chars; a body near that limit silently
+# fails to spawn (E2BIG) and disarms the hook. 25,000 leaves margin for the env-prefix
+# (`FOO=bar `) + `python -c ` + shell quoting overhead on top of the body, while sitting
+# above every hook currently left on `-c` (max: long-build-ownership-guard.sh ~19,805 B).
+# See docs/bugs/containment-hook-inline-python-exceeds-windows-cmdline-limit.
+_EMBEDDED_PY_CEILING = 25000
+
 # ---------------------------------------------------------------------------
 # Bash resolver — finds a POSIX-capable bash.exe on Windows (Git Bash),
 # or the system bash on any other platform.  Never returns System32\bash.exe
@@ -953,6 +961,88 @@ def test_inject_emits_lazy_route_banner():
         assert any(key in ctx for key in probe_evidence_keys), (
             f"additionalContext must contain probe-JSON evidence "
             f"(one of {probe_evidence_keys}); got: {ctx[:300]!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test 10b — inject banner reflects the MERGED head's type, not the marker
+#            pipeline (dispatch-probe-and-inject-bypass-merged-head)
+# ---------------------------------------------------------------------------
+
+def test_inject_banner_routes_bug_when_merged_head_is_p0_bug():
+    """Regression (dispatch-probe-and-inject-bypass-merged-head): with a
+    FEATURE-started run marker (pipeline="feature") but a P0 bug at the merged
+    work-list head, the injected LAZY-ROUTE banner must reflect the BUG (route
+    via bug-state.py) — NOT the lower-priority feature the marker's sticky
+    pipeline would otherwise select.
+
+    RED reason (pre-fix): _run_probe selected the state script from
+    marker.pipeline ("feature") and injected a feat-c banner, silently skipping
+    the P0 bug.
+    """
+    _guard()
+    assert _INJECT_SH.exists(), (
+        f"lazy-route-inject.sh missing: {_INJECT_SH}"
+    )
+
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+
+        # Feature fixture (feat-c, tier 1) + a P0 bug at the merged head.
+        fixture_repo = _build_fixture_repo(td_path)
+        bug_dir = fixture_repo / "docs" / "bugs" / "bug-z"
+        (bug_dir / "plans").mkdir(parents=True, exist_ok=True)
+        (fixture_repo / "docs" / "bugs" / "queue.json").write_text(
+            json.dumps({"queue": [
+                {"id": "bug-z", "name": "Bug Z", "spec_dir": "bug-z", "severity": "P0"}
+            ]}),
+            encoding="utf-8",
+        )
+        (bug_dir / "SPEC.md").write_text(
+            "# Spec\n\n**Status:** Concluded\n\n**Depends on:** (none)\n",
+            encoding="utf-8",
+        )
+        (bug_dir / "PHASES.md").write_text(
+            "# Phases\n\n### Phase 1\n- [ ] Fix the thing\n- [ ] Tests\n",
+            encoding="utf-8",
+        )
+        (bug_dir / "plans" / "all-phases-z.md").write_text("# Plan\n", encoding="utf-8")
+
+        env = _base_env(state_dir)
+
+        owner_session = str(uuid.uuid4())
+        _set_state_dir(state_dir)
+        try:
+            # Marker is a FEATURE run — the sticky pipeline the pre-fix hook trusted.
+            lazy_core.write_run_marker(
+                pipeline="feature",
+                cloud=False,
+                repo_root=str(fixture_repo),
+                max_cycles=10,
+                now=time.time(),
+                session_id=owner_session,
+            )
+        finally:
+            _clear_state_dir()
+
+        stdin_text = _userPromptSubmit_json(session_id=owner_session)
+        result = _run_bash(_INJECT_SH, stdin_text, env)
+
+        assert result.returncode == 0, (
+            f"inject hook must exit 0; stderr: {result.stderr!r}"
+        )
+        output = result.stdout.strip()
+        assert output != "", "inject hook must produce output (marker + valid repo)"
+        payload = json.loads(output)
+        ctx = payload.get("hookSpecificOutput", {}).get("additionalContext", "")
+
+        assert ctx.startswith("LAZY-ROUTE (hook-injected"), ctx[:120]
+        # The banner must reflect the MERGED head (the P0 bug), not the feature.
+        assert "bug-z" in ctx, (
+            f"inject banner must reflect the P0-bug merged head (route via "
+            f"bug-state.py); got: {ctx[:400]!r}"
         )
 
 
@@ -2998,6 +3088,10 @@ def test_p7_meta_dispatch_by_reference_via_guard():
 # ===========================================================================
 
 _CONTAINMENT_SH = _HOOKS_DIR / "lazy-cycle-containment.sh"
+_WEDGE_SH = _HOOKS_DIR / "subagent-wedge-backstop.sh"
+# adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke Phase 2
+# (Gap 1): the mechanical foreground-enforcement guard.
+_BGGATE_SH = _HOOKS_DIR / "cycle-subagent-bg-gate-guard.sh"
 
 # A synthetic subagent identifier — its mere PRESENCE in a PreToolUse payload
 # marks the call as coming from within a dispatched subagent (D4 trip).
@@ -3076,13 +3170,17 @@ def _write_cycle_marker_in_dir(
     state_dir: Path,
     feature_id: str = "feat-A",
     commit_tally: int = 0,
+    sub_skill: str | None = None,
 ) -> None:
     """Write a cycle-subagent marker into *state_dir* via lazy_core, optionally
     overriding commit_tally (lazy_core always writes 0; tests that exercise the
-    ceiling patch the value on disk after writing)."""
+    ceiling patch the value on disk after writing) and/or sub_skill (the
+    second-feature tripwire's ingest-research batch-writer exemption reads it)."""
     _set_state_dir(state_dir)
     try:
-        lazy_core.write_cycle_marker(feature_id, "deadbeef", now=time.time())
+        lazy_core.write_cycle_marker(
+            feature_id, "deadbeef", sub_skill=sub_skill, now=time.time()
+        )
     finally:
         _clear_state_dir()
     if commit_tally != 0:
@@ -3410,6 +3508,257 @@ def test_containment_allows_carve_out_commit():
         )
         assert _containment_decision(result) != "deny", (
             f"carve-out commit must NOT deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_allows_same_feature_commit_grouped():
+    """lazy-cycle-containment-misparses-grouped-feature-paths: a `git commit`
+    staging only the marker feature's own GROUPED dir
+    (docs/features/<group>/<feature_id>/…) → ALLOW. The marker feature_id is the
+    bare slug; the on-disk path carries a domain-group segment before it. Before
+    the group-aware fix, _FEATURE_DIR_RE.group(1) captured the group ('audio'),
+    not the slug, so this same-feature commit was FALSE-DENIED."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(
+            state_dir, feature_id="audio-quality-analysis-visualization"
+        )
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'work'"),
+            state_dir,
+            staged_paths=[
+                "docs/features/audio/audio-quality-analysis-visualization/SPEC.md",
+                "docs/features/audio/audio-quality-analysis-visualization/PHASES.md",
+            ],
+        )
+        assert _containment_decision(result) != "deny", (
+            f"grouped same-feature commit must NOT deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_second_feature_commit_grouped():
+    """lazy-cycle-containment-misparses-grouped-feature-paths: the group-aware fix
+    must NOT weaken the tripwire — a `git commit` staging a DIFFERENT grouped
+    feature's dir than the marker's feature_id → still DENY."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(
+            state_dir, feature_id="audio-quality-analysis-visualization"
+        )
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'work'"),
+            state_dir,
+            # A different feature under a different domain group.
+            staged_paths=["docs/features/mixer/crossfader-curve/SPEC.md"],
+        )
+        assert _containment_decision(result) == "deny", (
+            f"grouped 2nd-feature commit must deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_allows_same_feature_commit_grouped_multilevel():
+    """lazy-batch-parallel-run-harness-gaps gap 6: a `git commit` staging the
+    marker feature's own DEEPLY-grouped dir (three grouping segments before the
+    slug: docs/features/ui/secondary-ui-v2/domains/<slug>/…) → ALLOW. The prior
+    single-optional-group `(?:[^/]+/)?` matched at most one group segment and
+    false-denied this legitimate same-feature commit; the zero-or-more
+    `(?:[^/]+/)*` fix anchors the slug at any grouping depth."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="clip-inspector-panel")
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'work'"),
+            state_dir,
+            staged_paths=[
+                "docs/features/ui/secondary-ui-v2/domains/clip-inspector-panel/SPEC.md",
+                "docs/features/ui/secondary-ui-v2/domains/clip-inspector-panel/PHASES.md",
+            ],
+        )
+        assert _containment_decision(result) != "deny", (
+            f"deep-grouped same-feature commit must NOT deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_second_feature_commit_grouped_multilevel():
+    """lazy-batch-parallel-run-harness-gaps gap 6 (non-weakening): the deep-group
+    fix must NOT weaken the tripwire — a `git commit` staging a DIFFERENT feature
+    under a deep group than the marker's feature_id → still DENY."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="clip-inspector-panel")
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'work'"),
+            state_dir,
+            # A different slug at the SAME deep grouping depth.
+            staged_paths=[
+                "docs/features/ui/secondary-ui-v2/domains/waveform-overview/SPEC.md"
+            ],
+        )
+        assert _containment_decision(result) == "deny", (
+            f"deep-grouped 2nd-feature commit must deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_allows_ingest_research_multifeature_commit():
+    """lazy-batch-parallel-run-harness-gaps gap 7: an /ingest-research cycle
+    (sub_skill == 'ingest-research') legitimately writes RESEARCH.md across N
+    features in one commit. Staged paths spanning MULTIPLE feature dirs — none of
+    which is the marker's single feature_id — must NOT deny (the sanctioned
+    batch-docs-writer exemption)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(
+            state_dir, feature_id="hydra-overlay", sub_skill="ingest-research"
+        )
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'ingest research'"),
+            state_dir,
+            staged_paths=[
+                "docs/features/polyphonic-parameter-modulation/RESEARCH.md",
+                "docs/features/managed-llm-credits/RESEARCH.md",
+                "docs/features/managed-llm-credits/RESEARCH_SUMMARY.md",
+            ],
+        )
+        assert _containment_decision(result) != "deny", (
+            f"ingest-research multi-feature commit must NOT deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_allows_pathspec_scoped_commit_with_foreign_staged_path():
+    """adhoc-incident-hook-deny-057921: a pathspec-scoped `git commit <path>` must
+    evaluate only the commit's EFFECTIVE PATHSPEC, not the whole staged index — a
+    foreign feat-B path sitting in a shared worktree's index (a concurrent lane)
+    must NOT false-deny a commit that will not include it."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="feat-A")
+        result = _run_containment(
+            _bash_preToolUse_json("git commit docs/bugs/feat-A/SPEC.md -m 'fix'"),
+            state_dir,
+            staged_paths=["docs/bugs/feat-A/SPEC.md", "docs/bugs/feat-B/FIXED.md"],
+        )
+        assert _containment_decision(result) != "deny", (
+            f"pathspec-scoped commit excluding the foreign path must NOT deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_bare_commit_absorbing_foreign_staged_path():
+    """adhoc-incident-hook-deny-057921 (non-weakening): a bare `git commit -m ...`
+    with NO pathspec flushes the WHOLE staged index — the foreign feat-B path is
+    genuinely included, so this must still DENY (the re-scope is not a blanket
+    allow)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="feat-A")
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'fix'"),
+            state_dir,
+            staged_paths=["docs/bugs/feat-A/SPEC.md", "docs/bugs/feat-B/FIXED.md"],
+        )
+        assert _containment_decision(result) == "deny", (
+            f"bare commit absorbing the whole index must deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_commit_all_flag_with_foreign_staged_path():
+    """adhoc-incident-hook-deny-057921 (non-weakening): `git commit -a` commits the
+    whole staged+tracked-modified set regardless of any pathspec — must not be
+    narrowed by the pathspec-scoping fix, so the foreign feat-B path still DENIES."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="feat-A")
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -a -m 'fix'"),
+            state_dir,
+            staged_paths=["docs/bugs/feat-A/SPEC.md", "docs/bugs/feat-B/FIXED.md"],
+        )
+        assert _containment_decision(result) == "deny", (
+            f"-a/--all commit must deny on a foreign staged path; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_pathspec_commit_that_names_foreign_path():
+    """adhoc-incident-hook-deny-057921 (non-weakening): a pathspec-scoped commit
+    whose pathspec DIRECTLY NAMES the foreign feature's path must still deny — the
+    foreign path IS in the commit's effective set here."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="feat-A")
+        result = _run_containment(
+            _bash_preToolUse_json("git commit docs/bugs/feat-B/FIXED.md -m 'fix'"),
+            state_dir,
+            staged_paths=["docs/bugs/feat-A/SPEC.md", "docs/bugs/feat-B/FIXED.md"],
+        )
+        assert _containment_decision(result) == "deny", (
+            f"pathspec naming the foreign path directly must deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_pathspec_message_containing_path_token_not_mistaken_for_pathspec():
+    """adhoc-incident-hook-deny-057921: the `-m` VALUE must be skipped when parsing
+    pathspec tokens — a commit message that happens to mention the foreign path as
+    prose text (e.g. 'closes docs/bugs/feat-B/FIXED.md') must not be mistaken for a
+    second pathspec token; only the real pathspec (feat-A/SPEC.md) is evaluated."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir, feature_id="feat-A")
+        result = _run_containment(
+            _bash_preToolUse_json(
+                "git commit docs/bugs/feat-A/SPEC.md -m 'closes docs/bugs/feat-B/FIXED.md'"
+            ),
+            state_dir,
+            staged_paths=["docs/bugs/feat-A/SPEC.md", "docs/bugs/feat-B/FIXED.md"],
+        )
+        assert _containment_decision(result) != "deny", (
+            f"the -m message value must not be parsed as a pathspec token; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_denies_multifeature_commit_non_ingest():
+    """lazy-batch-parallel-run-harness-gaps gap 7 (non-weakening): the
+    ingest-research exemption is sub_skill-scoped — a NON-ingest cycle
+    (sub_skill 'execute-plan') staging a different feature's dir than the marker
+    feature_id still DENIES (a runaway cycle is still contained)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(
+            state_dir, feature_id="hydra-overlay", sub_skill="execute-plan"
+        )
+        result = _run_containment(
+            _bash_preToolUse_json("git commit -m 'work'"),
+            state_dir,
+            staged_paths=["docs/features/managed-llm-credits/SPEC.md"],
+        )
+        assert _containment_decision(result) == "deny", (
+            f"non-ingest 2nd-feature commit must deny; stdout: {result.stdout!r}"
         )
 
 
@@ -4069,6 +4418,77 @@ def test_containment_skill_fail_open_null_skill_field():
                 f"Skill payload with skill={null_val!r} must fail-OPEN; "
                 f"stdout: {result.stdout!r}"
             )
+
+
+def test_containment_temp_write_failure_fails_open_traced():
+    """windows-32k-cmdline-e2big-silently-disarms-containment: the FIXED hook
+    must invoke its embedded Python body via a `mktemp`'d temp FILE (not the
+    current `-c "$_LCC_PY"`, which exceeds Windows CreateProcess's 32,767-char
+    limit and silently fails to spawn — the E2BIG symptom this bug fixes).
+
+    This test forces the mktemp/temp-write step itself to fail (via TMPDIR
+    pointed at a non-existent parent directory — confirmed on this host to
+    make `mktemp` fail: `TMPDIR=/does/not/exist/x mktemp --suffix=.py` exits
+    1 with "No such file or directory") and asserts the NEW traced fail-open
+    contract: exit 0, no deny, AND a traced breadcrumb (hook-error.json +
+    a kind:"error" hook-events.jsonl line) — the fail-open must be OBSERVABLE,
+    not silent, mirroring every other hook's no-python fail-open path
+    (guard-fail-open-leaves-no-trace).
+
+    RED against the CURRENT `-c`-invocation hook: there is no mktemp step at
+    all, so setting TMPDIR has no effect on it, and (on this Windows/Git-Bash
+    host) the *existing* E2BIG symptom already fails the hook open, but
+    UNTRACED — no hook-error.json, no hook-events.jsonl line is written by
+    that path. So this test's traced-breadcrumb assertions fail for the
+    correct reason (no trace exists yet), not because of a broken fixture.
+
+    FAILURE-INJECTION SEAM (coordinate with the fix): the fix must `mktemp` a
+    `.py` file honoring the `TMPDIR` env var (the standard POSIX mktemp
+    seam). If the implementation ends up NOT honoring TMPDIR, this test's
+    injection must be updated to whatever seam it DOES honor — TMPDIR is the
+    expected/intended one.
+    """
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        env = _base_env(state_dir)
+        # Point TMPDIR at a path whose PARENT does not exist, so mktemp can
+        # never create a file there — confirmed to force a mktemp failure on
+        # this host (see docstring above).
+        env["TMPDIR"] = str(state_dir / "no_such_dir" / "tmp")
+        result = _run_bash(
+            _CONTAINMENT_SH,
+            _bash_preToolUse_json(
+                "python3 ~/.claude/scripts/lazy-state.py --probe",
+                agent_id=_SUBAGENT_AGENT_ID,
+            ),
+            env,
+        )
+        assert result.returncode == 0, (
+            f"temp-write failure must still fail-OPEN (exit 0); "
+            f"stderr={result.stderr!r}"
+        )
+        assert _containment_decision(result) != "deny", (
+            "a temp-write failure must fail-OPEN (never deny) — a broken "
+            f"hook must not wedge the pipeline; stdout={result.stdout!r}"
+        )
+        err_path = state_dir / "hook-error.json"
+        assert err_path.exists(), (
+            "temp-write failure must write a traced hook-error.json "
+            "breadcrumb (guard-fail-open-leaves-no-trace) — the fail-open "
+            "must be OBSERVABLE, not silent"
+        )
+        crumb = json.loads(err_path.read_text(encoding="utf-8"))
+        assert crumb.get("hook") == "lazy-cycle-containment", crumb
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, (
+            f"expected exactly one hook-events.jsonl line for the traced "
+            f"temp-write failure; got {events!r}"
+        )
+        assert events[0]["kind"] == "error", events
+        assert events[0]["hook"] == "lazy-cycle-containment", events
 
 
 # ---------------------------------------------------------------------------
@@ -5027,6 +5447,99 @@ def test_longbuild_guard_denies_npm_run_build():
         )
 
 
+def test_longbuild_guard_denies_qg_rust():
+    """long-build-ownership-guard-misses-qg-gates (Gap 1): `npm run qg -- rust`
+    (the heavy Rust quality gate — build+clippy+fmt+test) → deny + takeover
+    signature. It exceeds a subagent turn like the packaged builds and orphans
+    cargo when torn down."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json("npm run qg -- rust"), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"`npm run qg -- rust` must deny; stdout: {result.stdout!r}"
+        )
+        reason = json.loads(result.stdout.strip())["hookSpecificOutput"][
+            "permissionDecisionReason"
+        ]
+        assert _LONGBUILD_TAKEOVER_SIGNATURE in reason, (
+            f"deny reason must name the takeover signature; got {reason!r}"
+        )
+
+
+def test_longbuild_guard_denies_qg_ts():
+    """`npm run qg -- ts` (vue-tsc+eslint+vitest+vite build, ~4-6 min) → deny.
+    qg-ts is NOT queue-serialized (no manifest op) but is still orchestrator-
+    owned — a bare backgrounded vite build vanishes on subagent tear."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json("npm run qg -- ts"), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"`npm run qg -- ts` must deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_denies_qg_sidecar_and_quality_gate_alias():
+    """`npm run qg -- sidecar` and the `npm run quality-gate -- rust` alias →
+    deny (both heavy-gate forms the manifest registers)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for cmd in ("npm run qg -- sidecar", "npm run quality-gate -- rust"):
+            result = _run_longbuild_guard(
+                _bash_preToolUse_json(cmd), state_dir
+            )
+            assert _containment_decision(result) == "deny", (
+                f"{cmd!r} must deny; stdout: {result.stdout!r}"
+            )
+
+
+def test_longbuild_guard_denies_cd_prefixed_qg_rust():
+    """A qg gate chained behind a leading `cd` (`cd "..." && npm run qg -- rust`)
+    → still deny (command-position matcher, not only string-start)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_longbuild_guard(
+            _bash_preToolUse_json('cd "C:/repo" && npm run qg -- rust'), state_dir
+        )
+        assert _containment_decision(result) == "deny", (
+            f"cd-prefixed `npm run qg -- rust` must deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_longbuild_guard_allows_fast_qg_groups():
+    """The FAST qg groups (`arch`, `docs`, `lint`) and a bare `npm run qg` with
+    no target are NOT redirected — only the enumerated heavy targets
+    (rust/ts/sidecar) are (D1 near-zero-false-positive charter)."""
+    allow_cmds = [
+        "npm run qg -- arch",
+        "npm run qg -- docs",
+        "npm run qg -- lint",
+        "npm run qg",
+        "npm run qg -- ts-foo",   # not the exact `ts` target token
+    ]
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        for cmd in allow_cmds:
+            result = _run_longbuild_guard(
+                _bash_preToolUse_json(cmd), state_dir
+            )
+            assert result.returncode == 0, (
+                f"{cmd!r} must exit 0; stderr: {result.stderr!r}"
+            )
+            assert _containment_decision(result) != "deny", (
+                f"{cmd!r} must NOT deny (fast qg group / bare qg); "
+                f"stdout: {result.stdout!r}"
+            )
+
+
 def test_longbuild_guard_env_prefix_tolerance():
     """A leading env assignment (`ENV=1 tauri build`) → still deny (the matcher
     tolerates the env-assignment prefix before the long-build binary)."""
@@ -5382,6 +5895,72 @@ def test_bqe_denies_real_build_after_heredoc():
             f"real dotnet build chained after a heredoc must still deny; "
             f"stdout={result.stdout!r}"
         )
+
+
+def test_bqe_temp_write_failure_fails_open_traced():
+    """windows-32k-cmdline-e2big-silently-disarms-containment (bqe leg): the
+    hook's embedded ~32KB python body is invoked via `-c "$_BQE_PY"` (line
+    ~841), ~800B under Windows CreateProcess's 32,767-char limit — one
+    accretion from the SAME E2BIG silent-disarm Phase 1 fixed on
+    lazy-cycle-containment.sh. The FIXED hook must invoke its body via a
+    `mktemp`'d temp FILE (not `-c`), mirroring the lazy-cycle-containment.sh
+    conversion exactly (see test_containment_temp_write_failure_fails_open_traced).
+
+    This test forces the mktemp/temp-write step itself to fail (via TMPDIR
+    pointed at a non-existent parent directory — confirmed on this host to
+    make `mktemp` fail: `TMPDIR=/does/not/exist/x mktemp --suffix=.py` exits
+    1 with "No such file or directory") and asserts the NEW traced fail-open
+    contract: exit 0, decision NOT "deny" (fail-OPEN — a temp-write failure
+    must never wedge a build), AND a traced breadcrumb (hook-error.json +
+    exactly one kind:"error" hook-events.jsonl line) naming
+    hook: "build-queue-enforce" — mirroring every other hook's no-python
+    fail-open path (guard-fail-open-leaves-no-trace).
+
+    RED against the CURRENT `-c`-invocation hook: there is no mktemp step at
+    all, so TMPDIR has no effect on it — python runs fine via `-c` and the
+    hook DENIES the dotnet build normally (no failure, no breadcrumb). So
+    this test's "not deny" + "traced breadcrumb exists" assertions fail for
+    the correct reason (the temp-file branch + its traced fail-open don't
+    exist yet), not because of a broken fixture.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_cognito_worktree(td)
+        env = _base_env(state_dir)
+        # Point TMPDIR at a path whose PARENT does not exist, so mktemp can
+        # never create a file there — confirmed to force a mktemp failure on
+        # this host (same injection seam as the lazy-cycle-containment.sh fix).
+        env["TMPDIR"] = str(state_dir / "no_such_dir" / "tmp")
+        result = _run_bash(
+            _BQE_HOOK_SH,
+            _bqe_payload("dotnet build ./Cognito.sln", str(repo)),
+            env,
+        )
+        assert result.returncode == 0, (
+            f"temp-write failure must still fail-OPEN (exit 0); "
+            f"stderr={result.stderr!r}"
+        )
+        assert _containment_decision(result) != "deny", (
+            "a temp-write failure must fail-OPEN (never deny) — a broken "
+            f"hook must not wedge the build; stdout={result.stdout!r}"
+        )
+        err_path = state_dir / "hook-error.json"
+        assert err_path.exists(), (
+            "temp-write failure must write a traced hook-error.json "
+            "breadcrumb (guard-fail-open-leaves-no-trace) — the fail-open "
+            "must be OBSERVABLE, not silent"
+        )
+        crumb = json.loads(err_path.read_text(encoding="utf-8"))
+        assert crumb.get("hook") == "build-queue-enforce", crumb
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, (
+            f"expected exactly one hook-events.jsonl line for the traced "
+            f"temp-write failure; got {events!r}"
+        )
+        assert events[0]["kind"] == "error", events
+        assert events[0]["hook"] == "build-queue-enforce", events
 
 
 def test_bqe_bash_dash_c_wrapper_reference_accepted_residual():
@@ -6274,6 +6853,10 @@ _ALL_PYTHON_BEARING_HOOKS = [
     _BQE_HOOK_SH,
     _GUARD_SH,
     _INJECT_SH,
+    _WEDGE_SH,
+    # adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke Phase 2:
+    # the 9th python-bearing hook — the cycle-subagent background-gate guard.
+    _BGGATE_SH,
 ]
 
 
@@ -6291,7 +6874,8 @@ def test_all_python_bearing_hooks_breadcrumb_on_no_python():
     emit no deny, and write BOTH hook-error.json (hook field matches) and a
     single kind:error hook-events.jsonl line — closing guard-fail-open-leaves
     -no-trace symptom (a) (silent total disarm of the entire guard plane) for
-    all 7 hooks in one sweep."""
+    all 9 python-bearing hooks in one sweep (7 original + the SubagentStop
+    wedge-backstop hook + the cycle-subagent background-gate guard)."""
     minimal_payload = json.dumps({
         "tool_name": "Bash",
         "tool_input": {"command": "echo hi"},
@@ -6354,6 +6938,177 @@ def test_containment_no_python_breadcrumb_lands_in_override_dir_not_root():
         crumb = json.loads(crumb_path.read_text(encoding="utf-8"))
         assert crumb["hook"] == "lazy-cycle-containment"
         assert "no python" in crumb["error"]
+
+
+# ===========================================================================
+# shared-hook-lib Phase 1 — hook-prelude.sh + the two thin-wrapper consumers.
+#
+# The prelude is a SOURCED (never executed) bash file providing HOOK_PYTHON
+# (python3→python resolution; total absence ⇒ pure-bash breadcrumb + exit 0),
+# HOOK_SCRIPTS_DIR (SELF-normalized scripts-dir derivation), and
+# hook_emit_error_event() (pure-bash hook-events.jsonl + hook-error.json
+# append). Fail-open is the sacred invariant: a missing/broken prelude must
+# ALLOW (exit 0), never wedge.
+# ===========================================================================
+
+_PRELUDE_SH = _HOOKS_DIR / "hook-prelude.sh"
+_PRELUDE_CONSUMERS = [_GUARD_SH, _INJECT_SH]
+
+
+def test_prelude_file_exists():
+    """hook-prelude.sh must exist on disk (net-new Phase-1 deliverable).
+
+    RED reason: the prelude has not been authored yet."""
+    assert _PRELUDE_SH.exists(), (
+        f"Phase-1 deliverable missing: {_PRELUDE_SH}"
+    )
+
+
+def test_wrappers_source_prelude_and_drop_inline_python_resolution():
+    """The two thin wrappers must SOURCE the prelude fail-open-guarded and no
+    longer carry their own inline `command -v python3` resolution block (it
+    moved into the prelude). Proves the D1/D3 migration mechanically.
+
+    RED reason: the wrappers still inline the python-resolution block."""
+    for hook_sh in _PRELUDE_CONSUMERS:
+        text = hook_sh.read_text(encoding="utf-8")
+        assert "hook-prelude.sh" in text, (
+            f"{hook_sh.name} must source hook-prelude.sh"
+        )
+        # The fail-open source-site guard (SPEC D2) must be present verbatim.
+        assert "2>/dev/null || exit 0" in text, (
+            f"{hook_sh.name} must source the prelude with the "
+            "`2>/dev/null || exit 0` fail-open guard"
+        )
+        # The inline python-resolution block must be GONE — the prelude owns it.
+        assert "command -v python3" not in text, (
+            f"{hook_sh.name} must delegate python resolution to the prelude "
+            "(no inline `command -v python3`)"
+        )
+        # And it must consume the prelude-provided interpreter var.
+        assert "HOOK_PYTHON" in text, (
+            f"{hook_sh.name} must use the prelude-provided $HOOK_PYTHON"
+        )
+
+
+def test_missing_prelude_source_fails_open_allows():
+    """A hook that sources a renamed-away / absent prelude via the SPEC-D2
+    guard (`. "<path>" 2>/dev/null || exit 0`) must exit 0 with empty stdout —
+    a missing prelude ALLOWS, never wedges.
+
+    RED reason: none (validates the fail-open source-site pattern itself)."""
+    with tempfile.TemporaryDirectory() as td:
+        # A prelude that deliberately does NOT exist at this path.
+        absent_prelude = (Path(td) / "hook-prelude.sh").as_posix()
+        hook = Path(td) / "fake-hook.sh"
+        hook.write_text(
+            "#!/bin/bash\n"
+            'PAYLOAD="$(cat)"\n'
+            f'. "{absent_prelude}" 2>/dev/null || exit 0\n'
+            "echo SHOULD_NOT_REACH\n",
+            encoding="utf-8",
+        )
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_bash(hook, "{}", _base_env(state_dir))
+        assert result.returncode == 0, (
+            f"missing-prelude source must exit 0; stderr={result.stderr!r}"
+        )
+        assert result.stdout.strip() == "", (
+            f"missing-prelude source must produce no output; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_prelude_no_python_leaves_numeric_ts_event():
+    """A real prelude-backed wrapper run with a stripped PATH (no python) must
+    still exit 0 (allow), emit no deny, and write EXACTLY one JSON-parseable
+    hook-events.jsonl line with kind:"error" and a NUMERIC ts — the
+    guard-fail-open-leaves-no-trace §1 contract, now owned by the prelude.
+
+    RED reason: hook-prelude.sh does not exist, so the wrapper cannot source
+    it and the no-python event is not written through the shared writer."""
+    minimal_payload = json.dumps({
+        "tool_name": "Agent",
+        "tool_input": {"prompt": "hi"},
+        "cwd": "C:/repo",
+    })
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _no_python_env(state_dir)
+        result = _run_bash(_GUARD_SH, minimal_payload, env)
+        assert result.returncode == 0, (
+            f"no-python path must exit 0; stderr={result.stderr!r}"
+        )
+        assert _containment_decision(result) != "deny", (
+            f"no-python path must never deny; stdout={result.stdout!r}"
+        )
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, (
+            f"expected exactly one hook-events line; got {events!r}"
+        )
+        assert events[0]["kind"] == "error", events
+        assert events[0]["hook"] == _GUARD_SH.stem, events
+        assert isinstance(events[0]["ts"], (int, float)) and not isinstance(
+            events[0]["ts"], bool
+        ), (
+            f"ts must be a JSON number (integer seconds); got "
+            f"{events[0]['ts']!r}"
+        )
+
+
+def test_containment_hook_lib_unavailable_fails_open_with_trace():
+    """shared-hook-lib SPEC D2 (Phase 3 / WU-5): when hook_lib is UNAVAILABLE in
+    the scripts dir (an `import hook_lib` would fail), a migrated enforcement
+    hook must still ALLOW (exit 0, no deny) AND leave a prelude-side trace line
+    in hook-events.jsonl — the "trace even when the shared module is
+    unavailable" property the pre-migration inline lazy_core fallback carried.
+
+    Mechanism: copy the containment hook + hook-prelude.sh into a temp hooks/
+    dir whose sibling scripts/ dir is EMPTY (no hook_lib.py), so the
+    prelude-derived HOOK_SCRIPTS_DIR points at a dir without hook_lib.py and the
+    hook's `[ -f "$HOOK_SCRIPTS_DIR/hook_lib.py" ]` guard fires the shared
+    hook_emit_error_event breadcrumb before the inline body ever runs.
+
+    RED reason: a bare `except ImportError: sys.exit(0)` migration allows but
+    leaves NO trace (the bash guard is absent)."""
+    minimal_payload = json.dumps({
+        "tool_name": "Bash",
+        "tool_input": {"command": "echo hi"},
+        "cwd": "C:/repo",
+    })
+    with tempfile.TemporaryDirectory() as td:
+        tdp = Path(td)
+        hooks_dir = tdp / "hooks"
+        hooks_dir.mkdir()
+        (tdp / "scripts").mkdir()  # EMPTY — no hook_lib.py
+        state_dir = tdp / "state"
+        state_dir.mkdir()
+        # Copy the real hook + prelude into the temp hooks dir; the prelude
+        # derives HOOK_SCRIPTS_DIR = <hooks>/../scripts, which is empty here.
+        shutil.copy2(_CONTAINMENT_SH, hooks_dir / _CONTAINMENT_SH.name)
+        shutil.copy2(_PRELUDE_SH, hooks_dir / _PRELUDE_SH.name)
+        copied_hook = hooks_dir / _CONTAINMENT_SH.name
+        result = _run_bash(copied_hook, minimal_payload, _base_env(state_dir))
+        assert result.returncode == 0, (
+            f"hook_lib-unavailable must exit 0 (fail-open); "
+            f"stderr={result.stderr!r}"
+        )
+        assert _containment_decision(result) != "deny", (
+            f"hook_lib-unavailable must NOT deny; stdout={result.stdout!r}"
+        )
+        assert result.stdout.strip() == "", (
+            f"fail-open allow must emit no stdout; got {result.stdout!r}"
+        )
+        events = _read_hook_events(state_dir)
+        assert len(events) == 1, (
+            f"expected exactly one prelude-side trace line; got {events!r}"
+        )
+        e = events[0]
+        assert e["kind"] == "error", e
+        assert e["hook"] == "lazy-cycle-containment", e
+        assert "hook_lib" in e["detail"], e
 
 
 def test_noncanonical_catch_all_writes_breadcrumb_and_event():
@@ -6887,6 +7642,18 @@ _TESTS = [
      test_containment_allows_same_feature_commit),
     ("test_containment_allows_carve_out_commit",
      test_containment_allows_carve_out_commit),
+    ("test_containment_allows_same_feature_commit_grouped",
+     test_containment_allows_same_feature_commit_grouped),
+    ("test_containment_denies_second_feature_commit_grouped",
+     test_containment_denies_second_feature_commit_grouped),
+    ("test_containment_allows_same_feature_commit_grouped_multilevel",
+     test_containment_allows_same_feature_commit_grouped_multilevel),
+    ("test_containment_denies_second_feature_commit_grouped_multilevel",
+     test_containment_denies_second_feature_commit_grouped_multilevel),
+    ("test_containment_allows_ingest_research_multifeature_commit",
+     test_containment_allows_ingest_research_multifeature_commit),
+    ("test_containment_denies_multifeature_commit_non_ingest",
+     test_containment_denies_multifeature_commit_non_ingest),
     ("test_containment_increments_commit_tally_on_allow",
      test_containment_increments_commit_tally_on_allow),
     ("test_containment_commit_count_backstop_denies",
@@ -6988,6 +7755,16 @@ _TESTS = [
      test_longbuild_guard_denies_cargo_build_release),
     ("test_longbuild_guard_denies_npm_run_build",
      test_longbuild_guard_denies_npm_run_build),
+    ("test_longbuild_guard_denies_qg_rust",
+     test_longbuild_guard_denies_qg_rust),
+    ("test_longbuild_guard_denies_qg_ts",
+     test_longbuild_guard_denies_qg_ts),
+    ("test_longbuild_guard_denies_qg_sidecar_and_quality_gate_alias",
+     test_longbuild_guard_denies_qg_sidecar_and_quality_gate_alias),
+    ("test_longbuild_guard_denies_cd_prefixed_qg_rust",
+     test_longbuild_guard_denies_cd_prefixed_qg_rust),
+    ("test_longbuild_guard_allows_fast_qg_groups",
+     test_longbuild_guard_allows_fast_qg_groups),
     ("test_longbuild_guard_env_prefix_tolerance",
      test_longbuild_guard_env_prefix_tolerance),
     ("test_longbuild_guard_allows_false_positive_scope",
@@ -7248,6 +8025,53 @@ def test_guard_worker_subdispatch_denied_before_consume():
         )
 
 
+def test_guard_subagent_model_improvisation_deny_self_announces():
+    """dispatch-guard-improvisation-deny-not-self-announcing (harden Round 112):
+    an unregistered prompt under an armed subagent-model cycle whose OWN emission
+    is NOT consumed (the orchestrator improvising the skill's internal worker
+    split) is DENIED with a SELF-ANNOUNCING reason that names the specific
+    mistake + the single-cycle_prompt corrective — AND the deny still accrues
+    hardening debt (verdict + debt semantics UNCHANGED; a message upgrade, not a
+    gate change)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        session = str(uuid.uuid4())
+        # Armed subagent-model (execute-plan) cycle, bound workstation marker,
+        # but the cycle's own emission NEVER consumed → improvisation-caught.
+        _arm_worker_in_flight(state_dir, session, consume=False)
+
+        result = _run_guard_py(
+            _e1_preToolUse_json(_WORKER_PROMPT, session_id=session), env
+        )
+        payload = json.loads(result.stdout.strip())
+        hso = payload["hookSpecificOutput"]
+        assert hso["permissionDecision"] == "deny", payload
+        reason = hso.get("permissionDecisionReason", "")
+        # Self-announcing: names the improvisation, the one-Agent-per-cycle rule,
+        # the single-cycle_prompt corrective, and the offending sub_skill.
+        assert "orchestrator-improvised" in reason, reason
+        assert "EXACTLY ONE Agent per cycle" in reason, reason
+        assert "cycle_prompt" in reason, reason
+        assert "execute-plan" in reason, reason
+        # Not the bare generic recipe: the specific diagnosis precedes it.
+        assert reason.index("orchestrator-improvised") < reason.index(
+            "dispatch prompt not script-emitted this turn"
+        ), "diagnosis must PREPEND the standard corrective recipe"
+
+        # Debt semantics UNCHANGED: a bound-marker improvisation deny still books
+        # hardening debt exactly like the generic default deny (non-weakening).
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.pending_hardening() == 1, (
+                "improvisation deny under a bound marker must still accrue debt"
+            )
+        finally:
+            _clear_state_dir()
+
+
 def test_guard_worker_subdispatch_denied_without_capability():
     """A cycle marker whose sub_skill does NOT declare a sub-subagent model
     (subagent_model=False) keeps the deny even with the emission consumed."""
@@ -7365,12 +8189,169 @@ _TESTS = _TESTS + [
      test_guard_worker_subdispatch_exemption_allows_fresh_cycle_nonce),
     ("test_guard_worker_subdispatch_denied_before_consume",
      test_guard_worker_subdispatch_denied_before_consume),
+    ("test_guard_subagent_model_improvisation_deny_self_announces",
+     test_guard_subagent_model_improvisation_deny_self_announces),
     ("test_guard_worker_subdispatch_denied_without_capability",
      test_guard_worker_subdispatch_denied_without_capability),
     ("test_guard_worker_subdispatch_denied_on_cloud",
      test_guard_worker_subdispatch_denied_on_cloud),
     ("test_guard_worker_subdispatch_denied_unbound_marker",
      test_guard_worker_subdispatch_denied_unbound_marker),
+]
+
+
+# ===========================================================================
+# claude-code-guide consultation exemption
+# (harden-hard-parks-on-unconfirmed-platform-assumptions, operator-authorized
+# 2026-07-19). The /harden-harness self-resolve protocol must be able to CONSULT
+# the read-only claude-code-guide agent during a marked run. lazy_guard.py admits
+# an UNREGISTERED Agent dispatch whose subagent_type == "claude-code-guide" under a
+# bound, non-cloud marker (a read-only agent that cannot advance the pipeline), and
+# audits it as a pre-acked claude_code_guide_consult ledger event (no hardening
+# debt). These tests pin the allow, the audit, and the fences (subagent_type,
+# cloud, unbound).
+# ===========================================================================
+
+def _guide_preToolUse_json(
+    prompt: str = "Does the SubagentStop hook input expose a parent_agent_id / "
+                  "nesting-depth lineage field?",
+    *,
+    subagent_type: str = "claude-code-guide",
+    tool_use_id: str | None = None,
+    session_id: str | None = None,
+    cwd: str = "C:\\\\Users\\\\Jacob\\\\fixture-repo",
+) -> str:
+    """A PreToolUse Agent-dispatch payload with an overridable subagent_type — the
+    one field _e1_preToolUse_json hardcodes to 'general-purpose'."""
+    if tool_use_id is None:
+        tool_use_id = "toolu_" + uuid.uuid4().hex[:24]
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+    payload = {
+        "session_id": session_id,
+        "cwd": cwd,
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Agent",
+        "tool_input": {
+            "description": "confirm SubagentStop lineage capability",
+            "prompt": prompt,
+            "subagent_type": subagent_type,
+        },
+        "tool_use_id": tool_use_id,
+    }
+    return json.dumps(payload)
+
+
+def _guide_ledger_events(state_dir: Path) -> list[dict]:
+    ledger = state_dir / "lazy-deny-ledger.jsonl"
+    if not ledger.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in ledger.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def test_guard_claude_code_guide_consult_allowed_and_audited():
+    """An UNREGISTERED claude-code-guide dispatch under a BOUND, non-cloud marker
+    is ALLOWED and audited as a pre-acked claude_code_guide_consult event (no
+    hardening debt). A same-marker NON-guide unregistered dispatch stays DENIED."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        session = str(uuid.uuid4())
+        # Bound, non-cloud marker (no cycle marker at all — the exemption must not
+        # depend on subagent_model, unlike the branch-2b worker exemption).
+        _write_marker_in_dir(state_dir, session_id=session)
+
+        result = _run_guard_py(
+            _guide_preToolUse_json(session_id=session), env
+        )
+        assert result.returncode == 0, result.stderr
+        hso = json.loads(result.stdout.strip()).get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "allow", (
+            f"claude-code-guide consultation must be ALLOWED; got: {hso}"
+        )
+        assert "claude-code-guide" in hso.get("permissionDecisionReason", ""), hso
+
+        events = _guide_ledger_events(state_dir)
+        consults = [e for e in events if e.get("claude_code_guide_consult")]
+        assert len(consults) == 1, events
+        assert consults[0].get("acked") is True, consults[0]
+        _set_state_dir(state_dir)
+        try:
+            assert lazy_core.pending_hardening() == 0, (
+                "a sanctioned consultation allow must never book hardening debt"
+            )
+        finally:
+            _clear_state_dir()
+
+        # A non-guide unregistered dispatch under the same marker still denies.
+        result2 = _run_guard_py(
+            _guide_preToolUse_json(
+                prompt="totally unregistered improvised prompt",
+                subagent_type="general-purpose", session_id=session,
+            ),
+            env,
+        )
+        hso2 = json.loads(result2.stdout.strip()).get("hookSpecificOutput", {})
+        assert hso2.get("permissionDecision") == "deny", (
+            f"a non-guide unregistered dispatch must still DENY; got: {hso2}"
+        )
+
+
+def test_guard_claude_code_guide_consult_fenced_on_cloud_and_unbound():
+    """The exemption is fenced: a claude-code-guide dispatch is NOT admitted under
+    a cloud marker, nor under an unbound (pre-bind) marker."""
+    _guard()
+    # Cloud marker → the read-only exemption never fires (cloud keeps the ban).
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        session = str(uuid.uuid4())
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=True,
+                repo_root=str(state_dir / "fixture-repo"), max_cycles=10,
+                now=time.time(), session_id=session,
+            )
+        finally:
+            _clear_state_dir()
+        result = _run_guard_py(_guide_preToolUse_json(session_id=session), env)
+        hso = json.loads(result.stdout.strip()).get("hookSpecificOutput", {})
+        assert hso.get("permissionDecision") == "deny", (
+            f"cloud run must NOT admit the consultation; got: {hso}"
+        )
+
+    # Unbound marker → pre-bind window: the exemption must not fire.
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _base_env(state_dir)
+        session = str(uuid.uuid4())
+        _write_marker_in_dir(state_dir)  # unbound (no session_id)
+        result = _run_guard_py(_guide_preToolUse_json(session_id=session), env)
+        out = result.stdout.strip()
+        # Under an unbound marker the generic deny is a pre-bind no-debt deny; the
+        # important assertion is that it is NOT an allow.
+        if out:
+            hso = json.loads(out).get("hookSpecificOutput", {})
+            assert hso.get("permissionDecision") != "allow", (
+                f"unbound (pre-bind) marker must NOT admit the consultation; got: {hso}"
+            )
+
+
+_TESTS = _TESTS + [
+    ("test_guard_claude_code_guide_consult_allowed_and_audited",
+     test_guard_claude_code_guide_consult_allowed_and_audited),
+    ("test_guard_claude_code_guide_consult_fenced_on_cloud_and_unbound",
+     test_guard_claude_code_guide_consult_fenced_on_cloud_and_unbound),
 ]
 
 
@@ -7594,6 +8575,31 @@ def test_push_allows_with_bypass_token():
         )
 
 
+def test_push_allows_with_bypass_token_after_cd_prefix():
+    """Composed 'cd "…" && CLAUDE_PUSH_APPROVED=1 git push origin main' in a work repo
+    → allow (the anchor regression this locks — pre-365df0b9 this would have denied)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        repo = _init_email_repo(td, "jacob@cognitoforms.com")
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload(f'cd "{repo}" && CLAUDE_PUSH_APPROVED=1 git push origin main',
+                          cwd=str(repo)),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"composed/cd-prefixed bypass-token push must allow; stdout={result.stdout!r}"
+        )
+
+
+_TESTS = _TESTS + [
+    # push-hook-bypass-anchor-false-blocks-composed-push — composed approved-push regression
+    ("test_push_allows_with_bypass_token_after_cd_prefix",
+     test_push_allows_with_bypass_token_after_cd_prefix),
+]
+
+
 def test_push_allows_in_non_work_repo():
     """`git push origin main` from a non-work-email repo → allow."""
     with tempfile.TemporaryDirectory() as td:
@@ -7673,17 +8679,18 @@ def _matcher_for_hook(hook_name: str) -> str | None:
     return None
 
 
-def test_termkill_registered_widened_matcher():
-    """block-terminal-kill.sh must be registered under a matcher covering BOTH
-    Bash and PowerShell (Stop-Process via the PowerShell tool must not walk past)."""
+def test_termkill_revoked_not_registered():
+    """block-terminal-kill.sh was REVOKED by operator instruction on 2026-07-19 —
+    unregistered from user/settings.json. This is now a revocation guard: the hook
+    must STAY unregistered (any re-registration needs a fresh operator instruction).
+    The script itself is retained in user/hooks/ for reference (carrying a REVOKED
+    header comment); the functional deny/allow tests below still exercise the
+    retained script body directly (they drive it as a subprocess, not via the hook
+    registration)."""
     matcher = _matcher_for_hook("block-terminal-kill.sh")
-    assert matcher is not None, (
-        "block-terminal-kill.sh not registered in any PreToolUse block"
-    )
-    tools = matcher.split("|")
-    assert "Bash" in tools and "PowerShell" in tools, (
-        f"block-terminal-kill.sh matcher must include Bash AND PowerShell; "
-        f"got matcher={matcher!r}"
+    assert matcher is None, (
+        "block-terminal-kill.sh is REVOKED (operator, 2026-07-19) and must remain "
+        f"unregistered in user/settings.json; found matcher={matcher!r}"
     )
 
 
@@ -7721,8 +8728,8 @@ _TESTS = _TESTS + [
     ("test_push_malformed_fails_open", test_push_malformed_fails_open),
     ("test_push_powershell_payload_denies", test_push_powershell_payload_denies),
     # registration meta-tests
-    ("test_termkill_registered_widened_matcher",
-     test_termkill_registered_widened_matcher),
+    ("test_termkill_revoked_not_registered",
+     test_termkill_revoked_not_registered),
     ("test_push_registered_widened_matcher",
      test_push_registered_widened_matcher),
 ]
@@ -8305,12 +9312,17 @@ def test_push_unaffected_by_heredoc_body_no_cmd_start_anchoring():
 
 # --- cross-guard registration meta-test (item 4) ----------------------------
 
+# block-terminal-kill.sh REVOKED (operator, 2026-07-19) — unregistered from
+# user/settings.json, so it is deliberately NOT in this registered-guard set.
 _COMMAND_GUARD_HOOKS = (
     "block-work-repo-git-push.sh",
-    "block-terminal-kill.sh",
     "lazy-cycle-containment.sh",
     "long-build-ownership-guard.sh",
     "build-queue-enforce.sh",
+    # adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke Phase 2:
+    # the cycle-subagent background-gate guard is a command-content guard
+    # (Bash|PowerShell) too — it must carry the widened matcher.
+    "cycle-subagent-bg-gate-guard.sh",
 )
 
 
@@ -8338,7 +9350,45 @@ def test_all_command_guards_registered_with_widened_matcher():
     )
 
 
+def test_containment_registered_on_agent_task_matcher():
+    """Wiring-regression meta-test (containment-background-dispatch-deny-unreachable-on-agent-task):
+    lazy-cycle-containment.sh's background-dispatch deny branch inspects
+    Agent/Task tool calls, so the hook MUST be registered under a PreToolUse
+    matcher covering BOTH Agent and Task. It historically was registered only on
+    Bash|PowerShell + Skill, making the Round-28 background-dispatch deny DEAD
+    CODE — the per-branch tests below (test_containment_denies_background_subagent_dispatch)
+    invoke the script directly and never assert wiring. This meta-test closes that
+    gap: a future settings.json edit that drops the Agent|Task registration fails
+    here immediately. Scans ALL PreToolUse blocks (the hook spans three:
+    Bash|PowerShell, Skill, Agent|Task) — _matcher_for_hook returns only the first,
+    so it cannot be reused here."""
+    settings_path = _REPO_ROOT / "user" / "settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    pretooluse = settings.get("hooks", {}).get("PreToolUse", [])
+    covered: set[str] = set()
+    registered_anywhere = False
+    for block in pretooluse:
+        matcher = block.get("matcher") or ""
+        tools = {t.strip() for t in matcher.split("|") if t.strip()}
+        for h in block.get("hooks", []):
+            if "lazy-cycle-containment.sh" in h.get("command", ""):
+                registered_anywhere = True
+                covered |= tools
+    assert registered_anywhere, (
+        "lazy-cycle-containment.sh is not registered in any PreToolUse block"
+    )
+    missing = {"Agent", "Task"} - covered
+    assert not missing, (
+        "lazy-cycle-containment.sh must be registered on a matcher covering "
+        f"Agent AND Task (its background-dispatch deny inspects those tool calls); "
+        f"missing {sorted(missing)!r}; covered matchers across all blocks: "
+        f"{sorted(covered)!r}"
+    )
+
+
 _TESTS = _TESTS + [
+    ("test_containment_registered_on_agent_task_matcher",
+     test_containment_registered_on_agent_task_matcher),
     # lazy-cycle-containment.sh — PowerShell payload legs
     ("test_containment_powershell_loop_formation_flag_denies",
      test_containment_powershell_loop_formation_flag_denies),
@@ -8706,6 +9756,1010 @@ _TESTS = _TESTS + [
      test_bqe_qg_allows_bypass_token_on_qg_rust),
     ("test_bqe_qg_allows_reference_only_mention",
      test_bqe_qg_allows_reference_only_mention),
+]
+
+
+# ===========================================================================
+# subagent-wedge-backstop-hook — the SubagentStop wedge-backstop hook.
+#
+# A fail-open SubagentStop hook that BLOCKS a genuinely-wedged dispatched
+# subagent AT MOST ONCE (breadcrumb keyed on the documented `agent_id`), forcing
+# commit+complete or a BLOCKED.md instead of a dead stop. Blocking is exit-code 2
+# (the documented SubagentStop mechanism), NOT the PreToolUse deny-JSON — so
+# these tests read the SUBPROCESS EXIT CODE (2 = block, 0 = allow), not stdout
+# JSON. The loop-guard breadcrumb lives OUTSIDE any repo, in
+# <claude-state>/subagent-stops/<agent_id>.json (LAZY_STATE_DIR override in
+# tests). Every error path fails OPEN (exit 0 / allow) — a backstop hook that
+# could itself wedge the pipeline is worse than the wedge it prevents.
+# ===========================================================================
+
+_WEDGE_STOPS_SUBDIR = "subagent-stops"
+
+
+def _subagentstop_json(
+    agent_id: str,
+    session_id: str | None = None,
+    cwd: str | None = None,
+) -> str:
+    """Return a SubagentStop hook-input JSON payload (the fields the platform
+    confirmation enumerates: session_id, transcript_path, cwd, agent_id,
+    agent_type, permission_mode)."""
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+    if cwd is None:
+        cwd = "C:\\\\Users\\\\Jacob\\\\AppData\\\\Local\\\\Temp\\\\spike-wedge"
+    payload = {
+        "session_id": session_id,
+        "transcript_path": f"C:\\\\Users\\\\Jacob\\\\.claude\\\\projects\\\\test\\\\{session_id}.jsonl",
+        "cwd": cwd,
+        "permission_mode": "default",
+        "hook_event_name": "SubagentStop",
+        "agent_id": agent_id,
+        "agent_type": "general-purpose",
+    }
+    return json.dumps(payload)
+
+
+def _sessionend_json(session_id: str, cwd: str | None = None) -> str:
+    """Return a SessionEnd hook-input JSON payload (no agent_id — the field
+    whose ABSENCE routes the hook into the breadcrumb-GC branch)."""
+    if cwd is None:
+        cwd = "C:\\\\Users\\\\Jacob\\\\AppData\\\\Local\\\\Temp\\\\spike-wedge"
+    payload = {
+        "session_id": session_id,
+        "transcript_path": f"C:\\\\Users\\\\Jacob\\\\.claude\\\\projects\\\\test\\\\{session_id}.jsonl",
+        "cwd": cwd,
+        "permission_mode": "default",
+        "hook_event_name": "SessionEnd",
+        "reason": "clear",
+    }
+    return json.dumps(payload)
+
+
+def _wedge_git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], capture_output=True, text=True,
+    )
+
+
+def _init_wedge_repo(
+    parent: Path,
+    *,
+    plan_status: str = "In-progress",
+    wu_checked: bool = False,
+    dirty: bool = False,
+) -> Path:
+    """Build a temp git repo carrying ONE feature plan at the given status /
+    checkbox state. Committed clean first, so `dirty=True` adds an untracked
+    file (the ONLY porcelain signal) — otherwise the tree is genuinely clean."""
+    repo = parent / "wedge-repo"
+    plans = repo / "docs" / "features" / "wedge-feat" / "plans"
+    plans.mkdir(parents=True)
+    mark = "x" if wu_checked else " "
+    (plans / "plan.md").write_text(
+        "---\n"
+        "kind: implementation-plan\n"
+        "feature_id: wedge-feat\n"
+        f"status: {plan_status}\n"
+        "---\n\n"
+        "## Work Units\n\n"
+        f"- [{mark}] WU-1 — do the thing\n",
+        encoding="utf-8",
+    )
+    _wedge_git(repo, "init", "-q")
+    _wedge_git(repo, "add", "-A")
+    _wedge_git(
+        repo, "-c", "user.email=t@t", "-c", "user.name=t",
+        "commit", "-q", "-m", "init",
+    )
+    if dirty:
+        (repo / "dirty.txt").write_text("uncommitted\n", encoding="utf-8")
+    return repo
+
+
+def _run_wedge(stdin_text: str, state_dir: Path) -> subprocess.CompletedProcess:
+    return _run_bash(_WEDGE_SH, stdin_text, _base_env(state_dir))
+
+
+def _write_wedge_cycle_marker(
+    state_dir: Path,
+    sub_skill: str = "execute-plan",
+    plan_rel: str = "docs/features/wedge-feat/plans/plan.md",
+) -> None:
+    """Write a cycle-subagent marker (lazy-cycle-active.json) naming the ACTIVE
+    cycle's sub_skill + sub_skill_args plan path. The wedge backstop scopes its
+    plan-WU signal to THIS plan (adhoc-subagent-wedge-hook-overfires-globs-all-plans);
+    a non-execute-plan sub_skill resolves no active plan. `plan_rel` is repo-relative
+    (the hook joins it against the run marker's repo_root)."""
+    _set_state_dir(state_dir)
+    try:
+        lazy_core.write_cycle_marker(
+            "wedge-feat", "deadbeef",
+            sub_skill=sub_skill,
+            sub_skill_args=plan_rel,
+            now=time.time(),
+        )
+    finally:
+        _clear_state_dir()
+
+
+def _wedge_breadcrumb_path(state_dir: Path, agent_id: str) -> Path:
+    return state_dir / _WEDGE_STOPS_SUBDIR / f"{agent_id}.json"
+
+
+def _write_wedge_integrator(
+    state_dir: Path, agent_id: str, nonce: str = "deadbeef",
+) -> None:
+    """Record *agent_id* as the cycle INTEGRATOR for *nonce* (Option A breadcrumb,
+    subagent-wedge-backstop-blocks-nested-wu-workers). The wedge-backstop blocks a
+    predicate-true stop ONLY when the stopping agent_id matches this record; a
+    nested WU worker (a distinct agent_id) is exempted. Written to the sibling
+    cycle-integrator/ dir the hook reads; default nonce matches the 'deadbeef'
+    nonce _write_wedge_cycle_marker writes."""
+    integ = state_dir / "cycle-integrator"
+    integ.mkdir(parents=True, exist_ok=True)
+    (integ / f"{nonce}.json").write_text(
+        json.dumps({"nonce": nonce, "integrator_agent_id": agent_id,
+                    "written_at": time.time()}),
+        encoding="utf-8",
+    )
+
+
+def test_wedge_hook_file_exists():
+    """The SubagentStop wedge-backstop hook must exist on disk."""
+    assert _WEDGE_SH.exists(), (
+        f"subagent-wedge-backstop.sh missing — WU-1 not implemented: {_WEDGE_SH}"
+    )
+
+
+def test_wedge_blocks_once_predicate_true():
+    """marker present + non-Complete plan + DIRTY tree → BLOCK (exit 2) with an
+    actionable reason, and the loop-guard breadcrumb is written."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names the plan
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        _write_wedge_integrator(state_dir, agent_id)  # this agent IS the integrator
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 2, (
+            f"predicate-true must BLOCK (exit 2); got {result.returncode}; "
+            f"stdout={result.stdout!r} stderr={result.stderr!r}"
+        )
+        reason = (result.stderr or "") + (result.stdout or "")
+        assert "BLOCKED.md" in reason and "commit" in reason.lower(), (
+            f"block reason must be actionable (commit/BLOCKED.md); got {reason!r}"
+        )
+        assert _wedge_breadcrumb_path(state_dir, agent_id).exists(), (
+            "the loop-guard breadcrumb must be written before blocking"
+        )
+
+
+def test_wedge_second_attempt_same_agent_allows():
+    """Second stop with the SAME agent_id (breadcrumb present) → ALLOW (exit 0):
+    block at most once, no infinite block→continue→block loop."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names the plan
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        _write_wedge_integrator(state_dir, agent_id)  # this agent IS the integrator
+        first = _run_wedge(_subagentstop_json(agent_id, cwd=str(repo)), state_dir)
+        assert first.returncode == 2, f"first attempt must block; got {first.returncode}"
+        second = _run_wedge(_subagentstop_json(agent_id, cwd=str(repo)), state_dir)
+        assert second.returncode == 0, (
+            f"second attempt (breadcrumb present) must ALLOW; got {second.returncode}; "
+            f"stderr={second.stderr!r}"
+        )
+
+
+def test_wedge_malformed_json_allows():
+    """Malformed input JSON → fail-open ALLOW (exit 0)."""
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_wedge("{ not valid json", state_dir)
+        assert result.returncode == 0, (
+            f"malformed JSON must fail-open (exit 0); got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+
+
+def test_wedge_missing_agent_id_allows():
+    """SubagentStop-shaped payload MISSING agent_id → ALLOW (exit 0): no key to
+    loop-guard on, and a marker-less GC path never blocks."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        # SubagentStop shape but with agent_id stripped.
+        payload = json.loads(_subagentstop_json("x", cwd=str(repo)))
+        del payload["agent_id"]
+        result = _run_wedge(json.dumps(payload), state_dir)
+        assert result.returncode == 0, (
+            f"missing agent_id must fail-open (exit 0); got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+
+
+def test_wedge_clean_tree_all_checked_allows():
+    """Clean tree AND all WUs checked (plan In-progress) → ALLOW (exit 0):
+    no pending work, so no wedge to catch."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(
+            td, plan_status="In-progress", wu_checked=True, dirty=False
+        )
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names the plan
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 0, (
+            f"clean tree + all WUs checked must ALLOW; got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert not _wedge_breadcrumb_path(state_dir, agent_id).exists(), (
+            "an allowed stop must NOT write a loop-guard breadcrumb"
+        )
+
+
+def test_wedge_plan_complete_allows():
+    """Plan status Complete → ALLOW (exit 0) EVEN with a dirty tree — predicate
+    condition 2 (status != Complete) is false, so the block never fires."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(td, plan_status="Complete", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names the plan
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 0, (
+            f"Complete plan must ALLOW even when dirty; got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+
+
+def test_wedge_no_marker_allows():
+    """No run marker for the repo → ALLOW (exit 0): not a pipeline subagent."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        # No _write_marker_in_dir call — marker absent.
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 0, (
+            f"no marker must ALLOW; got {result.returncode}; stderr={result.stderr!r}"
+        )
+
+
+def test_wedge_integrator_blocks_distinct_worker_exempt():
+    """Option A (subagent-wedge-backstop-blocks-nested-wu-workers): under ONE
+    predicate-true cycle, the recorded INTEGRATOR blocks ONCE (then its own second
+    stop allows — loop-guard), while a DISTINCT agent (a nested WU worker, whose
+    agent_id is NOT the integrator) is EXEMPTED and ALLOWED — the false-fire this
+    fixes. Before Option A both distinct agents blocked (the bug)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names the plan
+        integrator = "agent_" + uuid.uuid4().hex[:16]
+        worker = "agent_" + uuid.uuid4().hex[:16]
+        _write_wedge_integrator(state_dir, integrator)  # integrator = first agent
+        # The integrator (owns commit/completion duty) blocks once.
+        r_i1 = _run_wedge(_subagentstop_json(integrator, cwd=str(repo)), state_dir)
+        assert r_i1.returncode == 2, f"integrator first stop must block; {r_i1.returncode}"
+        assert _wedge_breadcrumb_path(state_dir, integrator).exists()
+        # A DISTINCT nested WU worker under the SAME predicate-true state is EXEMPTED.
+        r_w = _run_wedge(_subagentstop_json(worker, cwd=str(repo)), state_dir)
+        assert r_w.returncode == 0, (
+            f"a nested WU worker (non-integrator) must be EXEMPTED (allow); "
+            f"got {r_w.returncode}"
+        )
+        assert not _wedge_breadcrumb_path(state_dir, worker).exists(), (
+            "an exempted worker must NOT write a loop-guard breadcrumb"
+        )
+        # Loop-guard: the integrator's second stop allows (block at most once).
+        r_i2 = _run_wedge(_subagentstop_json(integrator, cwd=str(repo)), state_dir)
+        assert r_i2.returncode == 0, f"integrator second stop must allow; {r_i2.returncode}"
+
+
+def test_wedge_breadcrumb_write_failure_allows():
+    """Breadcrumb dir unwritable (I/O failure) → fail-open ALLOW (exit 0): the
+    hook can never wedge the pipeline even when its own loop-guard write fails."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        # Plant a FILE where the breadcrumb DIR must live → makedirs raises.
+        (state_dir / _WEDGE_STOPS_SUBDIR).write_text("blocker\n", encoding="utf-8")
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # predicate-true: reach the breadcrumb write
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        _write_wedge_integrator(state_dir, agent_id)  # integrator → reach breadcrumb write
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 0, (
+            f"breadcrumb write failure must fail-open (exit 0), never block; "
+            f"got {result.returncode}; stderr={result.stderr!r}"
+        )
+
+
+def test_wedge_sessionend_gcs_session_breadcrumbs():
+    """SessionEnd (agent_id absent, session_id present) → GC breadcrumbs recorded
+    under THAT session_id; a breadcrumb for a different session survives. Exit 0."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        stops = state_dir / _WEDGE_STOPS_SUBDIR
+        stops.mkdir(parents=True)
+        sess = str(uuid.uuid4())
+        other = str(uuid.uuid4())
+        mine = stops / "agent_mine.json"
+        theirs = stops / "agent_theirs.json"
+        mine.write_text(
+            json.dumps({"agent_id": "agent_mine", "session_id": sess,
+                        "written_at": time.time()}),
+            encoding="utf-8",
+        )
+        theirs.write_text(
+            json.dumps({"agent_id": "agent_theirs", "session_id": other,
+                        "written_at": time.time()}),
+            encoding="utf-8",
+        )
+        result = _run_wedge(_sessionend_json(sess), state_dir)
+        assert result.returncode == 0, (
+            f"SessionEnd must ALLOW (exit 0); got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert not mine.exists(), "SessionEnd must GC this session's breadcrumb"
+        assert theirs.exists(), "SessionEnd must NOT GC another session's breadcrumb"
+
+
+def test_wedge_staleness_sweep_removes_old_breadcrumb():
+    """A stale breadcrumb (old written_at / mtime) is swept on entry; GC failure
+    is non-fatal and the invocation still exits 0."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        stops = state_dir / _WEDGE_STOPS_SUBDIR
+        stops.mkdir(parents=True)
+        old = stops / "agent_old.json"
+        old.write_text(
+            json.dumps({"agent_id": "agent_old", "session_id": "s",
+                        "written_at": time.time() - 72 * 3600}),
+            encoding="utf-8",
+        )
+        old_epoch = time.time() - 72 * 3600
+        os.utime(old, (old_epoch, old_epoch))
+        # A no-marker SubagentStop call (allows) still runs the entry sweep.
+        result = _run_wedge(
+            _subagentstop_json("agent_" + uuid.uuid4().hex[:16]), state_dir
+        )
+        assert result.returncode == 0
+        assert not old.exists(), "the entry staleness sweep must remove the stale breadcrumb"
+
+
+def test_wedge_non_execute_cycle_ignores_stray_plan_allows():
+    """adhoc-subagent-wedge-hook-overfires-globs-all-plans (REGRESSION): a
+    non-execute-plan cycle (/spec) whose cycle marker names no execute-plan plan
+    must ALLOW (exit 0) even with a STRAY non-terminal plan on disk (unchecked WU)
+    AND a dirty tree — the reported false-fire. Red on the glob-all predicate
+    (which found the stray plan → plan_pending → block), green on the
+    cycle-marker-scoped predicate (a /spec cycle owns no execute-plan plan → the
+    plan-WU signal is empty → allow)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        # A stray non-terminal plan with an unchecked WU the current cycle is NOT
+        # executing (models a realign-<date>.md / prior part's plan).
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        # The ACTIVE cycle is /spec — not execute-plan; it owns no plan.
+        _write_wedge_cycle_marker(state_dir, sub_skill="spec", plan_rel="")
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 0, (
+            f"a /spec cycle must ALLOW despite a stray plan + dirty tree; "
+            f"got {result.returncode}; stderr={result.stderr!r}"
+        )
+        assert not _wedge_breadcrumb_path(state_dir, agent_id).exists(), (
+            "an allowed stop must NOT write a loop-guard breadcrumb"
+        )
+
+
+def test_wedge_execute_plan_scoped_plan_wu_blocks_on_clean_tree():
+    """adhoc-subagent-wedge-hook-overfires-globs-all-plans (PRESERVED behavior): an
+    execute-plan cycle whose OWN plan has an unchecked WU must BLOCK (exit 2) even
+    on a CLEAN tree — proving the scoped predicate still reads the active cycle's
+    plan for the unchecked-WU half of the signal (not only the git-dirty half)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        # Clean tree, plan In-progress with an UNCHECKED WU (the plan-WU signal only).
+        repo = _init_wedge_repo(
+            td, plan_status="In-progress", wu_checked=False, dirty=False
+        )
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names THIS plan
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        _write_wedge_integrator(state_dir, agent_id)  # this agent IS the integrator
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 2, (
+            f"an execute-plan cycle with its own unchecked WU must BLOCK on a clean "
+            f"tree; got {result.returncode}; stderr={result.stderr!r}"
+        )
+        assert _wedge_breadcrumb_path(state_dir, agent_id).exists()
+
+
+def test_wedge_foreign_concurrent_dirty_only_allows():
+    """subagent-wedge-backstop-dirty-tree-predicate-repo-wide (REGRESSION): an
+    execute-plan cycle whose OWN plan has NO unchecked WU (plan_pending false) and
+    whose tree is dirty ONLY with a concurrent lane's FOREIGN residue — a foreign
+    docs/features/<other>/IMPLEMENTED.md and the shared docs/provenance-index.json —
+    must ALLOW (exit 0). Red on the whole-tree _git_dirty predicate (any dirt →
+    block), green on the own-item-dir-scoped predicate (foreign docs/ residue is
+    not this agent's work)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        # Plan all WUs checked → plan_pending false → isolate the git-dirty half.
+        repo = _init_wedge_repo(
+            td, plan_status="In-progress", wu_checked=True, dirty=False
+        )
+        # Foreign concurrent-lane residue: another item's IMPLEMENTED.md + the
+        # shared provenance index — both under docs/ but NOT under wedge-feat/.
+        foreign = repo / "docs" / "features" / "other-feat"
+        foreign.mkdir(parents=True)
+        (foreign / "IMPLEMENTED.md").write_text("shipped\n", encoding="utf-8")
+        (repo / "docs" / "provenance-index.json").write_text("{}\n", encoding="utf-8")
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names THIS plan
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 0, (
+            f"foreign concurrent residue only must ALLOW; got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert not _wedge_breadcrumb_path(state_dir, agent_id).exists(), (
+            "an allowed stop must NOT write a loop-guard breadcrumb"
+        )
+
+
+def test_wedge_own_source_dirty_blocks():
+    """subagent-wedge-backstop-dirty-tree-predicate-repo-wide (NON-VACUITY): the
+    own-item-dir scoping must NOT neuter own-source wedge detection. An execute-plan
+    cycle with all WUs checked (plan_pending false) but an uncommitted NON-docs
+    source file (repo-root dirty.txt) still BLOCKS (exit 2) — a non-docs path is
+    presumed OWN work."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        # dirty=True adds repo-root dirty.txt (non-docs → OWN); wu_checked isolates
+        # the git-dirty half.
+        repo = _init_wedge_repo(
+            td, plan_status="In-progress", wu_checked=True, dirty=True
+        )
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names THIS plan
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        _write_wedge_integrator(state_dir, agent_id)  # this agent IS the integrator
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 2, (
+            f"own uncommitted source must still BLOCK; got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert _wedge_breadcrumb_path(state_dir, agent_id).exists()
+
+
+def test_wedge_own_item_dir_dirty_blocks():
+    """subagent-wedge-backstop-dirty-tree-predicate-repo-wide (NON-VACUITY): dirt
+    INSIDE the cycle's own pipeline-item dir (docs/features/wedge-feat/) is OWN
+    work and still BLOCKS (exit 2) — only OTHER items' docs/ dirt is treated as
+    foreign residue."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(
+            td, plan_status="In-progress", wu_checked=True, dirty=False
+        )
+        # Uncommitted file under the cycle's OWN item dir.
+        (repo / "docs" / "features" / "wedge-feat" / "NOTES.md").write_text(
+            "own uncommitted note\n", encoding="utf-8"
+        )
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # execute-plan cycle names THIS plan
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        _write_wedge_integrator(state_dir, agent_id)  # this agent IS the integrator
+        result = _run_wedge(
+            _subagentstop_json(agent_id, cwd=str(repo)), state_dir
+        )
+        assert result.returncode == 2, (
+            f"own-item-dir dirt must BLOCK; got {result.returncode}; "
+            f"stderr={result.stderr!r}"
+        )
+        assert _wedge_breadcrumb_path(state_dir, agent_id).exists()
+
+
+def test_wedge_no_integrator_breadcrumb_allows():
+    """Option A bias-to-false-negative (subagent-wedge-backstop-blocks-nested-wu-workers):
+    predicate TRUE but NO integrator breadcrumb recorded (e.g. a cycle that predates
+    the recording seam, or the containment hook failed to record) → ALLOW (exit 0).
+    The hook never force-spins an agent it cannot attribute to the cycle integrator."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"
+        state_dir.mkdir()
+        repo = _init_wedge_repo(td, plan_status="In-progress", dirty=True)
+        _write_marker_in_dir(state_dir, repo_root=str(repo))
+        _write_wedge_cycle_marker(state_dir)  # predicate-true, but NO integrator recorded
+        agent_id = "agent_" + uuid.uuid4().hex[:16]
+        result = _run_wedge(_subagentstop_json(agent_id, cwd=str(repo)), state_dir)
+        assert result.returncode == 0, (
+            f"no integrator breadcrumb must ALLOW (bias to false-negative); "
+            f"got {result.returncode}; stderr={result.stderr!r}"
+        )
+        assert not _wedge_breadcrumb_path(state_dir, agent_id).exists(), (
+            "an allowed (unattributed) stop must NOT write a loop-guard breadcrumb"
+        )
+
+
+def test_containment_records_cycle_integrator_first_writer_wins():
+    """Option A recording seam (subagent-wedge-backstop-blocks-nested-wu-workers):
+    lazy-cycle-containment.sh records the FIRST subagent agent_id seen under a cycle
+    nonce as the integrator (cycle-integrator/<nonce>.json), and a later DISTINCT
+    agent_id does NOT overwrite it (first-writer-wins — the integrator acts before it
+    dispatches any worker; session tool calls are serial)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)  # cycle marker with nonce "deadbeef"
+        integrator = "agent_" + uuid.uuid4().hex[:16]
+        worker = "agent_" + uuid.uuid4().hex[:16]
+        # First subagent tool call under the nonce → recorded as integrator.
+        _run_containment(
+            _bash_preToolUse_json("echo hi", agent_id=integrator), state_dir
+        )
+        crumb = state_dir / "cycle-integrator" / "deadbeef.json"
+        assert crumb.exists(), "containment must record the cycle integrator breadcrumb"
+        data = json.loads(crumb.read_text(encoding="utf-8"))
+        assert data.get("integrator_agent_id") == integrator, data
+        # A later DISTINCT agent_id (a nested worker) must NOT overwrite it.
+        _run_containment(
+            _bash_preToolUse_json("echo hi", agent_id=worker), state_dir
+        )
+        data2 = json.loads(crumb.read_text(encoding="utf-8"))
+        assert data2.get("integrator_agent_id") == integrator, (
+            f"first-writer-wins: a later worker must not overwrite the integrator; "
+            f"got {data2}"
+        )
+
+
+_TESTS = _TESTS + [
+    # subagent-wedge-backstop-hook — SubagentStop wedge-backstop hook (WU-1)
+    ("test_wedge_hook_file_exists", test_wedge_hook_file_exists),
+    ("test_wedge_blocks_once_predicate_true", test_wedge_blocks_once_predicate_true),
+    ("test_wedge_no_integrator_breadcrumb_allows",
+     test_wedge_no_integrator_breadcrumb_allows),
+    ("test_containment_records_cycle_integrator_first_writer_wins",
+     test_containment_records_cycle_integrator_first_writer_wins),
+    ("test_wedge_second_attempt_same_agent_allows",
+     test_wedge_second_attempt_same_agent_allows),
+    ("test_wedge_malformed_json_allows", test_wedge_malformed_json_allows),
+    ("test_wedge_missing_agent_id_allows", test_wedge_missing_agent_id_allows),
+    ("test_wedge_clean_tree_all_checked_allows",
+     test_wedge_clean_tree_all_checked_allows),
+    ("test_wedge_plan_complete_allows", test_wedge_plan_complete_allows),
+    ("test_wedge_no_marker_allows", test_wedge_no_marker_allows),
+    ("test_wedge_integrator_blocks_distinct_worker_exempt",
+     test_wedge_integrator_blocks_distinct_worker_exempt),
+    ("test_wedge_breadcrumb_write_failure_allows",
+     test_wedge_breadcrumb_write_failure_allows),
+    ("test_wedge_sessionend_gcs_session_breadcrumbs",
+     test_wedge_sessionend_gcs_session_breadcrumbs),
+    ("test_wedge_staleness_sweep_removes_old_breadcrumb",
+     test_wedge_staleness_sweep_removes_old_breadcrumb),
+    ("test_wedge_non_execute_cycle_ignores_stray_plan_allows",
+     test_wedge_non_execute_cycle_ignores_stray_plan_allows),
+    ("test_wedge_execute_plan_scoped_plan_wu_blocks_on_clean_tree",
+     test_wedge_execute_plan_scoped_plan_wu_blocks_on_clean_tree),
+    ("test_wedge_foreign_concurrent_dirty_only_allows",
+     test_wedge_foreign_concurrent_dirty_only_allows),
+    ("test_wedge_own_source_dirty_blocks", test_wedge_own_source_dirty_blocks),
+    ("test_wedge_own_item_dir_dirty_blocks", test_wedge_own_item_dir_dirty_blocks),
+]
+
+
+# ---------------------------------------------------------------------------
+# Embedded `-c "$_..._PY"` python-body cmdline-length guard
+#
+# Recurrence prevention for the E2BIG class that silently disarmed
+# lazy-cycle-containment.sh / build-queue-enforce.sh: a hook that still invokes
+# python via `"$PYTHON" -c "$_<VAR>_PY"` puts its ENTIRE heredoc body on the OS
+# command line. Windows CreateProcess caps a command line at 32,767 chars; a
+# body near that limit fails to spawn (E2BIG) with no visible error, and the
+# hook silently stops firing. A hook converted to temp-file invocation (no
+# longer matching the `-c "$_..._PY"` shape) ships its body in a file instead
+# and is correctly exempt -- this scan is generic over every hook in
+# _HOOKS_DIR, so a FUTURE hook regressed back onto `-c` is covered for free.
+# ---------------------------------------------------------------------------
+
+def test_no_embedded_c_python_body_exceeds_cmdline_ceiling():
+    """No hook still invoking python via `"$PYTHON" -c "$_<VAR>_PY"` may embed a
+    heredoc body larger than _EMBEDDED_PY_CEILING bytes.
+
+    Discovery is generic (globs every *.sh in _HOOKS_DIR) so this covers any
+    hook -- present or future -- that invokes python this way, not just the
+    two hooks this guard was written after. A hook with no `-c "$_..._PY"`
+    invocation (e.g. converted to temp-file invocation) is skipped: its body
+    ships in a file, never on the command line, so it can't E2BIG.
+    """
+    import re
+
+    invoke_re = re.compile(r'"\$PYTHON"\s+-c\s+"\$(_[A-Z_]+)"')
+
+    offenders: list[str] = []
+    scanned: list[str] = []
+
+    for hook_path in sorted(_HOOKS_DIR.glob("*.sh")):
+        text = hook_path.read_text(encoding="utf-8")
+        m = invoke_re.search(text)
+        if not m:
+            continue  # no -c invocation here -- body ships in a file, not the cmdline
+
+        var = m.group(1)
+        heredoc_re = re.compile(r"read -r -d '' " + re.escape(var) + r" <<'PYEOF'\n")
+        hm = heredoc_re.search(text)
+        assert hm is not None, (
+            f"{hook_path.name} invokes \"$PYTHON\" -c \"${var}\" but no matching "
+            f"read -r -d '' {var} <<'PYEOF' heredoc was found -- can't measure its "
+            f"embedded body size"
+        )
+
+        start = hm.end()
+        terminator_idx = text.index("\nPYEOF\n", start)
+        body = text[start:terminator_idx]
+        body_len = len(body.encode("utf-8"))
+
+        scanned.append(hook_path.name)
+        if body_len > _EMBEDDED_PY_CEILING:
+            offenders.append(
+                f"{hook_path.name}: embedded -c python body is {body_len} bytes "
+                f"(var ${var}, ceiling {_EMBEDDED_PY_CEILING} bytes) -- risks "
+                f"silently exceeding Windows's 32,767-char CreateProcess "
+                f"command-line limit (E2BIG); convert to temp-file invocation"
+            )
+
+    assert scanned, (
+        "expected at least one hook in _HOOKS_DIR to still invoke python via "
+        "\"$PYTHON\" -c \"$_..._PY\" -- if this legitimately becomes zero, this "
+        "assertion documents that the whole -c invocation shape has been retired"
+    )
+    assert not offenders, (
+        "hook(s) embed a -c python body that risks the Windows CreateProcess "
+        "32,767-char command-line limit (silent E2BIG disarm):\n"
+        + "\n".join(offenders)
+    )
+
+
+_TESTS = _TESTS + [
+    # containment-hook-inline-python-exceeds-windows-cmdline-limit — plane-wide
+    # size guard against the E2BIG-disarm class
+    ("test_no_embedded_c_python_body_exceeds_cmdline_ceiling",
+     test_no_embedded_c_python_body_exceeds_cmdline_ceiling),
+]
+
+_TESTS = _TESTS + [
+    # shared-hook-lib Phase 1 — hook-prelude.sh + the two thin-wrapper consumers
+    ("test_prelude_file_exists", test_prelude_file_exists),
+    ("test_wrappers_source_prelude_and_drop_inline_python_resolution",
+     test_wrappers_source_prelude_and_drop_inline_python_resolution),
+    ("test_missing_prelude_source_fails_open_allows",
+     test_missing_prelude_source_fails_open_allows),
+    ("test_prelude_no_python_leaves_numeric_ts_event",
+     test_prelude_no_python_leaves_numeric_ts_event),
+    # shared-hook-lib Phase 3 — hook_lib import-failure fails open + leaves a trace
+    ("test_containment_hook_lib_unavailable_fails_open_with_trace",
+     test_containment_hook_lib_unavailable_fails_open_with_trace),
+]
+
+
+# ===========================================================================
+# cycle-subagent-bg-gate-guard.sh — the Gap-1 mechanical foreground-enforcement
+# guard (adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke
+# Phase 2). Denies a `run_in_background` long-gate/test-suite launch from inside
+# an ARMED cycle subagent (agent_id present + cycle marker present), so the
+# ambiguous "holding, will re-invoke" return can never be produced at its source.
+# ===========================================================================
+
+def _bggate_preToolUse_json(
+    command: str,
+    *,
+    agent_id: str | None = None,
+    run_in_background: bool | None = None,
+    tool_name: str = "Bash",
+    session_id: str | None = None,
+) -> str:
+    """A PreToolUse payload for the bg-gate guard: a command tool call carrying
+    an optional agent_id (subagent marker) and an optional run_in_background
+    flag in tool_input."""
+    if session_id is None:
+        session_id = str(uuid.uuid4())
+    tool_input: dict = {"command": command}
+    if run_in_background is not None:
+        tool_input["run_in_background"] = run_in_background
+    payload = {
+        "session_id": session_id,
+        "cwd": "C:\\\\Users\\\\Jacob\\\\AppData\\\\Local\\\\Temp\\\\spike",
+        "permission_mode": "default",
+        "hook_event_name": "PreToolUse",
+        "tool_name": tool_name,
+        "tool_input": tool_input,
+        "tool_use_id": "toolu_" + uuid.uuid4().hex[:24],
+    }
+    if agent_id is not None:
+        payload["agent_id"] = agent_id
+    return json.dumps(payload)
+
+
+def _run_bggate(stdin_text: str, state_dir: Path) -> subprocess.CompletedProcess:
+    return _run_bash(_BGGATE_SH, stdin_text, _base_env(state_dir))
+
+
+def test_bggate_hook_file_exists():
+    """The bg-gate guard script must exist on disk (Phase 2)."""
+    assert _BGGATE_SH.exists(), (
+        f"cycle-subagent-bg-gate-guard.sh missing — Phase 2 not implemented: "
+        f"{_BGGATE_SH}"
+    )
+
+
+def test_bggate_denies_backgrounded_gate_in_armed_subagent():
+    """(a) agent_id + cycle marker + run_in_background:true + a gate command
+    (`npm run qg`) → DENY."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_bggate(
+            _bggate_preToolUse_json(
+                "npm run qg", agent_id=_SUBAGENT_AGENT_ID, run_in_background=True
+            ),
+            state_dir,
+        )
+        assert result.returncode == 0, result.stderr
+        assert _containment_decision(result) == "deny", (
+            f"backgrounded gate in armed subagent must deny; stdout: "
+            f"{result.stdout!r}"
+        )
+        reason = json.loads(result.stdout.strip())["hookSpecificOutput"].get(
+            "permissionDecisionReason", ""
+        )
+        assert "foreground" in reason.lower(), (
+            f"deny reason must name the foreground-await mandate; got {reason!r}"
+        )
+
+
+def test_bggate_allows_main_thread_background_gate():
+    """(b) NO agent_id (main thread) + marker + bg + gate command → ALLOW (the
+    main-thread orchestrator legitimately backgrounds long gates)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_bggate(
+            _bggate_preToolUse_json("npm run qg", run_in_background=True),
+            state_dir,
+        )
+        assert _containment_decision(result) != "deny", (
+            f"main-thread background gate must allow; stdout: {result.stdout!r}"
+        )
+
+
+def test_bggate_allows_foreground_gate_in_subagent():
+    """(c) agent_id + marker + run_in_background:false + gate command → ALLOW
+    (a foreground gate is exactly what the mandate requires)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_bggate(
+            _bggate_preToolUse_json(
+                "npm run qg", agent_id=_SUBAGENT_AGENT_ID, run_in_background=False
+            ),
+            state_dir,
+        )
+        assert _containment_decision(result) != "deny", (
+            f"foreground gate in subagent must allow; stdout: {result.stdout!r}"
+        )
+
+
+def test_bggate_allows_backgrounded_non_gate_in_subagent():
+    """(d) agent_id + marker + bg + a NON-gate command (`sleep 2`, a log tail) →
+    ALLOW (only long gate/test-suite commands are the concern)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        for cmd in ("sleep 2", "tail -f build.log", "npm run dev"):
+            result = _run_bggate(
+                _bggate_preToolUse_json(
+                    cmd, agent_id=_SUBAGENT_AGENT_ID, run_in_background=True
+                ),
+                state_dir,
+            )
+            assert _containment_decision(result) != "deny", (
+                f"backgrounded non-gate {cmd!r} must allow; stdout: "
+                f"{result.stdout!r}"
+            )
+
+
+def test_bggate_allows_when_no_cycle_marker():
+    """(e) agent_id + bg + gate command but NO cycle marker → ALLOW (the guard
+    is scoped to an armed cycle subagent)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        # No cycle marker written.
+        result = _run_bggate(
+            _bggate_preToolUse_json(
+                "npm run qg", agent_id=_SUBAGENT_AGENT_ID, run_in_background=True
+            ),
+            state_dir,
+        )
+        assert _containment_decision(result) != "deny", (
+            f"no cycle marker must allow; stdout: {result.stdout!r}"
+        )
+
+
+def test_bggate_denies_gate_token_variants():
+    """The conservative gate/test-suite token set each denies under the armed
+    background predicate: pytest, python -m pytest, vitest, cargo test,
+    dotnet test, gate-battery, npm run test."""
+    _guard()
+    cmds = (
+        "pytest -q",
+        "python3 -m pytest user/scripts/test_hooks.py",
+        "vitest run",
+        "cargo test --workspace",
+        "dotnet test",
+        "npm run test",
+        "python3 user/scripts/gate-battery.py",
+        "cd repo && npm run qg -- rust",
+    )
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        for cmd in cmds:
+            result = _run_bggate(
+                _bggate_preToolUse_json(
+                    cmd, agent_id=_SUBAGENT_AGENT_ID, run_in_background=True
+                ),
+                state_dir,
+            )
+            assert _containment_decision(result) == "deny", (
+                f"backgrounded gate token {cmd!r} must deny; stdout: "
+                f"{result.stdout!r}"
+            )
+
+
+def test_bggate_powershell_backgrounded_gate_denies():
+    """PowerShell leg (widened-matcher family): a backgrounded gate command run
+    through the PowerShell tool in an armed subagent also denies."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_cycle_marker_in_dir(state_dir)
+        result = _run_bggate(
+            _bggate_preToolUse_json(
+                "pytest -q", agent_id=_SUBAGENT_AGENT_ID,
+                run_in_background=True, tool_name="PowerShell",
+            ),
+            state_dir,
+        )
+        assert _containment_decision(result) == "deny", (
+            f"PowerShell backgrounded gate must deny; stdout: {result.stdout!r}"
+        )
+
+
+def test_bggate_malformed_json_fails_open_with_breadcrumb():
+    """(f) malformed JSON → ALLOW (fail-open) AND a hook-error.json breadcrumb
+    is written (guard-fail-open-leaves-no-trace)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_bggate("{ not valid json", state_dir)
+        assert result.returncode == 0, result.stderr
+        assert _containment_decision(result) != "deny", (
+            f"malformed JSON must fail open (allow); stdout: {result.stdout!r}"
+        )
+        assert (state_dir / "hook-error.json").exists(), (
+            "malformed JSON must leave a hook-error.json breadcrumb"
+        )
+
+
+_TESTS = _TESTS + [
+    # cycle-subagent-bg-gate-guard.sh — Gap-1 mechanical foreground-enforcement
+    ("test_bggate_hook_file_exists", test_bggate_hook_file_exists),
+    ("test_bggate_denies_backgrounded_gate_in_armed_subagent",
+     test_bggate_denies_backgrounded_gate_in_armed_subagent),
+    ("test_bggate_allows_main_thread_background_gate",
+     test_bggate_allows_main_thread_background_gate),
+    ("test_bggate_allows_foreground_gate_in_subagent",
+     test_bggate_allows_foreground_gate_in_subagent),
+    ("test_bggate_allows_backgrounded_non_gate_in_subagent",
+     test_bggate_allows_backgrounded_non_gate_in_subagent),
+    ("test_bggate_allows_when_no_cycle_marker",
+     test_bggate_allows_when_no_cycle_marker),
+    ("test_bggate_denies_gate_token_variants",
+     test_bggate_denies_gate_token_variants),
+    ("test_bggate_powershell_backgrounded_gate_denies",
+     test_bggate_powershell_backgrounded_gate_denies),
+    ("test_bggate_malformed_json_fails_open_with_breadcrumb",
+     test_bggate_malformed_json_fails_open_with_breadcrumb),
 ]
 
 

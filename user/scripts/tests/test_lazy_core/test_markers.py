@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 
-from _util import _ModuleMissing, _GUARDED_OPS, _M4_CONFIG, _M4_CONFIG_BOOT, _M4_KEYS, _REAL_TEMPLATE_DIR, _STATE_A, _assert_run_end_refusal_emits, _build_phase8_fixture_repo, _clear_cycle_env, _clear_state_dir, _collect_bare_production_writes, _commit_dummy, _dispatch_requires, _make_git_repo_with_origin, _mrcr_restore_env, _mrcr_with_temp_home, _normalize_smoke_output, _os_env, _owned_lock, _phase9_guard_module, _prov_git_commit_file, _prov_git_fixture_repo, _record_consume, _seed_efficacy_breadcrumb, _set_state_dir, _t, _write_marker_in  # noqa: E402
+from _util import _ModuleMissing, _GUARDED_OPS, _M4_CONFIG, _M4_CONFIG_BOOT, _M4_KEYS, _REAL_TEMPLATE_DIR, _STATE_A, _assert_run_end_refusal_emits, _build_phase8_fixture_repo, _clear_cycle_env, _clear_state_dir, _collect_bare_production_writes, _commit_dummy, _dispatch_requires, _make_git_repo_with_origin, _mrcr_restore_env, _mrcr_with_temp_home, _normalize_smoke_output, _os_env, _owned_lock, _phase9_guard_module, _prov_git_commit_file, _prov_git_fixture_repo, _record_consume, _seed_efficacy_breadcrumb, _set_state_dir, _t, _write_marker_in, _write_phases_md, _write_spec_md, _write_validated_md  # noqa: E402
 
 
 
@@ -3281,6 +3281,99 @@ def test_p7_run_end_terminal_nonsanctioned_reason_with_auth_allowed():
 
 
 
+def test_sanctioned_lane_park_terminal_membership():
+    """lazy-batch-parallel-run-harness-gaps gap 4: the lane-park terminal set
+    exists, contains the P6 park + budget-deferred reasons (bare AND scoped
+    forms), and is DISJOINT from SANCTIONED_STOP_TERMINAL (these are lane-only —
+    a serial park stays a real, authorization-owing halt)."""
+    _guard()
+    lane = lazy_core.SANCTIONED_LANE_PARK_TERMINAL
+    for r in ("needs-input", "needs-input-scoped", "blocked", "blocked-scoped",
+              "budget-deferred", "needs-ratification", "needs-ratification-scoped"):
+        assert r in lane, f"{r!r} must be a sanctioned lane park terminal"
+    assert lane.isdisjoint(lazy_core.SANCTIONED_STOP_TERMINAL), (
+        "lane-park terminals must NOT leak into the serial sanctioned set"
+    )
+
+
+def test_p7_run_end_lane_park_terminal_allowed_and_skips_efficacy():
+    """lazy-batch-parallel-run-harness-gaps gaps 4+5: a LANE marker (parent_run
+    set) retiring on a park-class terminal (needs-input-scoped) must SUCCEED
+    without --operator-authorized (gap 4) AND without an efficacy breadcrumb
+    seeded (gap 5 — the parent owes the trio, not the lane). exit 0, marker
+    deleted."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "p7-lane-park"
+        state_dir.mkdir()
+        repo_dir = Path(td) / "p7-lane-park-repo"
+        repo_dir.mkdir()
+        env = dict(_os_env_p7.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        # Arm a LANE marker: parent-stamped.
+        parent = json.dumps({"repo_root": str(repo_dir), "started_at": "2026-07-18T03:38:27Z"})
+        r_start = run(["--run-start", "--max-cycles", "10", "--parent-run", parent])
+        assert r_start.returncode == 0, f"lane --run-start must succeed; {r_start.stderr!r}"
+
+        # Deliberately DO NOT seed the efficacy breadcrumb (gap 5: lane skips it),
+        # and DO NOT pass --operator-authorized (gap 4: lane park sanctioned).
+        r = run(["--run-end", "--reason", "terminal",
+                 "--terminal-reason", "needs-input-scoped"])
+        assert r.returncode == 0, (
+            f"lane park terminal must exit 0 without auth/efficacy; "
+            f"got {r.returncode}; stdout={r.stdout!r}; stderr={r.stderr!r}"
+        )
+        out = json.loads(r.stdout)
+        assert out.get("run_marker_deleted") is True, (
+            f"lane park terminal must delete the lane marker; got {out!r}"
+        )
+
+
+def test_p7_run_end_serial_park_terminal_still_refused():
+    """lazy-batch-parallel-run-harness-gaps gap 4 (non-weakening): the lane-park
+    sanction is parent_run-gated — a SERIAL marker (no parent_run) retiring on
+    needs-input-scoped without --operator-authorized is STILL refused (exit 1,
+    marker kept)."""
+    _guard()
+    lazy_state = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "p7-serial-park"
+        state_dir.mkdir()
+        repo_dir = Path(td) / "p7-serial-park-repo"
+        repo_dir.mkdir()
+        env = dict(_os_env_p7.environ)
+        env["LAZY_STATE_DIR"] = str(state_dir)
+
+        def run(args):
+            return subprocess.run(
+                [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
+                capture_output=True, text=True, env=env,
+            )
+
+        r_start = run(["--run-start", "--max-cycles", "10"])  # serial → parent_run: null
+        assert r_start.returncode == 0
+        _seed_efficacy_breadcrumb(state_dir)  # isolate the terminal-reason gate
+
+        r = run(["--run-end", "--reason", "terminal",
+                 "--terminal-reason", "needs-input-scoped"])
+        assert r.returncode == 1, (
+            f"serial park terminal without auth must exit 1; got {r.returncode}; "
+            f"stdout={r.stdout!r}"
+        )
+        out = json.loads(r.stdout)
+        assert out.get("run_marker_deleted") is False
+        assert "Stop-authorization gate" in out.get("refused", "")
+        assert (state_dir / "lazy-run-marker.json").exists()
+
+
 def test_p7_run_end_terminal_no_terminal_reason_adds_deprecation():
     """--run-end --reason terminal WITHOUT --terminal-reason (legacy form)
     must SUCCEED with a 'deprecation' note in the output — backward-compatible
@@ -3908,6 +4001,96 @@ def test_detect_friction_over_budget_commits():
     )
     assert got is not None and got["reason"] == "unexpected-commits", got
     assert "5" in got.get("detail", ""), got
+
+
+
+
+def test_detect_friction_concurrent_writer_commits_suppressed():
+    """WU-2 (SPEC Requirement 2, Validation row 1 — the 2026-07-18 false-friction
+    incident): a HEAD advance attributable to a CONCURRENT WRITER (a separate
+    sanctioned session committing to `main` mid-cycle) must NOT append an
+    `unexpected-commits` process-friction entry. The new `concurrent_writer_commits`
+    kwarg tells signal (b) how many of `commits_since` are NOT this cycle's own —
+    the comparison against budget becomes
+    `(commits_since - concurrent_writer_commits) > budget`.
+
+    `execute-plan` declares `commit-cadence: multi` (SKILL.md frontmatter), so its
+    derived budget (no `budget_override`) is `_CYCLE_COMMIT_MULTI +
+    _CYCLE_COMMIT_NOISE_ALLOWANCE`. `commits_since` is set to `budget + 3` (over
+    budget on its own), and `concurrent_writer_commits=3` attributes exactly enough
+    of that excess to the concurrent writer that the REMAINDER
+    (`commits_since - concurrent_writer_commits == budget - 1`) sits comfortably
+    within budget.
+
+    RED TODAY: `detect_cycle_bracket_friction` does not yet accept
+    `concurrent_writer_commits` — this call raises TypeError (unexpected keyword
+    argument), the correct RED reason. GREEN after the impl adds the kwarg.
+    """
+    _guard()
+    budget = lazy_core._CYCLE_COMMIT_MULTI + lazy_core._CYCLE_COMMIT_NOISE_ALLOWANCE
+    marker = {
+        "feature_id": "f", "nonce": "n", "run_started_at": "2026-07-18T00:00:00Z",
+        "begin_head_sha": "aaaa1111",
+    }
+    got = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-07-18T00:00:00Z",  # identity intact — isolate signal (b)
+        current_head_sha="bbbb2222",
+        sub_skill="execute-plan",
+        commits_since=budget + 3,
+        concurrent_writer_commits=3,  # remainder = budget - 1, within budget
+    )
+    assert got is None, got
+
+
+def test_detect_friction_genuine_runaway_still_flags_with_zero_concurrent():
+    """WU-2: the SAME shape as the concurrent-writer-suppressed test above, but
+    with `concurrent_writer_commits=0` (no concurrent writer — every excess commit
+    is this cycle's OWN) — the descriptor STILL fires `unexpected-commits`
+    (existing behavior preserved; a genuine runaway is never suppressed).
+
+    RED TODAY for the same reason as the suppressed-case test: the kwarg does not
+    exist yet, so this call also raises TypeError."""
+    _guard()
+    budget = lazy_core._CYCLE_COMMIT_MULTI + lazy_core._CYCLE_COMMIT_NOISE_ALLOWANCE
+    marker = {
+        "feature_id": "f", "nonce": "n", "run_started_at": "2026-07-18T00:00:00Z",
+        "begin_head_sha": "aaaa1111",
+    }
+    got = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-07-18T00:00:00Z",
+        current_head_sha="bbbb2222",
+        sub_skill="execute-plan",
+        commits_since=budget + 3,
+        concurrent_writer_commits=0,  # no concurrent writer — remainder = commits_since, over budget
+    )
+    assert got is not None and got["reason"] == "unexpected-commits", got
+
+
+def test_detect_friction_ambiguous_concurrent_signal_falls_to_existing_behavior():
+    """WU-2: when the concurrent-writer signal is UNKNOWN (the new kwarg omitted
+    entirely — the exact pre-existing call shape), an over-budget `commits_since`
+    STILL fires `unexpected-commits` — an unknown/ambiguous concurrent count does
+    NOT suppress friction (fail-safe toward detecting runaways). This doubles as
+    the backward-compatibility pin: omitting `concurrent_writer_commits` must be
+    byte-identical to today's behavior, so this test is GREEN both before and
+    after the implementation lands."""
+    _guard()
+    budget = lazy_core._CYCLE_COMMIT_MULTI + lazy_core._CYCLE_COMMIT_NOISE_ALLOWANCE
+    marker = {
+        "feature_id": "f", "nonce": "n", "run_started_at": "2026-07-18T00:00:00Z",
+        "begin_head_sha": "aaaa1111",
+    }
+    got = lazy_core.detect_cycle_bracket_friction(
+        marker,
+        current_run_started_at="2026-07-18T00:00:00Z",
+        current_head_sha="bbbb2222",
+        sub_skill="execute-plan",
+        commits_since=budget + 3,
+        # concurrent_writer_commits omitted — ambiguous/unknown
+    )
+    assert got is not None and got["reason"] == "unexpected-commits", got
 
 
 
@@ -4707,6 +4890,87 @@ def test_refuse_guard_noop_without_marker():
                 lazy_core.refuse_if_cycle_active(op)  # must NOT raise / exit
             finally:
                 _clear_state_dir()
+
+
+
+
+def _capture_refusal_flagged(op, *, allow_hardening_subagent):
+    """Like _capture_refusal but threads allow_hardening_subagent through."""
+    import io as _io
+    buf = _io.StringIO()
+    real_stderr = sys.stderr
+    sys.stderr = buf
+    code = None
+    try:
+        lazy_core.refuse_if_cycle_active(
+            op, allow_hardening_subagent=allow_hardening_subagent
+        )
+    except SystemExit as exc:
+        code = exc.code if exc.code is not None else 0
+    finally:
+        sys.stderr = real_stderr
+    return code, buf.getvalue()
+
+
+def test_record_intervention_permitted_for_hardening_cycle_subagent():
+    """dispatched-harden-record-intervention-refused-by-containment: a dispatched
+    HARDENING cycle subagent (marker sub_skill == "hardening", LAZY_ORCHESTRATOR
+    unset) MUST be permitted --record-intervention (allow_hardening_subagent=True)
+    — the one op its SKILL contract requires — while a NON-hardening cycle subagent
+    is still refused, and the dangerous lifecycle ops stay refused even under a
+    hardening marker."""
+    _guard()
+    _clear_cycle_env()
+    # Force the subagent branch: no orchestrator identity, explicit subagent signal.
+    os.environ.pop("LAZY_ORCHESTRATOR", None)
+    os.environ["LAZY_CYCLE_SUBAGENT"] = "1"
+    try:
+        # (a) Hardening cycle marker → --record-intervention PERMITTED (no exit).
+        with tempfile.TemporaryDirectory() as td:
+            _set_state_dir(Path(td))
+            try:
+                lazy_core.write_cycle_marker(
+                    feature_id="some-bug", nonce="n", sub_skill="hardening"
+                )
+                code, _ = _capture_refusal_flagged(
+                    "--record-intervention", allow_hardening_subagent=True
+                )
+                assert code is None, (
+                    "record-intervention must be PERMITTED for a hardening cycle "
+                    f"subagent, got exit {code}"
+                )
+                # (b) A dangerous lifecycle op stays refused even under the hardening
+                #     marker (allow_hardening_subagent defaults False for it).
+                code_run_end, msg = _capture_refusal_flagged(
+                    "--run-end", allow_hardening_subagent=False
+                )
+                assert code_run_end == 3, (
+                    f"--run-end must STILL be refused (exit 3) under a hardening "
+                    f"marker, got {code_run_end}"
+                )
+                assert "--run-end" in msg
+            finally:
+                _clear_state_dir()
+        # (c) A NON-hardening cycle marker → --record-intervention STILL refused,
+        #     even with allow_hardening_subagent=True (the exemption is keyed on the
+        #     marker's own sub_skill, not on the flag alone).
+        with tempfile.TemporaryDirectory() as td:
+            _set_state_dir(Path(td))
+            try:
+                lazy_core.write_cycle_marker(
+                    feature_id="some-feature", nonce="n", sub_skill="execute-plan"
+                )
+                code, _ = _capture_refusal_flagged(
+                    "--record-intervention", allow_hardening_subagent=True
+                )
+                assert code == 3, (
+                    "record-intervention must STILL be refused for a NON-hardening "
+                    f"cycle subagent, got exit {code}"
+                )
+            finally:
+                _clear_state_dir()
+    finally:
+        _clear_cycle_env()
 
 
 
@@ -5631,11 +5895,16 @@ def test_advance_forward_cycle_pseudo_cleanup_routes_meta():
 
 
 def test_advance_forward_cycle_verbatim_real_skill_theory_1b():
-    """WU-2 case (d) — Theory-1b closure: a real-skill sub_skill change advances
-    forward_cycles once even on a verbatim (consume-missed) dispatch.
+    """Theory-1b closure, retargeted to the DISPATCH-TIME bracket (decision-11): a
+    verbatim (consume-missed) real Agent dispatch advances forward_cycles exactly ONCE
+    per completed ``--cycle-end`` real bracket — via ``advance_cycle_bracket_counter``
+    with a ``kind: "real"`` cycle marker, NOT via the retired
+    ``advance_forward_cycle(consume_gate=…)`` probe-path advance.
 
     No consume is simulated (the verbatim dispatch missed the guard ALLOW), yet the
-    state change drives the advance."""
+    closed real bracket is the budget authority and drives the advance. RED against a
+    hypothetical un-relocated (probe/consume-gated) mechanism that would freeze at 0
+    with no consume; GREEN against the shipped bracket counter."""
     _guard()
     import time as _time
     with tempfile.TemporaryDirectory() as td:
@@ -5645,19 +5914,21 @@ def test_advance_forward_cycle_verbatim_real_skill_theory_1b():
                 pipeline="feature", cloud=False, repo_root="/tmp/r",
                 max_cycles=20, now=_time.time(),
             )
-            # First real cycle.
-            s1 = {"sub_skill": "/plan-feature", "feature_id": "feat-x",
-                  "current_step": "plan-feature"}
-            m1 = lazy_core.advance_forward_cycle(s1)
+            # First real bracket closes → advances once (no consume needed).
+            cm1 = {"kind": "real", "feature_id": "feat-x"}
+            m1 = lazy_core.advance_cycle_bracket_counter(cm1)
             assert m1["forward_cycles"] == 1, m1
-            # Second real cycle — different current_step → advances again, no consume.
-            s2 = {"sub_skill": "/execute-plan", "feature_id": "feat-x",
-                  "current_step": "execute-plan"}
-            m2 = lazy_core.advance_forward_cycle(s2)
+            assert m1["per_feature_forward_cycles"]["feat-x"] == 1, m1
+            # Second real bracket → advances again with no consume (the bracket, not
+            # the consume oracle, is the authority — Theory-1b).
+            cm2 = {"kind": "real", "feature_id": "feat-x"}
+            m2 = lazy_core.advance_cycle_bracket_counter(cm2)
             assert m2["forward_cycles"] == 2, (
-                f"a verbatim real-skill state change must advance forward_cycles to "
-                f"2 with no consume (Theory-1b), got {m2['forward_cycles']!r}"
+                f"a verbatim real-skill dispatch bracket must advance forward_cycles "
+                f"to 2 with no consume (Theory-1b, dispatch-time), got "
+                f"{m2['forward_cycles']!r}"
             )
+            assert m2["per_feature_forward_cycles"]["feat-x"] == 2, m2
         finally:
             _clear_state_dir()
 
@@ -5691,6 +5962,151 @@ def test_advance_forward_cycle_legacy_marker_no_state_key_advances():
             )
         finally:
             _clear_state_dir()
+
+
+
+
+def test_bracket_counter_advances_once_per_multicycle_same_step_bracket():
+    """decision-11 (retarget of the retired byref-forward-cycles-frozen-on-
+    multicycle-same-step consume-gate test): a multi-part /execute-plan dispatches the
+    SAME real sub_skill for the SAME feature at the SAME (feature_id, current_step,
+    sub_skill) tuple, one Agent dispatch per plan part. Each completed ``--cycle-end``
+    real bracket advances forward_cycles exactly ONCE via
+    ``advance_cycle_bracket_counter`` — NOT frozen at 1 (the freeze the retired
+    consume_gate trigger addressed), NOT over-counted.
+
+    The bracket counter keys on the CYCLE marker's ``kind`` (one bracket == one
+    dispatch), so the unchanging state tuple is irrelevant: N real brackets ⇒
+    forward_cycles == N. RED against a hypothetical un-relocated state-change-only
+    mechanism that would freeze at 1 on the identical tuple; GREEN against the shipped
+    dispatch-time bracket counter."""
+    _guard()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=10, now=_time.time(),
+            )
+            # N real brackets at the UNCHANGING multi-part-phase tuple — each closes
+            # one dispatch, each advances exactly once.
+            N = 3
+            mN = None
+            for expected in range(1, N + 1):
+                cm = {"kind": "real", "feature_id": "hydra-overlay"}
+                mN = lazy_core.advance_cycle_bracket_counter(cm)
+                assert mN["forward_cycles"] == expected, (
+                    f"real bracket {expected} must advance forward_cycles to "
+                    f"{expected} even on an identical multi-part tuple, got "
+                    f"{mN['forward_cycles']!r}"
+                )
+                # Per-feature counter rides the same bracket classification.
+                assert mN["per_feature_forward_cycles"]["hydra-overlay"] == expected, (
+                    f"per_feature must track the same advance, got "
+                    f"{mN['per_feature_forward_cycles']!r}"
+                )
+            assert mN["forward_cycles"] == N, (
+                f"{N} same-step real brackets must total forward_cycles == {N} "
+                f"(not frozen at 1, not over-counted), got {mN['forward_cycles']!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+
+
+def _run_start_park_env(state_dir: "Path") -> dict:
+    """Subprocess env for a `--run-start` invocation against an ISOLATED state
+    dir: LAZY_STATE_DIR scopes all marker state to the temp dir, LAZY_ORCHESTRATOR=1
+    immunizes the call against the cycle-containment guard, and any inherited
+    LAZY_CYCLE_SUBAGENT (present when this suite runs INSIDE a marked run) is
+    stripped so the isolated run-start is not falsely refused."""
+    e = {k: v for k, v in os.environ.items()
+         if k not in ("LAZY_ORCHESTRATOR", "LAZY_CYCLE_SUBAGENT")}
+    e["LAZY_STATE_DIR"] = str(state_dir)
+    e["LAZY_ORCHESTRATOR"] = "1"
+    return e
+
+
+def _park_facets(state_dir: "Path") -> dict:
+    """Read the run marker written directly under an isolated LAZY_STATE_DIR and
+    return only its three park facets."""
+    marker = json.loads(
+        (state_dir / lazy_core._MARKER_FILENAME).read_text(encoding="utf-8")
+    )
+    return {k: marker.get(k) for k in
+            ("park_needs_input", "park_blocked", "park_provisional")}
+
+
+def test_run_start_park_umbrella_arms_both_facets_both_scripts():
+    """harden lazy-run-marker-park-arm-and-forward-cycle-inflation (DEFECT 2):
+    `--run-start --park` (the umbrella) persists park_needs_input=True AND
+    park_blocked=True into the marker, and `--park --park-provisional` persists
+    all three — for BOTH lazy-state.py (feature) and bug-state.py (bug), the
+    coupled pair. A bare `--run-start` leaves all three False (byte-identical to a
+    non-park run). This is the CLI half of the fix; the SKILL Step 0.55 half
+    forwards the operator's `--park` token to this invocation.
+
+    RED before the fix: `--park` is an unknown argument → argparse exits 2, so the
+    subprocess returncode assertion fails with an explicit reason."""
+    _guard()
+    import time as _time  # noqa: F401 (kept for parity with sibling tests' style)
+    for script in ("lazy-state.py", "bug-state.py"):
+        script_path = _SCRIPTS_DIR / script
+        # --- (a) --park umbrella → both facets armed, provisional off ---
+        with tempfile.TemporaryDirectory() as td:
+            sd = Path(td)
+            r = subprocess.run(
+                [sys.executable, str(script_path), "--run-start", "--park",
+                 "--max-cycles", "20", "--repo-root", str(sd)],
+                capture_output=True, text=True, env=_run_start_park_env(sd),
+            )
+            assert r.returncode == 0, (
+                f"[{script}] --run-start --park must exit 0 (is --park a known "
+                f"flag?); rc={r.returncode} stderr={r.stderr!r}"
+            )
+            facets = _park_facets(sd)
+            assert facets == {"park_needs_input": True, "park_blocked": True,
+                              "park_provisional": False}, (
+                f"[{script}] --park umbrella must arm BOTH facets, got {facets!r}"
+            )
+        # --- (b) --park --park-provisional → all three armed ---
+        with tempfile.TemporaryDirectory() as td:
+            sd = Path(td)
+            r = subprocess.run(
+                [sys.executable, str(script_path), "--run-start", "--park",
+                 "--park-provisional", "--max-cycles", "20", "--repo-root", str(sd)],
+                capture_output=True, text=True, env=_run_start_park_env(sd),
+            )
+            assert r.returncode == 0, (
+                f"[{script}] --run-start --park --park-provisional must exit 0; "
+                f"rc={r.returncode} stderr={r.stderr!r}"
+            )
+            facets = _park_facets(sd)
+            assert facets == {"park_needs_input": True, "park_blocked": True,
+                              "park_provisional": True}, (
+                f"[{script}] --park --park-provisional must arm all three facets "
+                f"(the umbrella satisfies the provisional pairing guard), got "
+                f"{facets!r}"
+            )
+        # --- (c) bare --run-start → byte-identical non-park marker ---
+        with tempfile.TemporaryDirectory() as td:
+            sd = Path(td)
+            r = subprocess.run(
+                [sys.executable, str(script_path), "--run-start",
+                 "--max-cycles", "20", "--repo-root", str(sd)],
+                capture_output=True, text=True, env=_run_start_park_env(sd),
+            )
+            assert r.returncode == 0, (
+                f"[{script}] bare --run-start must exit 0; rc={r.returncode} "
+                f"stderr={r.stderr!r}"
+            )
+            facets = _park_facets(sd)
+            assert facets == {"park_needs_input": False, "park_blocked": False,
+                              "park_provisional": False}, (
+                f"[{script}] bare --run-start must leave park OFF, got {facets!r}"
+            )
 
 
 
@@ -5796,6 +6212,315 @@ def test_advance_forward_cycle_meta_does_not_increment_per_feature():
             )
         finally:
             _clear_state_dir()
+
+
+
+
+# ---------------------------------------------------------------------------
+# Tests: cycle-budget-counters-double-count-on-probes-and-inject-hook.
+#
+# The cycle-BUDGET counters (forward_cycles / meta_cycles) are DECOUPLED from the
+# --repeat-count PROBE path (which fires on inspection probes AND the per-turn
+# inject hook with NO dispatch). The budget now advances ONLY on a completed
+# --cycle-begin/--cycle-end dispatch bracket (advance_cycle_bracket_counter, keyed
+# on the cycle marker's --kind) and on --apply-pseudo (unchanged). The
+# loop-detection STREAKS (update_repeat_counts) stay probe-driven — a separate
+# concern with its own debounce.
+# ---------------------------------------------------------------------------
+
+
+def test_repeat_count_inspection_probe_does_not_advance_forward_budget():
+    """(a) N inspection ``--repeat-count --emit-prompt`` probes with ZERO
+    dispatches between them leave ``forward_cycles`` unchanged (0).
+
+    Regression for the live 2026-07-17 friction: three routing-DISCOVERY probes
+    drove forward_cycles 0→3 because the probe-path advance fired on each. With
+    the budget decoupled from the probe, repeated probes over a real, dispatchable
+    fixture (execute-plan route) advance nothing — the BRACKET is now the sole
+    budget authority for real dispatches.
+    """
+    _guard()
+    import time as _time
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = _build_phase8_fixture_repo(td_path)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(fixture_repo),
+                max_cycles=25, session_id="owner-session", now=_time.time(),
+            )
+        finally:
+            _clear_state_dir()
+        env = _run_start_park_env(state_dir)
+        marker_path = state_dir / lazy_core._MARKER_FILENAME
+        for i in range(3):
+            r = subprocess.run(
+                [sys.executable, str(lazy_state_script),
+                 "--repeat-count", "--probe", "--emit-prompt",
+                 "--repo-root", str(fixture_repo)],
+                capture_output=True, text=True, env=env,
+            )
+            assert r.returncode == 0, (
+                f"probe {i} failed: rc={r.returncode} stderr={r.stderr[:400]!r}"
+            )
+            probe = json.loads(r.stdout)
+            # Confirm the probe really routed to the REAL execute-plan skill — the
+            # exact by-reference route that used to advance the budget.
+            assert probe.get("sub_skill") == "execute-plan", (
+                f"probe {i} must route to the real execute-plan skill (else this "
+                f"is not exercising the inflation path), got {probe.get('sub_skill')!r}"
+            )
+            m = json.loads(marker_path.read_text(encoding="utf-8"))
+            assert m.get("forward_cycles") == 0, (
+                f"inspection probe {i} must NOT advance the forward budget "
+                f"(decoupled from the probe path); got forward_cycles="
+                f"{m.get('forward_cycles')!r}"
+            )
+            assert m.get("per_feature_forward_cycles") == {}, (
+                f"inspection probe {i} must NOT bump any per-feature counter, got "
+                f"{m.get('per_feature_forward_cycles')!r}"
+            )
+
+
+
+
+def test_inject_hook_probe_on_non_dispatch_turn_does_not_advance_forward_budget():
+    """(b) The per-turn inject-hook probe (lazy_inject.inject → lazy-state.py
+    --repeat-count) on a NON-dispatch turn leaves ``forward_cycles`` unchanged.
+
+    Regression for the live 2026-07-17 friction: after one real dispatch the
+    operator sent a chat message (no cycle dispatched); the inject hook fired its
+    full --repeat-count probe and bumped forward_cycles 1→2 with a phantom
+    per-feature entry. With the budget decoupled from the probe path, the
+    bound-owner inject probe still produces its banner (unchanged) but advances no
+    budget.
+    """
+    _guard()
+    lazy_inject = _phase9_inject_module()
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        fixture_repo = _build_phase8_fixture_repo(td_path)
+        state_dir = td_path / "state"
+        state_dir.mkdir()
+        _set_state_dir(state_dir)
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root=str(fixture_repo),
+                max_cycles=10, session_id="owner-session", now=_time.time(),
+            )
+            hook_input = json.dumps({
+                "session_id": "owner-session",  # MATCHES the bound marker
+                "hook_event_name": "UserPromptSubmit",
+                "prompt": "just a chat message — no dispatch this turn",
+            })
+            result = lazy_inject.inject(hook_input)
+            # The banner still fires (bound-owner path is unchanged).
+            assert result is not None, "bound-owner inject must still produce a banner"
+            marker_after = lazy_core.read_run_marker(session_id="owner-session")
+            assert marker_after is not None, "run marker must survive the inject probe"
+            assert marker_after.get("forward_cycles", 0) == 0, (
+                f"the inject-hook probe on a non-dispatch turn must NOT advance the "
+                f"forward budget; got forward_cycles={marker_after.get('forward_cycles')!r}"
+            )
+            assert marker_after.get("per_feature_forward_cycles") == {}, (
+                f"the inject-hook probe must NOT bump any per-feature counter, got "
+                f"{marker_after.get('per_feature_forward_cycles')!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+
+
+def test_cycle_end_real_bracket_advances_forward_and_per_feature():
+    """(c) ONE ``--cycle-begin --kind real ... / --cycle-end`` bracket increments
+    ``forward_cycles`` by exactly 1 AND ``per_feature_forward_cycles[feature]`` by
+    1 — the bracket is the budget authority for a real Agent dispatch.
+
+    This is the behavior that MOVED off the probe path (see the repurposed
+    ``test_repeat_count_real_skill_frozen_census_advances_forward``): a real cycle
+    is counted when its bracket CLOSES, not when a probe fires.
+    """
+    _guard()
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "repo"
+        root.mkdir()
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _run_start_park_env(state_dir)
+        marker_path = state_dir / lazy_core._MARKER_FILENAME
+
+        def run(extra):
+            return subprocess.run(
+                [sys.executable, str(lazy_state_script), "--repo-root", str(root)] + extra,
+                capture_output=True, text=True, env=env,
+            )
+
+        rs = run(["--run-start", "--max-cycles", "25"])
+        assert rs.returncode == 0, f"--run-start failed: {rs.stderr[:400]!r}"
+        m0 = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m0.get("forward_cycles", 0) == 0 and m0.get("meta_cycles", 0) == 0, m0
+
+        cb = run(["--cycle-begin", "--kind", "real", "--feature-id", "feat-C",
+                  "--nonce", "nonce-real-c", "--sub-skill", "execute-plan"])
+        assert cb.returncode == 0, f"--cycle-begin failed: {cb.stderr[:400]!r}"
+        # The bracket has NOT closed yet — the budget must still be 0.
+        m_mid = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m_mid.get("forward_cycles", 0) == 0, (
+            f"--cycle-begin alone must NOT advance the budget; got {m_mid!r}"
+        )
+
+        ce = run(["--cycle-end"])
+        assert ce.returncode == 0, f"--cycle-end failed: {ce.stderr[:400]!r}"
+        m1 = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m1.get("forward_cycles") == 1, (
+            f"a closed real bracket must advance forward_cycles to 1; got "
+            f"forward_cycles={m1.get('forward_cycles')!r}"
+        )
+        assert m1.get("per_feature_forward_cycles", {}).get("feat-C") == 1, (
+            f"the real bracket must bump per_feature_forward_cycles[feat-C] to 1; "
+            f"got {m1.get('per_feature_forward_cycles')!r}"
+        )
+        assert m1.get("meta_cycles", 0) == 0, (
+            f"a real bracket must NOT touch meta_cycles; got {m1.get('meta_cycles')!r}"
+        )
+
+
+
+
+def test_cycle_end_meta_bracket_advances_meta_and_cleanup_pseudo_classifies_meta():
+    """(d) A ``--kind meta`` bracket increments ``meta_cycles`` (NOT
+    ``forward_cycles``); and a cleanup pseudo-skill (``__flip_plan_complete_stale__``)
+    classifies to meta via the shared forward/meta classifier.
+
+    Meta dispatches are bracketed ``--kind meta``, so ``--cycle-end`` is the sole
+    counting point (counting at ``--emit-dispatch`` too would double-count — that
+    advance was removed). Cleanup pseudos are NOT members of
+    ``_FORWARD_ADVANCING_PSEUDO_SKILLS`` so the classifier routes them to meta.
+    """
+    _guard()
+    import time as _time
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+    # --- Part 1: a --kind meta bracket advances meta_cycles only. ---
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "repo"
+        root.mkdir()
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        env = _run_start_park_env(state_dir)
+        marker_path = state_dir / lazy_core._MARKER_FILENAME
+
+        def run(extra):
+            return subprocess.run(
+                [sys.executable, str(lazy_state_script), "--repo-root", str(root)] + extra,
+                capture_output=True, text=True, env=env,
+            )
+
+        rs = run(["--run-start", "--max-cycles", "25"])
+        assert rs.returncode == 0, f"--run-start failed: {rs.stderr[:400]!r}"
+        cb = run(["--cycle-begin", "--kind", "meta", "--feature-id", "feat-M",
+                  "--nonce", "nonce-meta-m"])
+        assert cb.returncode == 0, f"meta --cycle-begin failed: {cb.stderr[:400]!r}"
+        ce = run(["--cycle-end"])
+        assert ce.returncode == 0, f"meta --cycle-end failed: {ce.stderr[:400]!r}"
+        m1 = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m1.get("meta_cycles") == 1, (
+            f"a closed meta bracket must advance meta_cycles to 1; got "
+            f"meta_cycles={m1.get('meta_cycles')!r}"
+        )
+        assert m1.get("forward_cycles", 0) == 0, (
+            f"a meta bracket must NOT advance forward_cycles; got "
+            f"forward_cycles={m1.get('forward_cycles')!r}"
+        )
+        assert m1.get("per_feature_forward_cycles") == {}, (
+            f"a meta bracket must NOT bump any per-feature counter, got "
+            f"{m1.get('per_feature_forward_cycles')!r}"
+        )
+    # --- Part 2: a cleanup pseudo classifies to meta (the exact advance the
+    #     --apply-pseudo path would make for a NON-forward pseudo). ---
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/tmp/r",
+                max_cycles=20, now=_time.time(),
+            )
+            m = lazy_core.advance_forward_cycle({
+                "sub_skill": "__flip_plan_complete_stale__", "feature_id": "feat-M",
+                "current_step": "Step 7a: flip plan Complete (stale)",
+            })
+            assert m["meta_cycles"] == 1, (
+                f"a cleanup pseudo (__flip_plan_complete_stale__) must classify to "
+                f"meta_cycles, got {m!r}"
+            )
+            assert m.get("forward_cycles", 0) == 0, (
+                f"a cleanup pseudo must NOT advance forward_cycles, got {m!r}"
+            )
+            assert m.get("per_feature_forward_cycles", {}).get("feat-M", 0) == 0, (
+                f"a cleanup pseudo must NOT bump per-feature counters, got "
+                f"{m.get('per_feature_forward_cycles')!r}"
+            )
+        finally:
+            _clear_state_dir()
+
+
+
+
+def test_apply_pseudo_forward_advancing_increments_forward_cycles():
+    """(e) A forward-advancing ``--apply-pseudo`` (``__mark_complete__``) increments
+    ``forward_cycles`` — the apply-pseudo increment is UNCHANGED by this fix
+    (pseudo-skills dispatch no Agent and are not bracketed, so they keep counting
+    at apply-time).
+    """
+    _guard()
+    lazy_state_script = _SCRIPTS_DIR / "lazy-state.py"
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        spec_dir = root / "feat-e"
+        spec_dir.mkdir()
+        _write_validated_md(spec_dir)
+        _write_spec_md(spec_dir, status="In-progress")
+        # Fully coherent PHASES so completion sails past the coherence gate.
+        _write_phases_md(
+            spec_dir,
+            "## Phase 1 — Foundations\n\n**Status:** Complete\n\n- [x] Build the thing\n",
+        )
+        state_dir = root / "state"
+        state_dir.mkdir()
+        env = _run_start_park_env(state_dir)
+        marker_path = state_dir / lazy_core._MARKER_FILENAME
+
+        rs = subprocess.run(
+            [sys.executable, str(lazy_state_script), "--repo-root", str(root),
+             "--run-start", "--max-cycles", "25"],
+            capture_output=True, text=True, env=env,
+        )
+        assert rs.returncode == 0, f"--run-start failed: {rs.stderr[:400]!r}"
+
+        ap = subprocess.run(
+            [sys.executable, str(lazy_state_script), "--repo-root", str(root),
+             "--apply-pseudo", "__mark_complete__", str(spec_dir),
+             "--apply-date", "2026-07-17"],
+            capture_output=True, text=True, env=env,
+        )
+        assert ap.returncode == 0, (
+            f"--apply-pseudo __mark_complete__ failed: rc={ap.returncode} "
+            f"stderr={ap.stderr[:400]!r} stdout={ap.stdout[:400]!r}"
+        )
+        result = json.loads(ap.stdout)
+        assert result.get("ok") is True, f"apply must succeed, got {result!r}"
+        m1 = json.loads(marker_path.read_text(encoding="utf-8"))
+        assert m1.get("forward_cycles") == 1, (
+            f"a forward-advancing --apply-pseudo must advance forward_cycles to 1 "
+            f"(unchanged apply-time increment); got forward_cycles="
+            f"{m1.get('forward_cycles')!r}"
+        )
 
 
 
@@ -7403,6 +8128,367 @@ def test_ctx_mutation_visible_through_facade():
         lazy_core._ctx._DIAGNOSTICS.clear()
 
 
+# ---------------------------------------------------------------------------
+# lazy-batch-no-mid-run-budget-or-park-controls: operator-authorized mid-run
+# budget + park controls (marker schema + in-place mutators + folds).
+# ---------------------------------------------------------------------------
+
+def test_write_run_marker_seeds_park_fields():
+    """write_run_marker mints the three park fields (default False), seeds them
+    from the kwargs, and classifies them RUN_FRESH_FIELDS."""
+    _guard()
+    now = _t.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            # Default: all three park fields present and False (byte-identical to
+            # a non-park marker's shape).
+            m = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=now,
+            )
+            for k in ("park_needs_input", "park_blocked", "park_provisional"):
+                assert k in m, f"marker must always mint {k}"
+                assert m[k] is False, f"{k} must default False"
+            # Seeded from the --run-start invocation flags.
+            m2 = lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=now,
+                park_needs_input=True, park_blocked=True, park_provisional=True,
+            )
+            assert (m2["park_needs_input"], m2["park_blocked"], m2["park_provisional"]) == (
+                True, True, True
+            )
+        finally:
+            _clear_state_dir()
+    # Partition completeness: the three park keys are classified RUN_FRESH_FIELDS
+    # (re-supplied at run-start, like max_cycles) — not continuity-carried.
+    for k in ("park_needs_input", "park_blocked", "park_provisional"):
+        assert k in lazy_core.RUN_FRESH_FIELDS, (
+            f"{k} must be classified RUN_FRESH_FIELDS"
+        )
+        assert k not in lazy_core.RUN_CONTINUITY_FIELDS
+
+
+def test_set_marker_max_cycles_updates_in_place():
+    """set_marker_max_cycles mutates the ACTIVE marker's max_cycles with no
+    clobber/restart, echoes prior/new, and no-ops (None) when no marker exists."""
+    _guard()
+    now = _t.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r",
+                max_cycles=10, now=now,
+            )
+            result = lazy_core.set_marker_max_cycles(20)
+            assert result == {"max_cycles": 20, "prior_max_cycles": 10}
+            # Persisted in place — same marker file, no restart.
+            data = json.loads(
+                (Path(td) / "lazy-run-marker.json").read_text(encoding="utf-8")
+            )
+            assert data["max_cycles"] == 20
+            # The mid-run budget fold now returns the updated value.
+            assert lazy_core.fold_max_cycles(None, data) == 20
+        finally:
+            _clear_state_dir()
+    # No active marker → no-op, None.
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            assert lazy_core.set_marker_max_cycles(20) is None
+        finally:
+            _clear_state_dir()
+
+
+def test_set_marker_park_toggles_and_enforces_invariant():
+    """set_marker_park toggles the park facets in place, and REFUSES (SystemExit,
+    zero writes) a result that violates park_provisional ⇒ park_needs_input."""
+    _guard()
+    now = _t.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        marker_path = Path(td) / "lazy-run-marker.json"
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=now,
+            )
+            # Arm the park umbrella (needs_input + blocked).
+            res = lazy_core.set_marker_park(park_needs_input=True, park_blocked=True)
+            assert (res["park_needs_input"], res["park_blocked"], res["park_provisional"]) == (
+                True, True, False
+            )
+            assert res["prior"] == {
+                "park_needs_input": False, "park_blocked": False,
+                "park_provisional": False,
+            }
+            # Provisional on is now legal (needs_input is on).
+            res2 = lazy_core.set_marker_park(park_provisional=True)
+            assert res2["park_provisional"] is True
+            # Invariant violation: turning needs_input off while provisional is on
+            # is REFUSED with zero writes (marker unchanged on disk).
+            before = marker_path.read_text(encoding="utf-8")
+            raised = False
+            try:
+                lazy_core.set_marker_park(park_needs_input=False)
+            except SystemExit:
+                raised = True
+            assert raised, "an invariant-violating park update must _die"
+            assert marker_path.read_text(encoding="utf-8") == before, (
+                "a refused park update must leave the marker byte-identical"
+            )
+        finally:
+            _clear_state_dir()
+    # No active marker → no-op, None.
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            assert lazy_core.set_marker_park(park_needs_input=True) is None
+        finally:
+            _clear_state_dir()
+
+
+def test_fold_max_cycles_marker_authoritative():
+    """fold_max_cycles: marker wins when present (live budget), flag when absent."""
+    _guard()
+    assert lazy_core.fold_max_cycles(10, None) == 10
+    assert lazy_core.fold_max_cycles(None, None) is None
+    # Marker present → its max_cycles is authoritative (ignores the stale flag).
+    assert lazy_core.fold_max_cycles(10, {"max_cycles": 20}) == 20
+    # None max_cycles in the marker means an unbounded run — respected as-is.
+    assert lazy_core.fold_max_cycles(10, {"max_cycles": None}) is None
+
+
+def test_fold_park_flags_marker_authoritative_with_legacy_fallback():
+    """fold_park_flags: a NEW-schema marker is authoritative; a legacy marker
+    lacking the fields and the no-marker path fall back to the CLI flags."""
+    _guard()
+    # No marker → flags (byte-identical back-compat).
+    assert lazy_core.fold_park_flags(True, True, False, None) == (True, True, False)
+    # New-schema marker → marker wins (so --set-park off disables even if the
+    # orchestrator still passes the invocation flags).
+    new_marker = {
+        "park_needs_input": False, "park_blocked": False, "park_provisional": False,
+    }
+    assert lazy_core.fold_park_flags(True, True, True, new_marker) == (
+        False, False, False
+    )
+    # New-schema marker with park ON → authoritative on.
+    on_marker = {
+        "park_needs_input": True, "park_blocked": True, "park_provisional": True,
+    }
+    assert lazy_core.fold_park_flags(False, False, False, on_marker) == (
+        True, True, True
+    )
+    # Legacy marker (no park keys) → fall back to flags (in-flight run keeps parking).
+    legacy = {"max_cycles": 10}
+    assert lazy_core.fold_park_flags(True, False, False, legacy) == (True, False, False)
+
+
+def test_record_audit_obligation_real_commit_delta_arms_with_end_sha():
+    """adhoc-audit-obligation-fires-on-zero-commit-failed-cycle P1: a real-commit
+    delta (begin != end) with an audited cycle_kind arms the obligation carrying
+    cycle_commit_sha == end_sha and the supplied cycle_summary."""
+    _guard()
+    now = _t.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=now,
+            )
+            lazy_core.record_audit_obligation(
+                "feat-a", "spec",
+                begin_head_sha="aaa111", end_sha="bbb222",
+                cycle_summary="did the spec thing",
+            )
+            assert lazy_core.pending_audit_obligation() == {
+                "item_id": "feat-a", "cycle_kind": "spec",
+                "cycle_commit_sha": "bbb222",
+                "cycle_summary": "did the spec thing",
+            }
+        finally:
+            _clear_state_dir()
+
+
+def test_record_audit_obligation_zero_commit_delta_arms_nothing_preserves_prior():
+    """adhoc-audit-obligation-fires-on-zero-commit-failed-cycle P1: a zero-commit
+    delta (begin == end, or a missing end sha) with an audited cycle_kind arms
+    NOTHING and leaves a pre-seeded prior obligation untouched (arm nothing,
+    clear nothing)."""
+    _guard()
+    now = _t.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=now,
+            )
+            # No prior obligation: a zero-commit close (begin == end) arms nothing.
+            lazy_core.record_audit_obligation(
+                "feat-a", "spec",
+                begin_head_sha="ccc333", end_sha="ccc333",
+                cycle_summary="unchanged HEAD",
+            )
+            assert lazy_core.pending_audit_obligation() is None, (
+                "a zero-commit (begin == end) close must arm no obligation"
+            )
+            # A missing end sha (degraded / non-git snapshot) also arms nothing.
+            lazy_core.record_audit_obligation(
+                "feat-a", "spec", begin_head_sha="ddd444", end_sha=None,
+            )
+            assert lazy_core.pending_audit_obligation() is None, (
+                "a missing end sha must arm no obligation"
+            )
+            # Pre-seed a prior obligation via a REAL-commit arm, then a zero-commit
+            # close must PRESERVE it (clear nothing).
+            lazy_core.record_audit_obligation(
+                "feat-a", "spec",
+                begin_head_sha="e0", end_sha="e1", cycle_summary="first arm",
+            )
+            prior = lazy_core.pending_audit_obligation()
+            assert prior is not None and prior["cycle_commit_sha"] == "e1"
+            lazy_core.record_audit_obligation(
+                "feat-a", "spec", begin_head_sha="f0", end_sha="f0",
+            )
+            assert lazy_core.pending_audit_obligation() == prior, (
+                "a zero-commit close must not clear a pre-existing obligation"
+            )
+        finally:
+            _clear_state_dir()
+
+
+def test_record_audit_obligation_non_audited_kind_noop_regardless_of_delta():
+    """adhoc-audit-obligation-fires-on-zero-commit-failed-cycle P1: a non-audited
+    cycle_kind remains a no-op regardless of the commit delta (unchanged
+    behavior — only the four audited kinds ever arm)."""
+    _guard()
+    now = _t.time()
+    with tempfile.TemporaryDirectory() as td:
+        _set_state_dir(Path(td))
+        try:
+            lazy_core.write_run_marker(
+                pipeline="feature", cloud=False, repo_root="/r", now=now,
+            )
+            lazy_core.record_audit_obligation(
+                "feat-a", "execute-plan",
+                begin_head_sha="aaa", end_sha="bbb", cycle_summary="real commit",
+            )
+            assert lazy_core.pending_audit_obligation() is None, (
+                "a non-audited cycle_kind must never arm, even on a real delta"
+            )
+        finally:
+            _clear_state_dir()
+
+
+# ---------------------------------------------------------------------------
+# WU-2 — _count_concurrent_writer_commits ledger-read arm
+# (adhoc-process-friction-detector-counts-concurrent-session-commits Phase 1):
+# a window commit recorded in lazy-concurrent-activity.jsonl under a DISTINCT
+# run identity is attributed to a concurrent writer even when it shares THIS
+# repo's git identity (the committer-email blind spot). Fail-safe: a null/
+# same-identity/absent ledger entry is NEVER subtracted.
+# ---------------------------------------------------------------------------
+
+def _cwc_seed_ledger(state_dir: "Path", shas, run_started_at) -> None:
+    """Seed the concurrent-activity ledger via the REAL producer under state_dir."""
+    _set_state_dir(state_dir)
+    for s in shas:
+        lazy_core.append_concurrent_commit_sha(s, run_started_at=run_started_at)
+
+
+def test_count_concurrent_writer_commits_ledger_subtracts_same_identity():
+    """N in-window commits made under THIS repo's own git identity (email-only
+    signal returns 0) but recorded in the ledger under a DISTINCT run identity
+    are attributed to a concurrent writer — the SAME-identity blind spot closed."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td_repo, tempfile.TemporaryDirectory() as td_state:
+        root = Path(td_repo)
+        begin = _prov_git_fixture_repo(root)  # committer email t@t
+        shas = [_prov_git_commit_file(root, f"f{i}.txt", f"c{i}") for i in range(3)]
+        try:
+            # No ledger yet → email-only degrade == 0 (fail-safe; pre-fix behavior).
+            _set_state_dir(Path(td_state))
+            assert lazy_core._count_concurrent_writer_commits(
+                root, begin, "MINE") == 0
+            # Seed the 3 shas under a DISTINCT identity → all 3 attributed.
+            _cwc_seed_ledger(Path(td_state), shas, "OTHER")
+            assert lazy_core._count_concurrent_writer_commits(
+                root, begin, "MINE") == 3
+        finally:
+            _clear_state_dir()
+
+
+def test_count_concurrent_writer_commits_this_run_shas_not_subtracted():
+    """A ledger sha stamped with THIS run's own identity (== current) is NOT
+    subtracted — this run's own automated commits still charge the budget."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td_repo, tempfile.TemporaryDirectory() as td_state:
+        root = Path(td_repo)
+        begin = _prov_git_fixture_repo(root)
+        shas = [_prov_git_commit_file(root, f"f{i}.txt", f"c{i}") for i in range(2)]
+        try:
+            _cwc_seed_ledger(Path(td_state), shas, "MINE")
+            assert lazy_core._count_concurrent_writer_commits(
+                root, begin, "MINE") == 0
+        finally:
+            _clear_state_dir()
+
+
+def test_count_concurrent_writer_commits_null_identity_not_subtracted():
+    """A ledger entry with a null/absent run_started_at is NOT subtracted
+    (conservative — an unknown identity never suppresses friction)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td_repo, tempfile.TemporaryDirectory() as td_state:
+        root = Path(td_repo)
+        begin = _prov_git_fixture_repo(root)
+        shas = [_prov_git_commit_file(root, f"f{i}.txt", f"c{i}") for i in range(2)]
+        try:
+            _cwc_seed_ledger(Path(td_state), shas, None)  # null identity
+            assert lazy_core._count_concurrent_writer_commits(
+                root, begin, "MINE") == 0
+        finally:
+            _clear_state_dir()
+
+
+def test_count_concurrent_writer_commits_dedup_email_and_ledger():
+    """A window commit attributed by BOTH signals (distinct author email AND a
+    ledger record) is counted exactly ONCE, not twice."""
+    _guard()
+
+    def _run(cmd, cwd):
+        r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+        if r.returncode != 0:
+            raise RuntimeError(f"git fixture failed: {r.stderr.strip()}")
+        return r
+
+    with tempfile.TemporaryDirectory() as td_repo, tempfile.TemporaryDirectory() as td_state:
+        root = Path(td_repo)
+        begin = _prov_git_fixture_repo(root)  # own author email t@t
+        # One commit authored under a DIFFERENT email (email signal attributes it).
+        (root / "foreign.txt").write_text("x\n", encoding="utf-8")
+        _run(["git", "add", "-A"], str(root))
+        _run(["git", "-c", "user.email=other@x", "-c", "user.name=o",
+              "commit", "-q", "-m", "foreign"], str(root))
+        foreign_sha = _run(["git", "rev-parse", "HEAD"], str(root)).stdout.strip()
+        try:
+            # ALSO record the same sha in the ledger under a distinct identity.
+            _cwc_seed_ledger(Path(td_state), [foreign_sha], "OTHER")
+            # Both signals fire on the one commit → counted once.
+            assert lazy_core._count_concurrent_writer_commits(
+                root, begin, "MINE") == 1
+        finally:
+            _clear_state_dir()
+
+
+def test_count_concurrent_writer_commits_none_on_degraded_read():
+    """No begin sha → None (the degraded contract is preserved; the caller
+    treats None as 'disable suppression', never a false positive)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td_repo:
+        assert lazy_core._count_concurrent_writer_commits(
+            Path(td_repo), None, "MINE") is None
+
+
 _TESTS = [
     ("test_lazy_state_test_output_matches_baseline", test_lazy_state_test_output_matches_baseline),
     ("test_bug_state_test_output_matches_baseline", test_bug_state_test_output_matches_baseline),
@@ -7461,6 +8547,9 @@ _TESTS = [
     ("test_advance_run_counters_consume_gated", test_advance_run_counters_consume_gated),
     ("test_advance_meta_cycle_increments_meta", test_advance_meta_cycle_increments_meta),
     ("test_emit_dispatch_real_templates_exist_and_declare_requires", test_emit_dispatch_real_templates_exist_and_declare_requires),
+    ("test_record_audit_obligation_real_commit_delta_arms_with_end_sha", test_record_audit_obligation_real_commit_delta_arms_with_end_sha),
+    ("test_record_audit_obligation_zero_commit_delta_arms_nothing_preserves_prior", test_record_audit_obligation_zero_commit_delta_arms_nothing_preserves_prior),
+    ("test_record_audit_obligation_non_audited_kind_noop_regardless_of_delta", test_record_audit_obligation_non_audited_kind_noop_regardless_of_delta),
     ("test_p7_write_run_marker_defaults_attended", test_p7_write_run_marker_defaults_attended),
     ("test_p7_write_run_marker_attended_false", test_p7_write_run_marker_attended_false),
     ("test_p7_marker_missing_attended_defaults_true", test_p7_marker_missing_attended_defaults_true),
@@ -7470,6 +8559,9 @@ _TESTS = [
     ("test_p7_run_end_terminal_sanctioned_reason_allowed", test_p7_run_end_terminal_sanctioned_reason_allowed),
     ("test_p7_run_end_terminal_nonsanctioned_reason_refuses_without_auth", test_p7_run_end_terminal_nonsanctioned_reason_refuses_without_auth),
     ("test_p7_run_end_terminal_nonsanctioned_reason_with_auth_allowed", test_p7_run_end_terminal_nonsanctioned_reason_with_auth_allowed),
+    ("test_sanctioned_lane_park_terminal_membership", test_sanctioned_lane_park_terminal_membership),
+    ("test_p7_run_end_lane_park_terminal_allowed_and_skips_efficacy", test_p7_run_end_lane_park_terminal_allowed_and_skips_efficacy),
+    ("test_p7_run_end_serial_park_terminal_still_refused", test_p7_run_end_serial_park_terminal_still_refused),
     ("test_p7_run_end_terminal_no_terminal_reason_adds_deprecation", test_p7_run_end_terminal_no_terminal_reason_adds_deprecation),
     ("test_p7_emit_dispatch_includes_dispatch_prompt_ref", test_p7_emit_dispatch_includes_dispatch_prompt_ref),
     ("test_per_repo_marker_independence_when_unset", test_per_repo_marker_independence_when_unset),
@@ -7489,6 +8581,9 @@ _TESTS = [
     ("test_detect_friction_torn_bracket_run_identity_changed", test_detect_friction_torn_bracket_run_identity_changed),
     ("test_detect_friction_torn_bracket_run_marker_now_absent", test_detect_friction_torn_bracket_run_marker_now_absent),
     ("test_detect_friction_over_budget_commits", test_detect_friction_over_budget_commits),
+    ("test_detect_friction_concurrent_writer_commits_suppressed", test_detect_friction_concurrent_writer_commits_suppressed),
+    ("test_detect_friction_genuine_runaway_still_flags_with_zero_concurrent", test_detect_friction_genuine_runaway_still_flags_with_zero_concurrent),
+    ("test_detect_friction_ambiguous_concurrent_signal_falls_to_existing_behavior", test_detect_friction_ambiguous_concurrent_signal_falls_to_existing_behavior),
     ("test_detect_friction_branch_divergence", test_detect_friction_branch_divergence),
     ("test_current_branch_snapshot_degrades_to_none", test_current_branch_snapshot_degrades_to_none),
     ("test_detect_friction_mark_complete_meta_cycle_multi_commit_within_budget", test_detect_friction_mark_complete_meta_cycle_multi_commit_within_budget),
@@ -7496,6 +8591,11 @@ _TESTS = [
     ("test_detect_friction_planning_cycle_multi_commit_within_budget", test_detect_friction_planning_cycle_multi_commit_within_budget),
     ("test_detect_friction_spec_cycle_multi_commit_within_budget", test_detect_friction_spec_cycle_multi_commit_within_budget),
     ("test_count_authored_commits_since_excludes_merge_commits", test_count_authored_commits_since_excludes_merge_commits),
+    ("test_count_concurrent_writer_commits_ledger_subtracts_same_identity", test_count_concurrent_writer_commits_ledger_subtracts_same_identity),
+    ("test_count_concurrent_writer_commits_this_run_shas_not_subtracted", test_count_concurrent_writer_commits_this_run_shas_not_subtracted),
+    ("test_count_concurrent_writer_commits_null_identity_not_subtracted", test_count_concurrent_writer_commits_null_identity_not_subtracted),
+    ("test_count_concurrent_writer_commits_dedup_email_and_ledger", test_count_concurrent_writer_commits_dedup_email_and_ledger),
+    ("test_count_concurrent_writer_commits_none_on_degraded_read", test_count_concurrent_writer_commits_none_on_degraded_read),
     ("test_detect_friction_within_commit_budget_returns_none", test_detect_friction_within_commit_budget_returns_none),
     ("test_detect_friction_degraded_inputs_return_none", test_detect_friction_degraded_inputs_return_none),
     ("test_detect_friction_meta_cycle_exempt_from_unexpected_commits", test_detect_friction_meta_cycle_exempt_from_unexpected_commits),
@@ -7537,9 +8637,16 @@ _TESTS = [
     ("test_advance_forward_cycle_pseudo_cleanup_routes_meta", test_advance_forward_cycle_pseudo_cleanup_routes_meta),
     ("test_advance_forward_cycle_verbatim_real_skill_theory_1b", test_advance_forward_cycle_verbatim_real_skill_theory_1b),
     ("test_advance_forward_cycle_legacy_marker_no_state_key_advances", test_advance_forward_cycle_legacy_marker_no_state_key_advances),
+    ("test_bracket_counter_advances_once_per_multicycle_same_step_bracket", test_bracket_counter_advances_once_per_multicycle_same_step_bracket),
+    ("test_run_start_park_umbrella_arms_both_facets_both_scripts", test_run_start_park_umbrella_arms_both_facets_both_scripts),
     ("test_write_run_marker_initializes_per_feature_map", test_write_run_marker_initializes_per_feature_map),
     ("test_advance_forward_cycle_increments_per_feature", test_advance_forward_cycle_increments_per_feature),
     ("test_advance_forward_cycle_meta_does_not_increment_per_feature", test_advance_forward_cycle_meta_does_not_increment_per_feature),
+    ("test_repeat_count_inspection_probe_does_not_advance_forward_budget", test_repeat_count_inspection_probe_does_not_advance_forward_budget),
+    ("test_inject_hook_probe_on_non_dispatch_turn_does_not_advance_forward_budget", test_inject_hook_probe_on_non_dispatch_turn_does_not_advance_forward_budget),
+    ("test_cycle_end_real_bracket_advances_forward_and_per_feature", test_cycle_end_real_bracket_advances_forward_and_per_feature),
+    ("test_cycle_end_meta_bracket_advances_meta_and_cleanup_pseudo_classifies_meta", test_cycle_end_meta_bracket_advances_meta_and_cleanup_pseudo_classifies_meta),
+    ("test_apply_pseudo_forward_advancing_increments_forward_cycles", test_apply_pseudo_forward_advancing_increments_forward_cycles),
     ("test_per_feature_counter_independent_keys", test_per_feature_counter_independent_keys),
     ("test_per_feature_counter_legacy_marker_tolerance", test_per_feature_counter_legacy_marker_tolerance),
     ("test_compute_per_feature_ceiling_override_short_circuits", test_compute_per_feature_ceiling_override_short_circuits),
@@ -7597,6 +8704,12 @@ _TESTS = [
     ("test_no_bare_production_sentinel_writes", test_no_bare_production_sentinel_writes),
     ("test_bare_write_lint_guard_detects_planted_violation", test_bare_write_lint_guard_detects_planted_violation),
     ("test_ctx_mutation_visible_through_facade", test_ctx_mutation_visible_through_facade),
+    ("test_write_run_marker_seeds_park_fields", test_write_run_marker_seeds_park_fields),
+    ("test_set_marker_max_cycles_updates_in_place", test_set_marker_max_cycles_updates_in_place),
+    ("test_set_marker_park_toggles_and_enforces_invariant", test_set_marker_park_toggles_and_enforces_invariant),
+    ("test_fold_max_cycles_marker_authoritative", test_fold_max_cycles_marker_authoritative),
+    ("test_fold_park_flags_marker_authoritative_with_legacy_fallback", test_fold_park_flags_marker_authoritative_with_legacy_fallback),
+    ("test_record_intervention_permitted_for_hardening_cycle_subagent", test_record_intervention_permitted_for_hardening_cycle_subagent),
 ]
 
 

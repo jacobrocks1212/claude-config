@@ -85,6 +85,11 @@ _SOURCES: dict[str, frozenset] = {
         # mcp-validation-peels-one-seam-per-loop follow-up (state batch 2):
         # compute pending; honest NO-DATA until wired.
         "mcp-validation-round-trips-per-feature",
+        # orchestrator-tool-search Phase 4: share of tool-gap harden dispatches
+        # NOT preceded by a --tool-search in the same cycle. Compute IS wired
+        # (_sel_blind_tool_gap_dispatch_rate) over the tool-search-invocation
+        # breadcrumb (Phase 1) + the per-cycle dispatch telemetry event.
+        "blind-tool-gap-dispatch-rate",
     }),
     "deny-ledger": frozenset({
         "build-queue-enforce-deny-count",
@@ -148,6 +153,23 @@ _SOURCES: dict[str, frozenset] = {
         "override-rate",                  # operator sign-offs / gate-weakening hits
         "false-positive-rate",            # flags judged spurious / total flags
         "verdict-efficacy-disagreement",  # passed-then-REFUTED + flagged-then-CONFIRMED
+    }),
+    # shared-hook-lib Phase 4: a deterministic point-in-time static scan of the
+    # repo tree (NOT a windowed ledger read). Its lone v1 selector counts the
+    # remaining duplicated scaffolding lines across user/hooks/*.sh — the
+    # headline down-is-good KPI the shared-hook-lib extraction drives toward
+    # zero. Compute IS wired (_sel_hook_duplicated_line_count); honesty ladder:
+    # an absent/unreadable scan target → NO-DATA, never a fabricated zero (a
+    # measured, fully-deduplicated tree IS a real zero — a distinct outcome).
+    "repo-static-scan": frozenset({
+        "hook-duplicated-line-count",
+        # cycle-prompt-deflation Phase 1: max assembled cycle-prompt bytes across
+        # all dispatchable (pipeline,mode,skill,variant) profiles. Computation is
+        # REUSED from skill-size-ratchet.py's assembled-profile measurement
+        # (imported, never re-implemented). This id MUST stay byte-identical to
+        # the registry row's signal.selector (the --lint check is `selector in
+        # _SOURCES[source]`).
+        "cycle-prompt-assembled-bytes",
     }),
 }
 
@@ -879,7 +901,55 @@ def _sel_telemetry(repo_root, selector: str,
             return (None, "no completions in the window — a ratio is never "
                           "fabricated")
         return (float(cpc["cycles_per_completion"]), None)
+    if selector == "blind-tool-gap-dispatch-rate":
+        return _sel_blind_tool_gap_dispatch_rate(windowed)
     return (None, f"unknown telemetry selector {selector!r}")
+
+
+def _is_tool_gap_harden_dispatch(event: dict) -> bool:
+    """A telemetry `dispatch` event that is an observed-friction/tool-gap harden.
+
+    Keyed on the signals a hardening dispatch carries on the per-cycle `dispatch`
+    telemetry event: the pending-hardening route-withhold (`route_overridden_by`),
+    or an explicit `trigger_kind`/`dispatch_class`/`sub_skill` harden marker.
+    Deliberately broad — the exact signature of a Trigger-5 observed-friction
+    dispatch is still being enriched (see the feature's Phase-4 notes)."""
+    if event.get("event") != "dispatch":
+        return False
+    data = event.get("data") or {}
+    return (data.get("route_overridden_by") == "pending-hardening-debt"
+            or data.get("trigger_kind") == "observed-friction"
+            or data.get("dispatch_class") == "hardening"
+            or str(data.get("sub_skill") or "").startswith("harden"))
+
+
+def _sel_blind_tool_gap_dispatch_rate(
+        windowed: list) -> Tuple[Optional[float], Optional[str]]:
+    """count(tool-gap harden dispatch with NO preceding --tool-search this cycle)
+    / count(all tool-gap harden dispatches), over the window.
+
+    "This cycle" is keyed on the dispatch's (run_id, item_id); a dispatch is
+    "preceded" iff a `tool-search-invocation` event shares that key with an
+    earlier-or-equal ts. No tool-gap dispatches ⇒ NO-DATA (never a fabricated
+    zero); a real zero (dispatches present, none blind) IS reported."""
+    hardens = [e for e in windowed if _is_tool_gap_harden_dispatch(e)]
+    if not hardens:
+        return (None, "no tool-gap harden dispatches in the window — a ratio is "
+                      "never fabricated (NO-DATA, not zero)")
+    searches: dict = {}
+    for e in windowed:
+        if e.get("event") == "tool-search-invocation":
+            key = (e.get("run_id"), e.get("item_id"))
+            searches.setdefault(key, []).append(e.get("ts"))
+    blind = 0
+    for h in hardens:
+        key = (h.get("run_id"), h.get("item_id"))
+        hts = h.get("ts")
+        preceded = any(ts is not None and hts is not None and ts <= hts
+                       for ts in searches.get(key, []))
+        if not preceded:
+            blind += 1
+    return (round(blind / len(hardens), 4), None)
 
 
 # -- sentinel-scan ---------------------------------------------------------------
@@ -1003,6 +1073,107 @@ def _sel_claude_md_corpus_bytes(
     return (float(total), None)
 
 
+# -- shared-hook-lib Phase 4: user/hooks/ duplicated-scaffolding-line counter ----
+#
+# A deterministic, point-in-time static scan (NOT a windowed ledger read): over
+# every user/hooks/*.sh file, a NORMALIZED substantive line (stripped; length
+# >= _HOOK_DUP_MIN_LINE_CHARS; not a pure `#` comment) that appears in >= 2
+# DISTINCT hook files contributes (total_occurrences - 1) redundant copies to
+# the count. This is the classic cross-file duplicated-line metric — it needs no
+# hardcoded knowledge of WHICH blocks are "scaffolding" (so it can't drift as the
+# blocks evolve), and it trends toward zero exactly as hooks migrate off their
+# inline copies onto the shared hook-prelude.sh / hook_lib.py substrate. The
+# short-line + comment filter keeps trivial shell syntax (fi/esac/done/}/exit 0)
+# and drifting comment prose out of the signal so it measures functional
+# scaffolding duplication, not boilerplate punctuation.
+_HOOK_DUP_MIN_LINE_CHARS = 8
+
+
+def _sel_hook_duplicated_line_count(repo_root) -> Tuple[Optional[float], Optional[str]]:
+    """Count duplicated scaffolding lines across user/hooks/*.sh.
+
+    Honesty ladder: an absent user/hooks tree, no *.sh files, or a tree whose
+    every *.sh is unreadable → NO-DATA (never a fabricated zero). A present,
+    readable, fully-deduplicated tree returns a real 0.0 (measured absence of
+    duplication, distinct from an unrecordable scan target)."""
+    hooks_dir = Path(repo_root) / "user" / "hooks"
+    if not hooks_dir.is_dir():
+        return (None, "user/hooks tree absent — nothing to scan")
+    sh_files = sorted(hooks_dir.glob("*.sh"))
+    if not sh_files:
+        return (None, "no *.sh hooks under user/hooks — nothing to scan")
+    file_count: dict[str, int] = {}   # normalized line -> distinct files
+    occur_count: dict[str, int] = {}  # normalized line -> total occurrences
+    readable = 0
+    for f in sh_files:
+        try:
+            text = f.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        readable += 1
+        seen_here: set[str] = set()
+        for raw in text.splitlines():
+            s = raw.strip()
+            if len(s) < _HOOK_DUP_MIN_LINE_CHARS or s.startswith("#"):
+                continue
+            occur_count[s] = occur_count.get(s, 0) + 1
+            if s not in seen_here:
+                seen_here.add(s)
+                file_count[s] = file_count.get(s, 0) + 1
+    if readable == 0:
+        return (None, "user/hooks/*.sh present but none readable — no "
+                      "fabricated zero")
+    dup = sum(occur_count[s] - 1 for s, files in file_count.items()
+              if files >= 2)
+    return (float(dup), None)
+
+
+_RATCHET_MODULE = None
+
+
+def _load_ratchet_module():
+    """Import skill-size-ratchet.py (hyphenated → importlib), cached per process.
+
+    The assembled-profile measurement lives there (cycle-prompt-deflation Phase 1);
+    this selector REUSES it rather than duplicating the emitter-driving logic."""
+    global _RATCHET_MODULE
+    if _RATCHET_MODULE is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "skill_size_ratchet", _SCRIPTS_DIR / "skill-size-ratchet.py"
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _RATCHET_MODULE = mod
+    return _RATCHET_MODULE
+
+
+def _sel_cycle_prompt_assembled_bytes(repo_root) -> Tuple[Optional[float], Optional[str]]:
+    """max(assembled_bytes) over every dispatchable cycle-prompt profile.
+
+    Honesty ladder: an unreadable template (emitter cannot assemble any profile)
+    → NO-DATA (never a fabricated zero). A measured max is a real positive value.
+    Measurement is repo-path-independent by construction (the ratchet binds a
+    canonical root), so this is a deterministic static scan of the template."""
+    ratchet = _load_ratchet_module()
+    try:
+        profiles = ratchet.enumerate_profiles()
+    except OSError as exc:
+        return (None, f"cannot read cycle-prompt template: {exc}")
+    values: list[int] = []
+    refused: list[str] = []
+    for profile in profiles:
+        byte_count, _long_lines, note = ratchet.measure_assembled_profile(repo_root, profile)
+        if byte_count is None:
+            refused.append(f"{ratchet._profile_id(profile)}: {note}")
+        else:
+            values.append(byte_count)
+    if not values:
+        detail = "; ".join(refused) if refused else "no dispatchable profiles enumerated"
+        return (None, f"no assembled profile measured — {detail}")
+    return (float(max(values)), None)
+
+
 # -- dispatcher -------------------------------------------------------------------
 
 def compute_reading(row, *, repo_root,
@@ -1043,6 +1214,11 @@ def compute_reading(row, *, repo_root,
                 return _sel_concluded_unfixed_count(repo_root)
             if selector == "claude-md-corpus-bytes":
                 return _sel_claude_md_corpus_bytes(repo_root)
+        elif source == "repo-static-scan":
+            if selector == "hook-duplicated-line-count":
+                return _sel_hook_duplicated_line_count(repo_root)
+            if selector == "cycle-prompt-assembled-bytes":
+                return _sel_cycle_prompt_assembled_bytes(repo_root)
         return (None, f"no computation registered for "
                       f"{source!r}/{selector!r}")
     except Exception as exc:  # noqa: BLE001 — honest NO-DATA, never a crash

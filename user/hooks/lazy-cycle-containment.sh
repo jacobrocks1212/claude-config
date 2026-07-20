@@ -18,11 +18,18 @@
 #    orchestrator is never self-denied (this fixes the Proven-Finding-#3
 #    self-deny defect — the orchestrator's own legitimate cycle dispatch +
 #    between-cycle lifecycle ops always pass).
-#    NOTE (2026-07-09): recursive Agent/Task dispatch is NO LONGER denied — the
-#    harness allows nested subagent dispatch, and denying it broke mandated
-#    read-only fan-outs (touchpoint-audit-gate). A runaway can't advance the
-#    pipeline through plain Agent dispatch alone; the ops above stay denied.
+#    NOTE (2026-07-09): recursive FOREGROUND Agent/Task dispatch is NO LONGER
+#    denied — the harness allows nested subagent dispatch, and denying it broke
+#    mandated read-only fan-outs (touchpoint-audit-gate). A runaway can't advance
+#    the pipeline through plain Agent dispatch alone; the ops above stay denied.
 #    See docs/bugs/adhoc-containment-denies-mandated-explore-fanout.
+#    NOTE (2026-07-19): a BACKGROUND (run_in_background:true) Agent/Task dispatch
+#    from a subagent IS denied (deadlock — see the background-dispatch trip in
+#    main() below). For that trip to fire, this hook MUST be registered on the
+#    Agent|Task matcher in settings.json (alongside lazy-dispatch-guard.sh) — the
+#    Round-28 deny was dead code until then. Wiring pinned by
+#    test_containment_registered_on_agent_task_matcher (test_hooks.py). See
+#    docs/bugs/containment-background-dispatch-deny-unreachable-on-agent-task.
 #
 # 2. marker-gated (retained complementary carrier): while the CYCLE-SUBAGENT
 #    marker (~/.claude/state/lazy-cycle-active.json) is present, the 2nd-feature
@@ -42,65 +49,54 @@
 # never wedge the pipeline.  The C3 state-script refusal (lazy_core.py) is the
 # backstop.  This mirrors lazy-route-inject.sh / lazy-dispatch-guard.sh.
 #
-# Python resolution: python3 preferred (WSL / Linux), falling back to python
-# (Windows git-bash where python3 may not be on PATH).
-#
 # Test override: LAZY_CYCLE_STAGED_PATHS (newline-separated) substitutes for
 # `git diff --cached --name-only` so the 2nd-feature tripwire is hermetically
 # testable without a temp git repo.
-
+#
+# shared-hook-lib (Phase 3): python resolution, the scripts-dir derivation, the
+# no-python breadcrumb, AND the pure-bash error breadcrumb (hook_emit_error_event)
+# are provided by the SOURCED hook-prelude.sh (HOOK_PYTHON / HOOK_SCRIPTS_DIR /
+# HOOK_NAME); the allow/deny emitters, the countable hook-events append, and the
+# fail-open breadcrumb are provided by hook_lib (imported from HOOK_SCRIPTS_DIR by
+# the inline body). The command-segment anchor pair (ENV_PREFIX / CMD_START) is
+# ALSO consumed from hook_lib — the inline copies (the anchor triplication, SPEC
+# D3) are gone. The keyed cycle-marker resolution still imports lazy_core directly
+# (hook_lib deliberately does NOT re-export claude_state_dir); the PS-syntax audit,
+# the heredoc mask, and COMMAND_TOOL_NAMES stay hook-local and unchanged.
+#
 # multi-repo-concurrent-runs (Phase 2 / WU-2.3): the cycle marker
-# (lazy-cycle-active.json) is now per-repo, a sibling of the run marker in the
-# SAME keyed subdir (~/.claude/state/<repo-key>/) when LAZY_STATE_DIR is unset.
-# The embedded Python resolves MARKER repo-aware via lazy_core.claude_state_dir()
+# (lazy-cycle-active.json) is per-repo, a sibling of the run marker in the SAME
+# keyed subdir (~/.claude/state/<repo-key>/) when LAZY_STATE_DIR is unset. The
+# embedded Python resolves MARKER repo-aware via lazy_core.claude_state_dir()
 # after binding the active repo to the PreToolUse cwd — repo_key derivation lives
 # ONLY in Python (bash never re-derives it). When LAZY_STATE_DIR IS set (hermetic
-# tests) the override dir is used exactly, preserving every existing pipe-test.
-#
-# We do NOT force-export LAZY_STATE_DIR here: the embedded Python must SEE whether
-# it was genuinely set vs unset (set → exact dir; unset → keyed). We pass the
-# scripts dir so the Python can import lazy_core, plus a fallback base dir for the
-# breadcrumb path if the import is unavailable.
-LCC_BASE_DIR="${LAZY_STATE_DIR:-$HOME/.claude/state}"
-MARKER="$LCC_BASE_DIR/lazy-cycle-active.json"  # fallback path for early failures
+# tests) the override dir is used exactly, preserving every existing pipe-test. We
+# do NOT force-export LAZY_STATE_DIR here: the embedded Python must SEE whether it
+# was genuinely set vs unset. HOOK_SCRIPTS_DIR is threaded so the Python can import
+# both hook_lib and lazy_core.
 
-# Resolve the scripts dir relative to this hook's own directory so the embedded
-# Python can import lazy_core for the keyed state-dir resolution. Builtins only
-# (${0%/*}, cd, pwd) — `dirname` is not guaranteed on PATH for non-login git-bash.
-# $0 may carry Windows backslashes; normalize to forward slashes first.
+# Source the shared hook prelude, fail-open-guarded (shared-hook-lib SPEC D2).
+# A missing/broken prelude ALLOWS (exit 0), never wedges. Derive this hook's own
+# directory here ONLY to locate the prelude; the prelude then provides
+# HOOK_PYTHON (python3→python resolution; total absence ⇒ pure-bash breadcrumb
+# + exit 0 — guard-fail-open-leaves-no-trace §1), HOOK_SCRIPTS_DIR, HOOK_NAME,
+# and hook_emit_error_event. Builtins only ($0 may carry Windows backslashes;
+# `dirname` is not guaranteed on a non-login git-bash PATH).
 SELF="${0//\\//}"
 case "$SELF" in
-  */*) LCC_SCRIPT_DIR="$(cd "${SELF%/*}" && pwd)" ;;
-  *)   LCC_SCRIPT_DIR="$(pwd)" ;;
+  */*) _HOOK_DIR="$(cd "${SELF%/*}" && pwd)" ;;
+  *)   _HOOK_DIR="$(pwd)" ;;
 esac
-LCC_SCRIPTS_DIR="$LCC_SCRIPT_DIR/../scripts"
+. "$_HOOK_DIR/hook-prelude.sh" 2>/dev/null || exit 0
 
-# NOTE (D4): the bash fast-path no longer exits on marker-absence — the inline
-# Python must evaluate `agent_id` even when no marker is armed. The Python body
-# fast-allows immediately for the common no-marker + no-agent_id case, so the
-# only added cost for interactive/main-thread events is one short Python start.
-
-# Resolve python interpreter: prefer python3, fall back to python.
-if command -v python3 >/dev/null 2>&1; then
-  PYTHON=python3
-elif command -v python >/dev/null 2>&1; then
-  PYTHON=python
-else
-  # No python at all → fail open (exit 0, no output). guard-fail-open-leaves-no-trace
-  # CONFIRMED DEFECT (b): this breadcrumb previously targeted the unset $STATE_DIR
-  # — that name exists ONLY inside the inline Python body below; the bash-scope
-  # base dir var is $LCC_BASE_DIR (set above the python resolution). The write
-  # silently landed at the filesystem root (or failed outright) and was swallowed
-  # by `2>/dev/null || true`, so this breadcrumb had never actually worked. Fixed
-  # to use $LCC_BASE_DIR, and extended with the same hook-events.jsonl append the
-  # other python-bearing hooks carry (interim copied block per
-  # docs/bugs/guard-fail-open-leaves-no-trace D4 — keep the copies in lockstep).
-  _HOOK_NOPY_TS="$(date +%s 2>/dev/null || echo 0)"
-  mkdir -p "$LCC_BASE_DIR" 2>/dev/null
-  printf '{"hook":"lazy-cycle-containment","error":"no python interpreter on PATH","at":"%s"}' \
-    "$_HOOK_NOPY_TS" > "$LCC_BASE_DIR/hook-error.json" 2>/dev/null || true
-  printf '{"ts":%s,"kind":"error","hook":"lazy-cycle-containment","repo_root":"","signature":"","detail":"no python interpreter on PATH"}\n' \
-    "$_HOOK_NOPY_TS" >> "$LCC_BASE_DIR/hook-events.jsonl" 2>/dev/null || true
+# shared-hook-lib (SPEC D2): if hook_lib is unavailable in the scripts dir, leave
+# a prelude-side trace (hook_emit_error_event — the shared pure-bash breadcrumb)
+# and fail OPEN. This restores the "leave a trace even when the shared module is
+# unavailable" property the pre-migration inline lazy_core fallback carried; the
+# inline body's `except ImportError: sys.exit(0)` stays the silent last-resort for
+# a present-but-unimportable hook_lib.
+if [ ! -f "$HOOK_SCRIPTS_DIR/hook_lib.py" ]; then
+  hook_emit_error_event "$HOOK_NAME" "" "hook_lib.py not found in scripts dir"
   exit 0
 fi
 
@@ -110,16 +106,43 @@ fi
 # non-zero on an internal error: a PreToolUse non-zero exit is a hard blocking
 # error in Claude Code, so the contract is fail-OPEN-via-empty-output.
 #
-# The Python body is passed via `-c` (NOT a heredoc): a heredoc would BIND the
-# python process's stdin to the script body, swallowing the PreToolUse JSON
-# piped into this hook.  With `-c`, the hook's real stdin (the payload) flows
-# straight through to python's sys.stdin.
+# windows-32k-cmdline-e2big-silently-disarms-containment: the Python body is
+# handed to the interpreter via a `mktemp`'d TEMP FILE, NOT `-c "$_LCC_PY"`.
+# The body is large; on Windows (Git Bash -> native python.exe) a `-c`
+# invocation this large exceeds CreateProcess's 32,767-char command-line
+# limit, so the process silently fails to spawn (E2BIG) and the hook falls
+# through to its unconditional `exit 0` -- the containment guard is disarmed
+# with NO trace. Writing the body to a temp file keeps the invoked command
+# line short (interpreter + one path) regardless of body size.
+#
+# The PreToolUse JSON payload STAYS ON STDIN (it is never written into the
+# temp file, and the temp file's path is never fed on stdin): a heredoc-bound
+# stdin would swallow the payload the embedded body reads via
+# `sys.stdin.read()` below, so python is invoked as `python <tmpfile>` with
+# the hook's real stdin flowing straight through untouched -- the same
+# stdin-preservation the old `-c` form provided.
 read -r -d '' _LCC_PY <<'PYEOF'
 import json
 import os
 import re
 import sys
-import datetime
+
+# shared-hook-lib (SPEC D2): seed sys.path from HOOK_SCRIPTS_DIR (threaded via
+# env) and import hook_lib for the allow/deny emitters, the countable
+# hook-events append, the fail-open breadcrumb, AND the shared command-segment
+# anchor pair (ENV_PREFIX / CMD_START — the anchor triplication collapse, SPEC
+# D3). A missing/failed import must ALLOW, never wedge — the ONLY retained inline
+# fallback is this minimal `except ImportError: sys.exit(0)` (the bash guard above
+# writes the prelude-side trace for the file-absent case).
+try:
+    _sd = os.environ.get("HOOK_SCRIPTS_DIR")
+    if _sd and _sd not in sys.path:
+        sys.path.insert(0, _sd)
+    import hook_lib
+except ImportError:
+    sys.exit(0)
+
+_HOOK = "lazy-cycle-containment"
 
 # powershell-tool-bypasses-bash-matched-guards: the harness exposes more than
 # one command-execution tool (Bash, PowerShell) sharing the same
@@ -166,7 +189,7 @@ def _resolve_marker_path(cwd):
     if os.environ.get("LAZY_STATE_DIR"):
         return os.path.join(os.environ["LAZY_STATE_DIR"], "lazy-cycle-active.json")
     try:
-        scripts_dir = os.environ.get("LCC_SCRIPTS_DIR")
+        scripts_dir = os.environ.get("HOOK_SCRIPTS_DIR")
         if scripts_dir and scripts_dir not in sys.path:
             sys.path.insert(0, scripts_dir)
         import lazy_core
@@ -228,7 +251,7 @@ LIFECYCLE_PATTERNS = (
 # MESSAGE BODY merely mentions e.g. `dev:kill` as prose (`git commit -m "docs:
 # explain the npm run dev:kill teardown behavior"`) was wrongly denied, the
 # same reference-only-mention false-deny class already fixed for
-# _LAZY_BATCH_*_RE / _STATE_PY_INVOKE_RE above. A genuine INVOCATION is either
+# _LAZY_BATCH_*_RE / _STATE_PY_INVOKE_RE below. A genuine INVOCATION is either
 # segment-leading (a bare `dev:kill` / `kill-port 3333` command) OR immediately
 # after a recognized task-runner verb (`npm run` / `pnpm run` / `yarn run`) —
 # the form the two pinned tests (`npm run dev:kill`, bare `dev:kill`) require
@@ -245,21 +268,14 @@ LIFECYCLE_PATTERNS = (
 # begin a command segment and so must NOT trip the recursion deny — this is the
 # false-positive fixed in docs/bugs/adhoc-incident-hook-deny-4b767b.
 #
-# PowerShell-syntax regex audit (powershell-tool-bypasses-bash-matched-guards):
-# env-assignment prefixes differ between shells (`NAME=value` in bash vs
-# `$env:NAME='value';` in PowerShell) — _ENV_PREFIX now recognizes both forms
-# so a routing-flag invocation prefixed either way is still scoped correctly.
-_ENV_PREFIX = (
-    r"(?:"
-    r"[A-Za-z_][A-Za-z0-9_]*=\S+\s+"
-    r"|\$env:[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?:'[^']*'|\"[^\"]*\"|\S+)\s*;\s*"
-    r")*"
-)
-_CMD_START = r"(?:^|[\n;&|({])\s*" + _ENV_PREFIX
+# shared-hook-lib (SPEC D3): the segment anchor pair (ENV_PREFIX / CMD_START) now
+# comes from hook_lib — the single home of what used to be hand-copied here and in
+# the sibling guards. The PowerShell-syntax audit that motivated ENV_PREFIX's
+# two-shell shape lives with the constant in hook_lib.
 
 # A PowerShell backtick at end-of-line is a LINE CONTINUATION (the next line is
 # part of the SAME logical command) — not a segment boundary. Left unhandled,
-# the `\n` in _CMD_START's separator class would wrongly split a continued
+# the `\n` in CMD_START's separator class would wrongly split a continued
 # invocation (`cargo build `` + newline + `--release`) into two segments,
 # hiding the build from every anchored pattern below. Normalized once in
 # main() before any matching: a backtick-newline collapses to a single space.
@@ -270,7 +286,7 @@ _PS_LINE_CONTINUATION_RE = re.compile(r"`\r?\n")
 # at a top-level segment-start position under the anchors above, so a runaway
 # op hidden inside a nested -Command string would otherwise walk past every
 # deny below. Purely additive: the tail following the opening quote is
-# reappended as a synthetic segment (newline-prefixed, a recognized _CMD_START
+# reappended as a synthetic segment (newline-prefixed, a recognized CMD_START
 # separator) so the existing anchored patterns can still find it.
 _PS_NESTED_COMMAND_RE = re.compile(
     r"(?:powershell(?:\.exe)?|pwsh)\b[^\n;&|]*?-[Cc]ommand\s+[\"']"
@@ -300,14 +316,14 @@ def _normalize_ps_syntax(command):
 # block-terminal-kill-false-denies-heredoc-body-tokens: a heredoc body
 # (`<<WORD` / `<< 'WORD'` / `<<"WORD"` / `<<-WORD` introducer through its
 # terminator line) is inert DATA — file/message CONTENT, never executed —
-# but its interior newlines satisfy _CMD_START's `\n` segment-separator
+# but its interior newlines satisfy CMD_START's `\n` segment-separator
 # class exactly like a real command boundary, so a deny token sitting at
 # the start of a body line (e.g. a commit-message body, an appended log
 # line) fabricates a false command-segment start and false-denies a
 # completely benign command. THIRD variant of the same false-deny class
 # (1: bare word-boundary → segment-start anchoring; 2: quoted-argument
 # values → _mask_quoted; 3: this — heredoc bodies). Kept as an identical
-# hook-local copy across every _CMD_START-anchored guard (block-terminal-
+# hook-local copy across every CMD_START-anchored guard (block-terminal-
 # kill.sh, this hook, long-build-ownership-guard.sh,
 # build-queue-enforce.sh) — same lockstep-copy discipline as
 # _normalize_ps_syntax / COMMAND_TOOL_NAMES; keep the copies in sync by
@@ -385,10 +401,10 @@ def _mask_heredoc(command):
 #                   ALSO anchored to a command-segment start so the `.claude/`
 #                   path component never false-matches.
 _LAZY_BATCH_DIRECT_RE = re.compile(
-    _CMD_START + r"/lazy(?:-bug)?-batch(?:-cloud)?\b(?!/)"
+    hook_lib.CMD_START + r"/lazy(?:-bug)?-batch(?:-cloud)?\b(?!/)"
 )
 _LAZY_BATCH_NESTED_RE = re.compile(
-    _CMD_START + r"claude\b[^\n;&|]*/lazy(?:-bug)?-batch(?:-cloud)?\b"
+    hook_lib.CMD_START + r"claude\b[^\n;&|]*/lazy(?:-bug)?-batch(?:-cloud)?\b"
 )
 
 # Carve-out shared roots: always allowed in a commit even when not under the
@@ -399,7 +415,7 @@ CARVE_OUT_PATHS = ("docs/features/queue.json", "docs/features/ROADMAP.md", "CLAU
 # docs/bugs/lazy-cycle-containment-false-denies-reference-only-routing-mentions):
 # a state-script INVOCATION begins a command segment (optionally behind a
 # `python`/`python3` interpreter + a path prefix), mirroring
-# build-queue-enforce.sh's _CMD_START segment anchoring and the _LAZY_BATCH_*_RE
+# build-queue-enforce.sh's CMD_START segment anchoring and the _LAZY_BATCH_*_RE
 # anchors above. A `lazy-state.py`/`bug-state.py` token appearing as an ARGUMENT
 # to another verb (`git add user/scripts/lazy-state.py`) or inside a commit
 # MESSAGE body (`git commit -m "...routes via lazy-state.py --emit-dispatch..."`)
@@ -407,19 +423,61 @@ CARVE_OUT_PATHS = ("docs/features/queue.json", "docs/features/ROADMAP.md", "CLAU
 _STATE_PY_TAIL = (
     r"(?:python3?\s+)?(?:[^\s;&|]*[\\/])?(?:lazy-state|bug-state)\.py\b"
 )
-_STATE_PY_INVOKE_RE = re.compile(_CMD_START + _STATE_PY_TAIL)
+_STATE_PY_INVOKE_RE = re.compile(hook_lib.CMD_START + _STATE_PY_TAIL)
 # Per-segment anchored form: the command is split on the same separators the
-# _CMD_START class recognizes, then each segment is matched from its start
+# CMD_START class recognizes, then each segment is matched from its start
 # (absorbing leading whitespace + NAME=value env assignments), so the
 # routing-flag check can be scoped to the INVOKING segment only — a routing flag
 # mentioned in an unrelated later segment (a commit message) cannot trip it.
-_STATE_PY_INVOKE_SEG_RE = re.compile(r"^\s*" + _ENV_PREFIX + _STATE_PY_TAIL)
+_STATE_PY_INVOKE_SEG_RE = re.compile(r"^\s*" + hook_lib.ENV_PREFIX + _STATE_PY_TAIL)
 _SEGMENT_SPLIT_RE = re.compile(r"[\n;&|({]")
+
+# lazy-cycle-containment-misparses-grouped-feature-paths (harden 2026-07):
+# _FEATURE_DIR_RE captures ONLY the FIRST path segment after docs/(features|bugs)/.
+# For a GROUPED feature (docs/features/audio/<slug>/, docs/features/mixer/<slug>/,
+# … — the layout AlgoBooth's queue produces via each item's `spec_dir`) that
+# segment is the DOMAIN GROUP ('audio'), NOT the feature slug, so a
+# `group(1) == feature_id` comparison NEVER matched a grouped feature's own paths
+# and the tripwire false-denied legitimate same-feature commits. The regex is now
+# RETAINED ONLY as an "is this path anywhere under the features/bugs tree?"
+# predicate; feature membership is decided group-aware by _path_under_feature,
+# keyed on the marker's feature_id (the queue item's bare slug), which anchors the
+# slug as a FULL path segment whether the feature is grouped (one optional group
+# segment) or ungrouped.
 _FEATURE_DIR_RE = re.compile(r"docs/(?:features|bugs)/([^/]+)/")
+
+
+def _path_under_feature(path, feature_id):
+    """True iff *path* lies within *feature_id*'s own docs dir, group-aware.
+
+    Matches every layout the queue produces:
+      - ungrouped:        docs/(features|bugs)/<feature_id>/...
+      - single-level:     docs/(features|bugs)/<group>/<feature_id>/...
+      - multi-level:      docs/(features|bugs)/<g1>/<g2>/.../<feature_id>/...
+    The zero-or-more `(?:[^/]+/)*` grouping prefix plus the trailing `/` anchor
+    the (re.escape'd) feature_id as a FULL path segment at ANY grouping depth, so
+    it can never partial-match a longer sibling slug. An empty/None feature_id →
+    False (nothing owns the path).
+
+    lazy-batch-parallel-run-harness-gaps gap 6 (harden 2026-07): the queue now
+    produces DEEP grouping (e.g. `docs/features/ui/secondary-ui-v2/domains/<slug>/`
+    — three grouping segments before the slug). The prior single-optional-segment
+    `(?:[^/]+/)?` matched at most one group segment and false-denied a legitimate
+    same-feature commit under a deeper group — a regression of the concluded bug
+    `lazy-cycle-containment-misparses-grouped-feature-paths`, which had explicitly
+    scoped multi-level grouping OUT ("the queue does not produce it"). It does now,
+    so the grouping prefix is generalized to zero-or-more."""
+    if not feature_id:
+        return False
+    norm = path.replace("\\", "/")
+    return re.search(
+        r"docs/(?:features|bugs)/(?:[^/]+/)*" + re.escape(feature_id) + r"/",
+        norm,
+    ) is not None
 
 # lazy-cycle-containment-lifecycle-patterns-still-unanchored: an anchored
 # invocation form for LIFECYCLE_PATTERNS, mirroring _STATE_PY_INVOKE_RE's
-# _CMD_START anchoring. Matches either a bare segment-leading token
+# CMD_START anchoring. Matches either a bare segment-leading token
 # (`dev:kill`, `kill-port 3333`) or the token immediately after a recognized
 # task-runner verb (`npm run` / `pnpm run` / `yarn run`) — never a mention
 # elsewhere in the command (e.g. inside a quoted commit-message body).
@@ -428,7 +486,7 @@ _LIFECYCLE_TAIL = (
     r"(?=$|[\s;&|)}])"
 )
 _LIFECYCLE_INVOKE_RE = re.compile(
-    _CMD_START + r"(?:(?:npm|pnpm|yarn)\s+run\s+)?" + _LIFECYCLE_TAIL
+    hook_lib.CMD_START + r"(?:(?:npm|pnpm|yarn)\s+run\s+)?" + _LIFECYCLE_TAIL
 )
 
 
@@ -437,84 +495,22 @@ _LIFECYCLE_INVOKE_RE = re.compile(
 _EVT_CWD = ""
 
 
-def _append_hook_event(kind, signature, detail):
-    """incident-auto-capture Phase 1 (D2): append one countable hook-event line
-    (hook-events.jsonl). Best-effort / FAIL-OPEN — never raises, never changes
-    the deny/allow output. Prefers the shared lazy_core appender (keyed state
-    dir when the repo is resolvable; exact LAZY_STATE_DIR dir in tests); falls
-    back to an inline append at the base dir when lazy_core is unavailable."""
-    try:
-        try:
-            _sd = os.environ.get("LCC_SCRIPTS_DIR")
-            if _sd and _sd not in sys.path:
-                sys.path.insert(0, _sd)
-            import lazy_core
-            try:
-                lazy_core.set_active_repo_root(_EVT_CWD or None)
-                repo_root = str(lazy_core.active_repo_root() or "")
-            except Exception:
-                repo_root = _EVT_CWD or ""
-            lazy_core.append_hook_event(
-                kind, "lazy-cycle-containment", signature, detail,
-                repo_root=repo_root,
-            )
-            return
-        except ImportError:
-            pass
-        import time as _time
-        os.makedirs(STATE_DIR, exist_ok=True)
-        entry = {
-            "ts": _time.time(), "kind": kind,
-            "hook": "lazy-cycle-containment",
-            "repo_root": _EVT_CWD or "", "signature": (signature or "")[:200],
-            "detail": (detail or "")[:500],
-        }
-        with open(
-            os.path.join(STATE_DIR, "hook-events.jsonl"), "a", encoding="utf-8"
-        ) as fh:
-            fh.write(json.dumps(entry) + "\n")
-    except Exception:
-        pass
-
-
-def _breadcrumb(err):
-    """Write a fail-open breadcrumb; never raise."""
-    try:
-        os.makedirs(STATE_DIR, exist_ok=True)
-        with open(os.path.join(STATE_DIR, "hook-error.json"), "w", encoding="utf-8") as fh:
-            json.dump(
-                {
-                    "hook": "lazy-cycle-containment",
-                    "error": str(err),
-                    "at": datetime.datetime.now(tz=datetime.timezone.utc)
-                    .strftime("%Y-%m-%dT%H:%M:%S") + "Z",
-                },
-                fh,
-            )
-    except Exception:
-        pass
-    # D2: the breadcrumb stays byte-identical; the countable history is the
-    # additive hook-events line beside it (fail-open, never raises).
-    _append_hook_event("error", "", str(err))
-
-
 def _allow():
     """Fast allow: emit nothing (PreToolUse with no decision = allow)."""
-    sys.exit(0)
+    hook_lib.allow()
 
 
 def _deny(reason, signature="containment-deny"):
     # incident-auto-capture D2: countable deny event (fail-open, additive) —
-    # each deny site passes its stable per-trip signature token.
-    _append_hook_event("deny", signature, reason)
-    print(json.dumps({
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": reason,
-        }
-    }))
-    sys.exit(0)
+    # each deny site passes its stable per-trip signature token. The event
+    # append + the deny JSON both live in hook_lib now (shared-hook-lib D3).
+    hook_lib.append_hook_event("deny", _HOOK, signature, reason, repo_root=_EVT_CWD)
+    hook_lib.deny(reason)
+
+
+def _breadcrumb(err):
+    """Write a fail-open breadcrumb via hook_lib; never raise."""
+    hook_lib.breadcrumb(_HOOK, err)
 
 
 def _is_truthy_background(val):
@@ -560,15 +556,151 @@ def _staged_paths():
     return [p.strip() for p in out.stdout.splitlines() if p.strip()]
 
 
+# adhoc-incident-hook-deny-057921: the second-feature tripwire below must
+# evaluate only the commit's EFFECTIVE PATHSPEC, not the whole staged index —
+# a foreign path staged by a concurrent lane in a shared worktree index must
+# not false-deny a commit that will not include it. `_commit_pathspecs`
+# resolves the explicit pathspec token list for a `git commit` invocation (or
+# None when the commit is index-wide: bare, `-a`/`--all`, or any parse
+# ambiguity — safe-fallback bias, never a false-ALLOW of a foreign path).
+# Flat string scan, same not-a-shell-parser discipline as `_mask_heredoc` /
+# `_normalize_ps_syntax` — NOT a real shell tokenizer, but quote-aware enough
+# that a `-m '...path-looking text...'` message value is consumed as ONE
+# token (never split into stray pathspec-looking fragments by its own
+# internal whitespace).
+_GIT_COMMIT_RE = re.compile(r"\bgit\s+commit\b")
+
+# Option/value pairs that consume the FOLLOWING token as their value (both
+# `--opt value` and `--opt=value` forms) — so the value is never mistaken for
+# a pathspec token. `-S`/`--gpg-sign` takes an OPTIONAL value in real git; kept
+# conservative here (only consumed when the following token is not itself
+# option-shaped).
+_COMMIT_VALUE_OPTS = frozenset((
+    "-m", "--message", "-F", "--file", "-C", "--reuse-message",
+    "-c", "--reedit-message", "--author", "--date", "-t", "--template",
+    "--fixup", "--squash", "--cleanup", "-S", "--gpg-sign",
+))
+
+# Separator chars that end the `git commit` invocation's own segment — mirrors
+# `_SEGMENT_SPLIT_RE`'s separator class, but consulted QUOTE-AWARE here (a
+# separator char sitting inside a quoted commit-message value must not
+# fabricate a false segment boundary).
+_COMMIT_SEG_SEPARATOR_CHARS = frozenset("\n;&|({")
+
+
+def _commit_pathspecs(command):
+    """Return the explicit pathspec token list for a `git commit` invocation
+    in *command*, or None when the commit is index-wide (bare, `-a`/`--all`,
+    or any parse ambiguity — deny-safe: callers fall back to the whole staged
+    index on None, never a false-ALLOW of a foreign path).
+
+    Scoped to the `git commit` invocation's own segment (up to the next
+    top-level separator, quote-aware) so a later `&&`-chained segment never
+    leaks tokens in. Tokenization is a flat, quote-aware whitespace split — a
+    single-/double-quoted span (its `-m` message value, typically) is kept as
+    ONE token regardless of internal whitespace, so a message that merely
+    MENTIONS a path as prose is never split into a spurious pathspec-looking
+    fragment. An unterminated quote is a parse ambiguity -> None.
+    """
+    m = _GIT_COMMIT_RE.search(command)
+    if m is None:
+        return None
+    tail = command[m.end():]
+
+    tokens = []
+    buf = []
+    quote = None
+    for ch in tail:
+        if quote is not None:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            buf.append(ch)
+            continue
+        if ch in _COMMIT_SEG_SEPARATOR_CHARS:
+            break  # end of this invocation's own command segment
+        if ch.isspace():
+            if buf:
+                tokens.append("".join(buf))
+                buf = []
+            continue
+        buf.append(ch)
+    if quote is not None:
+        return None  # unterminated quote -- ambiguous, deny-safe fallback
+    if buf:
+        tokens.append("".join(buf))
+
+    pathspecs = []
+    saw_all = False
+    i = 0
+    n = len(tokens)
+    while i < n:
+        tok = tokens[i]
+        if tok == "--":
+            pathspecs.extend(t for t in tokens[i + 1:] if t)
+            break
+        if tok in ("-a", "--all"):
+            saw_all = True
+            i += 1
+            continue
+        if tok.startswith("--") and "=" in tok:
+            # --opt=value: the value is attached to this one token -- skip it
+            # whole, no separate value token to consume.
+            i += 1
+            continue
+        if tok in _COMMIT_VALUE_OPTS:
+            if i + 1 < n:
+                nxt = tokens[i + 1]
+                if tok in ("-S", "--gpg-sign") and nxt.startswith("-"):
+                    # optional value not supplied -- don't consume nxt.
+                    i += 1
+                    continue
+                i += 2  # consume the option AND its value token
+                continue
+            i += 1  # trailing option with no value token at all
+            continue
+        if tok.startswith("-"):
+            i += 1  # an ordinary no-value flag (-q, --amend, --no-verify, ...)
+            continue
+        pathspecs.append(tok)
+        i += 1
+
+    if saw_all:
+        return None
+    if not pathspecs:
+        return None
+    return pathspecs
+
+
+def _commit_effective_paths(command, staged):
+    """Return the subset of *staged* the pending `git commit` in *command*
+    will actually include -- its effective pathspec -- or *staged* unchanged
+    when the commit is index-wide (see `_commit_pathspecs`)."""
+    pathspecs = _commit_pathspecs(command)
+    if pathspecs is None:
+        return staged
+    norm_specs = [p.replace("\\", "/").rstrip("/") for p in pathspecs]
+    effective = []
+    for p in staged:
+        norm_p = p.replace("\\", "/")
+        for spec in norm_specs:
+            if norm_p == spec or norm_p.startswith(spec + "/"):
+                effective.append(p)
+                break
+    return effective
+
+
 def _is_carve_out(path, feature_id):
     norm = path.replace("\\", "/")
     if norm in CARVE_OUT_PATHS:
         return True
-    # The feature's own dir (features OR bugs) is always allowed.
-    m = _FEATURE_DIR_RE.search(norm)
-    if m and m.group(1) == feature_id:
-        return True
-    return False
+    # The feature's own dir (features OR bugs) is always allowed — group-aware,
+    # keyed on the marker's feature_id, so a GROUPED feature's own paths
+    # (docs/features/<group>/<feature_id>/…) are correctly recognized as its own.
+    return _path_under_feature(norm, feature_id)
 
 
 def _increment_tally(marker):
@@ -582,6 +714,46 @@ def _increment_tally(marker):
         os.replace(tmp, MARKER)
     except Exception as exc:
         _breadcrumb(f"commit_tally increment failed: {exc}")
+
+
+def _record_integrator(marker, agent_id):
+    """Option A (subagent-wedge-backstop-blocks-nested-wu-workers): record the
+    cycle INTEGRATOR's agent_id — the FIRST subagent to act under this cycle-marker
+    generation (keyed by the marker nonce) — into a sibling breadcrumb
+    ``<state>/cycle-integrator/<nonce>.json``, so the SubagentStop wedge-backstop
+    (subagent-wedge-backstop.sh) can BLOCK only the integrator and EXEMPT nested WU
+    workers (great-grandchildren) that stop mid-cycle.
+
+    FIRST-writer-wins: the integrator must act (read the plan, etc.) BEFORE it can
+    dispatch any worker, and session tool calls are serial (the SAME ordering the
+    guard's consumed-fence at lazy_guard.py already relies on), so the first
+    agent_id observed under this nonce IS the integrator; a worker's later agent_id
+    never overwrites it.
+
+    Best-effort / FAIL-OPEN: never raises, never affects the allow/deny decision. A
+    recording miss only weakens the wedge-backstop's integrator identification for
+    one cycle (it then biases to ALLOW — false-negative — per that hook's
+    allow-on-doubt posture)."""
+    try:
+        if not isinstance(marker, dict):
+            return
+        nonce = marker.get("nonce")
+        if not nonce or not agent_id:
+            return
+        integ_dir = os.path.join(os.path.dirname(MARKER), "cycle-integrator")
+        safe = "".join(c if (c.isalnum() or c in "._-") else "_" for c in str(nonce))
+        p = os.path.join(integ_dir, safe + ".json")
+        if os.path.exists(p):
+            return  # first-writer-wins — the integrator is already recorded
+        import time as _time
+        os.makedirs(integ_dir, exist_ok=True)
+        tmp = p + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"nonce": nonce, "integrator_agent_id": agent_id,
+                       "written_at": _time.time()}, fh)
+        os.replace(tmp, p)
+    except Exception:
+        pass
 
 
 def main():
@@ -603,6 +775,14 @@ def main():
     # arming required. The main-thread orchestrator (agent_id absent) is never
     # self-denied for these ops.
     is_subagent = bool(payload.get("agent_id"))
+
+    # Option A (subagent-wedge-backstop-blocks-nested-wu-workers): record the cycle
+    # INTEGRATOR's agent_id (the first subagent to act under this cycle nonce) so the
+    # SubagentStop wedge-backstop blocks only the integrator and exempts nested WU
+    # workers. Best-effort / fail-open; never affects the allow/deny below. Runs
+    # before the fast-allow (a subagent never reaches the fast-allow anyway).
+    if is_subagent and marker is not None:
+        _record_integrator(marker, payload.get("agent_id"))
 
     # Fast-allow the common cheap case: not a subagent AND no marker → there is
     # nothing this hook can trip (recursion/lifecycle/routing need a subagent;
@@ -708,12 +888,28 @@ def main():
                 + CORRECTIVE,
                 "commit-count-backstop",
             )
-        # Second-feature tripwire.
-        staged = _staged_paths()
-        offending = [
-            p for p in staged if not _is_carve_out(p, feature_id)
-            and _FEATURE_DIR_RE.search(p.replace("\\", "/"))
-            and _FEATURE_DIR_RE.search(p.replace("\\", "/")).group(1) != feature_id
+        # lazy-batch-parallel-run-harness-gaps gap 7 (harden 2026-07): a
+        # SANCTIONED BATCH docs-writer cycle legitimately spans N features in one
+        # commit, so the single-feature_id tripwire must not police it. The only
+        # such cycle today is /ingest-research (batch mode writes RESEARCH.md /
+        # RESEARCH_SUMMARY.md + clears stub markers across every pending-research
+        # feature — docs/features/<slug>/ artifacts only, never source). Keyed on
+        # the cycle marker's own sub_skill (set by the --cycle-begin --sub-skill
+        # ingest-research bracket — zero orchestrator change). The commit-count
+        # backstop above STILL applies (a runaway ingest cannot commit unbounded).
+        sub_skill = marker.get("sub_skill")
+        _batch_docs_writer = sub_skill in ("ingest-research",)
+        # Second-feature tripwire. A path is a 2nd-feature commit iff it is under
+        # SOME feature/bug dir (_FEATURE_DIR_RE, used purely as a tree predicate)
+        # but NOT a carve-out for THIS feature. _is_carve_out is now the sole
+        # group-aware membership authority (keyed on feature_id), so the old buggy
+        # `.group(1) != feature_id` comparison — which mis-parsed grouped features
+        # — is gone.
+        staged = _commit_effective_paths(command, _staged_paths())
+        offending = [] if _batch_docs_writer else [
+            p for p in staged
+            if _FEATURE_DIR_RE.search(p.replace("\\", "/"))
+            and not _is_carve_out(p, feature_id)
         ]
         if offending:
             _deny(
@@ -735,21 +931,64 @@ try:
 except SystemExit:
     raise
 except Exception as exc:  # noqa: BLE001 — fail-OPEN on ANY error.
-    _breadcrumb(exc)
+    hook_lib.breadcrumb(_HOOK, exc)
     sys.exit(0)
 PYEOF
 
 # `read -d ''` returns non-zero at EOF even on success — that is expected; the
-# variable is populated.  Run python with the captured body via -c so the
-# hook's real stdin (the PreToolUse payload) reaches python untouched.
+# variable is populated.
+#
+# windows-32k-cmdline-e2big-silently-disarms-containment: write the captured
+# body to a mktemp'd temp file and invoke python against THAT PATH (not `-c`)
+# so the spawned command line stays short regardless of body size. Plain
+# `mktemp` honors TMPDIR (the standard POSIX seam) so a test can force this
+# step to fail by pointing TMPDIR at a non-existent parent. Both the mktemp
+# step AND the subsequent write are guarded — either failing takes the SAME
+# traced fail-open branch (breadcrumb + hook-events line via the prelude's
+# hook_emit_error_event), distinct from the no-python breadcrumb by its
+# `detail` text.
+_lcc_tmpwrite_failed=0
+tmpfile="$(mktemp --suffix=.py 2>/dev/null)"
+if [ -z "$tmpfile" ] || [ ! -f "$tmpfile" ]; then
+  _lcc_tmpwrite_failed=1
+else
+  trap 'rm -f "$tmpfile"' EXIT
+  if ! printf '%s' "$_LCC_PY" > "$tmpfile" 2>/dev/null; then
+    _lcc_tmpwrite_failed=1
+  fi
+fi
+
+if [ "$_lcc_tmpwrite_failed" = "1" ]; then
+  # Traced fail-open (guard-fail-open-leaves-no-trace): the prelude's shared
+  # pure-bash breadcrumb, with a DISTINCT detail string so this temp-write
+  # cause is distinguishable from the no-python cause in
+  # hook-error.json / hook-events.jsonl.
+  hook_emit_error_event "$HOOK_NAME" "" "temp-file write failed"
+  exit 0
+fi
+
+# Windows Git Bash's `/tmp/...` MSYS path may not resolve for a native
+# python.exe — convert to a Windows path when `cygpath` is available (a no-op
+# elsewhere: WSL/Linux/macOS python reads the raw path fine, and `cygpath`
+# simply won't be on PATH there).
+if command -v cygpath >/dev/null 2>&1; then
+  tmppath="$(cygpath -w "$tmpfile")"
+else
+  tmppath="$tmpfile"
+fi
+
+# Invoke python against the temp-file PATH, not `-c`. The hook's real stdin
+# (the PreToolUse payload) still flows straight through to python's
+# sys.stdin — nothing pipes into this invocation on stdin, so it is
+# untouched, exactly as the old `-c` form preserved it.
 #
 # multi-repo-concurrent-runs (Phase 2 / WU-2.3): do NOT force-export
 # LAZY_STATE_DIR — the embedded Python must see whether it was genuinely set
 # (hermetic test → exact dir) or unset (production → keyed dir via lazy_core).
 # LAZY_STATE_DIR (if set in this hook's environment) already passes through to
-# the child. We export LCC_SCRIPTS_DIR so the Python can import lazy_core for the
-# keyed resolution; the embedded body resolves the keyed marker path itself.
-LCC_SCRIPTS_DIR="$LCC_SCRIPTS_DIR" "$PYTHON" -c "$_LCC_PY"
+# the child. We export HOOK_SCRIPTS_DIR so the Python can import hook_lib (the
+# emitters + append) AND lazy_core (the keyed marker resolution).
+HOOK_SCRIPTS_DIR="$HOOK_SCRIPTS_DIR" "$HOOK_PYTHON" "$tmppath"
 
 # Always exit 0 from the shell side: a non-zero PreToolUse exit is a hard
 # blocking error in Claude Code; deny is expressed in JSON, never an exit code.

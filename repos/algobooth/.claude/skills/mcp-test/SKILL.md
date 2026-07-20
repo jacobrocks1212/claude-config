@@ -250,7 +250,9 @@ The engine runs the full pipeline in ONE pass (SPEC §Validation flow):
    `DEFERRED_REQUIRES_DEVICE.md` (clean pass with backend deferrals) / `SKIP_MCP_TEST.md` (explicit
    structural skip). `genuine` / `uncertain` / unrepaired `harness` emit NO terminal sentinel here
    (they route to BLOCKED / Sonnet / self-heal). `MCP_TEST_RESULTS.md` carries the partial record
-   with `validated_commit`.
+   with `validated_commit`. The ONE documented exception to "the model never authors sentinels" is the
+   narrow `observation_gap_exemptions` amendment on an all-exempt `partial` — see **Scoped-validated
+   partial** under the Sentinel reference below.
 
 The CLI exits 0 on a pass verdict, 1 on a fail verdict, 2 on a load/transport error.
 
@@ -335,7 +337,7 @@ the feature stays In-progress on a no-device host and re-opens on a real-device 
 | Outcome | Sentinel | When |
 |---------|----------|------|
 | Every scenario passed | `VALIDATED.md` (`kind: validated`) | Clean pass, nothing environment-blocked |
-| Some passed, some un-runnable | `MCP_TEST_RESULTS.md` (`kind: mcp-test-results`, `result: partial`, `validated_commit`) | Honest partial — does NOT complete the feature |
+| Some passed, some un-runnable | `MCP_TEST_RESULTS.md` (`kind: mcp-test-results`, `result: partial`, `validated_commit`) | Honest partial — does NOT complete the feature, UNLESS every uncovered row is a documented-untestable class → see **Scoped-validated partial** below |
 | Residual failures real-device-only but certifiable on a real device | `DEFERRED_REQUIRES_DEVICE.md` (`kind: deferred-requires-device`), scoped `deferred_scenarios[]` | Sustained-timing / dropout / jitter under the headless pump |
 | Residual failures need a host CAPABILITY this machine lacks | declare `requires_host: <id>` (SPEC frontmatter / queue.json) → `lazy-state.py compute_state` writes `DEFERRED_REQUIRES_HOST.md` (`kind: deferred-requires-host`), terminal `host-capability-saturated` | A 2nd network peer (e.g. 2nd Ableton Link peer), a different OS (Linux/macOS), an external binary/GPU/MIDI surface — NOT an audio device |
 | Residual failures un-testable on ANY host | `SKIP_MCP_TEST.md` (`kind: skip-mcp-test`), scoped | Permanent waiver — only raw-PCM injection qualifies |
@@ -377,6 +379,49 @@ pass it deletes the deferral and writes `VALIDATED.md`; a real dropout on real h
   `non-windows-host`). An unregistered id is a loud fail-fast — REGISTER it (a one-line harness change
   in `lazy_core.py`) rather than falling back to the device axis. Canonical DEFERRED_REQUIRES_HOST
   schema: `~/.claude/skills/_components/sentinel-frontmatter.md`.
+
+### Scoped-validated partial — the all-exempt escape hatch (avoid the mcp-test forever-loop)
+
+A `result: partial` whose MCP-driveable scope FULLY passes (`pass_count == total_count`) but whose
+ONLY uncovered `Runtime Verification` rows are each a **documented-untestable class** is NOT a dead
+end. Left as a bare `partial` it loops forever — `__write_validated_from_results__` refuses any
+non-`all-passing` result, so the state machine re-dispatches `/mcp-test` every cycle and the item
+never reaches `__mark_complete__` / `__mark_fixed__` (the deadlock behind
+`docs/bugs/_archive/partial-mcp-results-all-exempt-rows-no-authorable-validated-path/`). There is a shipped
+escape hatch, and this is the ONE narrow case where you author onto the engine-written results file.
+
+- **The mechanism.** `observation_gap_promotable` (`lazy_core/gates.py`) promotes such a partial to a
+  scoped `VALIDATED.md` (`result: validated-modulo-observation-gaps`) when the results file carries a
+  non-empty `observation_gap_exemptions: [ { surface, spec_class }, ... ]` list AND **every** entry
+  carries a non-empty `spec_class` provenance string. It is wired to the apply gate
+  (`pseudo.py`), the completion-integrity gate, and Step-9 routing, so a promoted partial validates
+  and completes coherently. Canonical schema: `_components/sentinel-frontmatter.md`
+  ("`observation_gap_exemptions`").
+- **`observation_gap_exemptions` vs `carve_outs` — do not confuse them (this is what loops).**
+  `carve_outs` SOFTENS an *otherwise-`all-passing`* run (a host-artifact like capture-ring jitter) —
+  it does **NOT** promote a `partial`. Stamping a `carve_outs` block on a `partial` leaves it a
+  `partial`, the apply gate correctly refuses, and the loop continues. The PROMOTING block is
+  `observation_gap_exemptions`. If your uncovered rows are documented-untestable and you want the
+  partial to validate, you need `observation_gap_exemptions`, not `carve_outs`.
+- **The narrow authoring carve-out (the ONE exception to "the engine writes sentinels").** The engine
+  cannot make the `spec_class` judgment (which uncovered row maps to which documented-untestable
+  class), so when the engine writes a `result: partial` whose uncovered rows are all
+  documented-untestable, you MAY amend the engine-written `MCP_TEST_RESULTS.md` to add the
+  `observation_gap_exemptions` block — **scoped to that block only**. Do NOT touch `result`,
+  `pass_count`, `total_count`, or `validated_commit` — those stay engine-owned; you are adding the
+  provenance the engine structurally cannot. Every entry MUST cite a real `spec_class` (see below).
+- **The gate's refusals are UNCHANGED — this is not a way to launder a failure.** A `partial` with a
+  genuine MCP-scope failure (`pass_count < total_count`), with no exemptions, or with a
+  provenance-less exemption **still refuses** (the genuine-failure refusal is never relaxed). The
+  block only supplies provenance for a scope that already fully passed; it cannot green a real
+  failure.
+- **Valid `spec_class` values** are the documented-untestable classes in
+  `docs/features/mcp-testing/SPEC.md` — e.g. a control surface with **no registered MCP-tool mirror**
+  ("Cannot Prove"), a behavior **SPEC-locked to the unit/WDIO test tier**, and
+  **`build-artifact-deferred`**: an assertion that IS MCP-driveable in principle but is only reachable
+  against a **packaged production build** absent from the dev session (a `Mismatch`/reachability
+  branch already covered by the unit/Rust tier and pre-classified in PHASES). Cite the specific class
+  per row; a bare/empty `spec_class` does not promote.
 
 ---
 

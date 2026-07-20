@@ -481,6 +481,14 @@ def apply_pseudo(
     # callers run with no marker and no subagent env → the guard is a silent no-op.
     refuse_if_cycle_active("apply_pseudo")
 
+    # GAP 3 (spec-path polymorphism, adhoc-harden-bug-pipeline-gate-verdict-and-
+    # detector-gaps): the pseudo-skill positional is the item DIRECTORY
+    # (spec_path / "FIXED.md"; feature_id = spec_path.name). Accept a SPEC.md FILE
+    # too — the same shape --verify-ledger / --gate-coverage take as a FILE — by
+    # resolving it to its parent dir, so feature_id and every receipt/sentinel
+    # path bind to the item dir instead of the literal "SPEC.md".
+    spec_path = docmodel.normalize_item_dir(spec_path)
+
     # Resolve defaults for optional keyword arguments.
     if date is None:
         date = datetime.date.today().isoformat()
@@ -1167,10 +1175,15 @@ def apply_pseudo(
                 "affordance before completion"
             )
 
-        # --- anti-overfit-design-gate D3 ship seam (STATE-lane SEAM-DEFERRED
-        # diff, PHASES.md Phase 3 Implementation Notes) — the completion-gate
-        # half of the harness-change design gate. Re-derives whether this
-        # item's shipped commits touch a committed control surface
+        # --- anti-overfit-design-gate D3 ship seam — the completion-gate
+        # half of the harness-change design gate. NOTE (adhoc-harden-bug-
+        # pipeline-gate-verdict-and-detector-gaps GAP 1): this seam is WIRED and
+        # LIVE-BLOCKING (the historical "SEAM-DEFERRED" note is retired) — an
+        # in-scope item with a missing/failing/unsigned-gate-weakening
+        # GATE_VERDICT.md is refused here. Its AUTHORING seam is the `gate-verdict`
+        # completion-time dispatch class (orchestrators route it on this refusal)
+        # + the planning-seam `harness-change-gate.md` injection. Re-derives whether
+        # this item's shipped commits touch a committed control surface
         # (docs/gate/control-surfaces.json); a scoped item with a missing,
         # failing, or unsigned-gate-weakening GATE_VERDICT.md refuses with
         # ZERO writes. Out-of-scope / no manifest present -> no-op (in_scope:

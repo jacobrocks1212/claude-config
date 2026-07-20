@@ -1,0 +1,105 @@
+{
+  "_comment": [
+    "compute-state-routing-parity.json — declared allowlist of coupled compute_state routing branches,",
+    "consumed by lazy_parity_audit.py::audit_compute_state_routing_parity (a sibling of",
+    "audit_state_script_parity). It closes the gap that let an UNMIRRORED compute_state routing fix",
+    "(Round 92 research-pending exclusion; Round 93 verification-only bypass conjunct) pass the parity",
+    "audit clean and stall a live run weeks later — the audit historically covered only NAMED CLI/",
+    "call-site literals, never the highest-churn coupled surface: compute_state's routing branches.",
+    "",
+    "SCHEMA (each entry of `branches`):",
+    "  id              — stable kebab-case identifier for the routing branch.",
+    "  signature       — a STRUCTURAL token (verbatim substring) the branch is recognized by inside a",
+    "                    script's compute_state region. Written in CANONICAL (feature / lazy-state.py)",
+    "                    vocab; the audit derives the bug-state.py form via apply_tokens (see below).",
+    "  classification  — 'mirrored'            : signature MUST appear in BOTH scripts' compute_state.",
+    "                    'tabulated-divergence' : signature appears in ONE script only (a justified,",
+    "                                             reviewable, feature/bug-shaped divergence).",
+    "  token_substitutions (optional) — list of {canonical, derived} pairs fed to lazy_parity_audit.",
+    "                    apply_tokens so a mirrored branch whose two scripts legitimately differ on",
+    "                    --feature-id/--bug-id-class vocab (e.g. __mark_complete__ vs __mark_fixed__)",
+    "                    still matches in bug-state.py. Omit when the signature is vocab-neutral.",
+    "  owner           — (tabulated-divergence ONLY) the state script that carries the branch",
+    "                    ('lazy-state.py' or 'bug-state.py'). The audit asserts the signature is present",
+    "                    in the OWNER's compute_state; it does NOT require absence in the other.",
+    "  reason          — (tabulated-divergence ONLY, REQUIRED) why the divergence is correct.",
+    "",
+    "The census is DIVERGENCE-AWARE BY CONSTRUCTION — exactly like the SKILL-pair manifest",
+    "(lazy-parity-manifest.json) tabulates its divergences. To add a NEW justified compute_state",
+    "divergence, add a 'tabulated-divergence' row with an owner + a reason; the audit then tolerates it.",
+    "The allowlist need not enumerate every line of compute_state — it covers the shared routing",
+    "branches whose asymmetry would stall a live run (the two field recurrences + the shared skip",
+    "family). The host-capability FAIL-FAST is additionally covered whole-file by",
+    "audit_state_script_parity surface #5; the routing-branch row here is compute_state-scoped",
+    "defense-in-depth beside its (feature-only) miss-defer divergence."
+  ],
+  "schema_version": 1,
+  "branches": [
+    {
+      "id": "verification-only-workstation-bypass",
+      "signature": "workstation_bypass = not cloud and not plans and verification_only",
+      "classification": "mirrored",
+      "note": "Round 93 recurrence: the Step-7 verification-only bypass conjunct. bug-state.py once kept an over-narrow combined form (requiring _has_any_complete_plan) that the feature side had dropped, producing an infinite write-plan loop the audit never flagged. Must stay identical on both scripts."
+    },
+    {
+      "id": "verification-only-cloud-bypass",
+      "signature": "cloud_bypass = cloud and not plans and _has_any_complete_plan(",
+      "classification": "mirrored",
+      "note": "The cloud half of the same Step-7 bypass gate (cloud can't tick any workstation row, so it needs the explicit Complete-plan receipt). Coupled to the workstation conjunct above."
+    },
+    {
+      "id": "dep-gate-completion-status",
+      "signature": "dep_completion_status",
+      "classification": "mirrored",
+      "note": "queue-dependency-dag D2/D3: the compute_state walk-loop dep-gate holds an item whose dep is not receipt-gated-complete. Enforced on BOTH pipelines."
+    },
+    {
+      "id": "dep-unknown-dependency-failfast",
+      "signature": "format_unknown_dependency_blocker",
+      "classification": "mirrored",
+      "note": "queue-dependency-dag D4: a dangling / Superseded / Won't-fix dep fails fast with a canonical BLOCKED.md (blocker_kind: unknown-dependency) on both pipelines."
+    },
+    {
+      "id": "device-axis-defer",
+      "signature": "DEFERRED_REQUIRES_DEVICE",
+      "classification": "mirrored",
+      "note": "The real-device axis defer/re-open. bug-state.py carries the single device axis in v1, so this routing surface is mirrored."
+    },
+    {
+      "id": "host-capability-failfast",
+      "signature": "format_unknown_host_capability_blocker",
+      "classification": "mirrored",
+      "note": "host-capability-declaration-for-gated-features: an unregistered requires_host: id fails fast on BOTH scripts (a silent defer would starve the item forever). Also asserted whole-file by audit_state_script_parity surface #5 — this row is the compute_state-scoped restatement beside the miss-defer divergence."
+    },
+    {
+      "id": "completion-terminal-dispatch",
+      "signature": "__mark_complete__",
+      "classification": "mirrored",
+      "token_substitutions": [
+        { "canonical": "__mark_complete__", "derived": "__mark_fixed__" }
+      ],
+      "note": "The forward-advancing completion terminal. Feature pipeline routes to __mark_complete__; the bug pipeline's byte-mirror routes to __mark_fixed__ (apply_tokens substitution). Exercises the --feature-id/--bug-id-class vocab bridge."
+    },
+    {
+      "id": "research-pending-exclusion",
+      "signature": "research_pending",
+      "classification": "tabulated-divergence",
+      "owner": "lazy-state.py",
+      "reason": "Round 92 recurrence. The research-pending gate (RESEARCH_PROMPT.md / NEEDS_RESEARCH.md exclusion, --skip-needs-research) is a FEATURE-pipeline mechanic: the bug pipeline has NO research step (bugs are investigated directly via /spec-bug, which produces PHASES.md). bug-state.py accepts strict_research_halt as a parity-ONLY argparse param but has no research routing branch — a correct feature-only divergence, not a mirror-owed gap."
+    },
+    {
+      "id": "host-capability-miss-defer",
+      "signature": "DEFERRED_REQUIRES_HOST",
+      "classification": "tabulated-divergence",
+      "owner": "lazy-state.py",
+      "reason": "host-capability-declaration-for-gated-features: the capability-MISS DEFER (DEFERRED_REQUIRES_HOST.md skip + the host-capability-saturated terminal) is feature-pipeline-shaped queue-selection curation. bug-state.py deliberately does not expose the N-capability miss-defer (it has only the single device axis in v1); only the host-capability FAIL-FAST above is mirrored."
+    },
+    {
+      "id": "fixed-unreconciled-predispatch-divert",
+      "signature": "is_fixed_unreconciled",
+      "classification": "tabulated-divergence",
+      "owner": "bug-state.py",
+      "reason": "adhoc-plan-bug-no-guard-for-fixed-annotated-specs Phase 2: the Step-4 pre-gate that diverts a Concluded SPEC carrying a **Fixed:** out-of-pipeline annotation with no FIXED.md receipt to a fixed-unreconciled BLOCKED.md instead of a plan-bug dispatch. BUG-pipeline-only: the feature pipeline has no out-of-pipeline **Fixed:**-annotation / Concluded-intermediate analog (features route SPEC -> research -> spec-phases, not an investigate->Concluded->plan intermediate with an evidence-header fix annotation), so no lazy-state.py mirror is owed."
+    }
+  ]
+}
