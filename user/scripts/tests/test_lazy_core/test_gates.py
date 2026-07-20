@@ -1138,6 +1138,125 @@ def test_verify_ledger_incomplete_plan_still_fails_regression_guard():
 
 
 # ---------------------------------------------------------------------------
+# Tests: verify_ledger — deliverables_done absent-by-design (PRE-DECOMPOSITION)
+# bug `verify-ledger-deliverables-done-fails-pre-decomposition-feature`
+# ---------------------------------------------------------------------------
+#
+# The Phase-3 carve-out above taught plan_complete to distinguish
+# absent-by-design from incomplete, but the SIBLING deliverables_done check kept
+# failing unconditionally on a missing PHASES.md. A pre-decomposition feature
+# (a /realign-spec or /spec cycle on a scope stub) cannot HAVE a PHASES.md, so
+# the check failed with `rows: []` / `total: 0` — zero offending deliverables —
+# and was unreconcilable without fabricating a PHASES.md (a scope violation).
+#
+# Test (a) is the pre-decomposition pass, (b) pins the diagnostic so the
+# carve-out is never silent, and (c) is the regression guard proving the
+# carve-out is NOT a blanket "absent → pass".
+
+
+def test_verify_ledger_pre_decomposition_deliverables_not_applicable():
+    """(a) Pre-decomposition feature: NO PHASES.md and only a realign plan (no
+    implementation plan) → deliverables_done True (not-applicable) and ok True.
+
+    This is the exact live shape observed on `inspector-track-dashboard`
+    (2026-07-20): SPEC.md + plans/realign-*.md, no PHASES.md. plan_complete
+    already passed via the Phase-3 carve-out; deliverables_done must agree
+    rather than hard-fail an otherwise-clean cycle."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "SPEC.md").write_text("# Scope stub\n", encoding="utf-8")
+        plans = spec_dir / "plans"
+        plans.mkdir(parents=True)
+        # Realign plan only — find_implementation_plans / _implementation_plans_exist
+        # both skip realign-*.md, so there is NO implementation plan.
+        (plans / "realign-2026-07-20.md").write_text(
+            "---\nkind: realign-plan\nstatus: Complete\n---\n\n# Realign\n",
+            encoding="utf-8",
+        )
+        # Deliberately NO PHASES.md — the feature has not been decomposed.
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir)  # feature-level
+    assert result["checks"]["deliverables_done"] is True, (
+        f"pre-decomposition feature must be deliverables_done=True "
+        f"(not-applicable), not a hard fail: {result['checks']}"
+    )
+    assert result["ok"] is True, (
+        f"a genuinely clean pre-decomposition cycle must verify ok=True: {result}"
+    )
+    assert result["failing_detail"] == {}, result["failing_detail"]
+
+
+def test_verify_ledger_pre_decomposition_reports_not_applicable_source():
+    """(b) The pre-decomposition carve-out is never SILENT: deliverables_source
+    names the not-applicable path so operators, retro grading and incident
+    mining can see it fired."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "SPEC.md").write_text("# Scope stub\n", encoding="utf-8")
+        # No plans/ dir at all and no PHASES.md — the purest pre-decomposition
+        # shape (a feature that has only just been spec'd).
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir)  # feature-level
+    assert result["deliverables_source"].startswith("not-applicable"), (
+        f"the carve-out must announce itself via deliverables_source: {result}"
+    )
+    assert result["checks"]["deliverables_done"] is True, result["checks"]
+
+
+def test_verify_ledger_missing_phases_with_impl_plan_still_fails():
+    """(c) Regression guard: PHASES.md absent but an IMPLEMENTATION plan exists
+    → deliverables_done stays False.
+
+    Proves the carve-out is narrowly gated on `_implementation_plans_exist` and
+    is not a blanket "no PHASES.md → pass". A planned feature whose PHASES.md is
+    missing is genuinely 'no evidence phases were completed' and must keep
+    failing — otherwise this would be a gate weakening."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, _origin = _make_git_repo_with_origin(td)
+        spec_dir = repo_root / "docs" / "features" / "my-feat"
+        spec_dir.mkdir(parents=True)
+        plans = spec_dir / "plans"
+        plans.mkdir(parents=True)
+        # A REAL implementation plan (Complete, so plan_complete passes and
+        # deliverables_done is unambiguously the check under test).
+        (plans / "plan-phase-1.md").write_text(
+            "---\n"
+            "kind: implementation-plan\n"
+            "status: Complete\n"
+            "phases:\n"
+            "  - 1\n"
+            "---\n\n"
+            "# Implementation Plan\n",
+            encoding="utf-8",
+        )
+        # Deliberately NO PHASES.md despite the feature having been planned.
+        _commit_and_push_spec(repo_root)
+        result = lazy_core.verify_ledger(repo_root, spec_dir)  # feature-level
+    assert result["checks"]["plan_complete"] is True, (
+        f"fixture sanity — the Complete plan should pass plan_complete: "
+        f"{result['checks']}"
+    )
+    assert result["checks"]["deliverables_done"] is False, (
+        f"a PLANNED feature with a missing PHASES.md must still fail "
+        f"deliverables_done: {result['checks']}"
+    )
+    assert result["failing_check"] == "deliverables_done", result["failing_check"]
+    assert result["failing_detail"]["deliverables_done"]["note"] == "PHASES.md absent", (
+        f"the regression path keeps its original diagnostic: "
+        f"{result['failing_detail']}"
+    )
+
+
+
+
+# ---------------------------------------------------------------------------
 # Tests: verify_ledger `failing_detail` (completion-gate-refusal-opacity) —
 # every False check names the offending items, not just the boolean.
 # ---------------------------------------------------------------------------
@@ -3278,6 +3397,9 @@ _TESTS = [
     ("test_verify_ledger_plan_less_feature_absent_by_design_passes", test_verify_ledger_plan_less_feature_absent_by_design_passes),
     ("test_verify_ledger_realign_only_feature_absent_by_design_passes", test_verify_ledger_realign_only_feature_absent_by_design_passes),
     ("test_verify_ledger_incomplete_plan_still_fails_regression_guard", test_verify_ledger_incomplete_plan_still_fails_regression_guard),
+    ("test_verify_ledger_pre_decomposition_deliverables_not_applicable", test_verify_ledger_pre_decomposition_deliverables_not_applicable),
+    ("test_verify_ledger_pre_decomposition_reports_not_applicable_source", test_verify_ledger_pre_decomposition_reports_not_applicable_source),
+    ("test_verify_ledger_missing_phases_with_impl_plan_still_fails", test_verify_ledger_missing_phases_with_impl_plan_still_fails),
     ("test_verify_ledger_failing_detail_empty_when_ok", test_verify_ledger_failing_detail_empty_when_ok),
     ("test_verify_ledger_failing_detail_clean_tree_names_dirty_files", test_verify_ledger_failing_detail_clean_tree_names_dirty_files),
     ("test_verify_ledger_failing_detail_head_matches_origin_ahead_behind", test_verify_ledger_failing_detail_head_matches_origin_ahead_behind),

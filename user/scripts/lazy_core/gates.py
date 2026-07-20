@@ -1612,10 +1612,23 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
           ``deliverables_source: "phases-fallback (legacy plan — no per-WU
           checkboxes)"`` so the operator knows the legacy path fired. Legacy plans
           are NOT hard-failed.
-      ``plan_path=None`` → byte-for-byte the original feature-level behavior
-      (the whole feature's PHASES.md via ``count_deliverables`` +
-      ``remaining_unchecked_are_verification_only``). If PHASES.md does not exist
-      at feature level, returns False (no evidence phases were completed).
+      ``plan_path=None`` → the feature-level behavior (the whole feature's
+      PHASES.md via ``count_deliverables`` +
+      ``remaining_unchecked_are_verification_only``).
+      ABSENT-BY-DESIGN (bug
+      ``verify-ledger-deliverables-done-fails-pre-decomposition-feature``,
+      2026-07-20 — mirrors the check-3 carve-out above): a MISSING PHASES.md is
+      split by whether the feature was ever decomposed.
+        - No PHASES.md AND no implementation plan on disk
+          (``_implementation_plans_exist`` is False) → NOT-APPLICABLE, so
+          deliverables_done is True (a diagnostic notes it fired and
+          ``deliverables_source`` becomes ``"not-applicable (pre-decomposition
+          …)"``). A /realign-spec, /spec or research-ingest cycle runs BEFORE
+          decomposition, so PHASES.md cannot exist yet; failing there was
+          unreconcilable without fabricating a PHASES.md. This is the exact
+          feature state for which check 3 already returns plan_complete=True.
+        - No PHASES.md but an implementation plan DOES exist → still False (no
+          evidence phases were completed — the regression guard).
 
     Return shape:
     ```
@@ -1632,6 +1645,10 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
                                      #   "plan-wu-checkboxes"       — new machine record
                                      #   "phases-fallback (…)"      — legacy plan path fired
                                      #   "phases-feature-level"     — no plan_path (whole feature)
+                                     #   "not-applicable (pre-decomposition …)"
+                                     #                              — no PHASES.md and no
+                                     #                                implementation plan; the
+                                     #                                check does not apply yet
         "failing_detail": dict,      # diagnostic (additive, never gates) — the
                                      # offending items for EVERY False check,
                                      # keyed by check name; {} when ok is True
@@ -1829,8 +1846,50 @@ def verify_ledger(repo_root: Path, spec_path: Path, plan_path: Path | None = Non
     else:
         # Feature-level (no plan_path): the whole feature's PHASES.md.
         if not phases_file.exists():
-            # No PHASES.md means we have no evidence of phases being completed.
-            deliverables_done = False
+            # --- absent-by-design (pre-decomposition), mirroring check 3 ---
+            # A missing PHASES.md has TWO very different meanings, and collapsing
+            # them into False hard-failed every pre-decomposition cycle
+            # (bug `verify-ledger-deliverables-done-fails-pre-decomposition-feature`,
+            # observed live 2026-07-20 on `inspector-track-dashboard`):
+            #   (a) NOT-APPLICABLE — the feature has never been decomposed, so
+            #       PHASES.md *cannot* exist yet. A /realign-spec, /spec or
+            #       research-ingest cycle runs BEFORE decomposition; there are no
+            #       phases to have evidence about. The `failing_detail` for this
+            #       case was self-indicting: `rows: []`, `total: 0` — zero
+            #       offending deliverables, failing purely on the surface's
+            #       absence. Worse, it was UNRECONCILABLE: the turn-end TERMINAL
+            #       VERIFY GATE demands "re-run until ok:true", but the only way
+            #       to satisfy it is to author a PHASES.md — decomposition work
+            #       the cycle was not dispatched to do and must not fabricate.
+            #   (b) INCOMPLETE / anomalous — the feature WAS planned (an
+            #       implementation plan is on disk) but its PHASES.md is missing.
+            #       That is genuinely "no evidence phases were completed" and
+            #       must keep failing.
+            # `_implementation_plans_exist` is exactly the discriminator (it
+            # excludes realign-*/retro-* plans), and check 3 twenty lines above
+            # ALREADY uses it to pass `plan_complete` as absent-by-design for the
+            # identical feature state (harness-hardening-retro-fixes Phase 3).
+            # That Phase-3 lesson was simply never applied to this sibling check,
+            # so the two checks disagreed about the SAME feature. This narrows
+            # the carve-out to the (a) case only — every other state, including
+            # the plan-scoped branch above, is byte-identical to before — and
+            # announces itself via both a `_diag` breadcrumb and a distinct
+            # `deliverables_source` value, so it is never a silent pass.
+            if not _implementation_plans_exist(spec_path):
+                deliverables_done = True
+                deliverables_source = (
+                    "not-applicable (pre-decomposition — no PHASES.md, "
+                    "no implementation plan)"
+                )
+                _diag(
+                    "deliverables_done: no PHASES.md and no implementation plan "
+                    "— feature not yet decomposed (absent-by-design)"
+                )
+            else:
+                # An implementation plan exists but PHASES.md does not: no
+                # evidence of phases being completed. Regression guard — this is
+                # the pre-existing behavior and stays False.
+                deliverables_done = False
         else:
             phases_text = phases_file.read_text(encoding="utf-8")
             unchecked, _checked = count_deliverables(phases_text)
