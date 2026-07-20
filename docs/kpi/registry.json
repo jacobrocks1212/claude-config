@@ -510,10 +510,10 @@
       "unit": "bytes",
       "direction": "down-is-good",
       "baseline": {
-        "value": null,
-        "captured_at": null,
+        "value": 20843.0,
+        "captured_at": "2026-07-19",
         "window": "30d",
-        "provenance": "pending"
+        "provenance": "measured"
       },
       "band": null,
       "review_by": "2026-10-19",

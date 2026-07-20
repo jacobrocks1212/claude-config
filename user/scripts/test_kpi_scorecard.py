@@ -1484,6 +1484,34 @@ class TestCaptureBaseline:
         proc = self._capture(tmp_path, "no-such-kpi", env)
         assert proc.returncode == 1
 
+    def test_captures_cycle_prompt_assembled_bytes_measured(self, tmp_path):
+        # cycle-prompt-deflation Phase 1: this `repo-static-scan` selector
+        # reuses skill-size-ratchet.py's assembled-profile measurement, which
+        # binds the emitter to a canonical repo root internally (repo-path-
+        # independent by construction) — so it measures the REAL installed
+        # cycle-prompt template even though `--repo-root` here is a hermetic
+        # tmp_path fixture with no docs/features tree of its own.
+        row = _row(id="cycle-prompt-assembled-bytes", system="harness",
+                   unit="bytes", direction="down-is-good",
+                   signal={"source": "repo-static-scan",
+                           "selector": "cycle-prompt-assembled-bytes"},
+                   baseline={"value": None, "captured_at": None,
+                             "window": "30d", "provenance": "pending"},
+                   band=None)
+        _write_registry(tmp_path, _registry(row))
+        env = dict(os.environ, LAZY_STATE_DIR=str(tmp_path / "state"))
+        proc = self._capture(tmp_path, "cycle-prompt-assembled-bytes", env)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        reg = ksc.load_registry(
+            tmp_path / "docs" / "kpi" / "registry.json")
+        b = reg["kpis"][0]["baseline"]
+        assert b["provenance"] == "measured"
+        assert isinstance(b["value"], (int, float))
+        assert b["value"] > 0  # a real byte count, never fabricated / never 0
+        assert b["captured_at"] == datetime.date.today().isoformat()
+        errors, _ = ksc.lint_registry(reg, today=datetime.date.today())
+        assert errors == []
+
 
 # ---------------------------------------------------------------------------
 # kpi-drafted-row-never-promoted-to-registry — `--promote-drafted-rows`

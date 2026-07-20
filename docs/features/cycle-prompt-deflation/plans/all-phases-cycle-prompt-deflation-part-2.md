@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: cycle-prompt-deflation
-status: In-progress
+status: Complete
 created: 2026-07-19
 complexity: complex
 phases: [2, 3, 4]
@@ -86,7 +86,7 @@ Where this plan's repo uses non-default gates or component paths (a harness-conf
 
 - [x] WU-1 — Deflate `turn-end` + `workstation-dispatch` + `hard-contract` (Phase 2)
 - [x] WU-2 — Deflate remaining boilerplate + evidence-backed scope-tightening (Phase 3)
-- [ ] WU-3 — Capture measured KPI baseline + confirm gate wiring (Phase 4)
+- [x] WU-3 — Capture measured KPI baseline + confirm gate wiring (Phase 4)
 
 ### Phase: cycle-prompt-deflation P2 — Trim the top-3 boilerplate sections
 

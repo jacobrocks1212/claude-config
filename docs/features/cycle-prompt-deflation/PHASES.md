@@ -146,13 +146,15 @@ Phase-level dependencies on completed upstream features (extracted per /spec-pha
 
 ### Phase 4: KPI measured baseline + gate-wiring confirmation
 
+**Status:** Complete
+
 **Scope:** Capture the friction KPI measured baseline from the final post-Phase-3 assembled census, and confirm the assembled ratchet is wired into the lint battery and the gate-battery so re-bloat is blocked going forward.
 
 **Deliverables:**
-- [ ] `python3 user/scripts/kpi-scorecard.py --capture-baseline cycle-prompt-assembled-bytes` run — stamps `provenance: measured` + the measured value + `captured_at` from the current census into `docs/kpi/registry.json` (the sole computed-field writer; refuses on no-data, never fabricates).
-- [ ] Confirm `lint-skills.py --check-skill-size` and the `gate-battery.json` battery both exercise the assembled-profile ratchet (add the flag to the battery's `lint-skills` cmd if it is not already reached).
-- [ ] `kpi-scorecard.py --lint` exits 0 with the now-measured row; `kpi-scorecard.py` renders `SCORECARD.md` with the new KPI (byte-stable).
-- [ ] Tests: `--capture-baseline` writes a measured provenance from a fixture census; the full lint battery / gate-battery is green end-to-end.
+- [x] `python3 user/scripts/kpi-scorecard.py --capture-baseline cycle-prompt-assembled-bytes` run — stamps `provenance: measured` + the measured value (20843 B) + `captured_at` (2026-07-19) into `docs/kpi/registry.json` (the sole computed-field writer; refuses on no-data, never fabricates).
+- [x] Confirm `lint-skills.py --check-skill-size` and the `gate-battery.json` battery both exercise the assembled-profile ratchet — CONFIRMED already wired (Phase 1 WU-3: battery `lint-skills` cmd = `lint-skills.py --check-skill-size`); no gap, no change needed.
+- [x] `kpi-scorecard.py --lint` exits 0 with the now-measured row; `kpi-scorecard.py` renders `SCORECARD.md` with the new KPI (byte-stable).
+- [x] Tests: `--capture-baseline` writes a measured provenance from a fixture census (`test_captures_cycle_prompt_assembled_bytes_measured`); the full lint battery / gate-battery is green end-to-end.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/kpi-scorecard.py --lint` exits 0 with `cycle-prompt-assembled-bytes` at `provenance: measured`, AND `python3 user/scripts/gate-battery.py` (or the invariant battery) returns `RESULT=PASS`. Runnable in-cycle.
 

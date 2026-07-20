@@ -126,3 +126,28 @@ scope-tightening/section removal the conservative default declined.
 `skill-size-ratchet.py --check` exit 0 at the new floor; `generate-coupled-skills.py
 --check` exit 0 (no `--write` needed — the emitter's OUTPUT template does not appear
 in the committed coupled SKILL.md files).
+
+## Phase 4 — KPI measured baseline + gate-wiring confirmation (2026-07-19)
+
+**Work completed (Part 2, WU-3):**
+- `kpi-scorecard.py --capture-baseline cycle-prompt-assembled-bytes` → stamped
+  `provenance: measured`, `value: 20843` (bytes — the max assembled profile after
+  Phase 3), `captured_at: 2026-07-19` into `docs/kpi/registry.json` (script-owned).
+- Gate wiring CONFIRMED already complete (no gap): `.claude/skill-config/gate-battery.json`
+  `lint-skills` gate cmd is `python3 user/scripts/lint-skills.py --check-skill-size`
+  (Phase 1 WU-3 wired it), and `--check-skill-size` runs `check_profiles` — so the
+  assembled-profile ratchet is exercised on every battery pass. No edit needed.
+- Rendered `docs/kpi/SCORECARD.md` (byte-stable); `kpi-scorecard.py --lint` exit 0
+  with the row now measured.
+- Test added (Sonnet sub-subagent, test-first characterization; reviewed on disk):
+  `test_kpi_scorecard.py::TestCaptureBaseline::test_captures_cycle_prompt_assembled_bytes_measured`
+  — hermetic fixture registry, asserts measured provenance + positive value +
+  today captured_at + lint-clean. kpi test file 141 passed.
+
+**Feature-level result:** all three deflation phases (2–4) landed. Cumulative
+assembled-cycle-prompt reduction 80,876 B / 19.8% across the 20 dispatchable
+profiles; the assembled ratchet now blocks re-bloat and the KPI baseline is
+measured. This is a `MCP runtime: not-required` feature — the validation tail is
+deterministic gates (already green); no live-runtime rows are pending. SPEC.md
+**Status:** and COMPLETED.md remain gate-owned (`__mark_complete__`); the state
+machine routes to /mcp-test (SKIP grant) → mark-complete next.

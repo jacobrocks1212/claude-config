@@ -14,40 +14,40 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Runaway containment trip rate | 3644/30d | pending | — | PENDING-BASELINE |
+| Runaway containment trip rate | 3658/30d | pending | — | PENDING-BASELINE |
 
 ## halt-handling
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Halt dwell time p50 | 20960.2s (30d) | pending | — | PENDING-BASELINE |
+| Halt dwell time p50 | 10862.4s (30d) | pending | — | PENDING-BASELINE |
 
 ## pipeline-efficiency
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Cycles per completion | 6.05 (30d) | pending | — | PENDING-BASELINE |
+| Cycles per completion | 7.06 (30d) | pending | — | PENDING-BASELINE |
 | MCP-validation round trips per feature | — | pending | — | NO-DATA |
 
 ## harness-canary
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Canary trip precision | 100% (90d) | pending | — | PENDING-BASELINE |
+| Canary trip precision | 0% (90d) | pending | — | PENDING-BASELINE |
 | Canary closure latency p50 | 4 (90d) | pending | — | PENDING-BASELINE |
 
 ## skill-config
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Failed Reads / dangling references on .claude/skill-config/ paths `[all]` | 1 (30d) | pending | — | PENDING-BASELINE |
+| Failed Reads / dangling references on .claude/skill-config/ paths `[all]` | 3 (30d) | pending | — | PENDING-BASELINE |
 
 ## efficacy-loop
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
 | Conclusive efficacy verdicts produced | 0/90d | pending | — | PENDING-BASELINE |
-| Confounded-verdict ratio | 0% (90d) | pending | — | PENDING-BASELINE |
+| Confounded-verdict ratio | 10.4% (90d) | pending | — | PENDING-BASELINE |
 
 ## anti-overfit-gate
 
@@ -62,27 +62,39 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Age in days of the oldest open docs/bugs/ item `[claude-config]` | 8 (1d) | 17 (measured 2026-07-11) | — | PENDING-BASELINE |
-| Count of docs/bugs/ items at Status: Concluded (investigated, never fixed) `[claude-config]` | 32 (1d) | 23 (measured 2026-07-11) | — | PENDING-BASELINE |
+| Age in days of the oldest open docs/bugs/ item `[claude-config]` | 9 (1d) | 17 (measured 2026-07-11) | — | PENDING-BASELINE |
+| Count of docs/bugs/ items at Status: Concluded (investigated, never fixed) `[claude-config]` | 11 (1d) | 23 (measured 2026-07-11) | — | PENDING-BASELINE |
 
 ## lazy-core
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Monolith-induced drag on lazy_core interventions `[claude-config]` | 1 (30d) | 1 (measured 2026-07-13) | — | PENDING-BASELINE |
+| Monolith-induced drag on lazy_core interventions `[claude-config]` | 3 (30d) | 1 (measured 2026-07-13) | — | PENDING-BASELINE |
 
 ## generalized-runner
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
 | Raw heavy-gate invocation deny recurrence (AlgoBooth) `[algobooth]` | 0/30d | pending | — | PENDING-BASELINE |
-| Premature turn-end on in-flight gate batteries (non-Cognito) `[claude-config]` | 1/30d | pending | — | PENDING-BASELINE |
+| Premature turn-end on in-flight gate batteries (non-Cognito) `[claude-config]` | 3/30d | pending | — | PENDING-BASELINE |
 
 ## subagent-wedge-backstop
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Wedged-subagent pipeline-strand recurrence `[claude-config]` | 1/30d | pending | — | PENDING-BASELINE |
+| Wedged-subagent pipeline-strand recurrence `[claude-config]` | 3/30d | pending | — | PENDING-BASELINE |
+
+## hook-plane
+
+| KPI | current | baseline | band (warn/breach) | status |
+|-----|---------|----------|--------------------|--------|
+| Hook-plane duplicated scaffolding lines | 689 (1d) | 467 (retro-derived 2026-07-11) | — | PENDING-BASELINE |
+
+## cycle-prompt-deflation
+
+| KPI | current | baseline | band (warn/breach) | status |
+|-----|---------|----------|--------------------|--------|
+| Max assembled cycle-prompt bytes across dispatchable profiles `[claude-config]` | 20843 (30d) | 20843 (measured 2026-07-19) | — | PENDING-BASELINE |
 
 ## Regressions
 
@@ -94,7 +106,7 @@
 
 ## Canary health
 
-- 16 canaries open, oldest 1d, 0 will no-data-close within 7d
+- 26 canaries open, oldest 1d, 0 will no-data-close within 7d
 
 ## Notes
 
