@@ -7,6 +7,10 @@
   This matches the repo's existing commit history and the `/commit` skill convention.
 - **Commit cadence** — commit after each completed plan part / phase (the lazy pipeline expects a
   clean tree between cycles). Keep commits scoped to one logical change.
+- **Commit + push when done, autonomously (HARD REQUIREMENT)** — when a unit of work in this repo is
+  DONE, commit it AND push it in the same turn WITHOUT waiting for the operator to instruct a commit
+  or push. This OVERRIDES the default "commit/push only when the user asks" behavior for
+  claude-config specifically.
 - **Push — ALWAYS keep the remote in sync (HARD REQUIREMENT).** claude-config is a personal config
   repo, not a work repo (the `block-work-repo-git-push` hook does not apply here), so its
   `origin/main` MUST NOT lag local `main`: **`git push` after every commit** (or immediately after a
