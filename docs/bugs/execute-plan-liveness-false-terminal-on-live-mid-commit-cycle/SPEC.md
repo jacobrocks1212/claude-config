@@ -1,6 +1,8 @@
 # Bug: execute-plan-liveness discriminator mis-verdicts a LIVE mid-gate-commit cycle as `terminal` (plan-`Complete` branch has no liveness gate → premature recovery + one-writer collision)
 
-**Status:** Concluded
+**Status:** Fixed
+**Fixed:** 2026-07-20
+**Fix commit:** c297663f
 **Reported:** 2026-07-20
 **Pipeline:** claude-config harness (lazy-batch/lazy-bug-batch orchestrator — Gap-2 pause-vs-terminal discriminator)
 **Origin:** harden-harness round (observed-friction), item in flight `inspector-track-dashboard` (part-2)
