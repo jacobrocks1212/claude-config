@@ -112,14 +112,16 @@ Phase-level dependencies on completed upstream features (extracted per /spec-pha
 
 ### Phase 3: Trim remaining boilerplate + evidence-backed scope-tightening
 
+**Status:** Complete
+
 **Scope:** Deflate the remaining `skills=all` boilerplate — `d7`, `env-dialect-core`, `env-dialect-windows` (hosts=windows), `status-honesty`, `terminal-stop`, `task` — to terse rules; then narrow any `skills=all` selector *proven safe* to exclude a cycle class (candidate: `workstation-dispatch` for cycles that never fan out). Each narrowing carries an explicit safety justification; the conservative default is trim-only (no selector change) for any section whose exclusion safety is uncertain. Lock in the new floor.
 
 **Deliverables:**
-- [ ] `d7`, `env-dialect-core`, `env-dialect-windows`, `status-honesty`, `terminal-stop`, `task` deflated to terse rules; `@section` boundaries + marker literals preserved (esp. the `env-dialect-*` `hosts=` attributes and terminal-stop C4).
-- [ ] Any `skills=` selector narrowing carries a per-section written safety justification (the excluded cycle class genuinely does not consume the section's rules) in `SEMANTIC_DIFF_PHASE3.md`; uncertain sections stay `skills=all` (trim-only).
-- [ ] `generate-coupled-skills.py --check` exits 0; `emit_cycle_prompt` assembles every profile without residue error; every profile's assembled bytes ≤ its ceiling and moving toward the ~9–10 KB working target.
-- [ ] New floor locked via `skill-size-ratchet.py --lock-in`.
-- [ ] Tests: assembly/residue green for all profiles; a narrowed section is asserted absent from the excluded cycle's assembled prompt AND present in the cycles that DO consume it (the scope-tightening regression guard).
+- [x] `d7`, `env-dialect-core`, `env-dialect-windows`, `status-honesty`, `terminal-stop`, `task` deflated to terse rules; `@section` boundaries + marker literals preserved (esp. the `env-dialect-*` `hosts=` attributes and terminal-stop C4). (+ `cloud-override` deflated for cloud-profile parity — the more-complete path.)
+- [x] Any `skills=` selector narrowing carries a per-section written safety justification (the excluded cycle class genuinely does not consume the section's rules) in `SEMANTIC_DIFF_PHASE3.md`; uncertain sections stay `skills=all` (trim-only). (Decision: trim-only, NO narrowing — the one candidate is not provably safe under the allowlist grammar; justified in Part B.)
+- [x] `generate-coupled-skills.py --check` exits 0; `emit_cycle_prompt` assembles every profile without residue error; every profile's assembled bytes ≤ its ceiling and moving toward the ~9–10 KB working target. (19.8% cumulative reduction; smallest profile ~12.7 KB — directional target, not reached with trim-only.)
+- [x] New floor locked via `skill-size-ratchet.py --lock-in`.
+- [x] Tests: assembly/residue green for all profiles; a narrowed section is asserted absent from the excluded cycle's assembled prompt AND present in the cycles that DO consume it (the scope-tightening regression guard). (No narrowing → the existing `test_dispatch.py` binding-matrix presence/absence guard for `workstation-dispatch` stands.)
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/skill-size-ratchet.py --check` exits 0 at the Phase-3 floor AND `python3 user/scripts/generate-coupled-skills.py --check` exits 0 AND a test asserts each narrowed selector's section is present/absent in exactly the right cycle classes. All runnable in-cycle.
 

@@ -102,14 +102,14 @@ Action for this cycle:
 Operating mode: batch
   - Do NOT ask interactive questions. Skills accept --batch and either
     auto-accept a recommended option or write NEEDS_INPUT.md and halt.
-  - If the skill writes NEEDS_INPUT.md, do NOT attempt to resolve the
-    decision — that halt is for a human.
+  - If the skill writes NEEDS_INPUT.md, do NOT attempt to resolve it — that halt
+    is for a human.
 
 <!-- @section task pipelines=feature,bug modes=cloud skills=all -->
 Run exactly one skill, then stop. You are one worker in the {pipeline_phrase},
-running in a CLOUD Linux session. This container has: no Tauri desktop runtime,
-no MCP HTTP server, no audio device, no Windows-only tooling, and NO persistent
-state (it is reclaimed after the session).
+running in a CLOUD Linux session: no Tauri desktop runtime, no MCP HTTP server,
+no audio device, no Windows-only tooling, and NO persistent state (reclaimed
+after the session).
 
 {item_label}: {item_name} ({item_id})
 Working directory: {cwd}
@@ -122,65 +122,57 @@ Operating mode: batch
   - Do NOT ask interactive questions. Skills accept --batch and either
     auto-accept a recommended option or write NEEDS_INPUT.md and halt.
   - If the skill writes NEEDS_INPUT.md, do NOT attempt to resolve the decision.
-  - The state script (--cloud variant) already guaranteed this skill is safe
-    to run in cloud (genuine cloud-runtime limits are handled per the CLOUD
-    OVERRIDE below).
+  - The state script (--cloud variant) already guaranteed this skill is safe to
+    run in cloud (genuine cloud-runtime limits are handled per the CLOUD OVERRIDE
+    below).
 
 <!-- @section env-dialect-core pipelines=feature,bug modes=workstation,cloud skills=all -->
 Environment dialect (core — every host, {pipeline_phrase}):
   - Cross-process handoff: pipe data via STDIN, never a shared temp file — a
     Bash-written path is not guaranteed readable by a separately-invoked
-    interpreter (dialect mismatch between the shell and the runtime that
-    reads it). Prefer `<producer> | python3 -c "import sys, json; d =
-    json.load(sys.stdin)"` over writing then re-`open()`-ing a temp file.
+    interpreter (shell↔runtime dialect mismatch). Prefer `<producer> | python3 -c
+    "import sys, json; d = json.load(sys.stdin)"` over write-then-re-`open()`.
   - Probe the run marker with `python3 ~/.claude/scripts/lazy-state.py
-    --repo-root {cwd} --marker-status` (bug pipeline: `bug-state.py`) — it
-    ALWAYS exits 0 and prints `{"present": bool, ...}`, absent marker,
-    corrupt JSON, or no state dir alike. Never hand-roll a
-    `cat <marker> 2>/dev/null | python -c "json.load(sys.stdin)"` idiom — an
-    absent file raises on empty stdin.
-  - Read PHASES.md ONLY through
-    `python3 ~/.claude/scripts/phases-slice.py {spec_path} [--phase <id>]` —
-    never a whole-file Read. A mature feature's PHASES.md routinely exceeds
-    the Read tool's cap; the slicer returns the phase index plus only the
-    phase(s) you name.
+    --repo-root {cwd} --marker-status` (bug pipeline: `bug-state.py`) — it ALWAYS
+    exits 0 and prints `{"present": bool, ...}` (absent marker / corrupt JSON / no
+    state dir alike). Never hand-roll a `cat <marker> | python -c ...` idiom (an
+    absent file raises on empty stdin).
+  - Read PHASES.md ONLY through `python3 ~/.claude/scripts/phases-slice.py
+    {spec_path} [--phase <id>]` — never a whole-file Read (a mature PHASES.md
+    exceeds the Read cap; the slicer returns the index + only the phase(s) named).
 
 <!-- @section env-dialect-windows pipelines=feature,bug modes=workstation skills=all hosts=windows -->
 Environment dialect (this host: Windows / Git Bash):
   - No trailing `\` before a closing quote in a Windows path — `"C:\...\dir\"`
-    reads as an unterminated string to Git Bash (the `\"` escapes the quote,
-    so the shell waits for EOF). Use forward slashes (`"C:/.../dir"`) or make
-    sure the path's last character before the quote is never `\`.
-  - No `/mnt/c/...` — that is the WSL path dialect. This Bash tool is Git
-    Bash on native Windows, not WSL; use the native `C:/...` path (or a
-    relative path from {cwd}).
-  - Import `lazy_core`/state-script modules via a `$HOME`-anchored
-    `sys.path` (`sys.path.insert(0, os.path.expanduser("~/.claude/scripts"))`
-    or run the script by its `~/.claude/scripts/<name>.py` path directly) —
-    never a hardcoded `/root/...` or WSL-guessed absolute path.
+    reads as an unterminated string to Git Bash (the `\"` escapes the quote). Use
+    forward slashes (`"C:/.../dir"`) or ensure the last char before the quote is
+    never `\`.
+  - No `/mnt/c/...` (WSL dialect) — this Bash tool is Git Bash on native Windows,
+    not WSL; use the native `C:/...` path (or a relative path from {cwd}).
+  - Import `lazy_core`/state-script modules via a `$HOME`-anchored `sys.path`
+    (`sys.path.insert(0, os.path.expanduser("~/.claude/scripts"))`) or run the
+    script by its `~/.claude/scripts/<name>.py` path — never a hardcoded
+    `/root/...` or WSL-guessed absolute path.
 
 <!-- @section d7 pipelines=feature,bug modes=workstation,cloud skills=all -->
 Completeness-first (D7 — standing policy, pre-authorized, both modes):
   Before writing NEEDS_INPUT.md for ANY decision, apply the scope test: would
-  the end-state PRODUCT behavior differ between the options? If NO — they
-  differ only in effort / sizing / sequencing / completeness — it is
-  scope-class: take the MOST COMPLETE path IN-CYCLE and disclose it, one line
-  per application:
+  end-state PRODUCT behavior differ between the options? If NO (they differ only
+  in effort / sizing / sequencing / completeness) it is scope-class — take the
+  MOST COMPLETE path IN-CYCLE and disclose it, one line per application:
     ⚖ policy: <decision, ≤8 words> → <chosen path>
   Silently descoping WITHOUT the ⚖ line is the violation (not a missing
   question). Reserve NEEDS_INPUT.md for PRODUCT-class decisions (options diverge
   in user-visible behavior, UX, API, or data semantics, or conflict with a SPEC
   Locked Decision). Full policy: ~/.claude/skills/_components/completeness-policy.md.
 
-  SPIN-OFF LEGS (when this cycle spins off a bug doc or an --enqueue-adhoc
-  feature for discovered out-of-scope work): both directions are mandatory.
-  (1) Add a REVERSE-REFERENCE in the ORIGIN item's doc naming the spun-off
-  id/path — the PHASES.md Implementation Notes, or the blocker sentinel's
-  resolution body if the spin-off resolved a blocker. (2) REPORT the spin-off
-  in your return summary (its id + a one-line reason) so the orchestrator fires
-  a PushNotification ("spun off <id> — <reason>") and adds the D7 digest entry.
-  Cross-references in BOTH directions are the contract — the new doc names its
-  origin; the origin names the spin-off.
+  SPIN-OFF LEGS (spinning off a bug doc / --enqueue-adhoc feature for discovered
+  out-of-scope work): BOTH directions are mandatory. (1) REVERSE-REFERENCE in the
+  ORIGIN item's doc naming the spun-off id/path (the PHASES.md Implementation
+  Notes, or the blocker sentinel's resolution body). (2) REPORT the spin-off in
+  your summary (id + one-line reason) so the orchestrator fires a
+  PushNotification + D7 digest entry. Cross-references in BOTH directions are the
+  contract — the new doc names its origin; the origin names the spin-off.
 
 <!-- @section park-divergence-grade pipelines=feature,bug modes=workstation,cloud skills=all park=park -->
 Park-mode divergence self-grade (park-provisional-acceptance — PRODUCER duty):
@@ -264,17 +256,15 @@ Sub-subagent dispatch policy (WORKSTATION DISPATCH — LOAD-BEARING):
 <!-- @section cloud-override pipelines=feature,bug modes=cloud skills=all -->
 Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
   Do NOT use the `Agent` tool — sub-subagent dispatch is FORBIDDEN in a cloud
-  cycle (policy; do not rely on the tool being absent or on a hook denying it).
-  Perform ALL skill-mandated sub-subagent work (test-agent,
-  impl-agent, research subagents A–G, etc.) INLINE with Read / Edit / Write. The
-  dispatch-level prohibition (in addition to the TERMINAL STOP categorical ban on
-  pipeline ops): never invoke another /lazy or /lazy-batch. Do NOT write BLOCKED.md
-  because of this dispatch limit (BLOCKED.md is still correct for genuine
-  cloud-RUNTIME limits — Tauri, MCP, audio, Windows-only tooling — via
-  blocker_kind: cloud-limitation).
-  Zero sub-subagent dispatches in a cloud /execute-plan cycle is the EXPECTED state — NOT a contract violation.
-  The dispatched skill's SKILL.md stays authoritative for everything else —
-  re-read it from disk if unclear.
+  cycle (policy; do not rely on the tool being absent or a hook denying it).
+  Perform ALL skill-mandated sub-subagent work (test-agent, impl-agent, research
+  subagents A–G, etc.) INLINE with Read/Edit/Write. Never invoke another /lazy or
+  /lazy-batch (in addition to the TERMINAL STOP ban on pipeline ops). Do NOT write
+  BLOCKED.md over this dispatch limit — BLOCKED.md is still correct for genuine
+  cloud-RUNTIME limits (Tauri, MCP, audio, Windows-only tooling) via blocker_kind:
+  cloud-limitation. Zero sub-subagent dispatches in a cloud /execute-plan cycle is
+  the EXPECTED state — NOT a contract violation. The dispatched skill's SKILL.md
+  stays authoritative for everything else.
 
   Cloud runtime deferral: this container has no Tauri runtime and no MCP HTTP
   server, so MCP validation is DEFERRED to a later workstation pass — a cloud
@@ -500,15 +490,15 @@ load_test_tone + get_audio_buffer, so audio claims are usually WRONG).
 Status honesty (PIPELINE-GATE — HARD):
   Never flip the top-level `**Status:**` of SPEC.md or PHASES.md to
   {forbidden_status}, and never write {receipt_name} yourself — both are owned
-  EXCLUSIVELY by the orchestrator's {mark_pseudo} gate, which fires only after
-  the validation tail (/mcp-test → coverage audit). A rogue flip leaves
-  no {receipt_name} receipt, so the state script HARD-HALTS on
-  `completion-unverified` until a human reconciles (it does NOT skip the tail).
-  You MAY flip the PLAN-PART frontmatter `status:` and the per-PHASE checkboxes /
-  `Status:` line for the phase you just implemented; when the LAST phase's work
-  lands, set the top-level PHASES `**Status:**` to `In-progress` (NOT
-  {forbidden_status}) — implementation done, validation pending. Let the state
-  machine route to /mcp-test next. (The /retro step is unwired — 2026-06.)
+  EXCLUSIVELY by the orchestrator's {mark_pseudo} gate (fires only after the
+  validation tail: /mcp-test → coverage audit). A rogue flip leaves no
+  {receipt_name} receipt, so the state script HARD-HALTS on `completion-unverified`
+  until a human reconciles (it does NOT skip the tail). You MAY flip the PLAN-PART
+  frontmatter `status:` and the per-PHASE checkboxes / `Status:` line for the phase
+  you just implemented; when the LAST phase's work lands, set the top-level PHASES
+  `**Status:**` to `In-progress` (NOT {forbidden_status}) — implementation done,
+  validation pending. Let the state machine route to /mcp-test next. (The /retro
+  step is unwired — 2026-06.)
 
 <!-- @section resume-safety pipelines=feature,bug modes=workstation skills=execute-plan,retro,retro-feature -->
 Resume safety (plan-part + per-WU granularity):
@@ -606,13 +596,12 @@ Hard contract (sentinel + git hygiene + cloud push + report):
 
 <!-- @section terminal-stop pipelines=feature,bug modes=workstation,cloud skills=all -->
 TERMINAL STOP (HARD — your dispatch is ONE cycle):
-  Your dispatch is exactly ONE cycle. After your single skill returns and you
-  have committed + pushed + written your report, STOP. Do NOT run
-  `lazy-state.py`/`bug-state.py` to find or route a next action. Do NOT begin a
-  second feature. Do NOT run pipeline/orchestration or lifecycle commands, and do
-  not invoke any `/lazy*` skill — those are orchestrator-only and the harness will
-  DENY them in-flight. Routing the next cycle is the orchestrator's job; your job
-  ends at the report.
+  Your dispatch is exactly ONE cycle. After your single skill returns and you have
+  committed + pushed + written your report, STOP. Do NOT run
+  `lazy-state.py`/`bug-state.py` to route a next action, do NOT begin a second
+  feature, and do NOT run pipeline/orchestration or lifecycle commands or invoke
+  any `/lazy*` skill — those are orchestrator-only and the harness will DENY them
+  in-flight. Routing the next cycle is the orchestrator's job.
 
 <!-- @section turn-end pipelines=feature,bug modes=workstation skills=all -->
 TURN-END CONTRACT (HARD — read LAST because it is checked LAST):

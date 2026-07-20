@@ -95,3 +95,34 @@ terminal-stop/variant tests (228 passed); `skill-size-ratchet.py --check` exit 0
 new floor; `generate-coupled-skills.py --check` exit 0 (editing the emitter's OUTPUT
 template never shifts the committed coupled SKILL.md — the prompt is assembled at runtime,
 so no `--write` was needed).
+
+## Phase 3 — Trim remaining boilerplate + scope-tightening (2026-07-19)
+
+**Work completed (Part 2, WU-2):** deflated the remaining `skills=all` boilerplate —
+`d7`, `env-dialect-core`, `env-dialect-windows` (hosts=windows preserved),
+`status-honesty`, `terminal-stop`, `task` (ws + cloud), plus `cloud-override`
+(cloud analog of the P2 `workstation-dispatch` deflation — done for cloud-profile
+parity, the more-complete path). Prose-density only; all policy anchors survive
+(`SEMANTIC_DIFF_PHASE3.md` Part A).
+
+**Scope-tightening (lever 2) — trim-only, NO narrowing.**
+`⚖ policy: scope-tightening selector narrowing → trim-only (no narrowing)`. The one
+named candidate (narrow `workstation-dispatch` to exclude the never-fan-out
+`mcp-test` cycle) is NOT provably safe: the `@section` `skills=` grammar is a
+positive allowlist with no "all-except" form, so narrowing means enumerating every
+fan-out skill and any future skill omitted from that list silently loses the
+dispatch policy — the exact under-brief failure the SPEC calls worse than a few KB.
+Conservative default (the plan's pre-authorized path) holds. Justification in
+`SEMANTIC_DIFF_PHASE3.md` Part B; existing `test_dispatch.py` binding-matrix already
+guards `workstation-dispatch` presence/absence across cycle classes.
+
+**Measured:** Phase 3 saved a further 8,300 B; cumulative off the original seed
+80,876 B (19.8%) across the 20 profiles. Re-locked to the new floor via
+`--lock-in-profile`. The SPEC's ~9–10 KB directional target is not reached with
+trim-only (smallest profile ~12.7 KB) — reaching it would require aggressive
+scope-tightening/section removal the conservative default declined.
+
+**Gates green:** `test_dispatch.py` + `test_project_skills.py` (228 passed);
+`skill-size-ratchet.py --check` exit 0 at the new floor; `generate-coupled-skills.py
+--check` exit 0 (no `--write` needed — the emitter's OUTPUT template does not appear
+in the committed coupled SKILL.md files).
