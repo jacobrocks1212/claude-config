@@ -2,7 +2,7 @@
 
 **Status:** Fixed
 **Fixed:** 2026-07-20
-**Fix commit:** 3f2294a5
+**Fix commit:** 6d46f295
 **Reported:** 2026-07-20
 **Pipeline:** claude-config harness (lazy-batch/lazy-bug-batch orchestrator — Gap-2 pause-vs-terminal discriminator)
 **Origin:** harden-harness round (observed-friction), item in flight `inspector-track-dashboard` (part-2)
