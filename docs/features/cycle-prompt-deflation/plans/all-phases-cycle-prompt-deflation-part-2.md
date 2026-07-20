@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: cycle-prompt-deflation
-status: Ready
+status: In-progress
 created: 2026-07-19
 complexity: complex
 phases: [2, 3, 4]
