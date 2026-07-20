@@ -6,8 +6,8 @@
 **Severity:** P3
 **Discovered:** 2026-07-19
 **Placement:** docs/bugs/coupled-overlays-drift-from-committed-skills
-**Fixed:** 2026-07-19 - reconciled overlays out-of-pipeline via `generate-coupled-skills.py --extract`
-**Fix commit:** see FIXED.md
+**Fixed:** 2026-07-19
+**Fix commit:** b6289e4b
 **Related:** `coupled-pair-generation` (PROVISIONAL) feature; CLAUDE.md "Coupled Skill Pairs" table; hardening-log 2026-07 lines 1321/1358/1376 (prior rounds that observed this drift and left it as "advisory, out of scope"); over-fit spin-off for the durable fix (drift gate not in mandatory gate list)
 
 <!-- Status lifecycle:
