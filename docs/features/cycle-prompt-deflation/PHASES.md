@@ -77,15 +77,17 @@ Phase-level dependencies on completed upstream features (extracted per /spec-pha
 
 ### Phase 2: Trim-in-place the top-3 boilerplate sections
 
+**Status:** Complete
+
 **Scope:** Deflate the three highest-return `skills=all` boilerplate sections — `turn-end` (~4.9 KB), `workstation-dispatch` (~4.8 KB), `hard-contract` (~3 KB) — to terse verdict-routing rules, preserving every policy as an equivalent rule (prose-density reduction, NOT policy removal). Regenerate coupled-pair mirrors and confirm the drift gate green. Lower the affected profile ceilings.
 
 **Deliverables:**
-- [ ] `turn-end`, `workstation-dispatch`, `hard-contract` sections in `cycle-base-prompt.md` rewritten to terse rules, each `@section` selector line + every depended-on marker literal preserved verbatim.
-- [ ] Semantic-equivalence review artifact: a per-section old-rule → surviving-terse-rule mapping (`SEMANTIC_DIFF_PHASE2.md` in the feature dir) proving no policy was dropped.
-- [ ] `generate-coupled-skills.py --check` exits 0 (coupled SKILL.md mirrors regenerate cleanly; run `--write` first if any prompt-describing prose shifted).
-- [ ] `emit_cycle_prompt` still assembles every profile (residue guard passes — no unbound `{token}`).
-- [ ] Affected profile ceilings lowered via `skill-size-ratchet.py --lock-in`.
-- [ ] Tests: emitter residue-guard/assembly tests green for all profiles; assembled bytes measurably smaller for profiles carrying these three sections.
+- [x] `turn-end`, `workstation-dispatch`, `hard-contract` sections in `cycle-base-prompt.md` rewritten to terse rules, each `@section` selector line + every depended-on marker literal preserved verbatim.
+- [x] Semantic-equivalence review artifact: a per-section old-rule → surviving-terse-rule mapping (`SEMANTIC_DIFF_PHASE2.md` in the feature dir) proving no policy was dropped.
+- [x] `generate-coupled-skills.py --check` exits 0 (coupled SKILL.md mirrors regenerate cleanly; run `--write` first if any prompt-describing prose shifted).
+- [x] `emit_cycle_prompt` still assembles every profile (residue guard passes — no unbound `{token}`).
+- [x] Affected profile ceilings lowered via `skill-size-ratchet.py --lock-in`.
+- [x] Tests: emitter residue-guard/assembly tests green for all profiles; assembled bytes measurably smaller for profiles carrying these three sections.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/generate-coupled-skills.py --check` exits 0 AND `python3 user/scripts/skill-size-ratchet.py --check` exits 0 at the new lower ceilings AND the emitter assembles every profile without a residue error (assertable via the existing `emit_cycle_prompt` tests). All runnable in-cycle.
 

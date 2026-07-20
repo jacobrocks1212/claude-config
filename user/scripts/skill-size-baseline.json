@@ -35,83 +35,83 @@
   "profiles": {
     "_notes": "cycle-prompt-deflation Phase 1 seed ceilings for the assembled per-cycle dispatch prompt. A profile id is pipeline/mode/skill[/variant]; ceilings are len(emit_cycle_prompt(...).prompt.encode(utf-8)) driven through the REAL emitter (never a re-parse of cycle-base-prompt.md). park/host dims are OUT of v1 enumeration (SPEC KPI selector is over pipeline,mode,skill,variant; host resolved by live os.name). Seeded at pre-deflation sizes 2026-07-19 to LOCK the before-numbers + stop accretion; Phases 2-3 lower these via --lock-in-profile.",
     "bug/cloud/execute-plan": {
-      "byte_ceiling": 18983,
+      "byte_ceiling": 16592,
       "long_line_ceiling": 0
     },
     "bug/cloud/retro": {
-      "byte_ceiling": 16446,
+      "byte_ceiling": 14055,
       "long_line_ceiling": 0
     },
     "bug/cloud/retro-feature": {
-      "byte_ceiling": 20117,
+      "byte_ceiling": 17726,
       "long_line_ceiling": 0
     },
     "bug/cloud/spec-phases": {
-      "byte_ceiling": 15085,
+      "byte_ceiling": 12694,
       "long_line_ceiling": 0
     },
     "bug/workstation/execute-plan": {
-      "byte_ceiling": 21939,
+      "byte_ceiling": 17485,
       "long_line_ceiling": 0
     },
     "bug/workstation/mcp-test/no-runtime": {
-      "byte_ceiling": 25238,
+      "byte_ceiling": 20784,
       "long_line_ceiling": 0
     },
     "bug/workstation/mcp-test/runtime-up": {
-      "byte_ceiling": 25679,
+      "byte_ceiling": 21225,
       "long_line_ceiling": 0
     },
     "bug/workstation/retro": {
-      "byte_ceiling": 19216,
+      "byte_ceiling": 14762,
       "long_line_ceiling": 0
     },
     "bug/workstation/retro-feature": {
-      "byte_ceiling": 23073,
+      "byte_ceiling": 18619,
       "long_line_ceiling": 0
     },
     "bug/workstation/spec-phases": {
-      "byte_ceiling": 18233,
+      "byte_ceiling": 13779,
       "long_line_ceiling": 0
     },
     "feature/cloud/execute-plan": {
-      "byte_ceiling": 18990,
+      "byte_ceiling": 16599,
       "long_line_ceiling": 0
     },
     "feature/cloud/retro": {
-      "byte_ceiling": 16453,
+      "byte_ceiling": 14062,
       "long_line_ceiling": 0
     },
     "feature/cloud/retro-feature": {
-      "byte_ceiling": 20124,
+      "byte_ceiling": 17733,
       "long_line_ceiling": 0
     },
     "feature/cloud/spec-phases": {
-      "byte_ceiling": 15092,
+      "byte_ceiling": 12701,
       "long_line_ceiling": 0
     },
     "feature/workstation/execute-plan": {
-      "byte_ceiling": 21950,
+      "byte_ceiling": 17496,
       "long_line_ceiling": 0
     },
     "feature/workstation/mcp-test/no-runtime": {
-      "byte_ceiling": 25253,
+      "byte_ceiling": 20799,
       "long_line_ceiling": 0
     },
     "feature/workstation/mcp-test/runtime-up": {
-      "byte_ceiling": 25694,
+      "byte_ceiling": 21240,
       "long_line_ceiling": 0
     },
     "feature/workstation/retro": {
-      "byte_ceiling": 19227,
+      "byte_ceiling": 14773,
       "long_line_ceiling": 0
     },
     "feature/workstation/retro-feature": {
-      "byte_ceiling": 23084,
+      "byte_ceiling": 18630,
       "long_line_ceiling": 0
     },
     "feature/workstation/spec-phases": {
-      "byte_ceiling": 18244,
+      "byte_ceiling": 13790,
       "long_line_ceiling": 0
     }
   }

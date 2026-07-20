@@ -67,3 +67,31 @@
 Phase 2/3 lower them via `--lock-in-profile` as prose is trimmed (never hand-raise).
 Phase 4 stamps the KPI measured baseline via `kpi-scorecard.py --capture-baseline
 cycle-prompt-assembled-bytes`.
+
+## Phase 2 — Trim-in-place the top-3 boilerplate sections (2026-07-19)
+
+**Work completed (Part 2, WU-1):** deflated the three highest-return `skills=all`
+boilerplate section families in `cycle-base-prompt.md` to terse rules —
+`workstation-dispatch` (ws), `hard-contract` (ws + cloud), `turn-end` (ws + cloud).
+Both mode variants of `turn-end`/`hard-contract` were deflated (not just the
+workstation copy) so cloud profiles shrink too — the more-complete path.
+
+**Measured reduction (all 20 profiles under ceiling, then re-locked to the new floor
+via `--lock-in-profile`):** 72,576 B saved (17.8%) across the 20 profiles — 4,454 B
+per workstation profile, 2,391 B per cloud profile. Largest post-deflation profile:
+feature/workstation/mcp-test/runtime-up 25,694 → 21,240 B.
+
+**No policy lost:** `SEMANTIC_DIFF_PHASE2.md` maps every original rule → its surviving
+terse rule per section. Preserved literals (test-asserted): every `@section` selector,
+`WORKSTATION DISPATCH — LOAD-BEARING` (present) / `INLINE OVERRIDE — LOAD-BEARING`
+(absent) / `CLOUD OVERRIDE — LOAD-BEARING`; tokens `{receipt_name}`/`{work_branch}`/
+`{item_label}`; the R5 chained-command form, `git_safe_push`, `git add -A` ban,
+`classify_conflict` + `conflict_kind: semantic` + `--park-provisional`,
+`--verify-ledger` + `ok:true` four-condition certification,
+`cycle-subagent-bg-gate-guard.sh`.
+
+**Gates green:** `test_dispatch.py` binding-matrix + residue guards + `test_project_skills.py`
+terminal-stop/variant tests (228 passed); `skill-size-ratchet.py --check` exit 0 at the
+new floor; `generate-coupled-skills.py --check` exit 0 (editing the emitter's OUTPUT
+template never shifts the committed coupled SKILL.md — the prompt is assembled at runtime,
+so no `--write` was needed).

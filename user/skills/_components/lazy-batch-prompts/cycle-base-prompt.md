@@ -228,69 +228,38 @@ PARK-MODE INTERACTION CONTRACT (/spec under park mode — SPEC D13, LOAD-BEARING
 <!-- @section workstation-dispatch pipelines=feature,bug modes=workstation skills=all -->
 Sub-subagent dispatch policy (WORKSTATION DISPATCH — LOAD-BEARING):
   You MAY use the `Agent` tool (workstation-recursive-subagent-dispatch,
-  2026-07-09 — the former INLINE-OVERRIDE ban is lifted on workstation; cloud
-  cycles keep it). When the dispatched skill's SKILL.md defines a sub-subagent
-  orchestration model — /execute-plan's Sonnet test-agent + impl-agent split,
-  /retro's research subagents, read-only Explore fan-outs — FOLLOW that model:
-  the skill's own contract is authoritative again, including its structural
-  test-first agent separation. Dispatch is a tool, not an obligation — for a
-  small mechanical batch, inline Read/Edit/Write remains the cheaper right
-  choice.
-  GUARDRAILS (each is load-bearing):
-  - The TERMINAL STOP categorical ban binds you AND every sub-subagent you
-    dispatch: no /lazy*-family skill invocations, no run-lifecycle/routing ops
-    (--run-start / --run-end / --apply-pseudo / --enqueue-adhoc /
-    --cycle-begin / --cycle-end / dev:kill / dev:restart), no second-feature
-    commits. RESTATE this prohibition in EVERY sub-subagent prompt you
-    compose — the containment hook is the backstop, not the contract.
-  - Single-writer discipline: never run two sub-subagents that edit the same
-    files concurrently. You remain the cycle's single integrator — the
-    turn-end verify/commit gates are YOURS, and a sub-subagent's completion
-    claim is not evidence (verify the work on disk before ticking anything).
-  - Scope containment: sub-subagents work ONLY inside this {item_label}'s
-    scope. Delegating the entire cycle wholesale to one sub-subagent is
-    re-dispatching, not orchestrating — forbidden.
-  - SYNCHRONOUS AWAIT — never block on a child→parent message channel
-    (2026-07-11 sub-subagent deadlock). When you dispatch a sub-subagent with
-    the `Agent` tool, you AWAIT that dispatch and CONSUME the child's returned
-    final result DIRECTLY — the child's result comes back to you as the tool
-    result of the `Agent` call. No SendMessage is needed, EVER, to collect a
-    child's work. A dispatched child CANNOT reach its spawning parent by name
-    (only the top-level orchestrator / `main` is reachable by name from a
-    child — a child's `SendMessage` to its parent FAILS with "the
-    general-purpose agent isn't reachable by that name"). Therefore: NEVER
-    dispatch children "in the background" / asynchronously and then wait for
-    them to SendMessage their results back to you — that is a DEADLOCK: the
-    child's reply never arrives and you return RESULTLESS mid-cycle ("waiting
-    on the resumed test agents before dispatching impl agents"), which then
-    needs a manual orchestrator resume. Sequence dependent children
-    SYNCHRONOUSLY: for /execute-plan's test-first split, AWAIT the test-agent
-    dispatch and consume the failing tests it returns, THEN dispatch and AWAIT
-    the impl-agent — do NOT launch both and block on inter-agent messages.
-    Independent children may be dispatched in one batch (parallel), but you
-    still AWAIT their returned results — you never wait on a message FROM them.
-    "Waiting for a sub-subagent's message" is NEVER a valid cycle state: if you
-    catch yourself in it you have already diverged — dispatch-and-await each
-    child, or do the batch inline with Read/Edit/Write.
-  - WEDGE RESILIENCE — a dispatched sub-subagent that WEDGES never strands your
-    cycle; you fall back to INLINE (2026-07-18 depth-2 nested-dispatch wedge). A
-    total tool-execution wedge is a dispatched child whose EVERY tool call errors
-    before executing — e.g. the Claude Code `No tools needed for summary`
-    message — a platform limitation of depth-2 (grandchild) dispatch under
-    async/background agents; YOUR OWN depth-1 Read/Grep/Glob/Bash keep working.
-    When a child you dispatched comes back wedged (an empty / all-errored result,
-    not real work): do NOT wait for it, and do NOT re-dispatch it — it wedges
-    identically. Instead PERFORM THAT WORK INLINE yourself with Read/Grep/Glob/
-    Bash and finish the cycle. A wedged fan-out is NEVER an excuse to return
-    without your skill's deliverable — if the spec-phases capability/reuse audits,
-    the plan-feature / spec-phases(-batch) / write-plan Sonnet fan-out, or an
-    /execute-plan test/impl split wedge, do their reads INLINE and still produce
-    PHASES.md / the plan / the tested code this cycle. "Waiting for the remaining
-    wedged agents" is the same forbidden cycle state as waiting on a child
-    message above — collapse to inline the instant a dispatch returns wedged.
-    (Resilience, not avoidance — this composes with a "trust the coordination
-    layer, don't defensively serialize" contract; you still PREFER dispatch when
-    it works, and only fall back on an observed wedge.)
+  2026-07-09 — the former inline-only ban is lifted on workstation; cloud keeps
+  it). When the dispatched skill's SKILL.md defines a sub-subagent model
+  (/execute-plan's test-agent + impl-agent split, /retro research subagents,
+  read-only Explore fan-outs), FOLLOW it — the skill's contract is authoritative,
+  including its test-first agent separation. Dispatch is a tool, not an
+  obligation: for a small mechanical batch, inline Read/Edit/Write is the cheaper
+  right choice. GUARDRAILS (each load-bearing):
+  - TERMINAL STOP ban binds you AND every child: no /lazy*-family skills, no
+    run-lifecycle/routing ops (--run-start/--run-end/--apply-pseudo/
+    --enqueue-adhoc/--cycle-begin/--cycle-end/dev:kill/dev:restart), no
+    second-feature commits. RESTATE it in EVERY child prompt (the hook is the
+    backstop, not the contract).
+  - Single-writer: never run two children editing the same files concurrently.
+    You are the sole integrator — the turn-end verify/commit gates are YOURS, and
+    a child's completion claim is not evidence (verify on disk before ticking).
+  - Scope containment: children work ONLY inside this {item_label}'s scope;
+    delegating the WHOLE cycle to one child is re-dispatching — forbidden.
+  - SYNCHRONOUS AWAIT: a child's result returns as the `Agent` tool result —
+    AWAIT and consume it DIRECTLY. NEVER SendMessage to collect a child's work
+    (a child cannot reach its spawning parent by name → deadlock), and NEVER
+    dispatch children "in the background" then wait for a message back. Sequence
+    dependent children synchronously (test-agent → consume failing tests →
+    impl-agent); independent children may batch in one message but you still
+    AWAIT their returned results. "Waiting for a child's message" is never a
+    valid cycle state.
+  - WEDGE RESILIENCE: a dispatched child that WEDGES (empty / all-tool-calls-
+    error result — e.g. the `No tools needed for summary` depth-2 platform limit)
+    never strands your cycle. Do NOT wait for it or re-dispatch it (it wedges
+    identically) — PERFORM THAT WORK INLINE with your own depth-1
+    Read/Grep/Glob/Bash and still produce this cycle's deliverable. Collapse to
+    inline the instant a dispatch returns wedged (resilience, not avoidance —
+    still PREFER dispatch when it works).
 
 <!-- @section cloud-override pipelines=feature,bug modes=cloud skills=all -->
 Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
@@ -564,98 +533,76 @@ Resume safety (plan-part + per-WU granularity — cloud, PUSH each flip):
 
 <!-- @section hard-contract pipelines=feature,bug modes=workstation skills=all -->
 Hard contract (sentinel + git hygiene + report):
-  1. CANONICAL SENTINEL FILENAMES — write pipeline sentinels with their EXACT
-     canonical names (never lowercased / abbreviated / pluralized / renamed); a
-     mis-named sentinel is invisible to the state scripts and silently loops the
-     pipeline. Re-read ~/.claude/skills/_components/sentinel-frontmatter.md for
-     the exact name + schema before writing ANY sentinel. Your completion receipt
-     is {receipt_name}. NEEDS_INPUT_FOLLOWUP_<N>.md is orchestrator-only — cycle
-     subagents never write it.
+  1. CANONICAL SENTINEL FILENAMES — write sentinels with their EXACT canonical
+     names (never lowercased/abbreviated/pluralized/renamed; a mis-named sentinel
+     is invisible to the state scripts and loops the pipeline). Re-read
+     ~/.claude/skills/_components/sentinel-frontmatter.md for name+schema before
+     writing ANY sentinel. Your completion receipt is {receipt_name}.
+     NEEDS_INPUT_FOLLOWUP_<N>.md is orchestrator-only.
   2. WORK-BRANCH-ONLY COMMITS — Work branch: {work_branch}. Every commit/push
-     goes to {work_branch} only; never create a branch, never --force. NEVER run
-     `git checkout -b`, `git switch -c`, or `git branch <new>` mid-cycle — creating
-     a branch strands every sentinel you write where the state scripts cannot see
-     it. If `git rev-parse --abbrev-ref HEAD` is not {work_branch}, STOP and report.
-     RE-ASSERT this immediately BEFORE every commit/push, not only at cycle entry:
-     re-run `git rev-parse --abbrev-ref HEAD` and confirm it equals {work_branch}
-     before each `git commit`/`git push`; if it drifted, STOP and report.
+     goes to {work_branch}; never create a branch (no `git checkout -b`/`switch
+     -c`/`branch <new>` — a branch strands your sentinels), never --force.
+     RE-ASSERT before EVERY commit/push (not just at entry): re-run `git
+     rev-parse --abbrev-ref HEAD`; if it is not {work_branch}, STOP and report.
   3. AFTER THE SKILL RETURNS — the commit policy is whatever is ON DISK at
-     .claude/skill-config/commit-policy.md. `Read` that file and observe its
-     contents before asserting ANY rule from it; NEVER assert its contents from
-     memory, and an ABSENT file is NOT a policy. Absent the file, the standing
-     default is: commit + push per the standard pattern to {work_branch}. NEVER
-     skip a required commit on the basis of an unread or absent policy. Skip
-     committing ONLY if the skill produced no file changes.
-  4. REPORT — one paragraph (≤8 lines): state advanced, files modified, whether
-     work is committed+pushed (or "no commit"), any `⚖ policy:` lines, any issues.
-     NO commit sha. On any cycle that COULD write NEEDS_INPUT.md (/spec,
-     /spec-phases, /write-plan, /add-phase), state the NEEDS_INPUT
-     disposition EXPLICITLY — either "wrote NEEDS_INPUT.md ({N} decision(s))" or,
-     when none was needed, a skip disclosure: "no NEEDS_INPUT — {N} reviewed, all
-     {mechanical-internal | scope-class (D7) | none arose}; {≤12-word reason}".
-     The no-sentinel outcome is NEVER silent (sentinel-frontmatter.md Producer
-     responsibilities #7). On a decision-bearing cycle (/spec, /spec-phases,
-     /write-plan, /add-phase, /plan-feature, /spec-bug, /plan-bug), the return
-     summary MUST also carry a `### Decision-Classification Ledger` section per
-     that skill's own ledger mandate (empty-ledger fallback:
-     `_(no decisions surfaced this cycle — auto-finalized)_` when none arose) —
-     this is what lets the Step 1d.5 input-audit run its stronger diff-vs-ledger
-     cross-check instead of the diff-only fallback. On /execute-plan or
-     /retro-feature cycles, also confirm you executed INLINE (zero Agent() calls)
-     and wrote failing tests before implementing each batch (test-first).
+     .claude/skill-config/commit-policy.md: `Read` it before asserting ANY rule,
+     never from memory; an ABSENT file is NOT a policy. Absent it, the default is
+     commit + push to {work_branch}. NEVER skip a required commit on an unread/
+     absent policy; skip committing ONLY if the skill produced no file changes.
+  4. REPORT — one paragraph (≤8 lines): state advanced, files modified,
+     committed+pushed (or "no commit"), any `⚖ policy:` lines, issues. NO commit
+     sha. On any cycle that COULD write NEEDS_INPUT.md (/spec, /spec-phases,
+     /write-plan, /add-phase), state the disposition EXPLICITLY — either "wrote
+     NEEDS_INPUT.md ({N} decision(s))" or a skip disclosure "no NEEDS_INPUT — {N}
+     reviewed, all {mechanical-internal | scope-class (D7) | none arose};
+     {≤12-word reason}" (the no-sentinel outcome is NEVER silent). On a
+     decision-bearing cycle (/spec, /spec-phases, /write-plan, /add-phase,
+     /plan-feature, /spec-bug, /plan-bug) the summary MUST carry a
+     `### Decision-Classification Ledger` section (empty-ledger fallback:
+     `_(no decisions surfaced this cycle — auto-finalized)_`) so the Step 1d.5
+     input-audit runs its diff-vs-ledger cross-check. On /execute-plan or
+     /retro-feature cycles, confirm you executed INLINE (zero Agent() calls) and
+     wrote failing tests before implementing each batch (test-first).
 
 <!-- @section hard-contract pipelines=feature,bug modes=cloud skills=all -->
 Hard contract (sentinel + git hygiene + cloud push + report):
-  1. CANONICAL SENTINEL FILENAMES — write pipeline sentinels with their EXACT
-     canonical names (never lowercased / abbreviated / pluralized / renamed); a
-     mis-named sentinel is invisible to the state scripts and silently loops the
-     pipeline. Re-read ~/.claude/skills/_components/sentinel-frontmatter.md for
-     the exact name + frontmatter schema before writing ANY sentinel. Your
-     pipeline's completion receipt is {receipt_name}. NEEDS_INPUT_FOLLOWUP_<N>.md
-     is orchestrator-only — cycle subagents never write it.
-  2. WORK-BRANCH-ONLY COMMITS — Work branch: {work_branch}. Every commit and push
-     goes to {work_branch} ONLY; never create a branch, never --force. NEVER run
-     `git checkout -b`, `git switch -c`, or `git branch <new>` mid-cycle — creating
-     a branch strands every sentinel you write where the state scripts cannot see
-     it. If `git rev-parse --abbrev-ref HEAD` is not {work_branch}, STOP and report.
-     RE-ASSERT this immediately BEFORE every commit/push, not only at cycle entry:
-     re-run `git rev-parse --abbrev-ref HEAD` and confirm it equals {work_branch}
-     before each `git commit`/`git push`; if it drifted, STOP and report.
+  1. CANONICAL SENTINEL FILENAMES — write sentinels with their EXACT canonical
+     names (never lowercased/abbreviated/pluralized/renamed; a mis-named sentinel
+     is invisible to the state scripts and loops the pipeline). Re-read
+     ~/.claude/skills/_components/sentinel-frontmatter.md for name+schema before
+     writing ANY sentinel. Your completion receipt is {receipt_name}.
+     NEEDS_INPUT_FOLLOWUP_<N>.md is orchestrator-only.
+  2. WORK-BRANCH-ONLY COMMITS — Work branch: {work_branch}. Every commit/push
+     goes to {work_branch}; never create a branch (no `git checkout -b`/`switch
+     -c`/`branch <new>` — a branch strands your sentinels), never --force.
+     RE-ASSERT before EVERY commit/push (not just at entry): re-run `git
+     rev-parse --abbrev-ref HEAD`; if it is not {work_branch}, STOP and report.
   3. COMMIT + PUSH EACH BATCH (cloud durability) — the container is reclaimed on
-     inactivity and any UNPUSHED commit is permanently lost, so after EACH batch /
-     work-unit commit IMMEDIATELY fetch + fast-forward then `git push origin
-     {work_branch}`; never defer pushing to cycle end. Retry a failed push —
-     whether a transient NETWORK error OR a non-fast-forward rejection caused by a
-     concurrent writer landing on {work_branch} mid-cycle — by re-fetching +
-     fast-forwarding and re-pushing, bounded (a few attempts, e.g. 4× with
-     2s/4s/8s/16s backoff), then STOP and report.
-     The commit policy is whatever is ON DISK at
-     .claude/skill-config/commit-policy.md: `Read` that file and observe its
-     contents before asserting ANY rule from it; NEVER assert its contents from
-     memory, and an ABSENT file is NOT a policy. Absent the file, the standing
-     default is commit + push to {work_branch}; NEVER skip a required commit on the
-     basis of an unread or absent policy. NEVER force-push — resolve a
-     non-fast-forward rejection by fetch + fast-forward + bounded retry (above),
-     never `--force`/`-f`/`--force-with-lease` (the `git_safe_push` fetch+ff-then-
-     push contract in `lazy_core/runtimeplane.py`).
-  4. REPORT — one paragraph (≤8 lines): state advanced, files modified, whether
-     work is committed+pushed (or "no commit"), any `⚖ policy:` lines, and any
-     issues. NO commit sha. On any cycle that COULD write NEEDS_INPUT.md (/spec,
-     /spec-phases, /write-plan, /add-phase, /retro), state the NEEDS_INPUT
-     disposition EXPLICITLY — either "wrote NEEDS_INPUT.md ({N} decision(s))" or,
-     when none was needed, a skip disclosure: "no NEEDS_INPUT — {N} reviewed, all
-     {mechanical-internal | scope-class (D7) | none arose}; {≤12-word reason}".
-     The no-sentinel outcome is NEVER silent (sentinel-frontmatter.md Producer
-     responsibilities #7). On a decision-bearing cycle (/spec, /spec-phases,
-     /write-plan, /add-phase, /plan-feature, /spec-bug, /plan-bug), the return
-     summary MUST also carry a `### Decision-Classification Ledger` section per
-     that skill's own ledger mandate (empty-ledger fallback:
-     `_(no decisions surfaced this cycle — auto-finalized)_` when none arose) —
-     this is what lets the Step 1d.5 input-audit run its stronger diff-vs-ledger
-     cross-check instead of the diff-only fallback. On /execute-plan or /retro
-     cycles, also confirm you executed INLINE (zero Agent() calls), wrote failing
-     tests before implementing each batch (test-first), and pushed each batch as
-     it landed.
+     inactivity and any UNPUSHED commit is lost, so after EACH batch/work-unit
+     commit IMMEDIATELY fetch + fast-forward then `git push origin {work_branch}`;
+     never defer to cycle end. Retry a failed push (transient NETWORK error OR a
+     concurrent-writer non-fast-forward rejection) by re-fetch + ff + re-push,
+     bounded (~4× with 2s/4s/8s/16s backoff), then STOP and report. Commit policy
+     is whatever is ON DISK at .claude/skill-config/commit-policy.md: `Read` it
+     before asserting ANY rule, never from memory; an ABSENT file is NOT a policy
+     (default: commit+push to {work_branch}). NEVER force-push — resolve a
+     non-ff rejection by fetch+ff+bounded retry, never
+     `--force`/`-f`/`--force-with-lease` (the `git_safe_push` contract in
+     `lazy_core/runtimeplane.py`).
+  4. REPORT — one paragraph (≤8 lines): state advanced, files modified,
+     committed+pushed (or "no commit"), any `⚖ policy:` lines, issues. NO commit
+     sha. On any cycle that COULD write NEEDS_INPUT.md (/spec, /spec-phases,
+     /write-plan, /add-phase, /retro), state the disposition EXPLICITLY — either
+     "wrote NEEDS_INPUT.md ({N} decision(s))" or a skip disclosure "no
+     NEEDS_INPUT — {N} reviewed, all {mechanical-internal | scope-class (D7) |
+     none arose}; {≤12-word reason}" (the no-sentinel outcome is NEVER silent).
+     On a decision-bearing cycle (/spec, /spec-phases, /write-plan, /add-phase,
+     /plan-feature, /spec-bug, /plan-bug) the summary MUST carry a
+     `### Decision-Classification Ledger` section (empty-ledger fallback:
+     `_(no decisions surfaced this cycle — auto-finalized)_`) so the Step 1d.5
+     input-audit runs its diff-vs-ledger cross-check. On /execute-plan or /retro
+     cycles, confirm you executed INLINE (zero Agent() calls), wrote failing
+     tests before implementing each batch (test-first), and pushed each batch.
 
 <!-- @section terminal-stop pipelines=feature,bug modes=workstation,cloud skills=all -->
 TERMINAL STOP (HARD — your dispatch is ONE cycle):
@@ -669,139 +616,108 @@ TERMINAL STOP (HARD — your dispatch is ONE cycle):
 
 <!-- @section turn-end pipelines=feature,bug modes=workstation skills=all -->
 TURN-END CONTRACT (HARD — read LAST because it is checked LAST):
-  Your background processes DIE when your turn ends — they do not keep running
-  (a cycle ending "waiting" on a backgrounded job returns resultless with
-  uncommitted work).
-  1. NEVER end your turn while a process you started is still running. If a long
-     gate/test/build was auto-backgrounded, block on it (await it or poll its
-     output in a bounded foreground loop) before returning. PREVENT the
-     auto-background: when a required gate command would EXCEED the ~10-min Bash
-     cap (so the harness auto-backgrounds it), do NOT reach for the aggregate —
-     re-running the aggregate foreground just re-hits the cap and re-backgrounds.
-     Run its individual UNDER-cap sub-components synchronously in the foreground
-     instead (each drives to a real pass/fail within the cap). Never background a
-     long gate from inside this cycle subagent — its process tree is torn down
-     when your turn ends. This is now MECHANICALLY enforced — a PreToolUse guard
-     (`cycle-subagent-bg-gate-guard.sh`) denies a `run_in_background` long-gate/
-     test-suite launch from inside an armed cycle subagent, redirecting here.
-  2. ATOMIC GATE+COMMIT (R5): launch any long gate/test/build as ONE chained
-     command that carries its own commit —
+  Background processes DIE when your turn ends — a cycle ending "waiting" on a
+  backgrounded job returns resultless with uncommitted work.
+  1. NEVER end your turn while a process you started is still running. Block on
+     any auto-backgrounded gate/test/build (await it or poll its output in a
+     bounded foreground loop) first. PREVENT the auto-background: a gate command
+     exceeding the ~10-min Bash cap must be run as its individual UNDER-cap
+     sub-components synchronously — never re-run the aggregate (it re-hits the cap
+     and re-backgrounds) and never background a long gate inside this cycle
+     subagent (its process tree is torn down at turn end; MECHANICALLY enforced —
+     `cycle-subagent-bg-gate-guard.sh` denies a `run_in_background` long-gate/
+     test-suite launch and redirects here).
+  2. ATOMIC GATE+COMMIT (R5): each /execute-plan batch and plan-part completion
+     ends with ONE chained command carrying its own commit —
      `<gate> && git add <your changed paths> && git commit -m "..." && git push`
-     — so even an interrupted turn leaves committed, pushed state. This is the
-     final action of each /execute-plan batch and of plan-part completion. Stage
-     ONLY the paths YOU changed (pathspec-scoped) — NEVER a blanket `git add -A`,
-     which under a shared worktree can absorb a concurrent writer's staged files
-     into your commit. The push follows the fetch+ff-then-push + bounded non-ff
-     retry contract (item 3 above / `git_safe_push`), NEVER `--force`.
+     — so an interrupted turn still leaves committed, pushed state. Stage ONLY the
+     paths YOU changed (pathspec-scoped) — NEVER `git add -A` (a shared worktree
+     would absorb a concurrent writer's staged files). Push via the fetch+ff-then-
+     push + bounded non-ff retry contract (item 3 / `git_safe_push`), NEVER
+     `--force`.
 
-  **Concurrent-writer awareness:** other agents may be working this same
-  worktree/branch concurrently — an unexpected commit / moved HEAD is expected,
-  not a defect. Genuine write contention is resolved by the coordination layer
-  (git safety + the FIFO file-lock + conflict-routing) — not by halting.
-  **Conflict routing (concurrent-worktree-agent-coordination Phase 4):** when a
-  conflict SLIPS PAST the FIFO lock, classify it — `lazy_core.classify_conflict`
-  (git-mergeability + coupled-surface heuristic; ambiguous → semantic). A WRITE
-  conflict — git auto-merges, OR the conflicting hunks touch DISJOINT logical
-  surfaces — is NON-HALTING: retry/queue the write through the FIFO lock, log it,
-  and CONTINUE the cycle (never halt, never write a sentinel for it). A SEMANTIC
-  conflict — an un-auto-resolvable conflict on the SAME logical artifact (same
-  function / Locked-Decision row / sentinel), or any ambiguous/undeterminable case
-  — HALTS: write a class-`product` `NEEDS_INPUT.md` carrying `conflict_kind:
-  semantic` (NEVER auto-accepted under `--park-provisional` — the
-  `provisional_eligibility` carve-out; see `sentinel-frontmatter.md`) and stop for
-  the operator.
+  **Concurrent-writer awareness:** other agents may share this worktree/branch —
+  an unexpected commit / moved HEAD is EXPECTED, not a defect; contention is
+  resolved by the coordination layer (git safety + FIFO file-lock +
+  conflict-routing), not by halting. **Conflict routing:** classify a conflict
+  that slips the FIFO lock via `lazy_core.classify_conflict` (ambiguous →
+  semantic). A WRITE conflict (git auto-merges, OR hunks touch DISJOINT logical
+  surfaces) is NON-HALTING — retry the write through the lock, log it, CONTINUE
+  (never halt/sentinel). A SEMANTIC conflict (un-auto-resolvable on the SAME
+  logical artifact — same function / Locked-Decision row / sentinel — or any
+  ambiguous case) HALTS: write a class-`product` `NEEDS_INPUT.md` carrying
+  `conflict_kind: semantic` (NEVER auto-accepted under `--park-provisional`; see
+  `sentinel-frontmatter.md`) and stop.
 
   3. TERMINAL VERIFY GATE (EXECUTED, not self-walked) — your FINAL action is a
-     real command, not a mental checklist. In order:
-     (i) FINALIZE all reconciliation writes FIRST: tick the landed WU/PHASES
-         checkboxes (`- [ ]` → `- [x]`), flip the plan-part frontmatter `status:`,
-         and write the owed result sentinel — so no post-gate write can strand.
-     (ii) Then run the deterministic ledger verifier as a SEPARATE final step
-         (NOT appended to the R5 chain above — a non-zero verify exit must not
-         abort the commit). Select the script by pipeline (the bug pipeline uses
-         `bug-state.py`; the feature pipeline uses `lazy-state.py`):
-           `python3 ~/.claude/scripts/<lazy-state.py|bug-state.py> --repo-root <cwd> --verify-ledger <spec_path> [--plan <plan_file>]`
-         `--plan <plan_file>` is OPTIONAL — include it ONLY on plan-scoped
-         (execute-plan) cycles so the verifier reads `deliverables_done` from the
-         plan-part WU boxes.
-     (iii) If the result's `ok` is false, RECONCILE the named failing check
-         in-turn — commit + push residue, tick the boxes, flip the plan status —
-         and RE-RUN the verifier until `ok` is true. Only an `ok:true` terminal
-         verdict authorizes return; a return without it is a resultless return.
-     The `ok:true` verdict is what CERTIFIES the four turn-end conditions —
-     (a) no background job of yours still running; (b) `git status --short` EMPTY;
-     (c) the branch is pushed; (d) the result sentinel or plan/PHASES flip your
-     skill owes is ON DISK — so the checklist is this EXECUTED gate's contract,
-     not separate advisory prose to self-walk.
-  A return that fails any of these is a resultless return — a contract violation,
-  not an acceptable partial.
+     real command:
+     (i) FINALIZE reconciliation writes FIRST — tick landed WU/PHASES boxes
+         (`- [ ]`→`- [x]`), flip the plan-part `status:`, write the owed sentinel
+         (so no post-gate write can strand).
+     (ii) Then run the ledger verifier as a SEPARATE step (NOT in the R5 chain —
+          a non-zero verify must not abort the commit); select by pipeline:
+          `python3 ~/.claude/scripts/<lazy-state.py|bug-state.py> --repo-root <cwd> --verify-ledger <spec_path> [--plan <plan_file>]`
+          (`--plan` ONLY on execute-plan cycles — reads deliverables_done from the
+          plan-part WU boxes).
+     (iii) If `ok` is false, RECONCILE the named check in-turn (commit+push
+           residue, tick boxes, flip status) and RE-RUN until `ok:true`. Only an
+           `ok:true` verdict authorizes return.
+     `ok:true` CERTIFIES the four conditions: (a) no background job of yours
+     running; (b) `git status --short` EMPTY; (c) branch pushed; (d) the owed
+     sentinel / plan/PHASES flip is ON DISK.
+  A return failing any of these is a resultless return — a contract violation.
 
 <!-- @section turn-end pipelines=feature,bug modes=cloud skills=all -->
 TURN-END CONTRACT (HARD — read LAST because it is checked LAST):
-  Your background processes DIE when your turn ends — they do not keep running
-  (a cycle that ends "waiting" on a backgrounded gate/test/build loses the job's
-  process tree and returns resultless with uncommitted work).
-  1. NEVER end your turn while a process you started is still running. If a long
-     gate/test/build was auto-backgrounded, block on it before returning. PREVENT
-     the auto-background: when a required gate command would EXCEED the ~10-min
-     Bash cap (so the harness auto-backgrounds it), do NOT reach for the aggregate
-     — re-running the aggregate foreground just re-hits the cap and re-backgrounds.
-     Run its individual UNDER-cap sub-components synchronously in the foreground
-     instead (each drives to a real pass/fail within the cap). Never background a
-     long gate from inside this cycle subagent — its process tree is torn down
-     when your turn ends. This is now MECHANICALLY enforced — a PreToolUse guard
-     (`cycle-subagent-bg-gate-guard.sh`) denies a `run_in_background` long-gate/
-     test-suite launch from inside an armed cycle subagent, redirecting here.
-  2. ATOMIC GATE+COMMIT (R5): launch any long gate/test/build as ONE chained
-     command that carries its own commit+push —
+  Background processes DIE when your turn ends — a cycle ending "waiting" on a
+  backgrounded gate/test/build loses the job's process tree and returns
+  resultless with uncommitted work.
+  1. NEVER end your turn while a process you started is still running. Block on
+     any auto-backgrounded gate/test/build first. PREVENT the auto-background: a
+     gate exceeding the ~10-min Bash cap must be run as its individual UNDER-cap
+     sub-components synchronously — never re-run the aggregate (it re-hits the cap
+     and re-backgrounds) and never background a long gate inside this cycle
+     subagent (its process tree is torn down at turn end; MECHANICALLY enforced —
+     `cycle-subagent-bg-gate-guard.sh` denies a `run_in_background` long-gate/
+     test-suite launch and redirects here).
+  2. ATOMIC GATE+COMMIT (R5): each /execute-plan batch and plan-part completion
+     ends with ONE chained command carrying its own commit+push —
      `<gate> && git add <your changed paths> && git commit -m "..." && git push`
-     — so even an interrupted turn leaves committed, pushed state. This is the
-     final action of each /execute-plan batch and of plan-part completion. Stage
-     ONLY the paths YOU changed (pathspec-scoped) — NEVER a blanket `git add -A`,
-     which under a shared worktree can absorb a concurrent writer's staged files
-     into your commit. The push follows the fetch+ff-then-push + bounded non-ff
-     retry contract (item 3 above / `git_safe_push`), NEVER `--force`.
+     — so an interrupted turn still leaves committed, pushed state. Stage ONLY the
+     paths YOU changed (pathspec-scoped) — NEVER `git add -A` (a shared worktree
+     would absorb a concurrent writer's staged files). Push via the fetch+ff-then-
+     push + bounded non-ff retry contract (item 3 / `git_safe_push`), NEVER
+     `--force`.
 
-  **Concurrent-writer awareness:** other agents may be working this same
-  worktree/branch concurrently — an unexpected commit / moved HEAD is expected,
-  not a defect. Genuine write contention is resolved by the coordination layer
-  (git safety + the FIFO file-lock + conflict-routing) — not by halting.
-  **Conflict routing (concurrent-worktree-agent-coordination Phase 4):** when a
-  conflict SLIPS PAST the FIFO lock, classify it — `lazy_core.classify_conflict`
-  (git-mergeability + coupled-surface heuristic; ambiguous → semantic). A WRITE
-  conflict — git auto-merges, OR the conflicting hunks touch DISJOINT logical
-  surfaces — is NON-HALTING: retry/queue the write through the FIFO lock, log it,
-  and CONTINUE the cycle (never halt, never write a sentinel for it). A SEMANTIC
-  conflict — an un-auto-resolvable conflict on the SAME logical artifact (same
-  function / Locked-Decision row / sentinel), or any ambiguous/undeterminable case
-  — HALTS: write a class-`product` `NEEDS_INPUT.md` carrying `conflict_kind:
-  semantic` (NEVER auto-accepted under `--park-provisional` — the
-  `provisional_eligibility` carve-out; see `sentinel-frontmatter.md`) and stop for
-  the operator.
+  **Concurrent-writer awareness:** other agents may share this worktree/branch —
+  an unexpected commit / moved HEAD is EXPECTED, not a defect; contention is
+  resolved by the coordination layer (git safety + FIFO file-lock +
+  conflict-routing), not by halting. **Conflict routing:** classify a conflict
+  that slips the FIFO lock via `lazy_core.classify_conflict` (ambiguous →
+  semantic). A WRITE conflict (git auto-merges, OR hunks touch DISJOINT logical
+  surfaces) is NON-HALTING — retry the write through the lock, log it, CONTINUE
+  (never halt/sentinel). A SEMANTIC conflict (un-auto-resolvable on the SAME
+  logical artifact — same function / Locked-Decision row / sentinel — or any
+  ambiguous case) HALTS: write a class-`product` `NEEDS_INPUT.md` carrying
+  `conflict_kind: semantic` (NEVER auto-accepted under `--park-provisional`; see
+  `sentinel-frontmatter.md`) and stop.
 
   3. TERMINAL VERIFY GATE (EXECUTED, not self-walked) — your FINAL action is a
-     real command, not a mental checklist. In order:
-     (i) FINALIZE all reconciliation writes FIRST: tick the landed WU/PHASES
-         checkboxes (`- [ ]` → `- [x]`), flip the plan-part frontmatter `status:`,
-         and write the owed result sentinel — committing AND pushing each (an
-         unpushed commit is lost on container reclaim) — so no post-gate write
-         can strand.
-     (ii) Then run the deterministic ledger verifier as a SEPARATE final step
-         (NOT appended to the R5 commit+push chain above — a non-zero verify exit
-         must not abort the commit). Select the script by pipeline (the bug
-         pipeline uses `bug-state.py`; the feature pipeline uses `lazy-state.py`):
-           `python3 ~/.claude/scripts/<lazy-state.py|bug-state.py> --repo-root <cwd> --verify-ledger <spec_path> [--plan <plan_file>]`
-         `--plan <plan_file>` is OPTIONAL — include it ONLY on plan-scoped
-         (execute-plan) cycles so the verifier reads `deliverables_done` from the
-         plan-part WU boxes.
-     (iii) If the result's `ok` is false, RECONCILE the named failing check
-         in-turn — commit + push residue, tick the boxes, flip the plan status —
-         and RE-RUN the verifier until `ok` is true. Only an `ok:true` terminal
-         verdict authorizes return; a return without it is a resultless return.
-     The `ok:true` verdict is what CERTIFIES the four turn-end conditions —
-     (a) no background job of yours still running; (b) `git status --short` EMPTY;
-     (c) the branch is pushed; (d) the result sentinel or plan/PHASES flip your
-     skill owes is ON DISK — so the checklist is this EXECUTED gate's contract,
-     not separate advisory prose to self-walk.
-  A return that fails any of these is a resultless return — a contract violation,
-  not an acceptable partial.
+     real command:
+     (i) FINALIZE reconciliation writes FIRST — tick landed WU/PHASES boxes
+         (`- [ ]`→`- [x]`), flip the plan-part `status:`, write the owed sentinel,
+         committing AND pushing each (an unpushed commit is lost on container
+         reclaim) — so no post-gate write can strand.
+     (ii) Then run the ledger verifier as a SEPARATE step (NOT in the R5
+          commit+push chain — a non-zero verify must not abort the commit); select
+          by pipeline:
+          `python3 ~/.claude/scripts/<lazy-state.py|bug-state.py> --repo-root <cwd> --verify-ledger <spec_path> [--plan <plan_file>]`
+          (`--plan` ONLY on execute-plan cycles — reads deliverables_done from the
+          plan-part WU boxes).
+     (iii) If `ok` is false, RECONCILE the named check in-turn (commit+push
+           residue, tick boxes, flip status) and RE-RUN until `ok:true`. Only an
+           `ok:true` verdict authorizes return.
+     `ok:true` CERTIFIES the four conditions: (a) no background job of yours
+     running; (b) `git status --short` EMPTY; (c) branch pushed; (d) the owed
+     sentinel / plan/PHASES flip is ON DISK.
+  A return failing any of these is a resultless return — a contract violation.

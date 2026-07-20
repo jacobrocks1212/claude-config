@@ -84,7 +84,7 @@ Where this plan's repo uses non-default gates or component paths (a harness-conf
 
 ## Work Units
 
-- [ ] WU-1 — Deflate `turn-end` + `workstation-dispatch` + `hard-contract` (Phase 2)
+- [x] WU-1 — Deflate `turn-end` + `workstation-dispatch` + `hard-contract` (Phase 2)
 - [ ] WU-2 — Deflate remaining boilerplate + evidence-backed scope-tightening (Phase 3)
 - [ ] WU-3 — Capture measured KPI baseline + confirm gate wiring (Phase 4)
 
