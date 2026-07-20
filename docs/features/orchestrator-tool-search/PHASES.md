@@ -150,14 +150,16 @@ Every load-bearing assumption here is code-provable, not runtime-coupled: `--too
 
 ### Phase 3: Prose wiring (coupled-pair)
 
+**Status:** Complete (implementation; runtime-verification rows owned by the lint/audit tooling)
+
 **Scope:** Wire `--tool-search` into the orchestrator's always-present prose so the model actually invokes it before an abnormal tool-needing operation, and mirror the addition across the coupled-skill family per the root `CLAUDE.md` Coupled Skill Pairs table.
 
 **Deliverables:**
-- [ ] `user/skills/lazy-batch/SKILL.md`: add a terse rule near the existing harden-trigger #5 / `pending_hardening` prose — "before performing an abnormal operation that needs a specific tool/CLI, run `python3 user/scripts/tool-search.py --tool-search \"<need>\"`; on a ranked hit, use the named tool; on `MISS`, follow the printed suggestion (dedup / host-capability-defer / harden-suggestion)."
-- [ ] Mirror the identical rule into `user/skills/lazy-bug-batch/SKILL.md` (coupled pair) and `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` (cloud-derived twin).
-- [ ] `user/skills/_components/cycle-base-prompt.md`: add the equivalent terse rule in the appropriate `@section` so a cycle subagent hitting the need also reaches the search — coordinate wording/size with `cycle-prompt-deflation` (soft dep; this addition must fit under that feature's assembled-size ratchet, `skill-size-ratchet.py --check`).
-- [ ] Run `python3 user/scripts/lazy_parity_audit.py --repo-root .` (asserts the coupled pairs + `compute_state` routing parity are unaffected — this phase touches no state-script code, so it should be a clean no-op pass) and `python3 user/scripts/generate-coupled-skills.py --check --repo-root .` (drift gate on the cloud-derived twin).
-- [ ] Run `python3 user/scripts/skill-size-ratchet.py --check --repo-root .` to confirm the `cycle-base-prompt.md` / `lazy-batch` additions stay under their locked ceilings (or lock in a justified new ceiling if genuinely needed — never silently exceed it).
+- [x] `user/skills/lazy-batch/SKILL.md`: add a terse rule near the existing harden-trigger #5 / `pending_hardening` prose — "before performing an abnormal operation that needs a specific tool/CLI, run `python3 user/scripts/tool-search.py --tool-search \"<need>\"`; on a ranked hit, use the named tool; on `MISS`, follow the printed suggestion (dedup / host-capability-defer / harden-suggestion)."
+- [x] Mirror the identical rule into `user/skills/lazy-bug-batch/SKILL.md` (coupled pair) and `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` (cloud-derived twin).
+- [x] `user/skills/_components/cycle-base-prompt.md`: add the equivalent terse rule in the appropriate `@section` so a cycle subagent hitting the need also reaches the search — coordinate wording/size with `cycle-prompt-deflation` (soft dep; this addition must fit under that feature's assembled-size ratchet, `skill-size-ratchet.py --check`).
+- [x] Run `python3 user/scripts/lazy_parity_audit.py --repo-root .` (asserts the coupled pairs + `compute_state` routing parity are unaffected — this phase touches no state-script code, so it should be a clean no-op pass) and `python3 user/scripts/generate-coupled-skills.py --check --repo-root .` (drift gate on the cloud-derived twin).
+- [x] Run `python3 user/scripts/skill-size-ratchet.py --check --repo-root .` to confirm the `cycle-base-prompt.md` / `lazy-batch` additions stay under their locked ceilings (or lock in a justified new ceiling if genuinely needed — never silently exceed it).
 
 **Minimum Verifiable Behavior:** `grep -n "tool-search" user/skills/lazy-batch/SKILL.md user/skills/lazy-bug-batch/SKILL.md repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md user/skills/_components/cycle-base-prompt.md` returns a hit in all four files.
 
@@ -181,6 +183,13 @@ Every load-bearing assumption here is code-provable, not runtime-coupled: `--too
 
 **Integration Notes for Next Phase:**
 - Phase 4 does not depend on the prose wiring landing first, but SHOULD land after it so the telemetry breadcrumb (Phase 1) has at least a chance of being populated by the newly-wired invocation path before anyone runs `--capture-baseline`.
+
+**Implementation Notes (2026-07-19):**
+- Added the identical terse `--tool-search` search-before-acting rule (2 lines, one paragraph, each <500 chars) just before harden-Trigger 5 in `user/skills/lazy-batch/SKILL.md`, `user/skills/lazy-bug-batch/SKILL.md`, and `repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md` (coupled-pair mirror).
+- Added a NEW always-present `<!-- @section tool-search pipelines=feature,bug modes=workstation,cloud skills=all -->` block to `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` (single-sourced — no workstation/cloud mode-divergence to hand-mirror), so every cycle subagent reaches the search. The wording maps the miss protocol EXACTLY as Phase 2 ships (dedup pointer → host-capability defer → correctness-gated harden suggestion; the CLI only suggests, never dispatches).
+- Coupled-overlay reconciliation: hand-editing both canonical + derived skills drifted `generate-coupled-skills.py --check`; re-ran `--extract` to rebuild the two affected overlays (`lazy-batch-cloud`, `lazy-bug-batch`, +3 verbatim lines each) → `--check` byte-identical again. `lazy_parity_audit.py` clean.
+- Size-ratchet: the always-present cycle-prompt section added ~614B to all 20 assembled-prompt profiles and ~694B to the 3 SKILL.md byte ceilings (no long-line ceiling moved — every added line <500 chars). Hand-raised the 23 tripped byte ceilings in `skill-size-baseline.json` to current with a documented note (the ratchet never auto-raises; sanctioned legitimate-growth path per the SPEC 'Prose wiring' deliverable + `cycle-prompt-deflation` co-edit contract).
+- Gates green: `lazy_parity_audit.py`, `generate-coupled-skills.py --check`, `skill-size-ratchet.py --check`, `project-skills.py`, `lint-skills.py --check-projected --check-capabilities`. MVB grep hits all 4 files.
 
 ---
 

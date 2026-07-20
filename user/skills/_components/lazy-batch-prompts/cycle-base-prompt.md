@@ -174,6 +174,16 @@ Completeness-first (D7 — standing policy, pre-authorized, both modes):
   PushNotification + D7 digest entry. Cross-references in BOTH directions are the
   contract — the new doc names its origin; the origin names the spin-off.
 
+<!-- @section tool-search pipelines=feature,bug modes=workstation,cloud skills=all -->
+Tool-search before an abnormal operation (search-before-acting):
+  Before performing an abnormal operation that needs a specific tool/CLI you are
+  unsure exists, run `python3 user/scripts/tool-search.py --tool-search "<need>"`
+  first. On a ranked hit, use the named tool. On `MISS`, follow the printed
+  suggestion — a dedup pointer (an already-proposed tool: never double-propose),
+  a host-capability defer pointer, or a copy-pasteable observed-friction harden
+  command (orchestrator-only; pass `--correctness-load-bearing` for a
+  gate/validation-load-bearing need so the run holds until the tool ships).
+
 <!-- @section park-divergence-grade pipelines=feature,bug modes=workstation,cloud skills=all park=park -->
 Park-mode divergence self-grade (park-provisional-acceptance — PRODUCER duty):
   This is a PARK-MODE run (--park-needs-input active). When you write a

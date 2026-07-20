@@ -218,7 +218,7 @@ This repo (claude-config) has **no compiled app, no Tauri, no MCP server**. Qual
 
 ## Work Units
 
-- [ ] WU-7 — Coupled-pair prose rule (4 files, one atomic WU)
+- [x] WU-7 — Coupled-pair prose rule (4 files, one atomic WU)
 
 #### WU-7 — Coupled-pair prose rule (4 files, one atomic WU)
 
