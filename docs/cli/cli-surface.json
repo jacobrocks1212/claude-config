@@ -3378,6 +3378,103 @@
           "required": false
         }
       ]
+    },
+    "tool-search.py": {
+      "flags": [
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "Mark the needed operation correctness/gate-load-bearing so a MISS harden-suggestion carries correctness_load_bearing=true (advisory text only \u2014 this script never dispatches).",
+          "metavar": null,
+          "name": "--correctness-load-bearing",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "Introspect this script's live ArgumentParser and print its CLI-surface projection as JSON (schema_version 1), then exit 0.",
+          "metavar": null,
+          "name": "--dump-cli-surface",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_HelpAction",
+          "aliases": [
+            "-h"
+          ],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "show this help message and exit",
+          "metavar": null,
+          "name": "--help",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreTrueAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "const",
+          "group": null,
+          "help_head": "Emit the result as a JSON object {query, verdict, top_score, matches[], miss} instead of the human table.",
+          "metavar": null,
+          "name": "--json",
+          "nargs": 0,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "value",
+          "group": null,
+          "help_head": "Repo root whose inventories form the corpus (default: cwd).",
+          "metavar": null,
+          "name": "--repo-root",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "none",
+          "group": null,
+          "help_head": "The natural-language need to search for (e.g.",
+          "metavar": "QUERY",
+          "name": "--tool-search",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        },
+        {
+          "action": "_StoreAction",
+          "aliases": [],
+          "choices": null,
+          "default_kind": "value",
+          "group": null,
+          "help_head": "Cap the number of ranked matches returned (default 5).",
+          "metavar": "N",
+          "name": "--top",
+          "nargs": null,
+          "positional": false,
+          "required": false
+        }
+      ]
     }
   }
 }

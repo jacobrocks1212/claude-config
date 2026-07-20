@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: orchestrator-tool-search
-status: Ready
+status: In-progress
 created: 2026-07-19
 complexity: complex
 phases: [1, 2, 3, 4]
@@ -62,10 +62,10 @@ This repo (claude-config) has **no compiled app, no Tauri, no MCP server**. Qual
 
 ## Work Units
 
-- [ ] WU-1 — Corpus aggregation
-- [ ] WU-2 — Deterministic ranking + MISS banner
-- [ ] WU-3 — CLI scaffold, roster conformance, telemetry breadcrumb
-- [ ] WU-4 — ROSTER registration + registry regen
+- [x] WU-1 — Corpus aggregation
+- [x] WU-2 — Deterministic ranking + MISS banner
+- [x] WU-3 — CLI scaffold, roster conformance, telemetry breadcrumb
+- [x] WU-4 — ROSTER registration + registry regen
 
 #### WU-1 — Corpus aggregation
 
