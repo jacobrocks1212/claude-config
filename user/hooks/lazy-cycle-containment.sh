@@ -18,11 +18,18 @@
 #    orchestrator is never self-denied (this fixes the Proven-Finding-#3
 #    self-deny defect — the orchestrator's own legitimate cycle dispatch +
 #    between-cycle lifecycle ops always pass).
-#    NOTE (2026-07-09): recursive Agent/Task dispatch is NO LONGER denied — the
-#    harness allows nested subagent dispatch, and denying it broke mandated
-#    read-only fan-outs (touchpoint-audit-gate). A runaway can't advance the
-#    pipeline through plain Agent dispatch alone; the ops above stay denied.
+#    NOTE (2026-07-09): recursive FOREGROUND Agent/Task dispatch is NO LONGER
+#    denied — the harness allows nested subagent dispatch, and denying it broke
+#    mandated read-only fan-outs (touchpoint-audit-gate). A runaway can't advance
+#    the pipeline through plain Agent dispatch alone; the ops above stay denied.
 #    See docs/bugs/adhoc-containment-denies-mandated-explore-fanout.
+#    NOTE (2026-07-19): a BACKGROUND (run_in_background:true) Agent/Task dispatch
+#    from a subagent IS denied (deadlock — see the background-dispatch trip in
+#    main() below). For that trip to fire, this hook MUST be registered on the
+#    Agent|Task matcher in settings.json (alongside lazy-dispatch-guard.sh) — the
+#    Round-28 deny was dead code until then. Wiring pinned by
+#    test_containment_registered_on_agent_task_matcher (test_hooks.py). See
+#    docs/bugs/containment-background-dispatch-deny-unreachable-on-agent-task.
 #
 # 2. marker-gated (retained complementary carrier): while the CYCLE-SUBAGENT
 #    marker (~/.claude/state/lazy-cycle-active.json) is present, the 2nd-feature

@@ -9350,7 +9350,45 @@ def test_all_command_guards_registered_with_widened_matcher():
     )
 
 
+def test_containment_registered_on_agent_task_matcher():
+    """Wiring-regression meta-test (containment-background-dispatch-deny-unreachable-on-agent-task):
+    lazy-cycle-containment.sh's background-dispatch deny branch inspects
+    Agent/Task tool calls, so the hook MUST be registered under a PreToolUse
+    matcher covering BOTH Agent and Task. It historically was registered only on
+    Bash|PowerShell + Skill, making the Round-28 background-dispatch deny DEAD
+    CODE — the per-branch tests below (test_containment_denies_background_subagent_dispatch)
+    invoke the script directly and never assert wiring. This meta-test closes that
+    gap: a future settings.json edit that drops the Agent|Task registration fails
+    here immediately. Scans ALL PreToolUse blocks (the hook spans three:
+    Bash|PowerShell, Skill, Agent|Task) — _matcher_for_hook returns only the first,
+    so it cannot be reused here."""
+    settings_path = _REPO_ROOT / "user" / "settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    pretooluse = settings.get("hooks", {}).get("PreToolUse", [])
+    covered: set[str] = set()
+    registered_anywhere = False
+    for block in pretooluse:
+        matcher = block.get("matcher") or ""
+        tools = {t.strip() for t in matcher.split("|") if t.strip()}
+        for h in block.get("hooks", []):
+            if "lazy-cycle-containment.sh" in h.get("command", ""):
+                registered_anywhere = True
+                covered |= tools
+    assert registered_anywhere, (
+        "lazy-cycle-containment.sh is not registered in any PreToolUse block"
+    )
+    missing = {"Agent", "Task"} - covered
+    assert not missing, (
+        "lazy-cycle-containment.sh must be registered on a matcher covering "
+        f"Agent AND Task (its background-dispatch deny inspects those tool calls); "
+        f"missing {sorted(missing)!r}; covered matchers across all blocks: "
+        f"{sorted(covered)!r}"
+    )
+
+
 _TESTS = _TESTS + [
+    ("test_containment_registered_on_agent_task_matcher",
+     test_containment_registered_on_agent_task_matcher),
     # lazy-cycle-containment.sh — PowerShell payload legs
     ("test_containment_powershell_loop_formation_flag_denies",
      test_containment_powershell_loop_formation_flag_denies),

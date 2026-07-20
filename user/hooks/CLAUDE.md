@@ -92,6 +92,18 @@ therefore:
 `lazy-dispatch-guard.sh` (`Agent|Task`) and the `Write|Edit` sentinel pair are **not** in this set —
 they gate a different tool family, not command-content execution.
 
+> **`lazy-cycle-containment.sh` is ALSO registered on `Agent|Task`** (in addition to its
+> `Bash|PowerShell` command-content registration and its `Skill` registration) — but NOT because it
+> is a command-content guard on that family. Its `Agent|Task` registration exists solely so its
+> **background-dispatch deny** (a cycle subagent dispatching `Agent`/`Task` with
+> `run_in_background: true` deadlocks awaiting a child→parent message that can never arrive) actually
+> receives the Agent/Task tool calls its branch inspects. That deny was **dead code** until
+> 2026-07-19 — the hook was registered only on `Bash|PowerShell` + `Skill`, so the branch never ran
+> in production (`containment-background-dispatch-deny-unreachable-on-agent-task`). Wiring is pinned
+> by `test_containment_registered_on_agent_task_matcher` in `test_hooks.py`, distinct from the
+> `Bash|PowerShell` widened-matcher meta-test. A FOREGROUND Agent/Task dispatch from a subagent stays
+> ALLOWED there (the 2026-07-09 Explore-fan-out allowance); only the background flag is denied.
+
 ### PowerShell-syntax regex audit
 
 The command-content patterns above were originally authored against POSIX/bash syntax. Three

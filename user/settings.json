@@ -162,6 +162,11 @@
             "type": "command",
             "command": "bash ~/.claude/hooks/lazy-dispatch-guard.sh",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/lazy-cycle-containment.sh",
+            "timeout": 5
           }
         ]
       }
