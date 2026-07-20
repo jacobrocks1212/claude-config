@@ -20472,6 +20472,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -21249,6 +21254,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "interventions-telemetry-repo-scope-split-brain",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -21404,6 +21414,11 @@
       "id": "adhoc-audit-obligation-fires-on-zero-commit-failed-cycle",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "concurrent-worktree-agent-coordination",
@@ -22586,11 +22601,23 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/test_cli_surface_gen.py": [
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/scripts/test_doc_drift_lint.py": [
     {
       "id": "hardening-intervention-records-unmeasurable-or-missing",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
@@ -22625,6 +22652,11 @@
       "id": "adhoc-orchestrator-redundant-recovery-on-background-suite-reinvoke",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/scripts/test_generate_coupled_skills.py": [
@@ -22672,6 +22704,11 @@
     }
   ],
   "user/scripts/test_hook_lib.py": [
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "shared-hook-lib",
       "type": "feature",
@@ -22728,6 +22765,11 @@
       "id": "hardening-blind-to-process-friction",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "live-settings-split-brain-disarms-enforcement-plane",
@@ -22792,6 +22834,11 @@
   ],
   "user/scripts/test_incident_scan.py": [
     {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "incident-auto-capture",
       "type": "feature",
       "provenance": "backfilled"
@@ -22800,6 +22847,11 @@
   "user/scripts/test_kpi_scorecard.py": [
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -23095,6 +23147,11 @@
   ],
   "user/scripts/test_lazy_queue_doc.py": [
     {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "bug-queue-aging-backpressure",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -23112,6 +23169,11 @@
   ],
   "user/scripts/test_lint_skill_config.py": [
     {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -23125,6 +23187,11 @@
     },
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -23219,6 +23286,11 @@
       "provenance": "manual"
     },
     {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -23242,6 +23314,11 @@
     }
   ],
   "user/scripts/test_skill_usage_miner.py": [
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "skill-usage-miner",
       "type": "feature",
@@ -23282,6 +23359,13 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "user/scripts/test_stale_binary.py": [
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/scripts/test_surface_resolver.py": [
     {
       "id": "harness-hardening-retro-fixes",
@@ -23298,6 +23382,11 @@
   ],
   "user/scripts/test_toolify_miner.py": [
     {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "toolify-auto-promotion",
       "type": "feature",
       "provenance": "backfilled"
@@ -23310,12 +23399,22 @@
   ],
   "user/scripts/test_toolify_promote.py": [
     {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "toolify-auto-promotion",
       "type": "feature",
       "provenance": "backfilled"
     }
   ],
   "user/scripts/test_validate_plan.py": [
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
@@ -23543,6 +23642,11 @@
       "provenance": "manual"
     },
     {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -23563,6 +23667,11 @@
   "user/scripts/tests/test_lazy_core/_util.py": [
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -23592,6 +23701,11 @@
     },
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -23648,6 +23762,11 @@
       "provenance": "manual"
     },
     {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -23691,6 +23810,11 @@
     },
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -23743,6 +23867,11 @@
     },
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -23806,6 +23935,11 @@
       "provenance": "manual"
     },
     {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "lazy-batch-parallel-run-harness-gaps-round-2",
       "type": "bug",
       "provenance": "manual"
@@ -23853,6 +23987,11 @@
       "provenance": "manual"
     },
     {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "lazy-batch-parallel-run-harness-gaps-round-2",
       "type": "bug",
       "provenance": "manual"
@@ -23881,6 +24020,11 @@
     },
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
       "type": "bug",
       "provenance": "manual"
     },
@@ -23939,6 +24083,11 @@
       "provenance": "manual"
     },
     {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -23961,6 +24110,11 @@
       "provenance": "manual"
     },
     {
+      "id": "harness-python-cp1252-crashes-on-windows",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
@@ -23979,6 +24133,11 @@
     },
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "harness-python-cp1252-crashes-on-windows",
       "type": "bug",
       "provenance": "manual"
     },
