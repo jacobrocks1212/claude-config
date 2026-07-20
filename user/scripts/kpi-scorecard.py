@@ -85,6 +85,11 @@ _SOURCES: dict[str, frozenset] = {
         # mcp-validation-peels-one-seam-per-loop follow-up (state batch 2):
         # compute pending; honest NO-DATA until wired.
         "mcp-validation-round-trips-per-feature",
+        # orchestrator-tool-search Phase 4: share of tool-gap harden dispatches
+        # NOT preceded by a --tool-search in the same cycle. Compute IS wired
+        # (_sel_blind_tool_gap_dispatch_rate) over the tool-search-invocation
+        # breadcrumb (Phase 1) + the per-cycle dispatch telemetry event.
+        "blind-tool-gap-dispatch-rate",
     }),
     "deny-ledger": frozenset({
         "build-queue-enforce-deny-count",
@@ -891,7 +896,55 @@ def _sel_telemetry(repo_root, selector: str,
             return (None, "no completions in the window — a ratio is never "
                           "fabricated")
         return (float(cpc["cycles_per_completion"]), None)
+    if selector == "blind-tool-gap-dispatch-rate":
+        return _sel_blind_tool_gap_dispatch_rate(windowed)
     return (None, f"unknown telemetry selector {selector!r}")
+
+
+def _is_tool_gap_harden_dispatch(event: dict) -> bool:
+    """A telemetry `dispatch` event that is an observed-friction/tool-gap harden.
+
+    Keyed on the signals a hardening dispatch carries on the per-cycle `dispatch`
+    telemetry event: the pending-hardening route-withhold (`route_overridden_by`),
+    or an explicit `trigger_kind`/`dispatch_class`/`sub_skill` harden marker.
+    Deliberately broad — the exact signature of a Trigger-5 observed-friction
+    dispatch is still being enriched (see the feature's Phase-4 notes)."""
+    if event.get("event") != "dispatch":
+        return False
+    data = event.get("data") or {}
+    return (data.get("route_overridden_by") == "pending-hardening-debt"
+            or data.get("trigger_kind") == "observed-friction"
+            or data.get("dispatch_class") == "hardening"
+            or str(data.get("sub_skill") or "").startswith("harden"))
+
+
+def _sel_blind_tool_gap_dispatch_rate(
+        windowed: list) -> Tuple[Optional[float], Optional[str]]:
+    """count(tool-gap harden dispatch with NO preceding --tool-search this cycle)
+    / count(all tool-gap harden dispatches), over the window.
+
+    "This cycle" is keyed on the dispatch's (run_id, item_id); a dispatch is
+    "preceded" iff a `tool-search-invocation` event shares that key with an
+    earlier-or-equal ts. No tool-gap dispatches ⇒ NO-DATA (never a fabricated
+    zero); a real zero (dispatches present, none blind) IS reported."""
+    hardens = [e for e in windowed if _is_tool_gap_harden_dispatch(e)]
+    if not hardens:
+        return (None, "no tool-gap harden dispatches in the window — a ratio is "
+                      "never fabricated (NO-DATA, not zero)")
+    searches: dict = {}
+    for e in windowed:
+        if e.get("event") == "tool-search-invocation":
+            key = (e.get("run_id"), e.get("item_id"))
+            searches.setdefault(key, []).append(e.get("ts"))
+    blind = 0
+    for h in hardens:
+        key = (h.get("run_id"), h.get("item_id"))
+        hts = h.get("ts")
+        preceded = any(ts is not None and hts is not None and ts <= hts
+                       for ts in searches.get(key, []))
+        if not preceded:
+            blind += 1
+    return (round(blind / len(hardens), 4), None)
 
 
 # -- sentinel-scan ---------------------------------------------------------------

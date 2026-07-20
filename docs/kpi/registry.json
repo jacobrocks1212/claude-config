@@ -519,6 +519,28 @@
       "review_by": "2026-10-19",
       "repo_scope": "claude-config",
       "notes": "cycle-prompt-deflation. Selector census: skill-size-ratchet.py assembled-profile census = max(assembled_bytes) over all dispatchable (pipeline,mode,skill,variant) profiles, driven through the real emit_cycle_prompt (never a template re-parse) with a canonical repo root so the measure is path-independent. Selector id kept byte-identical to the _SOURCES['repo-static-scan'] registration (the --lint check is `selector in _SOURCES[source]`) — the SPEC's drafted long prose selector is reconciled to this short id here (Phase-1 ANCHOR). Field pre-deflation max ~16.8KB (session-corpus measured); current whole-template census higher (mcp-test profiles). baseline pending until Phase-4 --capture-baseline stamps measured provenance from the post-Phase-3 census; band null until a regression band is declared."
+    },
+    {
+      "id": "blind-tool-gap-dispatch-rate",
+      "system": "orchestrator-tool-search",
+      "title": "Share of tool-gap harden dispatches NOT preceded by a --tool-search in the same cycle",
+      "friction": "Blind gap-dispatch and duplicate tool proposals waste cycles; improvisation past a missing tool risks incorrect work.",
+      "signal": {
+        "source": "telemetry-ledger",
+        "selector": "blind-tool-gap-dispatch-rate"
+      },
+      "unit": "ratio",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-19",
+      "repo_scope": "claude-config",
+      "notes": "count(observed-friction/tool-gap harden dispatches with no preceding --tool-search this cycle) / count(all such dispatches), keyed per (run_id, item_id) cycle. Correlates the Phase-1 tool-search-invocation telemetry breadcrumb against the per-cycle dispatch telemetry event. The source/selector were aligned at Phase 4 from the drafted 'session-log-mining' + freeform text to the registrable 'telemetry-ledger' + short id 'blind-tool-gap-dispatch-rate' (the compute reads the telemetry ledger append_telemetry_event writes to; same KPI meaning/direction/window). Pre-feature baseline is ~1.0 (no search exists today) — Phase-4 --capture-baseline stamps the measured post-wiring value. Real coverage today keys on the pending-hardening route (route_overridden_by) dispatch signal; Trigger-5 observed-friction --emit-dispatch hardens do not yet emit a distinct telemetry event (flagged follow-up)."
     }
   ]
 }

@@ -108,8 +108,8 @@ See [`PHASES.md`](./PHASES.md) for the detailed phase breakdown.
   "title": "Share of tool-gap harden dispatches NOT preceded by a --tool-search in the same cycle",
   "friction": "Blind gap-dispatch and duplicate tool proposals waste cycles; improvisation past a missing tool risks incorrect work.",
   "signal": {
-    "source": "session-log-mining",
-    "selector": "tool-search invocation breadcrumb vs hardening-dispatch ledger: count(observed-friction/tool-gap harden dispatches with no preceding --tool-search this cycle) / count(all such dispatches)"
+    "source": "telemetry-ledger",
+    "selector": "blind-tool-gap-dispatch-rate"
   },
   "unit": "ratio",
   "direction": "down-is-good",
@@ -117,7 +117,7 @@ See [`PHASES.md`](./PHASES.md) for the detailed phase breakdown.
   "band": null,
   "review_by": "2026-10-19",
   "repo_scope": "claude-config",
-  "notes": "Requires a tool-search invocation breadcrumb (Phase 1) to correlate against the dispatch ledger. Pre-feature baseline is ~1.0 (no search exists today) — Phase-4 --capture-baseline stamps the measured post-wiring value."
+  "notes": "count(observed-friction/tool-gap harden dispatches with no preceding --tool-search this cycle) / count(all such dispatches), keyed per (run_id, item_id) cycle. Correlates the Phase-1 tool-search-invocation telemetry breadcrumb against the per-cycle dispatch telemetry event. The source/selector were aligned at Phase 4 from the drafted 'session-log-mining' + freeform text to the registrable 'telemetry-ledger' + short id 'blind-tool-gap-dispatch-rate' (the compute reads the telemetry ledger append_telemetry_event writes to; same KPI meaning/direction/window). Pre-feature baseline is ~1.0 (no search exists today) — Phase-4 --capture-baseline stamps the measured post-wiring value. Real coverage today keys on the pending-hardening route (route_overridden_by) dispatch signal; Trigger-5 observed-friction --emit-dispatch hardens do not yet emit a distinct telemetry event (flagged follow-up)."
 }
 ```
 

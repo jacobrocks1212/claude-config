@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: orchestrator-tool-search
-status: In-progress
+status: Complete
 created: 2026-07-19
 complexity: complex
 phases: [1, 2, 3, 4]
@@ -260,7 +260,7 @@ All five must exit 0 (or `skill-size-ratchet.py` may require a deliberate `--loc
 
 ## Work Units
 
-- [ ] WU-8 — KPI registry row + selector computation
+- [x] WU-8 — KPI registry row + selector computation
 
 #### WU-8 — KPI registry row + selector computation
 

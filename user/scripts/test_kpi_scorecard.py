@@ -148,7 +148,11 @@ class TestLintGreen:
         # + cycle-prompt-assembled-bytes (cycle-prompt-deflation Phase 1: a new
         # repo-static-scan selector — max assembled cycle-prompt bytes over all
         # dispatchable profiles; pending baseline until Phase-4 --capture-baseline).
-        assert len(registry["kpis"]) == 24
+        # + blind-tool-gap-dispatch-rate (orchestrator-tool-search Phase 4: a new
+        # telemetry-ledger selector — share of tool-gap harden dispatches not
+        # preceded by a --tool-search this cycle; pending baseline by design,
+        # deferred until ≥30d real telemetry accrues).
+        assert len(registry["kpis"]) == 25
         ids = {r["id"] for r in registry["kpis"]}
         assert "cycle-prompt-assembled-bytes" in ids
         assert "canary-trip-precision" in ids
@@ -163,6 +167,7 @@ class TestLintGreen:
         assert {"generalized-runner-raw-invocation-deny-recurrence",
                 "runner-turn-end-stall-recurrence"} <= ids
         assert "hook-plane-duplicated-lines" in ids
+        assert "blind-tool-gap-dispatch-rate" in ids
 
     def test_up_is_good_band_ordering_valid(self):
         row = _row(direction="up-is-good", band={"warn": 90, "breach": 80})
@@ -1709,3 +1714,73 @@ class TestCyclePromptAssembledBytesSelector:
             repo_root=_REPO_ROOT, now=_NOW)
         assert value is None
         assert "no computation registered" in note
+
+
+# ---------------------------------------------------------------------------
+# orchestrator-tool-search Phase 4 (WU-8) — blind-tool-gap-dispatch-rate selector
+# ---------------------------------------------------------------------------
+
+def _blind_tool_gap_row(**overrides):
+    return _row(
+        id="blind-tool-gap-dispatch-rate",
+        system="orchestrator-tool-search",
+        title="Share of tool-gap harden dispatches NOT preceded by a "
+              "--tool-search in the same cycle",
+        signal={"source": "telemetry-ledger",
+                "selector": "blind-tool-gap-dispatch-rate"},
+        unit="ratio", direction="down-is-good",
+        baseline={"value": None, "captured_at": None, "window": "30d",
+                  "provenance": "pending"},
+        band=None, **overrides)
+
+
+class TestBlindToolGapDispatchRate:
+    def test_ratio_counts_blind_dispatches(self, tmp_path, monkeypatch):
+        state = tmp_path / "state"
+        _write_telemetry(state, [
+            # cycle f1: a tool-search preceded the harden dispatch -> NOT blind
+            _tel_event("tool-search-invocation", ts=_NOW - 500, item_id="f1",
+                       run_id="R1", data={"query": "x", "verdict": "miss"}),
+            _tel_event("dispatch", ts=_NOW - 400, item_id="f1", run_id="R1",
+                       data={"route_overridden_by": "pending-hardening-debt"}),
+            # cycle f2: harden dispatch with NO preceding tool-search -> BLIND
+            _tel_event("dispatch", ts=_NOW - 300, item_id="f2", run_id="R1",
+                       data={"trigger_kind": "observed-friction"}),
+        ])
+        monkeypatch.setenv("LAZY_STATE_DIR", str(state))
+        value, note = ksc.compute_reading(
+            _blind_tool_gap_row(), repo_root=tmp_path, now=_NOW)
+        assert value == 0.5  # 1 blind of 2 tool-gap dispatches
+
+    def test_all_preceded_is_zero(self, tmp_path, monkeypatch):
+        state = tmp_path / "state"
+        _write_telemetry(state, [
+            _tel_event("tool-search-invocation", ts=_NOW - 500, item_id="f1",
+                       run_id="R1", data={"verdict": "miss"}),
+            _tel_event("dispatch", ts=_NOW - 400, item_id="f1", run_id="R1",
+                       data={"dispatch_class": "hardening"}),
+        ])
+        monkeypatch.setenv("LAZY_STATE_DIR", str(state))
+        value, _ = ksc.compute_reading(
+            _blind_tool_gap_row(), repo_root=tmp_path, now=_NOW)
+        assert value == 0.0  # a real, honest zero (dispatch present, none blind)
+
+    def test_no_tool_gap_dispatches_is_no_data(self, tmp_path, monkeypatch):
+        state = tmp_path / "state"
+        _write_telemetry(state, [
+            # a tool-search but zero harden dispatches -> ratio undefined -> NO-DATA
+            _tel_event("tool-search-invocation", ts=_NOW - 500, item_id="f1",
+                       run_id="R1", data={"verdict": "hit"}),
+        ])
+        monkeypatch.setenv("LAZY_STATE_DIR", str(state))
+        value, note = ksc.compute_reading(
+            _blind_tool_gap_row(), repo_root=tmp_path, now=_NOW)
+        assert value is None
+        assert note
+
+    def test_empty_telemetry_is_no_data_not_zero(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("LAZY_STATE_DIR", str(tmp_path / "state"))
+        value, note = ksc.compute_reading(
+            _blind_tool_gap_row(), repo_root=tmp_path, now=_NOW)
+        assert value is None
+        assert note  # honest NO-DATA, never a fabricated zero
