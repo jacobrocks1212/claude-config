@@ -13,7 +13,7 @@
 
 | # | item | state | sev | aging |
 |---|------|-------|------|------|
-| 1 | [coupled-overlay-drift-gate-not-in-mandatory-gates](docs/bugs/coupled-overlay-drift-gate-not-in-mandatory-gates/SPEC.md) | Complete | — | 2026-07-19 |
+| 1 | [coupled-overlay-drift-gate-not-in-mandatory-gates](docs/bugs/_archive/coupled-overlay-drift-gate-not-in-mandatory-gates/SPEC.md) | Complete | — | 2026-07-19 |
 | | status: Complete · phase 0/1 · next: done · The overlay-drift gate exists but is not wired into the mandatory authoring/commit-time gate battery, so per-pair overlays silently drifted from their committed hand-authored SKILL.md across three commits before being caught reactively mid-run. | | | |
 | 2 | [adhoc-incident-friction-4cb10b](docs/bugs/adhoc-incident-friction-4cb10b/SPEC.md) | Spec | — |  |
 | | status: Spec · next: spec | | | |

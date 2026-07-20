@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P3
 **Discovered:** 2026-07-19
+**Fixed:** 2026-07-19
+**Fix commit:** 62c108bc
 **Placement:** docs/bugs/coupled-overlay-drift-gate-not-in-mandatory-gates
 **Related:** `docs/bugs/_archive/coupled-overlays-drift-from-committed-skills/` (the instance fix that reconciled the drift and spun THIS durable fix off — fix commit `96f938ae` / `b6289e4b`); `coupled-pair-generation` (PROVISIONAL) feature; CLAUDE.md "Coupled Skill Pairs" table; `.claude/skill-config/gate-battery.json`; `.claude/skill-config/quality-gates.md`
 

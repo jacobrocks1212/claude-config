@@ -14,10 +14,10 @@ phases: [1]
 # Implementation Plan — Wire the coupled-overlay drift gate into the mandatory gate battery (v2)
 
 **PHASES.md files:**
-- `docs/bugs/coupled-overlay-drift-gate-not-in-mandatory-gates/PHASES.md` (coupled-overlay-drift-gate-not-in-mandatory-gates, 1 phase)
+- `docs/bugs/_archive/coupled-overlay-drift-gate-not-in-mandatory-gates/PHASES.md` (coupled-overlay-drift-gate-not-in-mandatory-gates, 1 phase)
 
 **SPEC.md files:**
-- `docs/bugs/coupled-overlay-drift-gate-not-in-mandatory-gates/SPEC.md`
+- `docs/bugs/_archive/coupled-overlay-drift-gate-not-in-mandatory-gates/SPEC.md`
 
 **Total phases:** 1
 **Plan version:** v2 (reference-based — components loaded from disk per step)
