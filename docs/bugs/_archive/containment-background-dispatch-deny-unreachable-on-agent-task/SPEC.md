@@ -3,6 +3,8 @@
 **Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-19
+**Fixed:** 2026-07-19
+**Fix commit:** 1fd59960
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage — this SPEC is the Step-2.5
 record for hardening Round 117); Round 17 (2026-07-09 prose fix — the synchronous-await guardrail
 in `cycle-base-prompt.md`); Round 28 (2026-07-12 — the mechanical `background-dispatch` deny this
