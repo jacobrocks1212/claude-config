@@ -7,6 +7,6 @@
     { "id": "parity-audit", "cmd": "python3 user/scripts/lazy_parity_audit.py --repo-root ." },
     { "id": "cli-surface", "cmd": "python3 user/scripts/cli_surface_gen.py --check --repo-root ." },
     { "id": "doc-drift", "cmd": "python3 user/scripts/doc-drift-lint.py --repo-root ." },
-    { "id": "lint-skills", "cmd": "python3 user/scripts/lint-skills.py" }
+    { "id": "lint-skills", "cmd": "python3 user/scripts/lint-skills.py --check-skill-size" }
   ]
 }

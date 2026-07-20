@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: cycle-prompt-deflation
-status: Ready
+status: Complete
 created: 2026-07-19
 complexity: complex
 phases: [1]
@@ -79,9 +79,9 @@ Where this plan's repo uses non-default gates or component paths (a harness-conf
 
 ## Work Units
 
-- [ ] WU-1 — Assembled-profile measurement + baseline store in `skill-size-ratchet.py`
-- [ ] WU-2 — `cycle-prompt-assembled-bytes` KPI selector + computation + registry row
-- [ ] WU-3 — Confirm/wire the assembled ratchet into `lint-skills --check-skill-size` + gate-battery
+- [x] WU-1 — Assembled-profile measurement + baseline store in `skill-size-ratchet.py`
+- [x] WU-2 — `cycle-prompt-assembled-bytes` KPI selector + computation + registry row
+- [x] WU-3 — Confirm/wire the assembled ratchet into `lint-skills --check-skill-size` + gate-battery
 
 ### Phase: cycle-prompt-deflation P1 — Assembled-profile measurement + baseline seed + KPI/gate wiring
 
@@ -123,7 +123,7 @@ Where this plan's repo uses non-default gates or component paths (a harness-conf
 | 1     | WU-1, WU-2, WU-3 | Yes | None (skill-size-ratchet.py+baseline / kpi-scorecard.py+registry / lint-skills.py+gate-battery are disjoint) |
 
 **Runtime Verification** *(checked by the deterministic gate run — NOT the implementation agent):*
-- [ ] <!-- verification-only --> `skill-size-ratchet.py --check` exits 0 naming N assembled profiles within seed ceilings.
-- [ ] <!-- verification-only --> `kpi-scorecard.py --lint` exits 0 with `cycle-prompt-assembled-bytes` registered (`provenance: pending`).
+- [x] <!-- verification-only --> `skill-size-ratchet.py --check` exits 0 naming N assembled profiles within seed ceilings.
+- [x] <!-- verification-only --> `kpi-scorecard.py --lint` exits 0 with `cycle-prompt-assembled-bytes` registered (`provenance: pending`).
 
 **Completion (gate-owned):** the `__mark_complete__` gate flips SPEC.md **Status:** and writes COMPLETED.md after the whole feature's validation tail — never authored as a checkbox here.

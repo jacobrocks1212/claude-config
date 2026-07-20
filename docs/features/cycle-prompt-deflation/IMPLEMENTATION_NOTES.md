@@ -1,0 +1,69 @@
+# Implementation Notes — Cycle-Prompt Deflation
+
+## Phase 1 — Assembled-profile measurement harness + baseline seed + KPI/gate wiring (2026-07-19)
+
+**Work completed (Part 1, WU-1/2/3):**
+- **WU-1** — `user/scripts/skill-size-ratchet.py`: added the assembled-cycle-prompt
+  profile mode — `enumerate_profiles()`, `measure_assembled_profile()`,
+  `check_profiles()`, `lock_in_profile()`, plus `--lock-in-profile` in `main()` and
+  a profile check folded into the default `--check`. `skill-size-baseline.json` gained
+  a top-level `profiles` block (20 seeded profiles). Tests in
+  `test_skill_size_ratchet.py` (now 21 pass).
+- **WU-2** — `user/scripts/kpi-scorecard.py`: registered `cycle-prompt-assembled-bytes`
+  in `_SOURCES["repo-static-scan"]`, added `_sel_cycle_prompt_assembled_bytes()`
+  (REUSES the ratchet's measurement via a cached importlib load — never duplicated),
+  wired into the `repo-static-scan` dispatch branch. `docs/kpi/registry.json` gained the
+  row (`baseline.provenance: pending`). Tests in `test_kpi_scorecard.py` (now 140 pass;
+  the seeded-registry row-count assertion bumped 23→24).
+- **WU-3** — `user/scripts/lint-skills.py` `--check-skill-size` branch now ALSO runs
+  `check_profiles()`; `.claude/skill-config/gate-battery.json` `lint-skills` gate cmd
+  gained `--check-skill-size` so the assembled ratchet runs every battery pass.
+
+**Key integration decisions / pitfalls:**
+- **Emitter reuse, never a re-parse/fork.** Measurement drives the real
+  `lazy_core.emit_cycle_prompt` through the facade (`_default_cycle_template_dir` /
+  `_parse_cycle_template` / `_csv_set` are all exposed on the lazy_core facade).
+- **Path-independence is load-bearing.** The emitter binds `{cwd}` (=`str(repo_root)`)
+  and `{work_branch}` (19 combined template occurrences), so measuring with the real
+  repo root makes byte counts vary with the checkout path — a longer path on another
+  machine would false-trip the ratchet. The measurement binds a canonical
+  `_MEASURE_REPO_ROOT = "__cycle-prompt-measure__"` so the count reflects template prose
+  ONLY (deterministic + machine-portable). Still host-sensitive via `os.name`
+  (`hosts=windows` sections), but a non-Windows host only measures FEWER bytes → never a
+  false trip. Seeded on Windows (this box); max seed 25694 B (feature/workstation/mcp-test/runtime-up).
+- **park/host profile dims OUT of v1 enumeration** — the SPEC KPI selector is over
+  `(pipeline,mode,skill,variant)`; host resolved by live `os.name`. `_notes` metadata key
+  in the `profiles` block is skipped by `check_profiles`/count (`_`-prefix guard).
+- **Selector-id ANCHOR reconciled.** The SPEC drafted a long prose `signal.selector`;
+  the `--lint` check is `selector in _SOURCES[source]`, so the registry row's
+  `signal.selector` and the `_SOURCES` id are BOTH the short `cycle-prompt-assembled-bytes`
+  (the prose moved to the row `notes`).
+
+**⚖ policy (scope-class, disclosed):**
+- `park/host profile dims → excluded from v1 enumeration` (SPEC KPI selector lists only
+  pipeline,mode,skill,variant; host via live os.name).
+- `registry selector prose vs short id → short id "cycle-prompt-assembled-bytes" in both sites`
+  (Phase-1 ANCHOR; SPEC prose preserved in the row notes).
+- `pre-existing ratchet file-ceiling debt blocked WU-3 battery wiring → hand-raised the 3
+  over-ceiling file entries (lazy-batch, lazy-batch-cloud, lazy-bug-batch SKILL.md) to
+  current` — the ratchet's own sanctioned legitimate-growth path (deliberate documented
+  growth from spike-pipeline-role Phase 3 + harden rounds 68/70 had landed without a
+  baseline realignment). WU-3 wiring `--check-skill-size` into the battery is the systemic
+  fix that stops such debt accumulating silently again. Not accretion — a corrective
+  realignment; none of these files are on the control-surface manifest.
+
+**Pre-existing failures observed (NOT caused by this cycle — for orchestrator/harden):**
+- `python3 -m pytest user/scripts/` is red on 4 pre-existing coupled-skills DRIFT
+  failures (`test_generate_coupled_skills.py`: lazy-bug-batch / lazy-batch-cloud /
+  lazy-cloud + `test_check_clean_on_committed_tree`) — the committed coupled SKILL.md
+  files (which this cycle never touched) diverge from the PROVISIONAL overlay generator,
+  from spike-pipeline-role's hand-mirroring. Plus 1 flaky
+  `test_pipeline_visualizer.py::TestFleetServer::test_post_to_fleet_routes_404`
+  (ConnectionAbortedError socket race — passes on retry). All other battery gates
+  (lazy-state/bug-state `--test`, parity-audit, cli-surface `--check`, doc-drift,
+  lint-skills `--check-skill-size`) are green.
+
+**For next phases (2–4):** the 20 seed ceilings are the pre-deflation "before" numbers —
+Phase 2/3 lower them via `--lock-in-profile` as prose is trimmed (never hand-raise).
+Phase 4 stamps the KPI measured baseline via `kpi-scorecard.py --capture-baseline
+cycle-prompt-assembled-bytes`.

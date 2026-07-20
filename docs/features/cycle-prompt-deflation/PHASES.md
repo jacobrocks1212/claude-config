@@ -40,14 +40,16 @@ Phase-level dependencies on completed upstream features (extracted per /spec-pha
 
 **Scope:** Add an assembled-cycle-prompt measurement mode to `skill-size-ratchet.py` (imports `emit_cycle_prompt`, never re-parses the template), enumerate the real dispatchable profiles, seed their current assembled sizes as ceilings in `skill-size-baseline.json`, register the `cycle-prompt-assembled-bytes` KPI selector + its census computation in `kpi-scorecard.py`, add the registry row (`baseline: pending`), and confirm the assembled ratchet runs from `lint-skills.py --check-skill-size` and the gate-battery. **No prompt edits in this phase** — this locks the "before" numbers and stops further accretion immediately.
 
+**Status:** Complete (implementation; feature validation pending later phases)
+
 **Deliverables:**
-- [ ] Assembled-profile measurement in `skill-size-ratchet.py`: a function that, given a `(pipeline, mode, skill[, variant, park, host])` profile, drives `lazy_core.emit_cycle_prompt` and returns `len(prompt.encode("utf-8"))` (refusing/`None` results surfaced honestly, never counted as 0).
-- [ ] Profile enumeration: the concrete set of real dispatchable profiles (e.g. `feature/workstation/execute-plan`, `feature/workstation/spec`, `feature/workstation/mcp-test/runtime-up`, `feature/workstation/mcp-test/no-runtime`, bug-pipeline equivalents) — derived from the `@section` selector matrix, not hand-guessed.
-- [ ] `skill-size-baseline.json` extended with an assembled-profile ceiling store seeded at current sizes; `--lock-in` semantics for profiles identical to files (only ever lowers; new profiles seeded at current). Existing per-file `files` entries byte-untouched.
-- [ ] `kpi-scorecard.py`: `cycle-prompt-assembled-bytes` registered in `_SOURCES["repo-static-scan"]`; `_sel_cycle_prompt_assembled_bytes(repo_root)` computes `max(assembled_bytes)` over all profiles (honest NO-DATA on an unreadable target, never a fabricated 0); wired into the dispatch at the `repo-static-scan` branch.
-- [ ] `docs/kpi/registry.json`: the SPEC's KPI row added with `baseline.provenance: pending` and `signal.selector` matching the registered id.
-- [ ] Confirm/extend `lint-skills.py --check-skill-size` so the assembled-profile check runs; confirm the gate-battery reaches it.
-- [ ] Tests: assembled measurement returns a positive byte count for a known profile; `check` flags an over-ceiling profile; `--lock-in` only lowers; `kpi-scorecard.py --lint` passes with the new row; the live self-check stays green.
+- [x] Assembled-profile measurement in `skill-size-ratchet.py`: a function that, given a `(pipeline, mode, skill[, variant, park, host])` profile, drives `lazy_core.emit_cycle_prompt` and returns `len(prompt.encode("utf-8"))` (refusing/`None` results surfaced honestly, never counted as 0).
+- [x] Profile enumeration: the concrete set of real dispatchable profiles (e.g. `feature/workstation/execute-plan`, `feature/workstation/spec`, `feature/workstation/mcp-test/runtime-up`, `feature/workstation/mcp-test/no-runtime`, bug-pipeline equivalents) — derived from the `@section` selector matrix, not hand-guessed.
+- [x] `skill-size-baseline.json` extended with an assembled-profile ceiling store seeded at current sizes; `--lock-in` semantics for profiles identical to files (only ever lowers; new profiles seeded at current). Existing per-file `files` entries byte-untouched.
+- [x] `kpi-scorecard.py`: `cycle-prompt-assembled-bytes` registered in `_SOURCES["repo-static-scan"]`; `_sel_cycle_prompt_assembled_bytes(repo_root)` computes `max(assembled_bytes)` over all profiles (honest NO-DATA on an unreadable target, never a fabricated 0); wired into the dispatch at the `repo-static-scan` branch.
+- [x] `docs/kpi/registry.json`: the SPEC's KPI row added with `baseline.provenance: pending` and `signal.selector` matching the registered id.
+- [x] Confirm/extend `lint-skills.py --check-skill-size` so the assembled-profile check runs; confirm the gate-battery reaches it.
+- [x] Tests: assembled measurement returns a positive byte count for a known profile; `check` flags an over-ceiling profile; `--lock-in` only lowers; `kpi-scorecard.py --lint` passes with the new row; the live self-check stays green.
 
 **Minimum Verifiable Behavior:** `python3 user/scripts/skill-size-ratchet.py --check` exits 0 naming N assembled profiles within their seed ceilings, AND `python3 user/scripts/kpi-scorecard.py --lint` exits 0 with the new row registered. Both are runnable in-cycle (deterministic; no runtime).
 

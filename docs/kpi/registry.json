@@ -497,6 +497,28 @@
       "band": null,
       "review_by": "2026-12-01",
       "notes": "Baseline hand-counted 2026-07-11 (grep inventory in the SPEC's Executive Summary). Source 'repo-static-scan' + selector 'hook-duplicated-line-count' registered in kpi-scorecard.py Phase 4 (a deterministic cross-file duplicated-line scan of user/hooks/*.sh; honesty ladder: absent/unreadable target -> NO-DATA, a deduplicated tree -> a real 0). Promoted from the SPEC's non-claiming fence per the canary-trip-precision precedent; window normalized from the draft's 'n/a-static' to the '1d' point-in-time-scan precedent so it lints. band null until a regression band is declared."
+    },
+    {
+      "id": "cycle-prompt-assembled-bytes",
+      "system": "cycle-prompt-deflation",
+      "title": "Max assembled cycle-prompt bytes across dispatchable profiles",
+      "friction": "Tokens paid per cycle dispatch and re-paid per compaction; dominated by ~13-14KB fixed boilerplate carried every cycle.",
+      "signal": {
+        "source": "repo-static-scan",
+        "selector": "cycle-prompt-assembled-bytes"
+      },
+      "unit": "bytes",
+      "direction": "down-is-good",
+      "baseline": {
+        "value": null,
+        "captured_at": null,
+        "window": "30d",
+        "provenance": "pending"
+      },
+      "band": null,
+      "review_by": "2026-10-19",
+      "repo_scope": "claude-config",
+      "notes": "cycle-prompt-deflation. Selector census: skill-size-ratchet.py assembled-profile census = max(assembled_bytes) over all dispatchable (pipeline,mode,skill,variant) profiles, driven through the real emit_cycle_prompt (never a template re-parse) with a canonical repo root so the measure is path-independent. Selector id kept byte-identical to the _SOURCES['repo-static-scan'] registration (the --lint check is `selector in _SOURCES[source]`) — the SPEC's drafted long prose selector is reconciled to this short id here (Phase-1 ANCHOR). Field pre-deflation max ~16.8KB (session-corpus measured); current whole-template census higher (mcp-test profiles). baseline pending until Phase-4 --capture-baseline stamps measured provenance from the post-Phase-3 census; band null until a regression band is declared."
     }
   ]
 }

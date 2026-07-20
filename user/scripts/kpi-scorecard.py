@@ -153,6 +153,13 @@ _SOURCES: dict[str, frozenset] = {
     # measured, fully-deduplicated tree IS a real zero — a distinct outcome).
     "repo-static-scan": frozenset({
         "hook-duplicated-line-count",
+        # cycle-prompt-deflation Phase 1: max assembled cycle-prompt bytes across
+        # all dispatchable (pipeline,mode,skill,variant) profiles. Computation is
+        # REUSED from skill-size-ratchet.py's assembled-profile measurement
+        # (imported, never re-implemented). This id MUST stay byte-identical to
+        # the registry row's signal.selector (the --lint check is `selector in
+        # _SOURCES[source]`).
+        "cycle-prompt-assembled-bytes",
     }),
 }
 
@@ -1048,6 +1055,52 @@ def _sel_hook_duplicated_line_count(repo_root) -> Tuple[Optional[float], Optiona
     return (float(dup), None)
 
 
+_RATCHET_MODULE = None
+
+
+def _load_ratchet_module():
+    """Import skill-size-ratchet.py (hyphenated → importlib), cached per process.
+
+    The assembled-profile measurement lives there (cycle-prompt-deflation Phase 1);
+    this selector REUSES it rather than duplicating the emitter-driving logic."""
+    global _RATCHET_MODULE
+    if _RATCHET_MODULE is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "skill_size_ratchet", _SCRIPTS_DIR / "skill-size-ratchet.py"
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _RATCHET_MODULE = mod
+    return _RATCHET_MODULE
+
+
+def _sel_cycle_prompt_assembled_bytes(repo_root) -> Tuple[Optional[float], Optional[str]]:
+    """max(assembled_bytes) over every dispatchable cycle-prompt profile.
+
+    Honesty ladder: an unreadable template (emitter cannot assemble any profile)
+    → NO-DATA (never a fabricated zero). A measured max is a real positive value.
+    Measurement is repo-path-independent by construction (the ratchet binds a
+    canonical root), so this is a deterministic static scan of the template."""
+    ratchet = _load_ratchet_module()
+    try:
+        profiles = ratchet.enumerate_profiles()
+    except OSError as exc:
+        return (None, f"cannot read cycle-prompt template: {exc}")
+    values: list[int] = []
+    refused: list[str] = []
+    for profile in profiles:
+        byte_count, _long_lines, note = ratchet.measure_assembled_profile(repo_root, profile)
+        if byte_count is None:
+            refused.append(f"{ratchet._profile_id(profile)}: {note}")
+        else:
+            values.append(byte_count)
+    if not values:
+        detail = "; ".join(refused) if refused else "no dispatchable profiles enumerated"
+        return (None, f"no assembled profile measured — {detail}")
+    return (float(max(values)), None)
+
+
 # -- dispatcher -------------------------------------------------------------------
 
 def compute_reading(row, *, repo_root,
@@ -1089,6 +1142,8 @@ def compute_reading(row, *, repo_root,
         elif source == "repo-static-scan":
             if selector == "hook-duplicated-line-count":
                 return _sel_hook_duplicated_line_count(repo_root)
+            if selector == "cycle-prompt-assembled-bytes":
+                return _sel_cycle_prompt_assembled_bytes(repo_root)
         return (None, f"no computation registered for "
                       f"{source!r}/{selector!r}")
     except Exception as exc:  # noqa: BLE001 — honest NO-DATA, never a crash

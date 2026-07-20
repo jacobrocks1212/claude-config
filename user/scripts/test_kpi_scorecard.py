@@ -145,8 +145,12 @@ class TestLintGreen:
         # + hook-plane-duplicated-lines (shared-hook-lib Phase 4: promoted from
         # the SPEC's non-claiming fence once the repo-static-scan source +
         # hook-duplicated-line-count selector were registered).
-        assert len(registry["kpis"]) == 23
+        # + cycle-prompt-assembled-bytes (cycle-prompt-deflation Phase 1: a new
+        # repo-static-scan selector — max assembled cycle-prompt bytes over all
+        # dispatchable profiles; pending baseline until Phase-4 --capture-baseline).
+        assert len(registry["kpis"]) == 24
         ids = {r["id"] for r in registry["kpis"]}
+        assert "cycle-prompt-assembled-bytes" in ids
         assert "canary-trip-precision" in ids
         assert {"efficacy-verdicts-produced", "confounded-verdict-ratio",
                 "canary-closure-latency-p50"} <= ids
@@ -1627,3 +1631,53 @@ class TestPromoteDraftedRowsCli:
     def test_missing_declaration_section_exits_one(self, tmp_path):
         proc = self._run(tmp_path, _spec(classification="no"))
         assert proc.returncode == 1
+
+
+# ---------------------------------------------------------------------------
+# cycle-prompt-deflation Phase 1 — the cycle-prompt-assembled-bytes selector
+# ---------------------------------------------------------------------------
+
+class TestCyclePromptAssembledBytesSelector:
+    def test_selector_registered_in_repo_static_scan(self):
+        assert "cycle-prompt-assembled-bytes" in ksc._SOURCES["repo-static-scan"]
+
+    def test_registry_row_lints_green(self):
+        """A row using the new selector must pass --lint (selector in _SOURCES)."""
+        row = ksc.lint_row  # sanity: the linter is importable
+        assert callable(row)
+        reg_row = {
+            "id": "cycle-prompt-assembled-bytes",
+            "system": "cycle-prompt-deflation",
+            "title": "Max assembled cycle-prompt bytes across dispatchable profiles",
+            "friction": "Boilerplate carried every cycle.",
+            "signal": {"source": "repo-static-scan",
+                       "selector": "cycle-prompt-assembled-bytes"},
+            "unit": "bytes",
+            "direction": "down-is-good",
+            "baseline": {"value": None, "captured_at": None,
+                         "window": "30d", "provenance": "pending"},
+            "band": None,
+            "review_by": "2026-10-19",
+        }
+        errors, warnings = ksc.lint_registry(_registry(reg_row), today=_TODAY)
+        assert errors == [], errors
+
+    def test_selector_computes_positive_max(self):
+        """Driven against the real template, the census returns a positive max."""
+        value, note = ksc._sel_cycle_prompt_assembled_bytes(_REPO_ROOT)
+        assert note is None
+        assert value is not None and value > 0
+
+    def test_selector_is_repo_root_independent(self):
+        """The measurement is path-independent (canonical measure root)."""
+        a, _ = ksc._sel_cycle_prompt_assembled_bytes(Path("/short"))
+        b, _ = ksc._sel_cycle_prompt_assembled_bytes(
+            Path("/a/much/longer/checkout/path/root"))
+        assert a == b
+
+    def test_unknown_repo_static_scan_selector_is_no_data(self):
+        value, note = ksc.compute_reading(
+            {"signal": {"source": "repo-static-scan", "selector": "bogus"}},
+            repo_root=_REPO_ROOT, now=_NOW)
+        assert value is None
+        assert "no computation registered" in note
