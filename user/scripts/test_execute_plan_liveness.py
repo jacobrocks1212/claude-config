@@ -8,8 +8,12 @@ Two surfaces are exercised:
     helper, driven against REAL on-disk execute-plan marker files in a temp
     state dir (LAZY_STATE_DIR override — the same hermetic seam the hook
     pipe-tests use), NOT a mock. This is the orchestrator<->script boundary
-    slice: marker present + plan not Complete => ``paused``; marker absent or
-    plan Complete => ``terminal``; an unreadable / missing plan file =>
+    slice: marker present + plan not Complete => ``paused`` (fresh) /
+    ``wedge-candidate`` (stale); marker present + plan ``Complete`` =>
+    ``commit-pending`` (the finalize→commit window — the cycle may be alive
+    mid-commit, so the orchestrator confirms live-vs-dead before recovering,
+    docs/bugs/execute-plan-liveness-false-terminal-on-live-mid-commit-cycle);
+    marker absent => ``terminal``; an unreadable / missing plan file =>
     ``terminal`` (fail-safe — never suppress a legitimate recovery on an
     unreadable signal).
 
@@ -127,7 +131,14 @@ class TestExecutePlanLivenessHelper(unittest.TestCase):
             self.assertEqual(r["verdict"], "paused")
             self.assertEqual(r["plan_status"], "In-progress")
 
-    def test_marker_present_status_complete_is_terminal(self) -> None:
+    def test_marker_present_status_complete_is_commit_pending(self) -> None:
+        # docs/bugs/execute-plan-liveness-false-terminal-on-live-mid-commit-cycle:
+        # a present marker + Complete plan is NOT proof the cycle is dead — plan
+        # Complete is flipped at FINALIZE, BEFORE the gate + atomic commit + marker
+        # removal, so the cycle may be alive mid-commit. It must NOT be a direct
+        # `terminal` (which routes straight to recovery, colliding one-writer with
+        # the live cycle) — it is `commit-pending`, which the orchestrator confirms
+        # via a TaskList liveness probe before recovering.
         with tempfile.TemporaryDirectory() as td:
             base = Path(td) / "state"
             repo_root = str(Path(td) / "repo")
@@ -138,7 +149,7 @@ class TestExecutePlanLivenessHelper(unittest.TestCase):
                 r = lazy_core.execute_plan_liveness(repo_root, str(plan))
             self.assertTrue(r["marker_present"])
             self.assertEqual(r["plan_status"], "Complete")
-            self.assertEqual(r["verdict"], "terminal")
+            self.assertEqual(r["verdict"], "commit-pending")
 
     def test_marker_absent_is_terminal(self) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -185,9 +196,13 @@ class TestExecutePlanLivenessHelper(unittest.TestCase):
             self.assertEqual(r["plan_status"], "In-progress")
             self.assertEqual(r["verdict"], "wedge-candidate")
 
-    def test_stale_marker_but_complete_is_still_terminal(self) -> None:
-        # Staleness is subordinate to completion: a stale marker whose plan is
-        # Complete is terminal (done), never a wedge candidate.
+    def test_stale_marker_but_complete_is_commit_pending(self) -> None:
+        # Completion routes to the liveness probe REGARDLESS of marker age: a
+        # Complete plan is `commit-pending` (confirm-then-recover), never a
+        # `wedge-candidate` (that verdict is the non-Complete staleness escalation)
+        # and never a direct `terminal`. Marker age does not drive the verdict here
+        # — a fresh AND a stale Complete marker both yield `commit-pending`
+        # (docs/bugs/execute-plan-liveness-false-terminal-on-live-mid-commit-cycle).
         with tempfile.TemporaryDirectory() as td:
             base = Path(td) / "state"
             repo_root = str(Path(td) / "repo")
@@ -198,7 +213,7 @@ class TestExecutePlanLivenessHelper(unittest.TestCase):
             os.utime(marker, (old, old))
             with _StateDirEnv(base):
                 r = lazy_core.execute_plan_liveness(repo_root, str(plan))
-            self.assertEqual(r["verdict"], "terminal")
+            self.assertEqual(r["verdict"], "commit-pending")
 
     def test_wedge_bound_env_override_lowers_threshold(self) -> None:
         # A freshly-written marker (mtime ~= now) is normally `paused`; a tiny

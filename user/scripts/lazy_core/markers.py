@@ -140,11 +140,11 @@ def execute_plan_liveness(repo_root: str, plan_path: str) -> dict:
 
         {"marker_present": bool,
          "plan_status": str | None,
-         "verdict": "paused" | "terminal" | "wedge-candidate"}
+         "verdict": "paused" | "terminal" | "wedge-candidate" | "commit-pending"}
 
     Decision rule:
       * execute-plan marker ABSENT (no in-flight run for this repo)      → ``terminal``
-      * marker present AND plan ``status: Complete``                     → ``terminal``
+      * marker present AND plan ``status: Complete``                     → ``commit-pending``
       * marker present AND plan not Complete AND marker mtime FRESH      → ``paused``
       * marker present AND plan not Complete AND marker mtime STALE      → ``wedge-candidate``
         (older than ``_execute_plan_marker_wedge_seconds()``)
@@ -170,6 +170,25 @@ def execute_plan_liveness(repo_root: str, plan_path: str) -> dict:
     down the marker on this verdict alone. The staleness dimension is purely
     ADDITIVE: any error computing the mtime falls back to ``paused`` so the
     pre-fix behavior is preserved when the age cannot be measured.
+
+    ``"commit-pending"`` is the OPPOSITE-DIRECTION companion escalation
+    (docs/bugs/execute-plan-liveness-false-terminal-on-live-mid-commit-cycle): a
+    present marker + plan ``status: Complete`` is NOT proof the cycle is dead.
+    ``/execute-plan`` flips ``status: Complete`` (and ticks the WU boxes) at its
+    FINALIZE step — BEFORE the gate + the atomic commit + the marker removal — so
+    ``{marker present + plan Complete}`` is precisely the finalize→gate→commit
+    →marker-removal window, during which the cycle may be ALIVE (running the gate,
+    about to commit — must WAIT) or DEAD (died between finalize-writes and commit
+    — recovery appropriate). The pre-fix code returned a DIRECT ``terminal`` here,
+    which the Step 1e.4a prose routes STRAIGHT to recovery with NO liveness
+    confirmation — the exact defect (a recovery dispatched against a still-live
+    cycle → one-writer collision). Like ``wedge-candidate`` it is a CANDIDATE the
+    orchestrator CONFIRMS via the same ``TaskList`` lineage probe (DEAD ⇒ recover
+    residue; still LIVE ⇒ treat as ``paused`` / keep waiting) and NEVER tears down
+    the marker. Marker-ABSENT (cycle cleaned up its own marker at genuine
+    completion) and read-error stay DIRECT ``terminal`` (safe / fail-safe), so
+    after this fix marker-mtime alone never drives recovery: every
+    marker-present, cycle-might-be-alive case routes through the liveness probe.
     """
     result: dict = {"marker_present": False, "plan_status": None,
                     "verdict": "terminal"}
@@ -184,7 +203,14 @@ def execute_plan_liveness(repo_root: str, plan_path: str) -> dict:
         status = _plan_status(plan_p)
         result["plan_status"] = status
         if status == "Complete":
-            result["verdict"] = "terminal"
+            # NOT terminal: plan-Complete is set at /execute-plan's FINALIZE step,
+            # BEFORE the gate + atomic commit + marker removal. A present marker +
+            # Complete plan is the finalize→commit window — the cycle may be ALIVE
+            # (mid-commit) or DEAD. Emit the confirm-then-recover CANDIDATE verdict
+            # so the orchestrator confirms live-vs-dead via a TaskList lineage probe
+            # instead of dispatching recovery blindly against a possibly-live cycle
+            # (docs/bugs/execute-plan-liveness-false-terminal-on-live-mid-commit-cycle).
+            result["verdict"] = "commit-pending"
             return result
         # Not Complete → paused, UNLESS the marker has gone stale (mtime older
         # than the wedge bound) → the dead-lineage-candidate escalation. The

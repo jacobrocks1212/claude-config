@@ -809,11 +809,17 @@ bindings:
   `docs/bugs/execute-plan-liveness-blind-to-dead-lineage-stall`) → do **NOT** keep suppressing
   indefinitely; CONFIRM live-vs-dead via the genuine-wedge fallback below (a `TaskList` lineage
   probe) — DEAD ⇒ route recovery, still-LIVE ⇒ treat as `paused`; NEVER a marker teardown
-  (decision #12). `verdict == "terminal"`
-  (marker absent / plan `Complete` / any read error — fail-safe) → proceed to the recovery emit
+  (decision #12). `verdict == "commit-pending"` (marker present + plan `Complete` — the
+  opposite-direction companion `docs/bugs/execute-plan-liveness-false-terminal-on-live-mid-commit-cycle`;
+  plan-`Complete` is set at FINALIZE, BEFORE the gate + atomic commit + marker removal, so the
+  cycle may be ALIVE mid-commit or DEAD) → do **NOT** route recovery directly (a blind recovery
+  collides one-writer with a still-live cycle); CONFIRM live-vs-dead via the SAME genuine-wedge
+  fallback — DEAD ⇒ route recovery, still-LIVE ⇒ treat as `paused` (mid-commit, keep waiting);
+  NEVER a marker teardown (decision #12). `verdict == "terminal"`
+  (marker absent / any read error — fail-safe) → proceed to the recovery emit
   below, unchanged. `/mcp-test` cycles (no `--plan`) skip the discriminator. Genuine-wedge
   fallback per `dispatched-agent-liveness.md` §57–62 (marker persists + NO live descendant after
-  a bounded wait ⇒ recovery IS appropriate; now verdict-routed by `wedge-candidate`) — see
+  a bounded wait ⇒ recovery IS appropriate; now verdict-routed by `wedge-candidate`/`commit-pending`) — see
   `/lazy-batch` Step 1e/4a for the full algorithm.
   Recovery dispatch — **NEVER hand-composed.** The reconcile+commit job the recovery agent
   performs is the emitted dispatch's *contract* (owned by `dispatch-recovery.md`), NOT a prompt
