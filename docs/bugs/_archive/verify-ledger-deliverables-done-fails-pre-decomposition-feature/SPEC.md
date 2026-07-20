@@ -10,6 +10,8 @@ written_by: harden-harness
 # `verify_ledger.deliverables_done` hard-fails every PRE-DECOMPOSITION feature (PHASES.md absent), asymmetrically with its own sibling `plan_complete`
 
 **Status:** Fixed (root cause proven by live repro; fix shipped OUT-OF-PIPELINE at `5529a973`
+**Fixed:** 2026-07-20
+**Fix commit:** 7ff09734
 under a `harden(script):` commit — see `FIXED.md`). This is the durable investigation record
 cited by hardening Round 118.
 
