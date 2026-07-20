@@ -297,3 +297,106 @@ class TestCliRosterAndTelemetry:
         for m in payload["matches"]:
             assert set(m) >= {"source", "name", "invocation",
                               "help_head", "score"}
+
+
+# ---------------------------------------------------------------------------
+# WU-5 — dedup check (ledger + open queues)
+# ---------------------------------------------------------------------------
+
+class TestDedupCheck:
+    def test_ledger_hit_names_candidate_and_disposition(self):
+        entries = {
+            "abc123def456": {
+                "signature": "regenerate cli surface registry tool",
+                "status": "promoted", "feature_id": "cli-regen-tool",
+            }
+        }
+        out = ts.dedup_check("regenerate cli surface registry", entries, [])
+        assert out["hit"] is True
+        assert out["source"] == "ledger"
+        assert out["candidate_id"] == "abc123def456"
+        assert "cli-regen-tool" in (out["disposition"] or "")
+
+    def test_queue_hit_when_no_ledger_entry(self):
+        queue = [{"id": "audio-normalizer-tool",
+                  "name": "Audio loudness normalizer tool"}]
+        out = ts.dedup_check("audio loudness normalizer", {}, queue)
+        assert out["hit"] is True
+        assert out["source"] == "queue"
+        assert out["candidate_id"] == "audio-normalizer-tool"
+
+    def test_no_overlap_is_no_hit(self):
+        entries = {"x": {"signature": "totally unrelated widget"}}
+        queue = [{"id": "other-thing", "name": "Other thing"}]
+        out = ts.dedup_check("frobnicate quantum flux capacitor", entries, queue)
+        assert out["hit"] is False
+        assert out["source"] is None
+
+
+# ---------------------------------------------------------------------------
+# WU-6 — host-capability special case + correctness-gated suggestion text
+# ---------------------------------------------------------------------------
+
+def _hostcap_corpus():
+    return ts.load_host_capability_corpus(
+        ["zimtohrli-toolchain", "real-audio-device"])
+
+
+class TestMissHandling:
+    def test_host_capability_match_short_circuits(self, tmp_path):
+        corpus = _hostcap_corpus()
+
+        class _A:
+            repo_root = str(tmp_path)
+            correctness_load_bearing = False
+
+        info = ts._handle_miss("run the zimtohrli toolchain golden report",
+                               corpus, _A())
+        assert info["kind"] == "host-capability"
+        assert "zimtohrli-toolchain" in info["text"]
+        assert "host-capability-declaration-for-gated-features" in info["text"]
+        assert "--emit-dispatch" not in info["text"]  # NOT a harden suggestion
+
+    def test_correctness_flag_toggles_suggestion_text(self):
+        s_true = ts.render_harden_suggestion("some novel tool", True)
+        s_false = ts.render_harden_suggestion("some novel tool", False)
+        assert "correctness_load_bearing=true" in s_true
+        assert "convenience=true" in s_false
+        assert "--emit-dispatch hardening" in s_true
+
+    def test_genuine_miss_renders_harden_suggestion(self, tmp_path):
+        # empty repo -> no ledger, no queue, no host-cap match -> harden suggestion
+        class _A:
+            repo_root = str(tmp_path)
+            correctness_load_bearing = True
+
+        info = ts._handle_miss("author a brand new frobnicator tool", [], _A())
+        assert info["kind"] == "harden"
+        assert "--emit-dispatch hardening" in info["text"]
+        assert "correctness_load_bearing=true" in info["text"]
+
+    def test_dedup_hit_suppresses_harden_suggestion(self, tmp_path):
+        # seed a ledger the need matches; _handle_miss should return kind=dedup.
+        ledger = (tmp_path / "docs" / "features"
+                  / "unified-pipeline-orchestrator" / "toolify-ledger.json")
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        ledger.write_text(json.dumps({"entries": {
+            "cid0001": {"signature": "brand new frobnicator tool",
+                        "status": "promoted", "feature_id": "frobnicator"}}}),
+            encoding="utf-8")
+
+        class _A:
+            repo_root = str(tmp_path)
+            correctness_load_bearing = False
+
+        info = ts._handle_miss("brand new frobnicator tool", [], _A())
+        assert info["kind"] == "dedup"
+        assert "cid0001" in info["text"] or "frobnicator" in info["text"]
+        assert "--emit-dispatch" not in info["text"]
+
+    def test_script_is_read_only_no_shellout(self):
+        src = (_SCRIPTS_DIR / "tool-search.py").read_text(encoding="utf-8")
+        assert "subprocess" not in src
+        assert "os.system" not in src
+        # the harden suggestion is pure string rendering, never executed.
+        assert "os.popen" not in src

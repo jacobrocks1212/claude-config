@@ -161,8 +161,8 @@ This repo (claude-config) has **no compiled app, no Tauri, no MCP server**. Qual
 
 ## Work Units
 
-- [ ] WU-5 — Dedup check (ledger + open queues)
-- [ ] WU-6 — Host-capability special case + correctness-gated suggestion text
+- [x] WU-5 — Dedup check (ledger + open queues)
+- [x] WU-6 — Host-capability special case + correctness-gated suggestion text
 
 #### WU-5 — Dedup check (ledger + open queues)
 

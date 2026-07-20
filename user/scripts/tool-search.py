@@ -280,15 +280,35 @@ def rank_corpus(corpus: list[dict], query: str, top_n: int = 5) -> list[dict]:
     return _near_miss_fallback(corpus, query or "", top_n)
 
 
+# A near-miss is a MISTYPED word, so the fallback matches per query-TOKEN
+# against the corpus's name-token vocabulary at a typo-grade cutoff — NOT a
+# whole-query difflib, which at a loose cutoff surfaces noise over a large
+# corpus (a genuine nonsense query must stay a clean MISS — the SPEC's MVB).
+# Only significant tokens (len>=4) participate, so short/stop tokens can't drag
+# in unrelated records.
+_NEAR_MISS_MIN_TOKEN = 4
+_NEAR_MISS_CUTOFF = 0.8
+
+
 def _near_miss_fallback(corpus: list[dict], query: str,
                         top_n: int) -> list[dict]:
-    """difflib close-name matches when token-overlap found nothing."""
-    by_name: dict[str, dict] = {}
+    """Per-token typo-grade difflib matches when token-overlap found nothing."""
+    tokens = [t for t in _query_tokens(query) if len(t) >= _NEAR_MISS_MIN_TOKEN]
+    if not tokens:
+        return []
+    vocab: dict[str, list[dict]] = {}
     for rec in corpus:
-        by_name.setdefault(rec["name"].lower(), rec)
-    close = difflib.get_close_matches(
-        query.lower(), list(by_name), n=top_n, cutoff=0.3)
-    return [{**by_name[name], "score": 0} for name in close]
+        for name_tok in _TOKEN_RE.findall(rec["name"].lower()):
+            vocab.setdefault(name_tok, []).append(rec)
+    if not vocab:
+        return []
+    surfaced: dict[str, dict] = {}
+    for tok in tokens:
+        for close in difflib.get_close_matches(
+                tok, list(vocab), n=3, cutoff=_NEAR_MISS_CUTOFF):
+            for rec in vocab[close]:
+                surfaced.setdefault(rec["name"], {**rec, "score": 0})
+    return list(surfaced.values())[:top_n]
 
 
 def search_verdict(ranked: list[dict]) -> str:
@@ -318,16 +338,179 @@ def render_search_result(ranked: list[dict], query: str, top_n: int) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Miss-handling placeholders — fully implemented in WU-5 (dedup) + WU-6
-# (host-capability special case + correctness-gated suggestion text).
+# WU-5 — dedup check (toolify ledger + open queues).
 # ---------------------------------------------------------------------------
 
-def _handle_miss(need: str, corpus: list[dict], args) -> dict | None:
-    return None
+def _load_toolify_promote():
+    """Import the hyphenated toolify-promote module (the _load_miner precedent)."""
+    if "toolify_promote" in sys.modules:
+        return sys.modules["toolify_promote"]
+    spec = importlib.util.spec_from_file_location(
+        "toolify_promote", str(_SCRIPTS_DIR / "toolify-promote.py"))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["toolify_promote"] = mod
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+def _best_match(need: str, texts: list[tuple[str, str]]) -> tuple[str, int]:
+    """Return (id, score) of the highest token-overlap over (id, text) pairs."""
+    tokens = _query_tokens(need)
+    best_id, best_score = "", 0
+    for ident, text in texts:
+        tl = text.lower()
+        score = sum(1 for tok in tokens if tok in tl)
+        if score > best_score:
+            best_id, best_score = ident, score
+    return best_id, best_score
+
+
+def dedup_check(need: str, ledger_entries: dict,
+                queue_entries: list) -> dict:
+    """Dedup a runtime tool-gap against the toolify ledger + open queues.
+
+    Matching is the SAME token-overlap idea as the main ranker, applied to each
+    ledger/queue entry's recorded text — a dedup hit is a ranking hit against a
+    different corpus, not a new algorithm. Ledger wins over queue on a tie.
+    """
+    ledger_entries = ledger_entries or {}
+    queue_entries = queue_entries or []
+    ledger_texts = [
+        (cid, " ".join(str(e.get(k, "")) for k in
+                       ("signature", "feature_id", "name", "title")))
+        for cid, e in ledger_entries.items()]
+    lid, lscore = _best_match(need, ledger_texts)
+    if lscore > 0:
+        disposition = None
+        try:
+            tp = _load_toolify_promote()
+            disposition = tp.candidate_disposition(
+                {"candidate_id": lid}, ledger_entries)
+        except Exception:  # noqa: BLE001 — disposition is a nicety, not required
+            disposition = None
+        return {"hit": True, "source": "ledger", "candidate_id": lid,
+                "disposition": disposition}
+    queue_texts = [
+        (str(q.get("id", "")),
+         f"{q.get('id', '')} {q.get('name', '')}") for q in queue_entries]
+    qid, qscore = _best_match(need, queue_texts)
+    if qscore > 0:
+        return {"hit": True, "source": "queue", "candidate_id": qid,
+                "disposition": None}
+    return {"hit": False, "source": None, "candidate_id": None,
+            "disposition": None}
+
+
+def _load_ledger_entries(repo_root) -> dict:
+    """The toolify promotion ledger's entries dict (fail-open → {})."""
+    path = (Path(repo_root) / "docs" / "features"
+            / "unified-pipeline-orchestrator" / "toolify-ledger.json")
+    try:
+        return _load_toolify_promote().load_ledger(path).get("entries", {})
+    except Exception:  # noqa: BLE001 — a missing/odd ledger just means no dedup
+        return {}
+
+
+def load_queue_entries(repo_root) -> list[dict]:
+    """Open feature + bug queue entries (read-only; fail-open → [])."""
+    out: list[dict] = []
+    for rel in ("docs/features/queue.json", "docs/bugs/queue.json"):
+        path = Path(repo_root) / rel
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        entries = data.get("queue") if isinstance(data, dict) else data
+        if isinstance(entries, list):
+            out += [e for e in entries if isinstance(e, dict)]
+    return out
+
+
+# ---------------------------------------------------------------------------
+# WU-6 — host-capability special case + correctness-gated suggestion text.
+# ---------------------------------------------------------------------------
+
+def host_capability_match(need: str, corpus: list[dict]) -> dict | None:
+    """The best-matching host-capability corpus record for `need`, or None.
+
+    A match short-circuits the miss protocol BEFORE dedup/harden: an absent host
+    binary/toolchain is remediated by the host-capability defer model, never a
+    build dispatch."""
+    caps = [r for r in corpus if r.get("source") == SOURCE_HOST_CAPABILITY]
+    if not caps:
+        return None
+    tokens = _query_tokens(need)
+    best, best_score = None, 0
+    for rec in caps:
+        nl = rec["name"].lower()
+        score = sum(2 for tok in tokens if tok in nl)
+        if score > best_score:
+            best, best_score = rec, score
+    return best if best_score > 0 else None
+
+
+def render_host_capability_suggestion(capability_id: str) -> str:
+    """Point at the existing host-capability defer model (no new mechanism)."""
+    return (
+        f"host-capability gap: the need matches the closed-registry host "
+        f"capability `{capability_id}`. This is an absent host binary/toolchain, "
+        f"not a harness script to author — do NOT dispatch a build. Route "
+        f"through host-capability-declaration-for-gated-features: declare "
+        f"`requires_host: {capability_id}` on the feature and let a "
+        f"capability-lacking host write DEFERRED_REQUIRES_HOST.md (defer, "
+        f"re-open on a capability-bearing host).")
+
+
+def render_dedup_suggestion(dedup: dict) -> str:
+    """Point at the already-proposed item; do NOT dispatch a duplicate."""
+    where = "toolify ledger" if dedup["source"] == "ledger" else "open queue"
+    disp = f" ({dedup['disposition']})" if dedup.get("disposition") else ""
+    return (
+        f"dedup hit: this tool-gap is already proposed in the {where} as "
+        f"`{dedup['candidate_id']}`{disp}. Point at that existing item — do "
+        f"NOT dispatch a second /harden-harness (no double-proposal).")
+
+
+def render_harden_suggestion(need: str, correctness_load_bearing: bool) -> str:
+    """A copy-pasteable observed-friction harden-dispatch command SUGGESTION.
+
+    Pure string rendering — this script NEVER shells out or forks the dispatch
+    surface (--emit-dispatch stays orchestrator-only per refuse_if_cycle_active).
+    The caller carries the classification forward when copying it."""
+    classification = ("correctness_load_bearing=true" if correctness_load_bearing
+                      else "convenience=true")
+    safe_need = need.replace('"', "'")
+    return (
+        "no existing tool found. If this operation needs a durable tool, dispatch "
+        "an observed-friction harden (orchestrator-only — copy this, do not let "
+        "tool-search run it):\n"
+        f"  python3 user/scripts/lazy-state.py --emit-dispatch hardening "
+        f"--context 'trigger_kind=observed-friction "
+        f"need=\"{safe_need}\" {classification}'")
+
+
+def _handle_miss(need: str, corpus: list[dict], args) -> dict:
+    """Classify a MISS: host-capability defer → dedup pointer → harden suggestion."""
+    cap = host_capability_match(need, corpus)
+    if cap is not None:
+        return {"kind": "host-capability", "capability": cap["name"],
+                "text": render_host_capability_suggestion(cap["name"])}
+    repo_root = getattr(args, "repo_root", ".")
+    dedup = dedup_check(need, _load_ledger_entries(repo_root),
+                        load_queue_entries(repo_root))
+    if dedup["hit"]:
+        return {"kind": "dedup", "dedup": dedup,
+                "text": render_dedup_suggestion(dedup)}
+    correctness = bool(getattr(args, "correctness_load_bearing", False))
+    return {"kind": "harden", "need": need,
+            "correctness_load_bearing": correctness,
+            "text": render_harden_suggestion(need, correctness)}
 
 
 def _render_miss_human(miss_info: dict) -> str:
-    return ""
+    return miss_info.get("text", "") if miss_info else ""
 
 
 # ---------------------------------------------------------------------------
