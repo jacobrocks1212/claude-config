@@ -1,6 +1,6 @@
 # Bug: harness Python crashes on Windows under the default cp1252 codec
 
-**Status:** Concluded
+**Status:** Fixed
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage; discovered Round 48, fixed Round 49); `docs/features/anti-overfit-design-gate/` (`harness-gate.py` is the mechanical over-fit floor)
 
 ## Symptom (verified)
@@ -68,3 +68,41 @@ At the source, robustly and consistently — do NOT rely on the ambient locale c
   read child ASCII. Logged in the Round 49 near-neighbor sweep. The durable, class-level guard
   (a mechanical lint that FLAGS any text-mode `subprocess` read without an explicit `encoding=`,
   and requires CLI entrypoints to reconfigure stdio) is the over-fit spin-off of Round 49.
+
+## Sweep completion (Round 128 — 2026-07-20)
+
+Round 49 (commit d35a4e64) fixed the three crashing surfaces + the production git readers +
+13 `write_text` calls, and DEFERRED both (a) the test-fixture `subprocess` captures it judged
+"read child ASCII" and (b) "the durable, class-level guard" as its over-fit spin-off. The
+merge of origin/main (629 commits) then landed MANY new fixtures/captures with the same latent
+bug — some of which DO compare non-ASCII child output — so the deferred (a) judgment was
+partially wrong and the deferred (b) guard was never built. Round 128 completes BOTH:
+
+- **Systematic AST sweep (mode 2):** a call-graph-scoped AST audit (whole-file for dedicated
+  pytest modules; functions transitively reachable from `run_smoke_tests` / `test_*` / `_smoke*`
+  for the in-file `--test` harnesses) found **252** test/fixture-context `subprocess.*` text
+  captures (`text=True` / `universal_newlines=True`) lacking `encoding=` across **31 files**
+  (`lazy-state.py` 43, `bug-state.py` 38, `lazy_coord.py` 10, and 28 `test_*.py` / `tests/**`
+  modules). All 252 now carry `encoding="utf-8", errors="replace"` (matching the Round-49
+  exemplar and the just-merged `resolve-ref-cli` fix). On this cp1252 machine, an unencoded
+  capture decodes the child's UTF-8 stdout with the locale default → mojibake mismatch (common)
+  or a hard `UnicodeDecodeError` crash (an undefined-cp1252 byte).
+- **Mode 1 (`write_text` non-ASCII no-encoding):** the AST audit found **0** remaining — the
+  merge fix and Round 49's 13-call sweep already closed this leg.
+- **The durable class-level guard (Round 49's deferred spin-off):** now built as
+  `_collect_cp1252_fragile_captures(source, filename)` (pure AST collector in
+  `tests/test_lazy_core/_util.py`) + the self-checking meta-test
+  `test_no_cp1252_fragile_captures_in_scripts` (scans the whole `user/scripts/` tree, FAILS
+  naming file:line on any new offender) + a negative-fixture non-vacuity proof
+  `test_cp1252_fragile_capture_guard_detects_planted_violation`, both registered in
+  `test_misc.py`'s `_TESTS`. This mirrors the established `test_no_bare_production_sentinel_writes`
+  / `test_no_duplicate_top_level_defs_in_state_scripts` AST-collector precedent, so a future
+  fixture that reintroduces the class is a hard test failure — the whack-a-mole is closed
+  structurally, not by another per-instance patch.
+
+**Verified (this cp1252 machine, `locale.getpreferredencoding()` == `cp1252`):**
+`lazy-state.py --test` + `bug-state.py --test` = "All smoke tests passed"; `lazy_parity_audit.py`
+exit 0; the guard + orphan-guard tests pass; the full `pytest tests/test_lazy_core/` (run with
+`-s` to sidestep an unrelated, pre-existing pytest-Windows stdin-handle `WinError 6` in ~224
+subprocess tests) = **2 failed / 1337 passed**, the 2 failures pre-existing on origin
+(environmental: a git-clean staging assertion + a cascade artifact) and unrelated to encoding.
