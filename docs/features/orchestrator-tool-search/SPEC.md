@@ -2,7 +2,7 @@
 
 > A thin `--tool-search` CLI the `/lazy-batch` orchestrator invokes when it hits an abnormal situation needing a specific action/tool — ranked matches over the existing tool inventories; a miss auto-dispatches a backgrounded `/harden-harness` to build the tool and, when the operation is correctness-load-bearing, holds the run until it ships.
 
-**Status:** Draft
+**Status:** Complete
 **Priority:** P2
 **Last updated:** 2026-07-19
 **Friction-reduction feature:** yes

@@ -10382,6 +10382,11 @@
       "id": "mechanize-prose-only-orchestrator-contracts",
       "type": "feature",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "orchestrator-tool-search",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/features/CLAUDE.md": [
@@ -14117,6 +14122,34 @@
   "docs/features/operator-halt-notifications/plans/all-phases-operator-halt-notifications-part-1.md": [
     {
       "id": "operator-halt-notifications",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/orchestrator-tool-search/GATE_VERDICT.md": [
+    {
+      "id": "orchestrator-tool-search",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/orchestrator-tool-search/PHASES.md": [
+    {
+      "id": "orchestrator-tool-search",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/orchestrator-tool-search/SPEC.md": [
+    {
+      "id": "orchestrator-tool-search",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/orchestrator-tool-search/plans/all-phases-orchestrator-tool-search.md": [
+    {
+      "id": "orchestrator-tool-search",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -18208,6 +18241,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "orchestrator-tool-search",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "shared-hook-lib",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -19014,6 +19052,11 @@
     },
     {
       "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "orchestrator-tool-search",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -20648,6 +20691,11 @@
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "orchestrator-tool-search",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/compute-state-routing-parity.json": [
@@ -20713,6 +20761,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "orchestrator-tool-search",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "spike-pipeline-role",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -20756,6 +20809,11 @@
     },
     {
       "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "orchestrator-tool-search",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -20963,6 +21021,11 @@
     },
     {
       "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "orchestrator-tool-search",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -22439,6 +22502,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "orchestrator-tool-search",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "spike-pipeline-role",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -22709,6 +22777,11 @@
     },
     {
       "id": "lazy-core-package-decomposition",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "orchestrator-tool-search",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -23166,6 +23239,13 @@
       "id": "harness-hardening-retro-fixes",
       "type": "feature",
       "provenance": "backfilled"
+    }
+  ],
+  "user/scripts/test_tool_search.py": [
+    {
+      "id": "orchestrator-tool-search",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "user/scripts/test_toolify_miner.py": [
@@ -23860,6 +23940,13 @@
       "provenance": "manual"
     }
   ],
+  "user/scripts/tool-search.py": [
+    {
+      "id": "orchestrator-tool-search",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "user/scripts/toolify-miner.py": [
     {
       "id": "toolify-auto-promotion",
@@ -24138,6 +24225,11 @@
     },
     {
       "id": "lean-plan-files",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "orchestrator-tool-search",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -25252,6 +25344,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "orchestrator-tool-search",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "park-provisional-acceptance",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -25385,6 +25482,11 @@
     },
     {
       "id": "mechanize-prose-only-orchestrator-contracts",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "orchestrator-tool-search",
       "type": "feature",
       "provenance": "pipeline-gated"
     },

@@ -62,7 +62,7 @@ Every load-bearing assumption here is code-provable, not runtime-coupled: `--too
 
 ### Phase 1: `--tool-search` CLI + corpus aggregation
 
-**Status:** Complete (implementation; runtime-verification rows owned by the quality-gate tail)
+**Status:** Complete
 
 **Scope:** A new stdlib-only, read-only roster script `user/scripts/tool-search.py` exposing `--tool-search "<need>" [--json] [--top N]`. It aggregates five existing on-disk sources into one searchable corpus and returns deterministic ranked matches or an explicit `MISS` verdict as the authoritative last stdout line.
 
@@ -109,7 +109,7 @@ Every load-bearing assumption here is code-provable, not runtime-coupled: `--too
 
 ### Phase 2: Miss protocol glue (dedup + correctness-gated recommendation)
 
-**Status:** Complete (implementation; runtime-verification row owned by the test suite)
+**Status:** Complete
 
 **Scope:** On a `MISS` verdict, `tool-search.py` additionally (a) checks the toolify promotion ledger + open feature/bug queues for an already-proposed match (dedup), (b) classifies whether the missing tool is a known absent host-capability (routes to the existing host-capability defer model instead of a build), and (c) — when neither dedup nor host-capability applies — prints a ready-to-copy `--emit-dispatch hardening` command suggestion (never executed by this script) shaped by a caller-supplied `--correctness-load-bearing` flag. No new state/ledger is introduced; every primitive reused already exists.
 
@@ -150,7 +150,7 @@ Every load-bearing assumption here is code-provable, not runtime-coupled: `--too
 
 ### Phase 3: Prose wiring (coupled-pair)
 
-**Status:** Complete (implementation; runtime-verification rows owned by the lint/audit tooling)
+**Status:** Complete
 
 **Scope:** Wire `--tool-search` into the orchestrator's always-present prose so the model actually invokes it before an abnormal tool-needing operation, and mirror the addition across the coupled-skill family per the root `CLAUDE.md` Coupled Skill Pairs table.
 
@@ -195,7 +195,7 @@ Every load-bearing assumption here is code-provable, not runtime-coupled: `--too
 
 ### Phase 4: KPI selector registration (code-complete now; baseline value deferred)
 
-**Status:** Complete (implementation; measured baseline deferred by design per SPEC — runtime-verification rows owned by the test suite/lint)
+**Status:** Complete
 
 **Scope:** Register the `blind-tool-gap-dispatch-rate` selector's COMPUTATION in `kpi-scorecard.py` (reading the Phase-1 telemetry-event kind + the existing hardening-dispatch ledger/deny-ledger), and add its registry row. The selector is buildable and testable NOW; the actual measured baseline value is honestly deferred until real telemetry accrues (30d window per the SPEC's drafted row) — this phase does not fabricate a number.
 

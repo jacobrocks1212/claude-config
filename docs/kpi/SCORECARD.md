@@ -14,7 +14,7 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Runaway containment trip rate | 3658/30d | pending | — | PENDING-BASELINE |
+| Runaway containment trip rate | 3660/30d | pending | — | PENDING-BASELINE |
 
 ## halt-handling
 
@@ -26,7 +26,7 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Cycles per completion | 6.85 (30d) | pending | — | PENDING-BASELINE |
+| Cycles per completion | 6.79 (30d) | pending | — | PENDING-BASELINE |
 | MCP-validation round trips per feature | — | pending | — | NO-DATA |
 
 ## harness-canary
@@ -94,7 +94,13 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Max assembled cycle-prompt bytes across dispatchable profiles `[claude-config]` | 20843 (30d) | 20843 (measured 2026-07-19) | — | PENDING-BASELINE |
+| Max assembled cycle-prompt bytes across dispatchable profiles `[claude-config]` | 21457 (30d) | 20843 (measured 2026-07-19) | — | PENDING-BASELINE |
+
+## orchestrator-tool-search
+
+| KPI | current | baseline | band (warn/breach) | status |
+|-----|---------|----------|--------------------|--------|
+| Share of tool-gap harden dispatches NOT preceded by a --tool-search in the same cycle `[claude-config]` | 1 (30d) | pending | — | PENDING-BASELINE |
 
 ## Regressions
 
@@ -106,7 +112,7 @@
 
 ## Canary health
 
-- 26 canaries open, oldest 1d, 0 will no-data-close within 7d
+- 27 canaries open, oldest 1d, 0 will no-data-close within 7d
 
 ## Notes
 
