@@ -2243,6 +2243,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/coupled-overlays-drift-from-committed-skills/FIXED.md": [
+    {
+      "id": "coupled-overlays-drift-from-committed-skills",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/coupled-overlays-drift-from-committed-skills/SPEC.md": [
+    {
+      "id": "coupled-overlays-drift-from-committed-skills",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/cycle-subagent-fabricates-policy-or-stray-branch/FIXED.md": [
     {
       "id": "cycle-subagent-fabricates-policy-or-stray-branch",
@@ -16276,6 +16290,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/interventions/harden-2026-07-r116.md": [
+    {
+      "id": "coupled-overlays-drift-from-committed-skills",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/harden-2026-07-r14.md": [
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -18422,6 +18443,11 @@
       "id": "containment-hook-inline-python-exceeds-windows-cmdline-limit",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "coupled-overlays-drift-from-committed-skills",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "cycle-subagent-stalls-on-wedged-sub-subagent",
