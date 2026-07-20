@@ -26,7 +26,7 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Cycles per completion | 7.06 (30d) | pending | — | PENDING-BASELINE |
+| Cycles per completion | 6.85 (30d) | pending | — | PENDING-BASELINE |
 | MCP-validation round trips per feature | — | pending | — | NO-DATA |
 
 ## harness-canary

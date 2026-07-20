@@ -57,6 +57,11 @@
       "provenance": "manual"
     },
     {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "generalized-build-test-runner-skills",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -6598,6 +6603,20 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/coupled-overlays-drift-from-committed-skills/FIXED.md": [
+    {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/coupled-overlays-drift-from-committed-skills/SPEC.md": [
+    {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/cycle-budget-counters-double-count-on-probes-and-inject-hook/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -11465,6 +11484,55 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/features/cycle-prompt-deflation/IMPLEMENTATION_NOTES.md": [
+    {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/cycle-prompt-deflation/PHASES.md": [
+    {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/cycle-prompt-deflation/SEMANTIC_DIFF_PHASE2.md": [
+    {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/cycle-prompt-deflation/SEMANTIC_DIFF_PHASE3.md": [
+    {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/cycle-prompt-deflation/SPEC.md": [
+    {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/cycle-prompt-deflation/plans/all-phases-cycle-prompt-deflation-part-1.md": [
+    {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/features/cycle-prompt-deflation/plans/all-phases-cycle-prompt-deflation-part-2.md": [
+    {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/features/cycle-prompt-environment-dialect/COMPLETED.md": [
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
@@ -16295,6 +16363,11 @@
       "id": "coupled-overlays-drift-from-committed-skills",
       "type": "bug",
       "provenance": "manual"
+    },
+    {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
     }
   ],
   "docs/interventions/harden-2026-07-r14.md": [
@@ -18079,6 +18152,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-core-package-decomposition",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -18102,6 +18180,11 @@
     },
     {
       "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -18586,6 +18669,11 @@
     },
     {
       "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -20596,6 +20684,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -20638,6 +20731,11 @@
       "provenance": "pipeline-gated"
     },
     {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -20670,6 +20768,11 @@
   "user/scripts/coupled-overlays/lazy-cloud.overlay.json": [
     {
       "id": "coupled-pair-generation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     }
@@ -20821,6 +20924,11 @@
     },
     {
       "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -22038,6 +22146,11 @@
   ],
   "user/scripts/lint-skills.py": [
     {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -22297,6 +22410,11 @@
       "provenance": "manual"
     },
     {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "lazy-batch-skill-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -22313,6 +22431,11 @@
     }
   ],
   "user/scripts/skill-size-ratchet.py": [
+    {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "lazy-batch-skill-deflation",
       "type": "feature",
@@ -22557,6 +22680,11 @@
     },
     {
       "id": "bug-queue-aging-backpressure",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },
@@ -22967,6 +23095,11 @@
     }
   ],
   "user/scripts/test_skill_size_ratchet.py": [
+    {
+      "id": "cycle-prompt-deflation",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "lazy-batch-skill-deflation",
       "type": "feature",
@@ -23966,6 +24099,11 @@
     },
     {
       "id": "concurrent-worktree-agent-coordination",
+      "type": "feature",
+      "provenance": "pipeline-gated"
+    },
+    {
+      "id": "cycle-prompt-deflation",
       "type": "feature",
       "provenance": "pipeline-gated"
     },

@@ -40,7 +40,7 @@ Phase-level dependencies on completed upstream features (extracted per /spec-pha
 
 **Scope:** Add an assembled-cycle-prompt measurement mode to `skill-size-ratchet.py` (imports `emit_cycle_prompt`, never re-parses the template), enumerate the real dispatchable profiles, seed their current assembled sizes as ceilings in `skill-size-baseline.json`, register the `cycle-prompt-assembled-bytes` KPI selector + its census computation in `kpi-scorecard.py`, add the registry row (`baseline: pending`), and confirm the assembled ratchet runs from `lint-skills.py --check-skill-size` and the gate-battery. **No prompt edits in this phase** — this locks the "before" numbers and stops further accretion immediately.
 
-**Status:** Complete (implementation; feature validation pending later phases)
+**Status:** Complete
 
 **Deliverables:**
 - [x] Assembled-profile measurement in `skill-size-ratchet.py`: a function that, given a `(pipeline, mode, skill[, variant, park, host])` profile, drives `lazy_core.emit_cycle_prompt` and returns `len(prompt.encode("utf-8"))` (refusing/`None` results surfaced honestly, never counted as 0).
