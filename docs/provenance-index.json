@@ -47,6 +47,11 @@
   ],
   ".claude/skill-config/gate-battery.json": [
     {
+      "id": "coupled-overlay-drift-gate-not-in-mandatory-gates",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
@@ -68,6 +73,11 @@
     }
   ],
   ".claude/skill-config/quality-gates.md": [
+    {
+      "id": "coupled-overlay-drift-gate-not-in-mandatory-gates",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "harness-hardening-retro-fixes",
       "type": "feature",
@@ -116,6 +126,11 @@
       "id": "concurrent-same-branch-walkers-no-arbitration",
       "type": "bug",
       "provenance": "backfilled"
+    },
+    {
+      "id": "coupled-overlay-drift-gate-not-in-mandatory-gates",
+      "type": "bug",
+      "provenance": "pipeline-gated"
     },
     {
       "id": "cycle-subagent-fabricates-policy-or-stray-branch",
@@ -6614,6 +6629,34 @@
     {
       "id": "skill-config-schema-and-reference-lint",
       "type": "feature",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/coupled-overlay-drift-gate-not-in-mandatory-gates/IMPLEMENTATION_NOTES.md": [
+    {
+      "id": "coupled-overlay-drift-gate-not-in-mandatory-gates",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/coupled-overlay-drift-gate-not-in-mandatory-gates/PHASES.md": [
+    {
+      "id": "coupled-overlay-drift-gate-not-in-mandatory-gates",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/coupled-overlay-drift-gate-not-in-mandatory-gates/SPEC.md": [
+    {
+      "id": "coupled-overlay-drift-gate-not-in-mandatory-gates",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/coupled-overlay-drift-gate-not-in-mandatory-gates/plans/fix-wire-coupled-overlay-drift-gate.md": [
+    {
+      "id": "coupled-overlay-drift-gate-not-in-mandatory-gates",
+      "type": "bug",
       "provenance": "pipeline-gated"
     }
   ],
@@ -20120,6 +20163,11 @@
       "provenance": "backfilled"
     },
     {
+      "id": "coupled-overlay-drift-gate-not-in-mandatory-gates",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
+    {
       "id": "cycle-subagent-fabricates-policy-or-stray-branch",
       "type": "bug",
       "provenance": "backfilled"
@@ -23484,6 +23532,11 @@
     }
   ],
   "user/scripts/tests/test_gate_battery.py": [
+    {
+      "id": "coupled-overlay-drift-gate-not-in-mandatory-gates",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    },
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",

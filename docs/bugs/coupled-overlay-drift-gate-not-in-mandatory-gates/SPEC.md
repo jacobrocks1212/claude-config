@@ -2,7 +2,7 @@
 
 > The overlay-drift gate exists but is not wired into the mandatory authoring/commit-time gate battery, so per-pair overlays silently drifted from their committed hand-authored SKILL.md across three commits before being caught reactively mid-run.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P3
 **Discovered:** 2026-07-19
 **Placement:** docs/bugs/coupled-overlay-drift-gate-not-in-mandatory-gates
