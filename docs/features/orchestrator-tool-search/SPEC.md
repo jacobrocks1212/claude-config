@@ -81,13 +81,7 @@ The remediation spine — observed-friction harden, `pending_hardening` route-wi
 
 ## Implementation Phases
 
-**Phase 1 — `--tool-search` CLI + corpus aggregation.** Author the read-only roster script; aggregate the five inventories; deterministic ranking; `MISS` banner; `--json`. Register on the CLI-surface roster + `cli_surface_gen --check`. Tests: hit ranking, MISS verdict, dedup-lookup helper. Deliverable: `--tool-search` returns correct ranked matches / MISS over the real registries.
-
-**Phase 2 — Miss protocol glue.** Wire the deterministic MISS → toolify-ledger/queue dedup → observed-friction `--emit-dispatch hardening` (backgrounded) → correctness-gated `pending_hardening` route-withhold. Reuse every primitive; add no new state. Host-binary case routes to host-capability defer. Tests: dedup hit suppresses dispatch; correctness-gated hold vs convenience-proceed; depth-cap respected. Deliverable: a MISS produces the right remediation deterministically.
-
-**Phase 3 — Prose wiring (coupled-pair).** Add the `--tool-search` reference + miss protocol to `lazy-batch` SKILL.md and `cycle-base-prompt.md`; mirror to `lazy-bug-batch` + `lazy-batch-cloud`; run the parity audit + overlay generator `--check`; respect the deflation size ratchet. Deliverable: orchestrator prose names the tool + trigger + protocol; parity green.
-
-**Phase 4 — KPI baseline.** Capture the friction KPI (below) once telemetry exists. Deliverable: registry row with measured baseline.
+See [`PHASES.md`](./PHASES.md) for the detailed phase breakdown.
 
 ## Validation Criteria
 
@@ -132,6 +126,8 @@ The remediation spine — observed-friction harden, `pending_hardening` route-wi
 - **Trigger mechanization (deferred to a later pass).** v1 relies on prose to invoke the search (model-invoked, like Claude Code ToolSearch). If telemetry shows under-invocation, a mechanical nudge (e.g. detecting a harden dispatch with no preceding search and back-pressuring it) is a follow-up — not v1 scope.
 - **Ranking precision.** The deterministic keyword/near-miss ranker's precision over the prose-y Scripts table is bounded; if match quality is poor in practice, enriching the corpus with per-tool keyword tags is a Phase-1 follow-up (estimated — verify during Phase 1).
 - **Convenience vs correctness classification authority.** v1 leaves the classification to the orchestrator's judgment at the miss site; if this proves inconsistent, a declared per-operation classification is a follow-up.
+- **Discovered at `/spec-phases` (2026-07-19):** `user/scripts/cli_surface.py` already ships a per-script `--search-ops`/`ops_index` token-overlap search (deterministic, over one script's own argparse flags). `--tool-search` reuses that exact scoring shape (documented as a reuse directive in `PHASES.md`'s touchpoint audit) but stays a separate script because its scope is cross-source aggregation, not one parser's own flags — flagged here in case a future pass decides to fold the two into one shared ranking module instead of two independent call sites of the same algorithm shape.
+- **Discovered at `/spec-phases` (2026-07-19):** the SPEC's `/spec-phases` Step 1.6 dep-sync (`lazy-state.py --sync-deps`) is refused for any cycle subagent by design (`refuse_if_cycle_active`), so it could not run during this feature's own phase-authoring cycle — the SPEC's `**Depends on:**` block is already locked and the realign stub records the upstream hashes, so this has no effect on THIS feature's correctness, but it is a standing harness-doc gap (spec-phases's Step 1.6 interpretation table doesn't name the exit-3 cycle-subagent case) worth a future `harden-harness` pass, not something this feature's phases need to fix.
 
 ## Research References
 
