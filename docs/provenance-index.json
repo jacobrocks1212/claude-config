@@ -2248,6 +2248,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/containment-background-dispatch-deny-unreachable-on-agent-task/FIXED.md": [
+    {
+      "id": "containment-background-dispatch-deny-unreachable-on-agent-task",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/containment-background-dispatch-deny-unreachable-on-agent-task/SPEC.md": [
+    {
+      "id": "containment-background-dispatch-deny-unreachable-on-agent-task",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/coupled-overlays-drift-from-committed-skills/FIXED.md": [
     {
       "id": "coupled-overlays-drift-from-committed-skills",
