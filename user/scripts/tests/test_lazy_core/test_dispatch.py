@@ -1829,7 +1829,7 @@ def test_record_decision_cli_and_apply_resolution_binds_end_to_end():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         emit_args = [
@@ -1889,7 +1889,7 @@ def test_emit_dispatch_always_emits_json_on_error():
         r = subprocess.run(
             [sys.executable, str(lazy_state), "--emit-dispatch", "recovery",
              "--context-file", str(cf)],
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
         assert r.returncode == 1, f"malformed context must exit 1, got {r.returncode}"
         data = json.loads(r.stdout)  # MUST be valid JSON
@@ -2435,7 +2435,7 @@ def test_subprocess_emit_prompt_with_marker_writes_registry():
                 "--repo-root", str(fixture_repo),
             ],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=env_no_marker,
         )
         registry_file = state_dir / "lazy-prompt-registry.json"
@@ -2467,7 +2467,7 @@ def test_subprocess_emit_prompt_with_marker_writes_registry():
                 "--repo-root", str(fixture_repo),
             ],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=env_with_marker,
         )
         assert result.returncode == 0, (
@@ -2581,7 +2581,7 @@ def test_subprocess_emit_prompt_withholds_when_merged_head_is_p0_bug():
             [sys.executable, str(lazy_state_script),
              "--repeat-count", "--probe", "--emit-prompt",
              "--repo-root", str(fixture_repo)],
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
         assert result.returncode == 0, (
             f"lazy-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
@@ -2662,7 +2662,7 @@ def test_subprocess_emit_prompt_oracle_excludes_nondispatchable_bug_head_no_with
         result = subprocess.run(
             [sys.executable, str(lazy_state_script),
              "--repeat-count", "--probe", "--emit-prompt", "--repo-root", str(fixture_repo)],
-            capture_output=True, text=True, env=env)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
         assert result.returncode == 0, (
             f"lazy-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
         state_json = json.loads(result.stdout)
@@ -2727,7 +2727,7 @@ def test_subprocess_bug_emit_prompt_oracle_excludes_nondispatchable_feature_head
         result = subprocess.run(
             [sys.executable, str(bug_state_script),
              "--repeat-count", "--probe", "--emit-prompt", "--repo-root", str(fixture_repo)],
-            capture_output=True, text=True, env=env)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
         assert result.returncode == 0, (
             f"bug-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
         state_json = json.loads(result.stdout)
@@ -2806,7 +2806,7 @@ def test_subprocess_emit_prompt_lane_marker_skips_merged_head_withhold():
             [sys.executable, str(lazy_state_script),
              "--repeat-count", "--probe", "--emit-prompt",
              "--repo-root", str(fixture_repo), "--feature-id", "feat-c"],
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
         assert result.returncode == 0, (
             f"lazy-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
@@ -2866,7 +2866,7 @@ def _gap8_run_emit_probe(lazy_state_script, fixture_repo, state_dir):
         [sys.executable, str(lazy_state_script),
          "--repeat-count", "--probe", "--emit-prompt",
          "--repo-root", str(fixture_repo), "--feature-id", "feat-c"],
-        capture_output=True, text=True, env=env,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
     )
     assert result.returncode == 0, (
         f"lazy-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
@@ -3023,7 +3023,7 @@ def test_repeat_count_peek_does_not_advance_marker_counters():
                 "--repo-root", str(fixture_repo),
             ],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=env,
         )
         assert result.returncode == 0, (
@@ -3670,7 +3670,7 @@ def test_emit_dispatch_cli_registry_gating():
         result_a = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=env_no_marker,
         )
 
@@ -3729,7 +3729,7 @@ def test_emit_dispatch_cli_registry_gating():
         result_b = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=env_with_marker,
         )
         assert result_b.returncode == 0, (
@@ -3792,7 +3792,7 @@ def test_emit_dispatch_cli_registry_gating():
             result_c = subprocess.run(
                 cmd_refusal,
                 capture_output=True,
-                text=True,
+                text=True, encoding="utf-8", errors="replace",
                 env=env_with_marker,
             )
             assert result_c.returncode == 1, (
@@ -3867,7 +3867,7 @@ def test_emit_dispatch_cli_bug_state_mirror():
         result = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=env,
         )
 
@@ -4506,7 +4506,7 @@ def test_hardening_cli_emit_and_register():
         result_a = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=env_with_marker,
         )
 
@@ -4576,7 +4576,7 @@ def test_hardening_cli_emit_and_register():
         result_b = subprocess.run(
             cmd_b,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=env_no_marker,
         )
         assert result_b.returncode == 0, (
@@ -5718,7 +5718,7 @@ def _emit_prompt_subprocess(fixture_repo, state_dir, extra_args=None):
         [sys.executable, str(_SCRIPTS_DIR / "lazy-state.py"),
          "--repeat-count", "--probe", "--emit-prompt",
          "--repo-root", str(fixture_repo), *(extra_args or [])],
-        capture_output=True, text=True, env=env,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
     )
     assert result.returncode == 0, (
         f"lazy-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
@@ -6307,7 +6307,7 @@ def test_subprocess_bug_emit_prompt_oracle_excludes_operator_deferred_feature_he
         result = subprocess.run(
             [sys.executable, str(bug_state_script),
              "--repeat-count", "--probe", "--emit-prompt", "--repo-root", str(fixture_repo)],
-            capture_output=True, text=True, env=env)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
         assert result.returncode == 0, (
             f"bug-state.py exited {result.returncode}; stderr: {result.stderr[:400]!r}")
         state_json = json.loads(result.stdout)

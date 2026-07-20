@@ -281,7 +281,7 @@ def _run_bash(script: Path, stdin_text: str, env: dict) -> subprocess.CompletedP
         [_BASH_EXE, str(script)],
         input=stdin_text,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=env,
     )
 
@@ -292,7 +292,7 @@ def _run_guard_py(stdin_text: str, env: dict) -> subprocess.CompletedProcess:
         [sys.executable, str(_GUARD_PY)],
         input=stdin_text,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=env,
     )
 
@@ -1146,7 +1146,7 @@ def test_pipe_tests_wsl():
     try:
         wsl_check = subprocess.run(
             ["wsl", "bash", "-c", "echo OK"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
         )
     except (FileNotFoundError, OSError):
         raise _TestSkip("wsl not available on this machine (no wsl binary)")
@@ -1156,7 +1156,7 @@ def test_pipe_tests_wsl():
     # Check if python3 is available inside WSL.
     py3_check = subprocess.run(
         ["wsl", "bash", "-c", "command -v python3"],
-        capture_output=True, text=True, timeout=15,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=15,
     )
     if py3_check.returncode != 0 or not py3_check.stdout.strip():
         raise _TestSkip("python3 not available inside WSL")
@@ -1169,7 +1169,7 @@ def test_pipe_tests_wsl():
         forward_slash_path = win_path.replace("\\", "/")
         r = subprocess.run(
             ["wsl", "wslpath", "-u", forward_slash_path],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
         )
         if r.returncode != 0:
             raise AssertionError(
@@ -1193,7 +1193,7 @@ def test_pipe_tests_wsl():
         result_fast = subprocess.run(
             ["wsl", "bash", "-c",
              f"echo '{stdin_text}' | LAZY_STATE_DIR={state_dir_wsl} bash {guard_sh_wsl}"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
         )
         assert result_fast.returncode == 0, (
             f"WSL guard fast-path must exit 0; got {result_fast.returncode}; "
@@ -1221,7 +1221,7 @@ def test_pipe_tests_wsl():
             ["wsl", "bash", "-c",
              f"echo '{stdin_text}' | "
              f"LAZY_STATE_DIR={state_dir_wsl} python3 {guard_py_wsl}"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
         )
         assert result_deny.returncode == 0, (
             f"WSL guard CLI must exit 0; got {result_deny.returncode}; "
@@ -1951,7 +1951,7 @@ def test_guard_depth_cap_real_hardening_entry():
         emit_result = subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=env,
         )
 
@@ -4517,7 +4517,7 @@ def _init_git_repo(path: Path) -> Path:
     and repo_key() resolve it consistently. Returns the realpath'd repo root."""
     path.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "-C", str(path), "init", "-q"],
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, encoding="utf-8", errors="replace")
     return Path(os.path.realpath(str(path)))
 
 
@@ -4567,7 +4567,7 @@ def test_guard_two_repo_isolation_crossrepo_noop_samerepo_enforces():
         stdin_b = _e1_preToolUse_json(unregistered, cwd=str(repo_b))
         res_b = subprocess.run(
             [_BASH_EXE, str(_GUARD_SH)], input=stdin_b,
-            capture_output=True, text=True, env=env, cwd=str(repo_b),
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, cwd=str(repo_b),
         )
         assert res_b.returncode == 0, (
             f"cross-repo guard must exit 0; stderr: {res_b.stderr!r}"
@@ -4581,7 +4581,7 @@ def test_guard_two_repo_isolation_crossrepo_noop_samerepo_enforces():
         stdin_a = _e1_preToolUse_json(unregistered, cwd=str(repo_a))
         res_a = subprocess.run(
             [_BASH_EXE, str(_GUARD_SH)], input=stdin_a,
-            capture_output=True, text=True, env=env, cwd=str(repo_a),
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, cwd=str(repo_a),
         )
         assert res_a.returncode == 0, (
             f"same-repo guard must exit 0 (deny is in JSON); stderr: {res_a.stderr!r}"
@@ -4644,7 +4644,7 @@ def test_inject_two_repo_isolation_crossrepo_noop_samerepo_injects():
         stdin_b = _userPromptSubmit_json(session_id=owner, cwd=str(repo_b))
         res_b = subprocess.run(
             [_BASH_EXE, str(_INJECT_SH)], input=stdin_b,
-            capture_output=True, text=True, env=env, cwd=str(repo_b),
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, cwd=str(repo_b),
         )
         assert res_b.returncode == 0, (
             f"cross-repo inject must exit 0; stderr: {res_b.stderr!r}"
@@ -4658,7 +4658,7 @@ def test_inject_two_repo_isolation_crossrepo_noop_samerepo_injects():
         stdin_a = _userPromptSubmit_json(session_id=owner, cwd=str(repo_a))
         res_a = subprocess.run(
             [_BASH_EXE, str(_INJECT_SH)], input=stdin_a,
-            capture_output=True, text=True, env=env, cwd=str(repo_a),
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, cwd=str(repo_a),
         )
         assert res_a.returncode == 0, (
             f"same-repo inject must exit 0; stderr: {res_a.stderr!r}"
@@ -4708,7 +4708,7 @@ def test_marker_present_non_owner_session_reports_absent():
             return subprocess.run(
                 [sys.executable, state_py, "--marker-present",
                  "--repo-root", repo_root, "--session-id", session_id],
-                env=env, capture_output=True, text=True,
+                env=env, capture_output=True, text=True, encoding="utf-8", errors="replace",
             ).returncode
 
         assert _present(owner_session) == 0, (
@@ -5133,7 +5133,7 @@ _STRAYBRANCH_HOOK_SH = _HOOKS_DIR / "block-sentinel-write-on-stray-branch.sh"
 def _git(args, cwd):
     return subprocess.run(
         ["git"] + args, cwd=str(cwd),
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
 
 
@@ -9818,7 +9818,7 @@ def _sessionend_json(session_id: str, cwd: str | None = None) -> str:
 
 def _wedge_git(repo: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        ["git", "-C", str(repo), *args], capture_output=True, text=True,
+        ["git", "-C", str(repo), *args], capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
 
 

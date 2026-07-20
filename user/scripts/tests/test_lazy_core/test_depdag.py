@@ -810,7 +810,7 @@ def test_set_severity_cli_operator_authorized_gate_and_reorder(tmp_path):
     cp = subprocess.run(
         [sys.executable, str(bug_state), "--set-severity", "bug-b", "P0",
          "--repo-root", str(tmp_path)],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     assert cp.returncode == 2, (cp.returncode, cp.stdout, cp.stderr)
     assert qp.read_bytes() == before
@@ -818,7 +818,7 @@ def test_set_severity_cli_operator_authorized_gate_and_reorder(tmp_path):
     cp2 = subprocess.run(
         [sys.executable, str(bug_state), "--set-severity", "bug-b", "P0",
          "--operator-authorized", "--repo-root", str(tmp_path)],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     assert cp2.returncode == 0, (cp2.returncode, cp2.stdout, cp2.stderr)
     order = [e["id"] for e in json.loads(qp.read_text())["queue"]]
@@ -843,7 +843,7 @@ def test_unpin_cli_restores_severity_and_repositions(tmp_path):
     cp = subprocess.run(
         [sys.executable, str(bug_state), "--unpin", "bug-pinned",
          "--operator-authorized", "--repo-root", str(tmp_path)],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     assert cp.returncode == 0, (cp.returncode, cp.stdout, cp.stderr)
     entry = next(e for e in json.loads(qp.read_text())["queue"] if e["id"] == "bug-pinned")
@@ -852,7 +852,7 @@ def test_unpin_cli_restores_severity_and_repositions(tmp_path):
     cp2 = subprocess.run(
         [sys.executable, str(bug_state), "--unpin", "bug-pinned",
          "--operator-authorized", "--repo-root", str(tmp_path)],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     assert cp2.returncode == 0 and '"noop": true' in cp2.stdout.lower()
 
@@ -868,7 +868,7 @@ def test_search_ops_finds_the_mutation_commands(tmp_path):
     ):
         cp = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / script), "--search-ops", query],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert cp.returncode == 0, (cp.returncode, cp.stderr)
         matches = [m["name"] for m in json.loads(cp.stdout)["matches"]]

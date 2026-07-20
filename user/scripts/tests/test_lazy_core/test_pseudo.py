@@ -2556,7 +2556,7 @@ def test_archive_fixed_happy_path_with_unstaged_deletion():
         assert result["committed"]
         status = subprocess.run(
             ["git", "-C", str(repo_root), "status", "--short"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert status.stdout.strip() == "", (
             f"expected clean tree, got: {status.stdout}"
@@ -2564,7 +2564,7 @@ def test_archive_fixed_happy_path_with_unstaged_deletion():
         # Canonical commit message.
         log = subprocess.run(
             ["git", "-C", str(repo_root), "log", "-1", "--format=%s"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert log.stdout.strip() == (
             "fix(my-bug): mark fixed and archive — FIXED.md receipt gated"
@@ -2643,7 +2643,7 @@ def test_archive_fixed_rerun_is_noop():
         assert first["ok"] is True
         sha_before = subprocess.run(
             ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         ).stdout.strip()
 
         second = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
@@ -2652,7 +2652,7 @@ def test_archive_fixed_rerun_is_noop():
         assert second["noop"] is True
         sha_after = subprocess.run(
             ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         ).stdout.strip()
         assert sha_before == sha_after, "noop re-run must not create a commit"
 
@@ -2684,7 +2684,7 @@ def test_archive_fixed_appends_concurrent_commit_sha():
             assert result["ok"] is True, result
             head = subprocess.run(
                 ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
-                capture_output=True, text=True,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
             ).stdout.strip()
             ledger = lazy_core.read_concurrent_commit_entries()
         finally:
@@ -2773,7 +2773,7 @@ def test_archive_fixed_resume_after_partial_move():
         assert result["committed"]
         status = subprocess.run(
             ["git", "-C", str(repo_root), "status", "--short"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert status.stdout.strip() == ""
 
@@ -2811,7 +2811,7 @@ def test_archive_fixed_accepts_relative_spec_path():
         assert result["committed"]
         status = subprocess.run(
             ["git", "-C", str(repo_root), "status", "--short"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert status.stdout.strip() == "", (
             f"expected clean tree, got: {status.stdout}"

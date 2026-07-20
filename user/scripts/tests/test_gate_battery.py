@@ -111,7 +111,7 @@ def _run_battery(repo_root: Path, state_root: Path, extra_args=None):
     ]
     if extra_args:
         cmd += extra_args
-    return subprocess.run(cmd, capture_output=True, text=True)
+    return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 
 def _last_stdout_line(result) -> str:
@@ -382,7 +382,7 @@ def _await_battery(repo_root: Path, state_root: Path, run_id: str, extra_args=No
     ]
     if extra_args:
         cmd += extra_args
-    return subprocess.run(cmd, capture_output=True, text=True)
+    return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 
 def _write_results_file(state_root: Path, repo_root: Path, run_id: str, payload: dict) -> Path:

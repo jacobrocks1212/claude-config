@@ -381,7 +381,7 @@ def test_cli_smoke_json_and_readonly():
         res = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "skill-usage-miner.py"),
              "--logs", str(logs), "--repo-root", str(root), "--json"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert res.returncode == 0, res.stderr
         json.loads(res.stdout)
@@ -401,13 +401,13 @@ def test_cli_out_writes_named_file_only():
             [sys.executable, str(_SCRIPTS_DIR / "skill-usage-miner.py"),
              "--logs", str(logs), "--repo-root", str(root), "--markdown",
              "--out", str(out)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert res1.returncode == 0, res1.stderr
         res2 = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "skill-usage-miner.py"),
              "--logs", str(logs), "--repo-root", str(root), "--markdown"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert out.read_text(encoding="utf-8") == res2.stdout, \
             "--out content must equal the stdout report"
@@ -423,7 +423,7 @@ def test_both_formats_when_neither_flag():
         res = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "skill-usage-miner.py"),
              "--logs", str(logs), "--repo-root", str(root)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert res.returncode == 0, res.stderr
         assert "## Skill usage" in res.stdout and '"usage"' in res.stdout
@@ -442,7 +442,7 @@ def _git(cwd, *args, env_extra=None):
     if env_extra:
         env.update(env_extra)
     res = subprocess.run(["git", "-C", str(cwd), *args],
-                         capture_output=True, text=True, env=env)
+                         capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
     assert res.returncode == 0, f"git {args}: {res.stderr}"
     return res.stdout
 

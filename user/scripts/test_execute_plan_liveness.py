@@ -188,7 +188,7 @@ def _run_cli(script: Path, repo_root: str, plan: str, base: Path):
         [sys.executable, str(script),
          "--repo-root", repo_root,
          "--execute-plan-liveness", "--plan", plan],
-        capture_output=True, text=True, env=env,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
     )
 
 

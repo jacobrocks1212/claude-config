@@ -91,7 +91,7 @@ def _run_scan(repo: Path, state_dir: Path, *extra: str) -> subprocess.CompletedP
     return subprocess.run(
         [sys.executable, str(_SCAN_PY),
          "--repo-root", str(repo), "--now", str(_NOW), *extra],
-        capture_output=True, text=True, env=env, timeout=120,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=120,
     )
 
 

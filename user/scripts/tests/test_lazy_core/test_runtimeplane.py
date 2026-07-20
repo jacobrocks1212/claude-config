@@ -4322,7 +4322,7 @@ def test_read_concurrent_merge_back_trailers_from_history():
     def _git(cwd, *args):
         return subprocess.run(
             ["git", "-C", str(cwd)] + list(args),
-            check=True, capture_output=True, text=True, env=env,
+            check=True, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
 
     with tempfile.TemporaryDirectory() as td:

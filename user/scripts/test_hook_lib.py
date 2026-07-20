@@ -55,7 +55,7 @@ def _run_snippet(snippet: str, env: dict | None = None) -> subprocess.CompletedP
         run_env.update(env)
     return subprocess.run(
         [sys.executable, "-c", full],
-        capture_output=True, text=True, env=run_env,
+        capture_output=True, text=True, encoding="utf-8", errors="replace", env=run_env,
     )
 
 

@@ -136,7 +136,7 @@ def test_lazy_state_test_output_matches_baseline():
         result = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "lazy-state.py"), "--test"],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env={**os.environ, "LAZY_STATE_DIR": _isolated_state},
         )
     live_output = result.stdout + result.stderr
@@ -189,7 +189,7 @@ def test_bug_state_test_output_matches_baseline():
         result = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "bug-state.py"), "--test"],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env={**os.environ, "LAZY_STATE_DIR": _isolated_state},
         )
     live_output = result.stdout + result.stderr
@@ -846,7 +846,7 @@ def test_guard_deny_writes_ledger_entry():
         })
         result = subprocess.run(
             [sys.executable, str(guard_script)],
-            input=hook_input, capture_output=True, text=True, env=env,
+            input=hook_input, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
         assert result.returncode == 0, f"guard must exit 0; stderr={result.stderr[:300]!r}"
         out = json.loads(result.stdout)
@@ -1109,7 +1109,7 @@ def test_checkpoint_round_trip():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # Phase 7: use --unattended so the checkpoint auth gate does not apply.
@@ -1206,7 +1206,7 @@ def test_run_end_checkpoint_threads_operator_authorized():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         ckpt_path = state_dir / "lazy-run-checkpoint.json"
@@ -1990,7 +1990,7 @@ def test_checkpoint_resume_preserves_counters_e2e():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # Start (unattended so the checkpoint auth gate does not block the test).
@@ -2044,7 +2044,7 @@ def test_operator_authorized_checkpoint_resume_resets_e2e():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         assert run(["--run-start", "--max-cycles", "25", "--unattended"]).returncode == 0
@@ -2106,7 +2106,7 @@ def test_emit_dispatch_context_file_long_value():
         r = subprocess.run(
             [sys.executable, str(lazy_state), "--emit-dispatch", "recovery",
              "--context-file", str(cf)],
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
         # MUST be parseable JSON regardless of value length/punctuation.
         data = json.loads(r.stdout)
@@ -3001,7 +3001,7 @@ def test_p7_run_end_checkpoint_attended_no_auth_refuses():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # --run-start WITHOUT --unattended → attended=True marker.
@@ -3066,7 +3066,7 @@ def test_p7_run_end_checkpoint_attended_with_auth_succeeds():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         r_start = run(["--run-start", "--max-cycles", "10"])
@@ -3113,7 +3113,7 @@ def test_p7_run_end_checkpoint_unattended_no_auth_allowed():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # --run-start --unattended → attended=False marker.
@@ -3160,7 +3160,7 @@ def test_p7_run_end_terminal_sanctioned_reason_allowed():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         r_start = run(["--run-start", "--max-cycles", "10"])
@@ -3200,7 +3200,7 @@ def test_p7_run_end_terminal_nonsanctioned_reason_refuses_without_auth():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         r_start = run(["--run-start", "--max-cycles", "10"])
@@ -3259,7 +3259,7 @@ def test_p7_run_end_terminal_nonsanctioned_reason_with_auth_allowed():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         r_start = run(["--run-start", "--max-cycles", "10"])
@@ -3315,7 +3315,7 @@ def test_p7_run_end_lane_park_terminal_allowed_and_skips_efficacy():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # Arm a LANE marker: parent-stamped.
@@ -3355,7 +3355,7 @@ def test_p7_run_end_serial_park_terminal_still_refused():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         r_start = run(["--run-start", "--max-cycles", "10"])  # serial → parent_run: null
@@ -3395,7 +3395,7 @@ def test_p7_run_end_terminal_no_terminal_reason_adds_deprecation():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         r_start = run(["--run-start", "--max-cycles", "10"])
@@ -3453,7 +3453,7 @@ def test_p7_emit_dispatch_includes_dispatch_prompt_ref():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # 1. No marker → dispatch_prompt_ref must be null.
@@ -3563,7 +3563,7 @@ def test_marker_present_cli_absent_then_present_and_readonly():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state), "--repo-root", str(repo_dir)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # No marker → exit 1, AND the read-only probe must not create the dir.
@@ -3607,7 +3607,7 @@ def _run_marker_status_cli_never_throws(script_name: str):
         def run(args):
             return subprocess.run(
                 [sys.executable, str(script)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # Absent (no state dir at all yet) → present: false, exit 0, read-only.
@@ -3695,7 +3695,7 @@ def test_cross_script_same_repo_refuses_keyed_dir_unset():
         def run(script, scriptargs):
             return subprocess.run(
                 [sys.executable, str(script)] + scriptargs,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # 1) Bug run-start in repo A → writes the marker into A's keyed subdir.
@@ -4430,7 +4430,7 @@ def test_count_authored_commits_since_excludes_merge_commits():
     _guard()
 
     def _run(cmd, cwd):
-        r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=cwd)
         if r.returncode != 0:
             raise RuntimeError(f"git fixture failed (cmd={cmd!r}): {r.stderr.strip()}")
         return r
@@ -5737,7 +5737,7 @@ def test_ensure_runtime_cli_handler_emits_m4_json_subprocess():
         result = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "lazy-state.py"),
              "--ensure-runtime", "--repo-root", str(repo_root)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
             env={**os.environ, "LAZY_STATE_DIR": state_dir},
             timeout=60,
         )
@@ -6060,7 +6060,7 @@ def test_run_start_park_umbrella_arms_both_facets_both_scripts():
             r = subprocess.run(
                 [sys.executable, str(script_path), "--run-start", "--park",
                  "--max-cycles", "20", "--repo-root", str(sd)],
-                capture_output=True, text=True, env=_run_start_park_env(sd),
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=_run_start_park_env(sd),
             )
             assert r.returncode == 0, (
                 f"[{script}] --run-start --park must exit 0 (is --park a known "
@@ -6077,7 +6077,7 @@ def test_run_start_park_umbrella_arms_both_facets_both_scripts():
             r = subprocess.run(
                 [sys.executable, str(script_path), "--run-start", "--park",
                  "--park-provisional", "--max-cycles", "20", "--repo-root", str(sd)],
-                capture_output=True, text=True, env=_run_start_park_env(sd),
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=_run_start_park_env(sd),
             )
             assert r.returncode == 0, (
                 f"[{script}] --run-start --park --park-provisional must exit 0; "
@@ -6096,7 +6096,7 @@ def test_run_start_park_umbrella_arms_both_facets_both_scripts():
             r = subprocess.run(
                 [sys.executable, str(script_path), "--run-start",
                  "--max-cycles", "20", "--repo-root", str(sd)],
-                capture_output=True, text=True, env=_run_start_park_env(sd),
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=_run_start_park_env(sd),
             )
             assert r.returncode == 0, (
                 f"[{script}] bare --run-start must exit 0; rc={r.returncode} "
@@ -6262,7 +6262,7 @@ def test_repeat_count_inspection_probe_does_not_advance_forward_budget():
                 [sys.executable, str(lazy_state_script),
                  "--repeat-count", "--probe", "--emit-prompt",
                  "--repo-root", str(fixture_repo)],
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
             assert r.returncode == 0, (
                 f"probe {i} failed: rc={r.returncode} stderr={r.stderr[:400]!r}"
@@ -6359,7 +6359,7 @@ def test_cycle_end_real_bracket_advances_forward_and_per_feature():
         def run(extra):
             return subprocess.run(
                 [sys.executable, str(lazy_state_script), "--repo-root", str(root)] + extra,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         rs = run(["--run-start", "--max-cycles", "25"])
@@ -6419,7 +6419,7 @@ def test_cycle_end_meta_bracket_advances_meta_and_cleanup_pseudo_classifies_meta
         def run(extra):
             return subprocess.run(
                 [sys.executable, str(lazy_state_script), "--repo-root", str(root)] + extra,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         rs = run(["--run-start", "--max-cycles", "25"])
@@ -6499,7 +6499,7 @@ def test_apply_pseudo_forward_advancing_increments_forward_cycles():
         rs = subprocess.run(
             [sys.executable, str(lazy_state_script), "--repo-root", str(root),
              "--run-start", "--max-cycles", "25"],
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
         assert rs.returncode == 0, f"--run-start failed: {rs.stderr[:400]!r}"
 
@@ -6507,7 +6507,7 @@ def test_apply_pseudo_forward_advancing_increments_forward_cycles():
             [sys.executable, str(lazy_state_script), "--repo-root", str(root),
              "--apply-pseudo", "__mark_complete__", str(spec_dir),
              "--apply-date", "2026-07-17"],
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
         assert ap.returncode == 0, (
             f"--apply-pseudo __mark_complete__ failed: rc={ap.returncode} "
@@ -7436,7 +7436,7 @@ def _run_marker_work_branch_cli(script_name: str):
         def run(args):
             return subprocess.run(
                 [sys.executable, str(script)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # (a) ABSENT marker → exit 1, no stdout branch, and the read-only probe
@@ -7626,7 +7626,7 @@ def _run_start_cli_owner_bind(script_name: str, pipeline: str) -> None:
         r = subprocess.run(
             [sys.executable, str(script), "--repo-root", str(repo_root),
              "--run-start", "--session-id", "OWNER"],
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
         assert r.returncode == 0, (
             f"{script_name} --run-start --session-id must exit 0, got "
@@ -7831,7 +7831,7 @@ def _run_cycle_end_records_bracket_cli(script_name: str, id_flag: str):
         def run(args):
             return subprocess.run(
                 [sys.executable, str(script)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # --cycle-begin --kind real (the default) now REQUIRES --sub-skill
@@ -8456,7 +8456,7 @@ def test_count_concurrent_writer_commits_dedup_email_and_ledger():
     _guard()
 
     def _run(cmd, cwd):
-        r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=cwd)
         if r.returncode != 0:
             raise RuntimeError(f"git fixture failed: {r.stderr.strip()}")
         return r

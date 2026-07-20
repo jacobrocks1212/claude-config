@@ -510,7 +510,7 @@ def _current_head(repo_root: Path) -> str | None:
     try:
         r = subprocess.run(
             ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10,
         )
         if r.returncode == 0:
             return r.stdout.strip() or None
@@ -5604,7 +5604,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
              "commit", "-q", "-m", "fixture"],
         ]:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
             if result.returncode != 0:
                 raise RuntimeError(
                     f"stale-mcp-results-reverify git setup failed "
@@ -5647,7 +5647,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
              "commit", "-q", "-m", "fixture A (validated)"],
         ]:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
             if result.returncode != 0:
                 raise RuntimeError(
                     f"docsonly-drift-validate git setup A failed "
@@ -5655,7 +5655,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
                 )
         head_a = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         if head_a.returncode != 0:
             raise RuntimeError(
@@ -5673,7 +5673,7 @@ def _build_fixture(tmpdir: Path, name: str) -> Path:
             ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
              "commit", "-q", "-m", "fixture B (docs-only *.md)"],
         ]:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
             if result.returncode != 0:
                 raise RuntimeError(
                     f"docsonly-drift-validate git setup B failed "
@@ -8981,7 +8981,7 @@ def run_smoke_tests() -> int:
         r_sd_refuse = subprocess.run(
             [sys.executable, _sd_script, "--sync-deps", "--id", "feat-sd",
              "--repo-root", str(sd_root)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
             env=_sd_env(LAZY_CYCLE_SUBAGENT="1"),
         )
         if r_sd_refuse.returncode != 3 \
@@ -8995,7 +8995,7 @@ def run_smoke_tests() -> int:
         r_sd = subprocess.run(
             [sys.executable, _sd_script, "--sync-deps", "--id", "feat-sd",
              "--repo-root", str(sd_root)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
             env=_sd_env(LAZY_ORCHESTRATOR="1"),
         )
         sd_queue = json.loads((sd_feats / "queue.json").read_text())
@@ -9011,7 +9011,7 @@ def run_smoke_tests() -> int:
         r_sd2 = subprocess.run(
             [sys.executable, _sd_script, "--sync-deps", "--id", "feat-sd",
              "--repo-root", str(sd_root)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
             env=_sd_env(LAZY_ORCHESTRATOR="1"),
         )
         try:
@@ -9198,7 +9198,7 @@ def run_smoke_tests() -> int:
              "--enqueue-adhoc", "--id", "adhoc-cli-stub", "--name", "Adhoc CLI Stub",
              "--tier", "2", "--stub", "--at", "tail",
              "--repo-root", str(enqf_cli_root)],
-            capture_output=True, text=True, env=enqf_env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=enqf_env,
         )
         if enqf_cli.returncode != 0:
             failures.append(
@@ -9222,7 +9222,7 @@ def run_smoke_tests() -> int:
              "--enqueue-adhoc", "--type", "bug", "--stub",
              "--id", "adhoc-bug-stub", "--name", "X",
              "--repo-root", str(enqf_cli_root)],
-            capture_output=True, text=True, env=enqf_env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=enqf_env,
         )
         if enqf_bug.returncode != 2:
             failures.append(
@@ -11000,7 +11000,7 @@ def run_smoke_tests() -> int:
         r_flag = subprocess.run(
             [sys.executable, str(Path(__file__).resolve()),
              "--park-provisional", "--repo-root", str(pp_root)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         if r_flag.returncode != 2:
             failures.append(
@@ -11046,7 +11046,7 @@ def run_smoke_tests() -> int:
         _write_cmg_marker()
         r = subprocess.run(
             [sys.executable, _this_script, "--cycle-end", "--repo-root", str(td_path)],
-            capture_output=True, text=True, env=_cmg_env(orchestrator=False),
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=_cmg_env(orchestrator=False),
         )
         if r.returncode != 3:
             failures.append(f"[{fix_cmg}] subagent --cycle-end must exit 3; got {r.returncode}")
@@ -11058,7 +11058,7 @@ def run_smoke_tests() -> int:
         _write_cmg_marker()
         r = subprocess.run(
             [sys.executable, _this_script, "--cycle-end", "--repo-root", str(td_path)],
-            capture_output=True, text=True, env=_cmg_env(orchestrator=True),
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=_cmg_env(orchestrator=True),
         )
         if r.returncode != 0:
             failures.append(f"[{fix_cmg}] orchestrator --cycle-end must exit 0; got {r.returncode}")
@@ -11071,7 +11071,7 @@ def run_smoke_tests() -> int:
         r = subprocess.run(
             [sys.executable, _this_script, "--cycle-begin", "--feature-id", "feat-cmg",
              "--nonce", "deadbeef", "--repo-root", str(td_path)],
-            capture_output=True, text=True, env=_cmg_env(orchestrator=False),
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=_cmg_env(orchestrator=False),
         )
         if r.returncode != 3:
             failures.append(f"[{fix_cmg}] subagent --cycle-begin must exit 3; got {r.returncode}")
@@ -11084,7 +11084,7 @@ def run_smoke_tests() -> int:
         r = subprocess.run(
             [sys.executable, _this_script, "--cycle-begin", "--feature-id", "feat-cmg2",
              "--nonce", "cafe", "--sub-skill", "execute-plan", "--repo-root", str(td_path)],
-            capture_output=True, text=True, env=_cmg_env(orchestrator=True),
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=_cmg_env(orchestrator=True),
         )
         if r.returncode != 0:
             failures.append(f"[{fix_cmg}] orchestrator --cycle-begin must exit 0; got {r.returncode}")
@@ -11145,7 +11145,7 @@ def run_smoke_tests() -> int:
                  "--feature-id", "feat-recon", "--nonce", "abad1dea",
                  "--sub-skill", "execute-plan",
                  "--repo-root", str(recon_repo)],
-                capture_output=True, text=True, env=recon_env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=recon_env,
             )
             if r.returncode != 0:
                 failures.append(f"[{fix_recon}] --cycle-begin must exit 0; got {r.returncode}: {r.stderr}")
@@ -11193,7 +11193,7 @@ def run_smoke_tests() -> int:
                 [sys.executable, _this_script, "--cycle-begin",
                  "--feature-id", "feat-rrs", "--nonce", "deadbeef",
                  "--kind", "real", "--repo-root", str(td_path)],
-                capture_output=True, text=True, env=rrs_env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=rrs_env,
             )
             if r.returncode == 0:
                 failures.append(f"[{fix_rrs}] real cycle w/o --sub-skill must exit non-zero; got 0")
@@ -11206,7 +11206,7 @@ def run_smoke_tests() -> int:
                 [sys.executable, _this_script, "--cycle-begin",
                  "--feature-id", "feat-rrs", "--nonce", "cafefeed",
                  "--kind", "meta", "--repo-root", str(td_path)],
-                capture_output=True, text=True, env=rrs_env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=rrs_env,
             )
             if r.returncode != 0:
                 failures.append(f"[{fix_rrs}] meta cycle w/o --sub-skill must exit 0; got {r.returncode}: {r.stderr}")
@@ -11220,7 +11220,7 @@ def run_smoke_tests() -> int:
                  "--feature-id", "feat-rrs", "--nonce", "abad1dea",
                  "--kind", "real", "--sub-skill", "execute-plan",
                  "--repo-root", str(td_path)],
-                capture_output=True, text=True, env=rrs_env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=rrs_env,
             )
             if r.returncode != 0:
                 failures.append(f"[{fix_rrs}] real cycle w/ --sub-skill must exit 0; got {r.returncode}: {r.stderr}")
@@ -11278,7 +11278,7 @@ def run_smoke_tests() -> int:
             return subprocess.run(
                 [sys.executable, _ro_script, "--repo-root", str(root),
                  "--reorder-queue", "--id", item, "--to", to],
-                capture_output=True, text=True,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
                 env=_ro_env(st, cycle_marker=cycle_marker),
             )
 
@@ -11402,7 +11402,7 @@ def run_smoke_tests() -> int:
             ):
                 r = subprocess.run(
                     [sys.executable, _tl_script, "--repo-root", str(tl_repo)] + cmd,
-                    capture_output=True, text=True, env=_tl_env(tl_state),
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", env=_tl_env(tl_state),
                 )
                 if r.returncode != 0:
                     failures.append(
@@ -11440,12 +11440,12 @@ def run_smoke_tests() -> int:
             subprocess.run(
                 [sys.executable, _tl_script, "--repo-root", str(halt_root),
                  "--run-start"],
-                capture_output=True, text=True, env=_tl_env(tl_state_b),
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=_tl_env(tl_state_b),
             )
             r = subprocess.run(
                 [sys.executable, _tl_script, "--repo-root", str(halt_root),
                  "--emit-prompt"],
-                capture_output=True, text=True, env=_tl_env(tl_state_b),
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=_tl_env(tl_state_b),
             )
             probe_json = json.loads(r.stdout)
             if "telemetry_flushed" in probe_json:
@@ -11471,7 +11471,7 @@ def run_smoke_tests() -> int:
             pure_root = _build_fixture(td_path, "all-complete")
             r = subprocess.run(
                 [sys.executable, _tl_script, "--repo-root", str(pure_root)],
-                capture_output=True, text=True,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
                 env=_tl_env(tl_state_c, orchestrator=False),
             )
             if r.returncode != 0:
@@ -11484,7 +11484,7 @@ def run_smoke_tests() -> int:
             before = (tl_state_b / _TL_LEDGER).read_bytes()
             subprocess.run(
                 [sys.executable, _tl_script, "--repo-root", str(pure_root)],
-                capture_output=True, text=True,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
                 env=_tl_env(tl_state_b, orchestrator=False),
             )
             if (tl_state_b / _TL_LEDGER).read_bytes() != before:
@@ -11496,14 +11496,14 @@ def run_smoke_tests() -> int:
                 [sys.executable, _tl_script, "--repo-root", str(halt_root),
                  "--cycle-begin", "--feature-id", "feat-b", "--nonce", "beef",
                  "--kind", "real", "--sub-skill", "execute-plan"],
-                capture_output=True, text=True, env=_tl_env(tl_state_b),
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=_tl_env(tl_state_b),
             )
             n_before = len(_tl_events(tl_state_b))
             r = subprocess.run(
                 [sys.executable, _tl_script, "--repo-root", str(halt_root),
                  "--apply-pseudo", "__mark_complete__",
                  str(halt_root / "docs" / "features" / "feat-b" / "SPEC.md")],
-                capture_output=True, text=True,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
                 env=_tl_env(tl_state_b, orchestrator=False),
             )
             if r.returncode != 3:
@@ -11525,7 +11525,7 @@ def run_smoke_tests() -> int:
                 [sys.executable, _tl_script, "--repo-root", str(halt_root),
                  "--verify-ledger",
                  str(halt_root / "docs" / "features" / "feat-b" / "SPEC.md")],
-                capture_output=True, text=True, env=_tl_env(tl_state_b),
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=_tl_env(tl_state_b),
             )
             if r.returncode != 1:
                 failures.append(f"[{fix_tl}] --verify-ledger dirty must exit 1; got {r.returncode}")
@@ -11545,14 +11545,14 @@ def run_smoke_tests() -> int:
             subprocess.run(
                 [sys.executable, _tl_script, "--repo-root", str(tl_repo_e),
                  "--cloud", "--run-start"],
-                capture_output=True, text=True, env=_tl_env(tl_state_e),
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=_tl_env(tl_state_e),
             )
             r = subprocess.run(
                 [sys.executable, _tl_script, "--repo-root", str(tl_repo_e),
                  "--cloud", "--run-end", "--reason", "terminal",
                  "--terminal-reason", "cloud-queue-exhausted",
                  "--efficacy-skip-authorized"],
-                capture_output=True, text=True, env=_tl_env(tl_state_e),
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=_tl_env(tl_state_e),
             )
             if r.returncode != 0:
                 failures.append(f"[{fix_tl}] cloud --run-end must exit 0; got {r.returncode}")
@@ -11618,7 +11618,7 @@ def run_smoke_tests() -> int:
                  "--feature-id", "feat-cbfo", "--nonce", "beef",
                  "--sub-skill", "execute-plan",
                  "--repo-root", str(cbfo_repo)],
-                capture_output=True, text=True, env=cbfo_env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=cbfo_env,
             )
             if r.returncode != 0:
                 failures.append(f"[{fix_cbfo}] --cycle-begin must exit 0; got {r.returncode}: {r.stderr}")
@@ -11630,7 +11630,7 @@ def run_smoke_tests() -> int:
             r = subprocess.run(
                 [sys.executable, _this_script, "--cycle-end",
                  "--repo-root", str(cbfo_repo)],
-                capture_output=True, text=True, env=cbfo_env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=cbfo_env,
             )
             if r.returncode != 0:
                 failures.append(f"[{fix_cbfo}] --cycle-end must exit 0 despite the unwritable ledger; got {r.returncode}: {r.stderr}")
@@ -11689,7 +11689,7 @@ def run_smoke_tests() -> int:
                 [sys.executable, _lane_script, "--repo-root", str(lane_repo),
                  "--run-start", "--session-id", "coordinator-sess",
                  "--max-cycles", "8", "--parent-run", parent_identity],
-                capture_output=True, text=True,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
                 env=_lane_env(lane_state, LAZY_ORCHESTRATOR="1"),
             )
             out_lane = json.loads(r.stdout) if r.stdout else {}
@@ -11711,7 +11711,7 @@ def run_smoke_tests() -> int:
             r = subprocess.run(
                 [sys.executable, _lane_script, "--repo-root", str(lane_repo),
                  "--run-start"],
-                capture_output=True, text=True,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
                 env=_lane_env(lane_state, LAZY_ORCHESTRATOR="1"),
             )
             if r.returncode != 3 or marker_path_lane.read_bytes() != marker_bytes_lane:
@@ -11724,7 +11724,7 @@ def run_smoke_tests() -> int:
             r = subprocess.run(
                 [sys.executable, _lane_script, "--repo-root", str(lane_repo),
                  "--run-end", "--reason", "terminal"],
-                capture_output=True, text=True,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
                 env=_lane_env(lane_state, LAZY_CYCLE_SUBAGENT="1"),
             )
             if r.returncode != 3 or not marker_path_lane.exists():
@@ -11739,7 +11739,7 @@ def run_smoke_tests() -> int:
             r = subprocess.run(
                 [sys.executable, _lane_script, "--repo-root", str(lane_repo),
                  "--run-start", "--parent-run", '["not", "a", "dict"]'],
-                capture_output=True, text=True,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
                 env=_lane_env(lane_state_bad, LAZY_ORCHESTRATOR="1"),
             )
             if r.returncode != 2 or (lane_state_bad / "lazy-run-marker.json").exists():
@@ -11754,7 +11754,7 @@ def run_smoke_tests() -> int:
             r = subprocess.run(
                 [sys.executable, _lane_script, "--repo-root", str(lane_repo),
                  "--run-start"],
-                capture_output=True, text=True,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
                 env=_lane_env(lane_state_serial, LAZY_ORCHESTRATOR="1"),
             )
             out_serial = json.loads(r.stdout) if r.stdout else {}
@@ -11825,7 +11825,7 @@ def run_smoke_tests() -> int:
                     r = subprocess.run(
                         [sys.executable, _lf_script,
                          "--repo-root", str(repo_lf)] + cmd,
-                        capture_output=True, text=True, env=_lf_env(state_lf),
+                        capture_output=True, text=True, encoding="utf-8", errors="replace", env=_lf_env(state_lf),
                     )
                     if r.returncode != 0:
                         failures.append(
@@ -11844,7 +11844,7 @@ def run_smoke_tests() -> int:
             r = subprocess.run(
                 [sys.executable, _lf_script, "--repo-root", str(repo_a),
                  "--cycle-end"],
-                capture_output=True, text=True, env=_lf_env(state_a),
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=_lf_env(state_a),
             )
             out_a = json.loads(r.stdout) if r.stdout else {}
             if r.returncode != 0 or out_a.get("cycle_marker_cleared") is not True \
@@ -11859,7 +11859,7 @@ def run_smoke_tests() -> int:
             r = subprocess.run(
                 [sys.executable, _lf_script, "--repo-root", str(repo_b),
                  "--cycle-end"],
-                capture_output=True, text=True, env=_lf_env(state_b),
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=_lf_env(state_b),
             )
             out_b = json.loads(r.stdout) if r.stdout else {}
             if r.returncode != 0 or out_b.get("cycle_marker_cleared") is not True \
@@ -12020,7 +12020,7 @@ def run_smoke_tests() -> int:
             [sys.executable, str(Path(__file__).resolve()),
              "--record-intervention", "--repo-root", str(repo_root)]
             + extra_args,
-            capture_output=True, text=True, env=_ri_env(state_dir),
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=_ri_env(state_dir),
         )
 
     # Sub-fixture 1: --pipeline hardening with NO --target-signal → the
@@ -12219,7 +12219,7 @@ def run_smoke_tests() -> int:
              "--feature-id", "feat-cwc", "--nonce", "beef",
              "--sub-skill", "execute-plan",
              "--repo-root", str(cwc_repo)],
-            capture_output=True, text=True, env=cwc_env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=cwc_env,
         )
         if r.returncode != 0:
             failures.append(f"[{fix_cwc}] --cycle-begin must exit 0; got {r.returncode}: {r.stderr}")
@@ -12243,7 +12243,7 @@ def run_smoke_tests() -> int:
         r = subprocess.run(
             [sys.executable, _this_script, "--cycle-end",
              "--repo-root", str(cwc_repo)],
-            capture_output=True, text=True, env=cwc_env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=cwc_env,
         )
         if r.returncode != 0:
             failures.append(f"[{fix_cwc}] --cycle-end must exit 0; got {r.returncode}: {r.stderr}")

@@ -223,7 +223,7 @@ def _make_git_repo_with_origin(td: str) -> tuple:
     origin.mkdir()
 
     def _run(cmd: list, cwd=None) -> None:
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=cwd)
         if result.returncode != 0:
             raise RuntimeError(
                 f"git fixture setup failed (cmd={cmd!r}): {result.stderr.strip()}"
@@ -243,7 +243,7 @@ def _make_git_repo_with_origin(td: str) -> tuple:
     # Detect branch name (could be "main" or "master" depending on git config).
     branch_result = subprocess.run(
         ["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     branch = branch_result.stdout.strip() or "main"
 
@@ -347,14 +347,14 @@ def _git_fixture_commit(root: Path) -> str:
         ["git", "-C", str(root), "-c", "user.email=t@t", "-c", "user.name=t",
          "-c", "commit.gpgsign=false", "commit", "-q", "-m", "fixture"],
     ]:
-        r = subprocess.run(cmd, capture_output=True, text=True)
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if r.returncode != 0:
             raise RuntimeError(
                 f"git fixture setup failed (cmd={cmd!r}): {r.stderr.strip()}"
             )
     head = subprocess.run(
         ["git", "-C", str(root), "rev-parse", "HEAD"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     if head.returncode != 0 or not head.stdout.strip():
         raise RuntimeError(f"git fixture rev-parse failed: {head.stderr.strip()}")
@@ -1471,7 +1471,7 @@ def _prov_git_fixture_repo(root: "Path") -> str:
     def g(*args):
         subprocess.run(
             ["git", "-C", str(root)] + list(args),
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
     g("init", "-q")
     g("config", "user.email", "t@t")
@@ -1484,7 +1484,7 @@ def _prov_git_fixture_repo(root: "Path") -> str:
     g("commit", "-q", "-m", "seed")
     r = subprocess.run(
         ["git", "-C", str(root), "rev-parse", "HEAD"],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     return r.stdout.strip()
 
@@ -1497,11 +1497,11 @@ def _prov_git_commit_file(root: "Path", relpath: str, message: str) -> str:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(f"content for {message}\n", encoding="utf-8")
     subprocess.run(["git", "-C", str(root), "add", "-A"],
-                   check=True, capture_output=True, text=True)
+                   check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
     subprocess.run(["git", "-C", str(root), "commit", "-q", "-m", message],
-                   check=True, capture_output=True, text=True)
+                   check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
     r = subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
-                       check=True, capture_output=True, text=True)
+                       check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
     return r.stdout.strip()
 
 
@@ -1584,7 +1584,7 @@ def _drive_run_end(script: str, pipeline: str, extra_args, *, seed_deny: bool,
     r = subprocess.run(
         [sys.executable, str(_SCRIPTS_DIR / script),
          "--repo-root", str(state_dir), "--run-end", *extra_args],
-        capture_output=True, text=True, env=_run_end_gate_env(state_dir),
+        capture_output=True, text=True, encoding="utf-8", errors="replace", env=_run_end_gate_env(state_dir),
     )
     events = lazy_core.read_telemetry_events()
     marker_exists = (state_dir / lazy_core._MARKER_FILENAME).exists()
@@ -1850,3 +1850,134 @@ def _collect_duplicate_top_level_defs(source: str) -> list:
     from collections import Counter
     counts = Counter(names)
     return sorted(name for name, n in counts.items() if n > 1)
+
+
+
+
+# ---------------------------------------------------------------------------
+# cp1252-fragile-subprocess-and-fixture-captures — mechanical guard against a
+# recurring Windows-cp1252 defect class: a test/fixture-context subprocess text
+# capture (`subprocess.run(..., text=True)` etc.) with NO `encoding="utf-8"`
+# decodes the child's UTF-8 stdout with the parent's LOCALE default (cp1252 on
+# this machine) → mojibake mismatch OR a hard UnicodeDecodeError that CRASHES a
+# `--test` run; and a bare `Path(...).write_text("...—...")` with non-ASCII
+# content and no encoding= writes a cp1252 byte a later `read_text("utf-8")`
+# cannot decode. Production paths route through the shared UTF-8-safe readers;
+# this collector guards the TEST/FIXTURE surface the merge-round sweep fixed.
+# Pure (source, filename) AST collector — no I/O — mirroring the
+# `_collect_bare_production_writes` / `_collect_duplicate_top_level_defs` idiom.
+# ---------------------------------------------------------------------------
+
+def _cp1252_is_test_context_file(filename: str) -> bool:
+    """A dedicated pytest module (whole-file test context) — its basename starts
+    ``test_``, it is ``_util.py``, or a ``tests`` path component is present."""
+    parts = re.split(r"[\\/]", filename)
+    base = parts[-1] if parts else filename
+    return base.startswith("test_") or base == "_util.py" or "tests" in parts
+
+
+def _cp1252_call_name(call: "ast.Call") -> "str | None":
+    f = call.func
+    if isinstance(f, ast.Attribute):
+        return f.attr
+    if isinstance(f, ast.Name):
+        return f.id
+    return None
+
+
+def _cp1252_has_kw(call: "ast.Call", name: str) -> bool:
+    return any(k.arg == name for k in call.keywords)
+
+
+def _cp1252_is_subprocess_text_capture(call: "ast.Call") -> bool:
+    """A ``subprocess.<run|check_output|Popen|call|check_call>(...)`` call that
+    decodes child output as TEXT (``text=True`` / ``universal_newlines=True``)."""
+    if _cp1252_call_name(call) not in ("run", "check_output", "Popen", "call", "check_call"):
+        return False
+    f = call.func
+    if not (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)
+            and f.value.id in ("subprocess", "sp")):
+        return False
+    for k in call.keywords:
+        if k.arg in ("text", "universal_newlines") and isinstance(k.value, ast.Constant) and k.value.value is True:
+            return True
+    return False
+
+
+def _cp1252_node_has_nonascii(node: "ast.AST") -> bool:
+    for n in ast.walk(node):
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and any(ord(c) > 127 for c in n.value):
+            return True
+    return False
+
+
+def _collect_cp1252_fragile_captures(source: str, filename: str) -> list:
+    """Pure AST collector: return a sorted list of ``(lineno, kind)`` for every
+    cp1252-fragile capture/write in ``source``'s TEST/FIXTURE context.
+
+    ``kind`` is ``"subprocess"`` (a text-decoding ``subprocess.*`` capture with
+    no ``encoding=``) or ``"write_text"`` (a ``write_text(...)`` with non-ASCII
+    positional content and no ``encoding=``).
+
+    TEST/FIXTURE context is: the WHOLE file for a dedicated pytest module
+    (``_cp1252_is_test_context_file``), else every function transitively
+    reachable — by direct-name call graph — from ``run_smoke_tests`` or a
+    ``test_*``/``_smoke*`` root (the in-file ``--test`` harness of the state
+    scripts / ``lazy_coord.py``). Production subprocess captures are OUT of
+    scope (they route through the shared UTF-8-safe readers). Pure — no I/O — so
+    a synthetic negative fixture can drive it."""
+    tree = ast.parse(source)
+    whole_file = _cp1252_is_test_context_file(filename)
+
+    test_funcs: "set | None" = None
+    if not whole_file:
+        defs: dict = {}
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                defs[node.name] = node
+        roots = {n for n in defs
+                 if n == "run_smoke_tests" or n.startswith("test_") or n.startswith("_smoke")}
+        if not roots:
+            return []
+        # transitive closure over direct-name calls
+        seen: set = set()
+        stack = list(roots)
+        while stack:
+            fn = stack.pop()
+            if fn in seen or fn not in defs:
+                continue
+            seen.add(fn)
+            for c in ast.walk(defs[fn]):
+                if isinstance(c, ast.Call):
+                    cn = _cp1252_call_name(c)
+                    if cn and cn in defs and cn not in seen:
+                        stack.append(cn)
+        test_funcs = seen
+
+    hits: list = []
+    stack_names: list = []
+
+    def in_ctx() -> bool:
+        if whole_file:
+            return True
+        return any(fn in test_funcs for fn in stack_names)
+
+    class _V(ast.NodeVisitor):
+        def visit_FunctionDef(self, node):
+            stack_names.append(node.name)
+            self.generic_visit(node)
+            stack_names.pop()
+        visit_AsyncFunctionDef = visit_FunctionDef
+
+        def visit_Call(self, node):
+            if in_ctx():
+                if _cp1252_is_subprocess_text_capture(node) and not _cp1252_has_kw(node, "encoding"):
+                    hits.append((node.lineno, "subprocess"))
+                elif (_cp1252_call_name(node) == "write_text"
+                        and not _cp1252_has_kw(node, "encoding")
+                        and node.args and _cp1252_node_has_nonascii(node.args[0])):
+                    hits.append((node.lineno, "write_text"))
+            self.generic_visit(node)
+
+    _V().visit(tree)
+    return sorted(hits)

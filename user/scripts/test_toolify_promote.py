@@ -584,7 +584,7 @@ def test_materialized_stub_routes_step_4_5_probe():
             probe = subprocess.run(
                 [sys.executable, str(_SCRIPTS_DIR / "lazy-state.py"),
                  "--repo-root", str(repo)],
-                capture_output=True, text=True,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
                 env={**os.environ, "LAZY_STATE_DIR": state_dir},
             )
         assert probe.returncode == 0, probe.stderr

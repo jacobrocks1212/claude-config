@@ -2552,7 +2552,7 @@ def test_count_phases_cli_matches_parse_phases():
         script = Path(lazy_core._SCRIPTS_DIR) / "lazy-state.py"
         out = subprocess.check_output(
             [sys.executable, str(script), "--count-phases", str(phases)],
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
         ).strip()
         assert out == str(expected), (
             f"--count-phases printed {out!r}, parse_phases gave {expected}"

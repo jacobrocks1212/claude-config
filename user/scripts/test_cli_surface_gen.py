@@ -303,7 +303,7 @@ def test_cli_check_exits_1_when_registry_missing(tmp_path):
     gen_script = _SCRIPTS_DIR / "cli_surface_gen.py"
     result = subprocess.run(
         [sys.executable, str(gen_script), "--repo-root", str(tmp_path), "--check"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     assert result.returncode == 1
     assert "does not exist" in (result.stdout + result.stderr)
@@ -317,7 +317,7 @@ def test_cli_check_clean_on_real_repo():
     gen_script = _SCRIPTS_DIR / "cli_surface_gen.py"
     result = subprocess.run(
         [sys.executable, str(gen_script), "--repo-root", str(_REPO_ROOT), "--check"],
-        capture_output=True, text=True,
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     assert result.returncode == 0, result.stdout + result.stderr
 

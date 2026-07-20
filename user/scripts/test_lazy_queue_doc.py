@@ -454,7 +454,7 @@ class TestRealRepoSmoke:
         proc = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "lazy-queue-doc.py"),
              "--repo-root", str(repo_root), "--stdout"],
-            capture_output=True, text=True, timeout=120,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
         )
         assert proc.returncode == 0, proc.stderr
         out = proc.stdout
@@ -465,7 +465,7 @@ class TestRealRepoSmoke:
     def test_help_invokable(self):
         proc = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "lazy-queue-doc.py"), "--help"],
-            capture_output=True, text=True, timeout=60,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
         )
         assert proc.returncode == 0
         assert "--repo-root" in proc.stdout

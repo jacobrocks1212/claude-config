@@ -718,7 +718,7 @@ def _run_cli(args, home):
     import subprocess
     env = dict(os.environ, HOME=str(home), USERPROFILE=str(home))
     return subprocess.run([sys.executable, str(SETUP_PY)] + args,
-                          capture_output=True, text=True, env=env)
+                          capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
 
 
 class TestCli:

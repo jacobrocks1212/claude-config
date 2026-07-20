@@ -2978,11 +2978,11 @@ def test_item_scoped_gate_report_agrees_with_ship_seam_for_merged_item():
         subprocess.run(
             ["git", "-C", str(repo_root), "update-ref",
              "refs/remotes/origin/main", "HEAD"],
-            check=True, capture_output=True, text=True)
+            check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
         empty = subprocess.run(
             ["git", "-C", str(repo_root), "rev-list", "--count",
              "origin/main..HEAD"],
-            check=True, capture_output=True, text=True).stdout.strip()
+            check=True, capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip()
         # The merged precondition: the OLD range basis is empty.
         assert empty == "0", f"expected empty origin/main..HEAD, got {empty}"
 

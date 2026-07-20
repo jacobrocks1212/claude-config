@@ -36,7 +36,7 @@ def run_lint(repo_root):
     return subprocess.run(
         [sys.executable, str(LINT_PATH), "--repo-root", str(repo_root)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
     )
 
 
@@ -703,7 +703,7 @@ def run_lint_live(repo_root, live_path):
             str(live_path),
         ],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
     )
 
 

@@ -1174,7 +1174,7 @@ def merge_lane_branch(repo_root, branch, *, no_ff=True) -> dict:
 	if no_ff:
 		args.append("--no-ff")
 	args += ["--no-edit", str(branch)]
-	r = subprocess.run(args, capture_output=True, text=True)
+	r = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
 	if r.returncode == 0:
 		return {"merged": True, "conflict": False, "aborted": False}
 	# Conflict (or any failure): abort back to a clean tree. `merge --abort`
@@ -1182,7 +1182,7 @@ def merge_lane_branch(repo_root, branch, *, no_ff=True) -> dict:
 	# before starting) — tolerated, the tree is already clean in that case.
 	subprocess.run(
 		["git", "-C", str(repo_root), "merge", "--abort"],
-		capture_output=True, text=True,
+		capture_output=True, text=True, encoding="utf-8", errors="replace",
 	)
 	return {
 		"merged": False,
@@ -1790,7 +1790,7 @@ def run_smoke_tests() -> int:
 				scrub_slot(repo_10, pool_10, "wt-00", 42, "fix")
 			head_default = subprocess.run(
 				["git", "-C", str(slot_path_10), "rev-parse", "--abbrev-ref", "HEAD"],
-				capture_output=True, text=True, env=_git_env,
+				capture_output=True, text=True, encoding="utf-8", errors="replace", env=_git_env,
 			).stdout.strip()
 			if head_default != "p/42-fix":
 				failures.append(
@@ -1807,7 +1807,7 @@ def run_smoke_tests() -> int:
 				)
 			head_lane = subprocess.run(
 				["git", "-C", str(slot_path_10), "rev-parse", "--abbrev-ref", "HEAD"],
-				capture_output=True, text=True, env=_git_env,
+				capture_output=True, text=True, encoding="utf-8", errors="replace", env=_git_env,
 			).stdout.strip()
 			if head_lane != "lane/feat-x":
 				failures.append(
@@ -1817,11 +1817,11 @@ def run_smoke_tests() -> int:
 				fix10_ok = False
 			lane_head_commit = subprocess.run(
 				["git", "-C", str(slot_path_10), "rev-parse", "HEAD"],
-				capture_output=True, text=True, env=_git_env,
+				capture_output=True, text=True, encoding="utf-8", errors="replace", env=_git_env,
 			).stdout.strip()
 			base_commit = subprocess.run(
 				["git", "-C", str(slot_path_10), "rev-parse", "origin/base"],
-				capture_output=True, text=True, env=_git_env,
+				capture_output=True, text=True, encoding="utf-8", errors="replace", env=_git_env,
 			).stdout.strip()
 			if not lane_head_commit or lane_head_commit != base_commit:
 				failures.append(
@@ -1939,7 +1939,7 @@ def run_smoke_tests() -> int:
 			def _git12(cwd, *args, check=True):
 				return subprocess.run(
 					["git", "-C", str(cwd)] + list(args),
-					check=check, capture_output=True, text=True, env=_git_env_12,
+					check=check, capture_output=True, text=True, encoding="utf-8", errors="replace", env=_git_env_12,
 				)
 
 			work_12 = fix12_dir / "work"
@@ -2032,7 +2032,7 @@ def run_smoke_tests() -> int:
 			def _git13(cwd, *args, check=True):
 				return subprocess.run(
 					["git", "-C", str(cwd)] + list(args),
-					check=check, capture_output=True, text=True, env=_git_env_13,
+					check=check, capture_output=True, text=True, encoding="utf-8", errors="replace", env=_git_env_13,
 				)
 
 			work_13 = fix13_dir / "work"
@@ -2773,7 +2773,7 @@ def run_smoke_tests() -> int:
 			def _git27(cwd, *args, check=True):
 				return subprocess.run(
 					["git", "-C", str(cwd)] + list(args),
-					check=check, capture_output=True, text=True, env=_git_env_27,
+					check=check, capture_output=True, text=True, encoding="utf-8", errors="replace", env=_git_env_27,
 				)
 
 			work_27 = fix27_dir / "work"
@@ -2861,7 +2861,7 @@ def run_smoke_tests() -> int:
 			def _git28(cwd, *args, check=True):
 				return subprocess.run(
 					["git", "-C", str(cwd)] + list(args),
-					check=check, capture_output=True, text=True, env=_git_env_28,
+					check=check, capture_output=True, text=True, encoding="utf-8", errors="replace", env=_git_env_28,
 				)
 
 			work_28 = fix28_dir / "work"

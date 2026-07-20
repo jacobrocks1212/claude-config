@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 
-from _util import _ModuleMissing, _CC_E2E_PHASES_VERIF_ONLY, _GUARDED_OPS, _NOW1, _REAL_TEMPLATE_DIR, _STATE_A, _build_blocked_feature_repo, _build_no_plans_verification_only_repo, _build_phase8_fixture_repo, _build_retro_routing_repo, _cc_build_validated_feature, _cc_seed_and_commit, _cc_write_retro_done, _cc_write_validated, _clear_cycle_env, _clear_state_dir, _collect_bare_production_writes, _collect_duplicate_top_level_defs, _collect_orphaned_test_names, _collect_registered_test_names, _commit_dummy, _dispatch_requires, _f1_guard_module, _f1_hook_input, _fresh_started_at, _lint_skills_module, _load_lazy_state_module, _load_state_script, _make_git_repo_with_origin, _make_git_tree, _make_interventions_bearing_repo, _make_laddered_dir, _normalize_smoke_output, _os, _os_env, _phase9_guard_module, _prov_git_commit_file, _prov_git_fixture_repo, _prov_spec_dir, _record_consume, _set_state_dir, _t, _write_marker_in, _write_mcp_test_results, _write_mcp_test_results_with_exemptions, _write_phases_md, _write_skip_mcp_test, _write_spec_md, _write_target_marker, _write_validated_md  # noqa: E402
+from _util import _ModuleMissing, _CC_E2E_PHASES_VERIF_ONLY, _GUARDED_OPS, _NOW1, _REAL_TEMPLATE_DIR, _STATE_A, _build_blocked_feature_repo, _build_no_plans_verification_only_repo, _build_phase8_fixture_repo, _build_retro_routing_repo, _cc_build_validated_feature, _cc_seed_and_commit, _cc_write_retro_done, _cc_write_validated, _clear_cycle_env, _clear_state_dir, _collect_bare_production_writes, _collect_cp1252_fragile_captures, _collect_duplicate_top_level_defs, _collect_orphaned_test_names, _collect_registered_test_names, _commit_dummy, _dispatch_requires, _f1_guard_module, _f1_hook_input, _fresh_started_at, _lint_skills_module, _load_lazy_state_module, _load_state_script, _make_git_repo_with_origin, _make_git_tree, _make_interventions_bearing_repo, _make_laddered_dir, _normalize_smoke_output, _os, _os_env, _phase9_guard_module, _prov_git_commit_file, _prov_git_fixture_repo, _prov_spec_dir, _record_consume, _set_state_dir, _t, _write_marker_in, _write_mcp_test_results, _write_mcp_test_results_with_exemptions, _write_phases_md, _write_skip_mcp_test, _write_spec_md, _write_target_marker, _write_validated_md  # noqa: E402
 
 
 
@@ -1924,7 +1924,7 @@ def test_phase8_mvb_chain():
                 [sys.executable, str(lazy_state),
                  "--repeat-count", "--probe", "--emit-prompt",
                  "--repo-root", str(fixture_repo)],
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # Marked run bound to 'owner', + 1 unacked deny.
@@ -1957,7 +1957,7 @@ def test_phase8_mvb_chain():
             ctx_flags += ["--context", "item_id=feat-c"]
         emit = subprocess.run(
             [sys.executable, str(lazy_state), "--emit-dispatch", "hardening"] + ctx_flags,
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
         assert emit.returncode == 0, emit.stderr
         hardening_prompt = json.loads(emit.stdout)["dispatch_prompt"]
@@ -2901,7 +2901,7 @@ def test_next_merged_cli_over_two_queue_fixture():
         cp = subprocess.run(
             [sys.executable, str(lazy_state), "--next-merged",
              "--repo-root", str(root)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert cp.returncode == 0, (cp.returncode, cp.stdout, cp.stderr)
         head = json.loads(cp.stdout.strip())
@@ -2948,7 +2948,7 @@ def test_next_merged_cli_only_features_matches_single_head():
         cp = subprocess.run(
             [sys.executable, str(lazy_state), "--next-merged",
              "--repo-root", str(root)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert cp.returncode == 0, (cp.returncode, cp.stdout, cp.stderr)
         head = json.loads(cp.stdout.strip())
@@ -2995,7 +2995,7 @@ def test_next_merged_cli_oracle_excludes_nondispatchable_head():
             encoding="utf-8")
         cp = subprocess.run(
             [sys.executable, str(lazy_state), "--next-merged", "--repo-root", str(root)],
-            capture_output=True, text=True)
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
         assert cp.returncode == 0, (cp.returncode, cp.stdout, cp.stderr)
         head = json.loads(cp.stdout.strip())
         assert head and head["item_id"] == "feat-w" and head["type"] == "feature", head
@@ -3012,7 +3012,7 @@ def test_next_merged_cli_both_empty_prints_null():
         cp = subprocess.run(
             [sys.executable, str(lazy_state), "--next-merged",
              "--repo-root", str(root)],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert cp.returncode == 0, (cp.returncode, cp.stdout, cp.stderr)
         assert json.loads(cp.stdout.strip()) is None, cp.stdout
@@ -3522,7 +3522,7 @@ def test_reconcile_does_not_false_trip_cycle_end_friction():
 
         head_before = subprocess.run(
             ["git", "-C", str(repo), "rev-parse", "HEAD"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         ).stdout.strip()
 
         lazy_core.reconcile_cycle_begin_git_consistency(
@@ -3531,7 +3531,7 @@ def test_reconcile_does_not_false_trip_cycle_end_friction():
 
         head_after = subprocess.run(
             ["git", "-C", str(repo), "rev-parse", "HEAD"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         ).stdout.strip()
         assert head_before == head_after, (
             "the reconciliation must NOT advance HEAD (it cleans uncommitted "
@@ -3608,7 +3608,7 @@ def _run_reassert_owner_cli(script_name: str, pipeline: str) -> None:
         r = subprocess.run(
             [sys.executable, str(script), "--repo-root", str(repo_root),
              "--reassert-owner", "--session-id", "OWNER"],
-            capture_output=True, text=True, env=sub_env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=sub_env,
         )
         assert r.returncode == 3, (
             f"{script_name} --reassert-owner must refuse a cycle subagent with "
@@ -3626,7 +3626,7 @@ def _run_reassert_owner_cli(script_name: str, pipeline: str) -> None:
         r = subprocess.run(
             [sys.executable, str(script), "--repo-root", str(repo_root),
              "--reassert-owner", "--session-id", "OWNER"],
-            capture_output=True, text=True, env=orch_env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=orch_env,
         )
         assert r.returncode == 0, (
             f"{script_name} --reassert-owner must succeed for the orchestrator, "
@@ -3644,7 +3644,7 @@ def _run_reassert_owner_cli(script_name: str, pipeline: str) -> None:
         r = subprocess.run(
             [sys.executable, str(script), "--repo-root", str(repo_root),
              "--reassert-owner"],
-            capture_output=True, text=True, env=orch_env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=orch_env,
         )
         assert r.returncode == 2, (
             f"{script_name} --reassert-owner without --session-id must _die "
@@ -3770,7 +3770,7 @@ def test_mark_complete_emits_provenance_from_brackets():
                        check=True, capture_output=True)
         bracket_begin = subprocess.run(
             ["git", "-C", str(repo_root), "rev-parse", "HEAD"],
-            check=True, capture_output=True, text=True).stdout.strip()
+            check=True, capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip()
         end = _prov_git_commit_file(repo_root, "src/impl.py", "implement feat-gate")
         state_dir = Path(td) / "state"
         state_dir.mkdir()
@@ -4657,6 +4657,67 @@ def test_bare_write_lint_guard_catches_open_write_mode_and_ignores_read():
 
 
 
+def test_no_cp1252_fragile_captures_in_scripts():
+    """Self-checking meta-test (cp1252-fragile-subprocess-and-fixture-captures):
+    every TEST/FIXTURE-context ``subprocess.*`` text capture across ``user/
+    scripts/`` carries ``encoding=`` (so the child's UTF-8 stdout is never
+    decoded with the parent's cp1252 locale default → mojibake / crash on
+    Windows), and every fixture ``write_text`` with non-ASCII content is
+    UTF-8-qualified. GREEN today (the merge-round sweep fixed 252 captures).
+    FAILS — naming file + line — the moment a new fixture reintroduces the
+    class. Scans the whole tree; production captures are out of scope (they
+    route through the shared UTF-8-safe readers)."""
+    _guard()
+    scripts_dir = Path(__file__).resolve().parents[2]
+    offenders: list = []
+    for path in sorted(scripts_dir.rglob("*.py")):
+        rel = path.relative_to(scripts_dir).as_posix()
+        source = path.read_text(encoding="utf-8")
+        for lineno, kind in _collect_cp1252_fragile_captures(source, rel):
+            offenders.append(f"{rel}:{lineno} ({kind})")
+    assert offenders == [], (
+        "cp1252-fragile test/fixture capture(s) missing encoding=\"utf-8\" "
+        "(add encoding=\"utf-8\"[, errors=\"replace\" for a subprocess capture]): "
+        + ", ".join(offenders)
+    )
+
+
+
+
+def test_cp1252_fragile_capture_guard_detects_planted_violation():
+    """Negative fixture — non-vacuity proof: in a synthetic pytest module a
+    text-decoding subprocess capture WITHOUT encoding= is CAUGHT, one WITH
+    encoding= is exempt, and a non-ASCII ``write_text`` without encoding= is
+    caught; a state-script's PRODUCTION-region capture (before the fixture
+    call-graph) is out of scope."""
+    _guard()
+    synthetic_test = (
+        "import subprocess\n"
+        "def test_thing():\n"
+        "    subprocess.run(['x'], capture_output=True, text=True)\n"          # 3 — BAD
+        "    subprocess.run(['x'], capture_output=True, text=True, encoding='utf-8')\n"  # 4 — OK
+        "    (p / 'f').write_text('em—dash')\n"                                 # 5 — BAD (non-ascii)
+        "    (p / 'g').write_text('plain ascii')\n"                            # 6 — OK (ascii)
+    )
+    hits = _collect_cp1252_fragile_captures(synthetic_test, "test_synthetic.py")
+    assert hits == [(3, "subprocess"), (5, "write_text")], (
+        f"expected the un-encoded capture at line 3 and the non-ASCII write_text "
+        f"at line 5 to be caught; got {hits}"
+    )
+
+    # A production (non-test, non-reachable-from-run_smoke_tests) capture is out
+    # of scope: a module whose subprocess call sits in a plain helper never
+    # reached from a test root reports nothing.
+    synthetic_prod = (
+        "import subprocess\n"
+        "def _production_git_read(root):\n"
+        "    return subprocess.run(['git', 'status'], capture_output=True, text=True)\n"
+    )
+    assert _collect_cp1252_fragile_captures(synthetic_prod, "lazy-state.py") == []
+
+
+
+
 def test_duplicate_def_guard_detects_planted_violation():
     """Negative fixture — non-vacuity proof: a synthetic module defining the
     same top-level function name twice must be CAUGHT by name; a module with no
@@ -4957,6 +5018,8 @@ _TESTS = [
     ("test_guard_plane_heartbeat_counts_events_since_run_start_only", test_guard_plane_heartbeat_counts_events_since_run_start_only),
     ("test_compute_state_surfaces_guard_plane_heartbeat_end_to_end", test_compute_state_surfaces_guard_plane_heartbeat_end_to_end),
     ("test_bare_write_lint_guard_catches_open_write_mode_and_ignores_read", test_bare_write_lint_guard_catches_open_write_mode_and_ignores_read),
+    ("test_no_cp1252_fragile_captures_in_scripts", test_no_cp1252_fragile_captures_in_scripts),
+    ("test_cp1252_fragile_capture_guard_detects_planted_violation", test_cp1252_fragile_capture_guard_detects_planted_violation),
     ("test_duplicate_def_guard_detects_planted_violation", test_duplicate_def_guard_detects_planted_violation),
     ("test_ctx_diagnostics_identity", test_ctx_diagnostics_identity),
     ("test_facade_map_total_and_collision_free", test_facade_map_total_and_collision_free),

@@ -261,7 +261,7 @@ class TestLintCli:
         proc = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
              "--lint", "--repo-root", str(tmp_path)],
-            capture_output=True, text=True)
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
         assert proc.returncode == 0, proc.stdout + proc.stderr
 
     def test_cli_lint_red_exits_one_and_names_row(self, tmp_path):
@@ -270,7 +270,7 @@ class TestLintCli:
         proc = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
              "--lint", "--repo-root", str(tmp_path)],
-            capture_output=True, text=True)
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
         assert proc.returncode == 1
         assert "sample-kpi" in proc.stdout
 
@@ -278,7 +278,7 @@ class TestLintCli:
         proc = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
              "--lint", "--repo-root", str(tmp_path)],
-            capture_output=True, text=True)
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
         assert proc.returncode == 1
         assert "registry" in (proc.stdout + proc.stderr).lower()
 
@@ -770,7 +770,7 @@ class TestRenderCli:
         proc = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
              "--repo-root", str(tmp_path), "--stdout"],
-            capture_output=True, text=True, env=env)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
         assert proc.returncode == 0, proc.stderr
         assert "# Friction KPI Scorecard" in proc.stdout
         assert not (tmp_path / "docs" / "kpi" / "SCORECARD.md").exists()
@@ -778,7 +778,7 @@ class TestRenderCli:
         proc2 = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
              "--repo-root", str(tmp_path)],
-            capture_output=True, text=True, env=env)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
         assert proc2.returncode == 0, proc2.stderr
         out = tmp_path / "docs" / "kpi" / "SCORECARD.md"
         assert out.exists()
@@ -787,7 +787,7 @@ class TestRenderCli:
         subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
              "--repo-root", str(tmp_path)],
-            capture_output=True, text=True, env=env)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
         assert out.read_text(encoding="utf-8") == first
 
 
@@ -1392,7 +1392,7 @@ class TestLintSpecCli:
         return subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
              "--lint", "--spec", str(spec), "--repo-root", str(tmp_path)],
-            capture_output=True, text=True)
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
 
     def test_friction_spec_without_declaration_exits_one(self, tmp_path):
         proc = self._run(tmp_path, _spec(classification="yes"))
@@ -1436,7 +1436,7 @@ class TestCaptureBaseline:
         return subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "kpi-scorecard.py"),
              "--capture-baseline", kpi_id, "--repo-root", str(tmp_path)],
-            capture_output=True, text=True, env=env)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
 
     def test_stamps_measured_and_captured_at(self, tmp_path):
         # A build-queue false-green row + a fixture results dir with data.
@@ -1617,7 +1617,7 @@ class TestPromoteDraftedRowsCli:
               "--promote-drafted-rows", str(spec), "--repo-root", str(tmp_path)]
         if kpi_id:
             cmd += ["--kpi-id", kpi_id]
-        return subprocess.run(cmd, capture_output=True, text=True, env=env)
+        return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
 
     def test_promotes_and_persists_to_registry(self, tmp_path):
         draft = _row(id="cli-drafted-kpi")

@@ -44,7 +44,7 @@ def run_lint(repo_root):
     return subprocess.run(
         [sys.executable, str(LINT_PATH), "--repo-root", str(repo_root)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
     )
 
 

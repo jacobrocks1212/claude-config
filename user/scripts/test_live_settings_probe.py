@@ -247,7 +247,7 @@ def test_probe_cli_emits_live_settings_ok_key(tmp_path):
         [sys.executable, str(SCRIPTS / "lazy-state.py"), "--probe",
          "--repo-root", str(repo_root)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=env,
     )
 

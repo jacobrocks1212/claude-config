@@ -1007,7 +1007,7 @@ def test_ack_deny_by_selector_refused_for_cycle_subagent():
         result = subprocess.run(
             [sys.executable, str(lazy_state), "--ack-deny", "oldest",
              "--resolution", "sneaky", "--repo-root", "."],
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
         assert result.returncode == 3, (
             f"a cycle subagent must be refused exit 3, got {result.returncode}: "
@@ -1106,7 +1106,7 @@ def test_run_end_refuses_on_unacked_deny():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # run-start
@@ -1241,7 +1241,7 @@ def test_run_end_ack_unhardened_clears_sessionless_friction():
         def run(args):
             return subprocess.run(
                 [sys.executable, str(lazy_state)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         assert run(["--run-start", "--max-cycles", "5"]).returncode == 0
@@ -1339,7 +1339,7 @@ def test_probe_withholds_forward_route_on_pending_debt():
                 [sys.executable, str(lazy_state),
                  "--repeat-count", "--probe", "--emit-prompt",
                  "--repo-root", str(fixture_repo)],
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # --- (1) marker present but NO debt → normal forward route emitted ---
@@ -1433,7 +1433,7 @@ def test_probe_withholds_forward_route_on_pending_debt():
             [sys.executable, str(lazy_state),
              "--repeat-count", "--probe", "--emit-prompt",
              "--repo-root", str(fixture_repo)],
-            capture_output=True, text=True, env=env_b,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env_b,
         )
         assert r2.returncode == 0, f"no-marker probe failed: {r2.stderr[:400]!r}"
         out2 = json.loads(r2.stdout)
@@ -1474,7 +1474,7 @@ def test_probe_withholds_forward_route_on_audit_obligation():
                 [sys.executable, str(lazy_state),
                  "--repeat-count", "--probe", "--emit-prompt",
                  "--repo-root", str(fixture_repo)],
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         import time as _time
@@ -1540,7 +1540,7 @@ def test_probe_withholds_forward_route_on_audit_obligation():
              "--context", "cycle_commit_sha=HEAD~1",
              "--context", "item_id=feat-c",
              "--context", "cwd=" + str(fixture_repo)],
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
         assert r_discharge.returncode == 0, r_discharge.stdout + r_discharge.stderr
         discharge_out = json.loads(r_discharge.stdout)
@@ -1624,7 +1624,7 @@ def test_input_audit_emit_names_pending_audit_item_not_next_queued():
             [sys.executable, str(lazy_state),
              "--repeat-count", "--probe", "--emit-prompt",
              "--repo-root", str(fixture_repo)],
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
         assert r.returncode == 0, f"probe failed: {r.stderr[:400]!r}"
         out = json.loads(r.stdout)
@@ -1924,7 +1924,7 @@ def test_emit_dispatch_hardening_no_longer_acks():
             ctx_flags += ["--context", "item_id=feat-x"]
         r = subprocess.run(
             [sys.executable, str(lazy_state), "--emit-dispatch", "hardening"] + ctx_flags,
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
         assert r.returncode == 0, f"emit hardening failed: {r.stdout}{r.stderr}"
 
@@ -2150,7 +2150,7 @@ def _run_end_efficacy_gate_cli(script_name: str):
             return subprocess.run(
                 [sys.executable, str(state_script), "--run-end",
                  "--repo-root", str(repo), *extra],
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # (1) No breadcrumb → refuse, marker kept.
@@ -2920,7 +2920,7 @@ def _run_link_provenance_cli(script_name: str):
         def run(args):
             return subprocess.run(
                 [sys.executable, str(script)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # (a) --dry-run: exit 0, derivation surfaced, nothing written.
@@ -3065,7 +3065,7 @@ def _run_provenance_lookup_cli(script_name: str):
         r = subprocess.run(
             [sys.executable, str(script), "--repo-root", str(repo_root),
              "--provenance-lookup", "src/a.py"],
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
         assert r.returncode == 0, f"{script_name} lookup failed: {r.stderr[:300]}"
         out = json.loads(r.stdout)
@@ -3076,7 +3076,7 @@ def _run_provenance_lookup_cli(script_name: str):
         r = subprocess.run(
             [sys.executable, str(script), "--repo-root", str(repo_root),
              "--provenance-lookup", "src/unknown.py"],
-            capture_output=True, text=True, env=env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
         )
         assert r.returncode == 0
         assert json.loads(r.stdout)["governed_by"] == []
@@ -3167,7 +3167,7 @@ def _run_lint_backfill_cli(script_name: str):
         def run(args):
             return subprocess.run(
                 [sys.executable, str(script)] + args,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         r = run(["--repo-root", str(repo_root), "--backfill-provenance"])
@@ -4062,7 +4062,7 @@ def test_intervention_event_vocabulary_matches_live_emit_set():
 def _fca_git_head_files(root: "Path") -> "list[str]":
     r = subprocess.run(
         ["git", "-C", str(root), "show", "--name-only", "--pretty=format:", "HEAD"],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     return [l.strip() for l in r.stdout.splitlines() if l.strip()]
 
@@ -4070,7 +4070,7 @@ def _fca_git_head_files(root: "Path") -> "list[str]":
 def _fca_git_staged(root: "Path") -> "list[str]":
     r = subprocess.run(
         ["git", "-C", str(root), "diff", "--cached", "--name-only"],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     return [l.strip() for l in r.stdout.splitlines() if l.strip()]
 
@@ -4094,7 +4094,7 @@ def test_flush_commit_artifacts_does_not_absorb_foreign_staged_file():
         foreign.write_text("# concurrent harden spec\n", encoding="utf-8")
         subprocess.run(
             ["git", "-C", str(root), "add", "docs/bugs/some-harden-bug/SPEC.md"],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert "docs/bugs/some-harden-bug/SPEC.md" in _fca_git_staged(root)
 
@@ -4128,7 +4128,7 @@ def test_flush_commit_artifacts_skips_missing_and_noops_when_empty():
         assert "docs/interventions/absent.md" in result["skipped_missing"]
         head1 = subprocess.run(
             ["git", "-C", str(root), "rev-parse", "HEAD"],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
         ).stdout.strip()
         assert head1 == head0, "no-op flush must not create a commit"
 

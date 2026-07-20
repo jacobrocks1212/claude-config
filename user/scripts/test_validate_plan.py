@@ -382,7 +382,7 @@ class TestScopeAndIo(unittest.TestCase):
             ))
             result = subprocess.run(
                 [sys.executable, os.path.join(HERE, "validate-plan.py"), "--structural", str(p)],
-                capture_output=True, text=True,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
             )
             self.assertEqual(result.returncode, 1)
 

@@ -42,7 +42,7 @@ def _git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         ["git", *args],
         cwd=cwd,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         check=True,
     )
 
@@ -81,7 +81,7 @@ def _commit_file(repo: Path, rel_path: str, content: str = "x") -> str:
     result = subprocess.run(
         ["git", "-C", str(repo), "log", "-1", "--format=%cI"],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         check=True,
     )
     return result.stdout.strip()

@@ -467,7 +467,7 @@ def test_repeat_count_real_skill_frozen_census_advances_forward(
         def run(extra):
             return subprocess.run(
                 [sys.executable, str(script), "--repo-root", str(root)] + extra,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         # 1) --run-start writes the marker with forward_cycles == 0 (no consume yet).
@@ -580,7 +580,7 @@ def test_repeat_count_real_skill_frozen_census_advances_forward_bug_state() -> N
         def run(extra):
             return subprocess.run(
                 [sys.executable, str(script), "--repo-root", str(root)] + extra,
-                capture_output=True, text=True, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", env=env,
             )
 
         rs = run(["--run-start", "--max-cycles", "25"])
@@ -776,7 +776,7 @@ def test_hook_surface_imports_without_monolith():
         "sys.exit(1 if extra else 0)"
     ).format(scripts=str(_SCRIPTS_DIR))
     result = subprocess.run(
-        [sys.executable, "-c", probe], capture_output=True, text=True,
+        [sys.executable, "-c", probe], capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     assert result.returncode == 0, (
         "hook-surface facade touch loaded modules beyond "

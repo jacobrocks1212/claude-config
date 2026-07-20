@@ -403,7 +403,7 @@ def test_cli_smoke_runs_and_writes_nothing(tmp_path=None):
         res = subprocess.run(
             [sys.executable, str(_SCRIPTS_DIR / "toolify-miner.py"),
              "--logs", str(logs), "--json"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
         )
         assert res.returncode == 0, res.stderr
         json.loads(res.stdout)  # valid JSON on stdout
