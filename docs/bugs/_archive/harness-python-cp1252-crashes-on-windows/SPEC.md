@@ -1,6 +1,8 @@
 # Bug: harness Python crashes on Windows under the default cp1252 codec
 
 **Status:** Fixed
+**Fixed:** 2026-07-20
+**Fix commit:** 050e8426
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage; discovered Round 48, fixed Round 49); `docs/features/anti-overfit-design-gate/` (`harness-gate.py` is the mechanical over-fit floor)
 
 ## Symptom (verified)
