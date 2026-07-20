@@ -3,14 +3,15 @@ kind: bug-investigation
 bug_id: verify-ledger-deliverables-done-fails-pre-decomposition-feature
 severity: P2
 discovered: 2026-07-20
-status: Concluded
+status: Fixed
 written_by: harden-harness
 ---
 
 # `verify_ledger.deliverables_done` hard-fails every PRE-DECOMPOSITION feature (PHASES.md absent), asymmetrically with its own sibling `plan_complete`
 
-**Status:** Concluded (root cause proven by live repro against shipped code; fix scope
-understood). This is the durable investigation record cited by hardening Round 118.
+**Status:** Fixed (root cause proven by live repro; fix shipped OUT-OF-PIPELINE at `5529a973`
+under a `harden(script):` commit — see `FIXED.md`). This is the durable investigation record
+cited by hardening Round 118.
 
 **Root-cause class:** `script-defect` — an incomplete application of the
 `harness-hardening-retro-fixes` Phase 3 *absent-by-design* carve-out. Phase 3 taught
