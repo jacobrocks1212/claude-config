@@ -97,6 +97,42 @@ def _execute_plan_marker_path(repo_root: str) -> Path:
     return Path(base) / "execute-plan" / f"{key}.json"
 
 
+# Marker-staleness bound for the wedge-candidate escalation
+# (docs/bugs/execute-plan-liveness-blind-to-dead-lineage-stall — the dead-lineage
+#  stall the Gap-2 v1 discriminator could not distinguish from a live pause).
+#
+# The execute-plan marker JSON carries NO timestamp and is written ONCE at
+# /execute-plan Step 1d (never refreshed), so the marker FILE mtime = when the
+# /execute-plan part began. A control-return whose marker has been in flight
+# longer than this bound, at a post-cycle boundary, is PAST the plausible
+# live-backgrounded-suite window → the pause is a wedge CANDIDATE. This is the
+# only live-vs-dead signal the PURE function can observe (a definitive
+# descendant-liveness probe is a TaskList capability the orchestrator, not this
+# function, performs — the orchestrator CONFIRMS the candidate).
+#
+# The exact value is deliberately NOT load-bearing for correctness: a
+# ``wedge-candidate`` verdict routes the orchestrator to a TaskList liveness
+# probe, NEVER to a marker teardown, so a false-positive on a legitimately-long
+# run is SAFE (the probe finds the lineage alive and simply waits). 1800s (30
+# min) is generous enough to clear normal cold-compile + backgrounded-suite
+# windows while still bounding a genuinely-dead stall to ~one cycle boundary.
+# Env-overridable for tuning / hermetic tests.
+_EXECUTE_PLAN_MARKER_WEDGE_SECONDS: float = 30 * 60  # 30 minutes
+
+
+def _execute_plan_marker_wedge_seconds() -> float:
+    """Resolve the wedge-candidate staleness bound, honoring the
+    ``LAZY_EXECUTE_PLAN_MARKER_WEDGE_SECS`` env override (a malformed / non-numeric
+    value falls back to the default — never raises)."""
+    raw = os.environ.get("LAZY_EXECUTE_PLAN_MARKER_WEDGE_SECS")
+    if raw:
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            pass
+    return _EXECUTE_PLAN_MARKER_WEDGE_SECONDS
+
+
 def execute_plan_liveness(repo_root: str, plan_path: str) -> dict:
     """Return a pause-vs-terminal verdict for a just-returned /execute-plan
     cycle, encoding the ``dispatched-agent-liveness.md`` authoritative-completion
@@ -107,9 +143,11 @@ def execute_plan_liveness(repo_root: str, plan_path: str) -> dict:
          "verdict": "paused" | "terminal" | "wedge-candidate"}
 
     Decision rule:
-      * execute-plan marker ABSENT (no in-flight run for this repo)  → ``terminal``
-      * marker present AND plan ``status: Complete``                 → ``terminal``
-      * marker present AND plan status not Complete                  → ``paused``
+      * execute-plan marker ABSENT (no in-flight run for this repo)      → ``terminal``
+      * marker present AND plan ``status: Complete``                     → ``terminal``
+      * marker present AND plan not Complete AND marker mtime FRESH      → ``paused``
+      * marker present AND plan not Complete AND marker mtime STALE      → ``wedge-candidate``
+        (older than ``_execute_plan_marker_wedge_seconds()``)
 
     FAIL-SAFE — bias to the SAFE / legacy behavior: ANY read error (an
     unreadable / missing plan file, a bad marker, an unexpected exception)
@@ -118,12 +156,20 @@ def execute_plan_liveness(repo_root: str, plan_path: str) -> dict:
     resultless cycle; an over-eager recovery is merely the pre-fix behavior).
 
     The marker read is NON-DESTRUCTIVE (a plain ``os.path.isfile`` presence
-    check + no delete) — this is a probe, never a mutation.
+    check + an ``os.stat`` mtime read, no delete) — this is a probe, never a
+    mutation.
 
-    ``"wedge-candidate"`` is RESERVED for the orchestrator's bounded-wait
-    genuine-wedge escalation (marker persisting with NO live descendant after a
-    bounded wait — ``dispatched-agent-liveness.md`` §57-62); the pure function
-    CANNOT observe live descendants, so it never returns that value in v1.
+    ``"wedge-candidate"`` is the marker-STALENESS escalation
+    (docs/bugs/execute-plan-liveness-blind-to-dead-lineage-stall): a present
+    marker + non-Complete plan whose FILE mtime is older than the wedge bound is
+    a CANDIDATE wedge — the pause has outlasted the plausible
+    live-backgrounded-suite window. It is a *candidate* because the pure function
+    still cannot observe live descendants; the orchestrator CONFIRMS it via a
+    bounded-wait ``TaskList`` lineage probe (``dispatched-agent-liveness.md``
+    §60-65) and routes recovery ONLY on a confirmed-dead lineage — it never tears
+    down the marker on this verdict alone. The staleness dimension is purely
+    ADDITIVE: any error computing the mtime falls back to ``paused`` so the
+    pre-fix behavior is preserved when the age cannot be measured.
     """
     result: dict = {"marker_present": False, "plan_status": None,
                     "verdict": "terminal"}
@@ -137,7 +183,21 @@ def execute_plan_liveness(repo_root: str, plan_path: str) -> dict:
             return result  # fail-safe: unreadable/missing plan → terminal
         status = _plan_status(plan_p)
         result["plan_status"] = status
-        result["verdict"] = "terminal" if status == "Complete" else "paused"
+        if status == "Complete":
+            result["verdict"] = "terminal"
+            return result
+        # Not Complete → paused, UNLESS the marker has gone stale (mtime older
+        # than the wedge bound) → the dead-lineage-candidate escalation. The
+        # mtime read is defensively guarded: if it can't be measured, fall back
+        # to the legacy `paused` (additive, never regresses the fresh-marker path).
+        verdict = "paused"
+        try:
+            age = time.time() - marker_path.stat().st_mtime
+            if age > _execute_plan_marker_wedge_seconds():
+                verdict = "wedge-candidate"
+        except OSError:
+            pass  # unmeasurable age → preserve legacy `paused`
+        result["verdict"] = verdict
         return result
     except Exception:  # noqa: BLE001 — fail-safe to terminal on ANY error
         return {"marker_present": False, "plan_status": None,

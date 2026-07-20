@@ -28,6 +28,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -163,6 +164,79 @@ class TestExecutePlanLivenessHelper(unittest.TestCase):
             # Marker present, but the plan is unreadable -> fail-safe terminal.
             self.assertTrue(r["marker_present"])
             self.assertEqual(r["verdict"], "terminal")
+
+    def test_stale_marker_not_complete_is_wedge_candidate(self) -> None:
+        # docs/bugs/execute-plan-liveness-blind-to-dead-lineage-stall: a present
+        # marker + non-Complete plan whose FILE mtime has gone stale (older than
+        # the wedge bound) is the dead-lineage CANDIDATE escalation, NOT a live
+        # pause — the orchestrator confirms via TaskList before recovering.
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td) / "state"
+            repo_root = str(Path(td) / "repo")
+            plan = Path(td) / "plan.md"
+            _write_plan(plan, "In-progress")
+            marker = _write_marker(base, repo_root, str(plan))
+            # Back-date the marker mtime well past the (default 1800s) bound.
+            old = time.time() - (3 * 3600)  # 3h old, mirrors the live incident
+            os.utime(marker, (old, old))
+            with _StateDirEnv(base):
+                r = lazy_core.execute_plan_liveness(repo_root, str(plan))
+            self.assertTrue(r["marker_present"])
+            self.assertEqual(r["plan_status"], "In-progress")
+            self.assertEqual(r["verdict"], "wedge-candidate")
+
+    def test_stale_marker_but_complete_is_still_terminal(self) -> None:
+        # Staleness is subordinate to completion: a stale marker whose plan is
+        # Complete is terminal (done), never a wedge candidate.
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td) / "state"
+            repo_root = str(Path(td) / "repo")
+            plan = Path(td) / "plan.md"
+            _write_plan(plan, "Complete")
+            marker = _write_marker(base, repo_root, str(plan))
+            old = time.time() - (3 * 3600)
+            os.utime(marker, (old, old))
+            with _StateDirEnv(base):
+                r = lazy_core.execute_plan_liveness(repo_root, str(plan))
+            self.assertEqual(r["verdict"], "terminal")
+
+    def test_wedge_bound_env_override_lowers_threshold(self) -> None:
+        # A freshly-written marker (mtime ~= now) is normally `paused`; a tiny
+        # env override makes even a moments-old marker read as stale → the env
+        # override wiring is exercised end-to-end.
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td) / "state"
+            repo_root = str(Path(td) / "repo")
+            plan = Path(td) / "plan.md"
+            _write_plan(plan, "Ready")
+            marker = _write_marker(base, repo_root, str(plan))
+            old = time.time() - 5  # only 5s old — fresh under the default bound
+            os.utime(marker, (old, old))
+            prev = os.environ.get("LAZY_EXECUTE_PLAN_MARKER_WEDGE_SECS")
+            os.environ["LAZY_EXECUTE_PLAN_MARKER_WEDGE_SECS"] = "1"
+            try:
+                with _StateDirEnv(base):
+                    r = lazy_core.execute_plan_liveness(repo_root, str(plan))
+            finally:
+                if prev is None:
+                    os.environ.pop("LAZY_EXECUTE_PLAN_MARKER_WEDGE_SECS", None)
+                else:
+                    os.environ["LAZY_EXECUTE_PLAN_MARKER_WEDGE_SECS"] = prev
+            self.assertEqual(r["verdict"], "wedge-candidate")
+
+    def test_fresh_marker_not_complete_stays_paused(self) -> None:
+        # Regression guard for the additive contract: a freshly-written marker
+        # (mtime ~= now, well under the default bound) must remain `paused` —
+        # the staleness dimension never touches the live-pause path.
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td) / "state"
+            repo_root = str(Path(td) / "repo")
+            plan = Path(td) / "plan.md"
+            _write_plan(plan, "In-progress")
+            _write_marker(base, repo_root, str(plan))
+            with _StateDirEnv(base):
+                r = lazy_core.execute_plan_liveness(repo_root, str(plan))
+            self.assertEqual(r["verdict"], "paused")
 
     def test_result_keys_present(self) -> None:
         with tempfile.TemporaryDirectory() as td:
