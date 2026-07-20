@@ -1,6 +1,6 @@
 ---
 name: restart-windows-claude
-description: Relaunch a native Windows phone-steerable Remote Control Claude session in a trusted Windows repo (default AlgoBooth; override with -Repo), from the WSL side. Use when the native Windows Remote Control session has dropped, or when you want an additional steerable session in another repo, without being at the laptop. Also deterministically enumerates the running Claude Code (claude.exe) sessions, and — ONLY on explicit operator confirmation of exact targets — terminates a specific session via a temporary, self-restoring kill-hook bypass.
+description: Relaunch a native Windows phone-steerable Remote Control Claude session in a trusted Windows repo (default AlgoBooth; override with -Repo), from the WSL side. Use when the native Windows Remote Control session has dropped, or when you want an additional steerable session in another repo, without being at the laptop. Carries the canonical registry of the operator's four DEFAULT SESSIONS (claude-config-opus1m, claude-config-fable1m, algobooth-opus1m, algobooth-fable1m — with their repos and model ids) so "restart/recycle my default sessions" resolves without asking, plus the self-goes-last restart-all ordering rule. Also deterministically enumerates the running Claude Code (claude.exe) sessions, and — ONLY on explicit operator confirmation of exact targets — terminates a specific session via a temporary, self-restoring kill-hook bypass.
 ---
 
 # Restart the native Windows Remote Control session
@@ -75,6 +75,46 @@ without recycling the default `algobooth` session:
 ```bash
 powershell.exe -NoProfile -File C:/Users/Jacob/restart-windows-claude.ps1 -Repo "C:/Users/Jacob/source/repos/claude-config" -Name claude-config -Model "claude-opus-4-8[1m]"
 ```
+
+## The operator's DEFAULT SESSIONS (canonical set)
+
+When Jacob says **"my default sessions"**, **"the default four"**, "recycle/restart the default
+sessions", or "restart everything", he means **exactly these four** Remote Control sessions — two
+repos × two models. This is the authoritative registry: an agent must never re-derive, guess, or
+ask which sessions are meant.
+
+| RC `-Name` | Repo (`-Repo`) | `-Model` |
+|---|---|---|
+| `claude-config-opus1m` | `C:/Users/Jacob/source/repos/claude-config` | `claude-opus-4-8[1m]` |
+| `claude-config-fable1m` | `C:/Users/Jacob/source/repos/claude-config` | `claude-fable-5[1m]` |
+| `algobooth-opus1m` | `C:\Users\Jacob\repos\AlgoBooth` (launcher default) | `claude-opus-4-8[1m]` |
+| `algobooth-fable1m` | `C:\Users\Jacob\repos\AlgoBooth` (launcher default) | `claude-fable-5[1m]` |
+
+The exact relaunch commands (AlgoBooth rows omit `-Repo` — it is the launcher default):
+
+```bash
+powershell.exe -NoProfile -File C:/Users/Jacob/restart-windows-claude.ps1 -Name algobooth-fable1m -Model "claude-fable-5[1m]"
+powershell.exe -NoProfile -File C:/Users/Jacob/restart-windows-claude.ps1 -Name algobooth-opus1m  -Model "claude-opus-4-8[1m]"
+powershell.exe -NoProfile -File C:/Users/Jacob/restart-windows-claude.ps1 -Repo "C:/Users/Jacob/source/repos/claude-config" -Name claude-config-fable1m -Model "claude-fable-5[1m]"
+powershell.exe -NoProfile -File C:/Users/Jacob/restart-windows-claude.ps1 -Repo "C:/Users/Jacob/source/repos/claude-config" -Name claude-config-opus1m  -Model "claude-opus-4-8[1m]"
+```
+
+Notes an agent MUST honor when acting on the default set:
+
+- **Restart-all ordering: SELF GOES LAST.** Relaunching a session recycles (kills) the same-named
+  one — so recycling your own name kills the very session running the command, ending the turn
+  mid-flight. Restart the other three first, verify them via the enumeration, finish any other
+  requested work (edits, commits, pushes), and only then relaunch your own name as the final act.
+- **The model ids above are the confirmed set** (read live off the running command lines
+  2026-07-20). They still satisfy the `-Model` SAFEGUARD, but re-read them from the enumeration
+  when in doubt — the enumeration's `Model` column is more authoritative than this table.
+- **`-Name algobooth` (bare) is NOT a default session.** It is only the *launcher's* built-in
+  `-Name` default. A bare `algobooth` process is a legacy/mis-named session: it is NOT recycled by
+  relaunching `algobooth-opus1m` (recycle is same-name only), so it lingers as an orphan and must
+  be terminated via the operator-gated kill procedure below. (Exactly this happened 2026-07-20 —
+  orphan PID 46448 was killed to restore the canonical four.)
+- **Any session outside this table is not a default** — do not restart or kill it without separate
+  explicit confirmation.
 
 ## Verify
 The authoritative check is the user's phone: ~15s after running, a session named
@@ -213,9 +253,12 @@ cat > /tmp/kill-claude.ps1 <<'EOF'
 $targets = @( 0 )   # <-- REPLACE with the operator-confirmed PID list, e.g. @(3960, 14516)
 $me = 0             # <-- SELF pid from the enumeration; a guard so we never kill ourselves
 foreach ($t in $targets) {
-  if ($t -eq $me -or $t -le 0) { Write-Output "SKIP $t (self/invalid)"; continue }
-  try { Stop-Process -Id $t -Force -ErrorAction Stop; Write-Output "KILLED $t" }
-  catch { Write-Output "FAILED $t: $($_.Exception.Message)" }
+  # NOTE: braces are REQUIRED on $t when a ':' follows it — bare "$t:" parses as a
+  # drive-qualified variable ("Variable reference is not valid") and kills the WHOLE
+  # script at parse time, so nothing runs. Verified 2026-07-20.
+  if ($t -eq $me -or $t -le 0) { Write-Output "SKIP ${t} (self/invalid)"; continue }
+  try { Stop-Process -Id $t -Force -ErrorAction Stop; Write-Output "KILLED ${t}" }
+  catch { Write-Output "FAILED ${t}: $($_.Exception.Message)" }
 }
 EOF
 powershell.exe -File /tmp/kill-claude.ps1
