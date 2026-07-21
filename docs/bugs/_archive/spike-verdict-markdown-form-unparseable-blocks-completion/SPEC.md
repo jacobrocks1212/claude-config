@@ -4,6 +4,8 @@
 **Severity:** P2 (a genuinely-passing runtime proof cannot advance the pipeline; the
 orchestrator must hand-edit SPIKE_VERDICT.md — a HARD-CONSTRAINT-stretching manual write — to proceed)
 **Discovered:** 2026-07-21
+**Fixed:** 2026-07-21
+**Fix commit:** 8fd980ba
 **Reported via:** `/harden-harness` observed-friction dispatch (2026-07-21, item in flight
 `waveform-visualization`, AlgoBooth `/lazy-batch`)
 **Root-cause class:** `script-defect` (parser) + `ambiguous-prose`/`missing-contract` (dispatch template)
