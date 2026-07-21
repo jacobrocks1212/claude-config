@@ -2113,6 +2113,203 @@ def test_boot_spawn_stamp_roundtrip_and_grace_window():
 
 
 # ---------------------------------------------------------------------------
+# runtime-ensure-unbounded-session-log-accumulation — prune_session_dirs: the
+# dev-runtime session-log retention cap. Every pipeline-driven `dev:restart`
+# mints a fresh `logs/session-<ts>/` dir with NO retention anywhere (719 dirs /
+# ~15 GB accrued over ~6 weeks). The cap prunes at the pipeline boundary after a
+# successful boot — keeping the newest N. Best-effort, never raises, disabled by
+# a falsy glob / None-or-<=0 keep (fail-safe: never wipes all logs).
+# ---------------------------------------------------------------------------
+
+def test_prune_session_dirs_keeps_newest_and_prunes_rest():
+    """With keep=2, the two newest (by mtime) session dirs survive and the older
+    ones are removed — the core retention behavior."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        logs = root / "logs"
+        logs.mkdir()
+        dirs = []
+        for i in range(5):
+            d = logs / f"session-{i}"
+            d.mkdir()
+            # Stagger mtimes so newest-first ordering is deterministic (i=4 newest).
+            os.utime(d, (1000.0 + i, 1000.0 + i))
+            dirs.append(d)
+
+        pruned = lazy_core.prune_session_dirs(
+            root, glob_pattern="logs/session-*", keep=2
+        )
+
+        pruned_names = sorted(p.name for p in pruned)
+        assert pruned_names == ["session-0", "session-1", "session-2"], (
+            f"the 3 oldest must be pruned, keeping the 2 newest; got {pruned_names}"
+        )
+        # Newest two survive on disk; the older three are gone.
+        assert (logs / "session-4").exists() and (logs / "session-3").exists()
+        for stale in ("session-0", "session-1", "session-2"):
+            assert not (logs / stale).exists(), f"{stale} should have been pruned"
+
+
+
+
+def test_prune_session_dirs_disabled_when_glob_falsy_or_keep_none():
+    """A falsy glob OR a None keep DISABLES the cap (repo-agnostic no-op) — a repo
+    whose config carries no session-log keys never triggers an accidental prune."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "logs").mkdir()
+        for i in range(3):
+            (root / "logs" / f"session-{i}").mkdir()
+
+        assert lazy_core.prune_session_dirs(root, glob_pattern="", keep=2) == []
+        assert lazy_core.prune_session_dirs(
+            root, glob_pattern="logs/session-*", keep=None
+        ) == []
+        # Nothing removed under either disabled path.
+        for i in range(3):
+            assert (root / "logs" / f"session-{i}").exists()
+
+
+
+
+def test_prune_session_dirs_non_positive_keep_disables_never_wipes_all():
+    """keep=0 (a misconfiguration) DISABLES the cap rather than wiping EVERY session
+    dir — the load-bearing fail-safe direction (a spurious no-op costs nothing; a
+    spurious wipe-all destroys every log)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "logs").mkdir()
+        for i in range(3):
+            (root / "logs" / f"session-{i}").mkdir()
+
+        assert lazy_core.prune_session_dirs(
+            root, glob_pattern="logs/session-*", keep=0
+        ) == []
+        for i in range(3):
+            assert (root / "logs" / f"session-{i}").exists(), (
+                "keep<=0 must NOT wipe all session dirs"
+            )
+
+
+
+
+def test_prune_session_dirs_never_raises_on_remover_error():
+    """A remover that raises for one dir is swallowed (best-effort) — the prune
+    never propagates, and the other prunable dirs are still attempted. A prune
+    failure must never abort or fail a boot."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        logs = root / "logs"
+        logs.mkdir()
+        for i in range(4):
+            d = logs / f"session-{i}"
+            d.mkdir()
+            os.utime(d, (1000.0 + i, 1000.0 + i))
+
+        removed = []
+
+        def flaky_remover(path):
+            if path.name == "session-1":
+                raise OSError("simulated locked dir")
+            removed.append(path.name)
+
+        # keep=1 → session-0, session-1, session-2 are candidates for removal.
+        pruned = lazy_core.prune_session_dirs(
+            root, glob_pattern="logs/session-*", keep=1,
+            lister=lambda: [logs / f"session-{i}" for i in range(4)],
+            remover=flaky_remover,
+        )
+        # The raising dir is skipped, not fatal; the other candidates still pruned.
+        assert sorted(removed) == ["session-0", "session-2"]
+        assert sorted(p.name for p in pruned) == ["session-0", "session-2"]
+
+
+
+
+def test_ensure_runtime_default_config_carries_session_log_keys():
+    """The default runtime config carries the retention-cap keys with the shipped
+    defaults (glob `logs/session-*`, keep 10) so `--ensure-runtime` prunes without
+    a per-repo override."""
+    _guard()
+    cfg = lazy_core._ENSURE_RUNTIME_DEFAULT_CONFIG
+    assert cfg["session_logs_glob"] == "logs/session-*"
+    assert cfg["session_logs_keep"] == 10
+
+
+
+
+def test_ensure_runtime_successful_boot_prunes_session_dirs():
+    """WIRING: the production `restart()` closure calls `prune_session_dirs` after a
+    successful boot (health 200), forwarding the config's session-log glob + keep —
+    so every pipeline-driven restart caps the session-dir accumulation it mints.
+    Guards against a false-green where the helper exists but is never called."""
+    _guard()
+    prune_calls = []
+
+    def spy_prune(repo_root, *, glob_pattern, keep, **_kw):
+        prune_calls.append({"glob": glob_pattern, "keep": keep})
+        return []
+
+    class _OkProc:
+        def poll(self):
+            return None
+
+    class _FakeSub:
+        DEVNULL = -3
+
+        def Popen(self, *_a, **_k):
+            return _OkProc()
+
+    class _NoSleepTime:
+        def time(self):
+            return 1000.0
+
+        def sleep(self, _s):
+            return None
+
+    probe_state = {"n": 0}
+
+    def probe():
+        # Legacy-down: first probe DOWN (→ restart), 200 thereafter (booted).
+        probe_state["n"] += 1
+        return (0, None) if probe_state["n"] == 1 else (200, {"tools": []})
+
+    real_prune = lazy_core.runtimeplane.prune_session_dirs
+    real_sub = lazy_core.runtimeplane.subprocess
+    real_time = lazy_core.runtimeplane.time
+    lazy_core.runtimeplane.prune_session_dirs = spy_prune
+    lazy_core.runtimeplane.subprocess = _FakeSub()
+    lazy_core.runtimeplane.time = _NoSleepTime()
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            result = lazy_core.ensure_runtime(
+                Path(td),
+                probe=probe,               # legacy mode (no identity callables)
+                stale_check=lambda: False,
+                # NO restart injected → the REAL production restart() closure binds
+                # and must call prune_session_dirs on the health-200 success.
+            )
+    finally:
+        lazy_core.runtimeplane.prune_session_dirs = real_prune
+        lazy_core.runtimeplane.subprocess = real_sub
+        lazy_core.runtimeplane.time = real_time
+
+    assert result["state"] == "READY", f"expected a booted READY runtime; got {result}"
+    assert len(prune_calls) == 1, (
+        f"the successful boot must prune exactly once; got {prune_calls}"
+    )
+    assert prune_calls[0] == {"glob": "logs/session-*", "keep": 10}, (
+        f"prune must receive the config's glob + keep defaults; got {prune_calls[0]}"
+    )
+
+
+
+
+# ---------------------------------------------------------------------------
 # stale-runtime-health-200-false-blocked — _default_stale_check (the F7
 # stale_binary.native_source_newer_than wiring) + the production ensure_runtime
 # binding. `stale_check` is on the production-binding guard's ALLOWED-injection
@@ -4407,6 +4604,12 @@ _TESTS = [
     ("test_ensure_runtime_production_boot_alive_live_handle_patient_waits", test_ensure_runtime_production_boot_alive_live_handle_patient_waits),
     ("test_ensure_runtime_production_boot_alive_dead_handle_recovers", test_ensure_runtime_production_boot_alive_dead_handle_recovers),
     ("test_boot_spawn_stamp_roundtrip_and_grace_window", test_boot_spawn_stamp_roundtrip_and_grace_window),
+    ("test_prune_session_dirs_keeps_newest_and_prunes_rest", test_prune_session_dirs_keeps_newest_and_prunes_rest),
+    ("test_prune_session_dirs_disabled_when_glob_falsy_or_keep_none", test_prune_session_dirs_disabled_when_glob_falsy_or_keep_none),
+    ("test_prune_session_dirs_non_positive_keep_disables_never_wipes_all", test_prune_session_dirs_non_positive_keep_disables_never_wipes_all),
+    ("test_prune_session_dirs_never_raises_on_remover_error", test_prune_session_dirs_never_raises_on_remover_error),
+    ("test_ensure_runtime_default_config_carries_session_log_keys", test_ensure_runtime_default_config_carries_session_log_keys),
+    ("test_ensure_runtime_successful_boot_prunes_session_dirs", test_ensure_runtime_successful_boot_prunes_session_dirs),
     ("test_default_stale_check_native_commit_after_boot_stamp_is_stale", test_default_stale_check_native_commit_after_boot_stamp_is_stale),
     ("test_default_stale_check_native_commit_before_boot_stamp_is_fresh", test_default_stale_check_native_commit_before_boot_stamp_is_fresh),
     ("test_default_stale_check_no_boot_stamp_falls_back_to_lock_start_time", test_default_stale_check_no_boot_stamp_falls_back_to_lock_start_time),

@@ -37,6 +37,7 @@ import json
 import os
 import platform
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -141,6 +142,24 @@ _ENSURE_RUNTIME_DEFAULT_CONFIG: dict[str, Any] = {
     # base default here is what wires the signal end-to-end — a per-repo override
     # may still set it `False` to opt OUT.
     "boot_liveness": True,
+    # Dev-runtime session-log retention cap
+    # (runtime-ensure-unbounded-session-log-accumulation). Every pipeline-driven
+    # `dev:restart` — a `--ensure-runtime` boot AND every mcp-test cycle — mints a
+    # fresh `logs/session-<ts>/` dir (fattened by ALGOBOOTH_AUDIO_TRACE=1 per-frame
+    # audio-trace JSONL). With NO retention anywhere in the runtime-ensure path
+    # these accrued to 719 dirs / ~15 GB over ~6 weeks (a third of free disk). The
+    # cap prunes at the pipeline boundary: after a successful boot the default
+    # `restart()` closure keeps the newest `session_logs_keep` dirs matching
+    # `session_logs_glob` under repo_root and removes the rest.
+    #
+    # PARAMETERIZED, not hard-coded into the control flow (mirrors `restart_command`
+    # / `native_globs` / `boot_liveness`): a repo overrides the glob / keep-count via
+    # its config. Fail-safe: a FALSY glob or a None/<=0 keep DISABLES the cap (never
+    # wipes all logs), and a repo whose config carries no matching session dirs
+    # simply prunes nothing (no-op). Read via .get() everywhere so a legacy override
+    # lacking the keys never raises (same back-compat discipline as the keys above).
+    "session_logs_glob": "logs/session-*",
+    "session_logs_keep": 10,
 }
 
 
@@ -759,6 +778,17 @@ def ensure_runtime(
             for _ in range(90):  # ~7.5 min ceiling (90 × 5s)
                 code, _payload = probe()
                 if code == 200:
+                    # Retention cap (runtime-ensure-unbounded-session-log-
+                    # accumulation): this successful boot just minted a fresh
+                    # `logs/session-<ts>/` dir, so prune old ones now — keeping the
+                    # newest N — so pipeline-driven restarts don't accumulate
+                    # unboundedly. Best-effort inside `prune_session_dirs` (never
+                    # raises), so a prune failure can never fail or abort the boot.
+                    prune_session_dirs(
+                        repo_root,
+                        glob_pattern=cfg.get("session_logs_glob", ""),
+                        keep=cfg.get("session_logs_keep"),
+                    )
                     return True
                 time.sleep(5)
             return False
@@ -2262,6 +2292,80 @@ def read_boot_stamp(repo_root) -> float | None:
         return float(ts) if ts is not None else None
     except (OSError, ValueError, TypeError):
         return None
+
+
+def prune_session_dirs(
+    repo_root,
+    *,
+    glob_pattern: str,
+    keep,
+    lister=None,
+    remover=None,
+) -> list:
+    """Prune old dev-runtime session-log dirs, keeping the newest ``keep``
+    (runtime-ensure-unbounded-session-log-accumulation).
+
+    Called after a successful boot from the default ``restart()`` closure — the
+    boot just minted a fresh ``logs/session-<ts>/`` dir, so this caps the on-disk
+    accumulation the runtime-ensure path is responsible for creating (719 dirs /
+    ~15 GB accrued with no retention anywhere in the path before this).
+
+    Lists the dirs matching ``glob_pattern`` under ``repo_root`` (default: a real
+    ``Path.glob`` restricted to directories), sorts them newest-first by mtime,
+    keeps the newest ``keep``, and removes the remainder via ``remover`` (default:
+    ``shutil.rmtree``). Returns the list of dirs actually pruned (for ``--test``
+    assertions).
+
+    Contract:
+      - **No-op** (returns ``[]``) when ``glob_pattern`` is falsy or ``keep`` is
+        None — retention is DISABLED. Repo-agnostic: a repo whose config carries
+        no session-log keys inherits a disabled cap, never an accidental prune.
+      - A non-positive ``keep`` (``<= 0``) also DISABLES the cap (fail-safe — a
+        misconfigured ``0`` must never wipe EVERY session dir).
+      - **Best-effort + NEVER raises:** any lister / stat / remover error is
+        swallowed so a prune failure can never abort or fail a boot (mirrors
+        ``write_boot_stamp``'s never-raise contract). A single un-removable dir is
+        skipped, not fatal.
+      - ``lister`` / ``remover`` are injected so ``--test`` is hermetic (no real
+        filesystem touched); production binds the real defaults.
+    """
+    if not glob_pattern or keep is None:
+        return []
+    try:
+        keep_n = int(keep)
+    except (TypeError, ValueError):
+        return []
+    # A non-positive keep DISABLES the cap — never prune everything.
+    if keep_n <= 0:
+        return []
+    if lister is None:
+        def lister():
+            root = Path(repo_root)
+            return [p for p in root.glob(glob_pattern) if p.is_dir()]
+    if remover is None:
+        remover = shutil.rmtree
+
+    try:
+        dirs = list(lister())
+    except Exception:  # noqa: BLE001 — a listing failure must never abort a boot
+        return []
+
+    def _mtime(p):
+        try:
+            return p.stat().st_mtime
+        except Exception:  # noqa: BLE001 — an unreadable dir sorts oldest (pruned first)
+            return 0.0
+
+    # Newest-first; keep the newest keep_n, prune the rest.
+    dirs.sort(key=_mtime, reverse=True)
+    pruned: list = []
+    for d in dirs[keep_n:]:
+        try:
+            remover(d)
+            pruned.append(d)
+        except Exception:  # noqa: BLE001 — best-effort; skip a dir we cannot remove
+            continue
+    return pruned
 
 
 def boot_recently_spawned(

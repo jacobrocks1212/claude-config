@@ -407,6 +407,7 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "probe_env_capability": "runtimeplane",
     "probe_platform_capability": "runtimeplane",
     "promote_artifact_atomically": "runtimeplane",
+    "prune_session_dirs": "runtimeplane",
     "read_boot_stamp": "runtimeplane",
     "read_runtime_lock": "runtimeplane",
     "reconcile_cycle_begin_git_consistency": "runtimeplane",
