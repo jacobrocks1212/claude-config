@@ -1,8 +1,10 @@
 # Auto-filed bug stubs violate the target repo's bugs-consistency gate
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-20
+**Fixed:** 2026-07-20
+**Fix commit:** a7a04ea6
 **Related:** `docs/features/incident-auto-capture/SPEC.md`, `user/skills/_components/adhoc-enqueue.md`, `docs/specs/turn-routing-enforcement/`
 
 ## Trigger / reconstructed route
