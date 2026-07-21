@@ -296,3 +296,246 @@ def test_real_baseline_profiles_are_clean():
     assert baseline.get("profiles"), "real baseline carries no assembled profiles"
     findings = ratchet.check_profiles(repo_root, baseline)
     assert findings == [], f"real-repo assembled-profile findings: {findings}"
+
+
+# ---------------------------------------------------------------------------
+# Standing anti-bloat guard — war-story detector + per-section ceiling
+# (cycle-prompt-residual-deflation-and-bloat-guard Phase 2, D1-D4)
+# ---------------------------------------------------------------------------
+
+# A minimal dispatched-prompt template (real @section grammar) the emitter parses.
+_CLEAN_SECTION = (
+    "<!-- @section role pipelines=feature,bug modes=workstation,cloud skills=all -->\n"
+    "You are running a cycle. Do the work and commit. No provenance here.\n"
+)
+
+
+def _war_story_template(body_line: str) -> str:
+    """A dispatched-prompt template whose one selectable section body carries
+    *body_line* as EMITTED prose (not a comment)."""
+    return (
+        "leading metadata dropped before the first @section marker\n"
+        "<!-- @section role pipelines=feature,bug modes=workstation,cloud skills=all -->\n"
+        f"{body_line}\n"
+    )
+
+
+def test_war_story_flags_iso_date(tmp_path):
+    findings = ratchet.scan_war_stories(
+        _war_story_template("Fixed since 2026-06-15 in the recovery path."),
+        "dispatch-recovery.md",
+    )
+    assert any(f["shape"] == "iso-date" and f["file"] == "dispatch-recovery.md"
+               for f in findings), findings
+    assert any(f["match"] == "2026-06-15" for f in findings)
+
+
+def test_war_story_flags_issue_round_and_d8(tmp_path):
+    for body, expect in (
+        ("Do X (HARD — ISSUE 2, blah).", "ISSUE 2"),
+        ("Per Round 44 the route broke.", "Round 44"),
+        ("Burned on the d8-effect-chains run.", "d8-effect-chains"),
+    ):
+        findings = ratchet.scan_war_stories(_war_story_template(body), "cycle-base-prompt.md")
+        assert any(f["shape"] == "issue-round-marker" for f in findings), (body, findings)
+        assert any(f["match"] == expect for f in findings), (body, findings)
+
+
+def test_war_story_flags_live_incident(tmp_path):
+    findings = ratchet.scan_war_stories(
+        _war_story_template("(Live incident: the subagent died resultless.)"),
+        "cycle-base-prompt.md",
+    )
+    assert any(f["shape"] == "live-incident" for f in findings), findings
+
+
+def test_war_story_flags_bare_docs_incident_literal(tmp_path):
+    findings = ratchet.scan_war_stories(
+        _war_story_template("This exists because of docs/bugs/some-incident-slug."),
+        "dispatch-recovery.md",
+    )
+    assert any(f["shape"] == "docs-incident-literal" for f in findings), findings
+    assert any(f["match"].startswith("docs/bugs/some-incident-slug") for f in findings)
+
+
+def test_war_story_operational_docs_path_not_flagged(tmp_path):
+    """A legit operational reference into a features/bugs dir (a doc FILE, not a
+    bare incident-dir literal) is NOT a war-story — shape 4 is bare-dir-only."""
+    findings = ratchet.scan_war_stories(
+        _war_story_template("Verify against docs/features/mcp-testing/SPEC.md first."),
+        "cycle-base-prompt.md",
+    )
+    assert findings == [], findings
+
+
+def test_war_story_provenance_in_comment_not_flagged(tmp_path):
+    """War-story provenance living in an HTML comment inside a section body is
+    NOT dispatched-as-imperative-prose — the emitter emits it but the contract
+    permits WHY-in-comments, so the detector excludes comment spans."""
+    template = (
+        "<!-- @section role pipelines=feature,bug modes=workstation,cloud skills=all -->\n"
+        "Do the work. <!-- history: burned on 2026-06-14, ISSUE 3 -->\n"
+    )
+    assert ratchet.scan_war_stories(template, "cycle-base-prompt.md") == []
+
+
+def test_war_story_multiline_authoring_comment_not_flagged(tmp_path):
+    """A multi-line leading authoring comment (research-halt-announcement.md
+    shape) is stripped wholesale — an interior 'Burned on d8-effect-chains,
+    2026-06-14' line does not leak into the scan."""
+    template = (
+        "# title\n"
+        "<!-- big authoring note\n"
+        "     spanning lines\n"
+        "     Burned on d8-effect-chains, 2026-06-14. -->\n"
+        "```\nOperator-facing block, no provenance.\n```\n"
+    )
+    assert ratchet.scan_war_stories(template, "research-halt-announcement.md") == []
+
+
+def test_war_story_allowlist_rescues_load_bearing_literal(tmp_path):
+    """A reason-required inline allowlist marker rescues a genuine load-bearing
+    literal that would otherwise match a shape; an EMPTY reason does not."""
+    rescued = (
+        "<!-- @section role pipelines=feature,bug modes=workstation,cloud skills=all -->\n"
+        "See docs/bugs/known-canonical-dir <!-- war-story-allow: canonical dir, load-bearing not incident -->\n"
+    )
+    assert ratchet.scan_war_stories(rescued, "cycle-base-prompt.md") == []
+
+    empty_reason = (
+        "<!-- @section role pipelines=feature,bug modes=workstation,cloud skills=all -->\n"
+        "See docs/bugs/known-canonical-dir <!-- war-story-allow: -->\n"
+    )
+    assert ratchet.scan_war_stories(empty_reason, "cycle-base-prompt.md") != []
+
+
+def test_war_story_never_selected_section_not_flagged(tmp_path):
+    """A DORMANT / never-selected @section (a modes value the emitter can never
+    dispatch) is NOT scanned — the detector honors emitter selectability."""
+    template = (
+        "<!-- @section live pipelines=feature,bug modes=workstation,cloud skills=all -->\n"
+        "Clean imperative rule.\n"
+        "<!-- @section ghost pipelines=feature,bug modes=disabled skills=all -->\n"
+        "Never dispatched: Live incident: 2026-01-01 Round 9 d8-effect-chains.\n"
+    )
+    assert ratchet.scan_war_stories(template, "cycle-base-prompt.md") == []
+
+
+def test_check_war_stories_scope_excludes_skills_and_docs(tmp_path):
+    """Scope = dispatched-prompt template family ONLY. An ordinary SKILL.md or a
+    docs/ file carrying a date/incident literal is NOT flagged."""
+    repo = tmp_path / "repo"
+    fam = repo / "user/skills/_components/lazy-batch-prompts"
+    fam.mkdir(parents=True)
+    (fam / "cycle-base-prompt.md").write_text(_CLEAN_SECTION, encoding="utf-8")
+    # Ordinary skill + docs carrying obvious war-story shapes — MUST be ignored.
+    (repo / "user/skills/some-skill").mkdir(parents=True)
+    (repo / "user/skills/some-skill/SKILL.md").write_text(
+        "Landed 2026-06-15 in Round 5. Live incident: docs/bugs/x-y-z.\n", encoding="utf-8"
+    )
+    (repo / "docs/bugs/foo").mkdir(parents=True)
+    (repo / "docs/bugs/foo/SPEC.md").write_text("Discovered 2026-07-20.\n", encoding="utf-8")
+    assert ratchet.check_war_stories(repo) == []
+
+
+def test_check_war_stories_excludes_family_claude_md(tmp_path):
+    """The lazy-batch-prompts/CLAUDE.md contract doc necessarily QUOTES the
+    detector patterns — it is excluded from the scan (a self-match)."""
+    repo = tmp_path / "repo"
+    fam = repo / "user/skills/_components/lazy-batch-prompts"
+    fam.mkdir(parents=True)
+    (fam / "cycle-base-prompt.md").write_text(_CLEAN_SECTION, encoding="utf-8")
+    (fam / "CLAUDE.md").write_text(
+        "The lint flags Live incident: / 2026-06-14 / Round 3 / d8-effect-chains / "
+        "docs/bugs/some-slug shapes.\n", encoding="utf-8"
+    )
+    assert ratchet.check_war_stories(repo) == []
+
+
+def test_check_war_stories_flags_family_file(tmp_path):
+    """A dispatched-prompt template in the family carrying an emitted war-story
+    IS flagged, named by file."""
+    repo = tmp_path / "repo"
+    fam = repo / "user/skills/_components/lazy-batch-prompts"
+    fam.mkdir(parents=True)
+    (fam / "dispatch-recovery.md").write_text(
+        "<!-- @section role pipelines=feature,bug modes=workstation,cloud -->\n"
+        "Reconcile since the 2026-06-15 review.\n", encoding="utf-8"
+    )
+    findings = ratchet.check_war_stories(repo)
+    assert any(f["file"] == "dispatch-recovery.md" and f["shape"] == "iso-date"
+               for f in findings), findings
+
+
+# --- per-section byte ceiling ----------------------------------------------
+
+def _sectioned_baseline(sections: dict) -> dict:
+    return {"schema_version": 1, "files": {}, "sections": sections}
+
+
+def test_check_sections_flags_over_ceiling(tmp_path):
+    tdir = _write_fixture_template(tmp_path)
+    # _write_fixture_template's base has a "task" section (skills=all) + "execute".
+    baseline = _sectioned_baseline({
+        "task": {"byte_ceiling": 1, "long_line_ceiling": 0},
+    })
+    findings = ratchet.check_sections(tmp_path, baseline, template_dir=tdir)
+    assert len(findings) == 1
+    assert findings[0]["section"] == "task"
+    assert findings[0]["metric"] == "byte_ceiling"
+    assert findings[0]["current"] > findings[0]["ceiling"]
+
+
+def test_check_sections_clean_when_within_ceiling(tmp_path):
+    tdir = _write_fixture_template(tmp_path)
+    baseline = _sectioned_baseline({
+        "task": {"byte_ceiling": 100000, "long_line_ceiling": 50},
+    })
+    assert ratchet.check_sections(tmp_path, baseline, template_dir=tdir) == []
+
+
+def test_check_sections_skips_metadata_keys(tmp_path):
+    tdir = _write_fixture_template(tmp_path)
+    baseline = _sectioned_baseline({"_notes": "meta"})
+    assert ratchet.check_sections(tmp_path, baseline, template_dir=tdir) == []
+
+
+def test_lock_in_section_only_lowers(tmp_path):
+    tdir = _write_fixture_template(tmp_path)
+    bp = tmp_path / "baseline.json"
+    baseline = _sectioned_baseline({"task": {"byte_ceiling": 100000, "long_line_ceiling": 50}})
+    lowered = ratchet.lock_in_section(tmp_path, bp, baseline, "task", template_dir=tdir)
+    assert lowered["action"] == "lowered"
+    assert lowered["byte_ceiling"] < 100000
+    baseline2 = _sectioned_baseline({"task": {"byte_ceiling": 1, "long_line_ceiling": 0}})
+    noop = ratchet.lock_in_section(tmp_path, bp, baseline2, "task", template_dir=tdir)
+    assert noop["action"] == "noop"
+    assert baseline2["sections"]["task"]["byte_ceiling"] == 1
+
+
+def test_lock_in_section_seeds_new_only_with_flag(tmp_path):
+    tdir = _write_fixture_template(tmp_path)
+    bp = tmp_path / "baseline.json"
+    baseline = _sectioned_baseline({})
+    refused = ratchet.lock_in_section(tmp_path, bp, baseline, "task", template_dir=tdir)
+    assert refused["action"] == "refused"
+    seeded = ratchet.lock_in_section(tmp_path, bp, baseline, "task", seed_new=True, template_dir=tdir)
+    assert seeded["action"] == "seeded"
+    assert baseline["sections"]["task"]["byte_ceiling"] == seeded["byte_ceiling"]
+
+
+def test_real_family_war_stories_clean():
+    """Live self-check: the real dispatched-prompt template family carries no
+    emitted war-story prose (the family-wide cleanup landed)."""
+    repo_root = _SCRIPTS_DIR.resolve().parents[1]
+    findings = ratchet.check_war_stories(repo_root)
+    assert findings == [], f"real-family war-story findings: {findings}"
+
+
+def test_real_baseline_sections_clean():
+    """Live self-check: every seeded cycle-base @section is within its ceiling."""
+    repo_root = _SCRIPTS_DIR.resolve().parents[1]
+    baseline = ratchet.load_baseline(ratchet.default_baseline_path())
+    assert baseline.get("sections"), "real baseline carries no per-section ceilings"
+    findings = ratchet.check_sections(repo_root, baseline)
+    assert findings == [], f"real-repo per-section findings: {findings}"

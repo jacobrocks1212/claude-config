@@ -538,7 +538,13 @@ def main() -> None:
         # profile ratchet so `--check-skill-size` (and the gate battery that shells
         # it) gates the assembled prompt, not just whole files.
         ss_profile_findings = skill_size_ratchet.check_profiles(ss_repo_root, ss_baseline)
-        if ss_findings or ss_profile_findings:
+        # cycle-prompt-residual-deflation-and-bloat-guard Phase 2 (D2a): also run the
+        # per-@section ceiling + the war-story pattern detector over the dispatched-
+        # prompt template family, so `--check-skill-size` (and the gate battery that
+        # shells it) refuses per-section re-bloat AND re-accreted incident narrative.
+        ss_section_findings = skill_size_ratchet.check_sections(ss_repo_root, ss_baseline)
+        ss_war_story_findings = skill_size_ratchet.check_war_stories(ss_repo_root)
+        if ss_findings or ss_profile_findings or ss_section_findings or ss_war_story_findings:
             for finding in ss_findings:
                 if finding["metric"] == "missing":
                     print(f"MISSING  {finding['file']} — listed in baseline but not found on disk")
@@ -558,16 +564,40 @@ def main() -> None:
                         f"OVER-CEILING  profile {finding['profile']}  {finding['metric']}="
                         f"{finding['current']} > ceiling={finding['ceiling']}"
                     )
-            total = len(ss_findings) + len(ss_profile_findings)
+            for finding in ss_section_findings:
+                if finding["metric"] == "missing":
+                    print(
+                        f"MISSING  section {finding['section']} — listed in baseline but "
+                        f"not found in cycle-base-prompt.md"
+                    )
+                else:
+                    print(
+                        f"OVER-CEILING  section {finding['section']}  {finding['metric']}="
+                        f"{finding['current']} > ceiling={finding['ceiling']}"
+                    )
+            for finding in ss_war_story_findings:
+                print(
+                    f"WAR-STORY  {finding['file']}  [{finding['shape']}] {finding['match']!r} — "
+                    f"dispatched-prompt prose carries incident/provenance narrative; move it to "
+                    f"the SPEC/IMPLEMENTATION_NOTES (or, for a genuine load-bearing literal, add "
+                    f"an inline `<!-- war-story-allow: <reason> -->`). Line: {finding['line'][:100]}"
+                )
+            total = (len(ss_findings) + len(ss_profile_findings)
+                     + len(ss_section_findings) + len(ss_war_story_findings))
             print(f"\n{total} skill-size ratchet finding(s) found.")
             exit_code = 1
         else:
             ss_profile_count = sum(
                 1 for k in (ss_baseline.get("profiles") or {}) if not k.startswith("_")
             )
+            ss_section_count = sum(
+                1 for k in (ss_baseline.get("sections") or {}) if not k.startswith("_")
+            )
             print(
-                f"OK — skill-size ratchet: {len(ss_baseline['files'])} file(s) and "
-                f"{ss_profile_count} assembled cycle-prompt profile(s) within ceiling."
+                f"OK — skill-size ratchet: {len(ss_baseline['files'])} file(s), "
+                f"{ss_profile_count} assembled cycle-prompt profile(s), and "
+                f"{ss_section_count} cycle-base @section(s) within ceiling; "
+                f"dispatched-prompt family carries no war-story prose."
             )
 
     # CLI-surface prose/fence lint (optional; state-cli-contract-registry).

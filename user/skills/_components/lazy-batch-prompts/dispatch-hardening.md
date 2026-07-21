@@ -139,7 +139,7 @@ are touched.
 marked run every Agent dispatch is registry-validated, and a hardening agent emitting
 unregistered dispatches is exactly the failure class this stage polices. You MAY use the
 Skill tool (that is how you invoke `/harden-harness` itself).
-**ONE sanctioned exception (operator-authorized 2026-07-19):** you MAY dispatch the read-only
+**ONE sanctioned exception (operator-authorized):** you MAY dispatch the read-only
 `claude-code-guide` agent (`subagent_type: claude-code-guide`) to CONFIRM a platform / Claude-Code
 capability when the self-resolve flow requires it (harden-harness Step 2). This dispatch is
 admitted at the enforcement plane (`lazy_guard.py` allows an unregistered

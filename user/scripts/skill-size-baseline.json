@@ -114,5 +114,112 @@
       "byte_ceiling": 13695,
       "long_line_ceiling": 0
     }
+  },
+  "sections": {
+    "_notes": "cycle-prompt-residual-deflation-and-bloat-guard Phase 2 (D2a) per-@section byte ceilings over cycle-base-prompt.md. Sibling of `profiles` (whole-assembled prompt) — catches a single @section bloating even when the assembled total nets under its profile ceiling. Key = section name, or name/<modes>[/<variant>][/park=<v>] when the name is duplicated. Seeded 2026-07-20 at the CLEANED (post-family-cleanup) sizes via `skill-size-ratchet.py --seed-sections`; lowered only via `--lock-in-section` (never auto-raised — a deliberate legitimate growth is a manual reviewable edit here). check_sections is folded into `--check` + `lint-skills.py --check-skill-size`.",
+    "task/workstation": {
+      "byte_ceiling": 535,
+      "long_line_ceiling": 0
+    },
+    "task/cloud": {
+      "byte_ceiling": 863,
+      "long_line_ceiling": 0
+    },
+    "env-dialect-core": {
+      "byte_ceiling": 828,
+      "long_line_ceiling": 0
+    },
+    "env-dialect-windows": {
+      "byte_ceiling": 675,
+      "long_line_ceiling": 0
+    },
+    "d7": {
+      "byte_ceiling": 1309,
+      "long_line_ceiling": 0
+    },
+    "tool-search": {
+      "byte_ceiling": 612,
+      "long_line_ceiling": 0
+    },
+    "park-divergence-grade": {
+      "byte_ceiling": 1129,
+      "long_line_ceiling": 0
+    },
+    "park-spec-sentinel-mediation": {
+      "byte_ceiling": 1533,
+      "long_line_ceiling": 0
+    },
+    "workstation-dispatch": {
+      "byte_ceiling": 2375,
+      "long_line_ceiling": 0
+    },
+    "cloud-override": {
+      "byte_ceiling": 1150,
+      "long_line_ceiling": 0
+    },
+    "skill-execute-plan": {
+      "byte_ceiling": 1995,
+      "long_line_ceiling": 0
+    },
+    "skill-execute-plan-cloud": {
+      "byte_ceiling": 1866,
+      "long_line_ceiling": 0
+    },
+    "provenance-lookup": {
+      "byte_ceiling": 575,
+      "long_line_ceiling": 0
+    },
+    "skill-retro": {
+      "byte_ceiling": 504,
+      "long_line_ceiling": 0
+    },
+    "skill-retro-feature": {
+      "byte_ceiling": 586,
+      "long_line_ceiling": 0
+    },
+    "skill-mcp-test-common": {
+      "byte_ceiling": 5107,
+      "long_line_ceiling": 0
+    },
+    "mcp-test-runtime/workstation/runtime-up": {
+      "byte_ceiling": 1496,
+      "long_line_ceiling": 0
+    },
+    "mcp-test-runtime/workstation/no-runtime": {
+      "byte_ceiling": 1276,
+      "long_line_ceiling": 0
+    },
+    "status-honesty": {
+      "byte_ceiling": 857,
+      "long_line_ceiling": 0
+    },
+    "resume-safety/workstation": {
+      "byte_ceiling": 442,
+      "long_line_ceiling": 0
+    },
+    "resume-safety/cloud": {
+      "byte_ceiling": 820,
+      "long_line_ceiling": 0
+    },
+    "hard-contract/workstation": {
+      "byte_ceiling": 2351,
+      "long_line_ceiling": 0
+    },
+    "hard-contract/cloud": {
+      "byte_ceiling": 2875,
+      "long_line_ceiling": 0
+    },
+    "terminal-stop": {
+      "byte_ceiling": 503,
+      "long_line_ceiling": 0
+    },
+    "turn-end/workstation": {
+      "byte_ceiling": 3559,
+      "long_line_ceiling": 0
+    },
+    "turn-end/cloud": {
+      "byte_ceiling": 3651,
+      "long_line_ceiling": 0
+    }
   }
 }

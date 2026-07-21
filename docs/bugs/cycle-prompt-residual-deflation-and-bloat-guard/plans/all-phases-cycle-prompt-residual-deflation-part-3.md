@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: cycle-prompt-residual-deflation-and-bloat-guard
-status: Ready
+status: Complete
 created: 2026-07-20
 phases: [2]
 complexity: complex
@@ -167,9 +167,9 @@ python3 user/scripts/skill-size-ratchet.py --check
 
 ## Work Units
 
-- [ ] WU-1 — Write failing tests (war-story shapes, per-section ceiling, allowlist rescue, scope exemption)
-- [ ] WU-2 — Implement detector + per-section ceiling + allowlist
-- [ ] WU-3 — Register control surface + run harness-gate.py / author GATE_VERDICT.md if flagged
+- [x] WU-1 — Write failing tests (war-story shapes, per-section ceiling, allowlist rescue, scope exemption)
+- [x] WU-2 — Implement detector + per-section ceiling + allowlist
+- [x] WU-3 — Register control surface + run harness-gate.py / author GATE_VERDICT.md if flagged
 
 ## Plan-specific execution notes
 

@@ -11,6 +11,8 @@
     "user/scripts/lazy_coord.py",
     "user/scripts/lazy-parity-manifest.json",
     "user/scripts/build-queue*.ps1",
+    "user/scripts/skill-size-ratchet.py",
+    "user/skills/_components/lazy-batch-prompts/**",
     "user/skills/lazy*/**",
     "user/skills/harden-harness/**",
     "user/skills/_components/mcp-coverage-audit.md",

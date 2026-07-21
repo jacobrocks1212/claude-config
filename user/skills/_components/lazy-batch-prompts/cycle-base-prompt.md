@@ -467,7 +467,7 @@ Status honesty (PIPELINE-GATE — HARD):
   you just implemented; when the LAST phase's work lands, set the top-level PHASES
   `**Status:**` to `In-progress` (NOT {forbidden_status}) — implementation done,
   validation pending. Let the state machine route to /mcp-test next. (The /retro
-  step is unwired — 2026-06.)
+  step is unwired.)
 
 <!-- @section resume-safety pipelines=feature,bug modes=workstation skills=execute-plan,retro,retro-feature -->
 Resume safety (plan-part + per-WU granularity):

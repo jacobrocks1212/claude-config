@@ -160,3 +160,68 @@ Confirmed present by grep after all WU-1/WU-2 edits (asserted by `test_dispatch.
    which is emitted `@section` prose). Those files are OUTSIDE this plan part's declared
    file list (WU-1 = `cycle-base-prompt.md` only); their cleanup belongs to Deliverable 2's
    family-wide guard (a later phase), not D1. The two in-scope files are residue-free.
+
+---
+
+# Phase 2 — Family-wide cleanup (D2a, standing anti-bloat guard)
+
+**Purpose:** Land the new HARD war-story lint GREEN honestly — the family-wide hard gate
+requires the family clean, so removable emitted war-story/dated provenance is REMOVED
+(never grandfathered via the allowlist), preserving every load-bearing rule. The war-story
+detector is EMITTED-TEXT-SCOPED (drives the emitter's own parser: selectable `@section`
+bodies, non-allowlist HTML-comment spans stripped), so ONLY prose the emitter actually
+dispatches to a subagent is in scope.
+
+## Removed emitted provenance clauses → surviving rule
+
+| File (section) | Removed clause | Surviving rule (every branch preserved) |
+|----------------|----------------|-----------------------------------------|
+| `dispatch-hardening.md` (`full-gates`) | `(operator-authorized 2026-07-19)` → `(operator-authorized)` | The ONE sanctioned `claude-code-guide` read-only exception + its enforcement-plane admission — kept verbatim; only the ISO date dropped |
+| `dispatch-recovery.md` (`job-steps`, deliverables_done) | `(the machine source of truth since the 2026-06-15 d8-effect-chains review)` → `(the machine source of truth)` | The plan-part `- [ ] WU-N` checkboxes ARE the machine record vs. PHASES phase-level rows — kept; the dated review provenance dropped |
+| `dispatch-recovery.md` (`job-steps`, plan-scoped form) | `(cite: live-run false alarm 2026-06-11 where a plan-level check incorrectly flagged In-progress parts beyond the one just executed)` → `(the plan-scoped check evaluates only the named part's WUs)` | Use the plan-scoped `--verify-ledger --plan` form to avoid false-fails from still-pending later parts — the RULE restated terse; the dated incident citation dropped |
+| `cycle-base-prompt.md` (`status-honesty`) | `(The /retro step is unwired — 2026-06.)` → `(The /retro step is unwired.)` | The `/retro`-unwired fact kept; the year-month provenance dropped (cosmetic — `2026-06` never matched the ISO-date shape, cleaned for tidiness) |
+
+## Deliberately LEFT (verified NON-emitted provenance — "clean only emitted ones")
+
+These carry war-story shapes but live in the leading metadata / authoring HTML comments the
+emitters DROP (before the first `@section`, or an authoring `<!-- ... -->` note) — the
+emitted-text-scoped detector correctly does not flag them, and the contract permits
+WHY-in-comments. Verified non-emitted by driving `emit_cycle_prompt` / `_parse_cycle_template`:
+
+- `repos/algobooth/.claude/skill-config/cycle-prompt-addenda.md` — `(… hand-spliced the audio
+  gate on 2026-06-11; that path is now closed)` — in the leading metadata comment (before the
+  first `@section`), never appended to a dispatch.
+- `dispatch-spike.md` — `Origin: hydra-overlay blocked … (AlgoBooth SPIKE_PROJECTOR_FPS.md)` —
+  in the leading `<!-- ... -->` metadata block.
+- `dispatch-ingest-research.md` / `dispatch-corrective-coverage.md` — `(harden Round 44,
+  2026-06-29)` — in the leading metadata comment.
+- `research-halt-announcement.md` — `Burned on d8-effect-chains, 2026-06-14.` — inside the
+  multi-line authoring HTML comment (stripped wholesale; the operator-facing variant blocks are
+  clean).
+- `cycle-base-prompt.md` — the two DORMANT retro-section metadata comments (`…2026-06;
+  emit_cycle_prompt never selects this section…`) — inline HTML comments (and `2026-06` never
+  matched the ISO shape); deliberate structural metadata, left intact.
+
+## Not-flagged operational references (shape-4 precision, no allowlist needed)
+
+`docs/features/mcp-testing/SPEC.md` (2× in `cycle-base-prompt.md` mcp-test-common, 2× in
+`dispatch-corrective-coverage.md`) is a legit OPERATIONAL doc reference, not an incident-dir
+literal. Shape 4 is BARE-dir-only (`docs/(bugs|features)/<slug>` NOT continuing into a longer
+path via `(?![/\w-])`), so these are structurally excluded WITHOUT an inline allowlist marker —
+keeping the dispatched prompts free of added allowlist-comment bytes (the profiles block part 1
+re-locked is untouched; the cleanup only REMOVED bytes).
+
+## ⚖ Scope-class decisions (Phase 2, disclosed)
+
+1. `⚖ scope-class: family-wide hard gate requires a clean family` — the removable emitted
+   war-stories (4 clauses above) were REMOVED, not grandfathered via the `war-story-allow`
+   allowlist. The allowlist is reserved for genuine load-bearing literals; using it to
+   grandfather removable narrative would defeat the guard. No real family file needs an
+   allowlist entry today.
+2. `⚖ scope-class: clean only emitted prose` — non-emitted metadata/authoring-comment
+   provenance (the "LEFT" list above) is preserved. The contract (`lazy-batch-prompts/CLAUDE.md`)
+   permits WHY-in-comments; the guard is scoped to dispatched imperative prose, so editing inert
+   comment provenance would be out-of-contract churn.
+3. `⚖ scope-class: per-section ceiling seeded at cleaned sizes` — the new `sections` baseline
+   block (26 `@section` ceilings over `cycle-base-prompt.md`) was seeded AFTER the cleanup via
+   `--seed-sections`, so it locks the post-cleanup floor; it lowers only via `--lock-in-section`.
