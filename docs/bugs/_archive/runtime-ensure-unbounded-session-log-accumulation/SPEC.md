@@ -2,6 +2,8 @@
 
 **Status:** Fixed
 **Discovered:** 2026-07-20
+**Fixed:** 2026-07-20
+**Fix commit:** 99f7a673
 **Trigger:** observed-friction (harden-harness dispatch; item in flight `inspector-track-dashboard`, Step 9 mcp-test)
 **Related:** `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` (Round 134);
 `user/scripts/lazy_core/runtimeplane.py` (`ensure_runtime`); AlgoBooth adhoc bug
