@@ -23,10 +23,10 @@ complexity: complex
 # Implementation Plan — Cycle-Prompt Residual Deflation + Anti-Bloat Guard (part 1 of 3)  (v2)
 
 **PHASES.md files:**
-- `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/PHASES.md` (cycle-prompt-residual-deflation-and-bloat-guard, 3 phases)
+- `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/PHASES.md` (cycle-prompt-residual-deflation-and-bloat-guard, 3 phases)
 
 **SPEC.md files:**
-- `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/SPEC.md`
+- `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/SPEC.md`
 
 **Total phases:** 3 (this part covers Phase 1 only)
 **Plan version:** v2 (reference-based — components loaded from disk per step)
@@ -118,14 +118,14 @@ Upstream plans and PHASES.md files this plan was authored against. The executing
 #### WU-3 — `SEMANTIC_DIFF.md` + re-lock the assembled-profile ratchet
 
 **Scope:**
-1. Author `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/SEMANTIC_DIFF.md` (new) mapping EVERY clause removed in WU-1/WU-2 → its surviving terse rule, following the `SEMANTIC_DIFF_PHASE2.md` / `SEMANTIC_DIFF_PHASE3.md` table format [VERIFY: `test -f docs/features/cycle-prompt-deflation/SEMANTIC_DIFF_PHASE2.md && test -f docs/features/cycle-prompt-deflation/SEMANTIC_DIFF_PHASE3.md`], and list the load-bearing literals preserved verbatim (the same list enumerated in WU-1's Implementation goal above, plus `--park-provisional` [VERIFY: `grep -rn "park-provisional" user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md`]).
+1. Author `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/SEMANTIC_DIFF.md` (new) mapping EVERY clause removed in WU-1/WU-2 → its surviving terse rule, following the `SEMANTIC_DIFF_PHASE2.md` / `SEMANTIC_DIFF_PHASE3.md` table format [VERIFY: `test -f docs/features/cycle-prompt-deflation/SEMANTIC_DIFF_PHASE2.md && test -f docs/features/cycle-prompt-deflation/SEMANTIC_DIFF_PHASE3.md`], and list the load-bearing literals preserved verbatim (the same list enumerated in WU-1's Implementation goal above, plus `--park-provisional` [VERIFY: `grep -rn "park-provisional" user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md`]).
 2. Run `python3 user/scripts/generate-coupled-skills.py --check --repo-root .` [VERIFY: `grep -n "add_argument(\"--check\"" user/scripts/generate-coupled-skills.py` → line 422] and confirm exit 0.
 3. Re-lock all 20 seeded assembled-profile ceilings to the new lower floor via `python3 user/scripts/skill-size-ratchet.py --lock-in-profile <profile-id>` [VERIFY: `grep -n -- "--lock-in-profile" user/scripts/skill-size-ratchet.py` → argparse def at line 431] per profile — NEVER hand-raise; `--lock-in-profile` only lowers a ceiling on measured improvement.
 
 **TDD:** no.
 
 **Files to create/modify:**
-- `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/SEMANTIC_DIFF.md` (new)
+- `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/SEMANTIC_DIFF.md` (new)
 - `user/scripts/skill-size-baseline.json` (profiles block only — no per-section block; that is Phase 2)
 
 **Implementation goal:** `SEMANTIC_DIFF.md` gives a human reviewer proof no policy was dropped; the 20 profile ceilings in `skill-size-baseline.json` reflect the deflated floor so Phase 2's per-section ceiling (part 3 of this series) has a stable, already-lowered seed to measure against (PHASES.md "Integration Notes for Next Phase" — Phase 2 CANNOT start until this re-lock lands).

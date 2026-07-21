@@ -7,6 +7,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-20
+**Fixed:** 2026-07-20
+**Fix commit:** c83f3b7c
 **Placement:** docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard
 **Related:**
 - `docs/features/cycle-prompt-deflation` (Complete 2026-07-19) — the parent feature this follows up; its SPEC / IMPLEMENTATION_NOTES / SEMANTIC_DIFF_PHASE2+3 are the reference playbook.

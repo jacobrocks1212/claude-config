@@ -51,13 +51,13 @@ skipping it here is the documented "structurally outside MCP reach" exemption, n
 |---|---|---|
 | `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md` | 1 | Trim-in-place: Class A skill-specific sections + Class B rationale tails |
 | `repos/algobooth/.claude/skill-config/cycle-prompt-addenda.md` | 1 | Condense over-cap-gate-decomposition + audio-invariants blocks |
-| `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/SEMANTIC_DIFF.md` | 1 | New — no-policy-lost review artifact |
+| `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/SEMANTIC_DIFF.md` | 1 | New — no-policy-lost review artifact |
 | `user/scripts/skill-size-baseline.json` | 1, 2 | Phase 1 re-locks the 20 assembled-profile ceilings; Phase 2 adds a new per-section ceiling block |
 | `user/scripts/skill-size-ratchet.py` | 2 | New war-story pattern detector + per-section byte ceiling check |
 | `user/scripts/test_skill_size_ratchet.py` | 2 | New failing-first tests for both checks |
 | `user/scripts/lint-skills.py` | 2 | Confirm/wire the new checks under `--check-skill-size` |
 | `docs/gate/control-surfaces.json` | 2 | Register `skill-size-ratchet.py` + the dispatched-prompt template family |
-| `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/GATE_VERDICT.md` | 2 (conditional) | Only if `harness-gate.py` flags the Phase 2 diff |
+| `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/GATE_VERDICT.md` | 2 (conditional) | Only if `harness-gate.py` flags the Phase 2 diff |
 | `user/skills/_components/lazy-batch-prompts/CLAUDE.md` | 3 | New — authoring contract at the edit site |
 
 ## Phase 1 — Residual prose-density deflation (D1)
@@ -75,7 +75,7 @@ test authorship).
 **Files likely modified:**
 - `user/skills/_components/lazy-batch-prompts/cycle-base-prompt.md`
 - `repos/algobooth/.claude/skill-config/cycle-prompt-addenda.md`
-- `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/SEMANTIC_DIFF.md` (new)
+- `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/SEMANTIC_DIFF.md` (new)
 - `user/scripts/skill-size-baseline.json` (profiles block only)
 
 **Deliverables:**
@@ -151,7 +151,7 @@ not replace, the existing whole-assembled-profile ceiling.
 - `user/scripts/test_skill_size_ratchet.py`
 - `user/scripts/lint-skills.py`
 - `docs/gate/control-surfaces.json`
-- `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/GATE_VERDICT.md` (conditional — only
+- `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/GATE_VERDICT.md` (conditional — only
   if `harness-gate.py` flags the diff)
 
 **Deliverables:**

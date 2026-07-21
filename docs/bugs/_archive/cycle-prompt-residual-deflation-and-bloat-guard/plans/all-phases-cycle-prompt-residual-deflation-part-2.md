@@ -24,10 +24,10 @@ complexity: mechanical
 # Implementation Plan — Cycle-Prompt Residual Deflation + Anti-Bloat Guard (part 2 of 3)  (v2)
 
 **PHASES.md files:**
-- `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/PHASES.md` (cycle-prompt-residual-deflation-and-bloat-guard, 3 phases)
+- `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/PHASES.md` (cycle-prompt-residual-deflation-and-bloat-guard, 3 phases)
 
 **SPEC.md files:**
-- `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/SPEC.md`
+- `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/SPEC.md`
 
 **Total phases:** 3 (this part covers Phase 3 only)
 **Plan version:** v2 (reference-based — components loaded from disk per step)

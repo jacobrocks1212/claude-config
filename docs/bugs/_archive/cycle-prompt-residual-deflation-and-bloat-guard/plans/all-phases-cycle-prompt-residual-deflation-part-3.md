@@ -25,10 +25,10 @@ complexity: complex
 # Implementation Plan — Cycle-Prompt Residual Deflation + Anti-Bloat Guard (part 3 of 3)  (v2)
 
 **PHASES.md files:**
-- `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/PHASES.md` (cycle-prompt-residual-deflation-and-bloat-guard, 3 phases)
+- `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/PHASES.md` (cycle-prompt-residual-deflation-and-bloat-guard, 3 phases)
 
 **SPEC.md files:**
-- `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/SPEC.md`
+- `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/SPEC.md`
 
 **Total phases:** 3 (this part covers Phase 2 only)
 **Plan version:** v2 (reference-based — components loaded from disk per step)
@@ -52,7 +52,7 @@ Upstream plans and PHASES.md files this plan was authored against. The executing
 | lazy-batch-skill-deflation | composes | (prior art per PHASES.md Cross-feature Integration Notes — the prose→verdict-rule playbook and `skill-size-ratchet.py` gate both this bug and the parent feature extend; no new pattern invented here) | Confirms the per-section + per-pattern generalization is extending an established gate, not inventing a new mechanism. |
 | anti-overfit-design-gate | hard (design constraint) | `docs/gate/control-surfaces.json` + `user/scripts/harness-gate.py` | This phase's war-story detector edits a matcher/pattern set inside `skill-size-ratchet.py`, a file this phase adds to the control-surface manifest — `harness-gate.py --staged` MUST run on the diff; if it flags `overfit` (or any detector), `GATE_VERDICT.md` must be authored per `_components/harness-change-gate.md` before this phase is done. |
 
-**Part 1 dependency (this bug, same series):** `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/plans/all-phases-cycle-prompt-residual-deflation-part-1.md` MUST be `status: Complete` before this part begins — its `skill-size-baseline.json` profile re-lock is the seed floor this phase's per-section ceiling is measured against, and `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/SEMANTIC_DIFF.md` (part 1's WU-3 output) is the record of what survived deflation that this phase's fixtures should not re-flag as war-story.
+**Part 1 dependency (this bug, same series):** `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/plans/all-phases-cycle-prompt-residual-deflation-part-1.md` MUST be `status: Complete` before this part begins — its `skill-size-baseline.json` profile re-lock is the seed floor this phase's per-section ceiling is measured against, and `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/SEMANTIC_DIFF.md` (part 1's WU-3 output) is the record of what survived deflation that this phase's fixtures should not re-flag as war-story.
 
 ## Execution Schedule
 
@@ -125,13 +125,13 @@ Upstream plans and PHASES.md files this plan was authored against. The executing
 **Scope:**
 1. Register `user/scripts/skill-size-ratchet.py` and the dispatched-prompt template family glob (`user/skills/_components/lazy-batch-prompts/**`) in `docs/gate/control-surfaces.json` `control_surfaces[]` [VERIFY: `grep -n "control_surfaces" docs/gate/control-surfaces.json` → confirmed array present; note `user/scripts/skill-size-ratchet.py` is NOT currently in the list — this WU adds it].
 2. Run `python3 user/scripts/harness-gate.py --repo-root . --staged` [VERIFY: `grep -n -- "--staged" user/scripts/harness-gate.py` → line 496] on the WU-2 diff.
-3. If it flags the matcher-set edit (or any other detector), author `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/GATE_VERDICT.md` per `~/.claude/skills/_components/harness-change-gate.md` [VERIFY: `test -f user/skills/_components/harness-change-gate.md`], `kind: gate-verdict` [VERIFY: `grep -n "kind: gate-verdict" user/skills/_components/sentinel-frontmatter.md` → line 453] — the structural, shape-keyed design (Locked Decision 2) is the intended overfit defense; the verdict records the judgment call, not a rubber stamp.
+3. If it flags the matcher-set edit (or any other detector), author `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/GATE_VERDICT.md` per `~/.claude/skills/_components/harness-change-gate.md` [VERIFY: `test -f user/skills/_components/harness-change-gate.md`], `kind: gate-verdict` [VERIFY: `grep -n "kind: gate-verdict" user/skills/_components/sentinel-frontmatter.md` → line 453] — the structural, shape-keyed design (Locked Decision 2) is the intended overfit defense; the verdict records the judgment call, not a rubber stamp.
 
 **TDD:** no (registration + gate-run, not code).
 
 **Files to create/modify:**
 - `docs/gate/control-surfaces.json`
-- `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/GATE_VERDICT.md` (conditional — only if `harness-gate.py` flags the diff)
+- `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/GATE_VERDICT.md` (conditional — only if `harness-gate.py` flags the diff)
 
 **Implementation goal:** The new detector's own control surface is registered so `harness-gate.py` covers its own future diffs (the same self-inclusion discipline `control-surfaces.json`'s `_doc` field already documents for its `gate_own` block). This WU runs AFTER WU-2 so `--staged`/`--range` inspects the actual implementation diff, not a speculative one.
 
@@ -143,7 +143,7 @@ Upstream plans and PHASES.md files this plan was authored against. The executing
 ```bash
 python3 user/scripts/harness-gate.py --repo-root . --staged
 ```
-Exit 0 (out-of-scope or pass) with no unresolved verdict requirement, OR exit 1 with `docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/GATE_VERDICT.md` authored resolving it.
+Exit 0 (out-of-scope or pass) with no unresolved verdict requirement, OR exit 1 with `docs/bugs/_archive/cycle-prompt-residual-deflation-and-bloat-guard/GATE_VERDICT.md` authored resolving it.
 
 **Testing Strategy:** Strict TDD for WU-1/WU-2 — write the four failing fixtures first, confirm red, then implement the detector + ceiling + allowlist until green:
 ```bash
