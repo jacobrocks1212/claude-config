@@ -39,7 +39,7 @@ canary:
   - user/skills/lazy-bug-batch/SKILL.md
   - repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md
   degraded_revert_note: null
-  status: open
+  status: closed-clean
 ---
 
 # Intervention: merged-head-includes-parked-items-deadlocks-park-run
@@ -47,3 +47,11 @@ canary:
 Hypothesis: shipping `merged-head-includes-parked-items-deadlocks-park-run` (bug pipeline) moves `undeclared` in direction `undeclared` within 20 post-ship runs.
 
 Reviews are appended below by `user/scripts/efficacy-eval.py` (`## Review <date>` sections). Do not hand-edit the frontmatter — the evaluator is its sole post-capture writer.
+
+## Canary 2026-07-20
+
+- window: closed after 10/10 observed post-ship run(s) (matured: True)
+- signal movement: band-not-evaluable (target undeclared)
+- incidents attributed: none
+- unattributed in-window incidents: 916 (listed, never counted)
+- handoff: the efficacy review proceeds on its own longer cadence — a clean canary does NOT pre-judge the efficacy verdict, and the watcher stops waking this record.
