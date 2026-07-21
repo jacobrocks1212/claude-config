@@ -4,7 +4,7 @@
 > prose after the parent 19.8% trim, and nothing prevents future harden rounds from re-accreting
 > it — the byte ratchet gates whole-prompt size, not per-section growth or the war-story pattern.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-20
 **Placement:** docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard

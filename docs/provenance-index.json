@@ -6759,6 +6759,41 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/PHASES.md": [
+    {
+      "id": "cycle-prompt-residual-deflation-and-bloat-guard",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/SPEC.md": [
+    {
+      "id": "cycle-prompt-residual-deflation-and-bloat-guard",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/plans/all-phases-cycle-prompt-residual-deflation-part-1.md": [
+    {
+      "id": "cycle-prompt-residual-deflation-and-bloat-guard",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/plans/all-phases-cycle-prompt-residual-deflation-part-2.md": [
+    {
+      "id": "cycle-prompt-residual-deflation-and-bloat-guard",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/cycle-prompt-residual-deflation-and-bloat-guard/plans/all-phases-cycle-prompt-residual-deflation-part-3.md": [
+    {
+      "id": "cycle-prompt-residual-deflation-and-bloat-guard",
+      "type": "bug",
+      "provenance": "pipeline-gated"
+    }
+  ],
   "docs/bugs/cycle-subagent-fabricates-policy-or-stray-branch/PHASES.md": [
     {
       "id": "cycle-subagent-fabricates-policy-or-stray-branch",
