@@ -4346,6 +4346,30 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/bugs/_archive/partial-validated-masks-shim-verification-rows-mark-complete-refuse-loop/FIXED.md": [
+    {
+      "id": "partial-validated-masks-shim-verification-rows-mark-complete-refuse-loop",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "spike-verdict-markdown-form-unparseable-blocks-completion",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/partial-validated-masks-shim-verification-rows-mark-complete-refuse-loop/SPEC.md": [
+    {
+      "id": "partial-validated-masks-shim-verification-rows-mark-complete-refuse-loop",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "spike-verdict-markdown-form-unparseable-blocks-completion",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/per-feature-cycle-cap-defers-incomplete-work/FIXED.md": [
     {
       "id": "per-feature-cycle-cap-defers-incomplete-work",
@@ -4861,6 +4885,30 @@
       "id": "single-slot-marker-ownership-race-disarms-owning-run",
       "type": "bug",
       "provenance": "backfilled"
+    }
+  ],
+  "docs/bugs/_archive/spike-verdict-markdown-form-unparseable-blocks-completion/FIXED.md": [
+    {
+      "id": "partial-validated-masks-shim-verification-rows-mark-complete-refuse-loop",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "spike-verdict-markdown-form-unparseable-blocks-completion",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/spike-verdict-markdown-form-unparseable-blocks-completion/SPEC.md": [
+    {
+      "id": "partial-validated-masks-shim-verification-rows-mark-complete-refuse-loop",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "spike-verdict-markdown-form-unparseable-blocks-completion",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/_archive/stale-marker-arms-validate-deny-on-unrelated-dispatches/FIXED.md": [
@@ -16732,6 +16780,30 @@
       "provenance": "manual"
     }
   ],
+  "docs/interventions/harden-2026-07-r136.md": [
+    {
+      "id": "partial-validated-masks-shim-verification-rows-mark-complete-refuse-loop",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "spike-verdict-markdown-form-unparseable-blocks-completion",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r137.md": [
+    {
+      "id": "partial-validated-masks-shim-verification-rows-mark-complete-refuse-loop",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "spike-verdict-markdown-form-unparseable-blocks-completion",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/harden-2026-07-r14.md": [
     {
       "id": "interventions-telemetry-repo-scope-split-brain",
@@ -18809,6 +18881,11 @@
       "provenance": "manual"
     },
     {
+      "id": "partial-validated-masks-shim-verification-rows-mark-complete-refuse-loop",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "code-doc-provenance-linkage",
       "type": "feature",
       "provenance": "pipeline-gated"
@@ -19201,9 +19278,19 @@
       "provenance": "manual"
     },
     {
+      "id": "partial-validated-masks-shim-verification-rows-mark-complete-refuse-loop",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "skip-mcp-test-frontmatter-unquoted-colon",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "spike-verdict-markdown-form-unparseable-blocks-completion",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "subagent-wedge-backstop-blocks-nested-wu-workers",
