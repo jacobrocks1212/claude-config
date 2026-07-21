@@ -2453,8 +2453,21 @@ def enqueue_adhoc(
         "id": bug_id,
         "name": name,
         "spec_dir": spec_dir,
-        "severity": severity,
     }
+    # queue-schema (bug-auto-file-produces-gate-noncompliant-artifacts): carry a
+    # `severity` key ONLY for an EXPLICIT operator/caller override. A None/empty
+    # severity is OMITTED, never written as `severity: null`, because
+    #   (a) a present-but-null value trips the target repo's qg:bugs-consistency
+    #       queue-schema rule (`if (e.severity !== undefined) …must be P0|P1|P2|Low`),
+    #       and
+    #   (b) an explicit queue severity is a PERMANENT `merged_priority` OVERRIDE of
+    #       the SPEC's own **Severity:** (depdag.py — it only falls back to
+    #       spec_severity past an EXPIRED pin), so a fabricated default (e.g. "Low")
+    #       would suppress the SPEC's real severity forever.
+    # Absent ⇒ merged_priority reads the SPEC-authored severity as the source of
+    # truth. Byte-identical entry shape to before for callers that DO pass a token.
+    if severity:
+        _new_entry["severity"] = severity
     if deps:
         # queue-dependency-dag: the optional hard-deps declaration. Key absent
         # when not supplied — byte-identical legacy entry shape.

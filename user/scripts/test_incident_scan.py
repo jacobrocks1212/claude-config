@@ -546,6 +546,19 @@ def test_end_to_end_enqueue_stub_and_capsule():
         slug = ids[0]
         stub = repo / "docs" / "bugs" / slug
         assert (stub / "ADHOC_BRIEF.md").exists(), "enqueue seed missing"
+        # bug-auto-file-produces-gate-noncompliant-artifacts: the enqueued dir must
+        # carry a gate-compliant stub SPEC.md so it resolves as an OPEN bug dir
+        # (qg:bugs-consistency queue-dangling-id + bug-status/severity-canonical),
+        # and the queue entry must NOT carry a null severity override.
+        spec = stub / "SPEC.md"
+        assert spec.exists(), "gate-compliant stub SPEC.md missing"
+        spec_txt = spec.read_text(encoding="utf-8")
+        assert "**Status:** Investigating" in spec_txt, spec_txt
+        assert "**Severity:** Low" in spec_txt, spec_txt
+        q_entry = json.loads(
+            (repo / "docs" / "bugs" / "queue.json").read_text(encoding="utf-8")
+        )["queue"][0]
+        assert "severity" not in q_entry, f"queue entry must omit severity: {q_entry}"
         cap = stub / "INCIDENT.md"
         assert cap.exists(), "capsule missing"
         fm = _parse_frontmatter(cap)

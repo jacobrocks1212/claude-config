@@ -894,6 +894,36 @@ def enqueue_adhoc(
     }
 
 
+def _adhoc_stub_spec(name: str, severity: str | None, discovered: str) -> str:
+    """Minimal GATE-COMPLIANT stub bug ``SPEC.md`` for an ad-hoc / auto-filed bug
+    (bug-auto-file-produces-gate-noncompliant-artifacts).
+
+    Satisfies the target repo's ``qg:bugs-consistency`` gate:
+      - Rule 1 (bug-status-canonical): a BARE, canonical first ``**Status:**`` token.
+      - Rule 2 (bug-severity-canonical): a canonical LEADING ``**Severity:**`` token
+        (trailing parenthetical prose is allowed).
+      - queue-dangling-id: the dir now carries a ``SPEC.md`` so it resolves as an
+        OPEN bug directory.
+
+    ``**Status:** Investigating`` is the ``docs/bugs/CLAUDE.md`` initial state and
+    routes to ``/spec-bug`` (STEP_INVESTIGATE) — never mistaken for a done/planning
+    state. ``/spec-bug`` OWNS root cause and OVERWRITES this ``SPEC.md`` with the full
+    investigation spec, so the body is deliberately a one-line evidence pointer.
+    ``severity`` is the caller's token (auto-file passes None → the ``Low`` default);
+    the queue entry itself carries NO severity override (see enqueue_adhoc) so this
+    SPEC line is the single source of truth that ``/spec-bug`` later refines.
+    """
+    sev = (severity or "").strip() or "Low"
+    return (
+        f"# {name}\n\n"
+        f"**Status:** Investigating\n"
+        f"**Severity:** {sev}\n"
+        f"**Discovered:** {discovered}\n\n"
+        "Auto-filed stub — see `ADHOC_BRIEF.md` (and `INCIDENT.md` if present) for the "
+        "seed evidence. `/spec-bug` owns root-cause investigation and expands this SPEC.\n"
+    )
+
+
 def enqueue_adhoc_bug(
     repo_root: Path,
     bug_id: str,
@@ -969,12 +999,23 @@ def enqueue_adhoc_bug(
             f"{brief.strip() or '(brief not supplied — infer from context during /spec-bug)'}\n",
         )
 
+    # Seed a GATE-COMPLIANT stub SPEC.md beside ADHOC_BRIEF.md (idempotent — only if
+    # absent, so a later /spec-bug SPEC or an existing one is never clobbered).
+    # bug-auto-file-produces-gate-noncompliant-artifacts: without this the enqueued
+    # dir has no SPEC.md, so the target repo's qg:bugs-consistency gate flags the
+    # queue id as dangling (queue-dangling-id) on EVERY auto-file run. Investigating
+    # status → the dir routes to /spec-bug for investigation.
+    spec_file = item_dir / "SPEC.md"
+    if not spec_file.exists():
+        _atomic_write(spec_file, _adhoc_stub_spec(name, severity, today))
+
     return {
         "enqueued": True,
         "bug_id": bug_id,
         "bug_name": name,
         "spec_dir": spec_dir,
         "brief_path": str(brief_file),
+        "spec_path": str(spec_file),
         "queue": "docs/bugs/queue.json",
     }
 
@@ -1098,10 +1139,24 @@ def materialize_wi(repo_root: Path, wi_id, type_pipeline_map: dict) -> dict:
         if not brief_file.exists():
             _atomic_write(brief_file, f"# Ad-hoc task: {title}\n\n{brief}")
 
-    # Both routes: write stub SPEC.md (idempotent — only if absent)
+    # Both routes: write stub SPEC.md (idempotent — only if absent).
+    # bug-auto-file-produces-gate-noncompliant-artifacts: the BUG route's stub must
+    # be gate-compliant (Status + Severity + Discovered) so the materialized dir
+    # resolves as an open bug dir under the target repo's qg:bugs-consistency gate;
+    # the WI provenance line is appended below it. The FEATURE route is unchanged
+    # (feature docs-consistency has different rules; the WU-3.3-1 fixture asserts the
+    # bare Work Item line).
     spec_file = item_dir / "SPEC.md"
     if not spec_file.exists():
-        _atomic_write(spec_file, f"**Work Item:** AB#{wi_id} ({url})\n")
+        if route == "bug":
+            _bm_today = datetime.now().strftime("%Y-%m-%d")
+            _atomic_write(
+                spec_file,
+                _adhoc_stub_spec(title or slug, None, _bm_today)
+                + f"\n**Work Item:** AB#{wi_id} ({url})\n",
+            )
+        else:
+            _atomic_write(spec_file, f"**Work Item:** AB#{wi_id} ({url})\n")
 
     # Both routes: record in materialized.json (idempotent on wi_id)
     work_dir = repo_root / "docs" / "work"
@@ -9266,6 +9321,25 @@ def run_smoke_tests() -> int:
             failures.append("[enqueue-bug] docs/bugs/<slug>/ADHOC_BRIEF.md not seeded")
         elif "Fix the bug thing" not in enqb_brief.read_text():
             failures.append("[enqueue-bug] ADHOC_BRIEF.md missing the brief text")
+        # bug-auto-file-produces-gate-noncompliant-artifacts: the enqueued dir MUST
+        # carry a gate-compliant stub SPEC.md (bare canonical Status + leading
+        # canonical Severity token), and the queue entry MUST NOT carry a null
+        # severity override.
+        enqb_spec = enqb_bugs / "adhoc-bug-1" / "SPEC.md"
+        if not enqb_spec.exists():
+            failures.append("[enqueue-bug] docs/bugs/<slug>/SPEC.md stub not seeded")
+        else:
+            _spec_txt = enqb_spec.read_text()
+            if "**Status:** Investigating" not in _spec_txt:
+                failures.append("[enqueue-bug] stub SPEC.md missing bare '**Status:** Investigating'")
+            if "**Severity:** Low" not in _spec_txt:
+                failures.append("[enqueue-bug] stub SPEC.md missing canonical '**Severity:** Low'")
+        _enqb_q = json.loads(enqb_queue_path.read_text()).get("queue") or []
+        if _enqb_q and "severity" in _enqb_q[0]:
+            failures.append(
+                "[enqueue-bug] queue entry must OMIT severity (no null override); "
+                f"got {_enqb_q[0].get('severity')!r}"
+            )
         # Idempotent: a second call with the same id is a no-op (no raise, queue unchanged).
         try:
             enqueue_adhoc_bug(enqb_root, "adhoc-bug-1", "Dup Bug", "x")
