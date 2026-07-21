@@ -47,7 +47,7 @@
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
 | Conclusive efficacy verdicts produced | 0/90d | pending | — | PENDING-BASELINE |
-| Confounded-verdict ratio | 10.7% (90d) | pending | — | PENDING-BASELINE |
+| Confounded-verdict ratio | 10.8% (90d) | pending | — | PENDING-BASELINE |
 
 ## anti-overfit-gate
 
