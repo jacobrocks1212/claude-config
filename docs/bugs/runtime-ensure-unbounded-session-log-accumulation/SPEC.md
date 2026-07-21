@@ -1,6 +1,6 @@
 # Bug: runtime-ensure mints unbounded dev-runtime session-log dirs (no retention cap)
 
-**Status:** Concluded
+**Status:** Fixed
 **Discovered:** 2026-07-20
 **Trigger:** observed-friction (harden-harness dispatch; item in flight `inspector-track-dashboard`, Step 9 mcp-test)
 **Related:** `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` (Round 134);
