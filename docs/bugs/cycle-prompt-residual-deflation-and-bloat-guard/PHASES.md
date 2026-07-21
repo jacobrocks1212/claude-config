@@ -79,24 +79,24 @@ test authorship).
 - `user/scripts/skill-size-baseline.json` (profiles block only)
 
 **Deliverables:**
-- [ ] Deflate the never-touched skill-specific `@section` families `skill-execute-plan` and
+- [x] Deflate the never-touched skill-specific `@section` families `skill-execute-plan` and
       `skill-execute-plan-cloud`: strip `(Live incident: …)`, `(HARD — ISSUE 2, d8-effect-chains
       run)`, `(hydra-overlay false-block, 2026-07-19)` and other dated/issue narrative — but
       PRESERVE the `series_index` prerequisite-ordering ALGORITHM as terse imperative logic (it is
       load-bearing rule, not a war-story: compress the framing, keep the rule intact).
-- [ ] Deflate `skill-mcp-test-common` (the largest un-deflated block, ~5,658 B) and both
+- [x] Deflate `skill-mcp-test-common` (the largest un-deflated block, ~5,658 B) and both
       `mcp-test-runtime` variants to terse imperative rules.
-- [ ] Deflate `skill-retro`, `skill-retro-feature`, `provenance-lookup`, `resume-safety` (both
+- [x] Deflate `skill-retro`, `skill-retro-feature`, `provenance-lookup`, `resume-safety` (both
       variants), and `park-spec-sentinel-mediation` to terse imperative rules.
-- [ ] Strip Class-B residual rationale tails from the already-deflated `skills=all` sections:
+- [x] Strip Class-B residual rationale tails from the already-deflated `skills=all` sections:
       `env-dialect-core` (`an absent file raises on empty stdin`, `a mature PHASES.md exceeds the
       Read cap; the slicer returns the index…`), `env-dialect-windows` (`No /mnt/c/... (WSL
       dialect)…` rationale clause), `workstation-dispatch` (the `2026-07-09 — the former
       inline-only ban is lifted…` removed-history clause) — keep each surviving rule, drop only
       the explanatory tail.
-- [ ] Condense the AlgoBooth addendum's `over-cap-gate-decomposition` and `audio-invariants`
+- [x] Condense the AlgoBooth addendum's `over-cap-gate-decomposition` and `audio-invariants`
       blocks to imperative rules.
-- [ ] Produce `SEMANTIC_DIFF.md` (this bug's dir) mapping EVERY removed clause to its surviving
+- [x] Produce `SEMANTIC_DIFF.md` (this bug's dir) mapping EVERY removed clause to its surviving
       terse rule (proof no policy was dropped — follow the `SEMANTIC_DIFF_PHASE2.md` /
       `SEMANTIC_DIFF_PHASE3.md` table format from the parent feature), and list the load-bearing
       literals preserved verbatim: every `@section` selector line; `WORKSTATION DISPATCH —
@@ -104,10 +104,10 @@ test authorship).
       chained-command form; `git_safe_push`; the `git add -A` ban; `classify_conflict` +
       `conflict_kind: semantic` + `--park-provisional`; the `--verify-ledger` + `ok:true`
       four-condition certification; `cycle-subagent-bg-gate-guard.sh`; the `series_index` algorithm.
-- [ ] Re-lock the assembled-profile ratchet to the new lower floor: run `skill-size-ratchet.py
+- [x] Re-lock the assembled-profile ratchet to the new lower floor: run `skill-size-ratchet.py
       --lock-in-profile <profile-id>` for each of the 20 seeded profiles (never hand-raise a
       ceiling — the script only lowers on improvement).
-- [ ] Run `python3 user/scripts/generate-coupled-skills.py --check --repo-root .` and confirm
+- [x] Run `python3 user/scripts/generate-coupled-skills.py --check --repo-root .` and confirm
       exit 0 (per the Cross-feature Integration Notes above).
 
 **Minimum Verifiable Behavior:**
@@ -155,33 +155,33 @@ not replace, the existing whole-assembled-profile ceiling.
   if `harness-gate.py` flags the diff)
 
 **Deliverables:**
-- [ ] Write failing tests first in `test_skill_size_ratchet.py`: (a) a fixture dispatched-prompt
+- [x] Write failing tests first in `test_skill_size_ratchet.py`: (a) a fixture dispatched-prompt
       template carrying each confirmed war-story shape makes the check FAIL, naming the file and
       the matched shape; (b) a fixture section over its per-section byte ceiling FAILS, naming the
       section; (c) a reason-required allowlist entry RESCUES a genuine load-bearing literal that
       would otherwise match a shape; (d) an ordinary `SKILL.md` / docs file carrying a date is NOT
       flagged — scope is dispatched-prompt templates ONLY, never orchestrator/docs prose.
-- [ ] Implement the war-story pattern detector over CONFIRMED SHAPES ONLY (structural, shape-keyed
+- [x] Implement the war-story pattern detector over CONFIRMED SHAPES ONLY (structural, shape-keyed
       — not incident-literal, so it passes `harness-gate.py`'s own overfit detector): ISO-date
       tokens `\b20\d\d-\d\d-\d\d\b`, `ISSUE \d` / `Round \d+` / `d8-effect-chains`, the literal
       `Live incident:`, and bare `docs/{bugs,features}/<slug>` incident literals. Scope strictly to
       `user/skills/_components/lazy-batch-prompts/*.md` + per-repo
       `<repo>/.claude/skill-config/cycle-prompt-addenda.md` — never `SKILL.md` or general docs.
-- [ ] Implement the per-section byte ceiling: extend `skill-size-baseline.json` with a new
+- [x] Implement the per-section byte ceiling: extend `skill-size-baseline.json` with a new
       per-`@section` block (keyed by section name, seeded at post-Phase-1 sizes) and a
       corresponding check function in `skill-size-ratchet.py` alongside the existing per-file and
       per-profile checks.
-- [ ] Implement a reason-required INLINE allowlist for genuine load-bearing literals that would
+- [x] Implement a reason-required INLINE allowlist for genuine load-bearing literals that would
       otherwise trip the war-story detector (mirror `cli-surface-lint.py`'s `<!-- marker -->` /
       `lint-skill-config.py`'s `SUPPRESSIONS` pattern — every exemption carries a reason at its
       point of use).
-- [ ] Fold both new checks into the default `--check` path and confirm they run reachable via
+- [x] Fold both new checks into the default `--check` path and confirm they run reachable via
       `lint-skills.py --check-skill-size` (already shelled by the gate battery — no new battery
       entry needed if wiring is correct; verify, don't assume).
-- [ ] Register `user/scripts/skill-size-ratchet.py` and the dispatched-prompt template family glob
+- [x] Register `user/scripts/skill-size-ratchet.py` and the dispatched-prompt template family glob
       (`user/skills/_components/lazy-batch-prompts/**`) in `docs/gate/control-surfaces.json`
       `control_surfaces[]`.
-- [ ] Run `python3 user/scripts/harness-gate.py --repo-root . --staged` (or `--range`) on the
+- [x] Run `python3 user/scripts/harness-gate.py --repo-root . --staged` (or `--range`) on the
       change. If it flags the matcher-set edit, author `GATE_VERDICT.md` in this bug's dir per
       `_components/harness-change-gate.md` before the phase is considered complete — the
       structural shape-keyed design above is the intended overfit defense; the verdict records the
@@ -216,7 +216,7 @@ contract at the edit site (none exists there today). Disjoint files from Phase 1
 - `user/skills/_components/lazy-batch-prompts/CLAUDE.md` (new)
 
 **Deliverables:**
-- [ ] Write `user/skills/_components/lazy-batch-prompts/CLAUDE.md` covering: these files are
+- [x] Write `user/skills/_components/lazy-batch-prompts/CLAUDE.md` covering: these files are
       assembled by `lazy_core.emit_cycle_prompt` and DISPATCHED VERBATIM to a subagent — they
       carry imperative rules + load-bearing marker literals ONLY; incident/provenance/dated-history
       narrative belongs in the SPEC/IMPLEMENTATION_NOTES, never the prompt (point at
