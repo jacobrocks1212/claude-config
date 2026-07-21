@@ -199,6 +199,40 @@ def _resolve_marker_path(cwd):
     except Exception:
         return MARKER  # base-dir fallback (fail-open)
 
+
+def _run_marker_present(cwd):
+    """Best-effort True iff a LIVE (non-stale) RUN marker exists for this repo.
+
+    adhoc-standalone-harden-enqueue-denied-by-agentid-trip: this is the guard
+    condition for RUN_MARKER_GATED_FLAGS (today: --enqueue-adhoc alone) — see
+    the constant's docstring-comment below for the full rationale. Reads the
+    RUN marker (lazy-run-marker.json) via lazy_core.read_run_marker(), the SAME
+    read `lazy-state.py --marker-present` performs (no session_id — matching
+    the sibling hooks' `--marker-present` calls that omit `--session-id` on
+    their own fail-open paths) — so this shares the identical staleness rules
+    (24h age deletion) and LAZY_STATE_DIR override handling already exercised
+    by lazy-dispatch-guard.sh / lazy-route-inject.sh, not a re-derivation.
+
+    Fail-CLOSED toward the SAFER (deny-preserving) default: any resolution
+    error (missing lazy_core, unreadable state dir) returns True ("a run is
+    active"), so a broken read only ever LOSES the relaxation — it never
+    weakens the --enqueue-adhoc deny. This is deliberately the opposite bias
+    from the hook's outer fail-open-on-total-error contract (which allows the
+    tool call outright on a hook-wide failure) — here we are already inside a
+    working hook execution deciding whether to grant a NEW, narrow relaxation,
+    and any uncertainty must fall back to the PRE-EXISTING (denying) behavior.
+    """
+    try:
+        scripts_dir = os.environ.get("HOOK_SCRIPTS_DIR")
+        if scripts_dir and scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        import lazy_core
+        lazy_core.set_active_repo_root(cwd or None)
+        return lazy_core.read_run_marker() is not None
+    except Exception:
+        return True
+
+
 CORRECTIVE = (
     "you are a single cycle subagent — STOP after your commit+push+report; "
     "routing the next cycle is the orchestrator's job. This op "
@@ -237,6 +271,37 @@ LOOP_FORMATION_FLAGS = (
     "--run-start", "--run-end", "--apply-pseudo", "--enqueue-adhoc",
     "--emit-dispatch", "--cycle-end", "--cycle-begin",
 )
+
+# adhoc-standalone-harden-enqueue-denied-by-agentid-trip (harden 2026-07-20,
+# Round 132/133): --enqueue-adhoc is the ONE LOOP_FORMATION_FLAGS member with a
+# legitimate STANDALONE-subagent use — /harden-harness's own documented Step-3
+# "Over-fit spin-off" instruction runs `lazy-state.py --enqueue-adhoc --type bug`
+# directly, and CLAUDE.md's own auto-invoke directive dispatches /harden-harness
+# as a PLAIN general-purpose Agent subagent (agent_id present) precisely when NO
+# lazy run marker is active — the common/recommended deployment shape. The
+# blanket agent_id-only trip made that documented workflow structurally
+# unreachable (confirmed live 2026-07-20; recorded in hardening-log Round 132).
+#
+# The fix is scoped to THIS ONE FLAG, gated on the RUN marker (lazy-run-
+# marker.json — written once at --run-start, cleared once at --run-end,
+# spanning a run's WHOLE lifetime) rather than the per-dispatch CYCLE marker
+# (lazy-cycle-active.json). A RUN marker is present for the entire duration of
+# any real /lazy-batch(-bug-batch)(-cloud) run regardless of whether any single
+# dispatch's --cycle-begin bracket was set — so gating on it does NOT reopen
+# the arming gap D4 closed (an orchestrator that forgets --cycle-begin before a
+# dispatch still leaves the RUN marker present, so a genuine runaway cycle
+# subagent's --enqueue-adhoc calls stay denied exactly as before). Only the
+# genuinely-orthogonal case — NO lazy run active anywhere in this repo, so
+# there is no orchestrator loop or queue priority to protect — is relaxed.
+#
+# Every OTHER LOOP_FORMATION_FLAGS member (the routing/lifecycle ops that
+# literally drive the pipeline: --probe/--emit-prompt/--run-start/--run-end/
+# --apply-pseudo/--emit-dispatch/--cycle-begin/--cycle-end/--repeat-count*)
+# stays UNCONDITIONALLY (arming-free) denied for a subagent — none of them has
+# a legitimate standalone use, and narrowing THEM would reopen the exact
+# self-deny/arming-gap defect D4 fixed. See
+# docs/bugs/_archive/lazy-cycle-containment-agentid-trip-blocks-standalone-enqueue-adhoc/.
+RUN_MARKER_GATED_FLAGS = frozenset({"--enqueue-adhoc"})
 # Narrow ops a legitimately-dispatched subagent needs — never denied.
 ALLOW_LISTED_FLAGS = ("--neutralize-sentinel", "--verify-ledger")
 
@@ -862,7 +927,19 @@ def main():
                 # A narrow ALLOW_LISTED op in this invoking segment is fine.
                 if any(flag in _seg for flag in ALLOW_LISTED_FLAGS):
                     continue
-                if any(flag in _seg for flag in LOOP_FORMATION_FLAGS):
+                _hit_flags = [f for f in LOOP_FORMATION_FLAGS if f in _seg]
+                if not _hit_flags:
+                    continue
+                # adhoc-standalone-harden-enqueue-denied-by-agentid-trip: any
+                # hit flag OUTSIDE RUN_MARKER_GATED_FLAGS stays unconditionally
+                # denied (arming-free, D4) regardless of run-marker state.
+                if any(f not in RUN_MARKER_GATED_FLAGS for f in _hit_flags):
+                    _deny(CORRECTIVE, "loop-formation-flag")
+                # Every hit flag IS in RUN_MARKER_GATED_FLAGS (today only
+                # --enqueue-adhoc): deny only while a lazy run is actually
+                # live in this repo — see RUN_MARKER_GATED_FLAGS' docstring-
+                # comment + _run_marker_present for the full rationale.
+                elif _run_marker_present(_EVT_CWD):
                     _deny(CORRECTIVE, "loop-formation-flag")
             # A real state-script invocation with no routing flag (a read) → allow.
             _allow()

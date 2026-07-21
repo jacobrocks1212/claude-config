@@ -3264,7 +3264,16 @@ def test_containment_denies_next_route_probe():
 
 def test_containment_denies_loop_formation_flags():
     """Each loop-formation flag from a subagent (agent_id) under the marker →
-    deny.  (D4: routing deny keys on agent_id.)"""
+    deny.  (D4: routing deny keys on agent_id.)
+
+    adhoc-standalone-harden-enqueue-denied-by-agentid-trip: --enqueue-adhoc's
+    deny is now ADDITIONALLY gated on RUN-marker presence (RUN_MARKER_GATED_FLAGS),
+    so this fixture writes a RUN marker alongside the cycle marker — mirroring
+    production, where a cycle marker is only ever present WHILE a run marker is
+    also live (--run-start always precedes any --cycle-begin). Every flag here,
+    including --enqueue-adhoc, must still deny under this realistic live-run
+    fixture; see test_containment_agentid_present_allows_enqueue_adhoc_no_run_marker
+    for the new no-run-marker relaxation."""
     _guard()
     flags = [
         "--emit-prompt", "--repeat-count", "--repeat-count-peek",
@@ -3274,6 +3283,7 @@ def test_containment_denies_loop_formation_flags():
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "state"
         state_dir.mkdir()
+        _write_marker_in_dir(state_dir)
         _write_cycle_marker_in_dir(state_dir)
         for flag in flags:
             result = _run_containment(
@@ -3981,11 +3991,18 @@ def test_containment_agentid_absent_allows_lazy_batch_invocation():
 
 
 def test_containment_agentid_present_denies_routing_flags_no_marker():
-    """SUBAGENT payload + each loop-formation routing flag, NO marker → deny."""
+    """SUBAGENT payload + each loop-formation routing flag, NO marker → deny.
+
+    adhoc-standalone-harden-enqueue-denied-by-agentid-trip: --enqueue-adhoc is
+    EXCLUDED from this list (it is now RUN_MARKER_GATED and legitimately
+    ALLOWS with no run marker — see
+    test_containment_agentid_present_allows_enqueue_adhoc_no_run_marker below).
+    Every OTHER loop-formation flag stays unconditionally (arming-free) denied
+    with no marker of any kind, exactly as before."""
     _guard()
     flags = [
         "--probe", "--emit-prompt", "--repeat-count", "--run-start",
-        "--run-end", "--apply-pseudo", "--enqueue-adhoc", "--emit-dispatch",
+        "--run-end", "--apply-pseudo", "--emit-dispatch",
     ]
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "state"
@@ -4001,6 +4018,60 @@ def test_containment_agentid_present_denies_routing_flags_no_marker():
                 f"subagent routing flag {flag!r} (no marker) must deny; "
                 f"stdout: {result.stdout!r}"
             )
+
+
+def test_containment_agentid_present_allows_enqueue_adhoc_no_run_marker():
+    """adhoc-standalone-harden-enqueue-denied-by-agentid-trip (harden 2026-07-20,
+    Round 133): SUBAGENT payload + --enqueue-adhoc, NO run marker AND no cycle
+    marker present -- must ALLOW.  This is the reproduced /harden-harness
+    standalone Step-3 over-fit-spinoff scenario: a dispatched Agent subagent
+    (agent_id present) with no live lazy pipeline run running
+    `lazy-state.py --enqueue-adhoc --type bug ...` must not be denied.  RED
+    against the pre-fix blanket agent_id-only LOOP_FORMATION_FLAGS trip."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        result = _run_containment(
+            _bash_preToolUse_json(
+                "python3 lazy-state.py --enqueue-adhoc --type bug "
+                "--id foo --name Foo --brief bar",
+                agent_id=_SUBAGENT_AGENT_ID,
+            ),
+            state_dir,
+        )
+        assert _containment_decision(result) != "deny", (
+            f"--enqueue-adhoc with no run marker must NOT deny; "
+            f"stdout: {result.stdout!r}"
+        )
+
+
+def test_containment_agentid_present_denies_enqueue_adhoc_with_run_marker():
+    """adhoc-standalone-harden-enqueue-denied-by-agentid-trip: SUBAGENT payload
+    + --enqueue-adhoc, a LIVE RUN marker present (no cycle marker) -- still
+    DENIES.  Proves the relaxation is scoped to "no lazy run active at all",
+    not a blanket allow -- a subagent operating during an actual live
+    /lazy-batch(-bug-batch)(-cloud) run still cannot enqueue queue items
+    unsupervised, even without its own --cycle-begin bracket (the arming-gap
+    case the RUN-marker choice, over the CYCLE marker, is designed to keep
+    covering)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        state_dir = Path(td) / "state"
+        state_dir.mkdir()
+        _write_marker_in_dir(state_dir)
+        result = _run_containment(
+            _bash_preToolUse_json(
+                "python3 lazy-state.py --enqueue-adhoc --type bug "
+                "--id foo --name Foo --brief bar",
+                agent_id=_SUBAGENT_AGENT_ID,
+            ),
+            state_dir,
+        )
+        assert _containment_decision(result) == "deny", (
+            f"--enqueue-adhoc with a live RUN marker (no cycle marker) must "
+            f"still deny; stdout: {result.stdout!r}"
+        )
 
 
 def test_containment_allows_state_script_reference_only_mention():
@@ -4043,7 +4114,12 @@ def test_containment_allows_state_script_reference_only_mention():
 def test_containment_still_denies_real_state_script_invocation():
     """The anchoring fix must PRESERVE every real-runaway deny: a SUBAGENT that
     actually INVOKES the state script with a routing flag (segment-leading, via a
-    path prefix, or chained behind another command) still DENIES."""
+    path prefix, or chained behind another command) still DENIES.
+
+    Includes a RUN marker (adhoc-standalone-harden-enqueue-denied-by-agentid-trip)
+    so the --enqueue-adhoc case here reflects a genuinely-live run (matching
+    production correlation between the cycle and run markers), which must still
+    deny -- distinct from the no-run-marker relaxation covered elsewhere."""
     _guard()
     runaway = (
         "python3 lazy-state.py --run-start",
@@ -4054,6 +4130,7 @@ def test_containment_still_denies_real_state_script_invocation():
     with tempfile.TemporaryDirectory() as td:
         state_dir = Path(td) / "state"
         state_dir.mkdir()
+        _write_marker_in_dir(state_dir)
         _write_cycle_marker_in_dir(state_dir)
         for cmd in runaway:
             result = _run_containment(
@@ -7677,6 +7754,12 @@ _TESTS = [
      test_containment_agentid_absent_allows_lazy_batch_invocation),
     ("test_containment_agentid_present_denies_routing_flags_no_marker",
      test_containment_agentid_present_denies_routing_flags_no_marker),
+    # adhoc-standalone-harden-enqueue-denied-by-agentid-trip (harden 2026-07-20,
+    # Round 133): --enqueue-adhoc run-marker-gated relaxation
+    ("test_containment_agentid_present_allows_enqueue_adhoc_no_run_marker",
+     test_containment_agentid_present_allows_enqueue_adhoc_no_run_marker),
+    ("test_containment_agentid_present_denies_enqueue_adhoc_with_run_marker",
+     test_containment_agentid_present_denies_enqueue_adhoc_with_run_marker),
     # reference-only-mention false-deny (harden 2026-07,
     # lazy-cycle-containment-false-denies-reference-only-routing-mentions)
     ("test_containment_allows_state_script_reference_only_mention",
