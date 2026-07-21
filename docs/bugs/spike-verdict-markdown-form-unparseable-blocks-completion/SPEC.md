@@ -1,6 +1,6 @@
 # Bug: a proven-PASS Spike whose SPIKE_VERDICT.md records the verdict in markdown-bold form is unparseable → completion blocked with no forward route
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2 (a genuinely-passing runtime proof cannot advance the pipeline; the
 orchestrator must hand-edit SPIKE_VERDICT.md — a HARD-CONSTRAINT-stretching manual write — to proceed)
 **Discovered:** 2026-07-21

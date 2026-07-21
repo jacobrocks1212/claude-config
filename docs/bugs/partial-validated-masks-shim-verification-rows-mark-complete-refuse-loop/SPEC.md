@@ -1,6 +1,6 @@
 # Bug: a feature-level VALIDATED.md + un-canonically-marked (shim) verification rows deadlocks __mark_complete__ with no forward route to mcp-test
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2 (the feature is stuck in a `__mark_complete__` → refuse →
 coherence-recovery-can't-fix loop with NO state-machine route back to the mcp-test that would
 certify the phase; the run must be stopped and the feature deferred by hand)
