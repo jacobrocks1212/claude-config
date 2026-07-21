@@ -118,42 +118,23 @@ class TestLintGreen:
         registry = ksc.load_registry(path)
         errors, warnings = ksc.lint_registry(registry, today=_TODAY)
         assert errors == []
-        # The six D8 rows + harness-change-canary-rollback's trip-precision +
-        # skill-config-broken-reference-reads + the three
-        # efficacy-signal-integrity intervention-records rows + the
-        # mcp-validation-round-trips-per-feature follow-up row (state batch 2)
-        # + the four anti-overfit-design-gate KPI Declaration rows (SEAM-
-        # DEFERRED ship-seam application, state batch 5 — the feature itself
-        # stays unratified/structurally-provisional; NO-DATA until a
-        # harness-gate collector is built) + the two
-        # bug-queue-aging-backpressure Phase 3 rows (promoted from the SPEC's
-        # jsonc drafts once their sentinel-scan selectors were registered)
-        # + lazy-core-monolith-intervention-drag (kpi-drafted-row-never-
-        # promoted-to-registry: promoted via the new `--promote-drafted-rows`
-        # subcommand from lazy-core-package-decomposition's SPEC.md draft;
-        # provenance stays pending until that feature's own Phase-1 benchmark
-        # harness captures a real baseline)
-        # + the two generalized-build-test-runner-skills Phase 4 rows
-        # (generalized-runner-raw-invocation-deny-recurrence,
-        # runner-turn-end-stall-recurrence — appended VERBATIM from that
-        # feature's SPEC `## KPI Declaration`; honest NO-DATA / PENDING-
-        # BASELINE, null baselines by design until denies/friction are
-        # ledgered)
-        # + subagent-wedge-strand-recurrence (the count was silently drifted to
-        # 22 by a prior promotion that did not update this assertion; corrected
-        # here)
-        # + hook-plane-duplicated-lines (shared-hook-lib Phase 4: promoted from
-        # the SPEC's non-claiming fence once the repo-static-scan source +
-        # hook-duplicated-line-count selector were registered).
-        # + cycle-prompt-assembled-bytes (cycle-prompt-deflation Phase 1: a new
-        # repo-static-scan selector — max assembled cycle-prompt bytes over all
-        # dispatchable profiles; pending baseline until Phase-4 --capture-baseline).
-        # + blind-tool-gap-dispatch-rate (orchestrator-tool-search Phase 4: a new
-        # telemetry-ledger selector — share of tool-gap harden dispatches not
-        # preceded by a --tool-search this cycle; pending baseline by design,
-        # deferred until ≥30d real telemetry accrues).
-        assert len(registry["kpis"]) == 25
-        ids = {r["id"] for r in registry["kpis"]}
+        # Row-count assertion is DELIBERATELY not a frozen literal
+        # (adhoc-kpi-registry-count-assertion-brittle /
+        # docs/bugs/kpi-registry-test-count-assertion-brittle). Every shipped
+        # friction-reduction feature legitimately appends its own KPI row(s) to
+        # the real registry, and a hardcoded expected N had to be hand-bumped
+        # (with an ever-growing comment narrating each bump) on every single
+        # addition — going stale/red whenever a feature landed a row without
+        # also touching this test (it happened at least twice: this literal was
+        # already bumped 18->19 as a drive-by aside in hardening-log/2026-07.md
+        # Round 41, then drifted stale again to 25 vs. a real 26). Assert
+        # internal consistency instead — non-empty, and every row's id unique
+        # (the one integrity property a bare count was standing in for) — never
+        # a specific N.
+        kpi_ids = [r["id"] for r in registry["kpis"]]
+        assert len(registry["kpis"]) > 0
+        assert len(kpi_ids) == len(set(kpi_ids)), "duplicate id in docs/kpi/registry.json"
+        ids = set(kpi_ids)
         assert "cycle-prompt-assembled-bytes" in ids
         assert "canary-trip-precision" in ids
         assert {"efficacy-verdicts-produced", "confounded-verdict-ratio",
