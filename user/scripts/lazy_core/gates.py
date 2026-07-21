@@ -1012,26 +1012,46 @@ def autotick_verification_rows(
 # (decision-2-6-uncovered-row-reroute-to-mcp-test WU-2)
 # ---------------------------------------------------------------------------
 
-def _collect_uncovered_verification_rows(phases_text: str) -> list[tuple[str, bool]]:
-    """Collect UNCHECKED verification-marked rows + a host-deferred flag each.
+def _collect_uncovered_verification_rows(phases_text: str) -> list[tuple[str, bool, bool]]:
+    """Collect UNCHECKED verification rows + a host-deferred flag + a shim flag.
 
     Shares the row-walk discipline of ``remaining_unchecked_are_verification_only``
     / ``autotick_verification_rows``: fence-aware (illustrative rows in a ```
     fence are skipped), phase-reset-aware, Superseded-aware, descope-aware
     (canonical ``_DESCOPED_MARKER`` row/header-scope + the legacy
-    strikethrough+keyword shim), and verification-marker aware (the row OR its
-    enclosing subsection header carrying ``_VERIFICATION_ONLY_MARKER``).
+    strikethrough+keyword shim), and verification-aware two ways:
+      * CANONICAL — the row OR its enclosing subsection header carries
+        ``_VERIFICATION_ONLY_MARKER`` (the autotickable form).
+      * SHIM — the enclosing subsection HEADER text matches the legacy
+        ``_VERIFICATION_SECTION_RE`` deprecation regex but NEITHER the row nor the
+        header carries the canonical marker (an un-migrated Runtime-Verification /
+        seam-audit row that ``/spec-phases`` inline templates still emit). This
+        arm was previously MISSING here even though
+        ``remaining_unchecked_are_verification_only`` /
+        ``classify_blocking_unchecked_rows`` recognize it — the divergence that let
+        a shim row DEADLOCK completion with no mcp-test re-route
+        (``docs/bugs/partial-validated-masks-shim-verification-rows-mark-complete-refuse-loop``):
+        the completion-coherence gate refuses on it, but this predicate collected
+        it as nothing, so ``uncovered_verification_rows_remain`` supplied no
+        forward route.
 
-    Each collected row is tagged HOST-DEFERRED when the row (or its enclosing
-    subsection header) carries the ``<!-- requires-host: <cap> -->`` marker
-    (``docmodel.row_requires_host``) — clause (b) of the re-route predicate.
+    Each collected row is tagged:
+      * ``is_host_deferred`` — the row (or its header) carries the
+        ``<!-- requires-host: <cap> -->`` marker (``docmodel.row_requires_host``);
+        clause (b) of the re-route predicate.
+      * ``is_shim`` — matched only via the legacy header regex (no canonical
+        marker), so it is NOT autotickable: the caller must never credit it against
+        an evidence ``pass_count`` (autotick will not tick it regardless), and the
+        forward route must MIGRATE it to the canonical marker once verification
+        actually runs.
 
-    Returns a list of ``(row_text, is_host_deferred)`` for every unchecked row
-    that is verification-marked AND not Superseded / descoped / fenced. Pure —
-    no I/O, no mutation.
+    Returns a list of ``(row_text, is_host_deferred, is_shim)`` for every unchecked
+    row that is verification-marked (canonical) OR shim, and not Superseded /
+    descoped / fenced. Pure — no I/O, no mutation.
     """
-    rows: list[tuple[str, bool]] = []
-    section_has_marker = False        # verification-only header scope
+    rows: list[tuple[str, bool, bool]] = []
+    section_has_marker = False        # canonical verification-only header scope
+    section_in_shim = False           # legacy verification-header (regex) scope
     section_has_descope = False       # descope header scope
     section_requires_host = False     # requires-host header scope (clause b)
     in_superseded_phase = False
@@ -1050,10 +1070,17 @@ def _collect_uncovered_verification_rows(phases_text: str) -> list[tuple[str, bo
                 # New phase block — reset all subsection tracking.
                 in_superseded_phase = False
                 section_has_marker = False
+                section_in_shim = False
                 section_has_descope = False
                 section_requires_host = False
             else:
                 section_has_marker = docmodel._VERIFICATION_ONLY_MARKER in raw
+                # Legacy header-regex scope, mirroring
+                # remaining_unchecked_are_verification_only (marker wins; the shim
+                # arm only matters when the canonical marker is absent).
+                section_in_shim = bool(
+                    docmodel._VERIFICATION_SECTION_RE.search(heading_text)
+                )
                 section_has_descope = docmodel._DESCOPED_MARKER in raw
                 section_requires_host = docmodel.row_requires_host(raw) is not None
             continue
@@ -1067,10 +1094,20 @@ def _collect_uncovered_verification_rows(phases_text: str) -> list[tuple[str, bo
                 # A named subsection header (Runtime Verification / Deliverables /
                 # a descope header) begins a new scope. Set each flag from THIS
                 # header line; a fresh named subsection resets the sibling scopes
-                # (mirrors autotick's marker handling, extended to the two new
-                # marker scopes).
+                # (mirrors autotick's marker handling + remaining_unchecked's
+                # verification/deliverables regex handling).
                 if docmodel._VERIFICATION_ONLY_MARKER in raw:
                     section_has_marker = True
+                    section_in_shim = False
+                elif docmodel._VERIFICATION_SECTION_RE.search(bold_text):
+                    # Un-migrated verification subsection header (shim scope).
+                    section_in_shim = True
+                    section_has_marker = False
+                elif docmodel._DELIVERABLES_SECTION_RE.search(bold_text):
+                    # Implementation/deliverables subsection ends the verification
+                    # scope so its rows are not swept as verification.
+                    section_in_shim = False
+                    section_has_marker = False
                 section_has_descope = docmodel._DESCOPED_MARKER in raw
                 section_requires_host = docmodel.row_requires_host(raw) is not None
                 continue
@@ -1088,12 +1125,13 @@ def _collect_uncovered_verification_rows(phases_text: str) -> list[tuple[str, bo
         ):
             continue
         row_has_marker = docmodel._VERIFICATION_ONLY_MARKER in raw
-        if not (row_has_marker or section_has_marker):
+        is_canonical = row_has_marker or section_has_marker
+        if not (is_canonical or section_in_shim):
             continue
         host_deferred = section_requires_host or (
             docmodel.row_requires_host(raw) is not None
         )
-        rows.append((raw.strip(), host_deferred))
+        rows.append((raw.strip(), host_deferred, not is_canonical))
     return rows
 
 
@@ -1158,35 +1196,50 @@ def uncovered_verification_rows_remain(feature_dir, phases_text, repo_root) -> d
 
     rows = _collect_uncovered_verification_rows(phases_text)
 
-    # Clause (c) mirrors autotick_verification_rows' cardinality lock: autotick
-    # ticks the verification rows ONLY when their total count <= pass_count
-    # (else it ABORTS, ticking nothing). So the rows are "covered" iff
-    # autotick would tick them all.
-    if len(rows) <= pass_count:
-        return {
-            "reroute": False,
-            "uncovered": [],
-            "reason": (
-                f"all {len(rows)} verification row(s) covered by recorded "
-                f"evidence (pass_count={pass_count}) — autotick would tick them"
-            ),
-        }
+    # Split CANONICAL (autotickable) rows from SHIM rows (un-migrated
+    # verification rows lacking the canonical marker — see
+    # partial-validated-masks-shim-verification-rows-mark-complete-refuse-loop):
+    #   - CANONICAL rows: autotick ticks them ONLY when their count <= pass_count
+    #     (else it ABORTS, ticking nothing). So they are "covered" iff autotick
+    #     would tick them all — the legacy cardinality lock, but computed over
+    #     canonical rows ONLY.
+    #   - SHIM rows: autotick NEVER ticks them (no canonical marker) regardless of
+    #     pass_count, so crediting them against pass_count is a category error.
+    #     They are ALWAYS uncovered — the completion gate refuses on them and the
+    #     ONLY forward route is a /mcp-test cycle that runs the scenario AND
+    #     migrates the row to the canonical marker.
+    canonical = [(t, hd) for (t, hd, is_shim) in rows if not is_shim]
+    shim = [(t, hd) for (t, hd, is_shim) in rows if is_shim]
 
-    # autotick would abort → nothing ticked → rows remain uncovered. Re-route
-    # ONLY over rows a /mcp-test cycle can actually cover here: exclude
+    canonical_covered = len(canonical) <= pass_count
+    # Re-route ONLY over rows a /mcp-test cycle can actually cover here: exclude
     # host-deferred rows (clause b — they can never pass on a host lacking the
-    # capability, so re-routing loops). If the only uncovered rows are
-    # host-deferred, fall through to the terminal pseudo-skill (decision-5 owns
-    # their completion-time exemption).
-    reroutable = [text for (text, host_deferred) in rows if not host_deferred]
+    # capability, so re-routing loops; decision-5 owns their completion-time
+    # exemption). Shim rows are always uncovered; canonical rows only when the
+    # cardinality lock would abort.
+    reroutable = [t for (t, hd) in shim if not hd]
+    if not canonical_covered:
+        reroutable += [t for (t, hd) in canonical if not hd]
+
     if reroutable:
         return {
             "reroute": True,
             "uncovered": reroutable,
             "reason": (
-                f"{len(reroutable)} uncovered verification row(s) exceed "
-                f"pass_count={pass_count} and are not host-deferred/exempt — "
-                "re-route to /mcp-test to finish the matrix"
+                f"{len(reroutable)} uncovered verification row(s) not covered by "
+                f"recorded evidence (pass_count={pass_count}; {len(shim)} shim "
+                f"row(s) never autotickable) and not host-deferred/exempt — "
+                "re-route to /mcp-test to finish/migrate the matrix"
+            ),
+        }
+    if canonical_covered and not shim:
+        return {
+            "reroute": False,
+            "uncovered": [],
+            "reason": (
+                f"all {len(canonical)} canonical verification row(s) covered by "
+                f"recorded evidence (pass_count={pass_count}) — autotick would "
+                "tick them"
             ),
         }
     return {

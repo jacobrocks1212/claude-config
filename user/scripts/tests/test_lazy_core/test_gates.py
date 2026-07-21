@@ -3172,6 +3172,77 @@ def test_uncovered_superseded_and_descoped_rows_terminate():
         assert res["uncovered"] == [], res
 
 
+# Shim (un-canonically-marked) Runtime-Verification rows under a header whose
+# TEXT matches the legacy _VERIFICATION_SECTION_RE but with NO canonical
+# <!-- verification-only --> marker on the header or rows.
+# (partial-validated-masks-shim-verification-rows-mark-complete-refuse-loop)
+_TWO_SHIM_RV_ROWS_PHASES = (
+    "# Phases\n\n"
+    "### Phase 3\n\n"
+    "**Status:** In-progress\n\n"
+    "- [x] frontend canvas component\n\n"
+    "**Runtime Verification (manual)**\n\n"
+    "- [ ] waveform animates on play\n"
+    "- [ ] toggle-off stops both\n"
+)
+
+
+def test_uncovered_shim_rows_reroute_despite_high_pass_count():
+    """GAP-2 regression: un-canonically-marked (shim) Runtime-Verification rows
+    are NEVER autotickable, so an unrelated high pass_count must NOT mask them.
+    The completion-coherence gate refuses on them; the re-route predicate must
+    supply the forward route (reroute True) rather than falling through to a
+    doomed __mark_complete__ (the deadlock this bug fixed)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _cc_write_validated(spec_dir)
+        # A Rust-only scenario: 39 passing assertions unrelated to the 2 frontend
+        # shim rows. Under the old cardinality shortcut (2 <= 39) this "covered"
+        # them and suppressed the re-route → stuck loop.
+        _write_mcp_test_results(
+            spec_dir, ["rust-a"], result="all-passing",
+            pass_count=39, total_count=39,
+        )
+        res = lazy_core.uncovered_verification_rows_remain(
+            spec_dir, _TWO_SHIM_RV_ROWS_PHASES, spec_dir,
+        )
+        assert res["reroute"] is True, res
+        assert len(res["uncovered"]) == 2, res
+
+
+def test_collect_uncovered_tags_shim_vs_canonical():
+    """The row collector distinguishes canonical (autotickable) rows from shim
+    rows via the third tuple element, so the caller can credit only canonical
+    rows against pass_count."""
+    _guard()
+    canonical = lazy_core._collect_uncovered_verification_rows(_TWO_RV_ROWS_PHASES)
+    shim = lazy_core._collect_uncovered_verification_rows(_TWO_SHIM_RV_ROWS_PHASES)
+    assert len(canonical) == 2 and all(not r[2] for r in canonical), canonical
+    assert len(shim) == 2 and all(r[2] for r in shim), shim
+
+
+def test_uncovered_host_deferred_shim_row_excluded_terminates():
+    """A shim row that ALSO carries `<!-- requires-host: <cap> -->` (host-deferred)
+    is excluded from the re-route (clause b) exactly like a canonical
+    host-deferred row — so a shim row that cannot run here never loops."""
+    _guard()
+    phases = (
+        "# Phases\n\n### Phase 3\n\n**Status:** In-progress\n\n"
+        "- [x] impl\n\n"
+        "**Runtime Verification (manual)** <!-- requires-host: real-audio-device -->\n\n"
+        "- [ ] real-device sustained timing\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        spec_dir = Path(td)
+        _cc_write_validated(spec_dir)
+        res = lazy_core.uncovered_verification_rows_remain(
+            spec_dir, phases, spec_dir,
+        )
+        assert res["reroute"] is False, res
+        assert res["uncovered"] == [], res
+
+
 def test_uncovered_predicate_is_evidence_driven_not_validated_gated():
     """CALLER PRECONDITION (documentation test): "no VALIDATED.md" is the
     Step-10 ENTRY gate's concern, NOT this predicate's. The predicate reasons
@@ -3365,6 +3436,9 @@ _TESTS = [
     ("test_uncovered_host_deferred_row_excluded_terminates", test_uncovered_host_deferred_row_excluded_terminates),
     ("test_uncovered_observation_gap_partial_excluded_terminates", test_uncovered_observation_gap_partial_excluded_terminates),
     ("test_uncovered_superseded_and_descoped_rows_terminate", test_uncovered_superseded_and_descoped_rows_terminate),
+    ("test_uncovered_shim_rows_reroute_despite_high_pass_count", test_uncovered_shim_rows_reroute_despite_high_pass_count),
+    ("test_collect_uncovered_tags_shim_vs_canonical", test_collect_uncovered_tags_shim_vs_canonical),
+    ("test_uncovered_host_deferred_shim_row_excluded_terminates", test_uncovered_host_deferred_shim_row_excluded_terminates),
     ("test_uncovered_predicate_is_evidence_driven_not_validated_gated", test_uncovered_predicate_is_evidence_driven_not_validated_gated),
     ("test_is_fixed_unreconciled_true_concluded_annotated_no_receipt", test_is_fixed_unreconciled_true_concluded_annotated_no_receipt),
     ("test_is_fixed_unreconciled_false_status_already_fixed", test_is_fixed_unreconciled_false_status_already_fixed),

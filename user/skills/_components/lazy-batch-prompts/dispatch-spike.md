@@ -40,9 +40,19 @@ HONESTY + AUDITABILITY (load-bearing — these VOID the cycle if violated):
 - Every `evidence:` entry cites its `source` (how it was observed: HUD read, log heartbeat, test id, INVESTIGATION.md path). The `evidence:` list is NEVER empty on a PASS or FAIL.
 
 <!-- @section verdict-branching pipelines=feature,bug modes=workstation,cloud -->
+AUTHORITATIVE VERDICT FIELD (machine gate signal — load-bearing): SPIKE_VERDICT.md MUST carry a machine-parseable verdict that the state machine keys on. Write it as a `---`-delimited YAML frontmatter block at the TOP of the doc with a `verdict:` field whose value is exactly `pass`, `fail`, or `pending` — e.g.:
+```
+---
+kind: spike-verdict
+verdict: pass
+---
+```
+This frontmatter field is the AUTHORITATIVE signal (it is read FIRST and wins). Your human-readable prose line (`**Verdict:** GO / PASS (scoped …)`) is SECONDARY — keep it for the reader, but the `verdict:` frontmatter is what advances the pipeline. A SPIKE_VERDICT.md with ONLY a bolded `**Verdict:** GO / PASS` prose line and NO `verdict:` frontmatter field can leave a genuinely-passing spike unparseable and BLOCK completion — do not omit the field.
+
 VERDICT → what you write:
-- PASS — record the verdict + evidence in the spike results doc (SPIKE_VERDICT.md in the {item_label} dir, or the doc named by the prescribed spike), tick the gated phase's spike deliverable (scoped reconcile ONLY — NEVER flip the top-level {forbidden_status} status, NEVER write a {receipt_name} receipt: those are gate-owned). The pipeline continues to the prescribed next cycle.
-- FAIL — update the results doc AND the gated phase docs with the real result, then write NEEDS_INPUT.md (`written_by: spike`, `spike_verdict: fail`) presenting the decision the plan prescribes on NO-GO, and HALT. A Spike FAIL is NEVER auto-accepted — under --park --park-provisional the feature is PARKED (surfaced at the flush), never provisionally accepted on recommendation.
+- PASS — write `verdict: pass` in the SPIKE_VERDICT.md frontmatter (per above), record the evidence in the spike results doc (SPIKE_VERDICT.md in the {item_label} dir, or the doc named by the prescribed spike), tick the gated phase's spike deliverable (scoped reconcile ONLY — NEVER flip the top-level {forbidden_status} status, NEVER write a {receipt_name} receipt: those are gate-owned). The pipeline continues to the prescribed next cycle.
+- FAIL — write `verdict: fail` in the SPIKE_VERDICT.md frontmatter, update the results doc AND the gated phase docs with the real result, then write NEEDS_INPUT.md (`written_by: spike`, `spike_verdict: fail`) presenting the decision the plan prescribes on NO-GO, and HALT. A Spike FAIL is NEVER auto-accepted — under --park --park-provisional the feature is PARKED (surfaced at the flush), never provisionally accepted on recommendation.
+- PENDING — write `verdict: pending` in the SPIKE_VERDICT.md frontmatter (with the honest reason), plus the NEEDS_RUNTIME / tooling-gap signal per the sections above.
 
 <!-- @section runtime-note pipelines=feature,bug modes=workstation -->
 RUNTIME IS ORCHESTRATOR-OWNED: the dev runtime (Tauri app, MCP HTTP server, sidecar) has ALREADY been booted and made ready by the orchestrator's long-lived session before this cycle. Do NOT kill/restart it and do NOT start your own background runtime (it will not survive your turn boundary — this is the exact failure /mcp-test's orchestrator-owned runtime fixed). If the runtime is dead or the sidecar pipe is disconnected mid-cycle, return the single line NEEDS_RUNTIME (do NOT write a BLOCKED.md — an env transient must not be charged to the retry budget); the orchestrator re-readies and re-dispatches.
@@ -58,7 +68,7 @@ CONSTRAINTS:
 
 <!-- @section return-format pipelines=feature,bug modes=workstation,cloud -->
 GROUND-TRUTH OUTPUT — return a structured summary containing:
-- verdict: PASS | FAIL | PENDING
+- verdict: PASS | FAIL | PENDING (and CONFIRM you wrote the matching `verdict: pass|fail|pending` frontmatter field into SPIKE_VERDICT.md — the authoritative machine signal)
 - method: runtime-measurement | investigate | tests | mixed
 - evidence: >=1 real observed item (value + source) on PASS/FAIL; the honest reason on PENDING
 - tooling_ok: true | false (false + the named missing tooling ⇒ the TOOLING-GAP signal for the /add-phase corrective loop)

@@ -297,27 +297,110 @@ def phases_spike_required(spec_path: Path) -> bool:
     return bool(re.search(r"(?mi)^\*\*Spike:\*\*\s*required\b", text))
 
 
-def spike_verdict_is_pass(spec_path: "Path | str | None") -> bool:
-    """True iff ``{spec_path}/SPIKE_VERDICT.md`` carries a ``verdict: PASS`` field.
+# Verdict-value token detection for a SPIKE_VERDICT.md (spike-verdict-markdown-
+# form-unparseable-blocks-completion). A verdict VALUE may be a bare token
+# (``PASS``), a GO/NO-GO-prefixed compound (``GO / PASS``, ``NO-GO / FAIL``), or
+# ``PENDING`` — so we search for the token as a WHOLE WORD anywhere in the value,
+# not only immediately after the colon. FAIL takes PRECEDENCE over PASS
+# (fail-closed): a PASS misread as pending merely re-routes to another spike
+# cycle (safe), whereas a FAIL misread as PASS would wrongly complete a feature
+# whose runtime proof did NOT hold.
+_SPIKE_FAIL_TOKEN_RE = re.compile(r"(?i)\b(?:FAIL|NO[-\s]?GO)\b")
+_SPIKE_PASS_TOKEN_RE = re.compile(r"(?i)\b(?:PASS|GO)\b")
+_SPIKE_PENDING_TOKEN_RE = re.compile(r"(?i)\b(?:PENDING|NEEDS[-_\s]?RUNTIME)\b")
 
-    Tolerant, never raises: absent dir/file, unreadable file, missing/other
-    verdict value ⇒ False (route to spike). PASS match is case-insensitive on
-    the value token (mirrors ``_read_spike_decision``'s anchored-value
-    discipline). Shared by both state scripts (lazy-state.py Step 9.5 +
-    bug-state.py mirror).
+
+def _classify_spike_verdict_value(value: str) -> "str | None":
+    """Classify a verdict VALUE string → ``"pass" | "fail" | "pending" | None``.
+
+    FAIL-precedence (fail-closed): a value carrying a FAIL / NO-GO token is FAIL
+    even if it also mentions PASS/GO (the canonical forms never mix them, but a
+    conservative reader must never upgrade an ambiguous value to PASS). ``None``
+    when no verdict token is present at all (the caller treats it as pending).
+    """
+    if _SPIKE_FAIL_TOKEN_RE.search(value):
+        return "fail"
+    if _SPIKE_PASS_TOKEN_RE.search(value):
+        return "pass"
+    if _SPIKE_PENDING_TOKEN_RE.search(value):
+        return "pending"
+    return None
+
+
+def classify_spike_verdict(spec_path: "Path | str | None") -> str:
+    """Classify ``{spec_path}/SPIKE_VERDICT.md`` → ``"pass" | "fail" | "pending"``.
+
+    The single home for reading a Spike's authoritative verdict, shared by both
+    state scripts (lazy-state.py Step 9.5 + bug-state.py mirror). Tolerant, never
+    raises: absent dir/file, unreadable file, or no recognizable verdict token ⇒
+    ``"pending"`` (route to / stay on spike).
+
+    Reads two forms, in priority order:
+
+    1. **Authoritative frontmatter field** — a ``---``-delimited YAML block with a
+       ``verdict:`` key (``verdict: pass|fail|pending``). This is the machine gate
+       signal the dispatch template mandates; it wins over prose.
+    2. **Line scan (fallback for the human-prose form)** — the FIRST line that,
+       after stripping leading markdown emphasis (``**``, ``*``, ``#``) and
+       whitespace, begins ``verdict:`` (case-insensitive). Its value is classified
+       via ``_classify_spike_verdict_value`` so the rendered-markdown
+       ``**Verdict:** GO / PASS`` form (which the old anchored ``verdict:\\s*PASS``
+       regex could not read — leading ``**`` + a ``GO /`` prefix) now parses, and a
+       ``**Verdict:** NO-GO / FAIL`` reads as FAIL, never PASS.
+
+    Fail-closed throughout: an unrecognizable / absent verdict is ``"pending"``,
+    never a vacuous PASS.
     """
     if not spec_path:
-        return False
+        return "pending"
     verdict_path = Path(spec_path) / "SPIKE_VERDICT.md"
     try:
         text = verdict_path.read_text(encoding="utf-8")
     except OSError:
-        return False
+        return "pending"
+
+    # (1) Authoritative frontmatter verdict field.
+    meta = parse_sentinel(verdict_path)
+    if meta and "verdict" in meta:
+        classified = _classify_spike_verdict_value(str(meta.get("verdict") or ""))
+        if classified is not None:
+            return classified
+
+    # (2) Line-scan fallback, markdown-emphasis tolerant. Strip a leading run of
+    # ``*``/``#``/whitespace so ``**Verdict:** ...`` and ``## Verdict: ...`` both
+    # expose the ``verdict:`` marker; classify the value token(s) after the colon.
     for line in text.splitlines():
-        stripped = line.strip()
-        if re.match(r"(?i)verdict:\s*PASS\b", stripped):
-            return True
-    return False
+        bare = line.strip().lstrip("*# \t")
+        m = re.match(r"(?i)verdict\s*\**\s*:\s*(.*)$", bare)
+        if m:
+            classified = _classify_spike_verdict_value(m.group(1))
+            if classified is not None:
+                return classified
+    return "pending"
+
+
+def spike_verdict_is_pass(spec_path: "Path | str | None") -> bool:
+    """True iff ``{spec_path}/SPIKE_VERDICT.md`` records a PASS verdict.
+
+    Thin wrapper over ``classify_spike_verdict`` (the single parsing home). See
+    that function for the two accepted forms (frontmatter ``verdict:`` field +
+    markdown-tolerant line scan). Tolerant, never raises. Shared by both state
+    scripts (lazy-state.py Step 9.5 + bug-state.py mirror).
+    """
+    return classify_spike_verdict(spec_path) == "pass"
+
+
+def spike_verdict_is_fail(spec_path: "Path | str | None") -> bool:
+    """True iff ``{spec_path}/SPIKE_VERDICT.md`` records a FAIL verdict.
+
+    The symmetric sibling of ``spike_verdict_is_pass`` — a Spike FAIL is a runtime
+    proof that did NOT hold and must be detected as FAIL (never silently read as
+    PASS or merely-pending). Callers that need to distinguish an explicit FAIL from
+    a not-yet-run PENDING use this; the Step-9.5 routing keys on
+    ``spike_verdict_is_pass`` (a FAIL, like a pending, is "not pass" → the Spike's
+    own ``NEEDS_INPUT.md`` parks it).
+    """
+    return classify_spike_verdict(spec_path) == "fail"
 
 
 def skip_waiver_refusal(

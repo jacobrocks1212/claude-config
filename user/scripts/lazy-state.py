@@ -4173,7 +4173,9 @@ def compute_state(
             sub_skill_args=(
                 f"finish the runtime-verification matrix for {feature_name} — "
                 f"{len(_uncov)} uncovered row(s) remain after a partial "
-                f"VALIDATED.md; author/run the missing scenario(s) then "
+                f"VALIDATED.md; author/run the missing scenario(s), and where a "
+                f"row lacks the canonical <!-- verification-only --> marker migrate "
+                f"it to the marker once its verification ACTUALLY runs, then "
                 f"re-validate. See {spec_path_str}/SPEC.md and PHASES.md."
             ),
         )

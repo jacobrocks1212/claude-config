@@ -3376,6 +3376,73 @@ def test_read_spike_decision_required_value_token_and_goal():
         assert lazy_core._read_spike_decision(None) == ("no-spike", None)
 
 
+def _write_spike_verdict(spec: Path, body: str) -> Path:
+    spec.mkdir(parents=True, exist_ok=True)
+    (spec / "SPIKE_VERDICT.md").write_text(body, encoding="utf-8")
+    return spec
+
+
+def test_classify_spike_verdict_markdown_bold_pass():
+    """GAP-1 regression: the rendered-markdown `**Verdict:** GO / PASS` form — a
+    leading `**` bold prefix AND a `GO /` value prefix — must classify as PASS
+    (the old anchored `verdict:\\s*PASS` regex read it as pending → completion
+    blocked with no forward route)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        spec = _write_spike_verdict(
+            Path(td) / "s",
+            "# Spike\n\n**Verdict:** GO / PASS (scoped to the MCP-provable envelope)\n\n"
+            "evidence: fps=60 (HUD read)\n",
+        )
+        assert lazy_core.classify_spike_verdict(spec) == "pass"
+        assert lazy_core.spike_verdict_is_pass(spec) is True
+        assert lazy_core.spike_verdict_is_fail(spec) is False
+
+
+def test_classify_spike_verdict_frontmatter_field_is_authoritative():
+    """A `verdict:` frontmatter field is read first and wins; both `pass` and
+    `PASS` values classify as pass; a bare `verdict: PASS` line also works."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        fm = _write_spike_verdict(
+            Path(td) / "fm",
+            "---\nkind: spike-verdict\nverdict: pass\n---\n\n**Verdict:** GO / PASS\n",
+        )
+        assert lazy_core.classify_spike_verdict(fm) == "pass"
+        bare = _write_spike_verdict(Path(td) / "bare", "verdict: PASS\n\nevidence: ...\n")
+        assert lazy_core.spike_verdict_is_pass(bare) is True
+
+
+def test_classify_spike_verdict_fail_never_reads_as_pass():
+    """A FAIL (frontmatter OR the `**Verdict:** NO-GO / FAIL` markdown form) must
+    classify as FAIL — never PASS. Fail-closed symmetry check."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        md = _write_spike_verdict(
+            Path(td) / "md",
+            "# Spike\n\n**Verdict:** NO-GO / FAIL (projector never sustained 30fps)\n",
+        )
+        assert lazy_core.classify_spike_verdict(md) == "fail"
+        assert lazy_core.spike_verdict_is_pass(md) is False
+        assert lazy_core.spike_verdict_is_fail(md) is True
+        fm = _write_spike_verdict(Path(td) / "fm", "---\nverdict: fail\n---\n")
+        assert lazy_core.spike_verdict_is_pass(fm) is False
+
+
+def test_classify_spike_verdict_pending_and_absent():
+    """A PENDING verdict, and an absent / verdict-less doc, both classify as
+    pending (fail-closed: never a vacuous PASS)."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        pend = _write_spike_verdict(
+            Path(td) / "p", "# Spike\n\n**Verdict:** PENDING (runtime unavailable)\n",
+        )
+        assert lazy_core.classify_spike_verdict(pend) == "pending"
+        none = _write_spike_verdict(Path(td) / "n", "# Spike\n\nno verdict line here\n")
+        assert lazy_core.classify_spike_verdict(none) == "pending"
+        assert lazy_core.classify_spike_verdict(Path(td) / "missing") == "pending"
+
+
 def _write_needs_input(path: Path, *, written_by: str, extra: str = "") -> None:
     """Minimal NEEDS_INPUT.md whose frontmatter reaches the written_by/spike_verdict
     exclusion checks in provisional_eligibility (kind + non-empty decisions present)."""
@@ -4163,6 +4230,10 @@ _TESTS = [
     ("test_phases_spike_required_true", test_phases_spike_required_true),
     ("test_phases_spike_required_false_when_absent_or_prose_only", test_phases_spike_required_false_when_absent_or_prose_only),
     ("test_read_spike_decision_required_value_token_and_goal", test_read_spike_decision_required_value_token_and_goal),
+    ("test_classify_spike_verdict_markdown_bold_pass", test_classify_spike_verdict_markdown_bold_pass),
+    ("test_classify_spike_verdict_frontmatter_field_is_authoritative", test_classify_spike_verdict_frontmatter_field_is_authoritative),
+    ("test_classify_spike_verdict_fail_never_reads_as_pass", test_classify_spike_verdict_fail_never_reads_as_pass),
+    ("test_classify_spike_verdict_pending_and_absent", test_classify_spike_verdict_pending_and_absent),
     ("test_provisional_eligibility_excludes_spike_written_by", test_provisional_eligibility_excludes_spike_written_by),
     ("test_provisional_eligibility_excludes_spike_verdict_fail", test_provisional_eligibility_excludes_spike_verdict_fail),
     ("test_classify_conflict_auto_merge_is_write", test_classify_conflict_auto_merge_is_write),

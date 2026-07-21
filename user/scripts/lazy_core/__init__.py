@@ -67,6 +67,8 @@ _SUBMODULE_BY_NAME: dict[str, str] = {
     "phases_spike_required": "docmodel",          # harden Round 80 — spike header parse
     "_read_spike_decision": "docmodel",           # harden Round 80 — spike variant + goal
     "spike_verdict_is_pass": "docmodel",          # spike-pipeline-role Phase 2 WU-1 — verdict PASS reader
+    "spike_verdict_is_fail": "docmodel",          # spike-verdict-markdown-form — symmetric FAIL reader
+    "classify_spike_verdict": "docmodel",         # spike-verdict-markdown-form — shared pass/fail/pending classifier
     "skip_waiver_refusal": "docmodel",
     "spec_status": "docmodel",
     "spec_fixed_annotation": "docmodel",

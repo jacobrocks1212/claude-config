@@ -73,11 +73,22 @@ tooling phase completes). This LOOPs if a further gap is found — with a HARD C
 (`spike_tooling_rounds`, default 3): on exceeding it, Spike writes `NEEDS_INPUT.md` instead of
 looping again, so the loop can NEVER spin forever.
 
+### The authoritative verdict field (machine gate signal — binding)
+
+`SPIKE_VERDICT.md` MUST carry a **machine-parseable** verdict the state machine keys on: a
+`---`-delimited YAML frontmatter block with a `verdict:` field valued exactly `pass` / `fail` /
+`pending`. That frontmatter field is AUTHORITATIVE (read first, wins); the human prose line
+(`**Verdict:** GO / PASS …`) is SECONDARY. `lazy_core.docmodel.classify_spike_verdict` reads the
+frontmatter field first, then falls back to a markdown-tolerant scan of a `verdict:` line — but a
+doc carrying ONLY a bolded `**Verdict:** GO / PASS` prose line and no `verdict:` frontmatter once
+left a genuinely-passing spike unparseable and blocked completion with no forward route
+(`docs/bugs/spike-verdict-markdown-form-unparseable-blocks-completion`). Always emit the field.
+
 ### PASS/FAIL branching (what the orchestrator does with the verdict)
 
-- **PASS** → the Spike recorded the verdict + evidence in the results doc and ticked the gated
-  phase's spike deliverable (scoped reconcile; never top-status/receipt). Continue to the
-  prescribed next cycle.
+- **PASS** → the Spike recorded `verdict: pass` (frontmatter) + evidence in the results doc and
+  ticked the gated phase's spike deliverable (scoped reconcile; never top-status/receipt). Continue
+  to the prescribed next cycle.
 - **FAIL** → the Spike updated the results doc + the gated phase and wrote `NEEDS_INPUT.md`
   (`written_by: spike`, `spike_verdict: fail`). HALT and present to the operator.
   **NO provisional auto-accept** — this is a deliberate carve-out enforced in TWO places:
