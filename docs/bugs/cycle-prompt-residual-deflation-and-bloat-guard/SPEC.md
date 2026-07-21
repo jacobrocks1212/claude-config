@@ -142,11 +142,30 @@ Parent `cycle-prompt-deflation` landed 2026-07-19 (`COMPLETED.md` `completed_com
 | Coupled-pair gate | `generate-coupled-skills.py` (`--check`) | Must stay green after template edits |
 | Control-surface manifest | `docs/gate/control-surfaces.json` | The new gate is a control surface — register it so `harness-gate.py` covers its own diff |
 
-## Open Questions
+## Resolved Decisions (operator disposition 2026-07-20)
 
-<!-- Plan-time (/plan-bug) decisions, not blockers to concluding this investigation. -->
+<!-- The four plan-time forks below were surfaced to the operator and resolved before /plan-bug.
+     They are LOCKED inputs to PHASES authoring, not open. -->
 
-- **Lint severity ramp:** ship the war-story detector as a **hard gate** (blocks the battery) from day one, or **advisory** first (warn, then flip after a soak)? Precedent split: `skill-size-ratchet.py` is hard; the `ruff` F-gate is advisory. Recommend hard for the pattern detector (bright-line, low false-positive on dispatched-prompt scope) and hard for the per-section ceiling (mirrors the whole-profile ratchet).
-- **Detector home:** extend `skill-size-ratchet.py` (per-section is a natural sibling of per-profile) vs. a new `lazy-batch-prompts/` sibling linter. Recommend folding into the ratchet for the byte-ceiling half and a small pattern check reachable via `lint-skills.py --check-skill-size` to keep one battery entry.
-- **Allowlist maintenance:** how the load-bearing-literal allowlist stays current without becoming an overfit escape hatch — likely a reason-required entry, mirroring `cli-surface-lint.py`'s `<!-- marker -->` and `lint-skill-config.py`'s `SUPPRESSIONS`.
-- **Anti-overfit self-check:** the detector edits a matcher set, so `harness-gate.py` may flag it — the SPEC's structural (shape-keyed) design is the defense; `/plan-bug` must record the `GATE_VERDICT.md` if flagged.
+1. **Lint severity → HARD GATE from day one.** The war-story pattern detector AND the per-section
+   byte ceiling block the battery on any match (like `skill-size-ratchet.py`), not advisory-first.
+   Bright-line, low false-positive within the narrow dispatched-prompt scope; a harden round adding
+   an incident date is refused immediately rather than during a soak.
+2. **Detector breadth → CONFIRMED SHAPES ONLY.** The pattern set is exactly: ISO-date tokens
+   (`\b20\d\d-\d\d-\d\d\b`), `ISSUE \d` / `Round \d+` / `d8-effect-chains`, `Live incident:`, and
+   bare `docs/{bugs,features}/<slug>` incident literals. **Excluded** (deliberately, to avoid
+   false-positives on legitimate imperative rules): loose narrative phrasings like `the former … ban`
+   / `used to` / `previously … now`. Accepted miss: a novel undated narrative phrasing — caught by
+   the per-section byte ceiling + the D2b CLAUDE.md contract instead.
+3. **Detector home → FOLD INTO `skill-size-ratchet.py`.** Per-section byte ceiling extends the
+   existing per-profile ratchet in-file; the pattern check rides the same script, reachable via
+   `lint-skills.py --check-skill-size` — one battery entry, no new script.
+4. **Allowlist → REASON-REQUIRED INLINE ENTRIES.** Each load-bearing-literal exemption carries a
+   reason at its point of use, mirroring `cli-surface-lint.py`'s `<!-- marker -->` and
+   `lint-skill-config.py`'s `SUPPRESSIONS` — keeps the escape hatch auditable and resists silent
+   overfit growth.
+
+**Anti-overfit self-check (plan-time action, not a fork):** the detector edits a matcher set, so
+`harness-gate.py` may flag it. Defense = the structural (shape-keyed, not incident-literal) design
+above; `/plan-bug` must register the new gate in `docs/gate/control-surfaces.json` and author
+`GATE_VERDICT.md` if flagged.
