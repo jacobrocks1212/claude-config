@@ -6,27 +6,27 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| False-green build rate `[cognito-forms]` | 10.31% (30d) | pending | — | PENDING-BASELINE |
+| False-green build rate `[cognito-forms]` | — | pending | — | NO-DATA |
 | Queue wait time p50 `[cognito-forms]` | — | pending | — | NO-DATA |
-| Raw-invocation deny recurrence `[cognito-forms]` | — | pending | — | NO-DATA |
+| Raw-invocation deny recurrence `[cognito-forms]` | 0/30d | pending | — | PENDING-BASELINE |
 
 ## containment
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Runaway containment trip rate | 758/30d | pending | — | PENDING-BASELINE |
+| Runaway containment trip rate | 3660/30d | pending | — | PENDING-BASELINE |
 
 ## halt-handling
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Halt dwell time p50 | — | pending | — | NO-DATA |
+| Halt dwell time p50 | 10862.4s (30d) | pending | — | PENDING-BASELINE |
 
 ## pipeline-efficiency
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Cycles per completion | — | pending | — | NO-DATA |
+| Cycles per completion | 6.74 (30d) | pending | — | PENDING-BASELINE |
 | MCP-validation round trips per feature | — | pending | — | NO-DATA |
 
 ## harness-canary
@@ -40,14 +40,14 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Failed Reads / dangling references on .claude/skill-config/ paths `[all]` | — | pending | — | NO-DATA |
+| Failed Reads / dangling references on .claude/skill-config/ paths `[all]` | 3 (30d) | pending | — | PENDING-BASELINE |
 
 ## efficacy-loop
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
 | Conclusive efficacy verdicts produced | 0/90d | pending | — | PENDING-BASELINE |
-| Confounded-verdict ratio | 10.4% (90d) | pending | — | PENDING-BASELINE |
+| Confounded-verdict ratio | 10.7% (90d) | pending | — | PENDING-BASELINE |
 
 ## anti-overfit-gate
 
@@ -62,39 +62,39 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Age in days of the oldest open docs/bugs/ item `[claude-config]` | 10 (1d) | 17 (measured 2026-07-11) | — | PENDING-BASELINE |
+| Age in days of the oldest open docs/bugs/ item `[claude-config]` | 11 (1d) | 17 (measured 2026-07-11) | — | PENDING-BASELINE |
 | Count of docs/bugs/ items at Status: Concluded (investigated, never fixed) `[claude-config]` | 14 (1d) | 23 (measured 2026-07-11) | — | PENDING-BASELINE |
 
 ## lazy-core
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Monolith-induced drag on lazy_core interventions `[claude-config]` | — | 1 (measured 2026-07-13) | — | NO-DATA |
+| Monolith-induced drag on lazy_core interventions `[claude-config]` | 3 (30d) | 1 (measured 2026-07-13) | — | PENDING-BASELINE |
 
 ## generalized-runner
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Raw heavy-gate invocation deny recurrence (AlgoBooth) `[algobooth]` | — | pending | — | NO-DATA |
-| Premature turn-end on in-flight gate batteries (non-Cognito) `[claude-config]` | — | pending | — | NO-DATA |
+| Raw heavy-gate invocation deny recurrence (AlgoBooth) `[algobooth]` | 0/30d | pending | — | PENDING-BASELINE |
+| Premature turn-end on in-flight gate batteries (non-Cognito) `[claude-config]` | 3/30d | pending | — | PENDING-BASELINE |
 
 ## subagent-wedge-backstop
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Wedged-subagent pipeline-strand recurrence `[claude-config]` | — | pending | — | NO-DATA |
+| Wedged-subagent pipeline-strand recurrence `[claude-config]` | 3/30d | pending | — | PENDING-BASELINE |
 
 ## hook-plane
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Hook-plane duplicated scaffolding lines | 689 (1d) | 467 (retro-derived 2026-07-11) | — | PENDING-BASELINE |
+| Hook-plane duplicated scaffolding lines | 697 (1d) | 467 (retro-derived 2026-07-11) | — | PENDING-BASELINE |
 
 ## cycle-prompt-deflation
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Max assembled cycle-prompt bytes across dispatchable profiles `[claude-config]` | 21457 (30d) | 20843 (measured 2026-07-19) | — | PENDING-BASELINE |
+| Max assembled cycle-prompt bytes across dispatchable profiles `[claude-config]` | 20265 (30d) | 20843 (measured 2026-07-19) | — | PENDING-BASELINE |
 
 ## orchestrator-tool-search
 
@@ -106,7 +106,7 @@
 
 | KPI | current | baseline | band (warn/breach) | status |
 |-----|---------|----------|--------------------|--------|
-| Cognito CLAUDE.local.md auto-loaded corpus size `[cognito-forms]` | 43630 (1d) | 40830 (measured 2026-07-17) | 44000 / 48000 | OK ▼ |
+| Cognito CLAUDE.local.md auto-loaded corpus size `[cognito-forms]` | 40830 (1d) | 40830 (measured 2026-07-17) | 44000 / 48000 | OK ▼ |
 
 ## Regressions
 
@@ -118,21 +118,14 @@
 
 ## Canary health
 
-- 29 canaries open, oldest 3d, 0 will no-data-close within 7d
+- 21 canaries open, oldest 3d, 0 will no-data-close within 7d
 
 ## Notes
 
+- `build-queue-false-green-rate`: no build records carrying hygiene.build_fidelity in the window
 - `build-queue-wait-time-p50`: results records carry no queued_at/started_at pair — runner timestamp add is a workstation-deferred follow-up
-- `build-queue-raw-invocation-deny-recurrence`: deny ledger absent — no denies recorded for this repo
-- `halt-dwell-p50`: no resolved halts in the window (open halts are honest unknowns, never counted as zero)
-- `cycles-per-completion`: no completions in the window — a ratio is never fabricated
 - `mcp-validation-round-trips-per-feature`: unknown telemetry selector 'mcp-validation-round-trips-per-feature'
-- `skill-config-broken-reference-reads`: deny ledger absent — no denies recorded for this repo
 - `anti-overfit-gate-hit-rate`: no computation registered for 'harness-gate'/'hit-rate'
 - `anti-overfit-gate-override-rate`: no computation registered for 'harness-gate'/'override-rate'
 - `anti-overfit-gate-false-positive-rate`: no computation registered for 'harness-gate'/'false-positive-rate'
 - `anti-overfit-gate-verdict-efficacy-disagreement`: no computation registered for 'harness-gate'/'verdict-efficacy-disagreement'
-- `lazy-core-monolith-intervention-drag`: deny ledger absent — no denies recorded for this repo
-- `generalized-runner-raw-invocation-deny-recurrence`: deny ledger absent — no denies recorded for this repo
-- `runner-turn-end-stall-recurrence`: deny ledger absent — no denies recorded for this repo
-- `subagent-wedge-strand-recurrence`: deny ledger absent — no denies recorded for this repo
