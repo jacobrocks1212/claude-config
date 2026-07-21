@@ -5,9 +5,11 @@
 > `TestLintGreen::test_real_seeded_registry_lints_green`. `/harden-harness` invoked directly by the
 > operator against this isolated, pre-existing defect.
 
-**Status:** Concluded
+**Status:** Fixed
 **Priority:** P3
 **Discovered:** 2026-07-20
+**Fixed:** 2026-07-20
+**Fix commit:** 0b85cf3e
 **Related:** `docs/features/friction-kpi-registry/` (owns `kpi-scorecard.py` + the registry);
 `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` Round 41 (the SAME class recurring
 — that round's fix bumped this identical literal 18→19 as a drive-by side effect of an unrelated
