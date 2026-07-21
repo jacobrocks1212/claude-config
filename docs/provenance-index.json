@@ -4771,6 +4771,20 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/_archive/runtime-ensure-unbounded-session-log-accumulation/FIXED.md": [
+    {
+      "id": "runtime-ensure-unbounded-session-log-accumulation",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/runtime-ensure-unbounded-session-log-accumulation/SPEC.md": [
+    {
+      "id": "runtime-ensure-unbounded-session-log-accumulation",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/sh-exe-crash-masks-successful-build-queue-run/SPEC.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
