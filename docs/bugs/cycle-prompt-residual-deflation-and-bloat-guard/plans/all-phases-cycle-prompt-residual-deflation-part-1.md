@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: cycle-prompt-residual-deflation-and-bloat-guard
-status: Ready
+status: Complete
 created: 2026-07-20
 phases: [1]
 complexity: complex
@@ -163,9 +163,9 @@ python3 -m pytest user/scripts/test_dispatch.py user/scripts/test_project_skills
 
 ## Work Units
 
-- [ ] WU-1 — Deflate cycle-base-prompt.md skill-specific sections + Class-B rationale tails
-- [ ] WU-2 — Condense AlgoBooth addendum
-- [ ] WU-3 — SEMANTIC_DIFF + re-lock assembled-profile ratchet
+- [x] WU-1 — Deflate cycle-base-prompt.md skill-specific sections + Class-B rationale tails
+- [x] WU-2 — Condense AlgoBooth addendum
+- [x] WU-3 — SEMANTIC_DIFF + re-lock assembled-profile ratchet
 
 ## Plan-specific execution notes
 

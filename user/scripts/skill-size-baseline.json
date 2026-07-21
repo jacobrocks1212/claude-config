@@ -5,113 +5,113 @@
       "byte_ceiling": 292003,
       "long_line_ceiling": 174,
       "locked_at": "2026-07-20",
-      "notes": "lazy-batch-skill-deflation Phase 3 seed ceiling — locked at the END-OF-SESSION size (after the Phase-1 model-selection excision AND the follow-up (ii) efficacy-signal-integrity D4 KPI-scorecard-flush wiring, a separate deliberate addition landed the same session, net +1529B/+1 long-line over the mid-session excision-only figure). This stops further accretion (+57%/4wk observed pre-gate) immediately; the diet's remaining Phase 1/2 hotspot excisions will lower this via --lock-in as they land, not raise it. 2026-07-13: +138B — deliberate hand-edit for cli-surface-lint findings (stale --gate-coverage/--run-end/--park cross-attribution fixes); a correctness fix, not accretion. 2026-07-17: deliberate hand-edit for harden-harness rounds 68/70 (dispatched-harden --record-intervention containment exemption bracket note §1d.1 + the §1c.6 flush-commit staging contract, one-writer coordination — end-of-run-flush-commit-absorbs-concurrent-writer-staged-files); mandated contract prose, not accretion — a correctness/contract fix. 2026-07-18: deliberate hand-edit for spike-pipeline-role Phase 3 (the new §1c.7 Spike cycle-handling orchestrator seam — dispatch-class routing, --ensure-runtime pre-boot, PASS/FAIL branch, provisional-FAIL carve-out + State Machine Summary bullet; cloud=defer-to-workstation, bug=bug-axis mirror via the overlay generator); a required feature deliverable, not accretion. 2026-07-19: hand-raised byte/long-line ceilings to current — deliberate documented growth (spike-pipeline-role Phase 3 + harden rounds 68/70, already recorded above) landed without a baseline realignment, leaving the ratchet red though it was not yet wired into the gate battery; cycle-prompt-deflation Part-1 WU-3 wires --check-skill-size INTO the battery, so the ceilings are realigned to current here (ratchet sanctioned legitimate-growth path) — not accretion, a corrective realignment. 2026-07-19: orchestrator-tool-search Phase 3 — hand-raised byte ceilings to current for the terse `--tool-search` search-before-acting rule (SKILL.md files, near harden-Trigger 5) + the new always-present `tool-search` @section in cycle-base-prompt.md (all 20 assembled-prompt profiles). Deliberate feature deliverable (SPEC 'Prose wiring'), each added line <500 chars so no long-line ceiling moved; sanctioned legitimate-growth realignment, not accretion. 2026-07-20: harden-harness observed-friction round (execute-plan-liveness-blind-to-dead-lineage-stall) — hand-raised byte/long-line ceilings to current for the NEW `wedge-candidate` verdict branch in the Step 1e.4a pause-vs-terminal discriminator (marker-mtime staleness → confirm-then-recover on a dead lineage, closing the 'wait forever' stall). Prose was tightened first to minimize growth; the residual is the irreducible new safety-critical branch. Sanctioned legitimate-growth realignment (ratchet contract: deliberate growth is a manual reviewable baseline edit), not accretion. 2026-07-20: harden-harness Round 130 (execute-plan-liveness-false-terminal-on-live-mid-commit-cycle — the OPPOSITE-direction companion to Round 129) — hand-raised byte/long-line ceilings to current (+1027B, +1 long line) for the NEW `commit-pending` verdict branch in the Step 1e.4a discriminator (plan-`Complete` is set at FINALIZE, BEFORE the gate+commit, so it routes to a `TaskList` liveness probe instead of a direct terminal → no premature recovery / one-writer collision against a live mid-commit cycle). Prose tightened first; the residual is the irreducible new safety-critical bullet paralleling `wedge-candidate`. Sanctioned legitimate-growth realignment, not accretion."
+      "notes": "lazy-batch-skill-deflation Phase 3 seed ceiling \u2014 locked at the END-OF-SESSION size (after the Phase-1 model-selection excision AND the follow-up (ii) efficacy-signal-integrity D4 KPI-scorecard-flush wiring, a separate deliberate addition landed the same session, net +1529B/+1 long-line over the mid-session excision-only figure). This stops further accretion (+57%/4wk observed pre-gate) immediately; the diet's remaining Phase 1/2 hotspot excisions will lower this via --lock-in as they land, not raise it. 2026-07-13: +138B \u2014 deliberate hand-edit for cli-surface-lint findings (stale --gate-coverage/--run-end/--park cross-attribution fixes); a correctness fix, not accretion. 2026-07-17: deliberate hand-edit for harden-harness rounds 68/70 (dispatched-harden --record-intervention containment exemption bracket note \u00a71d.1 + the \u00a71c.6 flush-commit staging contract, one-writer coordination \u2014 end-of-run-flush-commit-absorbs-concurrent-writer-staged-files); mandated contract prose, not accretion \u2014 a correctness/contract fix. 2026-07-18: deliberate hand-edit for spike-pipeline-role Phase 3 (the new \u00a71c.7 Spike cycle-handling orchestrator seam \u2014 dispatch-class routing, --ensure-runtime pre-boot, PASS/FAIL branch, provisional-FAIL carve-out + State Machine Summary bullet; cloud=defer-to-workstation, bug=bug-axis mirror via the overlay generator); a required feature deliverable, not accretion. 2026-07-19: hand-raised byte/long-line ceilings to current \u2014 deliberate documented growth (spike-pipeline-role Phase 3 + harden rounds 68/70, already recorded above) landed without a baseline realignment, leaving the ratchet red though it was not yet wired into the gate battery; cycle-prompt-deflation Part-1 WU-3 wires --check-skill-size INTO the battery, so the ceilings are realigned to current here (ratchet sanctioned legitimate-growth path) \u2014 not accretion, a corrective realignment. 2026-07-19: orchestrator-tool-search Phase 3 \u2014 hand-raised byte ceilings to current for the terse `--tool-search` search-before-acting rule (SKILL.md files, near harden-Trigger 5) + the new always-present `tool-search` @section in cycle-base-prompt.md (all 20 assembled-prompt profiles). Deliberate feature deliverable (SPEC 'Prose wiring'), each added line <500 chars so no long-line ceiling moved; sanctioned legitimate-growth realignment, not accretion. 2026-07-20: harden-harness observed-friction round (execute-plan-liveness-blind-to-dead-lineage-stall) \u2014 hand-raised byte/long-line ceilings to current for the NEW `wedge-candidate` verdict branch in the Step 1e.4a pause-vs-terminal discriminator (marker-mtime staleness \u2192 confirm-then-recover on a dead lineage, closing the 'wait forever' stall). Prose was tightened first to minimize growth; the residual is the irreducible new safety-critical branch. Sanctioned legitimate-growth realignment (ratchet contract: deliberate growth is a manual reviewable baseline edit), not accretion. 2026-07-20: harden-harness Round 130 (execute-plan-liveness-false-terminal-on-live-mid-commit-cycle \u2014 the OPPOSITE-direction companion to Round 129) \u2014 hand-raised byte/long-line ceilings to current (+1027B, +1 long line) for the NEW `commit-pending` verdict branch in the Step 1e.4a discriminator (plan-`Complete` is set at FINALIZE, BEFORE the gate+commit, so it routes to a `TaskList` liveness probe instead of a direct terminal \u2192 no premature recovery / one-writer collision against a live mid-commit cycle). Prose tightened first; the residual is the irreducible new safety-critical bullet paralleling `wedge-candidate`. Sanctioned legitimate-growth realignment, not accretion."
     },
     "repos/algobooth/.claude/skills/lazy-batch-cloud/SKILL.md": {
       "byte_ceiling": 225049,
       "long_line_ceiling": 137,
       "locked_at": "2026-07-19",
-      "notes": "Coupled-pair derived whale; seed ceiling at end-of-session size (D4 fallback — hand-mirrored, not yet generated; includes the mirrored follow-up (ii) KPI-scorecard-flush wiring). 2026-07-13: +241B — deliberate hand-edit for cli-surface-lint findings (stale --gate-coverage/--allow-research-skip/--adhoc cross-attribution fixes); a correctness fix, not accretion. 2026-07-17: deliberate hand-edit for harden-harness rounds 68/70 (dispatched-harden --record-intervention containment exemption bracket note §1d.1 + the §1c.6 flush-commit staging contract, one-writer coordination — end-of-run-flush-commit-absorbs-concurrent-writer-staged-files); mandated contract prose, not accretion — a correctness/contract fix. 2026-07-18: deliberate hand-edit for spike-pipeline-role Phase 3 (the new §1c.7 Spike cycle-handling orchestrator seam — dispatch-class routing, --ensure-runtime pre-boot, PASS/FAIL branch, provisional-FAIL carve-out + State Machine Summary bullet; cloud=defer-to-workstation, bug=bug-axis mirror via the overlay generator); a required feature deliverable, not accretion. 2026-07-19: hand-raised byte/long-line ceilings to current — deliberate documented growth (spike-pipeline-role Phase 3 + harden rounds 68/70, already recorded above) landed without a baseline realignment, leaving the ratchet red though it was not yet wired into the gate battery; cycle-prompt-deflation Part-1 WU-3 wires --check-skill-size INTO the battery, so the ceilings are realigned to current here (ratchet sanctioned legitimate-growth path) — not accretion, a corrective realignment. 2026-07-19: orchestrator-tool-search Phase 3 — hand-raised byte ceilings to current for the terse `--tool-search` search-before-acting rule (SKILL.md files, near harden-Trigger 5) + the new always-present `tool-search` @section in cycle-base-prompt.md (all 20 assembled-prompt profiles). Deliberate feature deliverable (SPEC 'Prose wiring'), each added line <500 chars so no long-line ceiling moved; sanctioned legitimate-growth realignment, not accretion."
+      "notes": "Coupled-pair derived whale; seed ceiling at end-of-session size (D4 fallback \u2014 hand-mirrored, not yet generated; includes the mirrored follow-up (ii) KPI-scorecard-flush wiring). 2026-07-13: +241B \u2014 deliberate hand-edit for cli-surface-lint findings (stale --gate-coverage/--allow-research-skip/--adhoc cross-attribution fixes); a correctness fix, not accretion. 2026-07-17: deliberate hand-edit for harden-harness rounds 68/70 (dispatched-harden --record-intervention containment exemption bracket note \u00a71d.1 + the \u00a71c.6 flush-commit staging contract, one-writer coordination \u2014 end-of-run-flush-commit-absorbs-concurrent-writer-staged-files); mandated contract prose, not accretion \u2014 a correctness/contract fix. 2026-07-18: deliberate hand-edit for spike-pipeline-role Phase 3 (the new \u00a71c.7 Spike cycle-handling orchestrator seam \u2014 dispatch-class routing, --ensure-runtime pre-boot, PASS/FAIL branch, provisional-FAIL carve-out + State Machine Summary bullet; cloud=defer-to-workstation, bug=bug-axis mirror via the overlay generator); a required feature deliverable, not accretion. 2026-07-19: hand-raised byte/long-line ceilings to current \u2014 deliberate documented growth (spike-pipeline-role Phase 3 + harden rounds 68/70, already recorded above) landed without a baseline realignment, leaving the ratchet red though it was not yet wired into the gate battery; cycle-prompt-deflation Part-1 WU-3 wires --check-skill-size INTO the battery, so the ceilings are realigned to current here (ratchet sanctioned legitimate-growth path) \u2014 not accretion, a corrective realignment. 2026-07-19: orchestrator-tool-search Phase 3 \u2014 hand-raised byte ceilings to current for the terse `--tool-search` search-before-acting rule (SKILL.md files, near harden-Trigger 5) + the new always-present `tool-search` @section in cycle-base-prompt.md (all 20 assembled-prompt profiles). Deliberate feature deliverable (SPEC 'Prose wiring'), each added line <500 chars so no long-line ceiling moved; sanctioned legitimate-growth realignment, not accretion."
     },
     "user/skills/lazy-bug-batch/SKILL.md": {
       "byte_ceiling": 123775,
       "long_line_ceiling": 52,
       "locked_at": "2026-07-20",
-      "notes": "Coupled-pair derived whale (bug-axis); seed ceiling at end-of-session size (the model-selection excision has no analog in this file; the +100B is the mirrored long-build-ownership.md fallback-prose fix from follow-up (i)). 2026-07-13: +43B — deliberate hand-edit for cli-surface-lint findings (stale --skip-needs-research/--json cross-attribution fixes); a correctness fix, not accretion. 2026-07-17: deliberate hand-edit for harden-harness rounds 68/70 (dispatched-harden --record-intervention containment exemption bracket note §1d.1 + the §1c.6 flush-commit staging contract, one-writer coordination — end-of-run-flush-commit-absorbs-concurrent-writer-staged-files); mandated contract prose, not accretion — a correctness/contract fix. 2026-07-18: deliberate hand-edit for spike-pipeline-role Phase 3 (the new §1c.7 Spike cycle-handling orchestrator seam — dispatch-class routing, --ensure-runtime pre-boot, PASS/FAIL branch, provisional-FAIL carve-out + State Machine Summary bullet; cloud=defer-to-workstation, bug=bug-axis mirror via the overlay generator); a required feature deliverable, not accretion. 2026-07-19: hand-raised byte/long-line ceilings to current — deliberate documented growth (spike-pipeline-role Phase 3 + harden rounds 68/70, already recorded above) landed without a baseline realignment, leaving the ratchet red though it was not yet wired into the gate battery; cycle-prompt-deflation Part-1 WU-3 wires --check-skill-size INTO the battery, so the ceilings are realigned to current here (ratchet sanctioned legitimate-growth path) — not accretion, a corrective realignment. 2026-07-19: orchestrator-tool-search Phase 3 — hand-raised byte ceilings to current for the terse `--tool-search` search-before-acting rule (SKILL.md files, near harden-Trigger 5) + the new always-present `tool-search` @section in cycle-base-prompt.md (all 20 assembled-prompt profiles). Deliberate feature deliverable (SPEC 'Prose wiring'), each added line <500 chars so no long-line ceiling moved; sanctioned legitimate-growth realignment, not accretion. 2026-07-20: harden-harness observed-friction round (execute-plan-liveness-blind-to-dead-lineage-stall) — hand-raised byte/long-line ceilings to current for the NEW `wedge-candidate` verdict branch in the Step 1e.4a pause-vs-terminal discriminator (marker-mtime staleness → confirm-then-recover on a dead lineage, closing the 'wait forever' stall). Prose was tightened first to minimize growth; the residual is the irreducible new safety-critical branch. Sanctioned legitimate-growth realignment (ratchet contract: deliberate growth is a manual reviewable baseline edit), not accretion. 2026-07-20: harden-harness Round 130 (execute-plan-liveness-false-terminal-on-live-mid-commit-cycle — opposite-direction companion to Round 129) — hand-raised byte ceiling to current (+615B; long_line_ceiling unchanged at 52) for the mirrored `commit-pending` verdict bullet in the coupled bug-axis Step 1e.4a prose (regenerated byte-identical via generate-coupled-skills.py). Sanctioned legitimate-growth realignment, not accretion."
+      "notes": "Coupled-pair derived whale (bug-axis); seed ceiling at end-of-session size (the model-selection excision has no analog in this file; the +100B is the mirrored long-build-ownership.md fallback-prose fix from follow-up (i)). 2026-07-13: +43B \u2014 deliberate hand-edit for cli-surface-lint findings (stale --skip-needs-research/--json cross-attribution fixes); a correctness fix, not accretion. 2026-07-17: deliberate hand-edit for harden-harness rounds 68/70 (dispatched-harden --record-intervention containment exemption bracket note \u00a71d.1 + the \u00a71c.6 flush-commit staging contract, one-writer coordination \u2014 end-of-run-flush-commit-absorbs-concurrent-writer-staged-files); mandated contract prose, not accretion \u2014 a correctness/contract fix. 2026-07-18: deliberate hand-edit for spike-pipeline-role Phase 3 (the new \u00a71c.7 Spike cycle-handling orchestrator seam \u2014 dispatch-class routing, --ensure-runtime pre-boot, PASS/FAIL branch, provisional-FAIL carve-out + State Machine Summary bullet; cloud=defer-to-workstation, bug=bug-axis mirror via the overlay generator); a required feature deliverable, not accretion. 2026-07-19: hand-raised byte/long-line ceilings to current \u2014 deliberate documented growth (spike-pipeline-role Phase 3 + harden rounds 68/70, already recorded above) landed without a baseline realignment, leaving the ratchet red though it was not yet wired into the gate battery; cycle-prompt-deflation Part-1 WU-3 wires --check-skill-size INTO the battery, so the ceilings are realigned to current here (ratchet sanctioned legitimate-growth path) \u2014 not accretion, a corrective realignment. 2026-07-19: orchestrator-tool-search Phase 3 \u2014 hand-raised byte ceilings to current for the terse `--tool-search` search-before-acting rule (SKILL.md files, near harden-Trigger 5) + the new always-present `tool-search` @section in cycle-base-prompt.md (all 20 assembled-prompt profiles). Deliberate feature deliverable (SPEC 'Prose wiring'), each added line <500 chars so no long-line ceiling moved; sanctioned legitimate-growth realignment, not accretion. 2026-07-20: harden-harness observed-friction round (execute-plan-liveness-blind-to-dead-lineage-stall) \u2014 hand-raised byte/long-line ceilings to current for the NEW `wedge-candidate` verdict branch in the Step 1e.4a pause-vs-terminal discriminator (marker-mtime staleness \u2192 confirm-then-recover on a dead lineage, closing the 'wait forever' stall). Prose was tightened first to minimize growth; the residual is the irreducible new safety-critical branch. Sanctioned legitimate-growth realignment (ratchet contract: deliberate growth is a manual reviewable baseline edit), not accretion. 2026-07-20: harden-harness Round 130 (execute-plan-liveness-false-terminal-on-live-mid-commit-cycle \u2014 opposite-direction companion to Round 129) \u2014 hand-raised byte ceiling to current (+615B; long_line_ceiling unchanged at 52) for the mirrored `commit-pending` verdict bullet in the coupled bug-axis Step 1e.4a prose (regenerated byte-identical via generate-coupled-skills.py). Sanctioned legitimate-growth realignment, not accretion."
     },
     "user/skills/lazy/SKILL.md": {
       "byte_ceiling": 28599,
       "long_line_ceiling": 14,
       "locked_at": "2026-07-12",
-      "notes": "Dispatcher-tier proof-of-shape skill (292 lines cited in SPEC) — included per D3 scope so the shape this diet targets cannot silently re-bloat either."
+      "notes": "Dispatcher-tier proof-of-shape skill (292 lines cited in SPEC) \u2014 included per D3 scope so the shape this diet targets cannot silently re-bloat either."
     },
     "user/skills/lazy-status/SKILL.md": {
       "byte_ceiling": 9790,
       "long_line_ceiling": 1,
       "locked_at": "2026-07-12",
-      "notes": "Read-only dashboard skill — small, included per D3's named scope list."
+      "notes": "Read-only dashboard skill \u2014 small, included per D3's named scope list."
     }
   },
   "profiles": {
     "_notes": "cycle-prompt-deflation Phase 1 seed ceilings for the assembled per-cycle dispatch prompt. A profile id is pipeline/mode/skill[/variant]; ceilings are len(emit_cycle_prompt(...).prompt.encode(utf-8)) driven through the REAL emitter (never a re-parse of cycle-base-prompt.md). park/host dims are OUT of v1 enumeration (SPEC KPI selector is over pipeline,mode,skill,variant; host resolved by live os.name). Seeded at pre-deflation sizes 2026-07-19 to LOCK the before-numbers + stop accretion; Phases 2-3 lower these via --lock-in-profile.",
     "bug/cloud/execute-plan": {
-      "byte_ceiling": 16764,
+      "byte_ceiling": 16008,
       "long_line_ceiling": 0
     },
     "bug/cloud/retro": {
-      "byte_ceiling": 14227,
+      "byte_ceiling": 14043,
       "long_line_ceiling": 0
     },
     "bug/cloud/retro-feature": {
-      "byte_ceiling": 17898,
+      "byte_ceiling": 17103,
       "long_line_ceiling": 0
     },
     "bug/cloud/spec-phases": {
-      "byte_ceiling": 12866,
+      "byte_ceiling": 12721,
       "long_line_ceiling": 0
     },
     "bug/workstation/execute-plan": {
-      "byte_ceiling": 17702,
+      "byte_ceiling": 16722,
       "long_line_ceiling": 0
     },
     "bug/workstation/mcp-test/no-runtime": {
-      "byte_ceiling": 21001,
+      "byte_ceiling": 20217,
       "long_line_ceiling": 0
     },
     "bug/workstation/mcp-test/runtime-up": {
-      "byte_ceiling": 21442,
+      "byte_ceiling": 20266,
       "long_line_ceiling": 0
     },
     "bug/workstation/retro": {
-      "byte_ceiling": 14979,
+      "byte_ceiling": 14628,
       "long_line_ceiling": 0
     },
     "bug/workstation/retro-feature": {
-      "byte_ceiling": 18836,
+      "byte_ceiling": 17817,
       "long_line_ceiling": 0
     },
     "bug/workstation/spec-phases": {
-      "byte_ceiling": 13996,
+      "byte_ceiling": 13684,
       "long_line_ceiling": 0
     },
     "feature/cloud/execute-plan": {
-      "byte_ceiling": 16771,
+      "byte_ceiling": 16015,
       "long_line_ceiling": 0
     },
     "feature/cloud/retro": {
-      "byte_ceiling": 14234,
+      "byte_ceiling": 14050,
       "long_line_ceiling": 0
     },
     "feature/cloud/retro-feature": {
-      "byte_ceiling": 17905,
+      "byte_ceiling": 17110,
       "long_line_ceiling": 0
     },
     "feature/cloud/spec-phases": {
-      "byte_ceiling": 12873,
+      "byte_ceiling": 12728,
       "long_line_ceiling": 0
     },
     "feature/workstation/execute-plan": {
-      "byte_ceiling": 17713,
+      "byte_ceiling": 16733,
       "long_line_ceiling": 0
     },
     "feature/workstation/mcp-test/no-runtime": {
-      "byte_ceiling": 21016,
+      "byte_ceiling": 20228,
       "long_line_ceiling": 0
     },
     "feature/workstation/mcp-test/runtime-up": {
-      "byte_ceiling": 21457,
+      "byte_ceiling": 20277,
       "long_line_ceiling": 0
     },
     "feature/workstation/retro": {
-      "byte_ceiling": 14990,
+      "byte_ceiling": 14639,
       "long_line_ceiling": 0
     },
     "feature/workstation/retro-feature": {
-      "byte_ceiling": 18847,
+      "byte_ceiling": 17828,
       "long_line_ceiling": 0
     },
     "feature/workstation/spec-phases": {
-      "byte_ceiling": 14007,
+      "byte_ceiling": 13695,
       "long_line_ceiling": 0
     }
   }

@@ -1,7 +1,7 @@
 ---
 kind: implementation-plan
 feature_id: cycle-prompt-residual-deflation-and-bloat-guard
-status: Ready
+status: Complete
 created: 2026-07-20
 phases: [3]
 complexity: mechanical
@@ -109,7 +109,7 @@ Both exit 0 — the new file introduces no broken injection, no undeclared refer
 
 ## Work Units
 
-- [ ] WU-1 — Write user/skills/_components/lazy-batch-prompts/CLAUDE.md (net-new)
+- [x] WU-1 — Write user/skills/_components/lazy-batch-prompts/CLAUDE.md (net-new)
 
 ## Plan-specific execution notes
 

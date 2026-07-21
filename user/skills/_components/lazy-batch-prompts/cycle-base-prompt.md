@@ -135,11 +135,9 @@ Environment dialect (core — every host, {pipeline_phrase}):
   - Probe the run marker with `python3 ~/.claude/scripts/lazy-state.py
     --repo-root {cwd} --marker-status` (bug pipeline: `bug-state.py`) — it ALWAYS
     exits 0 and prints `{"present": bool, ...}` (absent marker / corrupt JSON / no
-    state dir alike). Never hand-roll a `cat <marker> | python -c ...` idiom (an
-    absent file raises on empty stdin).
+    state dir alike). Never hand-roll a `cat <marker> | python -c ...` idiom.
   - Read PHASES.md ONLY through `python3 ~/.claude/scripts/phases-slice.py
-    {spec_path} [--phase <id>]` — never a whole-file Read (a mature PHASES.md
-    exceeds the Read cap; the slicer returns the index + only the phase(s) named).
+    {spec_path} [--phase <id>]` — never a whole-file Read.
 
 <!-- @section env-dialect-windows pipelines=feature,bug modes=workstation skills=all hosts=windows -->
 Environment dialect (this host: Windows / Git Bash):
@@ -147,8 +145,7 @@ Environment dialect (this host: Windows / Git Bash):
     reads as an unterminated string to Git Bash (the `\"` escapes the quote). Use
     forward slashes (`"C:/.../dir"`) or ensure the last char before the quote is
     never `\`.
-  - No `/mnt/c/...` (WSL dialect) — this Bash tool is Git Bash on native Windows,
-    not WSL; use the native `C:/...` path (or a relative path from {cwd}).
+  - No `/mnt/c/...` — use the native `C:/...` path (or a relative path from {cwd}).
   - Import `lazy_core`/state-script modules via a `$HOME`-anchored `sys.path`
     (`sys.path.insert(0, os.path.expanduser("~/.claude/scripts"))`) or run the
     script by its `~/.claude/scripts/<name>.py` path — never a hardcoded
@@ -204,34 +201,30 @@ Park-mode divergence self-grade (park-provisional-acceptance — PRODUCER duty):
 
 <!-- @section park-spec-sentinel-mediation pipelines=feature,bug modes=workstation,cloud skills=spec,spec-bug park=park -->
 PARK-MODE INTERACTION CONTRACT (/spec under park mode — SPEC D13, LOAD-BEARING):
-  This is an UNATTENDED park-mode run: no operator is watching, so an
-  AskUserQuestion round would silently hang the lane. You MUST NOT call
-  AskUserQuestion — even where /spec's Phase-1 brainstorming (stub-spec
-  baseline shaping) normally permits it. Instead, run fully sentinel-mediated:
-  1. DRAFT THE BASELINE FIRST (the "Phase 1 under --batch" contract): author
-     the best-supported baseline SPEC from the stub/brief + repo evidence.
+  This is an UNATTENDED park-mode run: an AskUserQuestion round would silently hang
+  the lane. You MUST NOT call AskUserQuestion — even where /spec's Phase-1
+  brainstorming normally permits it. Run fully sentinel-mediated:
+  1. DRAFT THE BASELINE FIRST (Phase 1 under --batch): author the best-supported
+     baseline SPEC from the stub/brief + repo evidence.
   2. Apply the D7 completeness policy IN-CYCLE for every scope-class decision
-     (disclose with ⚖ policy: lines — see the Completeness-first section).
+     (disclose with ⚖ policy: lines — see Completeness-first).
   3. Surface the ≤4 genuinely baseline-GATING product forks via NEEDS_INPUT.md
      (rich `## Decision Context` body per sentinel-frontmatter.md,
      recommendation-first Options, a **Recommendation:** per decision, the
-     file-level `divergence:` self-grade above, AND `stub_origin: true` —
-     MANDATORY on a stub-spec baseline round: these decisions shape a baseline
-     the operator has never seen, so they are excluded from provisional
-     acceptance and always park for the operator
-     (stub-origin-provisional-exclusion)) — the park machinery picks the
-     sentinel up on the next probe; the input-audit supplies the independent
-     `audit_divergence` second key and backstops the stub-origin marker.
-  Research-answerable questions still go into RESEARCH_PROMPT.md, never the
-  sentinel. A brief too ambiguous even for a placeholder baseline writes
-  BLOCKED.md (blocker_kind: pre-research-input-required) exactly as the
-  non-park batch contract specifies.
+     file-level `divergence:` self-grade above, AND `stub_origin: true` — MANDATORY
+     on a stub-spec baseline round: these decisions shape a baseline the operator has
+     never seen, so they are excluded from provisional acceptance and always park
+     (stub-origin-provisional-exclusion)). The park machinery picks the sentinel up
+     on the next probe; the input-audit supplies the independent `audit_divergence`
+     second key and backstops the stub-origin marker.
+  Research-answerable questions go into RESEARCH_PROMPT.md, never the sentinel. A
+  brief too ambiguous even for a placeholder baseline writes BLOCKED.md
+  (blocker_kind: pre-research-input-required), as the non-park batch contract specifies.
 
 <!-- @section workstation-dispatch pipelines=feature,bug modes=workstation skills=all -->
 Sub-subagent dispatch policy (WORKSTATION DISPATCH — LOAD-BEARING):
-  You MAY use the `Agent` tool (workstation-recursive-subagent-dispatch,
-  2026-07-09 — the former inline-only ban is lifted on workstation; cloud keeps
-  it). When the dispatched skill's SKILL.md defines a sub-subagent model
+  You MAY use the `Agent` tool on workstation (cloud forbids it). When the
+  dispatched skill's SKILL.md defines a sub-subagent model
   (/execute-plan's test-agent + impl-agent split, /retro research subagents,
   read-only Explore fan-outs), FOLLOW it — the skill's contract is authoritative,
   including its test-first agent separation. Dispatch is a tool, not an
@@ -283,62 +276,49 @@ Sub-subagent dispatch policy (CLOUD OVERRIDE — LOAD-BEARING):
 
 <!-- @section skill-execute-plan pipelines=feature,bug modes=workstation skills=execute-plan,retro-feature -->
 /execute-plan (and retro-feature's inner execute-plan loop) — execution:
-  - EXECUTE ONLY THE DISPATCHED PLAN PART (HARD — ISSUE 2, d8-effect-chains run):
-    run EXACTLY the plan file passed to you — never a sibling part, never "the part
-    that's actually ready." Check the dispatched part's `> **Entry criteria:**` /
-    `Plan series` "execute parts strictly in order" prerequisites FIRST. Order those
-    prerequisites by `series_index` (frontmatter-honored — the same order the router
-    uses), NOT by raw part-number: a sibling P is a prerequisite of the dispatched
-    part D iff `series_index(P) < series_index(D)`. A part rescheduled to a HIGHER
-    `series_index` (`series_index: N  # RESCHEDULED …`) to run LAST is NOT a
-    prerequisite of a lower-`series_index` part even when its filename `-part-K`
-    number is lower — do NOT block on it (hydra-overlay false-block, 2026-07-19).
-    Absent a `series_index` field, fall back to the raw part-number. If a genuine
-    prerequisite part is not `status: Complete`, STOP and write BLOCKED.md
-    (`blocker_kind: prerequisite-part-incomplete`) naming the unmet part — do NOT
-    silently switch to it. (Live incident: dispatched on Sonnet for the mechanical
-    part-2, the subagent silently executed the complex part-1 instead, then died
-    resultless.) If the dispatched part's real work exceeds its declared
-    `complexity:` tier (e.g. complex work under a Sonnet dispatch), STOP with
-    BLOCKED.md `blocker_kind: model-tier-mismatch` rather than grinding it out.
+  - EXECUTE ONLY THE DISPATCHED PLAN PART (HARD): run EXACTLY the plan file passed
+    to you — never a sibling part, never "the part that's actually ready." Check the
+    dispatched part's `> **Entry criteria:**` / `Plan series` prerequisites FIRST,
+    ordered by `series_index` (NOT raw part-number): a sibling P is a prerequisite of
+    dispatched part D iff `series_index(P) < series_index(D)`. A part rescheduled to a
+    HIGHER `series_index` is NOT a prerequisite of a lower one even when its `-part-K`
+    filename number is lower — do NOT block on it. Absent `series_index`, fall back to
+    raw part-number. A genuine incomplete prerequisite (not `status: Complete`) → STOP
+    + BLOCKED.md (`blocker_kind: prerequisite-part-incomplete`) naming the unmet part;
+    never silently switch to it. Real work exceeding the part's declared `complexity:`
+    tier (e.g. complex work under a Sonnet dispatch) → STOP + BLOCKED.md
+    (`blocker_kind: model-tier-mismatch`) rather than grinding it out.
   - TEST-FIRST PER BATCH (R4): follow the plan's test-agent → impl-agent
-    sub-subagent model per the WORKSTATION DISPATCH policy above — the failing
-    tests land (and fail for the right reason) BEFORE implementation. When you
-    judge a small mechanical batch cheaper inline, keep the same discipline
-    manually: failing tests first, then implement until they pass.
-  - SUBSTANTIVE REVIEW (R6): for work done by sub-subagents, apply the
-    dispatched skill's subagent-review contract (their reports are untrusted —
-    re-verify against the working tree). For work you did inline yourself, skip
-    subagent-review.md's Step 1.5 re-run-and-diff (it polices a SEPARATE
-    subagent's report) but still do the substantive review (spec alignment,
-    deliverable coverage, edge cases, propagation) and run the gates.
+    sub-subagent model per the WORKSTATION DISPATCH policy above — failing tests land
+    (and fail for the right reason) BEFORE implementation. A small mechanical batch
+    done inline keeps the same discipline: failing tests first, then implement until
+    they pass.
+  - SUBSTANTIVE REVIEW (R6): for sub-subagent work, apply the dispatched skill's
+    subagent-review contract (reports are untrusted — re-verify against the working
+    tree). For inline work, skip subagent-review.md's Step 1.5 re-run-and-diff (it
+    polices a SEPARATE subagent's report) but still do the substantive review (spec
+    alignment, deliverable coverage, edge cases, propagation) and run the gates.
   - ATOMIC GATE+COMMIT (R5): the final action of each batch / plan-part
     completion is the ONE chained command from the turn-end contract below.
 
 <!-- @section skill-execute-plan-cloud pipelines=feature,bug modes=cloud skills=execute-plan,retro-feature -->
 /execute-plan (and retro-feature's inner execute-plan loop) — inline execution:
-  - EXECUTE ONLY THE DISPATCHED PLAN PART (HARD — ISSUE 2, d8-effect-chains run):
-    run EXACTLY the plan file passed to you — never a sibling part, never "the part
-    that's actually ready." Check the dispatched part's `> **Entry criteria:**` /
-    `Plan series` "execute parts strictly in order" prerequisites FIRST. Order those
-    prerequisites by `series_index` (frontmatter-honored — the same order the router
-    uses), NOT by raw part-number: a sibling P is a prerequisite of the dispatched
-    part D iff `series_index(P) < series_index(D)`. A part rescheduled to a HIGHER
-    `series_index` (`series_index: N  # RESCHEDULED …`) to run LAST is NOT a
-    prerequisite of a lower-`series_index` part even when its filename `-part-K`
-    number is lower — do NOT block on it (hydra-overlay false-block, 2026-07-19).
-    Absent a `series_index` field, fall back to the raw part-number. If a genuine
-    prerequisite part is not `status: Complete`, STOP and write BLOCKED.md
-    (`blocker_kind: prerequisite-part-incomplete`) naming the unmet part — do NOT
-    silently switch to it. (Live incident: dispatched on Sonnet for the mechanical
-    part-2, the subagent silently executed the complex part-1 instead, then died
-    resultless.) If the dispatched part's real work exceeds its declared
-    `complexity:` tier (e.g. complex work under a Sonnet dispatch), STOP with
-    BLOCKED.md `blocker_kind: model-tier-mismatch` rather than grinding it out.
+  - EXECUTE ONLY THE DISPATCHED PLAN PART (HARD): run EXACTLY the plan file passed
+    to you — never a sibling part, never "the part that's actually ready." Check the
+    dispatched part's `> **Entry criteria:**` / `Plan series` prerequisites FIRST,
+    ordered by `series_index` (NOT raw part-number): a sibling P is a prerequisite of
+    dispatched part D iff `series_index(P) < series_index(D)`. A part rescheduled to a
+    HIGHER `series_index` is NOT a prerequisite of a lower one even when its `-part-K`
+    filename number is lower — do NOT block on it. Absent `series_index`, fall back to
+    raw part-number. A genuine incomplete prerequisite (not `status: Complete`) → STOP
+    + BLOCKED.md (`blocker_kind: prerequisite-part-incomplete`) naming the unmet part;
+    never silently switch to it. Real work exceeding the part's declared `complexity:`
+    tier (e.g. complex work under a Sonnet dispatch) → STOP + BLOCKED.md
+    (`blocker_kind: model-tier-mismatch`) rather than grinding it out.
   - TEST-FIRST PER BATCH (R4): the inline path collapses the test-agent/impl-agent
-    split, so keep the discipline manually — write the failing tests FIRST,
-    confirm they fail for the right reason, THEN implement until they pass. Edit
-    source/test files (.ts/.js/.cs/.vue/.py/.rs/.tsx/.jsx) directly.
+    split, so keep the discipline manually — failing tests FIRST, confirm they fail
+    for the right reason, THEN implement until they pass. Edit source/test files
+    (.ts/.js/.cs/.vue/.py/.rs/.tsx/.jsx) directly.
   - SUBSTANTIVE REVIEW, NOT FALSIFICATION RE-RUN (R6): skip subagent-review.md's
     Step 1.5 re-run-and-diff (it polices a SEPARATE untrusted subagent's report;
     you wrote the tests and code yourself). Still do the substantive review (spec
@@ -352,19 +332,16 @@ Provenance lookup before editing (code-doc-provenance-linkage D6-A):
   pure-read lookup:
     python3 ~/.claude/scripts/lazy-state.py --provenance-lookup <file> --repo-root {cwd}
   It lists the decision records governing that file (<id, doc, decisions>
-  rows from docs/provenance-index.json). Open the cited IMPLEMENTED.md ONLY
-  when the decision ids are unfamiliar to the task at hand — do not re-read
-  ledgers you already know. Empty governed_by / no index → proceed (the step
-  is a no-op where no index exists). This is how you avoid re-deriving — or
-  contradicting — a past Locked Decision that governs the file under edit.
+  rows from docs/provenance-index.json). Open the cited IMPLEMENTED.md ONLY when
+  the decision ids are unfamiliar to the task — do not re-read ledgers you already
+  know. Empty governed_by / no index → proceed (no-op where no index exists).
 
 <!-- @section skill-retro pipelines=feature,bug modes=workstation,cloud skills=retro,retro-feature -->
 <!-- DORMANT — retro unwired from the autonomous pipeline 2026-06; emit_cycle_prompt never selects this section (sub_skill=retro is no longer emitted by lazy-state.py). Retained so section-lookup / residue checks remain stable. -->
 /retro — inline execution:
   Do the Step 3 A–G research INLINE and SERIALLY (read each input, synthesize)
-  rather than fanning out parallel research subagents; the deliverable is
-  identical (the retro plan + RETRO_DONE.md when there are no significant
-  divergences) — only the parallelism is dropped.
+  instead of fanning out parallel research subagents; the deliverable is identical
+  (the retro plan + RETRO_DONE.md when there are no significant divergences).
 
 <!-- @section skill-retro-feature pipelines=feature,bug modes=workstation,cloud skills=retro-feature -->
 <!-- DORMANT — retro unwired from the autonomous pipeline 2026-06; emit_cycle_prompt never selects this section (sub_skill=retro-feature is no longer emitted by lazy-state.py). Retained so section-lookup / residue checks remain stable. -->
@@ -376,116 +353,98 @@ Provenance lookup before editing (code-doc-provenance-linkage D6-A):
 
 <!-- @section skill-mcp-test-common pipelines=feature,bug modes=workstation skills=mcp-test -->
 /mcp-test — run the Step 5 test work INLINE (read the MCP usage guide, drive the
-MCP HTTP tools yourself, analyze the session logs) instead of dispatching a
-Sonnet test subagent. These rules apply to EVERY mcp-test cycle:
-  - VALIDATED_COMMIT (REQUIRED): any MCP_TEST_RESULTS.md you write MUST carry
-    `validated_commit: <git rev-parse HEAD at validation time>` (capture it when
-    the run completes, BEFORE any further commits). The sha-freshness gate
-    compares it to HEAD — a results file without it cannot certify the code.
-    Schema: ~/.claude/skills/_components/sentinel-frontmatter.md.
+MCP HTTP tools yourself, analyze the session logs), not via a Sonnet test subagent.
+These rules apply to EVERY mcp-test cycle:
+  - VALIDATED_COMMIT (REQUIRED): any MCP_TEST_RESULTS.md MUST carry
+    `validated_commit: <git rev-parse HEAD at validation time>` (capture it when the
+    run completes, BEFORE any further commits) — the sha-freshness gate compares it
+    to HEAD; a results file without it cannot certify the code. Schema:
+    ~/.claude/skills/_components/sentinel-frontmatter.md.
   - INLINE-FIX POLICY (D5 — LOCKED): you MAY fix a production-code bug while
-    validating, but ONLY (1) test-first — write the failing test FIRST, confirm
-    it fails for the right reason, then fix — and (2) fully disclosed in your
-    summary (files, change, pinning test). A cycle that touched production code
-    MUST NOT write VALIDATED.md; end it in a needs-re-verify state
-    (MCP_TEST_RESULTS.md flagging the change, or BLOCKED.md if incomplete). Only
-    a SUBSEQUENT CLEAN cycle (no production edits) certifies via VALIDATED.md —
-    so a cycle never self-certifies its own un-reviewed change.
+    validating, but ONLY (1) test-first (failing test FIRST, confirm it fails for the
+    right reason, then fix) and (2) fully disclosed in your summary (files, change,
+    pinning test). A cycle that touched production code MUST NOT write VALIDATED.md —
+    end it needs-re-verify (MCP_TEST_RESULTS.md flagging the change, or BLOCKED.md if
+    incomplete); only a SUBSEQUENT CLEAN cycle (no production edits) certifies via
+    VALIDATED.md, so a cycle never self-certifies its own un-reviewed change.
   - NO FIRE-AND-FORGET: drive validation to a DEFINITIVE pass/fail WITH a written
-    sentinel within THIS turn; if you must wait on anything (readiness re-check,
-    sidecar connect) use a BLOCKING foreground wait — never end the turn on a
-    pending background job. Before returning, the owed sentinel is on disk:
-    VALIDATED.md (full pass, UNLESS you edited production code this cycle) /
-    MCP_TEST_RESULTS.md (partial or production-edited) /
-    DEFERRED_REQUIRES_DEVICE.md (per Step 4.5) / SKIP_MCP_TEST.md (per the
-    mcp-testing SPEC) / BLOCKED.md naming a CONCRETE blocker. A scenario whose
-    real unmet prerequisite is a HOST CAPABILITY this machine lacks (a 2nd network
-    peer / a different OS / an external binary), NOT an audio device, is NOT a
-    device deferral — declare `requires_host: <id>` (SPEC frontmatter / queue.json)
-    so the state machine defers it to a capability-host (host-capability-saturated)
+    sentinel within THIS turn; any wait (readiness re-check, sidecar connect) is a
+    BLOCKING foreground wait — never end the turn on a pending background job. Before
+    returning, the owed sentinel is on disk: VALIDATED.md (full pass, UNLESS you
+    edited production code this cycle) / MCP_TEST_RESULTS.md (partial or
+    production-edited) / DEFERRED_REQUIRES_DEVICE.md (per Step 4.5) / SKIP_MCP_TEST.md
+    (per the mcp-testing SPEC) / BLOCKED.md naming a CONCRETE blocker. A scenario
+    whose real unmet prerequisite is a HOST CAPABILITY this machine lacks (a 2nd
+    network peer / a different OS / an external binary), NOT an audio device, is NOT a
+    device deferral — declare `requires_host: <id>` (SPEC frontmatter / queue.json) so
+    the state machine defers it to a capability-host (host-capability-saturated)
     instead of DEFERRED_REQUIRES_DEVICE, which re-opens and LOOPS on a real-device
     host (litmus: would a real audio device on THIS machine certify it? no → host).
   - VALIDATION-BLOCKED IS FOR CODE/ENGINE FAILURES ONLY: a `BLOCKED.md` with
-    `blocker_kind: mcp-validation` certifies that the CODE under test failed (the
-    engine ran and assertions did not pass). A RUNTIME-READINESS condition — the
-    sidecar pipe is dead despite `/health == 200` (`get_sidecar_status` →
-    `is_connected: false`), a self-inflicted env transient — is EXPLICITLY
-    EXCLUDED: it routes to the runtime-readiness terminal (NEEDS_RUNTIME in the
-    runtime-up variant; `blocker_kind: mcp-runtime-unready`, escalation-immune,
-    when the orchestrator gate catches it upstream), so the env transient is
-    NEVER charged to the validation-retry/escalation budget.
+    `blocker_kind: mcp-validation` certifies the CODE under test failed (engine ran,
+    assertions did not pass). A RUNTIME-READINESS condition — the sidecar pipe is dead
+    despite `/health == 200` (`get_sidecar_status` → `is_connected: false`), a
+    self-inflicted env transient — is EXCLUDED: it routes to the runtime-readiness
+    terminal (NEEDS_RUNTIME in the runtime-up variant; `blocker_kind:
+    mcp-runtime-unready`, escalation-immune, when the orchestrator gate catches it
+    upstream), so the env transient is NEVER charged to the
+    validation-retry/escalation budget.
   - SKIP PROVENANCE: any SKIP_MCP_TEST.md MUST carry `granted_by: mcp-test` AND
     `spec_class: <the untestable class you verified against
     docs/features/mcp-testing/SPEC.md>`. The state scripts REFUSE a pipeline skip
-    that omits either field and halt for operator confirmation. Audio IS
-    MCP-testable (load_test_tone + get_audio_buffer), so audio untestability
-    claims are usually WRONG — cross-check the SPEC before claiming a class.
+    omitting either field and halt for operator confirmation. Audio IS MCP-testable
+    (load_test_tone + get_audio_buffer), so audio untestability claims are usually
+    WRONG — cross-check the SPEC before claiming a class.
   - RECONCILE PHASES (after VALIDATED.md): read {spec_path}'s PHASES.md via the
-    env-dialect-core mandate above (`phases-slice.py {spec_path} --phase <id>`,
-    never a whole-file Read) and, for EVERY unchecked Runtime Verification row,
-    either tick it with a brief evidence
-    annotation when THIS validation run covers it, or — when it does NOT — re-scope
-    it honestly (convert to a non-checkbox follow-up note, or downgrade your result
-    to an MCP_TEST_RESULTS.md partial if it is genuinely a blocking gap) under a
-    `⚖` disclosure line. Then flip each phase's `**Status:**` to Complete once
-    nothing in it remains unchecked (per-phase flips are permitted — R7). WHY: the
-    completion gate refuses an incoherent flip, so an unreconciled PHASES strands
-    the feature at mark-complete.
-  - SEAM ENUMERATION (EVERY mcp-validation BLOCKED.md — enumerate at the FIRST
-    failure, not only on escalation): if the BLOCKED.md you are writing carries
-    `blocker_kind: mcp-validation`, at ANY `retry_count` (including 0 — the
-    FIRST validation failure for this {item_label}), its body MUST include a
-    `## Seam Enumeration` section listing EVERY boundary in the failing chain
-    (user surface → sidecar/IPC → engine → final observable) PLUS any
-    obviously-adjacent unwired seam, each with a per-seam status: `probed-OK` /
-    `probed-FAIL` / `unprobed`. You are already inside the live runtime — you
-    are the cheapest enumeration point, and probing one more boundary costs a
-    single tool call, not a full pipeline loop. The corrective phase consumes
-    this as its seam-audit checklist so the NEXT validation round does not
-    discover the next layer cold (a feature once burned three ~1M-token rounds
-    peeling one layer per round — the historical pattern this mandate now heads
-    off from round 1, not just round 3). At `retry_count >= 2` (repeated
-    failure despite an already-batched seam fix) the escalation tier ALSO
-    requires `/investigate` before the next corrective phase — see
-    `blocked-resolution.md` step 1a.
+    env-dialect-core mandate above (`phases-slice.py {spec_path} --phase <id>`, never
+    a whole-file Read) and, for EVERY unchecked Runtime Verification row, either tick
+    it with a brief evidence annotation when THIS run covers it, or — when it does
+    NOT — re-scope it honestly (convert to a non-checkbox follow-up note, or downgrade
+    to an MCP_TEST_RESULTS.md partial if it is a genuine blocking gap) under a `⚖`
+    disclosure line. Then flip each phase's `**Status:**` to Complete once nothing in
+    it remains unchecked (per-phase flips permitted — R7). The completion gate refuses
+    an incoherent flip, so an unreconciled PHASES strands the feature at mark-complete.
+  - SEAM ENUMERATION (EVERY mcp-validation BLOCKED.md — at the FIRST failure, not
+    only on escalation): if the BLOCKED.md carries `blocker_kind: mcp-validation`, at
+    ANY `retry_count` (including 0), its body MUST include a `## Seam Enumeration`
+    section listing EVERY boundary in the failing chain (user surface → sidecar/IPC →
+    engine → final observable) PLUS any obviously-adjacent unwired seam, each with a
+    per-seam status: `probed-OK` / `probed-FAIL` / `unprobed`. You are already inside
+    the live runtime — the cheapest enumeration point, and probing one more boundary
+    costs a single tool call. The corrective phase consumes this as its seam-audit
+    checklist so the NEXT round does not discover the next layer cold. At
+    `retry_count >= 2` (repeated failure despite an already-batched seam fix) the
+    escalation tier ALSO requires `/investigate` before the next corrective phase —
+    see `blocked-resolution.md` step 1a.
 
 <!-- @section mcp-test-runtime pipelines=feature,bug modes=workstation skills=mcp-test variant=runtime-up -->
-RUNTIME IS ALREADY UP (orchestrator-managed): the orchestrator pre-booted the
-dev runtime and BLOCKED on `GET http://localhost:3333/health == 200` in its own
-session BEFORE dispatching you. The dev runtime + MCP HTTP server on :3333 are
-ALREADY running and MCP-ready. Do NOT run `npm run tauri:dev` / `dev:restart`
-and do NOT kill-port / restart the server. SKIP the skill's Step 2 (Server
-Lifecycle) and the Step 4 health-poll — treat `server_was_running` as true and
-start at the Step 4 readiness check (session-events / sidecar / smoke test), a
-fast in-turn verification against the live server, not a boot wait. Re-resolve
-any session-log dir from the live server (GET /tools/get_session_meta →
-log_dir); NEVER reuse a cached `logs/session-*` path (HARD REQUIREMENT,
-docs/development/CLAUDE.md).
-  - SIDECAR-PIPE READINESS (runtime-readiness terminal — NOT a validation
-    failure): the dev HTTP server boots INDEPENDENTLY of the MCP sidecar named
-    pipe, so `/health == 200` does NOT prove the sidecar is connected. A zombie
-    node process left holding the `:3333` pipe after a `dev:restart` leaves the
-    runtime HTTP-healthy but MCP-functionally DEAD — a self-inflicted ENVIRONMENT
-    transient, NOT a code failure. BEFORE running the engine, probe
-    `GET http://localhost:3333/tools/get_sidecar_status`. If it reports
-    `is_connected: false`, do NOT run the engine and do NOT write an
-    `mcp-validation` `BLOCKED.md` (that would charge an env transient to the
-    feature's validation-retry/escalation budget). Instead return the single line
-    NEEDS_RUNTIME as your ENTIRE report — the orchestrator re-boots the runtime
-    cleanly (reaping the zombie) in its own session and re-dispatches you against
-    a live, sidecar-connected server. (Same escape as the `no-runtime` variant's
-    DISAGREE path — the env transient routes to runtime-readiness, never to
-    `mcp-validation`.)
+RUNTIME IS ALREADY UP (orchestrator-managed): the orchestrator pre-booted the dev
+runtime and BLOCKED on `GET http://localhost:3333/health == 200` before dispatching
+you. The dev runtime + MCP HTTP server on :3333 are ALREADY running and MCP-ready. Do
+NOT run `npm run tauri:dev` / `dev:restart` and do NOT kill-port / restart the server.
+SKIP the skill's Step 2 (Server Lifecycle) and the Step 4 health-poll — treat
+`server_was_running` as true and start at the Step 4 readiness check (session-events /
+sidecar / smoke test), a fast in-turn verification, not a boot wait. Re-resolve any
+session-log dir from the live server (GET /tools/get_session_meta → log_dir); NEVER
+reuse a cached `logs/session-*` path (HARD REQUIREMENT, docs/development/CLAUDE.md).
+  - SIDECAR-PIPE READINESS (runtime-readiness terminal — NOT a validation failure):
+    the dev HTTP server boots INDEPENDENTLY of the MCP sidecar named pipe, so
+    `/health == 200` does NOT prove the sidecar is connected. BEFORE running the
+    engine, probe `GET http://localhost:3333/tools/get_sidecar_status`. If it reports
+    `is_connected: false`, do NOT run the engine and do NOT write an `mcp-validation`
+    `BLOCKED.md` (that would charge an env transient to the feature's
+    validation-retry/escalation budget). Instead return the single line NEEDS_RUNTIME
+    as your ENTIRE report — the orchestrator re-boots the runtime cleanly in its own
+    session and re-dispatches you against a live, sidecar-connected server.
 
 <!-- @section mcp-test-runtime pipelines=feature,bug modes=workstation skills=mcp-test variant=no-runtime -->
 RUNTIME NOT PRE-BOOTED (plan asserts structural MCP-untestability): this item's
 PHASES.md declares `**MCP runtime:** not-required` — {untestability_reason}. The
 orchestrator did NOT boot the dev runtime; no MCP HTTP server is running. That
-declaration is ROUTING, not a waiver — YOU own the skip decision. FIRST verify
-the assessment against docs/features/mcp-testing/SPEC.md (the genuinely
-untestable classes are the "What We Cannot Prove" observation gaps and the
-raw-PCM-injection-into-the-Rust-callback path; "Audio IS MCP-testable" via
-load_test_tone + get_audio_buffer, so audio claims are usually WRONG).
+declaration is ROUTING, not a waiver — YOU own the skip decision. FIRST verify it
+against docs/features/mcp-testing/SPEC.md (genuinely untestable = the "What We Cannot
+Prove" observation gaps + the raw-PCM-injection-into-the-Rust-callback path; "Audio IS
+MCP-testable" via load_test_tone + get_audio_buffer, so audio claims are usually WRONG).
   - CONCUR (no MCP-reachable surface exists): write SKIP_MCP_TEST.md per
     sentinel-frontmatter.md with `granted_by: mcp-test` AND `spec_class: <the
     class you verified>`, a scoped reason, and `alternative_validation` citing
