@@ -1145,6 +1145,20 @@
       "provenance": "backfilled"
     }
   ],
+  "docs/bugs/_archive/bug-auto-file-produces-gate-noncompliant-artifacts/FIXED.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/bug-auto-file-produces-gate-noncompliant-artifacts/SPEC.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref/FIXED.md": [
     {
       "id": "bug-pipeline-cycle-dispatch-omits-cycle-prompt-ref",
@@ -15971,7 +15985,19 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "docs/interventions/adhoc-audit-obligation-fires-on-zero-commit-failed-cycle.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/adhoc-containment-denies-mandated-explore-fanout.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -16059,6 +16085,11 @@
   ],
   "docs/interventions/adhoc-lane-plan-single-lane-seam-classification.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -16100,6 +16131,11 @@
     }
   ],
   "docs/interventions/adhoc-write-plan-cognito-planner-contract-read.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -16187,6 +16223,11 @@
   ],
   "docs/interventions/build-queue-copy-lock-stale-dll-false-success.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -16231,6 +16272,11 @@
   ],
   "docs/interventions/build-queue-eta-marker-mojibake-on-redirected-stdout.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -16252,6 +16298,11 @@
     }
   ],
   "docs/interventions/build-queue-false-green-on-silent-build-failure.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -16275,6 +16326,11 @@
   ],
   "docs/interventions/build-queue-foreground-wait-blocks-past-terminal-outcome.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -16296,6 +16352,11 @@
     }
   ],
   "docs/interventions/build-queue-hygiene-dot-source-discarded-in-child-scope.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -16329,6 +16390,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/interventions/claude-md-maintenance-v2.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/completion-gate-deadlocks-deferred-runtime-row-in-no-mcp-repo.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -16347,6 +16415,13 @@
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/containment-hook-inline-python-exceeds-windows-cmdline-limit.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
       "type": "bug",
       "provenance": "manual"
     }
@@ -16402,6 +16477,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/interventions/dispatched-harden-record-intervention-refused-by-containment.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/efficacy-signal-integrity.md": [
     {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
@@ -16432,6 +16514,11 @@
     }
   ],
   "docs/interventions/external-owner-contracts-locked-without-consultation.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
@@ -16512,6 +16599,11 @@
   ],
   "docs/interventions/harden-2026-07-r109.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
       "type": "bug",
       "provenance": "pipeline-gated"
@@ -16523,6 +16615,11 @@
     }
   ],
   "docs/interventions/harden-2026-07-r110.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "decision-2-6-uncovered-row-reroute-to-mcp-test",
       "type": "bug",
@@ -16575,6 +16672,48 @@
   "docs/interventions/harden-2026-07-r118.md": [
     {
       "id": "verify-ledger-deliverables-done-fails-pre-decomposition-feature",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r120.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r123.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r124.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r125.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r126.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/harden-2026-07-r127.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
       "type": "bug",
       "provenance": "manual"
     }
@@ -16656,6 +16795,11 @@
   ],
   "docs/interventions/harden-2026-07-r17.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -16704,6 +16848,11 @@
     }
   ],
   "docs/interventions/harden-2026-07-r19.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -16781,6 +16930,11 @@
   ],
   "docs/interventions/harden-2026-07-r22.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -16802,6 +16956,11 @@
     }
   ],
   "docs/interventions/harden-2026-07-r23.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -16825,6 +16984,11 @@
   ],
   "docs/interventions/harden-2026-07-r24.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -16847,6 +17011,11 @@
   ],
   "docs/interventions/harden-2026-07-r25.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -16868,6 +17037,11 @@
     }
   ],
   "docs/interventions/harden-2026-07-r26.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -17103,6 +17277,11 @@
   ],
   "docs/interventions/harden-2026-07-r5.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -17130,6 +17309,11 @@
   ],
   "docs/interventions/harden-2026-07-r50.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
@@ -17141,6 +17325,11 @@
     }
   ],
   "docs/interventions/harden-2026-07-r51.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
@@ -17154,6 +17343,11 @@
   ],
   "docs/interventions/harden-2026-07-r52.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
@@ -17166,6 +17360,11 @@
   ],
   "docs/interventions/harden-2026-07-r53.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
@@ -17177,6 +17376,11 @@
     }
   ],
   "docs/interventions/harden-2026-07-r54.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -17195,6 +17399,11 @@
   ],
   "docs/interventions/harden-2026-07-r55.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -17212,6 +17421,11 @@
   ],
   "docs/interventions/harden-2026-07-r56.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -17228,6 +17442,11 @@
     }
   ],
   "docs/interventions/harden-2026-07-r57.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -17250,6 +17469,11 @@
     }
   ],
   "docs/interventions/harden-2026-07-r6.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -17361,6 +17585,11 @@
   ],
   "docs/interventions/harden-2026-07-r65.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -17382,6 +17611,11 @@
     }
   ],
   "docs/interventions/harden-2026-07-r66.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -17405,6 +17639,11 @@
   ],
   "docs/interventions/harden-2026-07-r67.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -17426,6 +17665,11 @@
     }
   ],
   "docs/interventions/harden-2026-07-r7.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -17949,6 +18193,11 @@
   ],
   "docs/interventions/intervention-efficacy-tracking.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
@@ -18100,6 +18349,11 @@
   ],
   "docs/interventions/merged-head-includes-parked-items-deadlocks-park-run.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
@@ -18119,6 +18373,11 @@
   ],
   "docs/interventions/operator-halt-notifications.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
@@ -18130,6 +18389,11 @@
     }
   ],
   "docs/interventions/park-provisional-acceptance.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
@@ -18187,6 +18451,11 @@
   ],
   "docs/interventions/plan-skills-redesign.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "generic-execution-surfaces-lack-turn-end-gate",
       "type": "bug",
       "provenance": "manual"
@@ -18222,6 +18491,13 @@
     },
     {
       "id": "merged-head-excludes-parked-not-operator-deferred-deadlocks",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/interventions/shared-hook-lib.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
       "type": "bug",
       "provenance": "manual"
     }
@@ -18277,6 +18553,13 @@
       "provenance": "manual"
     }
   ],
+  "docs/interventions/spike-pipeline-role.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/state-cli-contract-registry.md": [
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -18301,6 +18584,11 @@
   ],
   "docs/interventions/stub-origin-provisional-exclusion.md": [
     {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
       "provenance": "manual"
@@ -18321,7 +18609,19 @@
       "provenance": "manual"
     }
   ],
+  "docs/interventions/subagent-wedge-backstop-hook.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/interventions/workstation-recursive-subagent-dispatch.md": [
+    {
+      "id": "bug-auto-file-produces-gate-noncompliant-artifacts",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
       "type": "bug",
