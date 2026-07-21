@@ -5,6 +5,8 @@
 coherence-recovery-can't-fix loop with NO state-machine route back to the mcp-test that would
 certify the phase; the run must be stopped and the feature deferred by hand)
 **Discovered:** 2026-07-21
+**Fixed:** 2026-07-21
+**Fix commit:** 59fbdb67
 **Reported via:** `/harden-harness` observed-friction dispatch (2026-07-21, item in flight
 `waveform-visualization`, AlgoBooth `/lazy-batch`)
 **Root-cause class:** `script-defect` — a walk divergence between the completion-coherence gate and
