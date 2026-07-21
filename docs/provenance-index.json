@@ -22993,6 +22993,11 @@
       "provenance": "manual"
     },
     {
+      "id": "kpi-registry-test-count-assertion-brittle",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "manual-runtime-gates-unowned-in-no-mcp-workflows",
       "type": "bug",
       "provenance": "manual"
