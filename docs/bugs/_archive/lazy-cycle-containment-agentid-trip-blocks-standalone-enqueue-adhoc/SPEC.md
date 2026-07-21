@@ -1,8 +1,10 @@
 # lazy-cycle-containment's agent_id trip denies --enqueue-adhoc for a standalone (non-lazy-run) dispatched subagent
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-20 (manual trigger 5 — discovered mid-round during a separate, already-completed `/harden-harness` invocation; recorded as a follow-up in `docs/specs/turn-routing-enforcement/hardening-log/2026-07.md` Round 132)
+**Fixed:** 2026-07-20
+**Fix commit:** 0bcc34c8
 **Related:** `turn-routing-enforcement` (`lazy-cycle-containment.sh` C2 / `lazy_core.markers.refuse_if_cycle_active` C3); `hardening-blind-to-process-friction` (the D4 arming-free agent_id-targeted redesign); `dispatched-harden-record-intervention-refused-by-containment` (the prior, structurally analogous fix for `--record-intervention`)
 
 ## Trigger
