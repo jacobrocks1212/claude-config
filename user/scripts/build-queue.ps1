@@ -248,7 +248,9 @@ function Get-ActiveLockStatusOnce {
 		return Get-ActiveLockStatusFromText -Text $txt -IsPidAlive { param($p) Test-PidAlive $p }
 	}
 
-	# Fallback (hygiene module absent): inline classification, current behavior.
+	# Fallback (hygiene module absent): inline classification by pid liveness.
+	# Lock-age staleness is applied at the reclaim decision (see the poll loop
+	# and Test-ShouldReclaimLock), not here — this function only classifies.
 	$data = Get-SafeValue { $txt | ConvertFrom-Json } $null
 	if ($null -eq $data) { return 'unknown' }
 	$buildPid = Get-SafeValue {
@@ -258,6 +260,24 @@ function Get-ActiveLockStatusOnce {
 	if ($null -eq $buildPid) { return 'unknown' }
 	if (Test-PidAlive $buildPid) { return 'alive' }
 	return 'dead'
+}
+
+function Get-ActiveLockAgeMinutes {
+	# Age of the current active.lock in minutes, parsed from its started_at
+	# stamp (timezone-normalized to UTC). Returns -1 when the lock is absent,
+	# unreadable, or carries no parseable started_at — callers treat -1 as
+	# "age unknown, do not fast-reclaim".
+	# (Gap fix: docs/bugs/build-queue-stale-lock-detection-too-lazy)
+	if (-not (Test-Path $activeLock)) { return -1 }
+	return Get-SafeValue {
+		$txt = [System.IO.File]::ReadAllText($activeLock)
+		if ([string]::IsNullOrWhiteSpace($txt)) { return -1 }
+		$data = $txt | ConvertFrom-Json
+		$startedAtRaw = $data | Select-Object -ExpandProperty started_at -ErrorAction SilentlyContinue
+		if ($null -eq $startedAtRaw) { return -1 }
+		$startedAt = [DateTime]::Parse([string]$startedAtRaw, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
+		return ([DateTime]::UtcNow - $startedAt.ToUniversalTime()).TotalMinutes
+	} -1
 }
 
 function Get-ActiveLockStatus {
@@ -304,16 +324,22 @@ while (-not $won) {
 	}
 
 	$isLowestSeq = ($lowestSeq -eq $seq)
+	$lockAgeMinutes = Get-ActiveLockAgeMinutes
 	$shouldReclaim = $false
 	if (Get-Command Test-ShouldReclaimLock -ErrorAction SilentlyContinue) {
-		$shouldReclaim = Test-ShouldReclaimLock -Observations @($recentStatuses.ToArray()) -StaleThreshold $staleThreshold -IsLowestSeq $isLowestSeq
+		$shouldReclaim = Test-ShouldReclaimLock -Observations @($recentStatuses.ToArray()) -StaleThreshold $staleThreshold -IsLowestSeq $isLowestSeq -LockAgeMinutes $lockAgeMinutes
 	} else {
 		if ($status -eq 'dead') {
 			$consecutiveDeadFallback++
 		} else {
 			$consecutiveDeadFallback = 0
 		}
-		$shouldReclaim = ($consecutiveDeadFallback -ge $staleThreshold -and $isLowestSeq)
+		# Age fast-path (mirrors Test-ShouldReclaimLock): an abandoned lock (dead
+		# holder, 30+ minutes old) reclaims on the first dead observation instead
+		# of waiting for $staleThreshold consecutive dead ticks.
+		# (Gap fix: docs/bugs/build-queue-stale-lock-detection-too-lazy)
+		$agedStale = ($status -eq 'dead' -and $lockAgeMinutes -ge 30)
+		$shouldReclaim = ((($consecutiveDeadFallback -ge $staleThreshold) -or $agedStale) -and $isLowestSeq)
 	}
 
 	if ($shouldReclaim) {

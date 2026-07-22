@@ -227,7 +227,19 @@ try {
 			if ([string]::IsNullOrWhiteSpace($buildLogPath) -or -not (Test-Path $buildLogPath)) {
 				return $null
 			}
-			$logText = Get-SafeValue { [System.IO.File]::ReadAllText($buildLogPath) } $null
+			# Share-tolerant read: the build log IS redirected stdout for the child process, and the
+			# Start-Process handle may still be held by the OS after WaitForExit() returns. ReadAllText
+			# (FileShare.Read) hits a sharing violation against any open write handle. Open with
+			# FileShare.ReadWrite instead (per the test-log read pattern in lines ~336-349).
+			$logText = Get-SafeValue {
+				$fs = [System.IO.File]::Open($buildLogPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+				try {
+					$sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+					try { $sr.ReadToEnd() } finally { $sr.Dispose() }
+				} finally {
+					$fs.Dispose()
+				}
+			} $null
 			if ([string]::IsNullOrEmpty($logText)) {
 				return $null
 			}
@@ -245,12 +257,28 @@ try {
 		# if $buildLogTextForClassify is still $null, attempt a final extended-window
 		# read. This handles the race where the file is created AFTER the initial
 		# retry loop completes (slow Nx I/O, node daemon startup delay, etc.).
+		# Further widened window: Nx/rspack daemon processes with multiple worker threads
+		# can have delayed final stdout flush (observed ~2-3 seconds on slower systems);
+		# 50x100ms = 5s ceiling is cheap relative to a multi-second build and safe for
+		# fast dotnet builds (which settle on attempt 1-2, not throttled by the 5s max).
 		if ($null -eq $script:buildLogTextForClassify -and -not [string]::IsNullOrWhiteSpace($buildLogPath)) {
-			$script:buildLogTextForClassify = Read-WithRetry -MaxAttempts 15 -DelayMs 100 -Parse {
+			$script:buildLogTextForClassify = Read-WithRetry -MaxAttempts 50 -DelayMs 100 -Parse {
 				if (-not (Test-Path $buildLogPath)) {
 					return $null
 				}
-				$logText = Get-SafeValue { [System.IO.File]::ReadAllText($buildLogPath) } $null
+				# Share-tolerant read: the build log IS redirected stdout for the child process, and the
+				# Start-Process handle may still be held by the OS after WaitForExit() returns. ReadAllText
+				# (FileShare.Read) hits a sharing violation against any open write handle. Open with
+				# FileShare.ReadWrite instead (per the test-log read pattern in lines ~336-349).
+				$logText = Get-SafeValue {
+					$fs = [System.IO.File]::Open($buildLogPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+					try {
+						$sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+						try { $sr.ReadToEnd() } finally { $sr.Dispose() }
+					} finally {
+						$fs.Dispose()
+					}
+				} $null
 				if ([string]::IsNullOrEmpty($logText)) {
 					return $null
 				}
@@ -425,15 +453,12 @@ try {
 }
 
 # FINAL WRITE — merge the real hygiene fields over the early write (status
-# flips pending -> complete). Kept INLINE (not via Write-BuildQueueResult) so
-# the result contract survives a failed hygiene-module dot-source, exactly as
-# the single write always has.
+# flips pending -> complete). Protected by error handling to ensure a result
+# is always written even if directory creation or file I/O fails.
+# (Gap fix: docs/bugs/build-queue-final-write-crash-orphans-lock)
+$null = Get-SafeValue { Ensure-ResultsDirectory -StateRoot $StateRoot }
+
 $resultsDir = Join-Path $StateRoot 'results'
-Get-SafeValue {
-	if (-not (Test-Path $resultsDir)) {
-		$null = New-Item -ItemType Directory -Path $resultsDir -Force
-	}
-}
 
 $resultPath = Join-Path $resultsDir "$Seq.json"
 $resultTmp  = Join-Path $resultsDir "$Seq.tmp"
@@ -459,14 +484,62 @@ if (-not [string]::IsNullOrWhiteSpace($Op)) {
 	$resultBody['started_at']       = $startedAtStamp
 	$resultBody['duration_seconds'] = $durationSeconds
 }
-$resultBody = $resultBody | ConvertTo-Json -Compress -Depth 5
+$resultBody = Get-SafeValue {
+	$resultBody | ConvertTo-Json -Compress -Depth 5
+} $null
 
-[System.IO.File]::WriteAllText($resultTmp, $resultBody)
-try {
-	[System.IO.File]::Replace($resultTmp, $resultPath, [NullString]::Value)
-} catch {
-	Get-SafeValue { [System.IO.File]::WriteAllText($resultPath, $resultBody) }
-	Get-SafeValue { Remove-Item $resultTmp -Force -ErrorAction SilentlyContinue }
+# Wrap the entire final write in error handling so a crash here doesn't
+# leave the runner without a result file.
+$finalWriteSucceeded = Get-SafeValue {
+	if ([string]::IsNullOrEmpty($resultBody)) { return $false }
+	[System.IO.File]::WriteAllText($resultTmp, $resultBody)
+	try {
+		[System.IO.File]::Replace($resultTmp, $resultPath, [NullString]::Value)
+	} catch {
+		Get-SafeValue { [System.IO.File]::WriteAllText($resultPath, $resultBody) }
+		Get-SafeValue { Remove-Item $resultTmp -Force -ErrorAction SilentlyContinue }
+	}
+	return $true
+} $false
+
+# Fallback: if the final write failed, try to write a minimal result from
+# the early write if it exists, or create a new minimal result. This ensures
+# active.lock is not left stale on a final-write crash.
+if (-not $finalWriteSucceeded) {
+	$null = Get-SafeValue {
+		$existingResult = $null
+		if (Test-Path $resultPath) {
+			try {
+				$fs = [System.IO.File]::Open($resultPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+				try {
+					$sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+					try { $existingResult = $sr.ReadToEnd() } finally { $sr.Dispose() }
+				} finally { $fs.Dispose() }
+			} catch { }
+		}
+
+		# If early write succeeded, we have a result with status=pending; preserve it.
+		# If no early result exists, create a minimal one now.
+		$minimalBody = if ($null -ne $existingResult) {
+			$existingResult
+		} else {
+			[ordered]@{
+				seq       = $Seq
+				exit_code = if ($null -eq $exitCode) { 1 } else { $exitCode }
+				ended_at  = (Get-Date).ToString('o')
+			} | ConvertTo-Json -Compress
+		}
+
+		# Best-effort write: try temp+replace, then direct write
+		$resultTmp2 = Join-Path $resultsDir "$Seq.tmp2"
+		[System.IO.File]::WriteAllText($resultTmp2, $minimalBody)
+		try {
+			[System.IO.File]::Replace($resultTmp2, $resultPath, [NullString]::Value)
+		} catch {
+			Get-SafeValue { [System.IO.File]::WriteAllText($resultPath, $minimalBody) }
+			Get-SafeValue { Remove-Item $resultTmp2 -Force -ErrorAction SilentlyContinue }
+		}
+	}
 }
 
 # eta-priority-lanes D2: append this run to the per-op duration ring

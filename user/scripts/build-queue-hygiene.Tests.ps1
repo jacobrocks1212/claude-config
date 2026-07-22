@@ -488,6 +488,31 @@ Describe 'Test-ShouldReclaimLock' {
 		$result = Test-ShouldReclaimLock -Observations @('alive', 'dead', 'dead') -StaleThreshold 2 -IsLowestSeq $true
 		$result | Should -Be $true
 	}
+
+	It 'reclaims an age-stale lock on the first dead observation below the consecutive-dead threshold' {
+		$result = Test-ShouldReclaimLock -Observations @('dead') -StaleThreshold 3 -IsLowestSeq $true -LockAgeMinutes 45
+		$result | Should -Be $true
+	}
+
+	It 'does not reclaim an age-stale lock when the trailing observation is not dead' {
+		$result = Test-ShouldReclaimLock -Observations @('dead', 'unknown') -StaleThreshold 3 -IsLowestSeq $true -LockAgeMinutes 45
+		$result | Should -Be $false
+	}
+
+	It 'does not reclaim on age when the lock is younger than the age threshold' {
+		$result = Test-ShouldReclaimLock -Observations @('dead') -StaleThreshold 3 -IsLowestSeq $true -LockAgeMinutes 5
+		$result | Should -Be $false
+	}
+
+	It 'does not reclaim on age when age is unknown (default -1) even with a trailing dead below threshold' {
+		$result = Test-ShouldReclaimLock -Observations @('dead') -StaleThreshold 3 -IsLowestSeq $true
+		$result | Should -Be $false
+	}
+
+	It 'does not reclaim an age-stale lock when IsLowestSeq is $false' {
+		$result = Test-ShouldReclaimLock -Observations @('dead') -StaleThreshold 3 -IsLowestSeq $false -LockAgeMinutes 45
+		$result | Should -Be $false
+	}
 }
 
 Describe 'Get-BuildQueueOccupancy' {

@@ -1126,11 +1126,14 @@ function Test-ShouldReclaimLock {
 	  based on a bounded observation history and lowest-seq gating.
 
 	.DESCRIPTION
-	  Returns $true iff $IsLowestSeq is $true AND $Observations contains at least
-	  $StaleThreshold CONSECUTIVE 'dead' entries (checked at the trailing end of
-	  the sequence — i.e. the most recent run of consecutive 'dead' observations
-	  must meet or exceed the threshold). Any non-'dead' entry ('unknown',
-	  'alive', 'absent') resets the consecutive-dead run to zero.
+	  Returns $true iff $IsLowestSeq is $true AND EITHER (a) $Observations contains
+	  at least $StaleThreshold CONSECUTIVE 'dead' entries (checked at the trailing
+	  end of the sequence — the most recent run of consecutive 'dead' observations
+	  must meet or exceed the threshold; any non-'dead' entry ('unknown', 'alive',
+	  'absent') resets the run to zero), OR (b) the lock is age-stale: $LockAgeMinutes
+	  is >= $MaxAgeMinutes AND the trailing observation is 'dead'. The age fast-path
+	  reclaims an abandoned lock (dead holder, well past any real build's lifetime)
+	  on the first dead observation rather than after the full consecutive-dead wait.
 
 	.PARAMETER Observations
 	  Ordered array of prior Get-ActiveLockStatus(FromText) results (oldest first).
@@ -1142,6 +1145,15 @@ function Test-ShouldReclaimLock {
 	  Whether the calling waiter holds the lowest live seq (only the lowest-seq
 	  waiter is allowed to reclaim).
 
+	.PARAMETER LockAgeMinutes
+	  Age of the current active.lock in minutes. A negative value means "age
+	  unknown" and disables the age fast-path (default -1, preserving the
+	  consecutive-dead-only behavior for callers that do not supply an age).
+
+	.PARAMETER MaxAgeMinutes
+	  Age threshold (minutes) above which a lock with a dead holder is reclaimed
+	  on the first dead observation (default 30).
+
 	.OUTPUTS
 	  [bool]. Fails open to $false on bad/malformed input. Never throws.
 	#>
@@ -1152,7 +1164,11 @@ function Test-ShouldReclaimLock {
 
 		[int]$StaleThreshold,
 
-		[bool]$IsLowestSeq
+		[bool]$IsLowestSeq,
+
+		[double]$LockAgeMinutes = -1,
+
+		[double]$MaxAgeMinutes = 30
 	)
 
 	$result = Get-SafeValue {
@@ -1175,7 +1191,24 @@ function Test-ShouldReclaimLock {
 			}
 		}
 
-		return ($consecutiveDead -ge $StaleThreshold)
+		if ($consecutiveDead -ge $StaleThreshold) {
+			return $true
+		}
+
+		# Age fast-path: an abandoned lock (dead holder, $MaxAgeMinutes+ old) is
+		# reclaimed on the FIRST dead observation instead of waiting for the full
+		# consecutive-dead threshold. A trailing 'dead' is required so a lock
+		# never observed dead is never reclaimed on age alone. $LockAgeMinutes < 0
+		# means "age unknown" and disables the path (preserves prior behavior).
+		# (Gap fix: docs/bugs/build-queue-stale-lock-detection-too-lazy)
+		if ($LockAgeMinutes -ge 0 -and $LockAgeMinutes -ge $MaxAgeMinutes) {
+			$trailing = @($Observations)[-1]
+			if ($trailing -eq 'dead') {
+				return $true
+			}
+		}
+
+		return $false
 	} $false
 
 	if ($result -ne $true) {
@@ -2323,6 +2356,52 @@ function Write-BuildQueueResult {
 		}
 		$endedAtStamp
 	} $null
+}
+
+function Ensure-ResultsDirectory {
+	<#
+	.SYNOPSIS
+	  Ensures the build-queue results directory exists with retries.
+
+	.DESCRIPTION
+	  Safety wrapper for results directory creation. Retries on failure up to
+	  5 times with 50ms delays between attempts to handle transient lock
+	  contention or filesystem delays.
+
+	  Fail-open: returns $true on success or after exhausting retries (best-effort).
+	  Never throws.
+
+	.PARAMETER StateRoot
+	  Build-queue state root.
+
+	.OUTPUTS
+	  [bool] $true when the directory exists after this call (either it already
+	  existed, or creation succeeded or was attempted).
+	#>
+	[CmdletBinding()]
+	[OutputType([bool])]
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$StateRoot
+	)
+
+	$resultsDir = Join-Path $StateRoot 'results'
+	if (Test-Path $resultsDir) { return $true }
+
+	$maxAttempts = 5
+	for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+		try {
+			$null = New-Item -ItemType Directory -Path $resultsDir -Force -ErrorAction Stop
+			return $true
+		} catch {
+			if ($attempt -lt $maxAttempts) {
+				Start-Sleep -Milliseconds 50
+			}
+		}
+	}
+
+	# Final check: directory may have been created by a concurrent operation
+	return (Test-Path $resultsDir)
 }
 
 function Format-BuildQueueBanner {
