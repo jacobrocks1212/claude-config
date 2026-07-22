@@ -4,7 +4,7 @@
 **Severity:** P1
 **Discovered:** 2026-07-22
 **Fixed:** 2026-07-22
-**Fix commit:** ed7dbea8
+**Fix commit:** a2a4dda0
 **Placement:** docs/bugs/build-queue-await-hangs-on-stale-lock
 **Related:** `docs/bugs/build-queue-timeout-kill-reaps-detached-runner` (the runner-death class that strands `active.lock` held by a dead pid with no result written — the exact state this waiter mis-handles), `docs/bugs/build-queue-final-write-crash-orphans-lock` (companion — the write-side of the same orphaned-lock class), `docs/bugs/build-queue-stale-lock-detection-too-lazy` (the acquire-loop's own age-blind reclaim), `docs/features/build-queue-generalization` (lock lifecycle contract)
 

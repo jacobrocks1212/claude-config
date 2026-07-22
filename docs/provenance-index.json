@@ -21157,6 +21157,13 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/build-queue-await.ps1": [
+    {
+      "id": "build-queue-await-hangs-on-stale-lock",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/scripts/build-queue-foreground-outcome.Tests.ps1": [
     {
       "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
@@ -21184,11 +21191,33 @@
       "provenance": "manual"
     }
   ],
+  "user/scripts/build-queue-hygiene.Tests.ps1": [
+    {
+      "id": "build-queue-final-write-crash-orphans-lock",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "build-queue-stale-lock-detection-too-lazy",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/scripts/build-queue-hygiene.ps1": [
+    {
+      "id": "build-queue-final-write-crash-orphans-lock",
+      "type": "bug",
+      "provenance": "manual"
+    },
     {
       "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "build-queue-stale-lock-detection-too-lazy",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -21225,9 +21254,19 @@
   ],
   "user/scripts/build-queue-runner.ps1": [
     {
+      "id": "build-queue-final-write-crash-orphans-lock",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "build-queue-stale-lock-detection-too-lazy",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",
@@ -21252,9 +21291,19 @@
   ],
   "user/scripts/build-queue.ps1": [
     {
+      "id": "build-queue-final-write-crash-orphans-lock",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "build-queue-stale-lock-detection-too-lazy",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "dispatch-probe-and-inject-bypass-merged-head",

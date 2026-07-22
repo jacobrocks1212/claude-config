@@ -4,7 +4,7 @@
 **Severity:** P1
 **Discovered:** 2026-07-22
 **Fixed:** 2026-07-22
-**Fix commit:** 38779485
+**Fix commit:** ed7dbea8
 **Placement:** docs/bugs/build-queue-final-write-crash-orphans-lock
 **Related:** `docs/bugs/build-queue-timeout-kill-reaps-detached-runner` (wrapper-kill variant of the same orphaned-lock class), `docs/bugs/build-queue-await-hangs-on-stale-lock` (the waiter that hangs on the orphaned lock this bug produces), `docs/bugs/build-queue-orphaned-result-on-wrapper-kill` (prior art), `docs/features/build-queue-generalization` (lock lifecycle contract)
 
