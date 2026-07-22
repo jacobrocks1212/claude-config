@@ -1,6 +1,6 @@
 # Bug: a crash during the runner's final result write orphans active.lock with no result
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P1
 **Discovered:** 2026-07-22
 **Placement:** docs/bugs/build-queue-final-write-crash-orphans-lock

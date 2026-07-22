@@ -1,6 +1,6 @@
 # Bug: build-queue stale-lock reclaim is age-blind — an abandoned lock waits 3 dead ticks
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-22
 **Placement:** docs/bugs/build-queue-stale-lock-detection-too-lazy
