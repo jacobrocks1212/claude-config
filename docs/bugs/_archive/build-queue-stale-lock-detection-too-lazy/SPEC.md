@@ -3,6 +3,8 @@
 **Status:** Fixed
 **Severity:** P2
 **Discovered:** 2026-07-22
+**Fixed:** 2026-07-22
+**Fix commit:** c90f2f7e
 **Placement:** docs/bugs/build-queue-stale-lock-detection-too-lazy
 **Related:** `docs/bugs/build-queue-timeout-kill-reaps-detached-runner` (the crashed-runner state that leaves a dead-pid lock the acquire loop must reclaim), `docs/bugs/build-queue-await-hangs-on-stale-lock` + `docs/bugs/build-queue-final-write-crash-orphans-lock` (companions in the orphaned-lock class), `docs/features/build-queue-generalization` (lock lifecycle contract)
 
