@@ -78,3 +78,6 @@ Add a regression test asserting the detection is symlink-invariant, and run the 
 ## Related
 
 - `docs/specs/turn-routing-enforcement/` — hardening stage / hardening-log home for this fix.
+
+**Fixed:** 2026-07-22
+**Fix commit:** 669609be
