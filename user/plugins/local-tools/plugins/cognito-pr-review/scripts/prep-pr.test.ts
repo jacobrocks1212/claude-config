@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import * as fs from "node:fs";
 import * as os from "node:os";
 
-import { detectReReview, readReviewedSha, computeIterationDiff } from "./prep-pr.ts";
+import { pathToFileURL } from "node:url";
+import { detectReReview, readReviewedSha, computeIterationDiff, isMainModuleInvocation } from "./prep-pr.ts";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
 const fxDir = join(scriptsDir, "test-fixtures");
@@ -129,5 +130,60 @@ describe("prep-pr merge-safe base-relative iteration diff (RC-2b)", () => {
 		assert.deepEqual(diff.filesAdded, []);
 		assert.deepEqual(diff.filesModified, []);
 		assert.deepEqual(diff.filesRemoved, []);
+	});
+});
+
+describe("prep-pr main-module detection is symlink-agnostic (documented ~/.claude/plugins path)", () => {
+	function tmpDir(): string {
+		return fs.mkdtempSync(join(os.tmpdir(), "prep-mainmod-"));
+	}
+
+	test("a module reached through a symlink is still detected as the CLI entry point", () => {
+		const dir = tmpDir();
+		const realTarget = join(dir, "real-prep.ts");
+		const linkPath = join(dir, "linked-prep.ts");
+		fs.writeFileSync(realTarget, "// entry point\n");
+		try {
+			fs.symlinkSync(realTarget, linkPath, "file");
+		} catch (err: any) {
+			// Windows without symlink privilege / dev mode — the invariant is untestable here.
+			if (err && (err.code === "EPERM" || err.code === "ENOSYS" || err.code === "UnknownSystemError")) return;
+			throw err;
+		}
+		// Module loaded from the REAL path (import.meta.url), process launched via the SYMLINK
+		// path (argv[1]) — the exact divergence that made the CLI silently no-op.
+		const moduleUrl = pathToFileURL(realTarget).href;
+		assert.strictEqual(
+			isMainModuleInvocation(moduleUrl, linkPath),
+			true,
+			"realpath of module URL and of the symlinked argv[1] resolve to the same file → entry point"
+		);
+	});
+
+	test("a direct (non-symlink) invocation is still detected as the CLI entry point", () => {
+		const dir = tmpDir();
+		const realTarget = join(dir, "real-prep.ts");
+		fs.writeFileSync(realTarget, "// entry point\n");
+		assert.strictEqual(isMainModuleInvocation(pathToFileURL(realTarget).href, realTarget), true);
+	});
+
+	test("importing the module (argv[1] is a different file) is NOT detected as the entry point", () => {
+		const dir = tmpDir();
+		const modulePath = join(dir, "prep.ts");
+		const importerPath = join(dir, "test-runner.ts");
+		fs.writeFileSync(modulePath, "// module\n");
+		fs.writeFileSync(importerPath, "// importer\n");
+		assert.strictEqual(
+			isMainModuleInvocation(pathToFileURL(modulePath).href, importerPath),
+			false,
+			"module imported by a different entry file must not run the CLI dispatch"
+		);
+	});
+
+	test("missing argv[1] is NOT detected as the entry point", () => {
+		const dir = tmpDir();
+		const modulePath = join(dir, "prep.ts");
+		fs.writeFileSync(modulePath, "// module\n");
+		assert.strictEqual(isMainModuleInvocation(pathToFileURL(modulePath).href, undefined), false);
 	});
 });

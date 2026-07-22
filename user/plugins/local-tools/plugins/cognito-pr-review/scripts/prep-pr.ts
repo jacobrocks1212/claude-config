@@ -20,7 +20,7 @@ import { execSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { fileURLToPath, pathToFileURL } from "url";
+import { fileURLToPath } from "url";
 import { createTwoFilesPatch } from "diff";
 import yaml from "js-yaml";
 
@@ -2230,9 +2230,27 @@ function parseArgs(argv: string[]): CliArgs {
   return { prId, force, cacheRoot, contextLines, local, baseBranch, includeUntracked };
 }
 
+// Decide whether this module is the process entry point (the CLI was invoked directly),
+// symlink-agnostically. The documented invocation path
+// (~/.claude/plugins/local-tools/plugins/cognito-pr-review/scripts/prep-pr.ts) is a symlink
+// into claude-config, so import.meta.url resolves to the module's REALPATH while argv[1]
+// stays the SYMLINK path. A raw file-URL comparison is then false and the CLI dispatch is
+// silently skipped (exit 0, no output). Resolve both sides through the OS realpath before
+// comparing so the guard holds through the symlink; fall back to a normalized-path compare
+// if argv[1] is not a real file (some runners).
+export function isMainModuleInvocation(moduleUrl: string, argv1: string | undefined): boolean {
+  if (!argv1) return false;
+  const modulePath = fileURLToPath(moduleUrl);
+  try {
+    return fs.realpathSync.native(modulePath) === fs.realpathSync.native(argv1);
+  } catch {
+    return path.resolve(modulePath) === path.resolve(argv1);
+  }
+}
+
 // CLI entry point — guarded so the module can be imported by tests (which supply their
 // own entry file) without executing the CLI dispatch, process.chdir, or process.exit.
-const isMainModule = import.meta.url === pathToFileURL(process.argv[1] ?? "").href;
+const isMainModule = isMainModuleInvocation(import.meta.url, process.argv[1]);
 if (isMainModule) {
 const { prId, force, cacheRoot, contextLines, local, baseBranch, includeUntracked } = parseArgs(process.argv);
 
