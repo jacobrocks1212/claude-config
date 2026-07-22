@@ -70,9 +70,11 @@ if ($null -eq (Get-Command Format-BuildQueueBanner -ErrorAction SilentlyContinue
 }
 
 $resultPath = Join-Path (Join-Path $StateRoot 'results') "$Seq.json"
+$activeLock = Join-Path $StateRoot 'active.lock'
 
 $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
 $result = $null
+$staleActiveLockDetected = $false
 while ($true) {
 	if (Test-Path -LiteralPath $resultPath) {
 		# Bounded parse-with-retry: the runner writes the file atomically, but a
@@ -86,11 +88,60 @@ while ($true) {
 		} -MaxAttempts 3 -DelayMs 50 -Fallback $null
 		if ($null -ne $result) { break }
 	}
+
+	# Detect stale active lock: if the lock exists but the build_pid is dead and
+	# the lock is old (30+ minutes), report it as a failure rather than polling
+	# forever. (Gap fix: docs/bugs/build-queue-await-hangs-on-stale-lock)
+	if (-not $staleActiveLockDetected -and (Test-Path -LiteralPath $activeLock)) {
+		$staleActiveLockDetected = Get-SafeValue {
+			$lockText = Get-Content -LiteralPath $activeLock -Raw -ErrorAction SilentlyContinue
+			if ([string]::IsNullOrWhiteSpace($lockText)) { return $false }
+			$lockData = $lockText | ConvertFrom-Json -ErrorAction SilentlyContinue
+			if ($null -eq $lockData) { return $false }
+
+			$lockSeq = Get-SafeValue { [int]$lockData.seq } $null
+			$buildPid = Get-SafeValue { [int]$lockData.build_pid } $null
+			$startedAtRaw = Get-SafeValue { [string]$lockData.started_at } $null
+
+			# Only worry about locks from OTHER builds (not our seq)
+			if ($null -eq $lockSeq -or $lockSeq -eq $Seq) { return $false }
+
+			# Check if the PID is dead
+			$pidDead = $false
+			if ($null -ne $buildPid -and $buildPid -gt 0) {
+				try {
+					$null = [System.Diagnostics.Process]::GetProcessById($buildPid)
+				} catch [System.ArgumentException] {
+					$pidDead = $true
+				}
+			}
+			if (-not $pidDead) { return $false }
+
+			# Check lock age
+			if ($null -ne $startedAtRaw) {
+				try {
+					$startedAt = [DateTime]::Parse($startedAtRaw, [System.Globalization.CultureInfo]::InvariantCulture)
+					$elapsed = [DateTime]::UtcNow - $startedAt
+					# 30-minute staleness threshold
+					return ($elapsed.TotalMinutes -ge 30)
+				} catch { }
+			}
+
+			return $false
+		} $false
+
+		if ($staleActiveLockDetected) { break }
+	}
+
 	if ([DateTime]::UtcNow -ge $deadline) { break }
 	Start-Sleep -Milliseconds $PollIntervalMs
 }
 
 if ($null -eq $result) {
+	if ($staleActiveLockDetected) {
+		Write-Output "build-queue-await: detected stale active lock (dead PID, lock age 30+ minutes) blocking seq=$Seq. Another build may have crashed. Run /build-queue-status to assess or manually remove the lock ($activeLock) if safe."
+		exit 1
+	}
 	if (Test-Path -LiteralPath $resultPath) {
 		Write-Output "build-queue-await: result file for seq=$Seq is present but unreadable/malformed after retries ($resultPath)."
 		exit 125
