@@ -20615,6 +20615,11 @@
       "id": "pr-review-rereview-low-fidelity-metadata",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "prep-pr-main-module-guard-symlink-noop",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/plugins/local-tools/plugins/cognito-pr-review/scripts/prep-pr.ts": [
@@ -20622,6 +20627,11 @@
       "id": "pr-review-rereview-low-fidelity-metadata",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "prep-pr-main-module-guard-symlink-noop",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "user/plugins/local-tools/plugins/cognito-pr-review/scripts/test-fixtures/phase1-manifest-iter.json": [
