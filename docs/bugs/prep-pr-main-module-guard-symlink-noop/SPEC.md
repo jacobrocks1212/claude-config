@@ -1,6 +1,6 @@
 ---
 title: "cognito-pr-review prep-pr.ts silently no-ops when invoked via the documented ~/.claude/plugins symlink path"
-status: Concluded
+status: Fixed
 priority: Critical
 date: 2026-07-22
 ---
