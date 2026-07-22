@@ -10,7 +10,9 @@
 # The PreToolUse payload arrives as stdin JSON ({tool_name, tool_input:{command},
 # cwd, ...}); this hook reads tool_input.command TOOL-NAME-AGNOSTICALLY (a work-
 # repo push denies whatever tool emits it). The work-repo signal is the repo's
-# `git config user.email` read from the payload cwd.
+# `git config user.email` read from the repo the push actually TARGETS — the
+# effective dir resolved from a leading `cd`/`pushd` prefix and/or a `git -C <dir>`
+# option, falling back to the payload cwd (push-guard-classifies-by-session-cwd-not-push-target).
 #
 # CONTRACT (per user/hooks/CLAUDE.md):
 #   * Deny is JSON permissionDecision, NEVER `exit 2`.
@@ -32,6 +34,7 @@ fi
 # stdin and swallows the payload). See block-terminal-kill.sh for the rationale.
 read -r -d '' _BWP_PY <<'PYEOF'
 import json
+import os
 import re
 import subprocess
 import sys
@@ -51,6 +54,58 @@ _BYPASS_RE = re.compile(
     r"(?:\bCLAUDE_PUSH_APPROVED=1\b"
     r"|\$env:CLAUDE_PUSH_APPROVED\s*=\s*(?:'1'|\"1\"|1))"
 )
+
+# Trigger: a `git push`, tolerating git GLOBAL options between `git` and the
+# subcommand — specifically `-C <dir>` and `-c <kv>` (the only ones that carry a
+# separate argument and are common in the wild). The pre-fix trigger required
+# `git` and `push` to be ADJACENT (`\bgit\s+push\b`), so `git -C <dir> push`
+# silently bypassed the hook entirely. Bounding the interior to `-C`/`-c` option
+# groups (rather than "any tokens") keeps unrelated commands such as
+# `git log --grep push` from false-triggering.
+_QUOTED_OR_BARE = r"(?:\"[^\"]*\"|'[^']*'|\S+)"
+_GIT_PUSH_RE = re.compile(
+    r"\bgit\b(?:\s+-[Cc]\s+" + _QUOTED_OR_BARE + r")*\s+push\b",
+    re.IGNORECASE,
+)
+
+# The push TARGET repo, not the session cwd, is what classifies work-vs-personal.
+# Effective dir = leading `cd`/`pushd` prefix (bash `&&` or PowerShell `;`
+# terminated), overridden by an explicit `git -C <dir>` (git's change-dir global,
+# case-sensitive — `-c` is config, never a dir), resolved relative to the base.
+_CD_PREFIX_RE = re.compile(
+    r"^\s*(?:cd|pushd)\s+(" + _QUOTED_OR_BARE + r")\s*(?:&&|;)"
+)
+# Case-SENSITIVE `-C <dir>`; scoped to the git command segment (`[^&;|]` stops it
+# crossing a command separator into an unrelated `-C`).
+_GIT_DASH_C_RE = re.compile(
+    r"\bgit\b[^&;|]*?\s-C\s+(" + _QUOTED_OR_BARE + r")"
+)
+
+
+def _unquote(s):
+    if s and len(s) >= 2 and s[0] == s[-1] and s[0] in ("'", '"'):
+        return s[1:-1]
+    return s
+
+
+def _resolve_target_dir(command, cwd):
+    """The dir the push actually targets: `git -C <dir>` (over) a leading
+    `cd`/`pushd` prefix (over) the payload cwd. Any resolution failure returns
+    the best base found — the caller's git-config read then fails open."""
+    base = cwd
+    m = _CD_PREFIX_RE.search(command)
+    if m:
+        cd_dir = _unquote(m.group(1))
+        if cd_dir:
+            base = cd_dir
+    mc = _GIT_DASH_C_RE.search(command)
+    if mc:
+        c_dir = _unquote(mc.group(1))
+        if c_dir:
+            # os.path.join honors an absolute -C dir (drops base); a relative one
+            # resolves under the cd'd/base dir, matching git's own -C semantics.
+            base = os.path.join(base, c_dir) if base else c_dir
+    return base
 
 
 def _allow():
@@ -74,25 +129,28 @@ def main():
     payload = json.loads(raw)  # JSONDecodeError → caught below → fail-open
     command = (payload.get("tool_input") or {}).get("command") or ""
 
-    # Only care about git push commands.
-    if not re.search(r"\bgit\s+push\b", command, re.IGNORECASE):
+    # Only care about git push commands (incl. `git -C <dir> push`).
+    if not _GIT_PUSH_RE.search(command):
         _allow()
 
     # Allow if the bypass token appears anywhere in the command (set by /push).
     if _BYPASS_RE.search(command):
         _allow()
 
-    # Resolve the work-repo signal from the payload cwd (a git config read from
-    # the wrong dir would misclassify — thread cwd into the subprocess).
+    # Resolve the work-repo signal from the repo the push TARGETS, not the
+    # session cwd (push-guard-classifies-by-session-cwd-not-push-target): a
+    # personal-repo push invoked from a work-repo session must not be denied by
+    # reading the work session's git config.
     cwd = payload.get("cwd") or None
+    target = _resolve_target_dir(command, cwd)
     try:
         proc = subprocess.run(
             ["git", "config", "user.email"],
-            cwd=cwd, capture_output=True, text=True,
+            cwd=target, capture_output=True, text=True,
         )
         email = (proc.stdout or "").strip()
     except Exception:
-        _allow()  # git unavailable / cwd gone → fail open
+        _allow()  # git unavailable / target dir gone → fail open
 
     if email == "jacob@cognitoforms.com":
         _deny(

@@ -9393,6 +9393,176 @@ def test_push_unaffected_by_heredoc_body_no_cmd_start_anchoring():
         )
 
 
+# --- block-work-repo-git-push.sh: target-repo classification ----------------
+# (push-guard-classifies-by-session-cwd-not-push-target) — the hook must resolve
+# work-vs-personal from the repo the push TARGETS (a `cd`/`pushd` prefix and/or a
+# `git -C <dir>` option), NOT the session/payload cwd. A personal-repo push
+# invoked from inside a work-repo session must be ALLOWED.
+
+def _init_named_email_repo(parent: Path, name: str, email: str) -> Path:
+    """Temp git repo (named, so two can coexist) whose local user.email is
+    *email* — lets one test hold both a work and a personal repo."""
+    repo = parent / name
+    repo.mkdir()
+    _git(["init", "-q"], repo)
+    _git(["config", "user.email", email], repo)
+    _git(["config", "user.name", "t"], repo)
+    return repo
+
+
+def test_push_allows_personal_target_via_cd_from_work_cwd():
+    """`cd <personal> && git push` while the payload cwd is a WORK repo → allow.
+    The push targets the personal repo; classifying by session cwd (the bug)
+    would wrongly deny."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        work = _init_named_email_repo(td, "work", "jacob@cognitoforms.com")
+        personal = _init_named_email_repo(td, "personal", "jacobmadsen12321@gmail.com")
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload(f'cd "{personal}" && git push origin main', cwd=str(work)),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"personal-target push via cd from a work cwd must allow; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_push_denies_work_target_via_cd_from_personal_cwd():
+    """Reverse: `cd <work> && git push` while the payload cwd is a PERSONAL repo
+    → deny. The cd prefix resolves the work target regardless of session cwd."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        work = _init_named_email_repo(td, "work", "jacob@cognitoforms.com")
+        personal = _init_named_email_repo(td, "personal", "jacobmadsen12321@gmail.com")
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload(f'cd "{work}" && git push origin main', cwd=str(personal)),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) == "deny", (
+            f"work-target push via cd from a personal cwd must deny; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_push_allows_personal_target_via_dash_C_from_work_cwd():
+    """`git -C <personal> push` while the payload cwd is a WORK repo → allow."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        work = _init_named_email_repo(td, "work", "jacob@cognitoforms.com")
+        personal = _init_named_email_repo(td, "personal", "jacobmadsen12321@gmail.com")
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload(f'git -C "{personal}" push origin main', cwd=str(work)),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"personal-target push via -C from a work cwd must allow; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_push_denies_work_target_via_dash_C():
+    """`git -C <work> push` while the payload cwd is a PERSONAL repo → deny.
+    Proves (a) the broadened trigger MATCHES the `git -C <dir> push` form that
+    the pre-fix `\\bgit\\s+push\\b` silently bypassed, AND (b) it classifies by
+    the -C target."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        work = _init_named_email_repo(td, "work", "jacob@cognitoforms.com")
+        personal = _init_named_email_repo(td, "personal", "jacobmadsen12321@gmail.com")
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload(f'git -C "{work}" push origin main', cwd=str(personal)),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) == "deny", (
+            f"work-target push via -C must be classified as work and deny; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_push_denies_bare_push_in_work_cwd_regression():
+    """Regression: a bare `git push` with no cd/-C in a WORK cwd still denies
+    (the base case must be unaffected by target-dir resolution)."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        work = _init_named_email_repo(td, "work", "jacob@cognitoforms.com")
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload("git push origin main", cwd=str(work)),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) == "deny", (
+            f"bare git push in a work cwd must still deny; stdout={result.stdout!r}"
+        )
+
+
+def test_push_allows_git_log_grep_push_not_false_triggered():
+    """`git log --grep push` in a WORK cwd → allow: the broadened trigger must
+    NOT treat `push` appearing after a non-`-C`/`-c` option as a push command."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        work = _init_named_email_repo(td, "work", "jacob@cognitoforms.com")
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload("git log --grep push", cwd=str(work)),
+            _base_env(state_dir),
+        )
+        assert _hook_decision(result) is None, (
+            f"`git log --grep push` must not false-trigger the push guard; "
+            f"stdout={result.stdout!r}"
+        )
+
+
+def test_push_fails_open_on_unresolvable_target_dir():
+    """`cd <nonexistent> && git push` → fail-open ALLOW: the target-dir git
+    config read fails, and a guard that cannot classify must allow."""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        state_dir = td / "state"; state_dir.mkdir()
+        work = _init_named_email_repo(td, "work", "jacob@cognitoforms.com")
+        missing = td / "does-not-exist"
+        result = _run_bash(
+            _PUSH_HOOK_SH,
+            _hook_payload(f'cd "{missing}" && git push origin main', cwd=str(work)),
+            _base_env(state_dir),
+        )
+        assert result.returncode == 0, (
+            f"hook must exit 0; got {result.returncode}; stderr={result.stderr!r}"
+        )
+        assert _hook_decision(result) is None, (
+            f"unresolvable target dir must fail open (allow); stdout={result.stdout!r}"
+        )
+
+
+_TESTS = _TESTS + [
+    # push-guard-classifies-by-session-cwd-not-push-target
+    ("test_push_allows_personal_target_via_cd_from_work_cwd",
+     test_push_allows_personal_target_via_cd_from_work_cwd),
+    ("test_push_denies_work_target_via_cd_from_personal_cwd",
+     test_push_denies_work_target_via_cd_from_personal_cwd),
+    ("test_push_allows_personal_target_via_dash_C_from_work_cwd",
+     test_push_allows_personal_target_via_dash_C_from_work_cwd),
+    ("test_push_denies_work_target_via_dash_C",
+     test_push_denies_work_target_via_dash_C),
+    ("test_push_denies_bare_push_in_work_cwd_regression",
+     test_push_denies_bare_push_in_work_cwd_regression),
+    ("test_push_allows_git_log_grep_push_not_false_triggered",
+     test_push_allows_git_log_grep_push_not_false_triggered),
+    ("test_push_fails_open_on_unresolvable_target_dir",
+     test_push_fails_open_on_unresolvable_target_dir),
+]
+
+
 # --- cross-guard registration meta-test (item 4) ----------------------------
 
 # block-terminal-kill.sh REVOKED (operator, 2026-07-19) — unregistered from
