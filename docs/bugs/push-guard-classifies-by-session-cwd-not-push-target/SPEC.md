@@ -1,6 +1,6 @@
 # Bug: work-repo push guard classifies by session cwd, not the push target repo
 
-**Status:** Concluded
+**Status:** Fixed
 **Discovered:** 2026-07-22
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage); `user/hooks/CLAUDE.md` (hook-plane contract)
 
