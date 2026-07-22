@@ -2,6 +2,8 @@
 
 **Status:** Fixed
 **Discovered:** 2026-07-22
+**Fixed:** 2026-07-22
+**Fix commit:** 31ddc543
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage); `user/hooks/CLAUDE.md` (hook-plane contract)
 
 ## Symptom (verified — live incident 2026-07-22)
