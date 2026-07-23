@@ -1,10 +1,12 @@
 # archive_fixed blanket-stages the entire docs/bugs tree — Bug Specification
 
-**Status:** Concluded
+**Status:** Fixed
 
 **Severity:** P1 (concurrency-integrity — captures a foreign session's files into an archive commit)
 
 **Discovered:** 2026-07-23
+**Fixed:** 2026-07-23
+**Fix commit:** e92244a8
 
 **Related:** `docs/specs/turn-routing-enforcement/` (hardening stage); prior-art fix
 `end-of-run-flush-commit-absorbs-concurrent-writer-staged-files` (live commit `115a991a`),
