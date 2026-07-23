@@ -1,6 +1,8 @@
 # Build-queue harness diagnostic gaps (bad exec, wrong log guidance, no status/enqueue path, phantom dead-holder lock)
 
 **Status:** Fixed
+**Fixed:** 2026-07-23
+**Fix commit:** 1a5b62ed
 
 Investigation spec for build-queue harness defects surfaced during a live `/execute-plan`
 autonomous run in the Cognito Forms repo. All live in `claude-config` (the canonical config
