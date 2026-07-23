@@ -23,6 +23,25 @@ function Get-SafeValue {
 	try { & $Block } catch { $Fallback }
 }
 
+# Pid-liveness probe (same fail-safe-to-alive bias as build-queue.ps1's
+# Test-PidAlive): only a definitive ArgumentException from GetProcessById means
+# the process is gone. Used to unmask a phantom Active Build whose holder pid has
+# died without ever writing a result (docs/bugs/build-queue-harness-diagnostic-gaps
+# Defect 4) — a killed foreground waiter can take its detached runner down with it,
+# leaving active.lock naming a dead pid and elapsed climbing forever.
+function Test-PidAlive {
+	param([int]$ProcId)
+	if ($ProcId -le 0) { return $false }
+	try {
+		$null = [System.Diagnostics.Process]::GetProcessById($ProcId)
+		return $true
+	} catch [System.ArgumentException] {
+		return $false
+	} catch {
+		return $true
+	}
+}
+
 # Dot-source the hygiene helpers at SCRIPT scope so this status view and its
 # Pester coverage select the SAME per-build highlight arm (Get-HygieneHighlight).
 # NOTE: this dot-source was previously wrapped in Get-SafeValue { ... }, which
@@ -102,29 +121,53 @@ if (Test-Path $activeLock) {
 	if ($null -ne $lockData) {
 		$hasActive = $true
 		$elapsed = Format-Elapsed $lockData.started_at
-		# eta-priority-lanes D3: remaining~ beside elapsed (per-op estimate minus
-		# elapsed, floored at 0; '?' with no history). Prediction, never outcome.
-		# ASCII '~', not U+2248 — OEM-codepage stdout mojibakes non-ASCII for
-		# UTF-8 consumers (docs/bugs/build-queue-eta-marker-mojibake-on-redirected-stdout).
-		$etaApprox = '~'
-		$remainingStr = Get-SafeValue {
-			if (-not (Get-Command Get-BuildQueueEta -ErrorAction SilentlyContinue)) { return '?' }
-			$est = Get-BuildQueueEta -StateRoot $StateRoot -Op ([string]$lockData.op)
-			if ($null -eq $est) { return '?' }
-			$start = [datetime]::Parse([string]$lockData.started_at, $null, [System.Globalization.DateTimeStyles]::RoundtripKind)
-			$remaining = $est - ((Get-Date) - $start).TotalSeconds
-			if ($remaining -lt 0) { $remaining = 0 }
-			Format-EtaDuration $remaining
-		} '?'
-		Write-Output '=== Active Build ==='
-		Write-Output ("  op:      {0}" -f $lockData.op)
-		Write-Output ("  worktree:{0}" -f $lockData.worktree)
-		Write-Output ("  pid:     {0}" -f $lockData.build_pid)
-		Write-Output ("  elapsed: {0}   remaining{1} {2}" -f $elapsed, $etaApprox, $remainingStr)
-		Write-Output ("  log:     {0}" -f $lockData.log_path)
-		$snapLine = Get-SafeValue { Get-PerfSnapshotLine $lockData.machine_perf }
-		if ($null -ne $snapLine -and $snapLine -ne '') {
-			Write-Output ("  perf:    {0}" -f $snapLine)
+
+		# Defect 4: unmask a phantom Active Build. If the holder pid is dead and no
+		# result was ever written for its seq, this is an abandoned lock (a killed
+		# waiter reaped its own detached runner), not a live build — report it as
+		# STALE so 'elapsed' is not mistaken for real build progress. Read-only: we
+		# only DIAGNOSE; the next build dispatch reclaims the lock via the poll loop.
+		$holderPid = Get-SafeValue { [int]$lockData.build_pid } $null
+		$holderDead = ($null -ne $holderPid -and $holderPid -gt 0 -and -not (Test-PidAlive $holderPid))
+		$lockSeq = Get-SafeValue { [int]$lockData.seq } $null
+		$holderResultExists = $false
+		if ($null -ne $lockSeq) {
+			$holderResultExists = Test-Path -LiteralPath (Join-Path $StateRoot ("results\{0}.json" -f $lockSeq))
+		}
+
+		if ($holderDead -and -not $holderResultExists) {
+			Write-Output '=== Active Build (STALE) ==='
+			Write-Output ("  op:      {0}" -f $lockData.op)
+			Write-Output ("  worktree:{0}" -f $lockData.worktree)
+			Write-Output ("  pid:     {0}  [DEAD - no result written]" -f $lockData.build_pid)
+			Write-Output ("  elapsed: {0}  (holder died; not real build progress)" -f $elapsed)
+			Write-Output ("  log:     {0}" -f $lockData.log_path)
+			Write-Output "  note:    the holder process is gone and never recorded a result. The queue self-heals on the next build dispatch (the poll loop reclaims a dead holder); to unblock now, remove the stale lock: $activeLock"
+		} else {
+			# eta-priority-lanes D3: remaining~ beside elapsed (per-op estimate minus
+			# elapsed, floored at 0; '?' with no history). Prediction, never outcome.
+			# ASCII '~', not U+2248 — OEM-codepage stdout mojibakes non-ASCII for
+			# UTF-8 consumers (docs/bugs/build-queue-eta-marker-mojibake-on-redirected-stdout).
+			$etaApprox = '~'
+			$remainingStr = Get-SafeValue {
+				if (-not (Get-Command Get-BuildQueueEta -ErrorAction SilentlyContinue)) { return '?' }
+				$est = Get-BuildQueueEta -StateRoot $StateRoot -Op ([string]$lockData.op)
+				if ($null -eq $est) { return '?' }
+				$start = [datetime]::Parse([string]$lockData.started_at, $null, [System.Globalization.DateTimeStyles]::RoundtripKind)
+				$remaining = $est - ((Get-Date) - $start).TotalSeconds
+				if ($remaining -lt 0) { $remaining = 0 }
+				Format-EtaDuration $remaining
+			} '?'
+			Write-Output '=== Active Build ==='
+			Write-Output ("  op:      {0}" -f $lockData.op)
+			Write-Output ("  worktree:{0}" -f $lockData.worktree)
+			Write-Output ("  pid:     {0}" -f $lockData.build_pid)
+			Write-Output ("  elapsed: {0}   remaining{1} {2}" -f $elapsed, $etaApprox, $remainingStr)
+			Write-Output ("  log:     {0}" -f $lockData.log_path)
+			$snapLine = Get-SafeValue { Get-PerfSnapshotLine $lockData.machine_perf }
+			if ($null -ne $snapLine -and $snapLine -ne '') {
+				Write-Output ("  perf:    {0}" -f $snapLine)
+			}
 		}
 	}
 }

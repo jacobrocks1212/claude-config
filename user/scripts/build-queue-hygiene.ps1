@@ -1758,7 +1758,14 @@ function Resolve-BuildQueueOp {
 	                with pre-manifest behavior.
 	      anything else -> not ok with an actionable error.
 
-	  Pure resolution — no state writes, no process spawns.
+	  In every ok branch the resolved exec is asserted to EXIST on disk; a
+	  missing exec (bad -Exec or stale manifest 'exec') returns not ok with a
+	  distinct "exec script not found" error, so the wrapper fails fast before
+	  enqueue instead of spawning a bad exec into an indistinguishable FAIL
+	  banner (docs/bugs/build-queue-harness-diagnostic-gaps).
+
+	  Resolution reads the manifest + probes the resolved exec path — no state
+	  writes, no process spawns.
 
 	.OUTPUTS
 	  Ordered hashtable @{ ok = [bool]; exec; kind; hygiene; source =
@@ -1782,6 +1789,21 @@ function Resolve-BuildQueueOp {
 		[ordered]@{ ok = $false; exec = $null; kind = $null; hygiene = $null; lane = $null; source = $null; error = $Message }
 	}
 
+	# Reject a resolved exec that does not exist on disk (docs/bugs/
+	# build-queue-harness-diagnostic-gaps Defect 1): without this a wrong -Exec
+	# (or a stale manifest 'exec') greenlit ok=$true, the wrapper enqueued and
+	# spawned it, and 'powershell.exe -File <bad>' failed to a surface no
+	# operator inspects — a RESULT=FAIL banner indistinguishable from a real
+	# compile failure with empty logs/<seq>.build*.log. Failing here (Step 0,
+	# BEFORE any state write) yields a distinct fail-fast error and no seq.
+	$assertExecExists = {
+		param([string]$Path, [string]$Src)
+		if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) {
+			return "build-queue: exec script not found: '$Path' (op '$Op', source '$Src'). Fix the '$Op' entry's 'exec' in the repo ops manifest, or the -Exec you passed."
+		}
+		return $null
+	}
+
 	$manifest = Get-SafeValue { Get-BuildQueueOpsManifest -RepoRoot $RepoRoot } $null
 	if ($null -ne $manifest) {
 		$entry = Get-SafeValue { ($manifest.ops.PSObject.Properties | Where-Object { $_.Name -eq $Op } | Select-Object -First 1).Value } $null
@@ -1789,12 +1811,15 @@ function Resolve-BuildQueueOp {
 			$registered = (Get-SafeValue { @($manifest.ops.PSObject.Properties | ForEach-Object { $_.Name }) } @()) -join ', '
 			return (& $fail "build-queue: unknown op '$Op' for this repo. Registered ops in $($manifest.path): $registered")
 		}
-		$resolvedExec = if (-not [string]::IsNullOrWhiteSpace($Exec)) {
+		$explicitExec = -not [string]::IsNullOrWhiteSpace($Exec)
+		$resolvedExec = if ($explicitExec) {
 			$Exec
 		} else {
 			$rel = Get-SafeValue { [string]$entry.exec } ''
 			if ([System.IO.Path]::IsPathRooted($rel)) { $rel } else { Join-Path $RepoRoot $rel }
 		}
+		$execError = & $assertExecExists $resolvedExec ($(if ($explicitExec) { 'explicit -Exec' } else { 'manifest' }))
+		if ($null -ne $execError) { return (& $fail $execError) }
 		# Lane class (eta-priority-lanes D4): explicit manifest field; absent or
 		# invalid normalizes to 'heavy' so legacy manifests are byte-compat.
 		$laneRaw = Get-SafeValue { [string]$entry.lane } ''
@@ -1825,6 +1850,8 @@ function Resolve-BuildQueueOp {
 	if ([string]::IsNullOrWhiteSpace($Exec)) {
 		return (& $fail "build-queue: -Exec is required for op '$Op' when no ops manifest exists at $expectedManifestPath.")
 	}
+	$execError = & $assertExecExists $Exec 'explicit -Exec (legacy)'
+	if ($null -ne $execError) { return (& $fail $execError) }
 	return [ordered]@{
 		ok      = $true
 		exec    = $Exec
@@ -2431,7 +2458,11 @@ function Format-BuildQueueBanner {
 	      delete obj/bin and rebuild" (unchanged dotnet-era remedy — msbuild and
 	      any other/unknown op)
 	    - FAIL, exit code 4 -> "rebuild (stale DLL)"
-	    - FAIL, otherwise    -> "read logs/<Seq>.build.err.log"
+	    - FAIL, otherwise    -> "read logs/<Seq>.build.log" for a build op (the
+	      stdout transcript where MSBuild writes compile errors), "read
+	      logs/<Seq>.log" for a test op (the inherited stdout transcript with
+	      failing tests + the Results line). The stderr sidecars
+	      (.build.err.log / .err.log) are typically empty for these tools.
 
 	.PARAMETER Seq
 	  The build-queue sequence number for this build.
@@ -2512,17 +2543,21 @@ function Format-BuildQueueBanner {
 			} elseif ($ExitCode -eq 4) {
 				'rebuild (stale DLL)'
 			} else {
-				# Op-aware error-log filename: the runner writes the extra
-				# <seq>.build.log / <seq>.build.err.log capture ONLY for build ops
-				# (build-queue-runner.ps1 gates that redirect on $isBuildOp). A test
-				# op (mstest/nxtest) has no .build.err.log — its output lives in
-				# <seq>.log / <seq>.err.log. Pointing a failed test op at the
-				# nonexistent .build.err.log sent readers to a missing file, so key
-				# the hint off the op name (mirrors the '^nx' name-keying above).
+				# Op-aware transcript filename (docs/bugs/build-queue-harness-
+				# diagnostic-gaps Defect 2). Point at the STDOUT transcript where
+				# these tools actually write diagnostics, NOT the stderr sidecar:
+				#   - build op: MSBuild/dotnet/nx write compile errors + "Build
+				#     FAILED" to stdout, which the runner redirects to
+				#     <seq>.build.log; the sibling <seq>.build.err.log (stderr) is
+				#     typically EMPTY, so the old .build.err.log hint sent readers
+				#     to a 0-byte file.
+				#   - test op (mstest/nxtest): the grandchild's stdout (failing
+				#     tests + the "Results:" line) is inherited into <seq>.log;
+				#     <seq>.err.log (stderr) is typically empty.
 				if ($Op -match 'build') {
-					"read logs/$Seq.build.err.log"
+					"read logs/$Seq.build.log"
 				} else {
-					"read logs/$Seq.err.log"
+					"read logs/$Seq.log"
 				}
 			}
 			$banner += " -> $nextAction"

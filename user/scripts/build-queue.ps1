@@ -37,10 +37,16 @@
 #>
 [CmdletBinding()]
 param(
-	[Parameter(Mandatory=$true)]
-	[string]$Op,
+	[string]$Op = '',
 
 	[string]$Exec = '',
+
+	# Read-only status shortcut (docs/bugs/build-queue-harness-diagnostic-gaps
+	# Defect 3): `build-queue.ps1 -Status` delegates to build-queue-status.ps1
+	# and returns immediately, so an operator's natural status guess no longer
+	# errors with a cryptic missing-mandatory-parameter message. Does NOT
+	# require -Op; enqueues nothing.
+	[switch]$Status,
 
 	[Parameter(ValueFromRemainingArguments=$true)]
 	$ExecArgs
@@ -52,6 +58,25 @@ Set-StrictMode -Version Latest
 function Get-SafeValue {
 	param([scriptblock]$Block, $Fallback = $null)
 	try { & $Block } catch { $Fallback }
+}
+
+# ---------------------------------------------------------------------------
+# Status shortcut / op presence (before any state work). -Status is a
+# read-only delegation to the status reader; otherwise -Op is required and a
+# missing -Op fails with an actionable error that names the status path too.
+# ---------------------------------------------------------------------------
+if ($Status) {
+	$statusScript = Join-Path $PSScriptRoot 'build-queue-status.ps1'
+	if (-not (Test-Path -LiteralPath $statusScript)) {
+		Write-Error "build-queue: status reader not found at $statusScript"
+		exit 1
+	}
+	& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $statusScript
+	exit $LASTEXITCODE
+}
+if ([string]::IsNullOrWhiteSpace($Op)) {
+	Write-Error "build-queue: -Op is required (e.g. -Op msbuild). To view the queue WITHOUT enqueuing a build, pass -Status or run build-queue-status.ps1 (/build-queue-status). To enqueue and return immediately, run the build with run_in_background and follow it with build-queue-await.ps1."
+	exit 1
 }
 
 try {
@@ -316,9 +341,9 @@ while (-not $won) {
 	}
 	$liveSeqs    = @($liveTickets | ForEach-Object { $_.seq })
 	$lowestSeq   = if ($liveSeqs.Count -gt 0) { (@($liveSeqs | Sort-Object))[0] } else { $seq }
-	$status      = Get-ActiveLockStatus
+	$lockStatus      = Get-ActiveLockStatus
 
-	$recentStatuses.Add($status)
+	$recentStatuses.Add($lockStatus)
 	while ($recentStatuses.Count -gt $staleThreshold) {
 		$recentStatuses.RemoveAt(0)
 	}
@@ -329,7 +354,7 @@ while (-not $won) {
 	if (Get-Command Test-ShouldReclaimLock -ErrorAction SilentlyContinue) {
 		$shouldReclaim = Test-ShouldReclaimLock -Observations @($recentStatuses.ToArray()) -StaleThreshold $staleThreshold -IsLowestSeq $isLowestSeq -LockAgeMinutes $lockAgeMinutes
 	} else {
-		if ($status -eq 'dead') {
+		if ($lockStatus -eq 'dead') {
 			$consecutiveDeadFallback++
 		} else {
 			$consecutiveDeadFallback = 0
@@ -338,13 +363,13 @@ while (-not $won) {
 		# holder, 30+ minutes old) reclaims on the first dead observation instead
 		# of waiting for $staleThreshold consecutive dead ticks.
 		# (Gap fix: docs/bugs/build-queue-stale-lock-detection-too-lazy)
-		$agedStale = ($status -eq 'dead' -and $lockAgeMinutes -ge 30)
+		$agedStale = ($lockStatus -eq 'dead' -and $lockAgeMinutes -ge 30)
 		$shouldReclaim = ((($consecutiveDeadFallback -ge $staleThreshold) -or $agedStale) -and $isLowestSeq)
 	}
 
 	if ($shouldReclaim) {
 		Get-SafeValue { Remove-Item $activeLock -Force -ErrorAction SilentlyContinue }
-		$status = 'absent'
+		$lockStatus = 'absent'
 		$recentStatuses.Clear()
 		$consecutiveDeadFallback = 0
 	}
@@ -354,7 +379,7 @@ while (-not $won) {
 	# below the claim are byte-identical; D7 structural containment). Fallback
 	# to the legacy global-lowest-seq rule when the hygiene module is absent.
 	$claimEligible = $false
-	if ($status -eq 'absent') {
+	if ($lockStatus -eq 'absent') {
 		if (Get-Command Test-LaneClaimEligible -ErrorAction SilentlyContinue) {
 			$fastPasses = Get-SafeValue { Get-FastPassCount -StateRoot $stateRoot -MaxFastPasses $maxFastPasses } $maxFastPasses
 			$claimEligible = Test-LaneClaimEligible -SelfSeq $seq -Tickets $liveTickets -FastPasses $fastPasses -MaxFastPasses $maxFastPasses
@@ -428,7 +453,7 @@ while (-not $won) {
 	if (-not $won) {
 		$liveSeqsSorted = @($liveSeqs | Sort-Object)
 		$myIndex        = [Array]::IndexOf($liveSeqsSorted, $seq)
-		$aheadCount = if ($status -eq 'alive') { $myIndex + 1 } else { $myIndex }
+		$aheadCount = if ($lockStatus -eq 'alive') { $myIndex + 1 } else { $myIndex }
 		$position   = $aheadCount + 1
 
 		if ($position -ne $lastEmittedPosition) {

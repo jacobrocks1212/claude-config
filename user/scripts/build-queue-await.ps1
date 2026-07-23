@@ -16,6 +16,13 @@
 
   Exit codes:
     <build exit_code>  result present and readable — mirrors the build.
+    1                  dead-holder / stale-lock: the build died without ever
+                       writing a result — EITHER the awaited seq is itself the
+                       active-lock holder and its build_pid is dead with no
+                       result (Defect 4: a killed foreground waiter reaped its
+                       own detached runner), OR another build's stale lock (dead
+                       pid, 30+ min old) is blocking. A DISTINCT non-124 failure
+                       so the caller does not poll to the full timeout.
     124                await-timeout: result not yet present. The build may
                        still be running — re-run this helper or check
                        /build-queue-status. NEVER treat 124 as success.
@@ -75,6 +82,13 @@ $activeLock = Join-Path $StateRoot 'active.lock'
 $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
 $result = $null
 $staleActiveLockDetected = $false
+# Defect 4: the awaited seq is ITSELF the active-lock holder whose build_pid has
+# died without writing a result (a killed foreground waiter reaped its own
+# detached runner). A few CONSECUTIVE dead observations guard against a transient
+# just-spawned-pid read before we conclude the build is gone and stop polling.
+$ownSeqHolderDead = $false
+$ownSeqDeadCount = 0
+$ownSeqDeadThreshold = 3
 while ($true) {
 	if (Test-Path -LiteralPath $resultPath) {
 		# Bounded parse-with-retry: the runner writes the file atomically, but a
@@ -87,6 +101,43 @@ while ($true) {
 			} $null
 		} -MaxAttempts 3 -DelayMs 50 -Fallback $null
 		if ($null -ne $result) { break }
+	}
+
+	# Defect 4: awaited seq is the dead holder itself. The OTHER-seq stale path
+	# below explicitly excludes our own seq (and gates on 30-min age), so without
+	# this the exact reported case — await the dead holder's OWN seq — polls to
+	# the full 540s timeout. When active.lock names OUR seq with a dead build_pid
+	# and no result has appeared, count consecutive dead observations and break as
+	# a distinct failure once the threshold is met.
+	if (-not $ownSeqHolderDead -and (Test-Path -LiteralPath $activeLock)) {
+		$ownSeqDead = Get-SafeValue {
+			$lockText = Get-Content -LiteralPath $activeLock -Raw -ErrorAction SilentlyContinue
+			if ([string]::IsNullOrWhiteSpace($lockText)) { return $false }
+			$lockData = $lockText | ConvertFrom-Json -ErrorAction SilentlyContinue
+			if ($null -eq $lockData) { return $false }
+			$lockSeq = Get-SafeValue { [int]$lockData.seq } $null
+			if ($null -eq $lockSeq -or $lockSeq -ne $Seq) { return $false }
+			$buildPid = Get-SafeValue { [int]$lockData.build_pid } $null
+			if ($null -eq $buildPid -or $buildPid -le 0) { return $false }
+			try {
+				$null = [System.Diagnostics.Process]::GetProcessById($buildPid)
+				return $false
+			} catch [System.ArgumentException] {
+				return $true
+			} catch {
+				return $false
+			}
+		} $false
+
+		if ($ownSeqDead) {
+			$ownSeqDeadCount++
+			if ($ownSeqDeadCount -ge $ownSeqDeadThreshold) {
+				$ownSeqHolderDead = $true
+				break
+			}
+		} else {
+			$ownSeqDeadCount = 0
+		}
 	}
 
 	# Detect stale active lock: if the lock exists but the build_pid is dead and
@@ -138,6 +189,10 @@ while ($true) {
 }
 
 if ($null -eq $result) {
+	if ($ownSeqHolderDead) {
+		Write-Output "build-queue-await: seq=$Seq is the active-lock holder but its build process is dead and no result was ever written - the build died before recording an outcome (e.g. a killed/timed-out foreground waiter reaped its own detached runner). This is a FAILURE, not a pass. The queue self-heals on the next build dispatch (the poll loop reclaims a dead holder); to unblock now, remove the stale lock ($activeLock) if safe."
+		exit 1
+	}
 	if ($staleActiveLockDetected) {
 		Write-Output "build-queue-await: detected stale active lock (dead PID, lock age 30+ minutes) blocking seq=$Seq. Another build may have crashed. Run /build-queue-status to assess or manually remove the lock ($activeLock) if safe."
 		exit 1
