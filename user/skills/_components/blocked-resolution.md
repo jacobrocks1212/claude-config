@@ -175,10 +175,16 @@ This replaces the old **zero-context halt** (a bare `PushNotification` + STOP th
        CANONICAL MARKER (harness-hardening-retro-fixes Phase 2): every
        runtime-verification / full-chain-seam-audit `- [ ]` checkbox the
        corrective phase authors (the seam-audit re-probe rows, the
-       Runtime-Verification rows) MUST carry the per-row canonical marker
-       `<!-- verification-only -->` right after the checkbox, e.g.
+       Runtime-Verification rows) MUST be marker-exempt via the canonical marker
+       `<!-- verification-only -->`. Emit it on the seam-audit / Runtime-
+       Verification SUBSECTION HEADER line (header-scope — it exempts every row
+       beneath, is authored ONCE on the fixed header string, and SURVIVES the
+       freehand row authoring that drops per-row HTML comments — the live gap in
+       `docs/bugs/verification-only-marker-dropped-on-freehand-rows`), AND on
+       each row where practical, e.g. `**Full-chain seam audit**
+       <!-- verification-only -->` on the header and
        `- [ ] <!-- verification-only --> seam: user-surface → IPC live-probe
-       returns a non-error response`. The state-script detector
+       returns a non-error response` on the rows. The state-script detector
        `remaining_unchecked_are_verification_only()` keys off this marker
        structurally (independent of the header free text — see the
        full-chain-seam-audit header convention), so these intentionally-unticked

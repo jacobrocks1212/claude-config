@@ -144,12 +144,23 @@
   value below equals that constant. If the marker form ever changes, change the
   constant and re-sync this value (and `blocked-resolution.md`).
 
-  Place the marker at the START of each verification row (right after `- [ ] `).
-  A marker on the subsection HEADER line also works (header-scope: exempts every
-  row beneath until the next phase/section boundary) — but the per-row form is
-  preferred for robustness.
+  MARKER PLACEMENT — HEADER-SCOPE IS THE ROBUST PRIMARY FORM. Emit the marker
+  on the `**Runtime Verification**` SUBSECTION HEADER line (header-scope: it
+  exempts every `- [ ]` row beneath until the next phase / deliverables /
+  section boundary), AND on each row where practical. The HEADER-scope marker is
+  what you must never omit: it is authored ONCE on a fixed header string you
+  control directly, so it SURVIVES freehand row authoring. The per-row marker is
+  ideal but FRAGILE in practice — an invisible HTML comment shown on the
+  template's `{placeholder}` rows reads as example scaffolding and gets DROPPED
+  when a subagent substitutes real content (observed live on post-convention
+  PHASES.md: `motorized-fader-sync` authored three RV subsections with zero
+  per-row markers; `managed-llm-credits` kept the marker on one row and dropped
+  it on its siblings — see `docs/bugs/verification-only-marker-dropped-on-freehand-rows`).
+  The header-scope marker is the guarantee; the per-row markers are the ideal.
+  Both are keyed by `remaining_unchecked_are_verification_only()` and honored by
+  the completion-gate autotick — header-scope is not a lesser fallback.
 -->
-**Runtime Verification** *(checked by integration test or manual testing — NOT by the implementation agent):*
+**Runtime Verification** <!-- verification-only --> *(checked by integration test or manual testing — NOT by the implementation agent):*
 - [ ] <!-- verification-only --> {Observable runtime behavior 1 — e.g., "API returns expected response after action"}
 - [ ] <!-- verification-only --> {Observable runtime behavior 2 — e.g., "database contains expected records"}
 

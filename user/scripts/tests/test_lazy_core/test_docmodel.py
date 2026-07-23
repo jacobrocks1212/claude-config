@@ -3951,6 +3951,42 @@ def test_ruvonly_marker_lockstep_producers_match_ssot():
 
 
 
+def test_ruvonly_producer_emits_header_scope_marker():
+    """The phases-runtime-verification.md producer emits the canonical marker on
+    the ``**Runtime Verification**`` SUBSECTION HEADER line (header-scope), not
+    only on the per-row placeholders. Header-scope is the robust form — authored
+    once on a fixed header string, it survives the freehand row authoring that
+    drops per-row HTML comments (docs/bugs/verification-only-marker-dropped-on-
+    freehand-rows). This regression pins that the template header carries the
+    marker so a future edit cannot silently revert to header-free-text-only."""
+    _guard()
+    marker = lazy_core.docmodel._VERIFICATION_ONLY_MARKER
+    prv = _PHASES_RUNTIME_VERIFICATION_PATH.read_text(encoding="utf-8")
+    # A real markdown template header line (not inside the HTML-comment banner):
+    # starts with the bold RV header AND carries the marker on the SAME line.
+    header_lines = [
+        ln for ln in prv.splitlines()
+        if ln.lstrip().startswith("**Runtime Verification**") and marker in ln
+    ]
+    assert header_lines, (
+        "phases-runtime-verification.md must emit a `**Runtime Verification**` "
+        f"header line carrying the header-scope marker {marker!r} (header-scope "
+        "is the robust primary form — survives freehand row authoring); none found"
+    )
+    # The detector must actually recognize that header-scope emission: a rendered
+    # phase whose RV rows carry NO per-row marker but whose header does must still
+    # exempt (True) — the guarantee header-scope provides.
+    text = (
+        "### Phase 1\n"
+        "- [x] Implementation done\n"
+        f"**Runtime Verification** {marker} *(checked by integration test):*\n"
+        "- [ ] freehand row authored without its own per-row marker\n"
+    )
+    assert lazy_core.remaining_unchecked_are_verification_only(text) is True, (
+        "header-scope marker on the RV header must exempt unmarked rows beneath it"
+    )
+
+
 def test_descoped_marker_lockstep_producer_matches_ssot():
     """The descope-authoring guidance in completeness-policy.md references the
     canonical marker lazy_core._DESCOPED_MARKER BY VALUE — no divergent
@@ -4255,6 +4291,7 @@ _TESTS = [
     ("test_ruvonly_novel_header_with_marker_passes", test_ruvonly_novel_header_with_marker_passes),
     ("test_ruvonly_novel_header_without_marker_warns_and_fails", test_ruvonly_novel_header_without_marker_warns_and_fails),
     ("test_ruvonly_marker_lockstep_producers_match_ssot", test_ruvonly_marker_lockstep_producers_match_ssot),
+    ("test_ruvonly_producer_emits_header_scope_marker", test_ruvonly_producer_emits_header_scope_marker),
     ("test_descoped_marker_lockstep_producer_matches_ssot", test_descoped_marker_lockstep_producer_matches_ssot),
     ("test_ctx_rebindable_globals_via_accessors", test_ctx_rebindable_globals_via_accessors),
 ]

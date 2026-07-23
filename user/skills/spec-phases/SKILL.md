@@ -346,10 +346,10 @@ Phase-level dependencies on completed upstream features, extracted from each ups
 
 **Minimum Verifiable Behavior:** {The smallest runtime-observable proof that this phase's slice is wired. Same rule as Phase 1 — runnable command, MCP assertion, or `- [ ] <!-- verification-only -->` row (canonical marker mandatory) if the behavior doesn't yet exist. "Unit tests pass" is not valid.}
 
-**Runtime Verification** *(checked by integration test or manual testing):*
+**Runtime Verification** <!-- verification-only --> *(checked by integration test or manual testing):*
 - [ ] <!-- verification-only --> {Observable runtime behavior if applicable — omit section if none}
 
-> Every Runtime-Verification `- [ ]` row MUST carry the canonical `<!-- verification-only -->` marker (an HTML comment, invisible in rendered markdown; SSOT `lazy_core:_VERIFICATION_ONLY_MARKER`), exactly as the `phases-runtime-verification.md` component above emits it. The marker is what lets the state machine route the phase forward to the MCP gate AND lets the completion gate auto-tick the row when its verification actually ran — DO NOT rely on the `**Runtime Verification**` header alone (that free-text form is the deprecated `_VERIFICATION_SECTION_RE` shim, which merely warns).
+> Emit the canonical `<!-- verification-only -->` marker (an HTML comment, invisible in rendered markdown; SSOT `lazy_core:_VERIFICATION_ONLY_MARKER`) on the `**Runtime Verification**` HEADER line (header-scope — exempts every row beneath), AND on each row where practical, exactly as the `phases-runtime-verification.md` component above emits it. The HEADER-scope marker is the one you must never omit: it is authored ONCE on the fixed header string, so it SURVIVES freehand row authoring — whereas per-row HTML comments get dropped when you substitute real content over the placeholders (the live gap in `docs/bugs/verification-only-marker-dropped-on-freehand-rows`). The marker is what lets the state machine route the phase forward to the MCP gate AND lets the completion gate auto-tick the row when its verification actually ran — DO NOT rely on the `**Runtime Verification**` header FREE TEXT alone (that unmarked form is the deprecated `_VERIFICATION_SECTION_RE` shim, which merely warns).
 
 **Prerequisites:**
 - Phase 1: {Specific dependency - what must exist}
