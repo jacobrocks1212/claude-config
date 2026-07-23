@@ -1,6 +1,6 @@
 ---
 name: msbuild
-description: Build Cognito.sln with filtered output (errors + summary only). Wraps build-filtered.ps1.
+description: Build Cognito.slnx with filtered output (errors + summary only). Wraps build-filtered.ps1.
 argument-hint: [-Project "path/to.csproj"] [-Restore] [-Test] [-TestProject "path/to/test.csproj"]
 model: haiku
 allowed-tools: ["Bash"]
@@ -22,18 +22,18 @@ Build the Cognito solution showing only errors and the build summary.
 
 1. Construct the command:
    ```
-   REPO_ROOT=$(git rev-parse --show-toplevel) && powershell.exe -ExecutionPolicy Bypass -File "$HOME/.claude/scripts/build-queue.ps1" -Op msbuild -Exec "$REPO_ROOT/.claude/scripts/build-filtered.ps1"
+   powershell.exe -ExecutionPolicy Bypass -File "$HOME/.claude/scripts/build-queue.ps1" -Op msbuild
    ```
 
-   The `msbuild` op is registered in this repo's ops manifest (`.claude/skill-config/build-queue-ops.json` — the queue's per-repo op registry); the explicit `-Exec` above matches the manifest's `exec` entry and overrides it if they ever diverge. The invocation is unchanged.
+   The `msbuild` op is registered in this repo's ops manifest (`.claude/skill-config/build-queue-ops.json` — the queue's per-repo op registry), which is the authoritative source of the exec script (`build-filtered.ps1`). Do NOT pass `-Exec` — the manifest resolves it. (`-Exec` remains an optional override; a passed-or-manifest exec that does not exist now fails fast with a distinct `exec script not found` error before anything is enqueued, so a wrong path is never mistaken for a build failure.)
 
 2. If `$ARGUMENTS` is provided, append it verbatim to the command. The script accepts:
-   - `-Project "..."` — build a single project (path relative to the repo root, e.g. `Cognito.Core/Cognito.Core.csproj`) instead of the whole `Cognito.sln`. Forward or back slashes both work. Same filtered output, still serialized through the queue.
+   - `-Project "..."` — build a single project (path relative to the repo root, e.g. `Cognito.Core/Cognito.Core.csproj`) instead of the whole `Cognito.slnx`. Forward or back slashes both work. Same filtered output, still serialized through the queue.
    - `-Restore` — enable NuGet package restore before building
    - `-Test` — also run tests after building
    - `-TestProject "..."` — custom test project path (default: `Cognito.Forms.UnitTests/Cognito.Forms.UnitTests.csproj`)
 
-3. Run the command using Bash with `timeout: 600000` (10 min). A full build can legitimately exceed the default 2-min Bash timeout; the higher ceiling costs nothing for fast builds because Bash returns as soon as the command exits. Do not interpret or reformat the output. The invocation prints an authoritative one-line `build-queue: seq=<N> op=msbuild RESULT=<PASS|FAIL> (result_fidelity=...)` banner as its LAST stdout line — trust that line for the outcome. Do NOT `cat`/`grep` the runner script (`build-queue-runner.ps1`) or `results/<seq>.json` to disambiguate an `exit_code=0`. On `RESULT=FAIL` the banner names the next action inline — read `logs/<seq>.build.err.log`, or `build produced no output; delete obj/bin and rebuild` on a `build_fidelity: no-output` false-green (see below), or the copy-lock case on `build_fidelity: log-failure-override` (see below).
+3. Run the command using Bash with `timeout: 600000` (10 min). A full build can legitimately exceed the default 2-min Bash timeout; the higher ceiling costs nothing for fast builds because Bash returns as soon as the command exits. Do not interpret or reformat the output. The invocation prints an authoritative one-line `build-queue: seq=<N> op=msbuild RESULT=<PASS|FAIL> (result_fidelity=...)` banner as its LAST stdout line — trust that line for the outcome. Do NOT `cat`/`grep` the runner script (`build-queue-runner.ps1`) or `results/<seq>.json` to disambiguate an `exit_code=0`. On `RESULT=FAIL` the banner names the next action inline — read `logs/<seq>.build.log` (the stdout transcript where MSBuild writes CS errors and `Build FAILED`; the sibling `logs/<seq>.build.err.log` stderr sidecar is typically empty), or `build produced no output; delete obj/bin and rebuild` on a `build_fidelity: no-output` false-green (see below), or the copy-lock case on `build_fidelity: log-failure-override` (see below).
 ETA note: the enqueue echo and waiting-position lines may carry advisory predictions (`eta-start≈` / `eta-done≈`, `?` when history is cold) computed from recent run durations. They are predictions, never outcomes — the authoritative outcome remains the final `build-queue: ... RESULT=` banner line.
 
 

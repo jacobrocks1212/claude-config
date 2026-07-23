@@ -27,10 +27,10 @@ MSTest filter expressions: `ClassName~Foo`, `Name~Bar`, `FullyQualifiedName~Baz`
 
 1. Construct the command:
    ```
-   REPO_ROOT=$(git rev-parse --show-toplevel) && powershell.exe -ExecutionPolicy Bypass -File "$HOME/.claude/scripts/build-queue.ps1" -Op mstest -Exec "$REPO_ROOT/.claude/scripts/test-filtered.ps1"
+   powershell.exe -ExecutionPolicy Bypass -File "$HOME/.claude/scripts/build-queue.ps1" -Op mstest
    ```
 
-   The `mstest` op is registered in this repo's ops manifest (`.claude/skill-config/build-queue-ops.json` — the queue's per-repo op registry); the explicit `-Exec` above matches the manifest's `exec` entry and overrides it if they ever diverge. The invocation is unchanged.
+   The `mstest` op is registered in this repo's ops manifest (`.claude/skill-config/build-queue-ops.json` — the queue's per-repo op registry), which is the authoritative source of the exec script (`test-filtered.ps1`). Do NOT pass `-Exec` — the manifest resolves it. (`-Exec` remains an optional override; a passed-or-manifest exec that does not exist now fails fast with a distinct `exec script not found` error before anything is enqueued.)
 
 2. If `$ARGUMENTS` is provided, append it verbatim to the command. The script accepts:
    - `-Filter "..."` — MSTest filter expression
