@@ -5,6 +5,8 @@
 **Status:** Fixed
 **Severity:** P3
 **Discovered:** 2026-07-23
+**Fixed:** 2026-07-23
+**Fix commit:** 3d49485f
 **Placement:** docs/bugs/verification-only-marker-dropped-on-freehand-rows
 **Related:** hardening-log Round 7 (2026-07-06, add-phase per-row marker mandate — the doc-coverage precedent this round supersedes); `harness-hardening-retro-fixes` Phase 2 (the marker-first detector rekey, 2026-06-17)
 
