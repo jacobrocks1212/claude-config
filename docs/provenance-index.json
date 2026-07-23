@@ -1864,6 +1864,20 @@
       "provenance": "manual"
     }
   ],
+  "docs/bugs/_archive/build-queue-harness-diagnostic-gaps/FIXED.md": [
+    {
+      "id": "build-queue-harness-diagnostic-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "docs/bugs/_archive/build-queue-harness-diagnostic-gaps/SPEC.md": [
+    {
+      "id": "build-queue-harness-diagnostic-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "docs/bugs/_archive/build-queue-no-artifact-or-process-hygiene-on-crash/BLOCKED_RESOLVED_2026-07-18.md": [
     {
       "id": "shared-hook-lib",
@@ -6189,6 +6203,13 @@
       "id": "dispatched-harden-record-intervention-refused-by-containment",
       "type": "bug",
       "provenance": "pipeline-gated"
+    }
+  ],
+  "docs/bugs/build-filtered-targets-nonexistent-cognito-sln/SPEC.md": [
+    {
+      "id": "build-queue-harness-diagnostic-gaps",
+      "type": "bug",
+      "provenance": "manual"
     }
   ],
   "docs/bugs/build-queue-copy-lock-stale-dll-false-success/BLOCKED.md": [
@@ -19808,6 +19829,41 @@
       "provenance": "pipeline-gated"
     }
   ],
+  "repos/cognito-forms/.claude/skills/build-queue-status/SKILL.md": [
+    {
+      "id": "build-queue-harness-diagnostic-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "repos/cognito-forms/.claude/skills/msbuild/SKILL.md": [
+    {
+      "id": "build-queue-harness-diagnostic-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "repos/cognito-forms/.claude/skills/mstest/SKILL.md": [
+    {
+      "id": "build-queue-harness-diagnostic-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "repos/cognito-forms/.claude/skills/nxbuild/SKILL.md": [
+    {
+      "id": "build-queue-harness-diagnostic-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "repos/cognito-forms/.claude/skills/nxtest/SKILL.md": [
+    {
+      "id": "build-queue-harness-diagnostic-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "repos/cognito-forms/.claude/skills/write-plan-cognito/SKILL.md": [
     {
       "id": "plan-skills-lack-targeted-phase-scoped-read",
@@ -21157,9 +21213,21 @@
       "provenance": "backfilled"
     }
   ],
+  "user/scripts/build-queue-await.Tests.ps1": [
+    {
+      "id": "build-queue-harness-diagnostic-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/scripts/build-queue-await.ps1": [
     {
       "id": "build-queue-await-hangs-on-stale-lock",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
+      "id": "build-queue-harness-diagnostic-gaps",
       "type": "bug",
       "provenance": "manual"
     }
@@ -21198,6 +21266,11 @@
       "provenance": "manual"
     },
     {
+      "id": "build-queue-harness-diagnostic-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    },
+    {
       "id": "build-queue-stale-lock-detection-too-lazy",
       "type": "bug",
       "provenance": "manual"
@@ -21213,6 +21286,11 @@
       "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "build-queue-harness-diagnostic-gaps",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "build-queue-stale-lock-detection-too-lazy",
@@ -21289,6 +21367,27 @@
       "provenance": "manual"
     }
   ],
+  "user/scripts/build-queue-status.Tests.ps1": [
+    {
+      "id": "build-queue-harness-diagnostic-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/build-queue-status.ps1": [
+    {
+      "id": "build-queue-harness-diagnostic-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
+  "user/scripts/build-queue.Tests.ps1": [
+    {
+      "id": "build-queue-harness-diagnostic-gaps",
+      "type": "bug",
+      "provenance": "manual"
+    }
+  ],
   "user/scripts/build-queue.ps1": [
     {
       "id": "build-queue-final-write-crash-orphans-lock",
@@ -21299,6 +21398,11 @@
       "id": "build-queue-foreground-wait-blocks-past-terminal-outcome",
       "type": "bug",
       "provenance": "pipeline-gated"
+    },
+    {
+      "id": "build-queue-harness-diagnostic-gaps",
+      "type": "bug",
+      "provenance": "manual"
     },
     {
       "id": "build-queue-stale-lock-detection-too-lazy",
