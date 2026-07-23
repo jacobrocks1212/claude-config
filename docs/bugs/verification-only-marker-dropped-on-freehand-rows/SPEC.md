@@ -2,7 +2,7 @@
 
 > The phase-authoring producers (`phases-runtime-verification.md` component, `/spec-phases`, `/add-phase`, `blocked-resolution.md`) mandate the canonical per-row `<!-- verification-only -->` marker (SSOT `lazy_core:_VERIFICATION_ONLY_MARKER`) on every `**Runtime Verification**` `- [ ]` row. But the marker is an invisible HTML comment, and subagents authoring REAL (non-template) verification rows treat it as example scaffolding and DROP it during content substitution. The rows then exempt only via the legacy `_VERIFICATION_SECTION_RE` deprecation shim, firing the `remaining_unchecked_are_verification_only` "verification-only marker absent (un-migrated producer)" `_DIAGNOSTICS` warning. This recurs on files authored AFTER the marker convention landed (2026-06-17), so it is a live producer-compliance gap, not pure legacy debt.
 
-**Status:** Concluded
+**Status:** Fixed
 **Severity:** P3
 **Discovered:** 2026-07-23
 **Placement:** docs/bugs/verification-only-marker-dropped-on-freehand-rows
