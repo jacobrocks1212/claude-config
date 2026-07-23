@@ -2803,22 +2803,50 @@ def archive_fixed(
                 )
 
         # --- step 7: stage + commit -------------------------------------------
-        to_stage = ["docs/bugs"] + result["repointed"]
-        add_proc = _git(repo_root, "add", "-A", "--", *to_stage)
+        # Stage + commit ONLY the paths THIS archive operation owns — never the
+        # blanket ``docs/bugs`` tree (archive-fixed-blanket-stages-docs-bugs-tree):
+        # ``git add -A -- docs/bugs`` swept a CONCURRENT session's untracked file
+        # elsewhere under docs/bugs/ into the archive commit, and the bare
+        # ``git commit`` then absorbed it. The owned paths are the moved source dir
+        # (its staged rename-deletion), the _archive/ destination, the trimmed
+        # queue.json, and the repointed *.md files. The commit uses a trailing
+        # ``-- <pathspec>`` so a file a concurrent writer already STAGED is left in
+        # the index, never absorbed — the SAME mechanism as
+        # end-of-run-flush-commit-absorbs-concurrent-writer-staged-files
+        # (ledgers.commit_flush_artifacts).
+        source_rel = spec_path.relative_to(repo_root).as_posix()
+        queue_rel = queue_path.relative_to(repo_root).as_posix()
+        # Working-tree paths to stage. The source deletion is already staged by the
+        # step-4 ``git mv``; a ``git add`` of a now-vanished source path is fatal
+        # ("pathspec did not match any files"), so ``source_rel`` is a COMMIT
+        # pathspec only, never an ``add`` pathspec. queue.json is included only when
+        # present (a never-tracked pathspec aborts the whole commit).
+        add_paths = [result["archived_to"]]
+        if queue_path.exists():
+            add_paths.append(queue_rel)
+        add_paths.extend(result["repointed"])
+        add_proc = _git(repo_root, "add", "--", *add_paths)
         if add_proc.returncode != 0:
             return _refuse(
                 f"archived to {result['archived_to']} but final staging "
                 f"failed: {add_proc.stderr.strip()} — PARTIAL STATE, re-run"
             )
-        diff_proc = _git(repo_root, "diff", "--cached", "--quiet")
+        # Commit pathspec = the owned working-tree paths PLUS the source dir (whose
+        # staged rename-deletion must be committed). Scoped so foreign staged files
+        # are excluded from BOTH the noop check and the commit.
+        commit_paths = [source_rel] + add_paths
+        diff_proc = _git(
+            repo_root, "diff", "--cached", "--quiet", "--", *commit_paths)
         if diff_proc.returncode == 0:
-            # Nothing staged — a re-run after a fully-completed prior pass.
+            # Nothing OWNED staged — a re-run after a fully-completed prior pass
+            # (a concurrent writer's staged file is deliberately ignored here).
             result["ok"] = True
             result["noop"] = True
             return result
         commit_proc = _git(
             repo_root, "commit", "-m",
             f"fix({bug_id}): mark fixed and archive — FIXED.md receipt gated",
+            "--", *commit_paths,
         )
         if commit_proc.returncode != 0:
             return _refuse(

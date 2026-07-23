@@ -2573,6 +2573,64 @@ def test_archive_fixed_happy_path_with_unstaged_deletion():
 
 
 
+def test_archive_fixed_does_not_capture_concurrent_docs_bugs_files():
+    """archive-fixed-blanket-stages-docs-bugs-tree: the archive commit must stage
+    ONLY the paths it owns (moved dir, _archive/ dest, queue.json, repointed refs)
+    — NEVER the blanket docs/bugs tree. A concurrent session's file elsewhere under
+    docs/bugs/, whether merely UNTRACKED or already STAGED into the shared index,
+    must not be absorbed into the archive commit."""
+    _guard()
+    with tempfile.TemporaryDirectory() as td:
+        repo_root, bug_dir = _make_fixed_bug_repo(td)
+        # A concurrent session's UNTRACKED file elsewhere under docs/bugs/.
+        untracked = repo_root / "docs" / "bugs" / "concurrent-untracked" / "SPEC.md"
+        untracked.parent.mkdir(parents=True)
+        untracked.write_text("# concurrent, untracked\n", encoding="utf-8")
+        # A concurrent session's file already STAGED into the shared index.
+        staged = repo_root / "docs" / "bugs" / "concurrent-staged" / "SPEC.md"
+        staged.parent.mkdir(parents=True)
+        staged.write_text("# concurrent, staged\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(repo_root), "add", "--",
+             "docs/bugs/concurrent-staged/SPEC.md"],
+            check=True, capture_output=True,
+        )
+
+        result = lazy_core.archive_fixed(repo_root, bug_dir, date="2026-06-10")
+
+        assert result["ok"] is True, f"expected ok, got {result}"
+        # The archive commit captured ONLY owned paths — neither foreign file.
+        committed = subprocess.run(
+            ["git", "-C", str(repo_root), "show", "--name-only",
+             "--pretty=format:", "HEAD"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        ).stdout
+        committed_files = {ln.strip() for ln in committed.splitlines() if ln.strip()}
+        assert "docs/bugs/concurrent-untracked/SPEC.md" not in committed_files, (
+            f"a concurrent untracked file was absorbed: {committed_files}"
+        )
+        assert "docs/bugs/concurrent-staged/SPEC.md" not in committed_files, (
+            f"a concurrent staged file was absorbed: {committed_files}"
+        )
+        # Owned changes ARE committed (the move, the queue trim, the repoint).
+        assert "docs/bugs/_archive/my-bug/SPEC.md" in committed_files
+        assert "docs/bugs/queue.json" in committed_files
+        assert "docs/bugs/CLAUDE.md" in committed_files
+        # The foreign files survive in their prior git states, untouched.
+        status = subprocess.run(
+            ["git", "-C", str(repo_root), "status", "--short"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        ).stdout
+        assert "?? docs/bugs/concurrent-untracked/" in status, (
+            f"untracked concurrent file must remain untracked, got: {status}"
+        )
+        assert "A  docs/bugs/concurrent-staged/SPEC.md" in status, (
+            f"staged concurrent file must remain staged, uncommitted, got: {status}"
+        )
+
+
+
+
 def test_archive_fixed_refuses_without_receipt():
     """No FIXED.md and SPEC not Won't-fix → refused, nothing moved."""
     _guard()
@@ -4527,6 +4585,7 @@ _TESTS = [
     ("test_neutralize_sentinel_refuses_already_resolved", test_neutralize_sentinel_refuses_already_resolved),
     ("test_neutralize_sentinel_blocked_form", test_neutralize_sentinel_blocked_form),
     ("test_archive_fixed_happy_path_with_unstaged_deletion", test_archive_fixed_happy_path_with_unstaged_deletion),
+    ("test_archive_fixed_does_not_capture_concurrent_docs_bugs_files", test_archive_fixed_does_not_capture_concurrent_docs_bugs_files),
     ("test_archive_fixed_refuses_without_receipt", test_archive_fixed_refuses_without_receipt),
     ("test_archive_fixed_wont_fix_archives_without_receipt", test_archive_fixed_wont_fix_archives_without_receipt),
     ("test_archive_fixed_collision_appends_suffix", test_archive_fixed_collision_appends_suffix),
