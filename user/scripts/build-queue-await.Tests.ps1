@@ -164,6 +164,33 @@ Describe 'build-queue-await.ps1 — await-timeout (result not yet present)' {
 	}
 }
 
+Describe 'build-queue-await.ps1 — dead-holder self-diagnose (build-queue-harness-diagnostic-gaps Defect 4)' {
+
+	It 'returns a distinct non-124 failure when the awaited seq is the active-lock holder with a dead pid and no result' {
+		$root = New-FixtureStateRoot
+		# A definitely-dead pid: spawn a process, wait for it to exit, reuse its id.
+		$deadProc = Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile', '-Command', 'exit 0' -PassThru -WindowStyle Hidden
+		$deadProc.WaitForExit()
+		Start-Sleep -Milliseconds 200
+		$lock = [ordered]@{ seq = 77; build_pid = $deadProc.Id; op = 'nxbuild'; worktree = 'C:\r'; started_at = (Get-Date).ToString('o'); log_path = 'x'; machine_perf = $null } | ConvertTo-Json -Compress
+		[System.IO.File]::WriteAllText((Join-Path $root 'active.lock'), $lock)
+
+		$run = Invoke-Await -Seq 77 -StateRoot $root -TimeoutSeconds 30 -PollIntervalMs 50
+		$run.ExitCode | Should -Be 1
+		($run.Lines -join "`n") | Should -Match 'is the active-lock holder but its build process is dead'
+	}
+
+	It 'does NOT false-positive when the holder pid is alive — keeps waiting and exits with the distinct timeout code' {
+		$root = New-FixtureStateRoot
+		# The test process itself is a guaranteed-alive holder pid.
+		$lock = [ordered]@{ seq = 78; build_pid = $PID; op = 'nxbuild'; worktree = 'C:\r'; started_at = (Get-Date).ToString('o'); log_path = 'x'; machine_perf = $null } | ConvertTo-Json -Compress
+		[System.IO.File]::WriteAllText((Join-Path $root 'active.lock'), $lock)
+
+		$run = Invoke-Await -Seq 78 -StateRoot $root -TimeoutSeconds 0 -PollIntervalMs 50
+		$run.ExitCode | Should -Be 124
+	}
+}
+
 Describe 'build-queue-await.ps1 — genuinely blocks until the result appears' {
 
 	It 'awaits a deferred results write and then emits the banner (backgrounded-build serving path)' {

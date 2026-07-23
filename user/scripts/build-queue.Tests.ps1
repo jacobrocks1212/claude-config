@@ -242,3 +242,50 @@ Describe 'build-queue.ps1 — happy path (regression: demoted Step 5 does not do
 		}
 	}
 }
+
+Describe 'build-queue.ps1 — status shortcut / op presence (build-queue-harness-diagnostic-gaps Defect 3)' {
+
+	It 'no -Op and no -Status fails fast with an actionable error naming -Status and no enqueue' {
+		$root = New-IsolatedRoot
+		$stateRoot = Get-QueueStateRoot -IsolatedRoot $root
+		$outLog = Join-Path $root 'out.log'
+		$errLog = Join-Path $root 'err.log'
+		$originalProfile = $env:USERPROFILE
+		try {
+			$env:USERPROFILE = $root
+			$argString = "-NoProfile -ExecutionPolicy Bypass -File `"$script:WrapperPath`""
+			$proc = Start-Process -FilePath 'powershell.exe' -ArgumentList $argString `
+				-WindowStyle Hidden -PassThru -Wait `
+				-RedirectStandardOutput $outLog -RedirectStandardError $errLog
+		} finally {
+			$env:USERPROFILE = $originalProfile
+		}
+		$proc.ExitCode | Should -Be 1
+		$err = Get-Content -Raw -Path $errLog
+		$err | Should -Match '-Op is required'
+		$err | Should -Match '-Status'
+		# Side-effect-free: no ticket/seq was allocated.
+		(Test-Path (Join-Path $stateRoot 'tickets')) -and @(Get-ChildItem -Path (Join-Path $stateRoot 'tickets') -ErrorAction SilentlyContinue).Count -gt 0 | Should -Be $false
+	}
+
+	It '-Status delegates to build-queue-status.ps1 and returns without enqueuing' {
+		$root = New-IsolatedRoot
+		$stateRoot = Get-QueueStateRoot -IsolatedRoot $root
+		$outLog = Join-Path $root 'out.log'
+		$errLog = Join-Path $root 'err.log'
+		$originalProfile = $env:USERPROFILE
+		try {
+			$env:USERPROFILE = $root
+			$argString = "-NoProfile -ExecutionPolicy Bypass -File `"$script:WrapperPath`" -Status"
+			$proc = Start-Process -FilePath 'powershell.exe' -ArgumentList $argString `
+				-WindowStyle Hidden -PassThru -Wait `
+				-RedirectStandardOutput $outLog -RedirectStandardError $errLog
+		} finally {
+			$env:USERPROFILE = $originalProfile
+		}
+		# The status reader exits 0 on an idle/empty queue; the key contract is
+		# that -Status enqueues nothing (no tickets dir populated).
+		$proc.ExitCode | Should -Be 0
+		(Test-Path (Join-Path $stateRoot 'tickets')) -and @(Get-ChildItem -Path (Join-Path $stateRoot 'tickets') -ErrorAction SilentlyContinue).Count -gt 0 | Should -Be $false
+	}
+}

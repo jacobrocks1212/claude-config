@@ -100,3 +100,45 @@ Describe 'build-queue-status.ps1 -- hygiene counts surfacing' {
 		($output -join "`n") | Should -Match 'queue idle'
 	}
 }
+
+Describe 'build-queue-status.ps1 -- dead-holder unmasking (build-queue-harness-diagnostic-gaps Defect 4)' {
+
+	It 'renders "Active Build (STALE)" with a DEAD marker when the holder pid is dead and no result was written' {
+		$root = New-IsolatedStateRoot
+		# A definitely-dead pid: spawn a process, wait for it to exit, reuse its id.
+		$deadProc = Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile', '-Command', 'exit 0' -PassThru -WindowStyle Hidden
+		$deadProc.WaitForExit()
+		Start-Sleep -Milliseconds 200
+		$lock = [ordered]@{ seq = 501; build_pid = $deadProc.Id; op = 'nxbuild'; worktree = 'C:\r'; started_at = (Get-Date).AddMinutes(-2).ToString('o'); log_path = 'x.log'; machine_perf = $null } | ConvertTo-Json -Compress
+		[System.IO.File]::WriteAllText((Join-Path $root 'active.lock'), $lock)
+
+		$joined = (Invoke-BuildQueueStatus -StateRoot $root) -join "`n"
+		$joined | Should -Match 'Active Build \(STALE\)'
+		$joined | Should -Match '\[DEAD - no result written\]'
+		$joined | Should -Not -Match '=== Active Build ===[^(]'
+	}
+
+	It 'renders a normal "Active Build" (not STALE) when the holder pid is alive' {
+		$root = New-IsolatedStateRoot
+		# The test process itself is a guaranteed-alive holder pid.
+		$lock = [ordered]@{ seq = 502; build_pid = $PID; op = 'nxbuild'; worktree = 'C:\r'; started_at = (Get-Date).ToString('o'); log_path = 'x.log'; machine_perf = $null } | ConvertTo-Json -Compress
+		[System.IO.File]::WriteAllText((Join-Path $root 'active.lock'), $lock)
+
+		$joined = (Invoke-BuildQueueStatus -StateRoot $root) -join "`n"
+		$joined | Should -Match '=== Active Build ==='
+		$joined | Should -Not -Match 'STALE'
+	}
+
+	It 'does NOT unmask as STALE when the dead holder DID write a result (build completed, lock not yet cleared)' {
+		$root = New-IsolatedStateRoot
+		Write-FakeResult -StateRoot $root -Seq 503 -Hygiene @{ result_fidelity = 'n/a'; build_fidelity = 'verified' }
+		$deadProc = Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile', '-Command', 'exit 0' -PassThru -WindowStyle Hidden
+		$deadProc.WaitForExit()
+		Start-Sleep -Milliseconds 200
+		$lock = [ordered]@{ seq = 503; build_pid = $deadProc.Id; op = 'nxbuild'; worktree = 'C:\r'; started_at = (Get-Date).ToString('o'); log_path = 'x.log'; machine_perf = $null } | ConvertTo-Json -Compress
+		[System.IO.File]::WriteAllText((Join-Path $root 'active.lock'), $lock)
+
+		$joined = (Invoke-BuildQueueStatus -StateRoot $root) -join "`n"
+		$joined | Should -Not -Match 'STALE'
+	}
+}

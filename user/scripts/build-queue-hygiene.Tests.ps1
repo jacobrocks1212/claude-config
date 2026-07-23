@@ -656,14 +656,14 @@ Describe 'Format-BuildQueueBanner' {
 		$result | Should -Be 'build-queue: seq=614 op=mstest RESULT=PASS tests=312 failed=0 (result_fidelity=verified)'
 	}
 
-	It 'FAIL via non-zero exit code: RESULT=FAIL with the read-logs next-action naming the seq' {
+	It 'FAIL via non-zero exit code: a build op points at the .build.log stdout transcript naming the seq' {
 		$result = Format-BuildQueueBanner -Seq 620 -Op msbuild -ExitCode 1 -ResultFidelity verified -BuildFidelity verified
-		$result | Should -Be 'build-queue: seq=620 op=msbuild RESULT=FAIL (result_fidelity=verified) -> read logs/620.build.err.log'
+		$result | Should -Be 'build-queue: seq=620 op=msbuild RESULT=FAIL (result_fidelity=verified) -> read logs/620.build.log'
 	}
 
-	It 'FAIL via log-failure-override (exit 0): a test op names its actual seq err.log (no .build. infix)' {
+	It 'FAIL via log-failure-override (exit 0): a test op points at its .log stdout transcript (no .build. infix)' {
 		$result = Format-BuildQueueBanner -Seq 621 -Op nxtest -ExitCode 0 -ResultFidelity verified -BuildFidelity log-failure-override
-		$result | Should -Be 'build-queue: seq=621 op=nxtest RESULT=FAIL (result_fidelity=verified) -> read logs/621.err.log'
+		$result | Should -Be 'build-queue: seq=621 op=nxtest RESULT=FAIL (result_fidelity=verified) -> read logs/621.log'
 	}
 
 	It 'NO-TESTS-MATCHED takes precedence over the exit code and gets the widen-filter next-action' {
@@ -1368,23 +1368,44 @@ Describe 'Resolve-BuildQueueOp (wrapper op resolution seam)' {
 			}
 		} | ConvertTo-Json -Depth 5
 		[System.IO.File]::WriteAllText($script:ManifestPath, $body)
+		# The resolver now asserts the resolved exec exists on disk, so the
+		# manifest's exec must be a real file for the ok-path tests below.
+		$script:ManifestExec = Join-Path $script:RepoRoot '.claude/scripts/tauri-build-filtered.ps1'
+		$null = New-Item -ItemType Directory -Path (Split-Path -Parent $script:ManifestExec) -Force
+		[System.IO.File]::WriteAllText($script:ManifestExec, 'exit 0')
 	}
 
 	It 'resolves a manifested op: exec defaulted repo-relative, kind/hygiene threaded' {
 		$r = Resolve-BuildQueueOp -RepoRoot $script:RepoRoot -Op 'tauri-build'
 		$r.ok | Should -Be $true
 		$r.source | Should -Be 'manifest'
-		$r.exec | Should -Be (Join-Path $script:RepoRoot '.claude/scripts/tauri-build-filtered.ps1')
+		$r.exec | Should -Be $script:ManifestExec
 		$r.kind | Should -Be 'build'
 		$r.hygiene | Should -Be 'rust-tauri'
 	}
 
 	It 'an explicit -Exec overrides the manifest entry (D8 back-compat)' {
 		$explicit = Join-Path $script:RepoRoot 'custom.ps1'
+		[System.IO.File]::WriteAllText($explicit, 'exit 0')
 		$r = Resolve-BuildQueueOp -RepoRoot $script:RepoRoot -Op 'tauri-build' -Exec $explicit
 		$r.ok | Should -Be $true
 		$r.exec | Should -Be $explicit
 		$r.hygiene | Should -Be 'rust-tauri'
+	}
+
+	It 'a resolved exec that does not exist fails with a distinct exec-not-found error (Defect 1)' {
+		$missing = Join-Path $script:RepoRoot 'does-not-exist.ps1'
+		$r = Resolve-BuildQueueOp -RepoRoot $script:RepoRoot -Op 'tauri-build' -Exec $missing
+		$r.ok | Should -Be $false
+		$r.error | Should -Match 'exec script not found'
+		$r.error | Should -Match ([regex]::Escape($missing))
+	}
+
+	It 'a stale manifest exec (missing file) also fails exec-not-found (Defect 1)' {
+		Remove-Item -LiteralPath $script:ManifestExec -Force
+		$r = Resolve-BuildQueueOp -RepoRoot $script:RepoRoot -Op 'tauri-build'
+		$r.ok | Should -Be $false
+		$r.error | Should -Match 'exec script not found'
 	}
 
 	It 'an unknown op in a manifested repo fails with an error naming the manifest path and registered ops' {
@@ -1399,6 +1420,7 @@ Describe 'Resolve-BuildQueueOp (wrapper op resolution seam)' {
 		$bare = Join-Path $TestDrive ("bare-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 		$null = New-Item -ItemType Directory -Path $bare -Force
 		$exec = Join-Path $bare 'test-filtered.ps1'
+		[System.IO.File]::WriteAllText($exec, 'exit 0')
 		$r = Resolve-BuildQueueOp -RepoRoot $bare -Op 'mstest' -Exec $exec
 		$r.ok | Should -Be $true
 		$r.source | Should -Be 'legacy'
@@ -1695,6 +1717,7 @@ Describe 'ops-manifest lane field (D4 - tolerant validation + resolution)' {
 		$null = New-Item -ItemType Directory -Path $dir -Force
 		$json = '{"version":1,"ops":{"mstest":{"exec":"t.ps1","kind":"test","hygiene":"dotnet","skill":"/mstest","deny":[],"lane":"fast"}}}'
 		[System.IO.File]::WriteAllText((Join-Path $dir 'build-queue-ops.json'), $json)
+		[System.IO.File]::WriteAllText((Join-Path $root 't.ps1'), 'exit 0')
 		$r = Resolve-BuildQueueOp -RepoRoot $root -Op 'mstest'
 		$r.ok | Should -BeTrue
 		$r.lane | Should -Be 'fast'
@@ -1706,6 +1729,7 @@ Describe 'ops-manifest lane field (D4 - tolerant validation + resolution)' {
 		$null = New-Item -ItemType Directory -Path $dir -Force
 		$json = '{"version":1,"ops":{"msbuild":{"exec":"b.ps1","kind":"build","hygiene":"dotnet","skill":"/msbuild","deny":[]}}}'
 		[System.IO.File]::WriteAllText((Join-Path $dir 'build-queue-ops.json'), $json)
+		[System.IO.File]::WriteAllText((Join-Path $root 'b.ps1'), 'exit 0')
 		$r = Resolve-BuildQueueOp -RepoRoot $root -Op 'msbuild'
 		$r.ok | Should -BeTrue
 		$r.lane | Should -Be 'heavy'
@@ -1717,6 +1741,7 @@ Describe 'ops-manifest lane field (D4 - tolerant validation + resolution)' {
 		$null = New-Item -ItemType Directory -Path $dir -Force
 		$json = '{"version":1,"ops":{"mstest":{"exec":"t.ps1","kind":"test","hygiene":"dotnet","skill":"/mstest","deny":[],"lane":"purple"}}}'
 		[System.IO.File]::WriteAllText((Join-Path $dir 'build-queue-ops.json'), $json)
+		[System.IO.File]::WriteAllText((Join-Path $root 't.ps1'), 'exit 0')
 		$r = Resolve-BuildQueueOp -RepoRoot $root -Op 'mstest' 3>$null
 		$r.ok | Should -BeTrue
 		$r.lane | Should -Be 'heavy'
@@ -1725,7 +1750,9 @@ Describe 'ops-manifest lane field (D4 - tolerant validation + resolution)' {
 	It 'legacy (no-manifest) resolution rides the heavy lane' {
 		$root = Join-Path $TestDrive 'lane-resolve-legacy'
 		$null = New-Item -ItemType Directory -Path $root -Force
-		$r = Resolve-BuildQueueOp -RepoRoot $root -Op 'mstest' -Exec 'x.ps1'
+		$exec = Join-Path $root 'x.ps1'
+		[System.IO.File]::WriteAllText($exec, 'exit 0')
+		$r = Resolve-BuildQueueOp -RepoRoot $root -Op 'mstest' -Exec $exec
 		$r.ok | Should -BeTrue
 		$r.lane | Should -Be 'heavy'
 	}
